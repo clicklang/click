@@ -27,8 +27,8 @@ int32 update(int32 *pool, int32 *p, int32 *q) {
     ensures result == 0 or result == 7;
 } by {
     step_until(statement(3).entry);
-    branch { true => { step(); solve(); } false => {} }
-    have separate(memory(p[0..1]), memory(q[0..1]) * memory(task[0..1])) by { solve(); }
+    branch { true => { step(); close(); } false => {} }
+    have separate(memory(p[0..1]), memory(q[0..1]) * memory(task[0..1])) by { close(); }
     with(slot(pool, p)) { step(); }
 }
 ```

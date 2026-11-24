@@ -26,7 +26,7 @@ which phase bodies name the arm's bindings, `spin` from `initialize` and
 the same definitional equation by `unfold` and `normalize`.
 
 `spin`'s `initialize` is written in the shape the entry planner checks: one
-`have` per invariant, then `known()`. The helper `have` that needs the
+`have` per invariant, then `close()`. The helper `have` that needs the
 arm's bindings is nested inside the invariant's own body, which is where a
 phase body of any depth now resolves them.
 
@@ -102,21 +102,21 @@ int spin(struct node* p, int n) {
                 invariant t.model == Tree::Node(id, value, left_model);
 
                 initialize by {
-                    have i >= 0 by known();
+                    have i >= 0 by close();
                     have i <= n;
                     have t.model == Tree::Node(id, value, left_model) by {
                         have head_value(Tree::Node(id, value, left_model)) == value by {
                             unfold(head_value(Tree::Node(id, value, left_model)));
-                            known();
+                            close();
                         }
-                        known();
+                        close();
                     }
-                    known();
+                    close();
                 }
                 maintain by {
                     have head_value(Tree::Node(id, value, left_model)) == value by {
                         unfold(head_value(Tree::Node(id, value, left_model)));
-                        known();
+                        close();
                     }
                     have 0 <= to_integer(n - i - 1) by { close() using { i < n; i >= 0; n >= 0; }; }
                     have to_integer(n - i - 1) < to_integer(n - i) by { close() using { i < n; i >= 0; n >= 0; }; }
@@ -124,7 +124,7 @@ int spin(struct node* p, int n) {
                 }
             }
             step();
-            solve();
+            close();
         },
     }
 }
@@ -146,17 +146,17 @@ int spin_ranked(struct node* p, int n) {
                 invariant i >= 0;
                 invariant i <= n;
 
-                initialize by solve();
+                initialize by close();
                 maintain by {
                     have head_value(Tree::Node(id, value, left_model)) == value by {
                         unfold(head_value(Tree::Node(id, value, left_model)));
-                        known();
+                        close();
                     }
                     step();
                 }
             }
             step();
-            solve();
+            close();
         },
     }
 }

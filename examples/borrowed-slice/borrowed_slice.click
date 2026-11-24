@@ -66,7 +66,7 @@ int32 borrowed_slice_buffer_init(
 } by {
     step_until(function.exit);
     fold(owned_borrowable_buffer(owner, data, length));
-    solve();
+    close();
 }
 
 int32 borrowed_slice_buffer_borrow(
@@ -94,7 +94,7 @@ int32 borrowed_slice_buffer_borrow(
     step_until(function.exit);
     fold(owned_slice(data, start, end));
     fold(buffer_without_slice(owner, data, length, start, end));
-    solve();
+    close();
 }
 
 int32 borrowed_slice_set(
@@ -114,7 +114,7 @@ int32 borrowed_slice_set(
     unfold(owned_slice(data, start, end));
     step_until(function.exit);
     fold(owned_slice(data, start, end));
-    solve();
+    close();
 }
 
 int32 borrowed_slice_buffer_return(
@@ -181,5 +181,5 @@ int32 borrowed_slice_buffer_pipeline(
     step();
     step();
     step();
-    solve();
+    close();
 }

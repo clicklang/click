@@ -44,7 +44,7 @@ uint32 caller(uint32 x) {
     step();
     step();
     step() {
-        requires statement(3).call(first, 0).parameter(p).a <= 1000u32 by solve();
+        requires statement(3).call(first, 0).parameter(p).a <= 1000u32 by close();
     }
     have statement(3).call(first, 0).parameter(p).a == x;
     have statement(3).call(first, 0).parameter(p).b == 2u32;

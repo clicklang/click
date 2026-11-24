@@ -83,70 +83,70 @@ function signed_digit(v: int32, k: uint64) -> uint8 {
 theorem pow10_0() {
     ensures stdio::pow10(0u64) == 1u64 by {
         unfold(stdio::pow10(0u64));
-        solve();
+        close();
     }
 }
 
 theorem pow10_1() {
     ensures stdio::pow10(1u64) == 10u64 by {
         unfold(stdio::pow10(1u64));
-        solve();
+        close();
     }
 }
 
 theorem pow10_2() {
     ensures stdio::pow10(2u64) == 100u64 by {
         unfold(stdio::pow10(2u64));
-        solve();
+        close();
     }
 }
 
 theorem pow10_3() {
     ensures stdio::pow10(3u64) == 1000u64 by {
         unfold(stdio::pow10(3u64));
-        solve();
+        close();
     }
 }
 
 theorem pow10_4() {
     ensures stdio::pow10(4u64) == 10000u64 by {
         unfold(stdio::pow10(4u64));
-        solve();
+        close();
     }
 }
 
 theorem pow10_5() {
     ensures stdio::pow10(5u64) == 100000u64 by {
         unfold(stdio::pow10(5u64));
-        solve();
+        close();
     }
 }
 
 theorem pow10_6() {
     ensures stdio::pow10(6u64) == 1000000u64 by {
         unfold(stdio::pow10(6u64));
-        solve();
+        close();
     }
 }
 
 theorem pow10_7() {
     ensures stdio::pow10(7u64) == 10000000u64 by {
         unfold(stdio::pow10(7u64));
-        solve();
+        close();
     }
 }
 
 theorem pow10_8() {
     ensures stdio::pow10(8u64) == 100000000u64 by {
         unfold(stdio::pow10(8u64));
-        solve();
+        close();
     }
 }
 
 theorem pow10_9() {
     ensures stdio::pow10(9u64) == 1000000000u64 by {
         unfold(stdio::pow10(9u64));
-        solve();
+        close();
     }
 }
 
@@ -209,70 +209,70 @@ theorem pow10_nonzero(e: uint64) {
                                                     rewrite(e, 9u64);
                                                     apply(stdio::pow10_9());
                                                     rewrite(stdio::pow10(9u64), 1000000000u64);
-                                                    known();
+                                                    close();
                                                 } else {
                                                     have e < 9u64 by { close() using { e < 10u64; not (e == 9u64); }; }
                                                     if e == 8u64 {
                                                         rewrite(e, 8u64);
                                                         apply(stdio::pow10_8());
                                                         rewrite(stdio::pow10(8u64), 100000000u64);
-                                                        known();
+                                                        close();
                                                     } else {
                                                         have e < 8u64 by { close() using { e < 9u64; not (e == 8u64); }; }
                                                         if e == 7u64 {
                                                             rewrite(e, 7u64);
                                                             apply(stdio::pow10_7());
                                                             rewrite(stdio::pow10(7u64), 10000000u64);
-                                                            known();
+                                                            close();
                                                         } else {
                                                             have e < 7u64 by { close() using { e < 8u64; not (e == 7u64); }; }
                                                             if e == 6u64 {
                                                                 rewrite(e, 6u64);
                                                                 apply(stdio::pow10_6());
                                                                 rewrite(stdio::pow10(6u64), 1000000u64);
-                                                                known();
+                                                                close();
                                                             } else {
                                                                 have e < 6u64 by { close() using { e < 7u64; not (e == 6u64); }; }
                                                                 if e == 5u64 {
                                                                     rewrite(e, 5u64);
                                                                     apply(stdio::pow10_5());
                                                                     rewrite(stdio::pow10(5u64), 100000u64);
-                                                                    known();
+                                                                    close();
                                                                 } else {
                                                                     have e < 5u64 by { close() using { e < 6u64; not (e == 5u64); }; }
                                                                     if e == 4u64 {
                                                                         rewrite(e, 4u64);
                                                                         apply(stdio::pow10_4());
                                                                         rewrite(stdio::pow10(4u64), 10000u64);
-                                                                        known();
+                                                                        close();
                                                                     } else {
                                                                         have e < 4u64 by { close() using { e < 5u64; not (e == 4u64); }; }
                                                                         if e == 3u64 {
                                                                             rewrite(e, 3u64);
                                                                             apply(stdio::pow10_3());
                                                                             rewrite(stdio::pow10(3u64), 1000u64);
-                                                                            known();
+                                                                            close();
                                                                         } else {
                                                                             have e < 3u64 by { close() using { e < 4u64; not (e == 3u64); }; }
                                                                             if e == 2u64 {
                                                                                 rewrite(e, 2u64);
                                                                                 apply(stdio::pow10_2());
                                                                                 rewrite(stdio::pow10(2u64), 100u64);
-                                                                                known();
+                                                                                close();
                                                                             } else {
                                                                                 have e < 2u64 by { close() using { e < 3u64; not (e == 2u64); }; }
                                                                                 if e == 1u64 {
                                                                                     rewrite(e, 1u64);
                                                                                     apply(stdio::pow10_1());
                                                                                     rewrite(stdio::pow10(1u64), 10u64);
-                                                                                    known();
+                                                                                    close();
                                                                                 } else {
                                                                                     have e < 1u64 by { close() using { e < 2u64; not (e == 1u64); }; }
                                                                                     have e == 0u64 by { close() using { e < 1u64; }; }
                                                                                     rewrite(e, 0u64);
                                                                                     apply(stdio::pow10_0());
                                                                                     rewrite(stdio::pow10(0u64), 1u64);
-                                                                                    known();
+                                                                                    close();
                                                                                 }
                                                                             }
                                                                         }
@@ -298,7 +298,7 @@ theorem pow10_nonzero(e: uint64) {
 theorem decimal_length_1(v: uint64) {
     requires v < 10u64;
     ensures stdio::decimal_length(v) == 1u64 by {
-        have v < 10u64 by { solve(); }
+        have v < 10u64 by { close(); }
         have v < 100u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10u64, 100u64)); }
         have v < 1000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10u64, 1000u64)); }
         have v < 10000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10u64, 10000u64)); }
@@ -356,7 +356,7 @@ theorem decimal_length_1(v: uint64) {
         rewrite((if v < 1000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
         have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000000000000000000u64; }; }
         rewrite((if v < 10000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        known();
+        close();
     }
 }
 
@@ -364,8 +364,8 @@ theorem decimal_length_2(v: uint64) {
     requires 10u64 <= v;
     requires v < 100u64;
     ensures stdio::decimal_length(v) == 2u64 by {
-        have not (v < 10u64) by { solve(); }
-        have v < 100u64 by { solve(); }
+        have not (v < 10u64) by { close(); }
+        have v < 100u64 by { close(); }
         have v < 1000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100u64, 1000u64)); }
         have v < 10000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100u64, 10000u64)); }
         have v < 100000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100u64, 100000u64)); }
@@ -422,7 +422,7 @@ theorem decimal_length_2(v: uint64) {
         rewrite((if v < 1000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
         have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000000000000000000u64; }; }
         rewrite((if v < 10000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        known();
+        close();
     }
 }
 
@@ -431,8 +431,8 @@ theorem decimal_length_3(v: uint64) {
     requires v < 1000u64;
     ensures stdio::decimal_length(v) == 3u64 by {
         have not (v < 10u64) by { apply(integer::uint64_less_equal_transitive(10u64, 100u64, v)); }
-        have not (v < 100u64) by { solve(); }
-        have v < 1000u64 by { solve(); }
+        have not (v < 100u64) by { close(); }
+        have v < 1000u64 by { close(); }
         have v < 10000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000u64, 10000u64)); }
         have v < 100000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000u64, 100000u64)); }
         have v < 1000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000u64, 1000000u64)); }
@@ -488,7 +488,7 @@ theorem decimal_length_3(v: uint64) {
         rewrite((if v < 1000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
         have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000000000000000000u64; }; }
         rewrite((if v < 10000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        known();
+        close();
     }
 }
 
@@ -498,8 +498,8 @@ theorem decimal_length_4(v: uint64) {
     ensures stdio::decimal_length(v) == 4u64 by {
         have not (v < 10u64) by { apply(integer::uint64_less_equal_transitive(10u64, 1000u64, v)); }
         have not (v < 100u64) by { apply(integer::uint64_less_equal_transitive(100u64, 1000u64, v)); }
-        have not (v < 1000u64) by { solve(); }
-        have v < 10000u64 by { solve(); }
+        have not (v < 1000u64) by { close(); }
+        have v < 10000u64 by { close(); }
         have v < 100000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000u64, 100000u64)); }
         have v < 1000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000u64, 1000000u64)); }
         have v < 10000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000u64, 10000000u64)); }
@@ -554,7 +554,7 @@ theorem decimal_length_4(v: uint64) {
         rewrite((if v < 1000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
         have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000000000000000000u64; }; }
         rewrite((if v < 10000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        known();
+        close();
     }
 }
 
@@ -565,8 +565,8 @@ theorem decimal_length_5(v: uint64) {
         have not (v < 10u64) by { apply(integer::uint64_less_equal_transitive(10u64, 10000u64, v)); }
         have not (v < 100u64) by { apply(integer::uint64_less_equal_transitive(100u64, 10000u64, v)); }
         have not (v < 1000u64) by { apply(integer::uint64_less_equal_transitive(1000u64, 10000u64, v)); }
-        have not (v < 10000u64) by { solve(); }
-        have v < 100000u64 by { solve(); }
+        have not (v < 10000u64) by { close(); }
+        have v < 100000u64 by { close(); }
         have v < 1000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000u64, 1000000u64)); }
         have v < 10000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000u64, 10000000u64)); }
         have v < 100000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000u64, 100000000u64)); }
@@ -620,7 +620,7 @@ theorem decimal_length_5(v: uint64) {
         rewrite((if v < 1000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
         have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000000000000000000u64; }; }
         rewrite((if v < 10000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        known();
+        close();
     }
 }
 
@@ -632,8 +632,8 @@ theorem decimal_length_6(v: uint64) {
         have not (v < 100u64) by { apply(integer::uint64_less_equal_transitive(100u64, 100000u64, v)); }
         have not (v < 1000u64) by { apply(integer::uint64_less_equal_transitive(1000u64, 100000u64, v)); }
         have not (v < 10000u64) by { apply(integer::uint64_less_equal_transitive(10000u64, 100000u64, v)); }
-        have not (v < 100000u64) by { solve(); }
-        have v < 1000000u64 by { solve(); }
+        have not (v < 100000u64) by { close(); }
+        have v < 1000000u64 by { close(); }
         have v < 10000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000u64, 10000000u64)); }
         have v < 100000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000u64, 100000000u64)); }
         have v < 1000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000u64, 1000000000u64)); }
@@ -686,7 +686,7 @@ theorem decimal_length_6(v: uint64) {
         rewrite((if v < 1000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
         have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000000000000000000u64; }; }
         rewrite((if v < 10000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        known();
+        close();
     }
 }
 
@@ -699,8 +699,8 @@ theorem decimal_length_7(v: uint64) {
         have not (v < 1000u64) by { apply(integer::uint64_less_equal_transitive(1000u64, 1000000u64, v)); }
         have not (v < 10000u64) by { apply(integer::uint64_less_equal_transitive(10000u64, 1000000u64, v)); }
         have not (v < 100000u64) by { apply(integer::uint64_less_equal_transitive(100000u64, 1000000u64, v)); }
-        have not (v < 1000000u64) by { solve(); }
-        have v < 10000000u64 by { solve(); }
+        have not (v < 1000000u64) by { close(); }
+        have v < 10000000u64 by { close(); }
         have v < 100000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000000u64, 100000000u64)); }
         have v < 1000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000000u64, 1000000000u64)); }
         have v < 10000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000000u64, 10000000000u64)); }
@@ -752,7 +752,7 @@ theorem decimal_length_7(v: uint64) {
         rewrite((if v < 1000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
         have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000000000000000000u64; }; }
         rewrite((if v < 10000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        known();
+        close();
     }
 }
 
@@ -766,8 +766,8 @@ theorem decimal_length_8(v: uint64) {
         have not (v < 10000u64) by { apply(integer::uint64_less_equal_transitive(10000u64, 10000000u64, v)); }
         have not (v < 100000u64) by { apply(integer::uint64_less_equal_transitive(100000u64, 10000000u64, v)); }
         have not (v < 1000000u64) by { apply(integer::uint64_less_equal_transitive(1000000u64, 10000000u64, v)); }
-        have not (v < 10000000u64) by { solve(); }
-        have v < 100000000u64 by { solve(); }
+        have not (v < 10000000u64) by { close(); }
+        have v < 100000000u64 by { close(); }
         have v < 1000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000000u64, 1000000000u64)); }
         have v < 10000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000000u64, 10000000000u64)); }
         have v < 100000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000000u64, 100000000000u64)); }
@@ -818,7 +818,7 @@ theorem decimal_length_8(v: uint64) {
         rewrite((if v < 1000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
         have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000000000000000000u64; }; }
         rewrite((if v < 10000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        known();
+        close();
     }
 }
 
@@ -833,8 +833,8 @@ theorem decimal_length_9(v: uint64) {
         have not (v < 100000u64) by { apply(integer::uint64_less_equal_transitive(100000u64, 100000000u64, v)); }
         have not (v < 1000000u64) by { apply(integer::uint64_less_equal_transitive(1000000u64, 100000000u64, v)); }
         have not (v < 10000000u64) by { apply(integer::uint64_less_equal_transitive(10000000u64, 100000000u64, v)); }
-        have not (v < 100000000u64) by { solve(); }
-        have v < 1000000000u64 by { solve(); }
+        have not (v < 100000000u64) by { close(); }
+        have v < 1000000000u64 by { close(); }
         have v < 10000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000000u64, 10000000000u64)); }
         have v < 100000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000000u64, 100000000000u64)); }
         have v < 1000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000000u64, 1000000000000u64)); }
@@ -884,7 +884,7 @@ theorem decimal_length_9(v: uint64) {
         rewrite((if v < 1000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
         have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000000000000000000u64; }; }
         rewrite((if v < 10000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        known();
+        close();
     }
 }
 
@@ -900,8 +900,8 @@ theorem decimal_length_10(v: uint64) {
         have not (v < 1000000u64) by { apply(integer::uint64_less_equal_transitive(1000000u64, 1000000000u64, v)); }
         have not (v < 10000000u64) by { apply(integer::uint64_less_equal_transitive(10000000u64, 1000000000u64, v)); }
         have not (v < 100000000u64) by { apply(integer::uint64_less_equal_transitive(100000000u64, 1000000000u64, v)); }
-        have not (v < 1000000000u64) by { solve(); }
-        have v < 10000000000u64 by { solve(); }
+        have not (v < 1000000000u64) by { close(); }
+        have v < 10000000000u64 by { close(); }
         have v < 100000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000000000u64, 100000000000u64)); }
         have v < 1000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000000000u64, 1000000000000u64)); }
         have v < 10000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000000000u64, 10000000000000u64)); }
@@ -950,7 +950,7 @@ theorem decimal_length_10(v: uint64) {
         rewrite((if v < 1000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
         have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000000000000000000u64; }; }
         rewrite((if v < 10000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        known();
+        close();
     }
 }
 
@@ -961,9 +961,9 @@ theorem decimal_digit_power_nonzero(v: uint64, k: uint64) {
     ensures stdio::pow10(stdio::decimal_length(v) - 1u64 - k) != 0u64 by {
         have stdio::decimal_length(v) <= 20u64 by {
             unfold(stdio::decimal_length(v));
-            solve();
+            close();
         }
-        have (stdio::decimal_length(v) - 1u64 - k) as uint64 < 20u64 by { solve(); }
+        have (stdio::decimal_length(v) - 1u64 - k) as uint64 < 20u64 by { close(); }
         apply(stdio::pow10_nonzero(stdio::decimal_length(v) - 1u64 - k));
     }
 }
@@ -987,7 +987,7 @@ theorem decimal_digit_lower_bound(v: uint64, k: uint64) {
             apply(stdio::decimal_digit_power_nonzero(v, k));
             apply(stdio::decimal_digit_of_length(v, stdio::decimal_length(v), k));
             rewrite(stdio::decimal_digit(v, k), (48u64 + v / stdio::pow10(stdio::decimal_length(v) - 1u64 - k) % 10u64) as uint8);
-            solve();
+            close();
         } else {
             unfold(stdio::decimal_digit(v, k));
             close() using { not (k < stdio::decimal_length(v)); };
@@ -1003,7 +1003,7 @@ theorem padded_digit_lower_bound(v: uint64, width: uint64, k: uint64) {
                 close() using { to_integer(k) < to_integer(stdio::padded_length(v, width) - stdio::decimal_length(v)); };
             }
             rewrite((if to_integer(k) < to_integer(stdio::padded_length(v, width) - stdio::decimal_length(v)) { 48u8 } else { stdio::decimal_digit(v, k - (stdio::padded_length(v, width) - stdio::decimal_length(v))) }), 48u8);
-            known();
+            close();
         } else {
             apply(stdio::decimal_digit_lower_bound(v, k - (stdio::padded_length(v, width) - stdio::decimal_length(v))));
             close() using { not (to_integer(k) < to_integer(stdio::padded_length(v, width) - stdio::decimal_length(v))); 48u8 <= stdio::decimal_digit(v, k - (stdio::padded_length(v, width) - stdio::decimal_length(v))); };

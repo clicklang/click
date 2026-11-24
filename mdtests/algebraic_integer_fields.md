@@ -12,14 +12,14 @@ spec enum Box<T> {
 
 theorem integer_field_equality() {
     ensures Box<Integer>::Wrapped(-9223372036854775809)
-        == Box<Integer>::Wrapped(-9223372036854775809) by solve();
+        == Box<Integer>::Wrapped(-9223372036854775809) by close();
 }
 
 theorem integer_field_match(value: Integer) {
     ensures match Box<Integer>::Wrapped(value) {
         Box::Empty => value,
         Box::Wrapped(inner) => inner,
-    } == value by { known(); }
+    } == value by { close(); }
 }
 ```
 

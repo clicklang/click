@@ -33,7 +33,7 @@ int32 read_payload(struct child* c) {
     ensures result == c->payload;
 } by {
     with(control(c)) { step_until(function.exit); }
-    solve();
+    close();
 }
 ```
 

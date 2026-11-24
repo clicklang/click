@@ -6,7 +6,7 @@ theorem integer_exists_choose() {
     ensures exists (k: Integer) { k == k } by {
         let candidate = obtain(exists (k: Integer) { k == k });
         witness(candidate);
-        known();
+        close();
     }
 }
 
@@ -14,11 +14,11 @@ theorem integer_exists_from_have() {
     ensures exists (z: Integer) { z == 0 } by {
         have exists (x: Integer) { x == 0 } by {
             witness(0);
-            solve();
+            close();
         }
         let candidate = obtain(exists (candidate: Integer) { candidate == 0 });
         witness(candidate);
-        known();
+        close();
     }
 }
 
@@ -28,7 +28,7 @@ theorem integer_exists_multiple_bindings() {
         let (left, right) = obtain(exists (x: Integer, y: Integer) { x == y });
         witness(left);
         witness(right);
-        known();
+        close();
     }
 }
 
@@ -38,7 +38,7 @@ theorem integer_exists_open_one() {
         let left = obtain(exists (x: Integer, y: Integer) { x < y });
         let right = obtain(exists (y: Integer) { left < y });
         witness(left, right);
-        known();
+        close();
     }
 }
 ```

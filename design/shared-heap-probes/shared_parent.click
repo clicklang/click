@@ -85,7 +85,7 @@ void child_release(struct child* obj) {
         unfold(child_ref(obj));
         unfold(authority(child_ref(obj)));
         step_until(function.exit);
-        solve();
+        close();
     } else {
         unfold(child_ref(obj));
         have 1 < obj->refs by {
@@ -96,7 +96,7 @@ void child_release(struct child* obj) {
         step();
         fold(child_control(obj));
         step_until(function.exit);
-        solve();
+        close();
     }
 }
 
@@ -115,7 +115,7 @@ void parent_attach(struct parent* p, struct child* kid) {
 } by {
     step_until(function.exit);
     let link = fold(parent(p), { link: ParentLink::Linked(kid) });
-    solve();
+    close();
 }
 
 int32 parent_read_payload(struct parent* p) {
@@ -138,7 +138,7 @@ int32 parent_read_payload(struct parent* p) {
             have old(p->kid) == entry_child;
             with(child_control(p->kid)) { step_until(function.exit); }
             let link = fold(parent(p), { link: ParentLink::Linked(entry_child) });
-            solve();
+            close();
         },
     }
 }
@@ -168,19 +168,19 @@ void parent_detach(struct parent* p) {
             if entry_child->refs > 1 {
                 have to_integer(old(count(child_ref(p->kid)))) > 1;
                 step_until(function.exit);
-                solve();
+                close();
             } else {
                 have to_integer(old(count(child_ref(p->kid)))) == to_integer(entry_child->refs);
                 have to_integer(old(count(child_ref(p->kid)))) <= 1 by {
                     rewrite(to_integer(old(count(child_ref(p->kid)))), to_integer(entry_child->refs));
-                    solve();
+                    close();
                 }
                 step_until(function.exit);
                 have to_integer(old(count(child_ref(p->kid)))) > 1 implies old(p->kid)->payload == old(p->kid->payload) by {
                     intro();
                     contradiction(to_integer(old(count(child_ref(p->kid)))) <= 1);
                 }
-                solve();
+                close();
             }
         },
     }
@@ -191,7 +191,7 @@ int32 run_first_destroyed(int32 payload) {
 } by {
     step();
     step();
-    branch { true => { step(); solve(); } false => {} }
+    branch { true => { step(); close(); } false => {} }
     fold(authority(child_ref(kid)));
     fold(child_storage(kid));
     step();
@@ -199,10 +199,10 @@ int32 run_first_destroyed(int32 payload) {
     fold(child_control(kid));
     step();
     step();
-    branch { true => { step(); step(); solve(); } false => {} }
+    branch { true => { step(); step(); close(); } false => {} }
     step();
     step();
-    branch { true => { step(); step(); step(); solve(); } false => {} }
+    branch { true => { step(); step(); step(); close(); } false => {} }
     let { link: first_link } = step(parent_attach);
     let { link: second_link } = step(parent_attach);
     step(child_release);
@@ -212,10 +212,10 @@ int32 run_first_destroyed(int32 payload) {
         have to_integer(count(child_ref(kid))) > 1;
         have 2 <= to_integer(kid->refs) by {
             rewrite(to_integer(kid->refs), to_integer(count(child_ref(kid))));
-            solve();
+            close();
         }
     }
-    have first->kid->payload == payload by { rewrite(first->kid, kid); solve(); }
+    have first->kid->payload == payload by { rewrite(first->kid, kid); close(); }
     have first->kid->refs == kid->refs by {
         normalize() using { first->kid == kid; };
     }
@@ -225,12 +225,12 @@ int32 run_first_destroyed(int32 payload) {
     }
     mark detaching;
     step(parent_detach, { link: first_link });
-    have at(detaching, first->kid) == kid by known();
+    have at(detaching, first->kid) == kid by close();
     have at(detaching, first->kid)->payload == at(detaching, first->kid->payload) by {
         have at(detaching, first->kid)->payload == at(detaching, first->kid->payload);
-        known();
+        close();
     }
-    have at(detaching, first->kid->payload) == payload by known();
+    have at(detaching, first->kid->payload) == payload by close();
     have at(detaching, first->kid)->payload == payload by {
         close() using {
             at(detaching, first->kid)->payload == at(detaching, first->kid->payload);
@@ -240,28 +240,28 @@ int32 run_first_destroyed(int32 payload) {
     have kid->payload == payload by {
         have kid == at(detaching, first->kid) by { close() using { at(detaching, first->kid) == kid; }; }
         rewrite(kid, at(detaching, first->kid));
-        known();
+        close();
     }
     step();
     have second->kid == kid;
-    have second->kid->payload == payload by { rewrite(second->kid, kid); solve(); }
+    have second->kid->payload == payload by { rewrite(second->kid, kid); close(); }
     mark reading;
     step(parent_read_payload, { link: second_link });
-    have at(reading, second->kid->payload) == payload by known();
+    have at(reading, second->kid->payload) == payload by close();
     have out == at(reading, second->kid->payload);
     have out == payload;
     have second->kid == kid;
     with(child_control(kid)) {
         have 1 <= to_integer(kid->refs) by {
             rewrite(to_integer(kid->refs), to_integer(count(child_ref(kid))));
-            solve();
+            close();
         }
     }
     step(parent_detach, { link: second_link });
     step();
     step();
     step();
-    solve();
+    close();
 }
 
 int32 run_second_destroyed(int32 payload) {
@@ -269,7 +269,7 @@ int32 run_second_destroyed(int32 payload) {
 } by {
     step();
     step();
-    branch { true => { step(); solve(); } false => {} }
+    branch { true => { step(); close(); } false => {} }
     fold(authority(child_ref(kid)));
     fold(child_storage(kid));
     step();
@@ -277,10 +277,10 @@ int32 run_second_destroyed(int32 payload) {
     fold(child_control(kid));
     step();
     step();
-    branch { true => { step(); step(); solve(); } false => {} }
+    branch { true => { step(); step(); close(); } false => {} }
     step();
     step();
-    branch { true => { step(); step(); step(); solve(); } false => {} }
+    branch { true => { step(); step(); step(); close(); } false => {} }
     let { link: first_link } = step(parent_attach);
     let { link: second_link } = step(parent_attach);
     step(child_release);
@@ -290,10 +290,10 @@ int32 run_second_destroyed(int32 payload) {
         have to_integer(count(child_ref(kid))) > 1;
         have 2 <= to_integer(kid->refs) by {
             rewrite(to_integer(kid->refs), to_integer(count(child_ref(kid))));
-            solve();
+            close();
         }
     }
-    have second->kid->payload == payload by { rewrite(second->kid, kid); solve(); }
+    have second->kid->payload == payload by { rewrite(second->kid, kid); close(); }
     have second->kid->refs == kid->refs by {
         normalize() using { second->kid == kid; };
     }
@@ -303,12 +303,12 @@ int32 run_second_destroyed(int32 payload) {
     }
     mark detaching;
     step(parent_detach, { link: second_link });
-    have at(detaching, second->kid) == kid by known();
+    have at(detaching, second->kid) == kid by close();
     have at(detaching, second->kid)->payload == at(detaching, second->kid->payload) by {
         have at(detaching, second->kid)->payload == at(detaching, second->kid->payload);
-        known();
+        close();
     }
-    have at(detaching, second->kid->payload) == payload by known();
+    have at(detaching, second->kid->payload) == payload by close();
     have at(detaching, second->kid)->payload == payload by {
         close() using {
             at(detaching, second->kid)->payload == at(detaching, second->kid->payload);
@@ -318,26 +318,26 @@ int32 run_second_destroyed(int32 payload) {
     have kid->payload == payload by {
         have kid == at(detaching, second->kid) by { close() using { at(detaching, second->kid) == kid; }; }
         rewrite(kid, at(detaching, second->kid));
-        known();
+        close();
     }
     step();
     have first->kid == kid;
-    have first->kid->payload == payload by { rewrite(first->kid, kid); solve(); }
+    have first->kid->payload == payload by { rewrite(first->kid, kid); close(); }
     mark reading;
     step(parent_read_payload, { link: first_link });
-    have at(reading, first->kid->payload) == payload by known();
+    have at(reading, first->kid->payload) == payload by close();
     have out == at(reading, first->kid->payload);
     have out == payload;
     have first->kid == kid;
     with(child_control(kid)) {
         have 1 <= to_integer(kid->refs) by {
             rewrite(to_integer(kid->refs), to_integer(count(child_ref(kid))));
-            solve();
+            close();
         }
     }
     step(parent_detach, { link: first_link });
     step();
     step();
     step();
-    solve();
+    close();
 }

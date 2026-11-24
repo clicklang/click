@@ -32,26 +32,26 @@ void cut(uint8* s, uint64 n) {
         contradiction();
     }
     have s[0u64] == '\0' by {
-        solve();
+        close();
     }
     have forall (k: uint64) { 0u64 <= k and k < 0u64 + 1u64 implies defined(s[k]) } by {
         intro();
         intro();
         have k == 0u64 by {
-            have 0 <= to_integer(k) by known();
-            have to_integer(k) < 1 by known();
+            have 0 <= to_integer(k) by close();
+            have to_integer(k) < 1 by close();
             have to_integer(k) <= 1 - 1 by {
                 apply(click::integer::lt_le_predecessor(to_integer(k), 1));
             }
             have to_integer(k) <= 0 by {
                 rewrite(0, 1 - 1);
-                known();
+                close();
             }
             apply(click::integer::le_antisymmetric(0, to_integer(k)));
-            known();
+            close();
         }
         rewrite(k, 0u64);
-        solve();
+        close();
     }
     fold(cstr_at(s, 0u64));
 }

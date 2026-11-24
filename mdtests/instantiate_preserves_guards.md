@@ -7,7 +7,7 @@ theorem instance_without_guard(x: int32) {
     requires forall (k: int32) { k > 0 implies value(k) > 0 };
     ensures x > 0 implies value(x) > 0 by {
         instantiate(forall (k: int32) { k > 0 implies value(k) > 0 }, x);
-        known();
+        close();
     }
 }
 
@@ -17,7 +17,7 @@ theorem guard_proved_after_instantiation(x: int32) {
     ensures value(x) > 0 by {
         instantiate(forall (k: int32) { k > 0 implies value(k) > 0 }, x);
         have x > 0;
-        known();
+        close();
     }
 }
 
@@ -31,7 +31,7 @@ theorem nested_instance_keeps_its_own_guard(x: int32, y: int32) {
             k >= 0 implies forall (j: int32) { j >= 0 implies value(j) >= 0 }
         }, x);
         instantiate(forall (j: int32) { j >= 0 implies value(j) >= 0 }, y);
-        known();
+        close();
     }
 }
 ```

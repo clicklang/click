@@ -34,12 +34,12 @@ int32 update(int32* p) {
                 decreases 0;
                 invariant state.model == old(state.model);
                 invariant state.model == View::At(alias);
-                initialize by solve();
+                initialize by close();
                 maintain by {
                     unfold(state);
                     mark iteration;
-                    have p[0] == 7 by { known(); }
-                    have p == alias by { solve(); }
+                    have p[0] == 7 by { close(); }
+                    have p == alias by { close(); }
                     have separate(memory(p[1]), memory(p[0])) by {
                         apply(click::separation::separate_elements(p, 1, 0));
                     }
@@ -50,15 +50,15 @@ int32 update(int32* p) {
                     have p[0] == at(iteration, p[0]) by {
                         preserve(memory(p[0]), statement(0).statement(0));
                     }
-                    have p[0] == 7 by { rewrite(p[0], at(iteration, p[0])); known(); }
-                    have alias[0] == 7 by { rewrite(alias, p); known(); }
+                    have p[0] == 7 by { rewrite(p[0], at(iteration, p[0])); close(); }
+                    have alias[0] == 7 by { rewrite(alias, p); close(); }
                     let state = fold(first(p), {model: View::At(alias)});
                     step();
                 }
             }
             unfold(state); step_until(function.exit);
             let state = fold(first(p), {model: View::At(alias)});
-            solve();
+            close();
         },
     }
 }

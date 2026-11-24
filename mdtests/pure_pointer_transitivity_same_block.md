@@ -16,8 +16,8 @@ void probe(struct node *p, struct node *q) {
     requires p == identity(q);
     ensures p == q;
 } by {
-    have identity(q) == q by { unfold(identity(q)); known(); }
-    have p == q by { known(); }
+    have identity(q) == q by { unfold(identity(q)); close(); }
+    have p == q by { close(); }
 }
 ```
 

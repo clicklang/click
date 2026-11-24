@@ -37,11 +37,11 @@ uint8* resize(int32* q) {
         true => {
             step();
             fold(resized(result));
-            solve();
+            close();
         }
         false => {}
     }
-    have separate(memory(p[0..16]), memory(*q)) by { solve(); }
+    have separate(memory(p[0..16]), memory(*q)) by { close(); }
     step();
     step();
     step();
@@ -49,7 +49,7 @@ uint8* resize(int32* q) {
         true => {
             step();
             fold(resized(result));
-            solve();
+            close();
         }
         false => {}
     }

@@ -33,9 +33,9 @@ int8 narrow_i8(int32 x) {
         have to_integer(result) == to_integer(x) by {
             close() using { -128 <= to_integer(x); to_integer(x) <= 127; };
         };
-        solve();
+        close();
     } else {
         step_until(function.exit);
-        solve();
+        close();
     }
 }

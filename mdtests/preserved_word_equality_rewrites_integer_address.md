@@ -11,7 +11,7 @@ struct node *caller(struct node *p, struct node *q, struct node *parent) {
 
 ```click
 verifying "packed.c";
-void update(struct node *q) { owns q->tag; } by { step(); step(); solve(); }
+void update(struct node *q) { owns q->tag; } by { step(); step(); close(); }
 struct node *caller(struct node *p, struct node *q, struct node *parent) {
     owns p->word;
     owns q->tag;
@@ -32,10 +32,10 @@ struct node *caller(struct node *p, struct node *q, struct node *parent) {
     }
     have ((p->word & ~3) as (struct node *)) == parent by {
         rewrite(p->word, at(before, p->word));
-        known();
+        close();
     }
     step();
-    known();
+    close();
 }
 ```
 

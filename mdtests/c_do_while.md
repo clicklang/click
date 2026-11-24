@@ -89,11 +89,11 @@ int32 do_while_invariant(int32 i) {
         decreases i;
         invariant i + 1 == 1;
         otherwise {
-            have i == 1 by solve();
+            have i == 1 by close();
         }
     }
     step();
-    solve();
+    close();
 }
 
 ```

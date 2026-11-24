@@ -16,7 +16,7 @@ void keep(uint8* p, uint8* q) {
         close() using { separate(memory(*p), memory(*q)); };
     }
     have 1 == at(statement(0).entry, 1) by {
-        known();
+        close();
     }
     step();
 }

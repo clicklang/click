@@ -18,8 +18,8 @@ theorem a_signed_arm_does_not_overflow(a: int32) {
         Step::Next(x) => x + 1,
         Step::Stay(x) => x,
     } > a by {
-        known();
-        solve();
+        close();
+        close();
     }
 }
 
@@ -29,8 +29,8 @@ theorem an_unsigned_arm_does_not_wrap(a: uint32) {
         Step::Next(x) => a + 1,
         Step::Stay(x) => a,
     } > a by {
-        known();
-        solve();
+        close();
+        close();
     }
 }
 ```

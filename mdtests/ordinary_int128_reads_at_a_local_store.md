@@ -32,8 +32,8 @@ int128 read_signed(int128 value) {
     step();
     mark written;
     step();
-    have *(&slot) == value by solve();
-    have separate(memory(*(&other)), memory(*(&slot))) by known();
+    have *(&slot) == value by close();
+    have separate(memory(*(&other)), memory(*(&slot))) by close();
     have separate(region(3).footprint, memory(*(&slot))) by {
         close() using { separate(memory(*(&other)), memory(*(&slot))); };
     }
@@ -41,7 +41,7 @@ int128 read_signed(int128 value) {
         preserve(memory(*(&slot)), region(3));
     }
     step_until(function.exit);
-    solve();
+    close();
 }
 
 uint128 read_unsigned(uint128 value) {
@@ -52,8 +52,8 @@ uint128 read_unsigned(uint128 value) {
     step();
     mark written;
     step();
-    have *(&slot) == value by solve();
-    have separate(memory(*(&other)), memory(*(&slot))) by known();
+    have *(&slot) == value by close();
+    have separate(memory(*(&other)), memory(*(&slot))) by close();
     have separate(region(3).footprint, memory(*(&slot))) by {
         close() using { separate(memory(*(&other)), memory(*(&slot))); };
     }
@@ -61,7 +61,7 @@ uint128 read_unsigned(uint128 value) {
         preserve(memory(*(&slot)), region(3));
     }
     step_until(function.exit);
-    solve();
+    close();
 }
 ```
 

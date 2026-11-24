@@ -8,7 +8,7 @@ void f() { uint32 obj; obj = 0; }
 verifying "address.c";
 void f() { ensures true; } by {
     step();
-    have ((&obj) as (uint8 *)) == ((&obj) as (uint8 *)) by { known(); }
+    have ((&obj) as (uint8 *)) == ((&obj) as (uint8 *)) by { close(); }
     step_until(function.exit);
 }
 ```

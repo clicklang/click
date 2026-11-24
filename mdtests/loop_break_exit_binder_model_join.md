@@ -66,20 +66,20 @@ void paint(struct node* p, int32 flag) {
                 step();
                 step();
                 let c = fold(painted(p), { color: Color::Red });
-                have c.color == Color::Red or c.color == Color::Black by known();
+                have c.color == Color::Red or c.color == Color::Black by close();
                 step();
             } else {
                 step();
                 step();
                 let c = fold(painted(p), { color: Color::Black });
-                have c.color == Color::Red or c.color == Color::Black by known();
+                have c.color == Color::Red or c.color == Color::Black by close();
                 step();
             }
         }
     }
     step();
     have c.color == Color::Red or c.color == Color::Black;
-    solve();
+    close();
 }
 ```
 

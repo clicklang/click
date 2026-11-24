@@ -27,7 +27,7 @@ int32 lower(int32 p) {
     step();
     step();
     have i == p by {
-        known();
+        close();
     }
     have i >= p by {
         close() using {
@@ -35,7 +35,7 @@ int32 lower(int32 p) {
         };
     }
     step();
-    solve();
+    close();
 }
 
 int32 upper(int32 p) {
@@ -44,7 +44,7 @@ int32 upper(int32 p) {
     step();
     step();
     have i == p by {
-        known();
+        close();
     }
     have i <= p by {
         close() using {
@@ -52,7 +52,7 @@ int32 upper(int32 p) {
         };
     }
     step();
-    solve();
+    close();
 }
 ```
 

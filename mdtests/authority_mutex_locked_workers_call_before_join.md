@@ -70,7 +70,7 @@ void* release(void* argument) {
     let restored = fold(control(obj), { refs: obj->refs });
     step(pthread_mutex_unlock, { access: access, guard: guard, state: restored });
     step();
-    solve();
+    close();
 }
 void nothing() {
     ensures 1 == 1;
@@ -82,7 +82,7 @@ int32 run() {
     step();
     step();
     step();
-    branch { true => { step(); solve(); } false => {} }
+    branch { true => { step(); close(); } false => {} }
     step();
     fold(authority(reference(obj)));
     fold(reference(obj));
@@ -100,7 +100,7 @@ int32 run() {
             unfold(authority(reference(obj)));
             step();
             step();
-            solve();
+            close();
         }
         false => {}
     }
@@ -115,7 +115,7 @@ int32 run() {
             unfold(authority(reference(obj)));
             step();
             step();
-            solve();
+            close();
         }
         false => {}
     }
@@ -130,7 +130,7 @@ int32 run() {
     unfold(authority(reference(obj)));
     step();
     step();
-    solve();
+    close();
 }
 ```
 

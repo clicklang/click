@@ -27,10 +27,10 @@ void caller(struct node* child, int32* slot) {
     owns *slot;
     produces c: box(child);
 } by {
-    have separate(b, memory(*slot)) by { known(); }
+    have separate(b, memory(*slot)) by { close(); }
     mark before_call;
     let { c: c } = step(touch, { b: b });
-    have contains(at(before_call, b), statement(0).footprint) by { known(); }
+    have contains(at(before_call, b), statement(0).footprint) by { close(); }
     apply(separation::contains_refl(memory(*slot)));
     apply(separation::separate_restrict(at(before_call, b), memory(*slot), statement(0).footprint, memory(*slot)));
     have *slot == at(before_call, *slot) by {

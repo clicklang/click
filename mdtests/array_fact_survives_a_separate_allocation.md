@@ -38,20 +38,20 @@ int32 scratch(int32 a[], int32 n) {
     have 0 <= 0;
     have icount(a, 0, 0) == 0 by {
         unfold(icount(a, 0, 0));
-        known();
+        close();
     }
     step();
     step();
     branch {
         true => {
             step_until(function.exit);
-            solve();
+            close();
         }
         false => {
         }
     }
     have icount(a, 0, 0) == 0;
-    have separate(memory((fresh as (uint8*))[0..4]), memory(a[0..n])) by { solve(); }
+    have separate(memory((fresh as (uint8*))[0..4]), memory(a[0..n])) by { close(); }
     step();
 }
 ```

@@ -81,7 +81,7 @@ int32 select_guarded(int32 key, int32 choose_left) {
             }
         }
         step();
-        solve();
+        close();
     }
 }
 ```

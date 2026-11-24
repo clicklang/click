@@ -22,16 +22,16 @@ int32 cast64(double x) {
 
 theorem negated_lower_bound(x: float) {
     requires x <= float32_from_bits(0x3f800000);
-    ensures -x >= float32_from_bits(0xbf800000) by known();
+    ensures -x >= float32_from_bits(0xbf800000) by close();
 }
 
 theorem negated_strict_upper_bound(x: double) {
     requires float64_from_bits(0xbff0000000000000) < x;
-    ensures -x < float64_from_bits(0x3ff0000000000000) by known();
+    ensures -x < float64_from_bits(0x3ff0000000000000) by close();
 }
 
 theorem ordered_negated_literal() {
-    ensures -float32_from_bits(0x3f800000) < float32_from_bits(0) by { known(); }
+    ensures -float32_from_bits(0x3f800000) < float32_from_bits(0) by { close(); }
 }
 ```
 

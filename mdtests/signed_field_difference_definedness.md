@@ -17,7 +17,7 @@ int32 span_length(struct span* span) {
     with(span_bounds(span)) {
         have defined(span->end - span->start);
         step();
-        solve();
+        close();
     }
 }
 ```

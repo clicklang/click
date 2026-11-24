@@ -44,11 +44,11 @@ void probe(struct node *p) {
     match a.model {
         Tag::At(id, gp, child_model) => {
             let {kid: kid} = unfold(a);
-            have id->tag == address(gp) + (id->tag & 1) by known();
-            have p != 0 by { rewrite(p, id); known(); }
-            have aligned(p, 8) by { rewrite(p, id); known(); }
+            have id->tag == address(gp) + (id->tag & 1) by close();
+            have p != 0 by { rewrite(p, id); close(); }
+            have aligned(p, 8) by { rewrite(p, id); close(); }
             let b = fold(frame(p), { model: Tag::At(id, gp, child_model), kid: kid });
-            step_until(function.exit); solve();
+            step_until(function.exit); close();
         },
     }
 }

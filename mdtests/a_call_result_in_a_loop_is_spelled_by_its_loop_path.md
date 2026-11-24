@@ -37,11 +37,11 @@ int32 walk(int32 n) {
     loop {
         decreases n - i;
         invariant 0 <= i and i <= n;
-        initialize by { solve(); }
+        initialize by { close(); }
         maintain by {
             step();
-            have loop(0).statement(0).call(next, 0).result == at(loop(0).statement(0).entry, i) + 1 by solve();
-            have statement(2).statement(0).call(next, 0).result == loop(0).statement(0).call(next, 0).result by solve();
+            have loop(0).statement(0).call(next, 0).result == at(loop(0).statement(0).entry, i) + 1 by close();
+            have statement(2).statement(0).call(next, 0).result == loop(0).statement(0).call(next, 0).result by close();
         }
     }
 }

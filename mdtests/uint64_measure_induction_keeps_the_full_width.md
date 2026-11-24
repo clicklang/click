@@ -9,13 +9,13 @@ theorem full_width_induction(n: uint64, limit: uint64) {
     ensures n <= limit by {
         let ih = induct(n);
         if n <= 0u64 {
-            known();
+            close();
         } else {
-            have 0u64 < n by solve();
+            have 0u64 < n by close();
             have to_integer(n - 1u64) < to_integer(n) by close() using { 0u64 < n; };
             have to_integer(n - 1u64) <= to_integer(limit) by close() using { 0u64 < n; n <= limit; };
             apply(ih(n - 1u64));
-            known();
+            close();
         }
     }
 }

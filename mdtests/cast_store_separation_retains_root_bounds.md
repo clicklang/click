@@ -22,9 +22,9 @@ void put(struct node* a, struct node* b) {
     views a->right;
 } by {
     step_until(statement(1).entry);
-    step() by { solve(); }
+    step() by { close(); }
     step_until(function.exit);
-    solve();
+    close();
 }
 ```
 

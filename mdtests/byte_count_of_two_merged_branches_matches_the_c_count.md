@@ -2,7 +2,7 @@
 
 Two `if` statements each add one to a counter when a byte equals `x`.
 After the omitted proof's implicit tail merges both branches, the result is a sum of conditional
-terms, and `solve()` matches it against the unfolded `bytes::count` fold of
+terms, and `close()` matches it against the unfolded `bytes::count` fold of
 the `uint8` prelude. Deciding the overflow of the second increment needs the
 signed interval of the first conditional, and the byte comparisons are
 resolved through equality facts anchored on the loaded bytes. This catches a

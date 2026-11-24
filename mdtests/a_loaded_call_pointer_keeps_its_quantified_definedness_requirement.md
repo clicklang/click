@@ -32,7 +32,7 @@ uint64 probe(const struct Input* src, uint8* dst, uint64 n) {
     requires forall (k: uint64) { k < n implies defined(src->data[k]) };
     ensures result == n;
 } by {
-    step() by { known(); }
+    step() by { close(); }
 }
 ```
 

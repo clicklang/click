@@ -37,7 +37,7 @@ int32 get(struct pair* p) {
     step_until(function.exit);
     have result == first.v;
     fold(pair(p), { first: first });
-    solve();
+    close();
 }
 ```
 

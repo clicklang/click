@@ -39,7 +39,7 @@ int32 drain(int32 n) {
     loop {
         decreases level(n);
         invariant 0 <= n;
-        initialize by { solve(); }
+        initialize by { close(); }
         maintain by {
             have 0 <= to_integer(n - 1);
             have 1 <= n by {
@@ -49,7 +49,7 @@ int32 drain(int32 n) {
             }
             have defined(n - 1) by {
                 have defined(n - 1);
-                solve();
+                close();
             }
             have 0 <= level(n - 1) by {
                 unfold(level(n - 1));
@@ -66,7 +66,7 @@ int32 drain(int32 n) {
         }
     }
     step();
-    solve();
+    close();
 }
 ```
 

@@ -51,7 +51,7 @@ void drain(int32 n) {
                 invariant child.model == LeafModel::Unit;
                 invariant n >= 0;
 
-                initialize by solve();
+                initialize by close();
                 maintain by {
                     have 0 <= to_integer(n - 1);
                     have to_integer(n - 1) >= 0;
@@ -63,7 +63,7 @@ void drain(int32 n) {
                 child: child
             });
             step();
-            solve();
+            close();
         },
     }
 }

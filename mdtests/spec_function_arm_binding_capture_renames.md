@@ -52,7 +52,7 @@ int probe(struct rb_node* node, struct rb_node* parent) {
         == RbTree::Node(node, parent, Color::Red, RbTree::Empty, RbTree::Empty) by {
         unfold(reparent(
             RbTree::Node(node, node, Color::Red, RbTree::Empty, RbTree::Empty), parent));
-        known();
+        close();
     }
 }
 ```

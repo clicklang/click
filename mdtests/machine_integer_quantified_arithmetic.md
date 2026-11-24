@@ -9,7 +9,7 @@ theorem wide_successor(n: int64) {
         have defined(n + 1i64);
         witness(n + 1i64);
         have to_integer(n + 1i64) == to_integer(n) + to_integer(1i64);
-        known();
+        close();
     }
 }
 
@@ -17,21 +17,21 @@ theorem byte_arithmetic(n: uint8) {
     ensures exists (x: uint8) { x + 1 == n + 1 } by {
         have defined(n + 1);
         witness(n);
-        solve();
+        close();
     }
 }
 
 theorem high_word() {
     ensures exists (x: int64) { x == 4294967296i64 and x != 0i64 } by {
         witness(4294967296i64);
-        solve();
+        close();
     }
 }
 
 theorem byte_range() {
     ensures forall (x: uint8) { x >= 0 and x <= 255 } by {
         intro();
-        all { x >= 0 => { known(); } x <= 255 => { known(); } }
+        all { x >= 0 => { close(); } x <= 255 => { close(); } }
     }
 }
 
@@ -40,7 +40,7 @@ theorem mixed() {
         intro();
         intro();
         witness(x, y);
-        solve();
+        close();
     }
 }
 ```

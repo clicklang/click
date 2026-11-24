@@ -5,7 +5,7 @@ theorem incremented_zero_is_one(before: int32, after: int32) {
     ensures after == 1 by {
         rewrite(after, before + 1);
         rewrite(before, 0);
-        solve();
+        close();
     }
 }
 
@@ -16,7 +16,7 @@ theorem decremented_one_is_zero(before: int32, after: int32) {
     ensures after == 0 by {
         rewrite(after, before - 1);
         rewrite(before, 1);
-        solve();
+        close();
     }
 }
 
@@ -25,7 +25,7 @@ theorem int32_equality_transitive(first: int32, second: int32, third: int32) {
     requires second == third;
 
     ensures first == third by {
-        solve();
+        close();
     }
 }
 
@@ -38,7 +38,7 @@ theorem pointer_equality_transitive(
     requires second == third;
 
     ensures first == third by {
-        solve();
+        close();
     }
 }
 
@@ -51,7 +51,7 @@ theorem pointer_add_zero_equals(
     requires offset == 0;
 
     ensures base + offset == target by {
-        solve();
+        close();
     }
 }
 
@@ -121,7 +121,7 @@ int32 owned_string_init(
         unfold(terminated_at(owner->data, owner->len));
         rewrite(owner->data, data);
         rewrite(owner->len, 0);
-        known();
+        close();
     }
     have 0 <= owner->len;
     have owner->len < owner->cap;
@@ -136,9 +136,9 @@ int32 owned_string_init(
         };
     }
     fold(owned_string(owner));
-    known();
-    known();
-    known();
+    close();
+    close();
+    close();
 }
 
 int32 owned_string_len(struct owned_string* owner) {
@@ -146,7 +146,7 @@ int32 owned_string_len(struct owned_string* owner) {
 
     ensures result == owner->len by {
         step();
-        known();
+        close();
     }
 }
 
@@ -157,7 +157,7 @@ int32 owned_string_get(struct owned_string* owner, int32 index) {
 
     ensures result == owner->data[index] by {
         step();
-        known();
+        close();
     }
 }
 
@@ -180,16 +180,16 @@ int32 owned_string_set(
         memory(*owner),
         memory(owner->data[0..owner->cap])
     ) by {
-        solve();
+        close();
     }
     have owner->data[index] == value by {
-        solve();
+        close();
     }
     fold(owned_string(owner));
     step();
-    known();
-    known();
-    known();
+    close();
+    close();
+    close();
 }
 
 int32 owned_string_push(struct owned_string* owner, int32 value) {
@@ -220,24 +220,24 @@ int32 owned_string_push(struct owned_string* owner, int32 value) {
         }
     }
     have owner->data == old(owner->data) by {
-        solve();
+        close();
     }
     have terminated_at(owner->data, owner->len) by {
         unfold(terminated_at(owner->data, owner->len));
-        solve();
+        close();
     }
     fold(owned_string(owner));
     have owner->len == (old(owner->len) + 1) by {
         rewrite(owner->len, at(region(3).entry, (index + 1)));
-        known();
+        close();
     }
-    known();
-    known();
-    known();
-    known();
-    known();
-    known();
-    known();
+    close();
+    close();
+    close();
+    close();
+    close();
+    close();
+    close();
 }
 
 int32 owned_string_push_preserves_first(
@@ -257,9 +257,9 @@ int32 owned_string_push_preserves_first(
     step();
     step();
     step();
-    known();
-    known();
-    known();
+    close();
+    close();
+    close();
 }
 
 int32 owned_string_pop(struct owned_string* owner) {
@@ -283,11 +283,11 @@ int32 owned_string_pop(struct owned_string* owner) {
     step();
     have terminated_at(owner->data, owner->len) by {
         unfold(terminated_at(owner->data, owner->len));
-        known();
+        close();
     }
     fold(owned_string(owner));
     have owner->data[owner->len] == 0;
-    solve();
+    close();
 }
 
 int32 owned_string_pop_preserves_first(struct owned_string* owner) {
@@ -303,9 +303,9 @@ int32 owned_string_pop_preserves_first(struct owned_string* owner) {
     step();
     step();
     step();
-    known();
-    known();
-    known();
+    close();
+    close();
+    close();
 }
 
 int32 owned_string_clear(struct owned_string* owner) {
@@ -327,18 +327,18 @@ int32 owned_string_clear(struct owned_string* owner) {
         memory(*owner),
         memory(owner->data[0..owner->cap])
     ) by {
-        solve();
+        close();
     }
     have owner->len == 0;
     have owner->len < owner->cap by {
         rewrite(owner->len, 0);
-        known();
+        close();
     }
     fold(owned_string(owner));
-    known();
-    known();
-    known();
-    known();
+    close();
+    close();
+    close();
+    close();
 }
 
 int32 owned_string_pipeline(
@@ -358,76 +358,76 @@ int32 owned_string_pipeline(
     step();
     step();
     have ignored == 0 by {
-        known();
+        close();
     }
     have owner->len == 0 by {
-        known();
+        close();
     }
     have owner->cap == capacity by {
-        known();
+        close();
     }
     have (owner->len + 1) < owner->cap by {
         rewrite(owner->cap, capacity);
         rewrite(owner->len, 0);
         have 1 < at(statement(2).entry, capacity);
-        solve();
+        close();
     }
     step();
     step();
     have owner->len == 1 by {
         rewrite(owner->len, at(statement(3).entry, owner->len + 1));
         rewrite(at(statement(3).entry, owner->len), at(statement(3).entry, 0));
-        known();
+        close();
     }
     have 0 < owner->len by {
         rewrite(owner->len, 1);
-        known();
+        close();
     }
     have owner->data[at(statement(3).entry, owner->len)] == first by {
-        known();
+        close();
     }
     have owner->data[0] == first by {
         rewrite(first, owner->data[at(statement(3).entry, owner->len)]);
         rewrite(at(statement(3).entry, owner->len), at(statement(3).entry, 0));
-        known();
+        close();
     }
     step();
     step();
     have 1 <= owner->len by {
         rewrite(owner->len, 1);
-        known();
+        close();
     }
     have observed == first by {
         rewrite(first, owner->data[0]);
-        known();
+        close();
     }
     step();
     step();
     have owner->len == at(statement(5).entry, owner->len) - 1 by {
-        known();
+        close();
     }
     have at(statement(5).entry, owner->len) == 1 by {
-        known();
+        close();
     }
     apply(decremented_one_is_zero(at(statement(5).entry, owner->len), owner->len));
     have owner->len == 0 by {
-        known();
+        close();
     }
     unfold(owned_string(owner));
     fold(empty_owned_string(owner));
     have observed == first by {
-        known();
+        close();
     }
     step();
     have result == at(statement(6).entry, observed) by {
-        known();
+        close();
     }
     have at(statement(6).entry, observed) == first by {
-        known();
+        close();
     }
     have result == first by {
-        known();
+        close();
     }
-    known();
-    known();
+    close();
+    close();
 }

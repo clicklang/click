@@ -23,17 +23,17 @@ fn adler2::adler32_slice(data: &[u8]) -> u32 {
  have to_integer(h.a) == old(adler_spec_a_u64(data, 0u64, 1)) by {
   rewrite(old(adler_spec_a_u64(data, 0u64, 1)), 1);
   rewrite(h.a, 1);
-  solve();
+  close();
  }
  have to_integer(h.b) == old(adler_spec_b_u64(data, 0u64, 1, 0)) by {
   rewrite(old(adler_spec_b_u64(data, 0u64, 1, 0)), 0);
   rewrite(h.b, 0);
-  solve();
+  close();
  }
  have 65536 * to_integer(h.b) + to_integer(h.a) == old(adler_spec_checksum_u64(data, 0u64, 1, 0)) by {
   rewrite(to_integer(h.a), old(adler_spec_a_u64(data, 0u64, 1)));
   rewrite(to_integer(h.b), old(adler_spec_b_u64(data, 0u64, 1, 0)));
-  solve();
+  close();
  }
  step();
  have to_integer(statement(2).call(0).result) == 65536 * to_integer(h.b) + to_integer(h.a);

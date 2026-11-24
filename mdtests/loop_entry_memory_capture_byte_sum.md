@@ -22,8 +22,8 @@ import click::integer;
 import click::separation;
 verifying "walk.c";
 theorem byte_as_int32(value: uint8) {
- ensures 0 <= value as int32 by { solve(); }
- ensures value as int32 <= 255 by { solve(); }
+ ensures 0 <= value as int32 by { close(); }
+ ensures value as int32 <= 255 by { close(); }
 }
 
 theorem contains_cursor_range(base: const uint8*, offset: int32, limit: int32, remaining: int32) {
@@ -51,7 +51,7 @@ int32 walk(const uint8* p, int32 n) {
  have forall (j: int32) { 0 <= j and j < n implies defined(p[j]) } by {
   intro(); intro();
   instantiate(forall (k: int32) { 0 <= k and k < n implies defined(old(p[k])) }, j);
-  have separate(memory(total), memory(p[j])) by { known(); }
+  have separate(memory(total), memory(p[j])) by { close(); }
   have separate(statement(0).region(0).footprint, memory(p[j])) by {
    close() using { separate(memory(total), memory(p[j])); };
   }
@@ -64,7 +64,7 @@ int32 walk(const uint8* p, int32 n) {
   have defined(p[j]) by {
    preserve(memory(p[j]), statement(0).region(1));
   }
-  known();
+  close();
  }
  loop {
   decreases n;
@@ -81,43 +81,43 @@ int32 walk(const uint8* p, int32 n) {
    have to_integer(old(n) - n + 1) <= to_integer(old(n)) by close() using { 1 <= n; n <= old(n); 0 <= old(n); old(n) <= 15; };
    have defined(p[0]) by {
     instantiate(forall (k: int32) { 0 <= k and k < n implies defined(p[k]) }, 0);
-    have 0 < n by { known(); }
-    known();
+    have 0 < n by { close(); }
+    close();
    }
    apply(separation::contains_subrange(p, 0, n, 0, 1));
    apply(separation::viewable_restrict(memory(p[0..n]), memory(p[0..1])));
-   have separate(memory(total), memory(old(p)[0..old(n)])) by { known(); }
+   have separate(memory(total), memory(old(p)[0..old(n)])) by { close(); }
    have n <= old(n) - (old(n) - n) by {
     close() using { 0 <= n; n <= old(n); 0 <= old(n); old(n) <= 15; };
    }
    apply(contains_cursor_range(old(p), old(n) - n, old(n), n));
    have contains(memory(old(p)[0..old(n)]), memory(p[0..n])) by {
     rewrite(p, old(p) + (old(n) - n));
-    known();
+    close();
    }
    apply(separation::contains_refl(memory(total)));
    apply(separation::separate_restrict(memory(total), memory(old(p)[0..old(n)]), memory(total), memory(p[0..n])));
    mark before_pointer;
    step_until(assignment(total, 1).entry);
-   have at(before_pointer, p) == old(p) + (old(n) - n) by solve();
-   have defined(at(before_pointer, p[0])) by solve();
-   have at(before_pointer, viewable(p[0..1])) by { known(); }
+   have at(before_pointer, p) == old(p) + (old(n) - n) by close();
+   have defined(at(before_pointer, p[0])) by close();
+   have at(before_pointer, viewable(p[0..1])) by { close(); }
    apply(byte_as_int32(at(before_pointer, p[0])));
    have to_integer(old(n) - n) <= 14 by close() using { 1 <= n; n <= old(n); 0 <= old(n); old(n) <= 15; };
    have 255 * (old(n) - n) <= 3570 by close() using { 1 <= n; n <= old(n); 0 <= old(n); old(n) <= 15; };
    have total <= 3570 by close() using { total <= 255 * (old(n) - n); 255 * (old(n) - n) <= 3570; };
-   have at(before_pointer, p[0] as int32) <= 255 by known();
+   have at(before_pointer, p[0] as int32) <= 255 by close();
    have to_integer(total) <= to_integer(2147483647 - at(before_pointer, p[0] as int32)) by close() using { total <= 3570; 0 <= at(before_pointer, p[0] as int32); at(before_pointer, p[0] as int32) <= 255; };
    have defined(total + (at(before_pointer, p[0] as int32)));
-   have defined(total + at(before_pointer, p[0] as int32)) by solve();
+   have defined(total + at(before_pointer, p[0] as int32)) by close();
    mark before_sum;
    step(); step();
-   have to_integer(n) == to_integer(at(before_pointer, n) - 1) by solve();
+   have to_integer(n) == to_integer(at(before_pointer, n) - 1) by close();
    have n == at(before_pointer, n) - 1;
    have 0 <= n by close() using { to_integer(n) == to_integer(at(before_pointer, n) - 1); 1 <= at(before_pointer, n); };
    have n <= old(n) by close() using { to_integer(n) == to_integer(at(before_pointer, n) - 1); 1 <= at(before_pointer, n); at(before_pointer, n) <= old(n); };
    have to_integer(old(n) - n) == to_integer((old(n) - at(before_pointer, n)) + 1) by close() using { to_integer(n) == to_integer(at(before_pointer, n) - 1); 0 <= n; n <= old(n); 0 <= old(n); old(n) <= 15; 1 <= at(before_pointer, n); at(before_pointer, n) <= old(n); };
-   have p == at(before_pointer, p) + 1 by solve();
+   have p == at(before_pointer, p) + 1 by close();
    have p == old(p) + (old(n) - n) by {
     rewrite(p, at(before_pointer, p) + 1);
     rewrite(to_integer(old(n) - n), to_integer((old(n) - at(before_pointer, n)) + 1));
@@ -132,10 +132,10 @@ int32 walk(const uint8* p, int32 n) {
    have viewable(at(before_pointer, memory(p[0..n]))) by {
     preserve(at(before_pointer, memory(p[0..n])), loop(0).statement(0).region(1));
    }
-   have 1 <= at(before_pointer, n) by { known(); }
+   have 1 <= at(before_pointer, n) by { close(); }
    apply(separation::contains_subrange(at(before_pointer, p), 0, at(before_pointer, n), 1, at(before_pointer, n)));
    apply(separation::contains_rebase(at(before_pointer, p), 1, at(before_pointer, n)));
-   have contains(memory(at(before_pointer, p)[1..at(before_pointer, n)]), memory(p[0..n])) by { known(); }
+   have contains(memory(at(before_pointer, p)[1..at(before_pointer, n)]), memory(p[0..n])) by { close(); }
    apply(separation::contains_trans(at(before_pointer, memory(p[0..n])),
      memory(at(before_pointer, p)[1..at(before_pointer, n)]), memory(p[0..n])));
    apply(separation::viewable_restrict(at(before_pointer, memory(p[0..n])), memory(p[0..n])));
@@ -154,21 +154,21 @@ int32 walk(const uint8* p, int32 n) {
     }
     have 0 <= (k + 1) and k + 1 < at(before_pointer, n) by {
      rewrite(to_integer(k + 1), to_integer(k) + 1);
-     known();
+     close();
     }
     instantiate(at(before_pointer, forall (j: int32) { 0 <= j and j < n implies defined(p[j]) }), k + 1);
-    have at(before_pointer, defined(p[k + 1])) by { known(); }
-    have p + 0 == at(before_pointer, p) + 1 by { known(); }
+    have at(before_pointer, defined(p[k + 1])) by { close(); }
+    have p + 0 == at(before_pointer, p) + 1 by { close(); }
     have to_integer(k) - 0 == to_integer(k + 1) - to_integer(1) by {
      rewrite(to_integer(k + 1), to_integer(k) + 1);
-     known();
+     close();
     }
     apply(integer::uint8_pointer_translate_int32(p, at(before_pointer, p), 0, 1, k, k + 1));
-    have &p[k] == at(before_pointer, &p[k + 1]) by { known(); }
-    have separate(memory(total), memory(p[k])) by { known(); }
+    have &p[k] == at(before_pointer, &p[k + 1]) by { close(); }
+    have separate(memory(total), memory(p[k])) by { close(); }
     have at(before_sum, defined(p[k])) by {
      rewrite(&p[k], at(before_pointer, &p[k + 1]));
-     known();
+     close();
     }
     have separate(loop(0).statement(0).region(1).footprint, memory(p[k])) by {
      close() using { separate(memory(total), memory(p[k])); };

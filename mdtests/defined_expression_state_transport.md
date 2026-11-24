@@ -29,9 +29,9 @@ int32 increment_after_other_write(struct pair* pair) {
     step();
     step();
     have pair->value == old(pair->value) by {
-        known();
+        close();
     }
-    solve();
+    close();
 }
 ```
 

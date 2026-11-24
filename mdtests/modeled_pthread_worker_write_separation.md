@@ -34,15 +34,15 @@ int32 run(int32 *p, const int32 *q) {
     ensures result == 0 or result == 7;
 } by {
     step();
-    have separate(memory(handle), memory(q[0..1])) by { known(); }
+    have separate(memory(handle), memory(q[0..1])) by { close(); }
     step();
     branch {
-        true => { step(); solve(); }
+        true => { step(); close(); }
         false => {}
     }
     step();
     step();
-    solve();
+    close();
 }
 ```
 

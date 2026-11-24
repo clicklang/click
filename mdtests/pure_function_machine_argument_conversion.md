@@ -17,19 +17,19 @@ theorem zero_word(word: uint64) {
     ensures is_zero(word) == 1 by {
         rewrite(word, 0);
         unfold(is_zero(0));
-        solve();
+        close();
     }
 }
 theorem byte_call() {
     ensures byte_plus_one(42) == 43 by {
-        unfold(byte_plus_one(42)); solve();
+        unfold(byte_plus_one(42)); close();
     }
 }
 theorem nested_call(word: int32) {
     requires word == 0;
     ensures is_zero(identity(word) as uint64) == 1 by {
         unfold(is_zero(identity(word) as uint64));
-        unfold(identity(word)); solve();
+        unfold(identity(word)); close();
     }
 }
 ```

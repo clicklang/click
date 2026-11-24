@@ -25,9 +25,9 @@ void fill(uint8* dst) {
     step();
     have (0u64..4u64).all(|k| { dst[k] == 7 }) by {
         intro() {
-            have k < 4u64 by { known(); }
+            have k < 4u64 by { close(); }
             instantiate((0u64..4u64).all(|k| { defined(dst[k]) and dst[k] == 7 }), k);
-            known();
+            close();
         }
     }
 }

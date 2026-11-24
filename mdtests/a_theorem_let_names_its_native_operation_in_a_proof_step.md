@@ -19,7 +19,7 @@ theorem have_native_int8(v: int8) {
     let n: int8 = v + 1;
     ensures to_integer(n) <= 127 by {
         have to_integer(n) <= 127;
-        solve();
+        close();
     }
 }
 
@@ -32,7 +32,7 @@ theorem have_native_uint16(v: uint16) {
     let n: uint16 = v + 1;
     ensures to_integer(n) <= 65535 by {
         have to_integer(n) <= 65535;
-        solve();
+        close();
     }
 }
 ```

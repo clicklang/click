@@ -16,10 +16,10 @@ theorem positive_seven(left: uint8[], right: uint8[]) {
             if bytes::equal(left, 0u64, right, 0u64, 2u64) {
                 unfold(bytes::equal(left, 0u64, right, 0u64, 2u64));
                 instantiate((0u64..2u64).all(|k| { left[0u64 + k] == right[0u64 + k] }), 0u64);
-                have false by { solve(); }
+                have false by { close(); }
                 contradiction();
             } else {
-                known();
+                close();
             }
         }
         have forall (k: uint64) {
@@ -31,31 +31,31 @@ theorem positive_seven(left: uint8[], right: uint8[]) {
             intro();
             if k == 0u64 {
                 rewrite(k, 0u64);
-                solve();
+                close();
             } else {
                 have 0u64 <= k by {
                     apply(integer::uint64_to_integer_less_equal_implies_less_equal(0u64, k));
                 }
                 have 0u64 < k by {
                     if 0u64 < k {
-                        known();
+                        close();
                     } else {
-                        have 0 <= to_integer(k) by { known(); }
+                        have 0 <= to_integer(k) by { close(); }
                         have to_integer(k) <= 0 by {
-                            known();
+                            close();
                         }
-                        have to_integer(k) == 0 by { solve(); }
-                        have k == 0u64 by { known(); }
+                        have to_integer(k) == 0 by { close(); }
+                        have k == 0u64 by { close(); }
                         contradiction(k == 0u64);
                     }
                 }
                 unfold(bytes::equal_range(left, right, 0u64, k));
                 instantiate((0u64..k).all(|j| { left[j] == right[j] }), 0u64);
-                solve();
+                close();
             }
         }
         unfold(bytes::comparison(left, right, 2u64, 7));
-        solve();
+        close();
     }
 }
 ```

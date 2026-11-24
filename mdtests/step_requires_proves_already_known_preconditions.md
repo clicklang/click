@@ -24,13 +24,13 @@ int32 first(int32 x, int32 y) {
 int32 caller(int32 a, int32 b) {
     requires a > 0;
     ensures 1 == 1 by {
-        have a > 0 or b > 0 by solve();
+        have a > 0 or b > 0 by close();
         step() {
-            requires a > 0 or b > 0 by solve();
-            requires b > 0 or a > 0 by solve();
+            requires a > 0 or b > 0 by close();
+            requires b > 0 or a > 0 by close();
         }
         step();
-        solve();
+        close();
     }
 }
 ```

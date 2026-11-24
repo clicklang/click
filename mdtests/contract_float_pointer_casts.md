@@ -26,13 +26,13 @@ float read32(float* p) {
     views *p;
     requires isfinite(*p);
     ensures result == *(p as (uint8 *) as (void *) as (float *));
-} by { step(); solve(); }
+} by { step(); close(); }
 
 double read64(double* p) {
     views *p;
     requires isfinite(*p);
     ensures result == (p as (uint8 *) as (void *) as (double *))[0];
-} by { step(); solve(); }
+} by { step(); close(); }
 ```
 
 ```expect

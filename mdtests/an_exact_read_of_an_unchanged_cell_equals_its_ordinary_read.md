@@ -22,11 +22,11 @@ void touch(int32* p, int32* q) {
     ensures p[0] == old(p[0]);
 } by {
     step_until(function.exit);
-    have exact(p[0]) == p[0] by known();
-    have exact(p[0]) == old(p[0]) by known();
-    have exact(q[0]) == 1 by known();
-    have old(exact(p[0])) == old(p[0]) by known();
-    have at(function.entry, exact(p[0])) == exact(p[0]) by known();
+    have exact(p[0]) == p[0] by close();
+    have exact(p[0]) == old(p[0]) by close();
+    have exact(q[0]) == 1 by close();
+    have old(exact(p[0])) == old(p[0]) by close();
+    have at(function.entry, exact(p[0])) == exact(p[0]) by close();
 }
 ```
 

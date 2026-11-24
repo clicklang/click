@@ -29,10 +29,10 @@ void caller(struct node* child, int32* slot) {
     owns *slot;
     produces c: box(child);
 } by {
-    have separate(b, memory(*slot)) by { known(); }
+    have separate(b, memory(*slot)) by { close(); }
     mark before_call;
     let { c: c } = step(touch, { b: b });
-    have separate(at(before_call, b), memory(*slot)) by { known(); }
+    have separate(at(before_call, b), memory(*slot)) by { close(); }
     apply(separation::separate_symm(at(before_call, b), memory(*slot)));
 }
 ```

@@ -13,14 +13,14 @@ import "an_imported_integer_function_is_an_integer_operand_module.click";
 theorem doubled_is_twice(x: int32) {
     ensures to_integer(x) + to_integer(x) == doubled(x) by {
         unfold(doubled(x));
-        known();
+        close();
     }
 }
 
 theorem doubled_beside_an_observation(x: int32) {
     requires x == 3;
     ensures to_integer(x) * 2 == doubled(x) by {
-        have to_integer(x) == 3 by known();
+        have to_integer(x) == 3 by close();
         unfold(doubled(x));
         close() using { to_integer(x) == 3; };
     }

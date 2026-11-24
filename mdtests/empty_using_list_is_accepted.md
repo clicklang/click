@@ -5,7 +5,7 @@ A goal that holds on its own needs no premises, and each tactic that takes a
 
 ```click
 theorem reflexive(x: int32) {
-    ensures x == x by known();
+    ensures x == x by close();
 }
 
 theorem empty_using_lists(x: int32, k: int32) {
@@ -16,7 +16,7 @@ theorem empty_using_lists(x: int32, k: int32) {
     ensures x == x by { apply(reflexive(x)); }
     ensures k + 0 == k by {
         instantiate(forall (j: int32) { j + 0 == j }, k);
-        known();
+        close();
     }
 }
 ```

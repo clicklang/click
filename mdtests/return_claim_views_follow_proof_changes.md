@@ -15,13 +15,13 @@ verifying "echo.c";
 int32 echo(int32 x, int32* p) {
     owns cell(p);
     ensures result == x;
-    ensures same(result, x) by { step_until(function.exit); unfold(same(result, x)); known(); }
+    ensures same(result, x) by { step_until(function.exit); unfold(same(result, x)); close(); }
     ensures p[0] == old(p[0]);
 } by {
     step();
-    known();
-    have x == x by known();
-    known();
+    close();
+    have x == x by close();
+    close();
 }
 ```
 

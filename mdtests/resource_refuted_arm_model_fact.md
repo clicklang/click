@@ -69,13 +69,13 @@ int32 probe_present(struct node* root) {
         HeapTree::Empty => { contradiction(t.model == HeapTree::Empty); },
         HeapTree::Node(identity, value, left_model, right_model) => {
             let { left: l, right: rt } = unfold(t);
-            have left_model != HeapTree::Empty by known();
+            have left_model != HeapTree::Empty by close();
             step_until(function.exit);
             let t = fold(tree_at(root), {
                 model: HeapTree::Node(identity, value, left_model, right_model),
                 left: l, right: rt
             });
-            solve();
+            close();
         },
     }
 }
@@ -90,13 +90,13 @@ int32 probe_absent(struct node* root) {
         HeapTree::Empty => { contradiction(t.model == HeapTree::Empty); },
         HeapTree::Node(identity, value, left_model, right_model) => {
             let { left: l, right: rt } = unfold(t);
-            have left_model == HeapTree::Empty by known();
+            have left_model == HeapTree::Empty by close();
             step_until(function.exit);
             let t = fold(tree_at(root), {
                 model: HeapTree::Node(identity, value, left_model, right_model),
                 left: l, right: rt
             });
-            solve();
+            close();
         },
     }
 }

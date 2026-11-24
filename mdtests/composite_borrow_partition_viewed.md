@@ -33,7 +33,7 @@ void update(struct node* p, const struct callbacks* cb) {
         }
         step_until(function.exit);
     }
-    solve();
+    close();
 }
 ```
 ```expect

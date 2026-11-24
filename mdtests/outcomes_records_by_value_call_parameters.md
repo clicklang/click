@@ -29,11 +29,11 @@ int32 caller(int32 field) throws int32 {
     step_until(call(0).entry);
     outcomes {
         returned => {
-            have call(0).parameter(input).field == field by { solve(); }
+            have call(0).parameter(input).field == field by { close(); }
             step_until(function.exit);
         }
         threw => {
-            have call(0).parameter(input).field == field by { solve(); }
+            have call(0).parameter(input).field == field by { close(); }
         }
     }
 }

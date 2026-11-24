@@ -17,12 +17,12 @@ theorem none() {
     ensures total(0) == 0 by {
         have 0 <= 0;
         unfold(total(0));
-        solve();
+        close();
     }
     ensures wide_total(0u64) == 0 by {
         have 0u64 <= 0u64;
         unfold(wide_total(0u64));
-        solve();
+        close();
     }
 }
 ```

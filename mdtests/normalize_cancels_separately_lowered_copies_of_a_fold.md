@@ -20,11 +20,11 @@ int32 f(int32 n) {
 } by {
     have (0..n).fold(0, |acc, k| { (acc + to_integer(k)) }) ==
         ((0..n).fold(0, |acc, k| { (acc + to_integer(k)) }) - 0) by {
-        known();
+        close();
     }
     have -(0..n).fold(0, |acc, k| { (acc + to_integer(k)) }) ==
         (0 - (0..n).fold(0, |acc, k| { (acc + to_integer(k)) })) by {
-        known();
+        close();
     }
     step_until(function.exit);
 }

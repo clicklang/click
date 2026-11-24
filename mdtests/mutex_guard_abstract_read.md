@@ -48,7 +48,7 @@ int32 read_locked(struct counter *counter) {
     step_until(function.exit);
     fold(state);
     fold(h);
-    solve();
+    close();
 }
 
 int32 read_counter(struct counter *counter) {
@@ -67,7 +67,7 @@ int32 read_counter(struct counter *counter) {
     step();
     step();
     step();
-    solve();
+    close();
 }
 ```
 

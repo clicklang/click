@@ -11,12 +11,12 @@ void caller(void) { invoke(&table); }
 ```click
 verifying "inline_callback.c";
 contract void Quiet() { ensures 1 == 1; }
-void quiet() { ensures 1 == 1; } by { step_until(function.exit); known(); }
+void quiet() { ensures 1 == 1; } by { step_until(function.exit); close(); }
 theorem quiet_contract() {
-    ensures Quiet(&quiet) by { unfold(Quiet(&quiet)); solve(); }
+    ensures Quiet(&quiet) by { unfold(Quiet(&quiet)); close(); }
 }
 theorem quiet_by_execution() executes quiet() {
-    ensures Quiet(&quiet) by { step_until(function.exit); known(); }
+    ensures Quiet(&quiet) by { step_until(function.exit); close(); }
 }
 resource callback_table(p: const struct callbacks*) {
     views p->run;
@@ -25,14 +25,14 @@ resource callback_table(p: const struct callbacks*) {
 void invoke(const struct callbacks* p) {
     views callback_table(p);
     ensures 1 == 1;
-} by { with(callback_table(p)) { step_until(function.exit); known(); } }
+} by { with(callback_table(p)) { step_until(function.exit); close(); } }
 void caller() {
     views table.run;
     ensures 1 == 1;
 } by {
     apply(quiet_contract());
     fold(callback_table(&table));
-    step_until(function.exit); known();
+    step_until(function.exit); close();
 }
 ```
 

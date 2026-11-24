@@ -33,32 +33,32 @@ int32 outer(const int8* src) {
         forall (k: uint64) { k < n implies (src as (uint8 *))[k] != '\0' } and
         (src as (uint8 *))[n] == '\0' and
         forall (k: uint64) { to_integer(k) < to_integer(n + 1u64) implies defined((src as (uint8 *))[k]) }
-    }) by { known(); }
+    }) by { close(); }
     step();
     let n = obtain(entry_string);
-    have at(function.entry, viewable((src as (uint8 *))[0..n + 1u64])) by { known(); }
+    have at(function.entry, viewable((src as (uint8 *))[0..n + 1u64])) by { close(); }
     have separate(region(0).footprint, memory((src as (uint8 *))[0..n + 1u64])) by {
         close() using {};
     }
     have viewable((src as (uint8 *))[0..n + 1u64]) by {
         preserve(memory((src as (uint8 *))[0..n + 1u64]), region(0));
     }
-    have entry_defined: at(region(0).entry, forall (j: uint64) { to_integer(j) < to_integer(n + 1u64) implies defined((src as (uint8 *))[j]) }) by { known(); }
+    have entry_defined: at(region(0).entry, forall (j: uint64) { to_integer(j) < to_integer(n + 1u64) implies defined((src as (uint8 *))[j]) }) by { close(); }
     have forall (j: uint64) { to_integer(j) < to_integer(n + 1u64) implies defined((src as (uint8 *))[j]) } by {
         intro(); intro();
         instantiate(entry_defined, j);
-        have at(region(0).entry, defined((src as (uint8 *))[j])) by { known(); }
+        have at(region(0).entry, defined((src as (uint8 *))[j])) by { close(); }
         have separate(region(0).footprint, memory((src as (uint8 *))[j])) by {
-            have separate(memory(result), memory((src as (uint8 *))[j])) by { known(); }
+            have separate(memory(result), memory((src as (uint8 *))[j])) by { close(); }
             close() using { separate(memory(result), memory((src as (uint8 *))[j])); };
         }
         preserve(memory((src as (uint8 *))[j]), region(0));
     }
 
-    have n < 18446744073709551615u64 by { known(); }
-    have forall (k: uint64) { k < n implies (src as (uint8 *))[k] != '\0' } by { known(); }
-    have (src as (uint8 *))[n] == '\0' by { known(); }
-    step() by { witness(n); known(); }
+    have n < 18446744073709551615u64 by { close(); }
+    have forall (k: uint64) { k < n implies (src as (uint8 *))[k] != '\0' } by { close(); }
+    have (src as (uint8 *))[n] == '\0' by { close(); }
+    step() by { witness(n); close(); }
 }
 ```
 

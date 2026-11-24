@@ -23,14 +23,14 @@ void rb_erase_augmented(struct rb_node* node, struct rb_root* root,
 } by {
     step(); // Declare rebalance before its initializer call.
     with(erase_callbacks(augment)) {
-        have separate(tree, memory(*augment)) by known();
-        have separate(up, memory(*augment)) by known();
+        have separate(tree, memory(*augment)) by close();
+        have separate(up, memory(*augment)) by close();
         apply(click::separation::separate_star(tree, up, memory(*augment)));
     }
     let { hole: hole, remaining: deficit } = step(__rb_erase_augmented, { tree: tree, up: up });
     apply(plug_parent_consistent_transport(deficit.model, RbTree::Empty, 0));
     have rb_tree_parent_consistent(plug(deficit.model, RbTree::Empty)) == 1 by {
-        unfold(rb_tree_parent_consistent(plug(deficit.model, RbTree::Empty))); known();
+        unfold(rb_tree_parent_consistent(plug(deficit.model, RbTree::Empty))); close();
     }
     step(); // Assign the returned rebalance pointer.
     if rebalance != 0 {
@@ -38,13 +38,13 @@ void rb_erase_augmented(struct rb_node* node, struct rb_root* root,
         have ctx_node_is(deficit.model, rebalance) == 1;
         have ctx_rb(deficit.model, Nat::Succ(Nat::Zero), Color::Black) == 1;
         have ctx_rb(deficit.model, Nat::Succ(black_height(RbTree::Empty)), Color::Black) == 1 by {
-            unfold(black_height(RbTree::Empty)); known();
+            unfold(black_height(RbTree::Empty)); close();
         }
         have erase_leaf_result(old(up.model), rb_color(old(tree.model))) == erase_flips_red_all_result(deficit.model, RbTree::Empty);
         unfold(hole);
         step(); // Select the nonnull rebalance branch.
         with(erase_callbacks(augment)) {
-            have separate(deficit, memory(*augment)) by known();
+            have separate(deficit, memory(*augment)) by close();
             mark repair;
             let { whole: whole } = step(__rb_erase_color, { c: deficit });
             have whole.model == erase_flips_red_all_result(at(repair, deficit.model), RbTree::Empty);
@@ -57,7 +57,7 @@ void rb_erase_augmented(struct rb_node* node, struct rb_root* root,
         have rebalance == 0;
         have is_rb_root(plug(deficit.model, RbTree::Empty)) == 1;
         have erase_leaf_result(old(up.model), rb_color(old(tree.model))) == plug(deficit.model, RbTree::Empty);
-        have rb_tree_parent_consistent(plug(deficit.model, hole.model)) == 1 by { rewrite(hole.model, RbTree::Empty); known(); }
+        have rb_tree_parent_consistent(plug(deficit.model, hole.model)) == 1 by { rewrite(hole.model, RbTree::Empty); close(); }
         mark balanced;
         let { whole: whole } = refold_to_root(0, root, { c: deficit, t: hole });
         have whole.model == plug(old(up.model), RbTree::Empty) by {
@@ -72,11 +72,11 @@ void rb_erase_augmented(struct rb_node* node, struct rb_root* root,
         }
         have is_rb_root(whole.model) == 1 by {
             rewrite(whole.model, plug(old(up.model), RbTree::Empty));
-            rewrite(old(up.model), at(balanced, deficit.model)); known();
+            rewrite(old(up.model), at(balanced, deficit.model)); close();
         }
         have rb_tree_parent_consistent(whole.model) == 1 by {
             rewrite(whole.model, plug(old(up.model), RbTree::Empty));
-            rewrite(old(up.model), at(balanced, deficit.model)); known();
+            rewrite(old(up.model), at(balanced, deficit.model)); close();
         }
         step_until(function.exit);
     }

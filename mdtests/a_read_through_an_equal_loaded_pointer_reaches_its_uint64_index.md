@@ -24,7 +24,7 @@ void f(struct P* p, struct S* r, int32* a) {
     requires a[r->idx] == 5;
     ensures 1 == 1;
 } by {
-    have a[p->q->idx] == 5 by known();
+    have a[p->q->idx] == 5 by close();
 }
 ```
 

@@ -26,7 +26,7 @@ resource frame(p: struct node*) {
         },
     }
 }
-void helper(struct node *q) { owns q->tag; } by { step_until(function.exit); solve(); }
+void helper(struct node *q) { owns q->tag; } by { step_until(function.exit); close(); }
 void probe(struct node *p, struct node *q) {
     owns q->tag; owns q->next; owns q->other;
     consumes a: frame(p);
@@ -36,7 +36,7 @@ void probe(struct node *p, struct node *q) {
     match a.model {
         Tag::At(id, cm) => {
             let {kid: kid} = unfold(a);
-            have p == id by known();
+            have p == id by close();
             have separate(memory(q->next), memory(id->other));
             have separate(memory(q->tag), memory(id->other));
             have separate(memory(q->other), memory(id->other));
@@ -58,7 +58,7 @@ void probe(struct node *p, struct node *q) {
             }
             have id->other == at(before_0, id->other) by {
                 rewrite(id->other, at(before_1, id->other));
-                known();
+                close();
             }
             mark before_2;
             step();
@@ -70,11 +70,11 @@ void probe(struct node *p, struct node *q) {
             }
             have id->other == at(before_0, id->other) by {
                 rewrite(id->other, at(before_2, id->other));
-                known();
+                close();
             }
 
             let b = fold(frame(p), { model: Tag::At(id, cm), kid: kid });
-            step_until(function.exit); solve();
+            step_until(function.exit); close();
         },
     }
 }

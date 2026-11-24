@@ -54,7 +54,7 @@ int32 loop_sorted_range_invariant(int32 p[3]) {
             unfold(sorted(old(p), 3));
             unfold(sorted_range(p, 0, 3));
             have i >= 0 and i <= 3 by {
-                all { i >= 0 => { known(); } i <= 3 => { known(); } }
+                all { i >= 0 => { close(); } i <= 3 => { close(); } }
             }
             have sorted(old(p), 3) by {
                 unfold(sorted(old(p), 3));
@@ -70,7 +70,7 @@ int32 loop_sorted_range_invariant(int32 p[3]) {
                 instantiate(forall (j: int32) {
                     0 <= i and 0 <= j and 0 <= i and i < j and j < 3 implies p[i] <= p[j]
                 }, j);
-                known();
+                close();
             }
         }
         maintain by {
@@ -81,7 +81,7 @@ int32 loop_sorted_range_invariant(int32 p[3]) {
     step();
     unfold(sorted(old(p), 3));
     unfold(sorted_range(p, 0, 3));
-    solve();
+    close();
 }
 ```
 

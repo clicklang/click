@@ -26,18 +26,18 @@ int32 count_once(int32 flag) {
         decreases 1 - i;
         invariant i >= 0;
         invariant i <= 1;
-        initialize by solve();
+        initialize by close();
         maintain by {
             step();
             if flag == i {
-                have flag == i by known();
+                have flag == i by close();
             } else {
-                have not (flag == i) by known();
+                have not (flag == i) by close();
             }
         }
     }
     step();
-    solve();
+    close();
 }
 ```
 

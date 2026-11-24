@@ -36,10 +36,10 @@ void word_prefix(const uint32* p, uint64 held, uint64 requested) {
         apply(click::integer::uint64_less_equal_transitive(requested, held, 2305843009213693951u64));
     }
     step_until(function.exit);
-    have viewable(p[0u64..held]) by { known(); }
+    have viewable(p[0u64..held]) by { close(); }
     apply(click::separation::contains_subrange(p, 0u64, held, 0u64, requested));
     apply(click::separation::viewable_restrict(memory(p[0u64..held]), memory(p[0u64..requested])));
-    solve();
+    close();
 }
 void first_byte(const uint8* p, uint64 held) {
     requires 1u64 <= held;

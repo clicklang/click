@@ -21,7 +21,7 @@ theorem bridge(a: int32, b: int32, c: int32) {
     requires defined(a + b) and defined(a + b + c);
     ensures to_integer(a + b + c) == to_integer(a + b) + to_integer(c) by {
         apply(add_observation(a + b, c));
-        known();
+        close();
     }
 }
 
@@ -31,7 +31,7 @@ int32 probe(int32 a, int32 b, int32 c) {
 } by {
     have to_integer(a + b + c) == to_integer(a + b) + to_integer(c) by {
         apply(add_observation(a + b, c));
-        known();
+        close();
     }
     apply(bridge(a, b, c));
 }

@@ -33,7 +33,7 @@ void fill(int32 *p, int32 n) {
     loop {
         owns cell(p, n);
         decreases 0;
-        initialize by solve();
+        initialize by close();
         maintain by {
             unfold(cell(p, n));
             step();

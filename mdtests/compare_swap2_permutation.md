@@ -35,14 +35,14 @@ int32 compare_swap2_permutation(int32 p[2]) {
                     if old(p[1]) == x { true } else { false },
                     if old(p[0]) == x { true } else { false }
                 ));
-                known();
+                close();
             }
-            known();
+            close();
         } else {
             step_until(function.exit);
             unfold(permutation::permutation(p, old(p), 0, 2));
             intro();
-            known();
+            close();
         }
     }
 }

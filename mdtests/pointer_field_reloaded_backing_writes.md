@@ -31,13 +31,13 @@ int32 probe(struct owner* owner, int32 index, int32 value) {
     unfold(buffer(owner));
     step();
     step();
-    have separate(memory(*owner), memory(owner->data[0..owner->cap])) by { solve(); }
-    have owner->data[0] == value by { solve(); }
+    have separate(memory(*owner), memory(owner->data[0..owner->cap])) by { close(); }
+    have owner->data[0] == value by { close(); }
     fold(buffer(owner));
     step();
-    known();
-    known();
-    known();
+    close();
+    close();
+    close();
 }
 ```
 

@@ -25,11 +25,11 @@ int32 caller() {
 } by {
     step_until(statement(1).call(0).entry);
     step();
-    have at(statement(1).call(0).exit, x == 7) by { known(); }
+    have at(statement(1).call(0).exit, x == 7) by { close(); }
     step();
-    have at(statement(1).assignment(x, 0).exit, x == 3) by { known(); }
+    have at(statement(1).assignment(x, 0).exit, x == 3) by { close(); }
     step();
-    known();
+    close();
 }
 ```
 

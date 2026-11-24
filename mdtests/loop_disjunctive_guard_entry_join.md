@@ -65,7 +65,7 @@ int32 enters_either_way(int32 a, int32 b) {
         }
     }
     step();
-    solve();
+    close();
 }
 ```
 

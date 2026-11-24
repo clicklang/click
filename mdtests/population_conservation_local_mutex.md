@@ -62,7 +62,7 @@ void contribute(struct counter* p) {
     step(pthread_mutex_destroy, { lifetime: lifetime });
     unfold(state);
     step();
-    solve();
+    close();
 }
 uint32 twice(struct counter* p) {
     owns authority(remaining(p));
@@ -79,7 +79,7 @@ uint32 twice(struct counter* p) {
     step();
     unfold(remaining(p));
     step();
-    solve();
+    close();
 }
 ```
 

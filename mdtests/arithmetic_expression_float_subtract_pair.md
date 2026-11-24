@@ -19,7 +19,7 @@ theorem upper(x: double, y: double) {
     requires x <= float64_from_bits(0x4010000000000000u64);
     requires y >= float64_from_bits(0x3ff0000000000000u64);
     requires y >= float64_from_bits(0x4000000000000000u64);
-    ensures x - y <= float64_from_bits(0x4000000000000000u64) by { solve(); }
+    ensures x - y <= float64_from_bits(0x4000000000000000u64) by { close(); }
 }
 
 theorem lower(x: float, y: float) {

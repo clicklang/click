@@ -7,7 +7,7 @@ theorem incremented_one_is_two(before: int32, after: int32) {
     ensures after == 2 by {
         rewrite(after, before + 1);
         rewrite(before, 1);
-        solve();
+        close();
     }
 }
 
@@ -16,7 +16,7 @@ theorem int32_equality_transitive(first: int32, second: int32, third: int32) {
     requires second == third;
 
     ensures first == third by {
-        solve();
+        close();
     }
 }
 
@@ -57,7 +57,7 @@ int32 owned_split_buffer_init(
 } by {
     step_until(function.exit);
     fold(owned_split_buffer(owner));
-    solve();
+    close();
 }
 
 int32 owned_split_buffer_set_left(
@@ -82,7 +82,7 @@ int32 owned_split_buffer_set_left(
     ensures owner->data == old(owner->data);
 } by {
     mark before_store;
-    have index < owner->len by { solve(); }
+    have index < owner->len by { close(); }
     have contains(memory(owner->data[0..owner->len]), memory(owner->data[index])) by {
         apply(separation::contains_element(owner->data, 0, owner->len, index));
     }
@@ -107,7 +107,7 @@ int32 owned_split_buffer_set_left(
         preserve(memory(owner->data), statement(0));
     }
     step();
-    solve();
+    close();
 }
 
 int32 owned_split_buffer_set_right(
@@ -133,7 +133,7 @@ int32 owned_split_buffer_set_right(
 } by {
     have 0 <= index;
     mark before_store;
-    have index < owner->len by { solve(); }
+    have index < owner->len by { close(); }
     have contains(memory(owner->data[0..owner->len]), memory(owner->data[index])) by {
         apply(separation::contains_element(owner->data, 0, owner->len, index));
     }
@@ -158,7 +158,7 @@ int32 owned_split_buffer_set_right(
         preserve(memory(owner->data), statement(0));
     }
     step();
-    solve();
+    close();
 }
 
 int32 owned_split_buffer_move_right(struct owned_split_buffer* owner) {
@@ -173,7 +173,7 @@ int32 owned_split_buffer_move_right(struct owned_split_buffer* owner) {
 } by {
     step();
     step();
-    solve();
+    close();
 }
 
 int32 owned_split_buffer_get_left(
@@ -212,34 +212,34 @@ int32 owned_split_buffer_pipeline(
     unfold(owned_split_buffer(owner));
     step();
     step();
-    have owner->split == 1 by { known(); }
-    have owner->len == length by { known(); }
-    have owner->data == data by { known(); }
+    have owner->split == 1 by { close(); }
+    have owner->len == length by { close(); }
+    have owner->data == data by { close(); }
     have 1 < length by {
         close() using { at(function.entry, 2 <= length); };
     }
     have 1 < owner->len by {
-        known();
+        close();
     }
     step();
     step();
-    have owner->data == data by { known(); }
-    have 1 < owner->len by { known(); }
+    have owner->data == data by { close(); }
+    have 1 < owner->len by { close(); }
     have data[1] == right_value by {
         rewrite(at(statement(5).entry, right_value), at(statement(5).entry, *(load<int32*>(byte_offset(owner, 8)) + 1)));
         rewrite(data, owner->data);
-        known();
+        close();
     }
     step();
     step();
-    have separate(memory(owner->split), memory(data[1])) by { solve(); }
+    have separate(memory(owner->split), memory(data[1])) by { close(); }
     have separate(statement(5).call(0).footprint, memory(data[1])) by {
         close() using { separate(memory(owner->split), memory(data[1])); };
     }
     have at(statement(5).call(0).exit, data[1]) == at(statement(5).call(0).entry, data[1]) by {
         preserve(memory(data[1]), statement(5).call(0));
     }
-    have separate(memory(ignored), memory(data[1])) by { known(); }
+    have separate(memory(ignored), memory(data[1])) by { close(); }
     have separate(statement(5).assignment(ignored, 0).footprint, memory(data[1])) by {
         close() using { separate(memory(ignored), memory(data[1])); };
     }
@@ -247,46 +247,46 @@ int32 owned_split_buffer_pipeline(
         preserve(memory(data[1]), statement(5).assignment(ignored, 0));
     }
     have to_integer(at(statement(5).exit, owner->split)) == (to_integer(at(statement(5).entry, owner->split)) + 1) by {
-        known();
+        close();
     }
     apply(incremented_one_is_two(at(statement(5).entry, owner->split), at(statement(5).exit, owner->split)));
     fold(owned_split_buffer(owner));
     step();
     step();
-    have separate(memory(result), memory(data[1])) by { known(); }
+    have separate(memory(result), memory(data[1])) by { close(); }
     have separate(statement(6).assignment(result, 0).footprint, memory(data[1])) by {
         close() using { separate(memory(result), memory(data[1])); };
     }
     have at(statement(6).assignment(result, 0).exit, data[1]) == at(statement(6).assignment(result, 0).entry, data[1]) by {
         preserve(memory(data[1]), statement(6).assignment(result, 0));
     }
-    have data[1] == right_value by { known(); }
+    have data[1] == right_value by { close(); }
     apply(int32_equality_transitive(program::result, data[1], right_value));
     step();
-    known();
+    close();
     have owner->split == 2 by {
-        known();
+        close();
     }
     have owner->len == length by {
-        known();
+        close();
     }
     have owner->data == data by {
-        known();
+        close();
     }
     have data[0] == left_value by {
         rewrite(data, at(statement(3).entry, owner->data));
-        known();
+        close();
     }
     have data[1] == right_value by {
-        known();
+        close();
     }
     have result == right_value by {
-        known();
+        close();
     }
-    known();
-    known();
-    known();
-    known();
-    known();
-    known();
+    close();
+    close();
+    close();
+    close();
+    close();
+    close();
 }

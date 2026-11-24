@@ -21,7 +21,7 @@ int32 fill(uint32 x) {
 } by {
     loop {
         decreases to_integer(3u32 - x);
-        initialize by { solve(); }
+        initialize by { close(); }
         maintain by {
             if x == 3u32 {
                 step();

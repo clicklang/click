@@ -55,7 +55,7 @@ int32 drain(int32 n) {
             }
             have defined(n - 1) by {
                 have defined(n - 1);
-                solve();
+                close();
             }
             have 0 <= level(n - 1) by {
                 unfold(level(n - 1));
@@ -71,12 +71,12 @@ int32 drain(int32 n) {
             step();
             step();
             step();
-            solve();
+            close();
         }
         false => {}
     }
     step();
-    solve();
+    close();
 }
 
 int32 run(int32 n) {

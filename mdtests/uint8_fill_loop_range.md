@@ -34,7 +34,7 @@ int32 fill_bytes(uint8 buf[], int32 n) {
     }
     step();
     observe(buf[0..n]);
-    solve();
+    close();
 }
 ```
 

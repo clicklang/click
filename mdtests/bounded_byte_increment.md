@@ -24,7 +24,7 @@ int64 next(uint8 byte) {
     have result <= 255i64 by {
         close() using { (byte as uint32) <= 255u32; byte < 255; };
     }
-    solve();
+    close();
 }
 ```
 

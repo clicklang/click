@@ -42,14 +42,14 @@ int32 shared_for(int32 n) {
         maintain by {
             step();
             have statement(0).call(again, 0).result ==
-                (if at(statement(0).call(again, 0).entry, n) > 0 { 1 } else { 0 }) by solve();
+                (if at(statement(0).call(again, 0).entry, n) > 0 { 1 } else { 0 }) by close();
             if statement(0).call(again, 0).result != 0 {
                 have at(statement(0).call(again, 0).entry, n) > 0 by {
                     if at(statement(0).call(again, 0).entry, n) > 0 {
-                        known();
+                        close();
                     } else {
                         have (if at(statement(0).call(again, 0).entry, n) > 0 { 1 } else { 0 }) == 0 by {
-                            known();
+                            close();
                         }
                         have statement(0).call(again, 0).result == 0 by {
                             close() using {
@@ -62,7 +62,7 @@ int32 shared_for(int32 n) {
                 }
             } else {
                 have n == 0 by {
-                    have n >= 0 by known();
+                    have n >= 0 by close();
                     if n > 0 {
                         have to_integer(if n > 0 { 1 } else { 0 }) == 1 by {
                             close() using { n > 0; };
@@ -91,7 +91,7 @@ int32 shared_for(int32 n) {
         }
     }
     step();
-    solve();
+    close();
 }
 
 int32 shared_do(int32 n) {
@@ -104,18 +104,18 @@ int32 shared_do(int32 n) {
         invariant n > 0;
         maintain by {
             step();
-            have n >= 0 by solve();
+            have n >= 0 by close();
             step();
             step();
             have statement(0).call(again, 0).result ==
-                (if at(statement(0).call(again, 0).entry, n) > 0 { 1 } else { 0 }) by solve();
+                (if at(statement(0).call(again, 0).entry, n) > 0 { 1 } else { 0 }) by close();
             if statement(0).call(again, 0).result != 0 {
                 have at(statement(0).call(again, 0).entry, n) > 0 by {
                     if at(statement(0).call(again, 0).entry, n) > 0 {
-                        known();
+                        close();
                     } else {
                         have (if at(statement(0).call(again, 0).entry, n) > 0 { 1 } else { 0 }) == 0 by {
-                            known();
+                            close();
                         }
                         have statement(0).call(again, 0).result == 0 by {
                             close() using {
@@ -128,7 +128,7 @@ int32 shared_do(int32 n) {
                 }
             } else {
                 have n == 0 by {
-                    have n >= 0 by known();
+                    have n >= 0 by close();
                     if n > 0 {
                         have to_integer(if n > 0 { 1 } else { 0 }) == 1 by {
                             close() using { n > 0; };
@@ -157,7 +157,7 @@ int32 shared_do(int32 n) {
         }
     }
     step();
-    solve();
+    close();
 }
 ```
 

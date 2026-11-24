@@ -53,7 +53,7 @@ theorem chain_len_is_nonnegative(m: Chain) {
         match m {
             Chain::Nil => {
                 unfold(chain_len(Chain::Nil));
-                known();
+                close();
             }
             Chain::Link(rest) => {
                 apply(ih(rest));
@@ -87,7 +87,7 @@ void countdown(int32 n) {
         decreases chain_len(c.model);
         invariant n >= 0;
 
-        initialize by solve();
+        initialize by close();
         maintain by {
             match c.model {
                 Chain::Nil => { contradiction(c.model == Chain::Nil); },
@@ -95,7 +95,7 @@ void countdown(int32 n) {
                     have chain_len(c.model) == chain_len(rest_model) + 1 by {
                         rewrite(c.model, Chain::Link(rest_model));
                         unfold(chain_len(Chain::Link(rest_model)));
-                        known();
+                        close();
                     }
                     match rest_model {
                         Chain::Nil => {
@@ -104,7 +104,7 @@ void countdown(int32 n) {
                                 rewrite(c.model, Chain::Link(rest_model));
                                 rewrite(rest_model, Chain::Nil);
                                 unfold(chain_len(Chain::Link(Chain::Nil)));
-                                known();
+                                close();
                             }
                             have chain_len(Chain::Nil) < chain_len(c.model) by {
                                 close() using {
@@ -123,7 +123,7 @@ void countdown(int32 n) {
                             have chain_len(rest_model) == chain_len(rest2_model) + 1 by {
                                 rewrite(rest_model, Chain::Link(rest2_model));
                                 unfold(chain_len(Chain::Link(rest2_model)));
-                                known();
+                                close();
                             }
                             have chain_len(rest2_model) < chain_len(c.model) by {
                                 close() using {
@@ -145,7 +145,7 @@ void countdown(int32 n) {
     have n == 0;
     unfold(c);
     step();
-    solve();
+    close();
 }
 ```
 

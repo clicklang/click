@@ -43,13 +43,13 @@ impl adler2::algo::U32X4 {
         // The aggregate stores use fresh storage. Read the bound result at return.
         step_until(function.exit);
         have result.0[0] == old((bytes[0] as u32));
-        have to_integer(result.0[0]) == old(to_integer((bytes[0] as i32))) by { rewrite(result.0[0], old((bytes[0] as u32))); known(); }
+        have to_integer(result.0[0]) == old(to_integer((bytes[0] as i32))) by { rewrite(result.0[0], old((bytes[0] as u32))); close(); }
         have result.0[1] == old((bytes[1] as u32));
-        have to_integer(result.0[1]) == old(to_integer((bytes[1] as i32))) by { rewrite(result.0[1], old((bytes[1] as u32))); known(); }
+        have to_integer(result.0[1]) == old(to_integer((bytes[1] as i32))) by { rewrite(result.0[1], old((bytes[1] as u32))); close(); }
         have result.0[2] == old((bytes[2] as u32));
-        have to_integer(result.0[2]) == old(to_integer((bytes[2] as i32))) by { rewrite(result.0[2], old((bytes[2] as u32))); known(); }
+        have to_integer(result.0[2]) == old(to_integer((bytes[2] as i32))) by { rewrite(result.0[2], old((bytes[2] as u32))); close(); }
         have result.0[3] == old((bytes[3] as u32));
-        have to_integer(result.0[3]) == old(to_integer((bytes[3] as i32))) by { rewrite(result.0[3], old((bytes[3] as u32))); known(); }
+        have to_integer(result.0[3]) == old(to_integer((bytes[3] as i32))) by { rewrite(result.0[3], old((bytes[3] as u32))); close(); }
         // Establish the byte ranges independently of the ensures clauses, then
         // close from those checked witnesses so false bounds fail without search.
         have 255u32 >= result.0[0];
@@ -153,22 +153,22 @@ impl RemAssign<u32> for adler2::algo::U32X4 {
         have self.0[0] == old(self.0[0]) % quotient;
         have to_integer(self.0[0]) == truncating_remainder(to_integer(old(self.0[0])), to_integer(quotient)) by {
             rewrite(self.0[0], old(self.0[0]) % quotient);
-            known();
+            close();
         }
         have self.0[1] == old(self.0[1]) % quotient;
         have to_integer(self.0[1]) == truncating_remainder(to_integer(old(self.0[1])), to_integer(quotient)) by {
             rewrite(self.0[1], old(self.0[1]) % quotient);
-            known();
+            close();
         }
         have self.0[2] == old(self.0[2]) % quotient;
         have to_integer(self.0[2]) == truncating_remainder(to_integer(old(self.0[2])), to_integer(quotient)) by {
             rewrite(self.0[2], old(self.0[2]) % quotient);
-            known();
+            close();
         }
         have self.0[3] == old(self.0[3]) % quotient;
         have to_integer(self.0[3]) == truncating_remainder(to_integer(old(self.0[3])), to_integer(quotient)) by {
             rewrite(self.0[3], old(self.0[3]) % quotient);
-            known();
+            close();
         }
         apply(integer::uint32_remainder_less_than_divisor(old(self.0[0]), quotient));
         have self.0[0] < quotient;
@@ -181,28 +181,28 @@ impl RemAssign<u32> for adler2::algo::U32X4 {
         have old(self.0[0]) < quotient implies self.0[0] == old(self.0[0]) by {
             if old(self.0[0]) < quotient {
                 apply(integer::uint32_less_than_divisor_implies_remainder_is_value(old(self.0[0]), quotient));
-                solve();
-            } else { solve(); }
+                close();
+            } else { close(); }
         }
         have old(self.0[1]) < quotient implies self.0[1] == old(self.0[1]) by {
             if old(self.0[1]) < quotient {
                 apply(integer::uint32_less_than_divisor_implies_remainder_is_value(old(self.0[1]), quotient));
-                solve();
-            } else { solve(); }
+                close();
+            } else { close(); }
         }
         have old(self.0[2]) < quotient implies self.0[2] == old(self.0[2]) by {
             if old(self.0[2]) < quotient {
                 apply(integer::uint32_less_than_divisor_implies_remainder_is_value(old(self.0[2]), quotient));
-                solve();
-            } else { solve(); }
+                close();
+            } else { close(); }
         }
         have old(self.0[3]) < quotient implies self.0[3] == old(self.0[3]) by {
             if old(self.0[3]) < quotient {
                 apply(integer::uint32_less_than_divisor_implies_remainder_is_value(old(self.0[3]), quotient));
-                solve();
-            } else { solve(); }
+                close();
+            } else { close(); }
         }
-        solve();
+        close();
     }
 }
 
@@ -235,7 +235,7 @@ impl MulAssign<u32> for adler2::algo::U32X4 {
         apply(integer::uint32_multiply_to_integer(old(self.0[1]), rhs));
         apply(integer::uint32_multiply_to_integer(old(self.0[2]), rhs));
         apply(integer::uint32_multiply_to_integer(old(self.0[3]), rhs));
-        solve();
+        close();
     }
 }
 
@@ -255,7 +255,7 @@ impl adler2::Adler32 {
      // The empty chunk iterators execute no body. Prove the scalar reduction
      // from its checked transition before following lane recombination.
      step_until(assignment(b, 0).entry); step();
-     have a == 1u32 by { known(); }
+     have a == 1u32 by { close(); }
      have b == 0u32;
      // Neither chunk iterator has any bytes available to yield.
      step_until(loop(0).entry);
@@ -276,7 +276,7 @@ impl adler2::Adler32 {
      have b == 0u32 by {
      rewrite(b, at(scalar_mod, b) % 65521u32);
      rewrite(at(scalar_mod, b), 0u32);
-     solve();
+     close();
      }
      // Both lane vectors are still zero: neither loop ran, and each reduction
      // and the multiplication by four keep a zero lane zero.
@@ -329,7 +329,7 @@ impl adler2::Adler32 {
      rewrite(at(before_sum_a, a_vec.0[1]), 0u32);
      rewrite(at(before_sum_a, a_vec.0[2]), 0u32);
      rewrite(at(before_sum_a, a_vec.0[3]), 0u32);
-     solve();
+     close();
      }
      mark before_sum_b;
      have at(before_sum_b, b) == 0u32;
@@ -344,7 +344,7 @@ impl adler2::Adler32 {
      rewrite(at(before_sum_b, b_vec.0[1]), 65521u32);
      rewrite(at(before_sum_b, b_vec.0[2]), 131042u32);
      rewrite(at(before_sum_b, b_vec.0[3]), 196563u32);
-     solve();
+     close();
      }
      have b == 393126u32 by {
      rewrite(b, at(before_sum_b, b) + at(before_sum_b, b_vec.0[0]) + at(before_sum_b, b_vec.0[1]) + at(before_sum_b, b_vec.0[2]) + at(before_sum_b, b_vec.0[3]));
@@ -353,7 +353,7 @@ impl adler2::Adler32 {
      rewrite(at(before_sum_b, b_vec.0[1]), 65521u32);
      rewrite(at(before_sum_b, b_vec.0[2]), 131042u32);
      rewrite(at(before_sum_b, b_vec.0[3]), 196563u32);
-     solve();
+     close();
      }
      // The serial tail is empty. Reduce the two sums before narrowing.
      step_until(statement(22).entry);
@@ -365,10 +365,10 @@ impl adler2::Adler32 {
      have at(output_b, b) == 393126u32;
      step_until(function.exit);
      have self.b == 0;
-     known();
-     known();
-     known();
-     known();
+     close();
+     close();
+     close();
+     close();
     }
 }
 

@@ -16,9 +16,9 @@ void probe(struct node *p, struct node *q, struct node *value) {
         owns p->next;
         fact p->next == value;
     } then {
-        have p->next == value by known();
+        have p->next == value by close();
     } else {
-        have p->next == value by known();
+        have p->next == value by close();
     }
 }
 ```

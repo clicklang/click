@@ -45,7 +45,7 @@ int32 grid(int32 m, int32 n) {
         invariant i >= 0;
         invariant i <= m;
         invariant result == 0;
-        initialize by solve();
+        initialize by close();
         maintain by {
             step();
             step();
@@ -57,14 +57,14 @@ int32 grid(int32 m, int32 n) {
         invariant i >= 0;
         invariant i <= n;
         invariant result == 0;
-        initialize by solve();
+        initialize by close();
         maintain by {
             step();
             step();
         }
     }
     step();
-    solve();
+    close();
 }
 ```
 

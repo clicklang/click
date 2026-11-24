@@ -54,7 +54,7 @@ by {
     step();
     have right_file::state.value == 41u64;
     step();
-    solve();
+    close();
 }
 ```
 

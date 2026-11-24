@@ -396,7 +396,7 @@ help: to prove the goal explicitly, step to this statement and prove it there wi
 ```click
     ensures to_integer(result) == to_integer(w * h + 1) by {
         step(); step();
-        have to_integer(w * h) <= 1000000 by solve();
+        have to_integer(w * h) <= 1000000 by close();
     }
 ```
 

@@ -22,7 +22,7 @@ theorem every_occurrence(n: int32, m: int32) {
     ensures f(n) + f(n) == n + n implies f(m) == m by {
         unfold(f(n));
         intro();
-        known();
+        close();
     }
 }
 
@@ -37,7 +37,7 @@ theorem one_layer() {
 theorem refreshed_to_true() {
     ensures f(3) == 3 by {
         unfold(f(3));
-        known();
+        close();
     }
 }
 ```

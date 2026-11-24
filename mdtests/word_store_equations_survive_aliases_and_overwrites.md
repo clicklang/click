@@ -19,11 +19,11 @@ void put(int32* p, int32* q) {
 } by {
     step();
     mark first;
-    have *p == 7 by { known(); }
-    have *q == 7 by { rewrite(q, p); known(); }
+    have *p == 7 by { close(); }
+    have *q == 7 by { rewrite(q, p); close(); }
     step();
-    have *p == 9 by { known(); }
-    have at(first, *p) == 7 by { known(); }
+    have *p == 9 by { close(); }
+    have at(first, *p) == 7 by { close(); }
 }
 ```
 

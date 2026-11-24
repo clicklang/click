@@ -21,7 +21,7 @@ int32 record_alpha() {
 } by {
     step_until(function.exit);
     have to_integer(calls + batches[0][0]) == to_integer(calls) + to_integer(batches[0][0]);
-    solve();
+    close();
 }
 
 int32 record_beta() {
@@ -41,7 +41,7 @@ int32 record_beta() {
 } by {
     step_until(function.exit);
     have to_integer(calls + batches[0].value) == to_integer(calls) + to_integer(batches[0].value);
-    solve();
+    close();
 }
 
 int32 alpha_calls() {
@@ -122,7 +122,7 @@ int32 registry_run() {
     have third == 102;
     have at(statement(2).call(record_beta, 0).entry, counters[1].value) == 20;
     have counters[1].value == at(statement(2).call(record_beta, 0).entry, counters[1].value) + 1 by {
-        known();
+        close();
     }
     step();
     step();

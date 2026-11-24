@@ -25,13 +25,13 @@ int32 keep_first(int32 p[3]) {
         step();
         step();
         unfold(same0(p, old(p)));
-        solve();
+        close();
     }
 }
 
 int32 keep_first_solved(int32 p[3]) {
     consumes p[0..3];
-    ensures kept: same0(p, old(p)) by { step(); step(); solve(); }
+    ensures kept: same0(p, old(p)) by { step(); step(); close(); }
 }
 ```
 

@@ -20,7 +20,7 @@ void set_c(char* p) {
         step();
         step();
         step();
-        known();
+        close();
     }
 }
 void set_u(uint8* p) {
@@ -31,7 +31,7 @@ void set_u(uint8* p) {
         step();
         step();
         step();
-        known();
+        close();
     }
 }
 ```

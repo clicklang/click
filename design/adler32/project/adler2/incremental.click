@@ -6,18 +6,18 @@ fn adler_incremental::incremental(bytes: &[u8], split: usize) -> u32 {
  ensures to_integer(result) == old(adler_spec_checksum_u64(bytes, bytes.len(), 1, 0));
 } by {
  step_until(statement(2).call(0).entry);
- have prefix.len() == split by solve();
- have to_integer(suffix.len()) == to_integer(bytes.len() - split) by solve();
- have prefix == bytes by solve();
- have suffix == bytes + split by solve();
- have state.a == 1 by solve();
- have state.b == 0 by solve();
+ have prefix.len() == split by close();
+ have to_integer(suffix.len()) == to_integer(bytes.len() - split) by close();
+ have prefix == bytes by close();
+ have suffix == bytes + split by close();
+ have state.a == 1 by close();
+ have state.b == 0 by close();
  have to_integer((state.a as u32)) == 1 by { rewrite(state.a, 1); normalize(); }
  have to_integer((state.b as u32)) == 0 by { rewrite(state.b, 0); normalize(); }
  mark initial_seed;
  step_until(statement(3).call(0).entry);
- have to_integer(state.a) == old(adler_spec_a_u64(bytes, split, 1)) by { rewrite(1, at(initial_seed, to_integer((state.a as u32)))); known(); }
- have to_integer(state.b) == old(adler_spec_b_u64(bytes, split, 1, 0)) by { rewrite(1, at(initial_seed, to_integer((state.a as u32)))); rewrite(0, at(initial_seed, to_integer((state.b as u32)))); known(); }
+ have to_integer(state.a) == old(adler_spec_a_u64(bytes, split, 1)) by { rewrite(1, at(initial_seed, to_integer((state.a as u32)))); close(); }
+ have to_integer(state.b) == old(adler_spec_b_u64(bytes, split, 1, 0)) by { rewrite(1, at(initial_seed, to_integer((state.a as u32)))); rewrite(0, at(initial_seed, to_integer((state.b as u32)))); close(); }
  apply(adler_u16_observation(state.a));
  apply(adler_u16_observation(state.b));
  have to_integer((state.a as u32)) == old(adler_spec_a_u64(bytes, split, 1)) by close() using { to_integer((state.a as u32)) == to_integer(state.a); to_integer(state.a) == old(adler_spec_a_u64(bytes, split, 1)); };
@@ -29,20 +29,20 @@ fn adler_incremental::incremental(bytes: &[u8], split: usize) -> u32 {
  }
  apply(adler_spec_extensional_u64(suffix, old(bytes + split), bytes.len() - split, to_integer((state.a as u32)), to_integer((state.b as u32))));
  step_until(statement(4).call(0).entry);
- have to_integer(state.a) == at(prefix_done, adler_spec_a_u64(suffix, bytes.len() - split, to_integer((state.a as u32)))) by known();
- have to_integer(state.b) == at(prefix_done, adler_spec_b_u64(suffix, bytes.len() - split, to_integer((state.a as u32)), to_integer((state.b as u32)))) by known();
- have at(prefix_done, adler_spec_a_u64(suffix, bytes.len() - split, to_integer((state.a as u32)))) == old(adler_spec_a_u64(bytes + split, bytes.len() - split, at(prefix_done, to_integer((state.a as u32))))) by known();
- have at(prefix_done, adler_spec_b_u64(suffix, bytes.len() - split, to_integer((state.a as u32)), to_integer((state.b as u32)))) == old(adler_spec_b_u64(bytes + split, bytes.len() - split, at(prefix_done, to_integer((state.a as u32))), at(prefix_done, to_integer((state.b as u32))))) by known();
+ have to_integer(state.a) == at(prefix_done, adler_spec_a_u64(suffix, bytes.len() - split, to_integer((state.a as u32)))) by close();
+ have to_integer(state.b) == at(prefix_done, adler_spec_b_u64(suffix, bytes.len() - split, to_integer((state.a as u32)), to_integer((state.b as u32)))) by close();
+ have at(prefix_done, adler_spec_a_u64(suffix, bytes.len() - split, to_integer((state.a as u32)))) == old(adler_spec_a_u64(bytes + split, bytes.len() - split, at(prefix_done, to_integer((state.a as u32))))) by close();
+ have at(prefix_done, adler_spec_b_u64(suffix, bytes.len() - split, to_integer((state.a as u32)), to_integer((state.b as u32)))) == old(adler_spec_b_u64(bytes + split, bytes.len() - split, at(prefix_done, to_integer((state.a as u32))), at(prefix_done, to_integer((state.b as u32))))) by close();
  have to_integer(state.a) == old(adler_spec_a_u64(bytes + split, bytes.len() - split, old(adler_spec_a_u64(bytes, split, 1)))) by {
   rewrite(old(adler_spec_a_u64(bytes, split, 1)), at(prefix_done, to_integer((state.a as u32))));
   rewrite(old(adler_spec_a_u64(bytes + split, bytes.len() - split, at(prefix_done, to_integer((state.a as u32))))), at(prefix_done, adler_spec_a_u64(suffix, bytes.len() - split, to_integer((state.a as u32)))));
-  known();
+  close();
  }
  have to_integer(state.b) == old(adler_spec_b_u64(bytes + split, bytes.len() - split, old(adler_spec_a_u64(bytes, split, 1)), old(adler_spec_b_u64(bytes, split, 1, 0)))) by {
   rewrite(old(adler_spec_a_u64(bytes, split, 1)), at(prefix_done, to_integer((state.a as u32))));
   rewrite(old(adler_spec_b_u64(bytes, split, 1, 0)), at(prefix_done, to_integer((state.b as u32))));
   rewrite(old(adler_spec_b_u64(bytes + split, bytes.len() - split, at(prefix_done, to_integer((state.a as u32))), at(prefix_done, to_integer((state.b as u32))))), at(prefix_done, adler_spec_b_u64(suffix, bytes.len() - split, to_integer((state.a as u32)), to_integer((state.b as u32)))));
-  known();
+  close();
  }
  // Compose the two updates over the uint64 specification at the split.
  have to_integer((bytes.len()) - split) == to_integer((bytes.len())) - to_integer(split);
@@ -65,11 +65,11 @@ fn adler_incremental::incremental(bytes: &[u8], split: usize) -> u32 {
  }
  have to_integer(state.a) == old(adler_spec_a_u64(bytes, bytes.len(), 1)) by {
   rewrite(adler_spec_a_u64(bytes, bytes.len(), 1), adler_spec_a_u64(bytes + split, bytes.len() - split, adler_spec_a_u64(bytes, split, 1)));
-  known();
+  close();
  }
  have to_integer(state.b) == old(adler_spec_b_u64(bytes, bytes.len(), 1, 0)) by {
   rewrite(adler_spec_b_u64(bytes, bytes.len(), 1, 0), adler_spec_b_u64(bytes + split, bytes.len() - split, adler_spec_a_u64(bytes, split, 1), adler_spec_b_u64(bytes, split, 1, 0)));
-  known();
+  close();
  }
  have 65536 * to_integer(state.b) + to_integer(state.a) == old(adler_spec_checksum_u64(bytes, bytes.len(), 1, 0)) by {
   unfold(adler_spec_checksum_u64(bytes, bytes.len(), 1, 0));
@@ -82,5 +82,5 @@ fn adler_incremental::incremental(bytes: &[u8], split: usize) -> u32 {
   to_integer(statement(4).call(0).result) == 65536 * to_integer(state.b) + to_integer(state.a);
   65536 * to_integer(state.b) + to_integer(state.a) == old(adler_spec_checksum_u64(bytes, bytes.len(), 1, 0));
  };
- have forall (k: uint64) { k < bytes.len() implies bytes[k] == old(bytes[k]) } by solve();
+ have forall (k: uint64) { k < bytes.len() implies bytes[k] == old(bytes[k]) } by close();
 }

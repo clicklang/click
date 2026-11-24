@@ -12,8 +12,8 @@ int32 word(int32* p) {
     ensures result == 10;
 } by {
     step();
-    have *p == 7 by { known(); }
-    have *p + 3 == 10 by { rewrite(*p, 7); known(); }
+    have *p == 7 by { close(); }
+    have *p + 3 == 10 by { rewrite(*p, 7); close(); }
     step_until(function.exit);
 }
 uint64 wide(uint64* p) {
@@ -21,8 +21,8 @@ uint64 wide(uint64* p) {
     ensures result == 10;
 } by {
     step();
-    have *p == 7 by { known(); }
-    have *p + 3 == 10 by { rewrite(*p, 7); known(); }
+    have *p == 7 by { close(); }
+    have *p + 3 == 10 by { rewrite(*p, 7); close(); }
     step_until(function.exit);
 }
 ```

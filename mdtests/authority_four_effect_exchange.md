@@ -48,11 +48,11 @@ void move(int32* source, int32* destination, int32* p) {
     unfold(slot(destination));
     fold(item(destination, p));
     fold(slot(source));
-    step_until(function.exit); solve();
+    step_until(function.exit); close();
 }
 int32 lifecycle() { ensures result == 0 or result == 18; } by {
     step(); step(); step(); step(); step(); step();
-    branch { true => { step_until(function.exit); solve(); } false => {} }
+    branch { true => { step_until(function.exit); close(); } false => {} }
     step(); step();
     fold(authority(slot(&source)));
     fold(authority(slot(&destination)));
@@ -72,7 +72,7 @@ int32 lifecycle() { ensures result == 0 or result == 18; } by {
     unfold(authority(slot(&destination)));
     unfold(authority(item(&source, _)));
     unfold(authority(item(&destination, _)));
-    step_until(function.exit); solve();
+    step_until(function.exit); close();
 }
 ```
 

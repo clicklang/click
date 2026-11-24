@@ -32,47 +32,47 @@ theorem append_right_identity<T>(xs: TestList<T>) {
         match xs {
             TestList::Nil => {
                 unfold(append(TestList<T>::Nil, TestList<T>::Nil));
-                solve();
+                close();
             }
             TestList::Cons(head, tail) => {
                 apply(ih(tail));
                 unfold(append(TestList<T>::Cons(head, tail), TestList<T>::Nil));
                 rewrite(append(tail, TestList<T>::Nil), tail);
-                known();
+                close();
             }
         }
     }
 }
 
 theorem reflexive<T>(value: T) {
-    ensures value == value by solve();
+    ensures value == value by close();
 }
 
 theorem reflexive_via_generic<T>(value: T) {
     ensures value == value by {
         apply(reflexive(value));
-        known();
+        close();
     }
 }
 
 theorem retain<T>(left: T, right: T) {
     requires left == right;
     ensures left == right by {
-        known();
+        close();
     }
 }
 
 theorem int32_instance(xs: TestList<int32>) {
     ensures append(xs, TestList<int32>::Nil) == xs by {
         apply(append_right_identity(xs));
-        known();
+        close();
     }
 }
 
 theorem pointer_instance(xs: TestList<int32*>) {
     ensures append(xs, TestList<int32*>::Nil) == xs by {
         apply(append_right_identity(xs));
-        known();
+        close();
     }
 }
 
@@ -81,7 +81,7 @@ theorem scalar_parameter_instance(value: int32) {
     ensures value == value by {
         apply(retain(value, value));
         apply(reflexive_via_generic(value));
-        known();
+        close();
     }
 }
 
@@ -89,21 +89,21 @@ theorem generic_requirement_instance(left: int32, right: int32) {
     requires left == right;
     ensures left == right by {
         apply(retain(left, right));
-        known();
+        close();
     }
 }
 
 theorem pointer_parameter_instance(value: int32*) {
     ensures value == value by {
         apply(reflexive_via_generic(value));
-        known();
+        close();
     }
 }
 
 theorem algebraic_parameter_instance(value: Maybe<int32>) {
     ensures value == value by {
         apply(reflexive_via_generic(value));
-        known();
+        close();
     }
 }
 ```

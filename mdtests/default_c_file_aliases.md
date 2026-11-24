@@ -35,7 +35,7 @@ int32 main() {
 theorem list_qualifier() {
     ensures list::length(List<int32>::Nil) == Nat::Zero by {
         unfold(list::length(List<int32>::Nil));
-        known();
+        close();
     }
 }
 ```

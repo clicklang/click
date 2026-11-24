@@ -51,12 +51,12 @@ int32 first(int32* p, int32* q) {
     ensures result == captured_pointer(p, q) by {
         step_until(function.exit);
         unfold(captured_pointer(p, q));
-        solve();
+        close();
     }
     ensures result == (|i: int32| -> int32 { read_helper(p, i) })(0) by {
         step_until(function.exit);
         unfold(read_helper(p, 0));
-        solve();
+        close();
     }
 }
 
@@ -70,37 +70,37 @@ int32 unchanged(int32* p, int32 lo, int32 hi) {
         step_until(function.exit);
         have p[lo] == 0 by {
             instantiate((lo..hi).all(|i: int32| -> Prop { p[i] == 0 }), lo);
-            solve();
+            close();
         }
         witness(lo);
-        solve();
+        close();
     }
     ensures (|i: int32| -> Prop { is_zero(p, i) })(lo) by {
         step_until(function.exit);
         have is_zero(p, lo) by {
             unfold(is_zero(p, lo));
             instantiate((lo..hi).all(|i: int32| -> Prop { p[i] == 0 }), lo);
-            solve();
+            close();
         }
-        solve();
+        close();
     }
     ensures typed_sum(p, lo, hi) == shorthand_sum(p, lo, hi) by {
         step_until(function.exit);
         unfold(typed_sum(p, lo, hi));
         unfold(shorthand_sum(p, lo, hi));
-        solve();
+        close();
     }
 }
 
 theorem application_read_validity(p: int32*) {
     let read = |i: int32| -> int32 { p[i] };
     requires defined(p[1]);
-    ensures defined(read(1)) by solve();
+    ensures defined(read(1)) by close();
 }
 
 theorem unused_read_needs_no_view(p: int32*) {
     let unused = |i: int32| -> Prop { p[i] == 0 };
-    ensures true by solve();
+    ensures true by close();
 }
 ```
 

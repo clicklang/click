@@ -7,17 +7,17 @@ A value already converted from int32 retains its signed source.
 ```click
 theorem native_unsigned_bound(x: uint32) {
     requires x <= 256u32;
-    ensures 0 <= (x as int32) and (x as int32) <= 256 by { known(); }
+    ensures 0 <= (x as int32) and (x as int32) <= 256 by { close(); }
 }
 
 theorem strict_unsigned_bound(x: uint32) {
     requires x < 257u32;
-    ensures 0 <= (x as int32) and (x as int32) < 257 by { known(); }
+    ensures 0 <= (x as int32) and (x as int32) < 257 by { close(); }
 }
 
 theorem converted_signed_bound(x: int32) {
     requires (x as uint32) <= 256u32;
-    ensures 0 <= x and x <= 256 by { known(); }
+    ensures 0 <= x and x <= 256 by { close(); }
 }
 ```
 

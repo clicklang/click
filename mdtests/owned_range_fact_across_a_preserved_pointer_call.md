@@ -43,7 +43,7 @@ int read_saved(struct Box *box) {
     have box->p == at(before, box->p);
     unfold(kept);
     have box->start == k;
-    have at(before, box->p)[k] == 22 by { known(); }
+    have at(before, box->p)[k] == 22 by { close(); }
     have box->p + box->start == at(before, box->p) + k by {
         close() using { box->start == k; box->p == at(before, box->p); };
     }
@@ -51,9 +51,9 @@ int read_saved(struct Box *box) {
         have box->p[box->start] == 22 by {
             rewrite(22, at(before, box->p)[k]);
             rewrite((box->p + box->start), (at(before, box->p) + k));
-            known();
+            close();
         }
-        known();
+        close();
     }
     let r = fold(region(box), { start: k, end: e });
     step();

@@ -38,20 +38,20 @@ int32 drain(int32 box[4]) {
     branch {
         true => {
             step();
-            have 0 <= head(box) by { unfold(head(box)); solve(); }
+            have 0 <= head(box) by { unfold(head(box)); close(); }
             have head(box) < old(head(box)) by {
                 unfold(head(box));
-                solve();
+                close();
             }
             step();
             step();
             step();
-            solve();
+            close();
         }
         false => {}
     }
     step();
-    solve();
+    close();
 }
 ```
 

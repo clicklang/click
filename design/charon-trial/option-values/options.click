@@ -70,10 +70,10 @@ fn option_values::sum(a: Option<u32>, b: Option<u32>) -> Option<u32> {
     match a {
         Option::Some(p) => {
             match b {
-                Option::Some(q) => { step_until(function.exit); solve(); },
-                Option::None => { step_until(function.exit); solve(); },
+                Option::Some(q) => { step_until(function.exit); close(); },
+                Option::None => { step_until(function.exit); close(); },
             }
         },
-        Option::None => { step_until(function.exit); solve(); },
+        Option::None => { step_until(function.exit); close(); },
     }
 }

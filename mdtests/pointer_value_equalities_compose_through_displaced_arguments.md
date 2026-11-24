@@ -18,7 +18,7 @@ void compose(const uint8* base, const uint8* middle, const uint8* end) {
  ensures end == base + 5u64;
 } by {
  step_until(function.exit);
- have base + 2u64 + 3u64 == base + 5u64 by known();
+ have base + 2u64 + 3u64 == base + 5u64 by close();
  close() using {
   end == middle + 3u64;
   middle == base + 2u64;

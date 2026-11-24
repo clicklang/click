@@ -59,7 +59,7 @@ int32 alternate_mutex(struct parity_mutex *object, int32 n) {
             invariant n < 0;
         }
         step_until(function.exit);
-        solve();
+        close();
     } else {
         have n >= 0;
         loop {
@@ -69,7 +69,7 @@ int32 alternate_mutex(struct parity_mutex *object, int32 n) {
             owns mutex_live(&object->mutex);
             decreases n - i;
             invariant 0 <= i and i <= n;
-            initialize by solve();
+            initialize by close();
             maintain by {
                 have i < 2147483647 by { close() using { i < n; }; }
                 if i % 2 == 0 {
@@ -91,14 +91,14 @@ int32 alternate_mutex(struct parity_mutex *object, int32 n) {
         }
         if i % 2 == 0 {
             step_until(function.exit);
-            solve();
+            close();
         } else {
             have 0 <= i % 2 by { close() using { 0 <= i; }; }
             have 1 <= i % 2 by apply(nonzero_nonnegative(i % 2));
             have i % 2 <= 1 by { close() using { 0 <= i; }; }
             have i % 2 == 1 by apply(bounded_one(i % 2));
             step_until(function.exit);
-            solve();
+            close();
         }
     }
 }

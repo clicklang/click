@@ -83,7 +83,7 @@ int32 read_beside_wrapped(struct pair* p) {
     requires separate(memory(p->left), memory(p->right));
     ensures result == old(p->right);
 } by {
-    step() by { known(); }
+    step() by { close(); }
 }
 
 int32 read_beside_named(struct pair* p) {
@@ -92,7 +92,7 @@ int32 read_beside_named(struct pair* p) {
     requires separate(memory(p->left), memory(p->right));
     ensures result == old(p->right);
 } by {
-    step(write_named, { r: r }) by { known(); }
+    step(write_named, { r: r }) by { close(); }
 }
 
 int32 read_beside_selected(struct pair* p) {
@@ -102,7 +102,7 @@ int32 read_beside_selected(struct pair* p) {
     requires separate(memory(p->left), memory(p->right));
     ensures result == old(p->right);
 } by {
-    step(write_selected, { r: r }) by { known(); }
+    step(write_selected, { r: r }) by { close(); }
 }
 ```
 

@@ -87,12 +87,12 @@ theorem adler_tail_iterator_step(total: int32, remaining: int32, a: Integer, b: 
  ensures a + byte <= adler_tail_a_ceiling(adler_tail_consumed(total, remaining) + 1) by {
   apply(adler_tail_index_before_next(total, remaining));
   apply(adler_tail_a_next(adler_tail_consumed(total, remaining), a, byte));
-  known();
+  close();
  }
  ensures b + a + byte <= adler_tail_b_ceiling(adler_tail_consumed(total, remaining) + 1) by {
   apply(adler_tail_index_before_next(total, remaining));
   apply(adler_tail_b_next(adler_tail_consumed(total, remaining), a, b, byte));
-  known();
+  close();
  }
 }
 theorem adler_tail_remaining_progress(total: int32, remaining: int32) {

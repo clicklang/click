@@ -40,7 +40,7 @@ int32 stated_integer(int32 m) {
     requires m <= 1000;
     ensures result == 0 or result == 7;
 } by {
-    have m - 1 != 0 by solve();
+    have m - 1 != 0 by close();
 }
 
 int32 stated_word(int32 m) {
@@ -48,7 +48,7 @@ int32 stated_word(int32 m) {
     requires m <= 1000;
     ensures result == 0 or result == 7;
 } by {
-    have ((m - 1) as int32) != 0 by solve();
+    have ((m - 1) as int32) != 0 by close();
 }
 ```
 

@@ -49,13 +49,13 @@ int32 run(struct cell *job, struct cell *unrelated) {
     branch {
         true => {
             step();
-            solve();
+            close();
         }
         false => {}
     }
     step();
     step();
-    solve();
+    close();
 }
 ```
 

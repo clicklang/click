@@ -47,12 +47,12 @@ void set_one_if_active(int32 active, int32* cell) {
         unfold(optional_cell(active, cell));
         step_until(function.exit);
         fold(optional_cell(active, cell));
-        solve();
+        close();
     } else {
         unfold(optional_cell(active, cell));
         step_until(function.exit);
         fold(optional_cell(active, cell));
-        solve();
+        close();
     }
 }
 
@@ -61,9 +61,9 @@ theorem set_one_is_make_positive() {
         unfold(MakePositive(&set_one_if_active));
 
         if active != 0 {
-            solve();
+            close();
         } else {
-            solve();
+            close();
         }
     }
 }

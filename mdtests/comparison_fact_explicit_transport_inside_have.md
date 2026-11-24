@@ -20,7 +20,7 @@ void mark(int32 *next, int32 *visited) {
     ensures 0 <= next[0];
 } by {
     mark entry;
-    have at(entry, 0 <= next[0]) by known();
+    have at(entry, 0 <= next[0]) by close();
     have contains(memory(next[0..1]), memory(next[0])) by { apply(click::separation::contains_element(next, 0, 1, 0)); }
     have contains(memory(visited[0..1]), memory(visited[0])) by { apply(click::separation::contains_element(visited, 0, 1, 0)); }
     have separate(memory(next[0]), memory(visited[0])) by {
@@ -34,7 +34,7 @@ void mark(int32 *next, int32 *visited) {
         preserve(memory(next[0]), statement(0));
     }
     have 0 <= next[0] by {
-        known();
+        close();
     }
 }
 ```

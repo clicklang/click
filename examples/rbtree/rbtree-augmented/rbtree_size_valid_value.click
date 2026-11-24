@@ -26,7 +26,7 @@ theorem sized_valid_value_matches_size(tree: SizedTree) {
                 unfold(sized_value(SizedTree::Empty));
                 unfold(sized_shape(SizedTree::Empty));
                 unfold(rb_subtree_size(RbTree::Empty));
-                known();
+                close();
             },
             SizedTree::Node(identity, parent, color, value, left, right) => {
                 apply(sized_valid_parts(identity, parent, color, value, left, right));

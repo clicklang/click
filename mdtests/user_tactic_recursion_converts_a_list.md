@@ -40,7 +40,7 @@ theorem links_len_is_nonnegative(m: Links) {
         match m {
             Links::Nil => {
                 unfold(links_len(Links::Nil));
-                known();
+                close();
             }
             Links::Cons(rest) => {
                 apply(ih(rest));
@@ -94,12 +94,12 @@ tactic convert(p: struct node*) {
             apply(links_len_is_nonnegative(rest_model));
             have 0 <= links_len(r.model) by {
                 rewrite(r.model, rest_model);
-                known();
+                close();
             }
             have links_len(old(x.model)) == links_len(rest_model) + 1 by {
                 rewrite(old(x.model), Links::Cons(rest_model));
                 unfold(links_len(Links::Cons(rest_model)));
-                known();
+                close();
             }
             have links_len(r.model) < links_len(old(x.model)) by {
                 rewrite(r.model, rest_model);
@@ -120,7 +120,7 @@ void user(struct node* p) {
     let { y: b } = convert(p, { x: a });
     step();
     step();
-    solve();
+    close();
 }
 ```
 

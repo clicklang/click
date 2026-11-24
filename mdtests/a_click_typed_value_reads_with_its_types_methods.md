@@ -12,13 +12,13 @@ import click::rust::slice;
 theorem slice_methods(s: Slice<uint8>) {
     requires 2u64 <= s.len();
     ensures s.len() == slice::len(s) by {
-        solve();
+        close();
     }
     ensures s.as_ptr() == slice::as_ptr(s) by {
-        solve();
+        close();
     }
     ensures s[1..].len() == s.len() - 1u64 by {
-        solve();
+        close();
     }
 }
 ```

@@ -24,7 +24,7 @@ int32 first_matches(int32 p[], int32 n, int32 x) {
     ensures exists (k: int32) { 0 <= k and k < n and p[k] == x } by {
         step_until(function.exit);
         witness(0);
-        solve();
+        close();
     }
 }
 
@@ -32,7 +32,7 @@ theorem quantifier_binders(value: int32) {
     ensures forall (x: int32) { x == x };
     ensures exists (x: int32) { x == value } by {
         witness(value);
-        solve();
+        close();
     }
 }
 ```

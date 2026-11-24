@@ -53,7 +53,7 @@ void acquire(struct object *obj) {
     have count(reference(obj)) >= 0;
     let state = fold(control(obj), { refs: obj->refs });
     step();
-    solve();
+    close();
 }
 
 void release(struct object *obj) {
@@ -63,7 +63,7 @@ void release(struct object *obj) {
 } by {
     step(pthread_mutex_unlock, { access: access, guard: guard, state: state });
     step();
-    solve();
+    close();
 }
 
 int32 run() {
@@ -71,7 +71,7 @@ int32 run() {
 } by {
     step();
     step();
-    branch { true => { step(); solve(); } false => {} }
+    branch { true => { step(); close(); } false => {} }
     step();
     fold(authority(reference(obj)));
     let control = fold(control(obj), { refs: 0 });
@@ -94,7 +94,7 @@ int32 run() {
     unfold(authority(reference(obj)));
     step();
     step();
-    solve();
+    close();
 }
 ```
 

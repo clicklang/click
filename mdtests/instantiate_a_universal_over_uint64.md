@@ -15,7 +15,7 @@ theorem below_ten(length: uint64, index: uint64) {
 
     ensures index < 10u64 by {
         instantiate(forall (k: uint64) { k < length implies k < 10u64 }, index);
-        known();
+        close();
     }
 }
 ```

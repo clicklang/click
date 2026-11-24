@@ -9,14 +9,14 @@ contract void Boxed(int32* p) { owns Box(p); }
 theorem lift(callback: void (*)(int32*)) executes callback(int32* data) {
     requires Raw(callback);
     ensures Buffered(callback) by {
-        unfold(Buffer(data)); step(Raw); fold(Buffer(data)); solve();
+        unfold(Buffer(data)); step(Raw); fold(Buffer(data)); close();
     }
 }
 theorem box(callback: void (*)(int32*)) executes callback(int32* data) {
     requires Raw(callback);
     ensures Boxed(callback) by {
         apply(lift(callback));
-        unfold(Box(data)); step(Buffered); fold(Box(data)); solve();
+        unfold(Box(data)); step(Buffered); fold(Box(data)); close();
     }
 }
 ```

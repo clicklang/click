@@ -67,7 +67,7 @@ theorem increment_at_is_slice_step() executes increment_at(int32* cells, int32 i
         unfold(slice_prefix(cells, index));
         unfold(slice_suffix(cells, index, length));
         step(increment_at);
-        solve();
+        close();
     }
 }
 

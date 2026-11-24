@@ -29,23 +29,23 @@ theorem same_weighted(p: int32[], q: int32[], lo: int32, n: int32, hi: int32) {
         if hi <= lo {
             unfold(weighted(p, lo, hi));
             unfold(weighted(q, lo, hi));
-            known();
+            close();
         } else {
             have lo < hi;
-            have 0 <= to_integer(hi - 1) by { solve(); }
-            have to_integer(hi - 1) < to_integer(hi) by { solve(); }
-            have to_integer(hi - 1) <= to_integer(n) by { solve(); }
+            have 0 <= to_integer(hi - 1) by { close(); }
+            have to_integer(hi - 1) < to_integer(hi) by { close(); }
+            have to_integer(hi - 1) <= to_integer(n) by { close(); }
             apply(ih(hi - 1));
-            have to_integer(hi - 1) < to_integer(n) by { solve(); }
-            have to_integer(lo) <= to_integer(hi - 1) by { solve(); }
+            have to_integer(hi - 1) < to_integer(n) by { close(); }
+            have to_integer(lo) <= to_integer(hi - 1) by { close(); }
             have lo <= (hi - 1) and (hi - 1) < n;
             instantiate(forall (k: int32) { lo <= k and k < n implies p[k] == q[k] }, hi - 1);
-            have to_integer(lo) <= to_integer(hi - 1) by { solve(); }
-            have to_integer(hi - 1) < 2147483647 by { solve(); }
+            have to_integer(lo) <= to_integer(hi - 1) by { close(); }
+            have to_integer(hi - 1) < 2147483647 by { close(); }
             unfold(weighted(p, lo, hi));
             unfold(weighted(q, lo, hi));
             rewrite(p[hi - 1], q[hi - 1]);
-            known();
+            close();
         }
     }
 }
@@ -58,11 +58,11 @@ void set_end(int32 *v, int32 i, int32 n) {
     ensures weighted(v, 0, i) == old(weighted(v, 0, i));
 } by {
     mark entry;
-    have weighted(at(entry, v), 0, i) == weighted(at(entry, v), 0, i) by known();
-    have 0 <= 0 by { known(); }
-    have 0 <= i by { known(); }
-    have i <= n by { solve(); }
-    have viewable(v[0..n]) by { observe(v[0..n]); known(); }
+    have weighted(at(entry, v), 0, i) == weighted(at(entry, v), 0, i) by close();
+    have 0 <= 0 by { close(); }
+    have 0 <= i by { close(); }
+    have i <= n by { close(); }
+    have viewable(v[0..n]) by { observe(v[0..n]); close(); }
     have contains(memory(v[0..n]), memory(v[0..i])) by {
         apply(click::separation::contains_subrange(v, 0, n, 0, i));
     }
@@ -73,7 +73,7 @@ void set_end(int32 *v, int32 i, int32 n) {
     have weighted(at(entry, v), 0, i) == weighted(v, 0, i) by {
         have forall (k: int32) { 0 <= k and k < i implies v[k] == at(entry, v[k]) } by {
             intro(); intro();
-            have i != k by { solve(); }
+            have i != k by { close(); }
             have separate(memory(v[i]), memory(v[k])) by {
                 apply(click::separation::separate_elements(v, i, k));
             }
@@ -82,13 +82,13 @@ void set_end(int32 *v, int32 i, int32 n) {
             }
             preserve(memory(v[k]), statement(0));
         }
-        have viewable(v[0..n]) by { observe(v[0..n]); known(); }
+        have viewable(v[0..n]) by { observe(v[0..n]); close(); }
         have viewable(v[0..i]) by {
             apply(click::separation::viewable_restrict(memory(v[0..n]), memory(v[0..i])));
         }
-        have i <= 1073741823 by { solve(); }
+        have i <= 1073741823 by { close(); }
         apply(same_weighted(v, at(entry, v), 0, i, i));
-        known();
+        close();
     }
 }
 ```

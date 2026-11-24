@@ -48,7 +48,7 @@ int32 f(struct region* r, struct arena* out) {
             unfold(b);
             step_until(function.exit);
             let b = fold(part(r), { tag: Tag::T(x) });
-            solve();
+            close();
         },
     }
 }

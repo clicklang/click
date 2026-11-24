@@ -22,7 +22,7 @@ theorem low(x: float, y: float) {
         apply(click::float_order::float32_add_lower(
             x, y, float32_from_bits(0xbf800000), float32_from_bits(0x3f800000)
         ));
-        known();
+        close();
     }
 }
 theorem upper(x: double, y: double) {
@@ -32,7 +32,7 @@ theorem upper(x: double, y: double) {
         apply(click::float_order::float64_add_upper(
             x, y, float64_from_bits(0x3ff0000000000000u64), float64_from_bits(0x4000000000000000u64)
         ));
-        known();
+        close();
     }
 }
 
@@ -43,7 +43,7 @@ theorem upper32(x: float, y: float) {
         apply(click::float_order::float32_add_upper(
             x, y, float32_from_bits(0x3f800000), float32_from_bits(0x40000000)
         ));
-        known();
+        close();
     }
 }
 
@@ -54,7 +54,7 @@ theorem lower64(x: double, y: double) {
         apply(click::float_order::float64_add_lower(
             x, y, float64_from_bits(0xbff0000000000000u64), float64_from_bits(0x3ff0000000000000u64)
         ));
-        known();
+        close();
     }
 }
 ```

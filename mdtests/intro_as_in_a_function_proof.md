@@ -17,7 +17,7 @@ int32 keep(int32 x) {
 } by {
     step_until(function.exit);
     let below = intro();
-    solve();
+    close();
 }
 
 int32 keep_again(int32 x) {
@@ -27,7 +27,7 @@ int32 keep_again(int32 x) {
     have forall (k: int32) { k < x implies k < x } by {
         let below = intro();
         intro();
-        known();
+        close();
     }
 }
 ```

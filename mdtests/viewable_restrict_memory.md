@@ -22,9 +22,9 @@ int32 first(int32* p, int32 n, int32 a, int32 b) {
         apply(separation::viewable_restrict(memory(p[0..n]), memory(p[a..b])));
     }
     step();
-    known();
+    close();
 
-    known(); known(); known();
+    close(); close(); close();
 }
 ```
 

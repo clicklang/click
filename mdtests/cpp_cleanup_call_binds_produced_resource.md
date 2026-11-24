@@ -35,7 +35,7 @@ int32 caller(Cell* cell) {
     step();
     step();
     let { after: after } = step(set, { before: before });
-    have after.value == 1 by { known(); }
+    have after.value == 1 by { close(); }
     step_until(function.exit);
 }
 ```

@@ -30,10 +30,10 @@ void follow(struct node* p, int32 more) {
         decreases more;
         invariant p == old(p);
         invariant 0 <= more;
-        initialize by solve();
+        initialize by close();
         maintain by {
             let { word: saved_word } = unfold(held);
-            have p->parent_word == address(p) by { rewrite(p, old(p)); known(); }
+            have p->parent_word == address(p) by { rewrite(p, old(p)); close(); }
             step(); step();
             let held = fold(self_link(old(p)), { word: saved_word });
         }

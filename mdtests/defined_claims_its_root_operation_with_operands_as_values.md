@@ -9,13 +9,13 @@ whose right side is read only where its left side holds.
 ```click
 theorem both(a: int32, b: int32, c: int32) {
     requires defined(a + b) and defined(a + b + c);
-    ensures to_integer(a + b) + to_integer(c) <= 2147483647 by { known(); }
-    ensures to_integer(a) + to_integer(b) <= 2147483647 by { known(); }
+    ensures to_integer(a + b) + to_integer(c) <= 2147483647 by { close(); }
+    ensures to_integer(a) + to_integer(b) <= 2147483647 by { close(); }
 }
 
 theorem guarded(a: int32, b: int32, c: int32, x: int32) {
     requires defined(a + b) and defined(a + b + c) implies x == 1;
-    ensures 1 == 1 by solve();
+    ensures 1 == 1 by close();
 }
 ```
 

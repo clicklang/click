@@ -20,7 +20,7 @@ theorem select_left(left: Tree, right: Tree) {
     ensures select(Tree::Node(left, right), 0) == left by {
         unfold(select(Tree::Node(left, right), 0));
         unfold(identity(left));
-        known();
+        close();
     }
 }
 

@@ -35,9 +35,9 @@ int32 s(int32 j) {
         have t[3u64] == 0u8 by { normalize() using { j == 2; }; }
         have defined(t[3u64]) by { normalize() using { j == 2; }; }
         step_until(function.exit);
-        solve();
+        close();
     } else {
-        if j == 1 { step_until(function.exit); solve(); } else { step_until(function.exit); solve(); }
+        if j == 1 { step_until(function.exit); close(); } else { step_until(function.exit); close(); }
     }
 }
 ```

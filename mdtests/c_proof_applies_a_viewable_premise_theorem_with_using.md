@@ -15,7 +15,7 @@ verifying "c_proof_applies_a_loadable_premise_theorem_with_using.c";
 
 theorem viewable_range_is_nonnegative(v: int32[], n: int32) {
     requires n >= 0 and viewable(v[0..n]);
-    ensures 0 <= n by solve();
+    ensures 0 <= n by close();
 }
 
 int32 probe(int32 a[], int32 n) {
@@ -27,9 +27,9 @@ int32 probe(int32 a[], int32 n) {
     step();
     have n >= 0;
     have viewable(a[0..n]);
-    have n >= 0 and viewable(a[0..n]) by known();
+    have n >= 0 and viewable(a[0..n]) by close();
     apply(viewable_range_is_nonnegative(a, n));
-    solve();
+    close();
 }
 ```
 

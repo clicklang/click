@@ -22,7 +22,7 @@ void fill_t(uint8* dst) {
     step_until(function.exit);
     have at(statement(1).entry,
         (0u64..4u64).all(|renamed| { defined(dst[renamed]) and dst[renamed] == 7 })) by {
-        known();
+        close();
     }
     have (0u64..4u64).all(|k| { defined(dst[k]) and dst[k] == 7 }) by {
         intro(); intro();
@@ -40,11 +40,11 @@ void fill_t(uint8* dst) {
         have at(statement(1).exit, defined(dst[k])) by {
             preserve(memory(dst[k]), statement(1));
         }
-        have defined(dst[k]) by { known(); }
-        have dst[k] == 7u8 by { known(); }
-        known();
+        have defined(dst[k]) by { close(); }
+        have dst[k] == 7u8 by { close(); }
+        close();
     }
-    known();
+    close();
 }
 ```
 

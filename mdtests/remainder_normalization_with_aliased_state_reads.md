@@ -26,18 +26,18 @@ uint32 observe(uint32 *p, uint32 divisor) {
  have p[0] < divisor;
  apply(integer::uint32_less_than_divisor_implies_remainder_is_value(p[0], divisor));
  have p[0] == at(before, p[0]) % divisor by {
-  have at(before, p[0]) == p[0] by known();
+  have at(before, p[0]) == p[0] by close();
   rewrite(at(before, p[0]), p[0]);
-  known();
+  close();
  }
  have p[0] < 65521u32 by {
   rewrite(65521u32, divisor);
-  known();
+  close();
  }
- have at(before, p[0]) < 65521u32 by known();
+ have at(before, p[0]) < 65521u32 by close();
  apply(integer::uint32_less_than_divisor_implies_remainder_is_value(at(before, p[0]), 65521u32));
- have p[0] == at(before, p[0]) % 65521u32 by known();
- solve();
+ have p[0] == at(before, p[0]) % 65521u32 by close();
+ close();
 }
 ```
 ```expect

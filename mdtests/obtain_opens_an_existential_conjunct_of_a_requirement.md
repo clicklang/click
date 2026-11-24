@@ -16,7 +16,7 @@ theorem below(n: int32) {
     ensures exists (m: int32) { m < n } by {
         let k = obtain(exists (k: int32) { k < n });
         witness(k);
-        known();
+        close();
     }
 }
 ```

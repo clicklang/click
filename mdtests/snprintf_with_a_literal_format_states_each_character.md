@@ -44,7 +44,7 @@ int32 render(char buf[], uint32 n) {
     }
     ensures buf[0] == 52 by {
         step_until(function.exit);
-        have n as uint64 == 42u64 by { solve(); }
+        have n as uint64 == 42u64 by { close(); }
         have stdio::decimal_length(n as uint64) == 2u64 by {
             rewrite(n as uint64, 42u64);
             apply(stdio::decimal_length_2(42u64));
@@ -63,11 +63,11 @@ int32 render(char buf[], uint32 n) {
             instantiate(forall (k: uint64) {
                 k < stdio::decimal_length(n as uint64) and k + 1u64 < 8u64 implies buf[k] == stdio::decimal_digit(n as uint64, k)
             }, 0u64);
-            solve();
+            close();
         }
         have buf[0] == 52 by {
             rewrite(52u8, stdio::decimal_digit(n as uint64, 0u64));
-            known();
+            close();
         }
     }
 }
@@ -77,7 +77,7 @@ int32 fraction(char tmp[], uint32 remainder) {
     owns tmp[0..12];
     ensures result == 4 by {
         step_until(function.exit);
-        have remainder as uint64 == 5u64 by { solve(); }
+        have remainder as uint64 == 5u64 by { close(); }
         have stdio::decimal_length(5u64) == 1u64 by {
             apply(stdio::decimal_length_1(5u64));
         }

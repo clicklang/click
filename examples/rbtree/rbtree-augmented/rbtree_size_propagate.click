@@ -39,18 +39,18 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
         invariant links.word == old(links.word);
         invariant rb == old(rb) or rb == stop;
         invariant metadata.value == 1 or rb == old(rb);
-        initialize by solve();
+        initialize by close();
         maintain by {
             have rb == old(rb) by {
                 cases {
-                    rb == old(rb) => { known(); }
+                    rb == old(rb) => { close(); }
                     rb == stop => {
-                        have address(rb) == address(stop) by { rewrite(rb, stop); solve(); }
+                        have address(rb) == address(stop) by { rewrite(rb, stop); close(); }
                         contradiction(address(rb) == address(stop));
                     }
                 }
             }
-            have address(rb) != address(stop) by { rewrite(rb, old(rb)); known(); }
+            have address(rb) != address(stop) by { rewrite(rb, old(rb)); close(); }
             have propagate_remaining(rb, stop) == 1 by {
                 unfold(propagate_remaining(rb, stop));
                 normalize() using { address(rb) != address(stop); };
@@ -87,7 +87,7 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
             }
             unfold(left);
             unfold(right);
-            have ((old(rb)->__rb_parent_color & ~3) as (struct rb_node *)) == stop by solve();
+            have ((old(rb)->__rb_parent_color & ~3) as (struct rb_node *)) == stop by close();
             fold(links);
             if status != 0 {
                 step();
@@ -96,13 +96,13 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
                 step();
                 step();
                 step();
-                have rb == stop by { known(); }
+                have rb == stop by { close(); }
                 have propagate_remaining(rb, stop) == 0 by {
                     unfold(propagate_remaining(rb, stop));
                     normalize() using { rb == stop; };
                 }
-                have metadata.value == 1 by { known(); }
-                have metadata.value == 1 or rb == old(rb) by { known(); }
+                have metadata.value == 1 by { close(); }
+                have metadata.value == 1 or rb == old(rb) by { close(); }
             }
         }
     }

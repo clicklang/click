@@ -19,8 +19,8 @@ theorem nonnegative(x: int32, y: int32) {
     requires y == 1;
     ensures x >= 0 by {
         cases {
-            x == 0 => { solve(); }
-            x == 1 => { solve(); }
+            x == 0 => { close(); }
+            x == 1 => { close(); }
         }
     }
 }
@@ -31,8 +31,8 @@ int32 choose(int32 x, int32 y) {
     ensures result == 0 or result == 1;
 } by {
     cases {
-        x == 0 => { step_until(function.exit); solve(); }
-        x == 1 => { step_until(function.exit); solve(); }
+        x == 0 => { step_until(function.exit); close(); }
+        x == 1 => { step_until(function.exit); close(); }
     }
 }
 
@@ -43,8 +43,8 @@ int32 choose_after(int32 x, int32 y) {
 } by {
     step_until(function.exit);
     cases {
-        result == 0 => { solve(); }
-        result == 1 => { solve(); }
+        result == 0 => { close(); }
+        result == 1 => { close(); }
     }
 }
 
@@ -54,10 +54,10 @@ int32 choose_explicit(int32 x, int32 y) {
     ensures result == 0 or result == 1;
 } by {
     step_until(function.exit);
-    have x == 0 or x == 1 by solve();
+    have x == 0 or x == 1 by close();
     cases {
-        x == 0 => { solve(); }
-        x == 1 => { solve(); }
+        x == 0 => { close(); }
+        x == 1 => { close(); }
     }
 }
 ```

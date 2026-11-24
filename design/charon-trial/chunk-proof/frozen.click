@@ -13,7 +13,7 @@ fn cover(bytes: &[u8]) -> usize {
     have bytes.len() - bytes.len() % 4u64 <= 1000u64 by { normalize() using { bytes.len() - bytes.len() % 4u64 <= bytes.len(); bytes.len() <= 1000u64; } }
     have bytes.len() - bytes.len() % 4u64 <= 2147483647u64 by { normalize() using { bytes.len() - bytes.len() % 4u64 <= 1000u64; } }
     have 0 <= (((bytes.len() - bytes.len() % 4u64) as uint32) as int32) by { normalize() using { bytes.len() - bytes.len() % 4u64 <= 2147483647u64; } }
-    have ((((bytes.len() - bytes.len() % 4u64) as uint32) as int32)) <= 1000 by { solve(); }
+    have ((((bytes.len() - bytes.len() % 4u64) as uint32) as int32)) <= 1000 by { close(); }
     have bytes.len() <= 2147483647u64 by { normalize() using { bytes.len() <= 1000u64; } }
     have ((((bytes.len() - bytes.len() % 4u64) as uint32) as int32)) <= ((bytes.len() as uint32) as int32) by { normalize() using { bytes.len() - bytes.len() % 4u64 <= bytes.len(); bytes.len() <= 2147483647u64; } }
     step_until(region(22).entry);
@@ -25,9 +25,9 @@ fn cover(bytes: &[u8]) -> usize {
     }
     have bytes.len() <= 2147483647u64 by { normalize() using { bytes.len() <= 1000u64; } }
     have (((((bytes.len() - bytes.len() % 4u64) as uint32) as int32)) % 4) == 0 by { normalize() using { bytes.len() <= 2147483647u64; } }
-    have chunks_remaining == (((bytes.len() - bytes.len() % 4u64) as uint32) as int32) by { solve(); }
+    have chunks_remaining == (((bytes.len() - bytes.len() % 4u64) as uint32) as int32) by { close(); }
     have chunks_remaining % 4 == 0 by {
-        rewrite(chunks_remaining, (((bytes.len() - bytes.len() % 4u64) as uint32) as int32)); solve();
+        rewrite(chunks_remaining, (((bytes.len() - bytes.len() % 4u64) as uint32) as int32)); close();
     }
     loop {
         decreases chunks_remaining;
@@ -47,7 +47,7 @@ fn cover(bytes: &[u8]) -> usize {
         invariant chunks_cursor == bytes + ((((bytes.len() - bytes.len() % 4u64) as uint32) as int32) - chunks_remaining);
         invariant 0 <= ((((bytes.len() - bytes.len() % 4u64) as uint32) as int32) - chunks_remaining) and ((((bytes.len() - bytes.len() % 4u64) as uint32) as int32) - chunks_remaining) <= 1000;
         maintain by {
-            have 4 <= chunks_remaining by { solve(); }
+            have 4 <= chunks_remaining by { close(); }
             mark iteration;
             have ((((bytes.len() - bytes.len() % 4u64) as uint32) as int32) - chunks_remaining) + 4 <= ((bytes.len() as uint32) as int32) by {
                 close() using {
@@ -65,13 +65,13 @@ fn cover(bytes: &[u8]) -> usize {
                     0 <= ((bytes.len() as uint32) as int32);
                 }
             }
-            have chunks_remaining == at(iteration, chunks_remaining) - 4 by { solve(); }
+            have chunks_remaining == at(iteration, chunks_remaining) - 4 by { close(); }
             have (at(iteration, chunks_remaining) - 4) % 4 == at(iteration, chunks_remaining % 4) by {
                 normalize() using { at(iteration, 4 <= chunks_remaining); }
             }
             have chunks_remaining % 4 == 0 by {
                 rewrite(chunks_remaining, at(iteration, chunks_remaining) - 4);
-                rewrite((at(iteration, chunks_remaining) - 4) % 4, at(iteration, chunks_remaining % 4)); solve();
+                rewrite((at(iteration, chunks_remaining) - 4) % 4, at(iteration, chunks_remaining % 4)); close();
             }
             have 0 <= chunks_remaining by {
                 close() using { chunks_remaining == at(iteration, chunks_remaining) - 4; at(iteration, 4 <= chunks_remaining); }
@@ -85,7 +85,7 @@ fn cover(bytes: &[u8]) -> usize {
                     ((((bytes.len() - bytes.len() % 4u64) as uint32) as int32)) <= 1000;
                 }
             }
-            have chunks_cursor == at(iteration, chunks_cursor) + 4 by { solve(); }
+            have chunks_cursor == at(iteration, chunks_cursor) + 4 by { close(); }
             have ((((bytes.len() - bytes.len() % 4u64) as uint32) as int32) - chunks_remaining) == at(iteration, (((bytes.len() - bytes.len() % 4u64) as uint32) as int32) - chunks_remaining) + 4 by {
                 close() using {
                     chunks_remaining == at(iteration, chunks_remaining) - 4;
@@ -103,7 +103,7 @@ fn cover(bytes: &[u8]) -> usize {
                 }
             }
             have chunks_cursor == bytes + ((((bytes.len() - bytes.len() % 4u64) as uint32) as int32) - chunks_remaining) by {
-                rewrite(((((bytes.len() - bytes.len() % 4u64) as uint32) as int32) - chunks_remaining), at(iteration, (((bytes.len() - bytes.len() % 4u64) as uint32) as int32) - chunks_remaining) + 4); solve();
+                rewrite(((((bytes.len() - bytes.len() % 4u64) as uint32) as int32) - chunks_remaining), at(iteration, (((bytes.len() - bytes.len() % 4u64) as uint32) as int32) - chunks_remaining) + 4); close();
             }
             have ((((bytes.len() as uint32)) as int32)) <= 1000;
             have at(region(23).entry, 0) <= at(region(23).entry, chunks_remaining);
@@ -115,20 +115,20 @@ fn cover(bytes: &[u8]) -> usize {
     have chunks_remaining < 4 by {
         cases {
             not (0 < chunks_remaining) => {
-                have chunks_remaining <= 0 by { solve(); }
+                have chunks_remaining <= 0 by { close(); }
                 close() using { chunks_remaining <= 0; }
             }
-            not (4 <= chunks_remaining) => { solve(); }
+            not (4 <= chunks_remaining) => { close(); }
         }
     }
     have chunks_remaining % 4 == chunks_remaining by { normalize() using { 0 <= chunks_remaining; chunks_remaining < 4; } }
-    have chunks_remaining == 0 by { solve(); }
-    have chunks_cursor == chunks_tail by { solve(); }
+    have chunks_remaining == 0 by { close(); }
+    have chunks_cursor == chunks_tail by { close(); }
     step_until(function.exit);
     have forall (k: int32) {
         0 <= k and k < ((bytes.len() as uint32) as int32) implies bytes[k] == old(bytes[k])
-    } by { intro(); intro(); solve(); }
-    solve();
+    } by { intro(); intro(); close(); }
+    close();
 }
 
 import click::integer;

@@ -45,9 +45,9 @@ int read(int* p) {
             have quad_code(old(c.model)) == 0 by {
                 rewrite(old(c.model), Quad::Zero);
                 unfold(quad_code(Quad::Zero));
-                known();
+                close();
             }
-            solve();
+            close();
         },
         Quad::One => {
             unfold(c);
@@ -56,9 +56,9 @@ int read(int* p) {
             have quad_code(old(c.model)) == 1 by {
                 rewrite(old(c.model), Quad::One);
                 unfold(quad_code(Quad::One));
-                known();
+                close();
             }
-            solve();
+            close();
         },
         Quad::Two => {
             unfold(c);
@@ -67,9 +67,9 @@ int read(int* p) {
             have quad_code(old(c.model)) == 2 by {
                 rewrite(old(c.model), Quad::Two);
                 unfold(quad_code(Quad::Two));
-                known();
+                close();
             }
-            solve();
+            close();
         },
         Quad::Other(value) => {
             unfold(c);
@@ -78,9 +78,9 @@ int read(int* p) {
             have quad_code(old(c.model)) == value by {
                 rewrite(old(c.model), Quad::Other(value));
                 unfold(quad_code(Quad::Other(value)));
-                known();
+                close();
             }
-            solve();
+            close();
         },
     }
 }

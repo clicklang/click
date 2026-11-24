@@ -8,10 +8,10 @@ theorem append(lo: Integer, hi: Integer) {
     requires lo <= hi;
     ensures total(|acc: Integer, k: Integer| -> Integer { acc + k }, lo, hi + 1)
         == total(|acc: Integer, k: Integer| -> Integer { acc + k }, lo, hi) + hi by {
-        have hi + 1 - 1 == hi by solve();
-        have lo <= hi + 1 - 1 by solve();
+        have hi + 1 - 1 == hi by close();
+        have lo <= hi + 1 - 1 by close();
         unfold(total(|acc: Integer, k: Integer| -> Integer { acc + k }, lo, hi + 1));
-        solve();
+        close();
     }
 }
 ```

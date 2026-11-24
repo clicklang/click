@@ -37,7 +37,7 @@ uint8 set_pointer(struct bytes* p, uint8 value) {
     have separate(memory(p->data[2]), memory(p->data[1..2])) by {
         apply(click::separation::separate_restrict(memory(p->data[2..3]), memory(p->data[1..2]), memory(p->data[2]), memory(p->data[1..2])));
     }
-    step() by { known(); }
+    step() by { close(); }
     step_until(function.exit);
 }
 ```

@@ -53,7 +53,7 @@ theorem sized_double_subtrees_bounds(pv: int32, far: SizedTree, middle: SizedTre
         have to_integer(sized_value(middle)) <= 2147483646 - to_integer(sized_value(far)) by {
             close() using { 1 + to_integer(sized_value(far)) + to_integer(sized_value(middle)) <= 2147483647; };
         }
-        known();
+        close();
     }
 }
 
@@ -87,7 +87,7 @@ theorem sized_double_subtrees_subtract_other_defined(pv: int32, far: SizedTree, 
         }
         have defined((pv - 1) - sized_value(other));
         have to_integer((pv - 1) - sized_value(other)) == to_integer((pv - 1)) - to_integer(sized_value(other));
-        known();
+        close();
     }
 }
 
@@ -127,13 +127,13 @@ theorem sized_double_subtrees_inner_valid(p: struct rb_node*, node: struct rb_no
         have sized_counts_valid(sized_recolor(sized_reparent(middle, p), Color::Black)) == 1 by {
             rewrite(sized_counts_valid(sized_recolor(sized_reparent(middle, p), Color::Black)), sized_counts_valid(sized_reparent(middle, p)));
             rewrite(sized_counts_valid(sized_reparent(middle, p)), sized_counts_valid(middle));
-            known();
+            close();
         }
         have to_integer(pv - 1 - sized_value(other)) == 1 + to_integer(sized_value(far))
                 + to_integer(sized_value(sized_recolor(sized_reparent(middle, p), Color::Black))) by {
             rewrite(sized_value(sized_recolor(sized_reparent(middle, p), Color::Black)), sized_value(sized_reparent(middle, p)));
             rewrite(sized_value(sized_reparent(middle, p)), sized_value(middle));
-            known();
+            close();
         }
         apply(sized_valid_node(p, node, Color::Red, pv - 1 - sized_value(other), far,
             sized_recolor(sized_reparent(middle, p), Color::Black)));
@@ -151,6 +151,6 @@ theorem sized_double_subtrees_inner_valid(p: struct rb_node*, node: struct rb_no
         apply(sized_valid_node(node, p, Color::Red, pv,
             SizedTree::Node(p, node, Color::Red, pv - 1 - sized_value(other), far,
                 sized_recolor(sized_reparent(middle, p), Color::Black)), other));
-        known();
+        close();
     }
 }

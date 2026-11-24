@@ -22,14 +22,14 @@ int32 returning_branch(int32 x) {
         } {
             true => {
                 step();
-                solve();
+                close();
             }
             false => {
                 have x >= 0;
             }
         }
         step();
-        solve();
+        close();
     }
 }
 ```

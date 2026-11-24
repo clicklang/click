@@ -21,7 +21,7 @@ function first(s: Shape) -> int32 {
     }
 }
 theorem first_pair(a: int32, b: int32) {
-    ensures first(Shape::Pair(a, b)) == a by { unfold(first(Shape::Pair(a, b))); known(); }
+    ensures first(Shape::Pair(a, b)) == a by { unfold(first(Shape::Pair(a, b))); close(); }
 }
 resource Cell(p: int32*) {
     field model: int32;
@@ -37,7 +37,7 @@ int32 pick(int32* p, int32 x) {
     step_until(function.exit);
     apply(first_pair(x, 3));
     let c = fold(Cell(p), { model: x });
-    solve();
+    close();
 }
 ```
 

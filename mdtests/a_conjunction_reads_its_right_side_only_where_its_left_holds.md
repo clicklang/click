@@ -7,12 +7,12 @@ makes `y / x` defined, so each requirement owes nothing for its right side.
 ```click
 theorem shift(s: uint64) {
     requires s < 64u64 and (1u64 << s) >= 1u64;
-    ensures 1 == 1 by solve();
+    ensures 1 == 1 by close();
 }
 
 theorem divide(x: int32, y: int32) {
     requires x > 0 and y / x > 1;
-    ensures 1 == 1 by solve();
+    ensures 1 == 1 by close();
 }
 
 theorem shift_instance() {

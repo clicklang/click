@@ -54,12 +54,12 @@ int32 drain(int32 n) {
             step();
             step();
             step();
-            solve();
+            close();
         }
         false => {}
     }
     step();
-    solve();
+    close();
 }
 ```
 

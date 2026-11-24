@@ -31,7 +31,7 @@ int32 clamp(int32 x) {
     branch {
         true => {
             step();
-            solve();
+            close();
         }
         false => {}
     }
@@ -43,7 +43,7 @@ int32 clamp_again(int32 x) {
     branch {
         true => {
             step();
-            solve();
+            close();
         }
         false => {}
     }

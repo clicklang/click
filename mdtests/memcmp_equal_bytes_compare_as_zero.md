@@ -19,9 +19,9 @@ int32 ordered() { ensures result == 1; } by {
         unfold(bytes::equal(left, 0u64, right, 0u64, 1u64));
         intro();
         intro();
-        have k == 0u64 by { solve(); }
+        have k == 0u64 by { close(); }
         rewrite(k, 0u64);
-        solve();
+        close();
     }
     apply(bytes::comparison_zero_when_equal(left, right, 1u64, cmp));
 }

@@ -30,14 +30,14 @@ void inner(struct holder *holder) {
     step();
     step();
     step();
-    solve();
+    close();
 }
 void outer(struct holder *holder) {
     owns mutex_use(&holder->mu);
 } by {
     step(inner);
     step();
-    solve();
+    close();
 }
 int32 run(struct holder *holder) {
     owns holder->mu;
@@ -48,7 +48,7 @@ int32 run(struct holder *holder) {
     step(outer);
     step();
     step();
-    solve();
+    close();
 }
 ```
 

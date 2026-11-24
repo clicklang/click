@@ -65,7 +65,7 @@ int32 store_next(int32* a, int32 i) {
         preserve(memory(a[i]), statement(2));
     }
     step_until(function.exit);
-    solve();
+    close();
 }
 
 int32 store_next_in_anchored_range(int32* a, int32 i) {
@@ -91,7 +91,7 @@ int32 store_next_in_anchored_range(int32* a, int32 i) {
         preserve(memory(a[i]), statement(2));
     }
     step_until(function.exit);
-    solve();
+    close();
 }
 ```
 

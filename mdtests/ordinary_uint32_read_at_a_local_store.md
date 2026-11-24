@@ -24,10 +24,10 @@ uint32 read(uint32 value) {
     step_until(statement(5).entry);
     mark written;
     step();
-    have *p == value by solve();
-    have *p == at(written, *p) by known();
+    have *p == value by close();
+    have *p == at(written, *p) by close();
     step_until(function.exit);
-    solve();
+    close();
 }
 ```
 

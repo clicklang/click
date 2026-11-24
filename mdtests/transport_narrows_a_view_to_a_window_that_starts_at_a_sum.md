@@ -29,7 +29,7 @@ uint8 first(const uint8* p, uint64 n, uint64 k) {
         apply(click::separation::viewable_restrict(memory(p[0u64..n]), memory(p[k + 3u64..k + 4u64])));
     }
     step_until(function.exit);
-    solve();
+    close();
 }
 ```
 

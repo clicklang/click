@@ -5,7 +5,7 @@ the planner prints for the sum spells it as the two premises added side by
 side, `(0 + u) <= (u + v)`. Lowering folds the zero away, so the left side is
 read as `u`, and the check that accepts a printed sum knew a zero only on the
 right addend. The step then failed as "does not encode the child sum",
-although a bare `solve()` closed the same goal at once.
+although a bare `close()` closed the same goal at once.
 
 ```c filename=arithmetic_adds_a_premise_with_a_zero_side.c
 int32 pass(int32 u, int32 v) {
@@ -23,7 +23,7 @@ int32 pass(int32 u, int32 v) {
 } by {
     have 0 <= v by { close() using { 0 <= u; u <= v; }; }
     step();
-    solve();
+    close();
 }
 ```
 

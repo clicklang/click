@@ -28,10 +28,10 @@ int32 service_init(struct service* owner, int32 cell[]) {
     have owner->cell[0] == owner->phase by {
         rewrite(owner->cell, cell);
         rewrite(owner->phase, 0);
-        known();
+        close();
     }
     fold(service(owner));
-    solve();
+    close();
 }
 
 int32 service_step(struct service* owner) {
@@ -65,7 +65,7 @@ int32 service_step(struct service* owner) {
     fold(service(owner));
     observe(service(owner));
     step();
-    solve();
+    close();
 }
 
 int32 service_run(struct service* owner) diverges {
@@ -75,10 +75,10 @@ int32 service_run(struct service* owner) diverges {
     loop diverges {
         invariant 0 <= owner->phase;
         invariant owner->phase <= 1;
-        initialize by solve();
+        initialize by close();
         maintain by {
             step();
         }
     }
-    solve();
+    close();
 }

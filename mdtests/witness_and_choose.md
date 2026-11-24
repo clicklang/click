@@ -21,7 +21,7 @@ int32 witness_zero(int32 n) {
     ensures found_zero: (0..n).any(|k| { k == result }) by {
         step_until(function.exit);
         witness(0);
-        solve();
+        close();
     }
 }
 
@@ -31,13 +31,13 @@ int32 choose_requirement(int32 x) {
         step_until(function.exit);
         let k = obtain(exists (k: int32) { k == x });
         witness(k);
-        solve();
+        close();
     }
     ensures found_again_second: exists (j: int32) { j == x } by {
         step_until(function.exit);
         let k = obtain(exists (k: int32) { k == x });
         witness(k);
-        solve();
+        close();
     }
 }
 ```

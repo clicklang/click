@@ -62,26 +62,26 @@ int32 tree_depth_ok(struct node* root) {
             unfold(t);
             step_until(function.exit);
             let t = fold(tree_at(root), { model: HeapTree::Empty });
-            solve();
+            close();
         },
         HeapTree::Node(identity, value, left_model, right_model) => {
             let { left: l, right: r } = unfold(t);
-            branch { true => { step(); solve(); } false => {} }
+            branch { true => { step(); close(); } false => {} }
             step(tree_depth_ok, { t: l });
             branch {
                 true => {
                     step();
                     let t = fold(tree_at(root), { model: old(t.model), left: l, right: r });
-                    solve();
+                    close();
                 }
                 false => {}
             }
             step(tree_depth_ok, { t: r });
             step();
-            have root->left == old(root->left) by { solve(); }
-            have root->right == old(root->right) by { solve(); }
+            have root->left == old(root->left) by { close(); }
+            have root->right == old(root->right) by { close(); }
             let t = fold(tree_at(root), { model: old(t.model), left: l, right: r });
-            solve();
+            close();
         },
     }
 }

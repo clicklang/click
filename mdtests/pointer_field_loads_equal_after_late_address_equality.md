@@ -36,15 +36,15 @@ int32 equal_reads(struct node* a, struct node* b, struct node* c,
     branch {
         true => {
             step();
-            solve();
+            close();
         }
         false => {}
     }
-    branch { true => { step(); solve(); } false => {} }
-    branch { true => { step(); solve(); } false => {} }
+    branch { true => { step(); close(); } false => {} }
+    branch { true => { step(); close(); } false => {} }
     have x == y;
     step();
-    solve();
+    close();
 }
 ```
 

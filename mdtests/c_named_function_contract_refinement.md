@@ -63,8 +63,8 @@ theorem increment_is_positive_step() {
             close() using { input <= 100; };
         }
         all {
-            -100 <= to_integer(input) => { known(); }
-            input <= 1000 => { known(); }
+            -100 <= to_integer(input) => { close(); }
+            input <= 1000 => { close(); }
             (
                 (to_integer(input) + 1 <= 2147483647 and
                  to_integer(input) + 1 >= -2147483648 and
@@ -78,7 +78,7 @@ theorem increment_is_positive_step() {
                 have 0 < result by {
                     close() using { 0 <= input; input < result; };
                 }
-                known();
+                close();
             }
         }
     }

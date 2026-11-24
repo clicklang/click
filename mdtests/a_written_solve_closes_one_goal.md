@@ -1,6 +1,6 @@
 # A written `solve` closes one goal
 
-Written as a step of a script, `solve();` closes the first open goal, and the
+Written as a step of a script, `close();` closes the first open goal, and the
 next closer, here `normalize()`, takes the second.
 
 ```c filename=a_written_solve_closes_one_goal.c
@@ -18,8 +18,8 @@ int32 f(int32 n) {
     ensures result == n;
 } by {
     step_until(function.exit);
-    solve();
-    known();
+    close();
+    close();
 }
 ```
 

@@ -19,22 +19,22 @@ theorem rb_erase_only_right_child(node: struct rb_node*, parent: struct rb_node*
     ensures color == Color::Black by {
         have rb_minimum(RbTree::Node(node, parent, color, RbTree::Empty, child))
             == RbMinimum::Found(node, color, child) by {
-            unfold(rb_minimum(RbTree::Node(node, parent, color, RbTree::Empty, child))); known();
+            unfold(rb_minimum(RbTree::Node(node, parent, color, RbTree::Empty, child))); close();
         }
         apply(rb_minimum_nonempty_child_parent_color(
             RbTree::Node(node, parent, color, RbTree::Empty, child), node, color, child));
-        known();
+        close();
     }
     ensures is_rb_root(plug(up, rb_reparent(rb_recolor(child, Color::Black), parent))) == 1 by {
         have rb_minimum(RbTree::Node(node, parent, color, RbTree::Empty, child))
             == RbMinimum::Found(node, color, child) by {
-            unfold(rb_minimum(RbTree::Node(node, parent, color, RbTree::Empty, child))); known();
+            unfold(rb_minimum(RbTree::Node(node, parent, color, RbTree::Empty, child))); close();
         }
         apply(rb_minimum_child_blackens_without_deficit(
             RbTree::Node(node, parent, color, RbTree::Empty, child), up, node, color, child, parent));
         unfold(rb_min_context(RbTree::Node(node, parent, color, RbTree::Empty, child), up));
         rewrite(up, rb_min_context(RbTree::Node(node, parent, color, RbTree::Empty, child), up));
-        known();
+        close();
     }
 }
 
@@ -47,13 +47,13 @@ theorem rb_erase_child_keeps_parents(up: Context, node: struct rb_node*, parent:
         apply(rb_reparent_parent_consistent(rb_recolor(child, Color::Black), node, parent));
         apply(ctx_consistent_swap(up, node, parent, color, left, right,
             rb_reparent(rb_recolor(child, Color::Black), parent), 0));
-        known();
+        close();
     }
     ensures rb_inorder(rb_reparent(rb_recolor(child, Color::Black), parent)) == rb_inorder(child) by {
         apply(rb_reparent_preserves_inorder(rb_recolor(child, Color::Black), parent));
         apply(rb_recolor_preserves_inorder(child, Color::Black));
         rewrite(rb_inorder(rb_reparent(rb_recolor(child, Color::Black), parent)), rb_inorder(rb_recolor(child, Color::Black)));
-        known();
+        close();
     }
 }
 
@@ -71,14 +71,14 @@ theorem rb_swap_children_valid(node: struct rb_node*, parent: struct rb_node*, c
                 apply(is_rb_red_node_children_are_black(node, parent, left, right));
                 apply(is_rb_red_node_right_child_is_black(node, parent, left, right));
                 have black_height(right) == black_height(left);
-                apply(is_rb_red_node(node, parent, right, left)); known();
+                apply(is_rb_red_node(node, parent, right, left)); close();
             }
             Color::Black => {
                 apply(is_rb_node_left(node, parent, Color::Black, left, right));
                 apply(is_rb_node_right(node, parent, Color::Black, left, right));
                 apply(is_rb_node_black_heights(node, parent, Color::Black, left, right));
                 have black_height(right) == black_height(left);
-                apply(is_rb_black_node(node, parent, right, left)); known();
+                apply(is_rb_black_node(node, parent, right, left)); close();
             }
         }
     }
@@ -89,7 +89,7 @@ theorem rb_swap_children_valid(node: struct rb_node*, parent: struct rb_node*, c
         apply(black_height_node_frame(node, parent, color, left, right));
         rewrite(black_height(RbTree::Node(node, parent, color, right, left)), frame_black_height(color, black_height(right)));
         rewrite(black_height(RbTree::Node(node, parent, color, left, right)), frame_black_height(color, black_height(left)));
-        rewrite(black_height(right), black_height(left)); known();
+        rewrite(black_height(right), black_height(left)); close();
     }
 }
 
@@ -105,13 +105,13 @@ theorem rb_erase_only_left_child(node: struct rb_node*, parent: struct rb_node*,
         have rb_color(RbTree::Node(node, parent, color, RbTree::Empty, child))
             == rb_color(RbTree::Node(node, parent, color, child, RbTree::Empty)) by {
             unfold(rb_color(RbTree::Node(node, parent, color, RbTree::Empty, child)));
-            unfold(rb_color(RbTree::Node(node, parent, color, child, RbTree::Empty))); known();
+            unfold(rb_color(RbTree::Node(node, parent, color, child, RbTree::Empty))); close();
         }
         have ctx_rb(up, black_height(RbTree::Node(node, parent, color, RbTree::Empty, child)),
             rb_color(RbTree::Node(node, parent, color, RbTree::Empty, child))) == 1 by {
             rewrite(black_height(RbTree::Node(node, parent, color, RbTree::Empty, child)), black_height(RbTree::Node(node, parent, color, child, RbTree::Empty)));
-            rewrite(rb_color(RbTree::Node(node, parent, color, RbTree::Empty, child)), rb_color(RbTree::Node(node, parent, color, child, RbTree::Empty))); known();
+            rewrite(rb_color(RbTree::Node(node, parent, color, RbTree::Empty, child)), rb_color(RbTree::Node(node, parent, color, child, RbTree::Empty))); close();
         }
-        apply(rb_erase_only_right_child(node, parent, color, child, up)); known();
+        apply(rb_erase_only_right_child(node, parent, color, child, up)); close();
     }
 }

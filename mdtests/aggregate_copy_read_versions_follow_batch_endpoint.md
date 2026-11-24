@@ -29,7 +29,7 @@ int32 copy_left(int32 left, int32 right) {
     step();
     have target.left == at(copied, target.left);
     step_until(function.exit);
-    solve();
+    close();
 }
 ```
 

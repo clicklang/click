@@ -27,7 +27,7 @@ uint32 shorten(struct View value) {
     ensures result == 7u32;
 } by {
     step_until(function.exit);
-    have at(region(1).entry, value.count) == 7u32 by { known(); }
+    have at(region(1).entry, value.count) == 7u32 by { close(); }
 }
 
 uint32 probe(const struct View& source) {
@@ -38,12 +38,12 @@ uint32 probe(const struct View& source) {
 } by {
     step_until(call(0).entry);
     step() {
-        requires call(0).parameter(value).count == 13u32 by solve();
+        requires call(0).parameter(value).count == 13u32 by close();
     }
     step_until(function.exit);
-    have at(call(0).entry, call(0).parameter(value).count) == 13u32 by { known(); }
-    have call(0).result == 7u32 by { known(); }
-    have result == old(source.count) by { known(); }
+    have at(call(0).entry, call(0).parameter(value).count) == 13u32 by { close(); }
+    have call(0).result == 7u32 by { close(); }
+    have result == old(source.count) by { close(); }
 }
 ```
 

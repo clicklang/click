@@ -15,7 +15,7 @@ theorem or_left(x: uint64, y: uint64) {
     ensures or_value(x, y) == 7 by {
         unfold(or_value(x, y));
         rewrite(x, 0);
-        known();
+        close();
     }
 }
 theorem or_right(x: uint64, y: uint64) {
@@ -24,7 +24,7 @@ theorem or_right(x: uint64, y: uint64) {
     ensures or_value(x, y) == 7 by {
         unfold(or_value(x, y));
         rewrite(y, 1);
-        known();
+        close();
     }
 }
 theorem or_neither(x: uint64, y: uint64) {
@@ -52,7 +52,7 @@ theorem and_right_false(x: uint64, y: uint64) {
     ensures and_value(x, y) == 9 by {
         unfold(and_value(x, y));
         rewrite(y, 1);
-        known();
+        close();
     }
 }
 theorem negated_neither(x: uint64, y: uint64) {

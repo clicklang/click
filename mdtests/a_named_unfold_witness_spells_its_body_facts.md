@@ -30,16 +30,16 @@ struct node* parent_of(struct node* node) {
     ensures address(result) == (node->word & ~3);
 } by {
     let { parent: p } = unfold(linked(node));
-    have (address(p) & 3u64) == 0u64 by known();
-    have ((node->word & 1u64) & ~3u64) == 0u64 by known();
+    have (address(p) & 3u64) == 0u64 by close();
+    have ((node->word & 1u64) & ~3u64) == 0u64 by close();
     apply(click::integer::uint64_mask_add_clear(address(p), node->word & 1u64, ~3u64));
     have (node->word & ~3u64) == address(p) by {
         rewrite(node->word, address(p) + (node->word & 1u64));
-        known();
+        close();
     }
     step_until(function.exit);
     fold(linked(node));
-    known();
+    close();
 }
 ```
 

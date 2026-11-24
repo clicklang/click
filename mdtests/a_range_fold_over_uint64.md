@@ -18,7 +18,7 @@ theorem empty(n: uint64) {
     ensures total(n, n) == 0 by {
         have n <= n;
         unfold(total(n, n));
-        known();
+        close();
     }
 }
 
@@ -27,7 +27,7 @@ theorem step(lo: uint64, hi: uint64) {
     requires hi < 18446744073709551615u64;
     ensures total(lo, hi + 1u64) == total(lo, hi) + to_integer(hi) by {
         unfold(total(lo, hi + 1u64));
-        solve();
+        close();
     }
 }
 
@@ -35,7 +35,7 @@ theorem step_from_zero(hi: uint64) {
     requires hi < 18446744073709551615u64;
     ensures upto(hi + 1u64) == upto(hi) + to_integer(hi) by {
         unfold(upto(hi + 1u64));
-        solve();
+        close();
     }
 }
 ```

@@ -85,10 +85,10 @@ int32 buffer_push(struct buffer* owner, int32 value) {
     }
     have owner->data[0] == old(owner->data[0]) by {
         rewrite(at(statement(4).exit, owner->data[0]), at(statement(4).entry, owner->data[0]));
-        known();
+        close();
     }
     have 0 <= owner->len by {
-        solve();
+        close();
     }
     have owner->len < owner->cap by {
         close() using {
@@ -96,7 +96,7 @@ int32 buffer_push(struct buffer* owner, int32 value) {
         };
     }
     fold(owned_buffer(owner));
-    solve();
+    close();
 }
 
 int32 buffer_push_preserves_first(

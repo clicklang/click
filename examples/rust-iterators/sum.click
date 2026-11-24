@@ -27,7 +27,7 @@ fn sum(bytes: &[u8]) -> i32 {
         rewrite(bytes.len() - loop(0).iter.len(), 0u64);
         have 0u64 <= 0u64;
         unfold(prefix(bytes, 0u64));
-        solve();
+        close();
     }
     have 0 <= total and to_integer(total) <= 255 * (to_integer(bytes.len()) - to_integer(loop(0).iter.len()));
     have total == prefix(bytes, bytes.len() - loop(0).iter.len());
@@ -53,7 +53,7 @@ fn sum(bytes: &[u8]) -> i32 {
                 have to_integer(bytes.len() - iter.len()) < 18446744073709551615;
                 have prefix(bytes, (bytes.len() - iter.len()) + 1u64) == prefix(bytes, (bytes.len() - iter.len())) + to_integer(bytes[(bytes.len() - iter.len())] as i32) by {
                     unfold(prefix(bytes, (bytes.len() - iter.len()) + 1u64));
-                    solve();
+                    close();
                 }
                 have to_integer(bytes.len() - iter.len()) + 1 <= 18446744073709551615;
                 step_until(loop(0).statement(0).entry);
@@ -81,10 +81,10 @@ fn sum(bytes: &[u8]) -> i32 {
                 have iter.len() <= bytes.len();
                 have iter.as_slice() == bytes + (bytes.len() - iter.len()) by {
                     rewrite((bytes.len() - iter.len()), (bytes.len() - at(iteration, iter.len())) + 1u64);
-                    known();
+                    close();
                 }
                 have iter.len() < at(iteration, iter.len());
-                have to_integer(total) == to_integer(at(before_total_write, total)) + to_integer(byte as i32) by { known(); }
+                have to_integer(total) == to_integer(at(before_total_write, total)) + to_integer(byte as i32) by { close(); }
                 have 0 <= total by {
                     close() using {
                         0 <= to_integer(at(before_total_write, total)) + to_integer(byte as i32);
@@ -101,6 +101,6 @@ fn sum(bytes: &[u8]) -> i32 {
     have loop(0).iter.len() == 0u64;
     have prefix(bytes, bytes.len() - loop(0).iter.len()) == prefix(bytes, bytes.len()) by {
         rewrite(loop(0).iter.len(), 0u64);
-        solve();
+        close();
     }
 }

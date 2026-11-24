@@ -45,7 +45,7 @@ theorem append_right_identity(xs: TestList<int32>) {
         match xs {
             TestList::Nil => {
                 unfold(append(TestList<int32>::Nil, TestList<int32>::Nil));
-                solve();
+                close();
             }
             TestList::Cons(head, tail) => {
                 apply(ih(tail));
@@ -54,7 +54,7 @@ theorem append_right_identity(xs: TestList<int32>) {
                     TestList<int32>::Nil
                 ));
                 rewrite(append(tail, TestList<int32>::Nil), tail);
-                known();
+                close();
             }
         }
     }
@@ -66,7 +66,7 @@ theorem copy_tree_identity(tree: Tree<int32>) {
         match tree {
             Tree::Empty => {
                 unfold(copy_tree(Tree<int32>::Empty));
-                solve();
+                close();
             }
             Tree::Node(left, value, right) => {
                 apply(ih(left));
@@ -74,7 +74,7 @@ theorem copy_tree_identity(tree: Tree<int32>) {
                 unfold(copy_tree(Tree<int32>::Node(left, value, right)));
                 rewrite(copy_tree(left), left);
                 rewrite(copy_tree(right), right);
-                known();
+                close();
             }
         }
     }

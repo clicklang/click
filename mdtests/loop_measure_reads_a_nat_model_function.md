@@ -55,7 +55,7 @@ void countdown(int32 n) {
         decreases chain_nat(c.model);
         invariant n >= 0;
 
-        initialize by solve();
+        initialize by close();
         maintain by {
             match c.model {
                 Chain::Nil => { contradiction(c.model == Chain::Nil); },
@@ -63,12 +63,12 @@ void countdown(int32 n) {
                     have chain_nat(c.model) == Nat::Succ(chain_nat(rest_model)) by {
                         rewrite(c.model, Chain::Link(rest_model));
                         unfold(chain_nat(Chain::Link(rest_model)));
-                        known();
+                        close();
                     }
                     apply(nat::to_integer_succ(chain_nat(rest_model)));
                     have to_integer(chain_nat(c.model)) == to_integer(chain_nat(rest_model)) + 1 by {
                         rewrite(chain_nat(c.model), Nat::Succ(chain_nat(rest_model)));
-                        known();
+                        close();
                     }
                     have to_integer(chain_nat(rest_model)) < to_integer(chain_nat(c.model)) by {
                         close() using {
@@ -84,7 +84,7 @@ void countdown(int32 n) {
     have n == 0;
     unfold(c);
     step();
-    solve();
+    close();
 }
 ```
 

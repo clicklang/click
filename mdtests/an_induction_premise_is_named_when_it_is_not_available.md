@@ -27,7 +27,7 @@ theorem t(n: int32) {
             apply(ih(n - 1));
             unfold(cd(n));
             rewrite(cd(n - 1), 0);
-            known();
+            close();
         }
     }
 }

@@ -25,16 +25,16 @@ int32 pick(int32 x) {
     ensures result == 0 or result == 1;
 } by {
     if x != 0 {
-        have x != 0 by known();
+        have x != 0 by close();
     } else {
         step();
         step();
-        solve();
+        close();
     }
     step();
     step();
     step();
-    solve();
+    close();
 }
 ```
 

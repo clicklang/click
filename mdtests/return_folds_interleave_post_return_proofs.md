@@ -24,11 +24,11 @@ int32 f(int32* p, int32* q) {
     ensures result == 0;
 } by {
     step_until(function.exit);
-    have reflexive(p) == 1 by { unfold(reflexive(p)); known(); }
+    have reflexive(p) == 1 by { unfold(reflexive(p)); close(); }
     let left = fold(Cell(p), { tag: 1 });
-    have reflexive(q) == 1 by { unfold(reflexive(q)); known(); }
+    have reflexive(q) == 1 by { unfold(reflexive(q)); close(); }
     let right = fold(Cell(q), { tag: 2 });
-    solve();
+    close();
 }
 int32 g(int32* p, int32* q) {
     consumes p[0..1];
@@ -39,9 +39,9 @@ int32 g(int32* p, int32* q) {
 } by {
     step_until(function.exit);
     let left = fold(PlainCell(p), { tag: 1 });
-    have reflexive(q) == 1 by { unfold(reflexive(q)); known(); }
+    have reflexive(q) == 1 by { unfold(reflexive(q)); close(); }
     let right = fold(Cell(q), { tag: 2 });
-    solve();
+    close();
 }
 ```
 ```expect

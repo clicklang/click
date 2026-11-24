@@ -38,7 +38,7 @@ uint32 read_locked(struct counter* p) {
     let restored = fold(counter_state(p), { value: p->value });
     step(pthread_mutex_unlock, { access: access, guard: guard, state: restored });
     step();
-    solve();
+    close();
 }
 ```
 

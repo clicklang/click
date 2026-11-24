@@ -54,7 +54,7 @@ uint32 contribute_early(struct counter* p) {
 } by {
     with(control(p)) {
         have to_integer(count(remaining(p))) <= 3 by {
-            known();
+            close();
         }
     }
     with(control(p)) {
@@ -107,7 +107,7 @@ uint32 contribute_early(struct counter* p) {
     with(control(p)) {
         step();
     }
-    known();
+    close();
     have to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) - 1) by {
         have -2147483648 <= (to_integer(old(count(remaining(p)))) - 1) by {
             close() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) >=
@@ -120,16 +120,16 @@ uint32 contribute_early(struct counter* p) {
         have to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) - 1) by {
             close() using { -2147483648 <= (to_integer(old(count(remaining(p)))) - 1); (to_integer(old(count(remaining(p)))) - 1) <= 2147483647; };
         }
-        known();
+        close();
     }
     have to_integer(p->value) == (to_integer(old(p->value)) + 1) by {
         rewrite(at(function.entry, to_integer(p->value)), at(function.entry, (3 - to_integer(count(remaining(p))))));
         rewrite(to_integer(p->value), (3 - to_integer(count(remaining(p)))));
         rewrite(to_integer(count(remaining(p))), (to_integer(old(count(remaining(p)))) - 1));
-        known();
+        close();
     }
-    known();
-    known();
+    close();
+    close();
 }
 uint32 read_current(struct counter* p) {
     owns control(p);
@@ -137,7 +137,7 @@ uint32 read_current(struct counter* p) {
     with(control(p)) {
         step();
     }
-    known();
+    close();
 }
 uint32 contribute_nested(struct counter* p) {
     owns control(p);
@@ -232,7 +232,7 @@ uint32 contribute_nested(struct counter* p) {
         }
     }
     step();
-    known();
+    close();
     have to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) - 1) by {
         have to_integer(count(remaining(p))) <= (to_integer(old(count(remaining(p)))) - 1) by {
             close() using { at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
@@ -245,10 +245,10 @@ uint32 contribute_nested(struct counter* p) {
         close() using { to_integer(count(remaining(p))) <= (to_integer(old(count(remaining(p)))) - 1); (to_integer(old(count(remaining(p)))) - 1) <= to_integer(count(remaining(p))); };
     }
     have to_integer(p->value) == (to_integer(old(p->value)) + 1) by {
-        known();
+        close();
     }
-    known();
-    known();
+    close();
+    close();
 }
 uint32 contribute_branch(struct counter* p, int32 report) {
     owns control(p);
@@ -309,7 +309,7 @@ uint32 contribute_branch(struct counter* p, int32 report) {
             step();
             step();
         }
-        known();
+        close();
         have to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) - 1) by {
             have -2147483648 <= (to_integer(old(count(remaining(p)))) - 1) by {
                 close() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) >=
@@ -322,21 +322,21 @@ uint32 contribute_branch(struct counter* p, int32 report) {
             have to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) - 1) by {
                 close() using { -2147483648 <= (to_integer(old(count(remaining(p)))) - 1); (to_integer(old(count(remaining(p)))) - 1) <= 2147483647; };
             }
-            known();
+            close();
         }
         have to_integer(p->value) == (to_integer(old(p->value)) + 1) by {
             rewrite(at(function.entry, to_integer(p->value)), at(function.entry, (3 - to_integer(count(remaining(p))))));
             rewrite(to_integer(p->value), (3 - to_integer(count(remaining(p)))));
             rewrite(to_integer(count(remaining(p))), (to_integer(old(count(remaining(p)))) - 1));
-            known();
+            close();
         }
-        known();
-        known();
+        close();
+        close();
     } else {
         step();
         step();
         step();
-        known();
+        close();
         have to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) - 1) by {
             have -2147483648 <= (to_integer(old(count(remaining(p)))) - 1) by {
                 close() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) >=
@@ -349,16 +349,16 @@ uint32 contribute_branch(struct counter* p, int32 report) {
             have to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) - 1) by {
                 close() using { -2147483648 <= (to_integer(old(count(remaining(p)))) - 1); (to_integer(old(count(remaining(p)))) - 1) <= 2147483647; };
             }
-            known();
+            close();
         }
         have to_integer(p->value) == (to_integer(old(p->value)) + 1) by {
             rewrite(at(function.entry, to_integer(p->value)), at(function.entry, (3 - to_integer(count(remaining(p))))));
             rewrite(to_integer(p->value), (3 - to_integer(count(remaining(p)))));
             rewrite(to_integer(count(remaining(p))), (to_integer(old(count(remaining(p)))) - 1));
-            known();
+            close();
         }
-        known();
-        known();
+        close();
+        close();
     }
 }
 uint32 sequential_early(struct counter* p) {
@@ -400,11 +400,11 @@ uint32 sequential_early(struct counter* p) {
     unfold(remaining(p));
     unfold(authority(remaining(p)));
     step();
-    known();
+    close();
     have result == 2 by {
-        known();
+        close();
     }
-    known();
+    close();
 }
 ```
 

@@ -29,11 +29,11 @@ int32 f(int32* p) {
             unfold(before);
             have points_to(Link::Node(q), p) == 1 by {
                 rewrite(q, p);
-                unfold(points_to(Link::Node(p), p)); known();
+                unfold(points_to(Link::Node(p), p)); close();
             }
             step_until(function.exit);
             let after = fold(Cell(p), { model: Link::Node(q) });
-            solve();
+            close();
         },
     }
 }

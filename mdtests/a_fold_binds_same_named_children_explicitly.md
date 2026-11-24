@@ -39,7 +39,7 @@ int32 read_left(int32* p, int32* lp, int32* rp) {
     step_until(function.exit);
     let left = fold(tree(lp), { model: Tree::Leaf(2) });
     let root = fold(tree(p), { model: old(root.model), left: left, right: right });
-    solve();
+    close();
 }
 
 void init(int32* p, int32* lp, int32* rp, int32 value) {
@@ -51,7 +51,7 @@ void init(int32* p, int32* lp, int32* rp, int32 value) {
 } by {
     step_until(function.exit);
     let root = fold(tree(p), { model: Tree::Branch(value, lp, left.model, rp, r.model), left: left, right: r });
-    solve();
+    close();
 }
 ```
 

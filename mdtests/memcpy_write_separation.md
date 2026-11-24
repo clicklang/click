@@ -25,8 +25,8 @@ void copy_beside_view(uint8* dst, uint8* src, const uint8* q) {
     views q[0..1];
     requires separate(memory(dst[0u64..4u64]), memory(q[0..1]));
     ensures click::bytes::equal(dst, 0u64, src, 0u64, 4u64) by {
-        have separate(memory(dst[0..4]), memory(src[0..4])) by { known(); }
-        step() by { known(); }
+        have separate(memory(dst[0..4]), memory(src[0..4])) by { close(); }
+        step() by { close(); }
         have separate(statement(0).footprint, memory(src[0..4])) by {
             close() using { separate(memory(dst[0..4]), memory(src[0..4])); };
         }
@@ -49,7 +49,7 @@ void copy_beside_view(uint8* dst, uint8* src, const uint8* q) {
             have src[k] == at(statement(0).entry, src[k]) by {
                 preserve(memory(src[k]), statement(0));
             }
-            known();
+            close();
         }
         step();
         unfold(click::bytes::equal(dst, 0u64, old(src), 0u64, 4u64));
@@ -60,9 +60,9 @@ void copy_beside_view(uint8* dst, uint8* src, const uint8* q) {
             instantiate(forall (k1: uint64) { true and k1 < 4u64 implies dst[0u64 + k1] == old(src[0u64 + k1]) }, k);
             instantiate(forall (k1: uint64) { k1 < 4u64 implies src[k1] == old(src[k1]) }, k);
             rewrite(src[k], old(src[k]));
-            known();
+            close();
         }
-        known();
+        close();
     }
 }
 

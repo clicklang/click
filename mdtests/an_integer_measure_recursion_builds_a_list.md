@@ -21,7 +21,7 @@ theorem two_copies(value: uint64) {
         unfold(repeat_value(0, value));
         unfold(repeat_value(1, value));
         unfold(repeat_value(2, value));
-        solve();
+        close();
     }
 }
 ```

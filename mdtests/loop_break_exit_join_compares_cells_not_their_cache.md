@@ -64,13 +64,13 @@ void paint(struct node* p, int32 flag) {
                 step();
                 step();
                 let c = fold(painted(p), { color: Color::Red });
-                have c.color == Color::Red or c.color == Color::Black by known();
+                have c.color == Color::Red or c.color == Color::Black by close();
                 step();
             } else {
                 unfold(c);
                 step();
                 let c = fold(painted(p), { color: Color::Black });
-                have c.color == Color::Red or c.color == Color::Black by known();
+                have c.color == Color::Red or c.color == Color::Black by close();
                 step();
             }
         }
@@ -82,19 +82,19 @@ void paint(struct node* p, int32 flag) {
     } {
         Color::Red => {
             unfold(c);
-            have p->shade == 0 by known();
+            have p->shade == 0 by close();
             let c = fold(painted(p), { color: Color::Red });
-            have c.color == Color::Red or c.color == Color::Black by known();
+            have c.color == Color::Red or c.color == Color::Black by close();
         },
         Color::Black => {
             unfold(c);
-            have p->shade == 1 by known();
+            have p->shade == 1 by close();
             let c = fold(painted(p), { color: Color::Black });
-            have c.color == Color::Red or c.color == Color::Black by known();
+            have c.color == Color::Red or c.color == Color::Black by close();
         },
     }
     step();
-    solve();
+    close();
 }
 ```
 

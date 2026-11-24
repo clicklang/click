@@ -11,7 +11,7 @@ fn held_values::shrink(o: &mut Option<u32>) {
 } by {
     step_until(function.exit);
     unfold(size(*o));
-    solve();
+    close();
 }
 
 fn held_values::peek(o: &Option<u32>) -> u32 {
@@ -24,7 +24,7 @@ fn held_values::make(x: u32) -> Option<u32> {
 } by {
     step_until(function.exit);
     unfold(size(result));
-    solve();
+    close();
 }
 
 // The arithmetic closing each claim cites `shrink`'s fact about `o`'s new
@@ -33,7 +33,7 @@ fn held_values::constructed(x: u32) -> u32 {
     requires x >= 1u32;
     ensures result < x;
 } by {
-    have size(Option<u32>::Some(x)) == x by { unfold(size(Option<u32>::Some(x))); solve(); }
+    have size(Option<u32>::Some(x)) == x by { unfold(size(Option<u32>::Some(x))); close(); }
 }
 
 // The value `make` returned, which `o` held before `shrink`, is spelled by

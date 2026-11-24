@@ -35,7 +35,7 @@ int32 next_index(int32 i, int32 n) {
 } by {
     have 0 <= to_integer(i + 1) by { close() using { 0 <= i; i < n; }; }
     step();
-    solve();
+    close();
 }
 ```
 

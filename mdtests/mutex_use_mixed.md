@@ -34,7 +34,7 @@ void outer(struct holder *holder, int32 *out, int32 *value) {
     ensures *out == *value;
 } by {
     step() {
-        requires separate(memory(((&holder->mu) as (uint8 *))[0..40]), memory(value[0..1])) by { known(); }
+        requires separate(memory(((&holder->mu) as (uint8 *))[0..40]), memory(value[0..1])) by { close(); }
     }
 }
 int32 run(struct holder *holder, int32 *out, int32 *value) {
@@ -46,10 +46,10 @@ int32 run(struct holder *holder, int32 *out, int32 *value) {
     requires aligned(&holder->mu, 8);
     ensures result == *value;
 } by {
-    step() by { known(); }
+    step() by { close(); }
     step();
     step();
-    step() by { known(); }
+    step() by { close(); }
     step();
 }
 ```

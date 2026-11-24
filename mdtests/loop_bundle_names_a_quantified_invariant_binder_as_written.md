@@ -45,9 +45,9 @@ int32 count_up(int32 *a, int32 n) {
                 intro();
                 have 0 <= k;
                 have k <= n;
-                solve();
+                close();
             }
-            solve();
+            close();
         }
         maintain by {
             step();
@@ -57,7 +57,7 @@ int32 count_up(int32 *a, int32 n) {
                 intro();
                 have 0 <= k;
                 have k <= n;
-                solve();
+                close();
             }
         }
     }

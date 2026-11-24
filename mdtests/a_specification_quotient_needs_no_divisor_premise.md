@@ -27,7 +27,7 @@ theorem a_quotient_by_zero_is_itself(a: uint64) {
 theorem a_dividing_function_unfolds_without_a_premise(total: uint64, count: uint64) {
     ensures mean(total, count) == total / count by {
         unfold(mean(total, count));
-        solve();
+        close();
     }
 }
 

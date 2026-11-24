@@ -63,13 +63,13 @@ int32 use_callbacks(struct callback_table* table, int32 left, int32 right) {
 } by {
     step_until(statement(4).entry);
     have to_integer(program::sum) == to_integer(left + right) by {
-        solve();
+        close();
     }
     have to_integer(program::difference) == to_integer(left - right) by {
-        solve();
+        close();
     }
     step();
-    solve();
+    close();
 }
 ```
 

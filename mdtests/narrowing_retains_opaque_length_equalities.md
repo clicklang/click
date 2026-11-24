@@ -10,7 +10,7 @@ theorem narrowed_length(n: uint64) {
     requires stdio::padded_length(n, 3u64) == 3u64;
     ensures (stdio::padded_length(n, 3u64) as int32) == 3 by {
         rewrite(stdio::padded_length(n, 3u64), 3u64);
-        known();
+        close();
     }
 }
 
@@ -18,7 +18,7 @@ theorem narrowed_length_sum(n: uint64) {
     requires stdio::padded_length(n, 3u64) == 3u64;
     ensures (1u64 + stdio::padded_length(n, 3u64)) as int32 == 4 by {
         rewrite(stdio::padded_length(n, 3u64), 3u64);
-        known();
+        close();
     }
 }
 
@@ -28,7 +28,7 @@ theorem narrowed_length_result(n: uint64, result: int32) {
     ensures result == 4 by {
         have (1u64 + stdio::padded_length(n, 3u64)) as int32 == 4 by {
             rewrite(stdio::padded_length(n, 3u64), 3u64);
-            known();
+            close();
         }
         close() using {
             result == (1u64 + stdio::padded_length(n, 3u64)) as int32;

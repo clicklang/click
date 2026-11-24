@@ -36,7 +36,7 @@ int32 keep(int32* p) {
             unfold(b);
             step_until(function.exit);
             let b = fold(box(p), { tag: Tag::T(x) });
-            solve();
+            close();
         },
     }
 }

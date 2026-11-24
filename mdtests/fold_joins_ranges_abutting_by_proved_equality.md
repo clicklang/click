@@ -50,7 +50,7 @@ void join(int32* data, int32 cap) {
     let { lo: l, hi: h } = unfold(a);
     let { start: t } = unfold(b);
     have h == t by {
-        known();
+        close();
     }
     have h <= cap by {
         close() using {

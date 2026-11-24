@@ -15,7 +15,7 @@ theorem transport_count(left: CountModel, right: CountModel, total: int32) {
     requires left == right;
     requires to_integer(total) == 1 + to_integer(cached(left));
     ensures to_integer(total) == 1 + to_integer(cached(right)) by {
-        known();
+        close();
     }
 }
 
@@ -23,7 +23,7 @@ theorem transport_mask(left: uint32, right: uint32, mask: uint32) {
     requires left == right;
     ensures to_integer((left * mask) & mask) ==
             to_integer((right * mask) & mask) by {
-        known();
+        close();
     }
 }
 ```

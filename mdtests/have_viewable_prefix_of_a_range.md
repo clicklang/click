@@ -40,7 +40,7 @@ theorem prefix_of_a_viewable_range(v: int32[], lo: int32, hi: int32) {
         have 0 < hi by { close() using { 0 <= lo; lo < hi; }; }
         have to_integer(lo) <= to_integer(hi - 1) by { close() using { lo < hi; 0 < hi; }; }
         have to_integer(hi - 1) < to_integer(hi) by { close() using { 0 < hi; }; }
-        solve();
+        close();
     }
 }
 ```

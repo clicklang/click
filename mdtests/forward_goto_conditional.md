@@ -55,14 +55,14 @@ int32 conditional_cleanup_step(int32 failed) {
     step();
     step();
     step();
-    known();
+    close();
 }
 
 int32 skip_conditional(int32 flag) {
     ensures result == 1;
 } by {
     step_until(function.exit);
-    known();
+    close();
 }
 ```
 

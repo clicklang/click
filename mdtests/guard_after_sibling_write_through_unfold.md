@@ -82,10 +82,10 @@ void run_frame(struct link* x, struct link* y, struct link* z, int32* out) {
     ensures out[0] == 1;
 } by {
     unfold(f);
-    have x->next == z by known();
+    have x->next == z by close();
     step_until(function.exit);
     let g = fold(frame_at(z), { model: old(f.model) });
-    solve();
+    close();
 }
 ```
 

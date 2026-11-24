@@ -19,7 +19,7 @@ int32 pointer_existential_witness(int32* p) {
         step_until(function.exit);
         let q = obtain(exists (q: int32*) { q == p });
         witness(q);
-        solve();
+        close();
     }
 }
 ```

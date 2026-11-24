@@ -37,8 +37,8 @@ void rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures is_rb_root(tree.model) == 1;
     ensures rb_tree_parent_consistent(tree.model) == 1;
 } by {
-    have separate(c, memory(augment->rotate)) by known();
-    have separate(t, memory(augment->rotate)) by known();
+    have separate(c, memory(augment->rotate)) by close();
+    have separate(t, memory(augment->rotate)) by close();
     apply(click::separation::separate_star(c, t, memory(augment->rotate)));
     let { tree: tree } = step(__rb_insert_augmented, { c: c, t: t });
 }

@@ -50,7 +50,7 @@ int32 scale(uint64 size, int32 i) {
 } by {
     if size == 0 {
         step_until(function.exit);
-        solve();
+        close();
     } else {
         step();
         step();
@@ -60,7 +60,7 @@ int32 scale(uint64 size, int32 i) {
             invariant i >= 0 and i <= 3;
         }
         step_until(function.exit);
-        solve();
+        close();
     }
 }
 ```

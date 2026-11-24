@@ -22,14 +22,14 @@ theorem converted_zero(word: uint64, base: uint64) {
         rewrite(to_integer(word), to_integer(base) + to_integer(word & 1));
         rewrite((word & 1), zero_color());
         unfold(zero_color());
-        known();
+        close();
     }
 }
 
 theorem wide_unit_products(x: uint64, y: int64) {
-    ensures x * 1 == x by { known(); }
-    ensures 0 * x == 0 by { known(); }
-    ensures 1 * y == y by { known(); }
+    ensures x * 1 == x by { close(); }
+    ensures 0 * x == 0 by { close(); }
+    ensures 1 * y == y by { close(); }
 }
 ```
 

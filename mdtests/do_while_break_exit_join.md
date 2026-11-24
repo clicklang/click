@@ -49,7 +49,7 @@ int32 do_break_flag(int32 flag) {
             if flag == 3 {
                 step();
                 step();
-                have i == 3 or i == 0 by known();
+                have i == 3 or i == 0 by close();
                 step();
             } else {
                 step();
@@ -57,11 +57,11 @@ int32 do_break_flag(int32 flag) {
             }
         }
         otherwise {
-            have i == 3 or i == 0 by known();
+            have i == 3 or i == 0 by close();
         }
     }
     step();
-    solve();
+    close();
 }
 ```
 

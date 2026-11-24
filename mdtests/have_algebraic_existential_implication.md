@@ -16,7 +16,7 @@ theorem have_algebraic_existential(flag: int32) {
         have exists (caller_path: Nat) {
             caller_path == Nat::Zero
         };
-        known();
+        close();
     }
 }
 ```

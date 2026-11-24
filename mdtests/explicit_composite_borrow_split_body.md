@@ -36,7 +36,7 @@ void use(int32* p) {
     unfold(pair(p));
     fold(pair(p));
     step_until(function.exit);
-    solve();
+    close();
 }
 ```
 

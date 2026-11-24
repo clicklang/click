@@ -42,7 +42,7 @@ theorem exact_increment_is_progress(
     ensures ProgressPair(step) by {
         unfold(ExactIncrement(step));
         unfold(ProgressPair(step));
-        solve();
+        close();
     }
 }
 

@@ -39,7 +39,7 @@ uint8 probe(uint8* destination, const uint8* source) {
         instantiate(forall (k: uint64) {
             true and k < 1u64 implies destination[0u64 + k] == old(source[0u64 + k])
         }, 0u64);
-        solve();
+        close();
     }
     step_until(function.exit);
 }

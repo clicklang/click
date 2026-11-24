@@ -6,7 +6,7 @@ function changes_only(x: Integer) -> Integer { x }
 theorem identity(x: Integer) {
     ensures changes_only(x) == x by {
         unfold(changes_only(x));
-        known();
+        close();
     }
 }
 ```

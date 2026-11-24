@@ -26,8 +26,8 @@ int32 d(int32 j) {
     have forall (k: uint64) { 0u64 <= k and k < 1u64 implies tmp[k] != 0u8 } by { enumerate(); }
     have forall (k: uint64) { 0u64 <= k and k < 2u64 implies defined(tmp[k]) } by { enumerate(); }
     step();
-    have forall (k: uint64) { 0u64 <= k and k < 1u64 implies tmp[k] != 0u8 } by { known(); }
-    have forall (k: uint64) { 0u64 <= k and k < 2u64 implies defined(tmp[k]) } by { known(); }
+    have forall (k: uint64) { 0u64 <= k and k < 1u64 implies tmp[k] != 0u8 } by { close(); }
+    have forall (k: uint64) { 0u64 <= k and k < 2u64 implies defined(tmp[k]) } by { close(); }
 }
 ```
 

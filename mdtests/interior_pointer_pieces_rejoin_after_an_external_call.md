@@ -46,7 +46,7 @@ int32 caller(int32* x, int32 i, int32 j) {
     unfold(retained_prefix(x, i));
     step();
     step();
-    solve();
+    close();
 }
 ```
 

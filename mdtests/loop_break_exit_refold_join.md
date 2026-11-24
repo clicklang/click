@@ -87,7 +87,7 @@ struct tree_node* maybe_swap(struct tree_node* root, int flag) {
         owns t: tree_at(root);
         invariant t.model != HeapTree::Empty;
 
-        initialize by solve();
+        initialize by close();
         maintain by {
             match t.model {
                 HeapTree::Empty => { contradiction(t.model == HeapTree::Empty); },
@@ -119,7 +119,7 @@ struct tree_node* maybe_swap(struct tree_node* root, int flag) {
         }
     }
     step();
-    solve();
+    close();
 }
 ```
 

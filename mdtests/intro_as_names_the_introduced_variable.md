@@ -12,7 +12,7 @@ theorem int32_binder(n: int32) {
         let row = intro();
         intro();
         instantiate(forall (k: int32) { to_integer(k + 0) == to_integer(k) }, row);
-        known();
+        close();
     }
 }
 
@@ -20,15 +20,15 @@ theorem integer_binder() {
     ensures forall (m: Integer) { m + 0 == m } by {
         let value = intro();
         have value + 0 == value by close() using {};
-        known();
+        close();
     }
 }
 
 theorem pointer_binder(q: int32*) {
     ensures forall (p: int32*) { p == p } by {
         let cell = intro();
-        have cell == cell by solve();
-        known();
+        have cell == cell by close();
+        close();
     }
 }
 
@@ -37,8 +37,8 @@ theorem nested_binders(n: int32) {
         let x = intro();
         let y = intro();
         intro();
-        have x < y by known();
-        known();
+        have x < y by close();
+        close();
     }
 }
 ```

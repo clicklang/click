@@ -15,19 +15,19 @@ spec enum Wrap { Wrap(Box) }
 theorem fields_equal_through_a_shared_value(x: Box, a: int32, b: int32) {
     requires x == Box::Full(a);
     requires Box::Full(b) == x;
-    ensures a == b by solve();
+    ensures a == b by close();
 }
 
 theorem integer_fields_equal_through_a_shared_value(x: Count, a: Integer, b: Integer) {
     requires x == Count::Count(a);
     requires x == Count::Count(b);
-    ensures a == b by solve();
+    ensures a == b by close();
 }
 
 theorem nested_fields_equal_through_a_shared_value(x: Wrap, a: int32) {
     requires x == Wrap::Wrap(Box::Full(a));
     requires x == Wrap::Wrap(Box::Full(3));
-    ensures a == 3 by solve();
+    ensures a == 3 by close();
 }
 ```
 

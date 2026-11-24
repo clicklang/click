@@ -12,13 +12,13 @@ function get(m: Ref) -> struct node* { match m { Ref::At(p) => p, } }
 function copy(m: Ref) -> Ref { match m { Ref::At(p) => Ref::At(p), } }
 
 theorem scalar_case(p: struct node*) {
-    ensures tag(Ref::At(p)) == 1 by { unfold(tag(Ref::At(p))); known(); }
+    ensures tag(Ref::At(p)) == 1 by { unfold(tag(Ref::At(p))); close(); }
 }
 theorem pointer_case(p: struct node*) {
-    ensures get(Ref::At(p)) == p by { unfold(get(Ref::At(p))); known(); }
+    ensures get(Ref::At(p)) == p by { unfold(get(Ref::At(p))); close(); }
 }
 theorem model_case(p: struct node*) {
-    ensures copy(Ref::At(p)) == Ref::At(p) by { unfold(copy(Ref::At(p))); known(); }
+    ensures copy(Ref::At(p)) == Ref::At(p) by { unfold(copy(Ref::At(p))); close(); }
 }
 ```
 

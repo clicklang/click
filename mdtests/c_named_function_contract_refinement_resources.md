@@ -57,7 +57,7 @@ int32 apply_store_step(
 theorem store_increment_is_store_step() {
     ensures StoreStep(&store_increment) by {
         unfold(StoreStep(&store_increment));
-        solve();
+        close();
     }
 }
 

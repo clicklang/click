@@ -41,7 +41,7 @@ int32 accept(void (*step)(int32*)) {
 theorem preserve_satisfies_Preserve() executes preserve(int32* p) {
     ensures Preserve(&preserve) as { root: r } by {
         step(preserve, { t: r });
-        solve();
+        close();
     }
 }
 

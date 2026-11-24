@@ -26,7 +26,7 @@ int32 cast_saved(double x) {
 
 theorem weaken_float32_bound(x: float) {
     requires float32_from_bits(0x3f800000) >= x;
-    ensures x < float32_from_bits(0x40000000) by { solve(); }
+    ensures x < float32_from_bits(0x40000000) by { close(); }
 }
 
 theorem cite_float32_bound(x: float) {

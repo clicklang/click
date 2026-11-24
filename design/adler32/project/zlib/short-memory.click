@@ -19,9 +19,9 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
  have to_integer(len as uint32 as int32) == to_integer(len) by {
   close() using { 0 <= to_integer(len); to_integer(len) <= 2147483647; };
  }
- have viewable(buf[0u64..len]) by solve();
+ have viewable(buf[0u64..len]) by close();
  step_until(loop(0).entry);
- have viewable(buf[0u64..len]) by solve();
+ have viewable(buf[0u64..len]) by close();
  loop {
   decreases to_integer(len);
   views buf[0u64..len];
@@ -40,20 +40,20 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
   invariant to_integer(sum2) <= 3826 * (to_integer(old(len)) - to_integer(len));
   invariant to_integer(sum2) <= 57390;
   initialize by {
-   have adler == 1u64 by solve();
-   have sum2 == 0u64 by solve();
+   have adler == 1u64 by close();
+   have sum2 == 0u64 by close();
    apply(adler_sum_empty(old(buf), 0));
-   have old(len) - len == 0u64 by solve();
+   have old(len) - len == 0u64 by close();
    have to_integer(adler) == 1 by { close() using { adler == 1u64; }; }
    have to_integer(sum2) == 0 by { close() using { sum2 == 0u64; }; }
    have 1 <= to_integer(adler) by close() using { to_integer(adler) == 1; };
    have to_integer(adler) <= 3826 by close() using { to_integer(adler) == 1; };
    have 0 <= to_integer(sum2) by close() using { to_integer(sum2) == 0; };
    have to_integer(sum2) <= 57390 by close() using { to_integer(sum2) == 0; };
-   have to_integer(old(len)) == to_integer(len) by solve();
+   have to_integer(old(len)) == to_integer(len) by close();
    have zlib_prefix_count(old(len), len) == 0 by {
     unfold(zlib_prefix_count(old(len), len));
-    solve();
+    close();
    }
    have to_integer(adler) == 1 + adler_byte_sum(old(buf), zlib_prefix_count(old(len), len)) by {
     rewrite(zlib_prefix_count(old(len), len), 0);
@@ -67,14 +67,14 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    }
    have to_integer(adler) <= 1 + 255 * (to_integer(old(len)) - to_integer(len)) by close() using { to_integer(adler) == 1; to_integer(old(len)) == to_integer(len); };
    have to_integer(sum2) <= 3826 * (to_integer(old(len)) - to_integer(len)) by close() using { to_integer(sum2) == 0; to_integer(old(len)) == to_integer(len); };
-   solve();
+   close();
   }
   maintain by {
    if len == 0u64 {
-    have old(len) - len == old(len) by solve();
+    have old(len) - len == old(len) by close();
     have zlib_prefix_count(old(len), len) == old(len as uint32 as int32) by {
      unfold(zlib_prefix_count(old(len), len));
-     solve();
+     close();
     }
     have to_integer(adler) == 1 + adler_byte_sum(old(buf), old(len as uint32 as int32)) by {
      close() using { to_integer(adler) == 1 + adler_byte_sum(old(buf), zlib_prefix_count(old(len), len)); zlib_prefix_count(old(len), len) == old(len as uint32 as int32); };
@@ -83,12 +83,12 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
      close() using { to_integer(sum2) == to_integer(zlib_prefix_count(old(len), len)) + adler_weighted_sum(old(buf), zlib_prefix_count(old(len), len), zlib_prefix_count(old(len), len)); zlib_prefix_count(old(len), len) == old(len as uint32 as int32); };
     }
     step(); step(); step(); step();
-    have __click_call_result1 == 0u64 by known();
+    have __click_call_result1 == 0u64 by close();
     step();
    } else {
     have 0u64 <= len by normalize();
     have 0u64 < len by {
-     if 0u64 < len { known(); } else {
+     if 0u64 < len { close(); } else {
       have 0u64 == len;
       have len == 0u64 by { rewrite(0u64, len); normalize(); }
       contradiction(len == 0u64);
@@ -97,24 +97,24 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    have to_integer(1u64) <= to_integer(len) by close() using { to_integer(0u64) < to_integer(len); };
    have to_integer(len - 1u64) == to_integer(len) - to_integer(1u64);
    step(); step();
-   have 0u64 < len by known();
+   have 0u64 < len by close();
    have 0u64 <= len by normalize();
    have 0u64 <= len - 0u64 by normalize();
-   have viewable(buf[0u64..1u64]) by solve();
-   have viewable(buf[0u64..len]) by solve();
+   have viewable(buf[0u64..1u64]) by close();
+   have viewable(buf[0u64..len]) by close();
    mark before_decrement;
    step(); step(); step();
-   have to_integer(len) == at(before_decrement, to_integer(len)) - 1 by known();
+   have to_integer(len) == at(before_decrement, to_integer(len)) - 1 by close();
    have to_integer(len) <= 15 by close() using { to_integer(len) == at(before_decrement, to_integer(len)) - 1; at(before_decrement, to_integer(len)) <= 15; };
    have 0 <= to_integer(len) by close() using { to_integer(len) == at(before_decrement, to_integer(len)) - 1; to_integer(1u64) <= at(before_decrement, to_integer(len)); };
    have to_integer(len) < at(before_decrement, to_integer(len)) by close() using { to_integer(len) == at(before_decrement, to_integer(len)) - 1; };
    step_until(assignment(adler, 3).entry);
-   have __click_call_result0 == at(before_decrement, buf) by solve();
+   have __click_call_result0 == at(before_decrement, buf) by close();
    have viewable(__click_call_result0[0u64..1u64]) by {
     close() using { __click_call_result0 == at(before_decrement, buf); at(before_decrement, viewable(buf[0u64..1u64])); };
    }
-   have __click_call_result0 == old(buf) + (old(len) - at(before_decrement, len)) by solve();
-   have at(before_decrement, len) <= old(len) by known();
+   have __click_call_result0 == old(buf) + (old(len) - at(before_decrement, len)) by close();
+   have at(before_decrement, len) <= old(len) by close();
    have to_integer(old(len) - at(before_decrement, len)) == to_integer(old(len)) - to_integer(at(before_decrement, len));
    have to_integer(old(len) - at(before_decrement, len)) < to_integer(old(len)) by close() using {
     to_integer(old(len) - at(before_decrement, len)) == to_integer(old(len)) - at(before_decrement, to_integer(len));
@@ -151,7 +151,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    have to_integer(adler + __click_call_result0[0] as uint32 as uint64) == to_integer(adler) + to_integer(__click_call_result0[0] as uint32 as uint64);
    mark before_add;
    step();
-   have adler == at(before_add, adler + __click_call_result0[0] as uint32 as uint64) by solve();
+   have adler == at(before_add, adler + __click_call_result0[0] as uint32 as uint64) by close();
    have to_integer(adler) == at(before_add, to_integer(adler + __click_call_result0[0] as uint32 as uint64)) by close() using { adler == at(before_add, adler + __click_call_result0[0] as uint32 as uint64); };
    have to_integer(adler) == at(before_add, to_integer(adler)) + at(before_add, to_integer(__click_call_result0[0] as int32)) by close() using {
     to_integer(adler) == at(before_add, to_integer(adler + __click_call_result0[0] as uint32 as uint64));
@@ -181,7 +181,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    have to_integer(sum2 + adler) == to_integer(sum2) + to_integer(adler);
    mark before_sum;
    step_until(loop.back_edge);
-   have to_integer(sum2) == at(before_sum, to_integer(sum2)) + to_integer(adler) by solve();
+   have to_integer(sum2) == at(before_sum, to_integer(sum2)) + to_integer(adler) by close();
    have 0 <= to_integer(sum2);
    have to_integer(sum2) <= 3826 * (to_integer(old(len)) - to_integer(len)) by close() using {
     at(before_sum, to_integer(sum2)) <= 3826 * (to_integer(old(len)) - at(before_decrement, to_integer(len)));
@@ -212,15 +212,15 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
     to_integer(old(len) - at(before_decrement, len)) == to_integer(old(len)) - at(before_decrement, to_integer(len));
     to_integer((old(len) - at(before_decrement, len)) + 1u64) == to_integer(old(len) - at(before_decrement, len)) + to_integer(1u64);
    };
-   have buf == at(before_decrement, buf) + 1 by solve();
+   have buf == at(before_decrement, buf) + 1 by close();
    have buf == old(buf) + (old(len) - len) by {
     rewrite(buf, at(before_decrement, buf) + 1);
     rewrite(old(len) - len, (old(len) - at(before_decrement, len)) + 1u64);
     close() using { at(before_decrement, buf) == old(buf) + (old(len) - at(before_decrement, len)); old(len) - at(before_decrement, len) <= 14u64; };
    }
-   have to_integer(len) == to_integer(at(before_decrement, len) - 1u64) by solve();
+   have to_integer(len) == to_integer(at(before_decrement, len) - 1u64) by close();
    have len == (at(before_decrement, len) - 1u64);
-   have len <= at(before_decrement, len) - 1u64 by solve();
+   have len <= at(before_decrement, len) - 1u64 by close();
    have len <= 15u64;
    have len <= 9223372036854775807u64;
    have viewable(buf[0u64..len]) by {
@@ -312,7 +312,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
  apply(integer::positive_divisor_remainder_upper(to_integer(sum2), 65521));
  mark before_reduction;
  step();
- have sum2 == at(before_reduction, sum2 % 65521u64) by solve();
+ have sum2 == at(before_reduction, sum2 % 65521u64) by close();
  have to_integer(sum2) == at(before_reduction, to_integer(sum2 % 65521u64)) by close() using { sum2 == at(before_reduction, sum2 % 65521u64); };
  have to_integer(sum2) <= 65520 by close() using {
   to_integer(sum2) == at(before_reduction, to_integer(sum2 % 65521u64));

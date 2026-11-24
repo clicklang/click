@@ -73,34 +73,10 @@ fn migrate_claim(
         verify_proof_unit(project, source, inputs, claim).map_err(|error| error.report())
     };
     verify(&apply_edits(source, edits)).map_err(|error| format!("Original proof: {error}"))?;
-    // Most claims can take all of their preferred substitutions in one
-    // verification. Retry individual sites only to recover from a miss.
-    edits.extend(
-        sites
-            .iter()
-            .map(|site| (site.offset, if site.using { "close" } else { "known" })),
-    );
-    if let Err(error) = verify(&apply_edits(source, edits)) {
-        if sites.iter().all(|site| site.using) {
-            return Err(format!("Replacement proof: {error}"));
-        }
-        for site in sites {
-            edits.remove(&site.offset);
-        }
-        for site in sites {
-            if !site.using {
-                edits.insert(site.offset, "known");
-                if verify(&apply_edits(source, edits)).is_ok() {
-                    continue;
-                }
-            }
-            edits.insert(site.offset, if site.using { "close" } else { "solve" });
-            verify(&apply_edits(source, edits))
-                .map_err(|error| format!("Replacement proof: {error}"))?;
-        }
-    }
+    edits.extend(sites.iter().map(|site| (site.offset, "close")));
 
     let candidate = apply_edits(source, edits);
+    verify(&candidate).map_err(|error| format!("Replacement proof: {error}"))?;
     let candidate_project = project.map(|project| project.with_entry_source(candidate.clone()));
     require_no_normalize(
         candidate_project.as_ref(),
@@ -207,7 +183,7 @@ theorem broken(x: int32) {
             source
                 .replace(
                     "ensures x == x by normalize();",
-                    "ensures x == x by known();"
+                    "ensures x == x by close();"
                 )
                 .replace("normalize() using { x == 0; }", "close() using { x == 0; }")
         );

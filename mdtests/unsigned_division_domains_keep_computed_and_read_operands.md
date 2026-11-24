@@ -14,8 +14,8 @@ uint32 computed_divisor(uint32 x, uint32 y) {
     requires ((y + 1u32) as uint32) != 0u32;
     ensures result == x / ((y + 1u32) as uint32);
 } by {
-    step() by { known(); }
-    known();
+    step() by { close(); }
+    close();
 }
 uint32 read_divisor(uint32* p, uint32* q) {
     views p[0];
@@ -23,8 +23,8 @@ uint32 read_divisor(uint32* p, uint32* q) {
     requires q[0] != 0u32;
     ensures result == p[0] / q[0];
 } by {
-    step() by { known(); }
-    known();
+    step() by { close(); }
+    close();
 }
 ```
 

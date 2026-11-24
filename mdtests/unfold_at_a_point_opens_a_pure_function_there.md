@@ -32,7 +32,7 @@ int32 replace_first(int32 *a) {
 } by {
     have at(function.entry, head(a)) == at(function.entry, a[0u64]) by {
         unfold(at(function.entry, head(a)));
-        known();
+        close();
     }
 }
 ```

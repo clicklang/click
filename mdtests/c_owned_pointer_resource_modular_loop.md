@@ -80,7 +80,7 @@ int32 service_step(struct service* owner) {
     fold(service(owner));
     observe(service(owner));
     step();
-    solve();
+    close();
 }
 
 int32 service_run(struct service* owner) diverges {
@@ -90,12 +90,12 @@ int32 service_run(struct service* owner) diverges {
     loop diverges {
         invariant 0 <= owner->phase;
         invariant owner->phase <= 1;
-        initialize by solve();
+        initialize by close();
         maintain by {
             step();
         }
     }
-    solve();
+    close();
 }
 ```
 

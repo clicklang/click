@@ -21,11 +21,11 @@ int32 wrong_selected_branch(int32 x) {
         branch {
             true => {
                 step();
-                solve();
+                close();
             }
             false => {
                 step();
-                solve();
+                close();
             }
         }
     }

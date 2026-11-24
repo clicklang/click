@@ -42,7 +42,7 @@ int32 run(void* p, void* q) {
     branch {
         true => {
             have count(ticket(p)) == 2;
-            step(); solve();
+            step(); close();
         }
         false => {}
     }
@@ -51,7 +51,7 @@ int32 run(void* p, void* q) {
         true => {
             step();
             have count(ticket(q)) == 1;
-            step(); solve();
+            step(); close();
         }
         false => {}
     }
@@ -60,7 +60,7 @@ int32 run(void* p, void* q) {
     step();
     have count(ticket(p)) == 2;
     have count(ticket(q)) == 1;
-    step(); solve();
+    step(); close();
 }
 ```
 

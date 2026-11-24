@@ -49,12 +49,12 @@ fn boxed::maybe(x: u32, make: bool) -> Option<Box<boxed::Cell>> {
         make => {
             step_until(function.exit);
             let cell = fold(cell_box(result), { value: Option<u32>::Some(x) });
-            solve();
+            close();
         }
         not make => {
             step_until(function.exit);
             let cell = fold(cell_box(result), { value: Option<u32>::None });
-            solve();
+            close();
         }
     }
 }
@@ -64,8 +64,8 @@ fn boxed::value_or(o: Option<Box<boxed::Cell>>, d: u32) -> u32 {
     ensures result == (match old(cell.value) { Option::Some(v) => v, Option::None => d });
 } by {
     match cell.value {
-        Option::Some(v) => { unfold(cell); step_until(function.exit); solve(); },
-        Option::None => { unfold(cell); step_until(function.exit); solve(); },
+        Option::Some(v) => { unfold(cell); step_until(function.exit); close(); },
+        Option::None => { unfold(cell); step_until(function.exit); close(); },
     }
 }
 
@@ -74,7 +74,7 @@ fn boxed::maybe_through(x: u32, make: bool) -> u32 {
     ensures make == false implies result == 0;
 } by {
     cases {
-        make => { step_until(function.exit); solve(); }
-        not make => { step_until(function.exit); solve(); }
+        make => { step_until(function.exit); close(); }
+        not make => { step_until(function.exit); close(); }
     }
 }

@@ -62,13 +62,13 @@ impl resource_state::Store<u32> for resource_state::Slot {
                 let {} = unfold(state);
                 step_until(function.exit);
                 let state = fold(boxed(self.item), { value: Option<u32>::None });
-                solve();
+                close();
             }
             Option::Some(v) => {
                 let {} = unfold(state);
                 step_until(function.exit);
                 let state = fold(boxed(self.item), { value: Option<u32>::None });
-                solve();
+                close();
             }
         }
     }
@@ -80,7 +80,7 @@ fn resource_state::refill<S: resource_state::Store<u32>>(store: &mut S, x: u32) 
 } by {
     step_until(function.exit);
     unfold(value_or(Option<u32>::Some(x), 0u32));
-    solve();
+    close();
 }
 
 fn resource_state::refill_dyn(store: &mut dyn resource_state::Store<u32>, x: u32) -> u32 {
@@ -89,7 +89,7 @@ fn resource_state::refill_dyn(store: &mut dyn resource_state::Store<u32>, x: u32
 } by {
     step_until(function.exit);
     unfold(value_or(Option<u32>::Some(x), 0u32));
-    solve();
+    close();
 }
 
 // A caller lends its `Slot` with the box's resource: both become the

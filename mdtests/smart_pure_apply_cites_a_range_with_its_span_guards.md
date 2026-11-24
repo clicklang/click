@@ -33,7 +33,7 @@ theorem walk_in_range(next: int32[], n: int32, from: int32, fuel: Nat) {
         match fuel {
             Nat::Zero => {
                 unfold(walk(next, from, Nat::Zero));
-                solve();
+                close();
             }
             Nat::Succ(previous) => {
                 apply(ih(previous));
@@ -43,10 +43,10 @@ theorem walk_in_range(next: int32[], n: int32, from: int32, fuel: Nat) {
                     instantiate(forall (k: int32) {
                         0 <= k and k < n implies 0 <= next[k] and next[k] < n
                     }, walk(next, from, previous));
-                    known();
+                    close();
                 }
                 unfold(walk(next, from, Nat::Succ(previous)));
-                known();
+                close();
             }
         }
     }

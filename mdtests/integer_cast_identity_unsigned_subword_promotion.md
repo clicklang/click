@@ -20,12 +20,12 @@ void store_lane(uint16 *out, uint32 value) {
     ensures to_integer(*out as int32) == to_integer(*out);
 } by {
     step_until(function.exit);
-    have to_integer(*out) == to_integer((((old(value) & 65535u32) as int32) as uint16)) by known();
-    have to_integer((((old(value) & 65535u32) as int32) as uint16)) == to_integer(old(value)) by known();
-    have to_integer(*out) == to_integer(old(value)) by known();
-    have to_integer(*out as int32) == to_integer((((old(value) & 65535u32) as int32) as uint16) as int32) by known();
-    have to_integer((((old(value) & 65535u32) as int32) as uint16) as int32) == to_integer((((old(value) & 65535u32) as int32) as uint16)) by known();
-    known();
+    have to_integer(*out) == to_integer((((old(value) & 65535u32) as int32) as uint16)) by close();
+    have to_integer((((old(value) & 65535u32) as int32) as uint16)) == to_integer(old(value)) by close();
+    have to_integer(*out) == to_integer(old(value)) by close();
+    have to_integer(*out as int32) == to_integer((((old(value) & 65535u32) as int32) as uint16) as int32) by close();
+    have to_integer((((old(value) & 65535u32) as int32) as uint16) as int32) == to_integer((((old(value) & 65535u32) as int32) as uint16)) by close();
+    close();
 }
 ```
 

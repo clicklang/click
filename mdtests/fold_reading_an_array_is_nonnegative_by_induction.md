@@ -36,7 +36,7 @@ theorem unmarked_nonnegative(v: int32[], lo: int32, n: int32, hi: int32) {
         let ih = induct(hi);
         if hi <= lo {
             unfold(unmarked(v, lo, hi));
-            solve();
+            close();
         } else {
             have lo < hi;
             have 0 <= to_integer(hi - 1) by { close() using { 0 <= lo; lo < hi; }; }

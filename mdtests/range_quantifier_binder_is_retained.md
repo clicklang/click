@@ -15,8 +15,8 @@ theorem range_binder_is_retained() {
     ensures (0..3).all(|k| { k < 3 }) by {
         intro();
         intro();
-        have k < 3 by solve();
-        known();
+        have k < 3 by close();
+        close();
     }
 }
 ```

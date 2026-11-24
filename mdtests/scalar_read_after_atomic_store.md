@@ -33,14 +33,14 @@ int32 later(int32 u) {
     ensures result == 3 or result == 7;
 } by {
     step(); step(); step(); step();
-    have a[0] == 3 by { known(); }
+    have a[0] == 3 by { close(); }
     mark before_store;
     step();
-    have a[u] == 7 by { known(); }
+    have a[u] == 7 by { close(); }
     have a[0] == 3 or a[0] == 7 by {
         if u == 0 {
             have a[0] == 7 by { normalize() using { a[u] == 7; u == 0; }; }
-            known();
+            close();
         } else {
             have separate(memory(a[u]), memory(a[0])) by {
                 apply(separation::separate_elements(a, u, 0));
@@ -51,15 +51,15 @@ int32 later(int32 u) {
             have a[0] == at(before_store, a[0]) by {
                 preserve(memory(a[0]), statement(4));
             }
-            have a[0] == 3 by { rewrite(a[0], at(before_store, a[0])); known(); }
-            known();
+            have a[0] == 3 by { rewrite(a[0], at(before_store, a[0])); close(); }
+            close();
         }
     }
     mark stored;
     step();
-    have a[0] == at(stored, a[0]) by { known(); }
+    have a[0] == at(stored, a[0]) by { close(); }
     step();
-    solve();
+    close();
 }
 ```
 

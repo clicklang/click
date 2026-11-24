@@ -29,8 +29,8 @@ fn increment_first(bytes: &mut [u8]) {
     ensures bytes[0] == old(bytes[0]) + 1;
 } by {
     step_until(function.exit);
-    have to_integer(bytes[0]) == to_integer(old(bytes[0]) + 1u8) by solve();
-    solve();
+    have to_integer(bytes[0]) == to_integer(old(bytes[0]) + 1u8) by close();
+    close();
 }
 
 fn empty(bytes: &[u8]) -> bool {

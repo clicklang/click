@@ -9,7 +9,7 @@ spec enum Flag { Set }
 theorem integer_first() {
     ensures exists (i: Integer, f: Flag) { i == 3 and f == Flag::Set } by {
         witness(3, Flag::Set);
-        solve();
+        close();
     }
 }
 
@@ -17,7 +17,7 @@ theorem enum_first() {
     ensures exists (f: Flag, i: Integer) { f == Flag::Set and i == 3 } by {
         witness(Flag::Set);
         witness(3);
-        solve();
+        close();
     }
 }
 ```

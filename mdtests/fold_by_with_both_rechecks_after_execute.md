@@ -35,17 +35,17 @@ void bump(struct holder* h) {
     fold(holder_of(h)) by {
         all {
             h->target == p => {
-                known();
+                close();
             }
             h->count < 200 or p == 0 => {
                 have h->count < 200 by {
                     close() using { at(function.entry, h->count < 100); };
                 }
-                known();
+                close();
             }
         }
     }
-    known();
+    close();
 }
 ```
 

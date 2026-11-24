@@ -22,12 +22,12 @@ int32 spin() diverges {
 } by {
     loop diverges {
         invariant 0 == 0;
-        initialize by solve();
+        initialize by close();
         maintain by {
             step();
         }
     }
-    solve();
+    close();
 }
 ```
 

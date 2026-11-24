@@ -11,7 +11,7 @@ int32 imported_helper(int32 x) {
 tactic retain_equal(x: int32, y: int32) {
     requires x == y;
     ensures x == y;
-} by { have x == y by known(); }
+} by { have x == y by close(); }
 
 resource imported_cell(p: int32*) {
     field value: int32;
@@ -27,7 +27,7 @@ void imported_keep(int32* p) {
     unfold(before);
     step_until(function.exit);
     let after = fold(imported_cell(p), { value: *p });
-    solve();
+    close();
 }
 
 tactic imported_rename(p: int32*) {

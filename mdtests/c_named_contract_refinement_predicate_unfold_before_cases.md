@@ -38,7 +38,7 @@ void clear_if_active(int32 active, int32* cell) {
         unfold(optional_cell(active, cell));
         step_until(function.exit);
         fold(optional_cell(active, cell));
-        solve();
+        close();
     } else {
         unfold(optional_cell(active, cell));
     }
@@ -50,9 +50,9 @@ theorem clear_if_active_satisfies_contract() {
         unfold(ActiveIsZero(active, cell));
 
         if active != 0 {
-            solve();
+            close();
         } else {
-            solve();
+            close();
         }
     }
 }

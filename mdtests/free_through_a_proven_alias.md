@@ -11,7 +11,7 @@ void dispose(int32* p, int32* q) {
     consumes p[0..1];
     requires q == p;
 } by {
-    have q == p by { known(); }
+    have q == p by { close(); }
     step();
 }
 ```

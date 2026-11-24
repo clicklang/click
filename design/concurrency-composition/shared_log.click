@@ -8,7 +8,7 @@ theorem int32_equality_transitive(first: int32, second: int32, third: int32) {
     requires second == third;
 
     ensures first == third by {
-        solve();
+        close();
     }
 }
 
@@ -105,7 +105,7 @@ int32 vector_copy(
                 normalize();
             }
             have i <= length by {
-                known();
+                close();
             }
             have forall (k: int32) { 0 <= k and k < i implies dst[k] == old(src[k]) } by {
                 intro();
@@ -127,23 +127,23 @@ int32 vector_copy(
         maintain by {
             step();
             step();
-            solve();
+            close();
         }
     }
     have i == length by {
         apply(integer::int32_less_equal_and_not_less_than_implies_equal(at(loop(0).exit, i), at(loop(0).exit, length)));
-        known();
+        close();
     }
     have forall (k: int32) { 0 <= k and k < length implies dst[k] == old(src[k]) } by {
         intro();
         intro();
         have at(loop(0).exit, 0) <= at(loop(0).exit, k) and at(loop(0).exit, k) < at(loop(0).exit, i);
         instantiate(forall (k: int32) { at(loop(0).exit, 0) <= at(loop(0).exit, k) and at(loop(0).exit, k) < at(loop(0).exit, i) implies at(loop(0).exit, dst[k]) == old(src[k]) }, k);
-        known();
+        close();
     }
     step();
     have result == length by {
-        known();
+        close();
     }
     have forall (k: int32) { 0 <= k and k < length implies src[k] == old(src[k]) } by {
         intro();
@@ -160,15 +160,15 @@ int32 vector_copy(
             1 <= src_capacity;
             separate(memory(dst[0..dst_capacity]), memory(src[0..src_capacity]));
         };
-        known();
+        close();
     }
     have forall (k: int32) { 0 <= k and k < length implies dst[k] == old(src[k]) } by {
-        known();
+        close();
     }
-    known();
-    known();
-    known();
-    known();
+    close();
+    close();
+    close();
+    close();
 }
 
 int32 vector_grow(struct vector* owner) {
@@ -191,12 +191,12 @@ int32 vector_grow(struct vector* owner) {
     unfold(before);
     have owner->cap < 2147483647 by {
         apply(integer::int32_less_equal_less_than_transitive(owner->cap, 536870910, 2147483647));
-        known();
+        close();
     }
     have (owner->cap + 1) <= 536870911 by {
         apply(integer::int32_less_equal_less_than_transitive(owner->cap, 536870910, 536870911));
         apply(integer::int32_increment_upper_bound(owner->cap, 536870911));
-        known();
+        close();
     }
     step();
     step();
@@ -208,40 +208,40 @@ int32 vector_grow(struct vector* owner) {
     step();
     step();
     have 0 <= owner->len by {
-        known();
+        close();
     }
     have owner->len <= owner->cap by {
-        known();
+        close();
     }
     have 1 <= new_capacity by {
         have 1 <= (owner->cap + 1) by {
             apply(integer::int32_increment_lower_bound(owner->cap, 1, 2147483647));
-            known();
+            close();
         }
         transport(1 <= (owner->cap + 1), 1 <= new_capacity) using {
             1 <= (owner->cap + 1);
         };
-        known();
+        close();
     }
     have owner->len <= old_capacity by {
-        known();
+        close();
     }
     have owner->len <= new_capacity by {
         have owner->len <= (owner->cap + 1) by {
             apply(integer::int32_increment_lower_bound(owner->cap, owner->len, 2147483647));
-            known();
+            close();
         }
         transport(owner->len <= (owner->cap + 1), owner->len <= new_capacity) using {
             owner->len <= (owner->cap + 1);
         };
-        known();
+        close();
     }
     have new_capacity <= 536870911 by {
-        known();
+        close();
     }
     have 0 <= new_capacity by {
         apply(integer::int32_less_equal_transitive(0, 1, new_capacity));
-        known();
+        close();
     }
     have 0 <= old_capacity by {
         have old_capacity == owner->cap by {
@@ -249,7 +249,7 @@ int32 vector_grow(struct vector* owner) {
         }
         rewrite(old_capacity, owner->cap);
         apply(integer::int32_less_equal_transitive(0, 1, owner->cap));
-        known();
+        close();
     }
     have (new_capacity as uint32) <= 1073741823u32 by {
         close() using {
@@ -269,7 +269,7 @@ int32 vector_grow(struct vector* owner) {
     }
     have owner->len <= 536870910 by {
         apply(integer::int32_less_equal_transitive(owner->len, owner->cap, 536870910));
-        known();
+        close();
     }
     have (owner->len as uint32) <= 1073741823u32 by {
         close() using {
@@ -289,95 +289,95 @@ int32 vector_grow(struct vector* owner) {
                 0 <= k;
                 k < old(owner->len);
             };
-            known();
+            close();
         }
         let after = fold(allocated_vector(owner), { cap: owner->cap });
         have result == 0 by {
             normalize();
         }
         have result == 0 or result == 1 by {
-            known();
+            close();
         }
         have owner->len == old(owner->len) by {
             normalize();
         }
         have result == 0 implies owner->cap == old(owner->cap) by {
-            solve();
+            close();
         }
         have result == 0 implies owner->data == old(owner->data) by {
-            solve();
+            close();
         }
         have result == 1 implies owner->cap == (old(owner->cap) + 1) by {
-            solve();
+            close();
         }
-        known();
-        known();
-        known();
-        known();
-        known();
-        known();
-        known();
+        close();
+        close();
+        close();
+        close();
+        close();
+        close();
+        close();
     } else {
         step();
         step();
         step();
         have copied == owner->len by {
-            known();
+            close();
         }
         step();
         step();
         step();
         step();
         have 0 <= owner->len by {
-            known();
+            close();
         }
         have owner->cap == at(region(9).entry, new_capacity) by {
             normalize();
         }
         have owner->len <= owner->cap by {
-            known();
+            close();
         }
         have 1 <= owner->cap by {
-            known();
+            close();
         }
         have owner->cap <= 536870911 by {
-            known();
+            close();
         }
         have separate(memory(*owner), memory(owner->data[0..owner->cap])) by {
-            known();
+            close();
         }
         have owner->len == old(owner->len) by {
             transport(old(owner->len) == old(owner->len), owner->len == old(owner->len)) using {
             };
-            known();
+            close();
         }
-        have forall (k: int32) { 0 <= k and k < old(owner->len) implies owner->data[k] == old(owner->data[k]) } by solve();
+        have forall (k: int32) { 0 <= k and k < old(owner->len) implies owner->data[k] == old(owner->data[k]) } by close();
         let after = fold(allocated_vector(owner), { cap: owner->cap });
         have result == 1 by {
             normalize();
         }
         have result == 0 or result == 1 by {
-            known();
+            close();
         }
         have owner->len == old(owner->len) by {
             normalize();
         }
         have result == 0 implies owner->cap == old(owner->cap) by {
-            solve();
+            close();
         }
         have result == 0 implies owner->data == old(owner->data) by {
-            solve();
+            close();
         }
         have result == 1 implies owner->cap == (old(owner->cap) + 1) by {
-            solve();
+            close();
         }
-        known();
-        known();
-        known();
-        known();
-        known();
-        known();
-        known();
+        close();
+        close();
+        close();
+        close();
+        close();
+        close();
+        close();
     }
 }
 
@@ -404,26 +404,26 @@ int32 vector_push(struct vector* owner, int32 value) {
     step();
     fold(vector_storage(owner));
     have at(function.entry, owner->len) <= at(function.entry, owner->len) by {
-        solve();
+        close();
     }
     have at(function.entry, owner->len) < at(function.entry, (owner->len + 1)) by {
         apply(integer::int32_increment_strictly_increases(at(function.entry, owner->len), at(function.entry, owner->cap)));
-        known();
+        close();
     }
     have result == (old(owner->len) + 1) by {
-        solve();
+        close();
     }
     have owner->len == (old(owner->len) + 1) by {
-        solve();
+        close();
     }
     have owner->data[old(owner->len)] == value by {
-        solve();
+        close();
     }
     have owner->cap == old(owner->cap) by {
-        solve();
+        close();
     }
     have owner->data == old(owner->data) by {
-        known();
+        close();
     }
     have forall (k: int32) { 0 <= k and k < old(owner->len) implies owner->data[k] == old(owner->data[k]) } by {
         intro();
@@ -435,15 +435,15 @@ int32 vector_push(struct vector* owner, int32 value) {
             0 <= k;
             k < old(owner->len);
         };
-        known();
+        close();
     }
-    known();
-    known();
-    known();
-    known();
-    known();
-    known();
-    known();
+    close();
+    close();
+    close();
+    close();
+    close();
+    close();
+    close();
 }
 
 int32 allocated_vector_push(struct vector* owner, int32 value) {
@@ -485,23 +485,23 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
                 normalize();
             }
             have result == 0 or result == 1 by {
-                known();
+                close();
             }
             have result == 0 implies owner->len == old(owner->len) by {
                 intro();
                 transport(old(owner->len) == old(owner->len), owner->len == old(owner->len)) using {
                 };
-                known();
+                close();
             }
             have result == 0 implies owner->cap == old(owner->cap) by {
                 intro();
                 have at(region(4).entry, owner->cap) == at(region(3).entry, owner->cap);
-                known();
+                close();
             }
             have result == 0 implies owner->data == old(owner->data) by {
                 intro();
                 have at(region(4).entry, owner->data) == at(region(3).entry, owner->data);
-                known();
+                close();
             }
             have result == 1 implies owner->len == (old(owner->len) + 1) by {
                 intro();
@@ -512,7 +512,7 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
                 contradiction(result == 1);
             }
             have forall (k: int32) { 0 <= k and k < old(owner->len) implies owner->data[k] == old(owner->data[k]) } by {
-                known();
+                close();
             }
             have old(owner->len) < old(owner->cap) implies result == 1 by {
                 intro();
@@ -528,7 +528,7 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
             }
             have owner->cap == old(owner->cap) by {
                 have at(region(4).entry, owner->cap) == at(region(3).entry, owner->cap);
-                known();
+                close();
             }
             have owner->cap <= old(owner->cap) by {
                 rewrite(owner->cap, old(owner->cap));
@@ -538,18 +538,18 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
             have 536870910 < 2147483647 by normalize();
             have old(owner->cap) < 2147483647 by apply(integer::int32_less_equal_less_than_transitive(old(owner->cap), 536870910, 2147483647));
             have owner->cap <= old(owner->cap) + 1 by apply(integer::int32_increment_lower_bound(old(owner->cap), owner->cap, 2147483647));
-            known();
-            known();
-            known();
-            known();
-            known();
-            known();
-            known();
-            known();
-            known();
-            known();
-            known();
-            known();
+            close();
+            close();
+            close();
+            close();
+            close();
+            close();
+            close();
+            close();
+            close();
+            close();
+            close();
+            close();
         } else {
             step();
             step();
@@ -560,19 +560,19 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
                         contradiction(program::grown == 0);
                     }
                     program::grown == 1 => {
-                        known();
+                        close();
                     }
                 }
             }
             have owner->len == old(owner->len) by {
-                known();
+                close();
             }
             have owner->cap == (old(owner->cap) + 1) by {
                 have owner->cap == (old(owner->cap) + 1);
-                known();
+                close();
             }
             have at(function.entry, owner->cap) <= 536870911 by {
-                known();
+                close();
             }
             have 536870911 < 2147483647 by {
                 normalize();
@@ -583,36 +583,36 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
                 rewrite(owner->len, old(owner->len));
                 rewrite(owner->cap, (old(owner->cap) + 1));
                 rewrite(at(function.entry, owner->len), at(function.entry, owner->cap));
-                known();
+                close();
             }
             fold(vector_storage(owner));
             step();
             have at(region(8).exit, owner->data[at(region(8).entry, owner->len)]) == at(region(8).exit, value) by {
-                known();
+                close();
             }
             unfold(vector_storage(owner));
             have 0 <= owner->len by {
-                known();
+                close();
             }
             have owner->len <= owner->cap by {
-                known();
+                close();
             }
             have owner->cap == at(region(8).entry, owner->cap) by {
-                known();
+                close();
             }
             have 1 <= at(region(8).entry, owner->cap) by {
-                known();
+                close();
             }
             have at(region(8).entry, owner->cap) <= 536870911 by {
-                known();
+                close();
             }
             have 1 <= owner->cap by {
                 rewrite(owner->cap, at(region(8).entry, owner->cap));
-                known();
+                close();
             }
             have owner->cap <= 536870911 by {
                 rewrite(owner->cap, at(region(8).entry, owner->cap));
-                known();
+                close();
             }
             let after = fold(allocated_vector(owner), { cap: owner->cap });
             step();
@@ -622,19 +622,19 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
             }
             have result == 0 or result == 1 by {
                 have result == 1 by normalize();
-                known();
+                close();
             }
             have result == 0 implies owner->len == old(owner->len) by {
-                solve();
+                close();
             }
             have result == 0 implies owner->cap == old(owner->cap) by {
-                solve();
+                close();
             }
             have result == 0 implies owner->data == old(owner->data) by {
-                solve();
+                close();
             }
             have at(region(8).entry, owner->len) == old(owner->len) by {
-                known();
+                close();
             }
             have owner->len == (old(owner->len) + 1) by {
                 rewrite(owner->len, (at(region(8).entry, owner->len) + 1));
@@ -643,16 +643,16 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
             }
             have result == 1 implies owner->len == (old(owner->len) + 1) by {
                 intro();
-                known();
+                close();
             }
             have at(region(8).entry, owner->len) < at(region(8).entry, owner->cap) by {
-                known();
+                close();
             }
             have at(region(8).entry, owner->len) == old(owner->len) by {
-                known();
+                close();
             }
             have owner->cap == at(region(8).entry, owner->cap) by {
-                known();
+                close();
             }
             have old(owner->len) < owner->cap by {
                 transport(at(region(8).entry, owner->len) < at(region(8).entry, owner->cap), old(owner->len) < owner->cap) using {
@@ -660,15 +660,15 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
                     at(region(8).entry, owner->len) == old(owner->len);
                     owner->cap == at(region(8).entry, owner->cap);
                 };
-                known();
+                close();
             }
             have owner->data[old(owner->len)] == value by {
                 rewrite(old(owner->len), at(region(8).entry, owner->len));
-                known();
+                close();
             }
             have result == 1 implies owner->data[old(owner->len)] == value by {
                 intro();
-                known();
+                close();
             }
             have forall (k: int32) { 0 <= k and k < old(owner->len) implies owner->data[k] == old(owner->data[k]) } by {
                 intro();
@@ -681,7 +681,7 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
                     0 <= k;
                     k < old(owner->len);
                 };
-                known();
+                close();
             }
             have old(owner->len) < old(owner->cap) implies result == 1 by {
                 intro();
@@ -697,39 +697,39 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
             }
             have owner->cap == old(owner->cap) + 1 by {
                 rewrite(owner->cap, at(region(8).entry, owner->cap));
-                known();
+                close();
             }
             have owner->cap <= old(owner->cap) + 1 by {
                 rewrite(owner->cap, old(owner->cap) + 1);
                 normalize();
             }
-            known();
-            known();
-            known();
-            known();
-            known();
-            known();
-            known();
-            known();
-            known();
-            known();
-            known();
-            known();
+            close();
+            close();
+            close();
+            close();
+            close();
+            close();
+            close();
+            close();
+            close();
+            close();
+            close();
+            close();
         }
     } else {
         unfold(before);
         have owner->len <= owner->cap by {
-            known();
+            close();
         }
         have not owner->len == owner->cap by {
-            known();
+            close();
         }
         have owner->len < owner->cap by {
             apply(integer::int32_less_equal_and_not_equal_implies_less_than(owner->len, owner->cap));
-            known();
+            close();
         }
         have old(owner->len) < old(owner->cap) by {
-            known();
+            close();
         }
         step();
         step();
@@ -739,18 +739,18 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
         step();
         unfold(vector_storage(owner));
         have 0 <= owner->len by {
-            known();
+            close();
         }
         have owner->len <= owner->cap by {
-            known();
+            close();
         }
         have 1 <= owner->cap by {
             rewrite(owner->cap, at(region(0).entry, owner->cap));
-            known();
+            close();
         }
         have owner->cap <= 536870911 by {
             rewrite(owner->cap, at(region(0).entry, owner->cap));
-            known();
+            close();
         }
         let after = fold(allocated_vector(owner), { cap: owner->cap });
         step();
@@ -758,64 +758,64 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
             normalize();
         }
         have at(region(0).entry, 0) <= at(region(0).entry, owner->len) by {
-            known();
+            close();
         }
         have at(region(0).entry, (owner->len + 1)) <= at(region(0).entry, owner->cap) by {
             have at(region(0).entry, owner->len) < at(region(0).entry, owner->cap) by {
                 transport(owner->len < owner->cap, at(region(0).entry, owner->len) < at(region(0).entry, owner->cap)) using {
                     owner->len < owner->cap;
                 };
-                known();
+                close();
             }
             apply(integer::int32_increment_upper_bound(at(region(0).entry, owner->len), at(region(0).entry, owner->cap)));
-            known();
+            close();
         }
         have result == 1 by {
             normalize();
         }
         have result == 0 or result == 1 by {
-            known();
+            close();
         }
         have result == 0 implies owner->len == old(owner->len) by {
-            solve();
+            close();
         }
         have result == 0 implies owner->cap == old(owner->cap) by {
-            solve();
+            close();
         }
         have result == 0 implies owner->data == old(owner->data) by {
-            solve();
+            close();
         }
         have result == 1 implies owner->len == (old(owner->len) + 1) by {
             intro();
-            known();
+            close();
         }
         have owner->data[old(owner->len)] == value by {
-            known();
+            close();
         }
         have result == 1 implies owner->data[old(owner->len)] == value by {
             intro();
-            known();
+            close();
         }
         have forall (k: int32) { 0 <= k and k < old(owner->len) implies owner->data[k] == old(owner->data[k]) } by {
-            known();
+            close();
         }
         have owner->cap == old(owner->cap) by {
-            known();
+            close();
         }
         have owner->data == old(owner->data) by {
-            known();
+            close();
         }
         have old(owner->len) < old(owner->cap) implies result == 1 by {
             intro();
-            known();
+            close();
         }
         have old(owner->len) < old(owner->cap) implies owner->cap == old(owner->cap) by {
             intro();
-            known();
+            close();
         }
         have old(owner->len) < old(owner->cap) implies owner->data == old(owner->data) by {
             intro();
-            known();
+            close();
         }
         have owner->cap <= old(owner->cap) by {
             rewrite(owner->cap, old(owner->cap));
@@ -825,18 +825,18 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
         have 536870910 < 2147483647 by normalize();
         have old(owner->cap) < 2147483647 by apply(integer::int32_less_equal_less_than_transitive(old(owner->cap), 536870910, 2147483647));
         have owner->cap <= old(owner->cap) + 1 by apply(integer::int32_increment_lower_bound(old(owner->cap), owner->cap, 2147483647));
-        known();
-        known();
-        known();
-        known();
-        known();
-        known();
-        known();
-        known();
-        known();
-        known();
-        known();
-        known();
+        close();
+        close();
+        close();
+        close();
+        close();
+        close();
+        close();
+        close();
+        close();
+        close();
+        close();
+        close();
     }
 }
 
@@ -898,7 +898,7 @@ void* producer(void* argument) {
     have pushed_cap <= cap + 1 by {
         rewrite(pushed_cap, log->items->cap);
         rewrite(cap, at(region(3).entry, log->items->cap));
-        known();
+        close();
     }
     have defined(cap + 1);
     have defined(slack - 1);
@@ -917,7 +917,7 @@ void* producer(void* argument) {
         access: access, guard: guard, state: restored
     });
     step();
-    solve();
+    close();
 }
 
 int32 run_two_producers(struct shared_log* log) {
@@ -949,7 +949,7 @@ int32 run_two_producers(struct shared_log* log) {
             unfold(credit(log));
             unfold(credit(log));
             step();
-            solve();
+            close();
         }
         false => {}
     }
@@ -961,7 +961,7 @@ int32 run_two_producers(struct shared_log* log) {
             unfold(credit(log));
             unfold(credit(log));
             step();
-            solve();
+            close();
         }
         false => {}
     }
@@ -973,7 +973,7 @@ int32 run_two_producers(struct shared_log* log) {
             let { cap: cap3, slack: slack3, items: after } = unfold(state);
             unfold(credit(log));
             step();
-            solve();
+            close();
         }
         false => {}
     }
@@ -982,5 +982,5 @@ int32 run_two_producers(struct shared_log* log) {
     step(pthread_mutex_destroy, { lifetime: lifetime });
     let { cap: cap4, slack: slack4, items: after } = unfold(state);
     step();
-    solve();
+    close();
 }

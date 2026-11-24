@@ -60,7 +60,7 @@ theorem comparison_negative_after_prefix(left: uint8[], right: uint8[], length: 
                 (left[k] < right[k] implies cmp < 0) and
                 (right[k] < left[k] implies cmp > 0)
         }, first);
-        solve();
+        close();
     }
 }
 
@@ -76,7 +76,7 @@ theorem comparison_positive_after_prefix(left: uint8[], right: uint8[], length: 
                 (left[k] < right[k] implies cmp < 0) and
                 (right[k] < left[k] implies cmp > 0)
         }, first);
-        solve();
+        close();
     }
 }
 
@@ -85,6 +85,6 @@ theorem comparison_zero_when_equal(left: uint8[], right: uint8[], length: uint64
     requires bytes::equal(left, 0u64, right, 0u64, length);
     ensures cmp == 0 by {
         unfold(bytes::comparison(left, right, length, cmp));
-        solve();
+        close();
     }
 }

@@ -25,7 +25,7 @@ int32 id(int32 x) {
     step_until(function.exit);
     have sq(to_integer(result)) >= 0 by {
         instantiate(forall (z: Integer) { sq(z) >= 0 }, to_integer(result));
-        known();
+        close();
     }
 }
 
@@ -36,7 +36,7 @@ int32* keep(int32* p) {
     step_until(function.exit);
     have same(result, result) by {
         instantiate(forall (q: int32*) { same(q, q) }, result);
-        known();
+        close();
     }
 }
 int32* keep_both(int32* p, int32 x) {
@@ -46,7 +46,7 @@ int32* keep_both(int32* p, int32 x) {
     step_until(function.exit);
     have same(result, result) and sq(to_integer(x)) >= 0 by {
         instantiate(forall (q: int32*) { forall (z: Integer) { same(q, q) and sq(z) >= 0 } }, result, to_integer(x));
-        known();
+        close();
     }
 }
 ```

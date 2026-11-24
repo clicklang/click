@@ -29,10 +29,10 @@ void set(int32_t* q, int i, int32_t v) {
     step();
     step();
     have at(statement(2).exit, exact(*((program::b + i * 4) as (int32 *))) == v) by {
-        known();
+        close();
     }
     have at(statement(2).exit, address(q + i) == address(((program::b + i * 4) as (int32 *)))) by {
-        solve();
+        close();
     }
     have q[i] == v by {
         close() using {
@@ -40,8 +40,8 @@ void set(int32_t* q, int i, int32_t v) {
             at(statement(2).exit, address(q + i) == address(((program::b + i * 4) as (int32 *))));
         };
     }
-    known();
-    known();
+    close();
+    close();
 }
 ```
 

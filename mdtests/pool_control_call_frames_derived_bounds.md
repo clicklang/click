@@ -32,7 +32,7 @@ int32 pool_used(struct pool* pool) {
     owns control(pool);
 } by {
     with(control(pool)) { step_until(function.exit); }
-    solve();
+    close();
 }
 int32 forward(struct pool* pool) {
     owns control(pool);
@@ -41,7 +41,7 @@ int32 forward(struct pool* pool) {
 } by {
     with(control(pool)) {
         have 0 <= pool->used;
-        have defined(pool->used + count(slot(pool))) by { known(); }
+        have defined(pool->used + count(slot(pool))) by { close(); }
     }
 }
 ```

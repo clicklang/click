@@ -64,12 +64,12 @@ int32 even(int32 n) {
             step();
             step();
             step();
-            solve();
+            close();
         }
         false => {}
     }
     step();
-    solve();
+    close();
 }
 
 int32 odd(int32 n) {
@@ -96,12 +96,12 @@ int32 odd(int32 n) {
             step();
             step();
             step();
-            solve();
+            close();
         }
         false => {}
     }
     step();
-    solve();
+    close();
 }
 ```
 

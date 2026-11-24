@@ -62,7 +62,7 @@ int32 tree_sum(struct node* node) {
     step();
     step();
     step();
-    known();
+    close();
 }
 ```
 

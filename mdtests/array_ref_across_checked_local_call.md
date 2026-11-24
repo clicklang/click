@@ -26,15 +26,15 @@ int32 keep(int32 a[]) {
 } by {
     have total(a, 0, 0) == 0 by {
         unfold(total(a, 0, 0));
-        known();
+        close();
     }
     step();
     step();
     step();
     step();
-    have total(a, 0, 0) == 0 by { known(); }
+    have total(a, 0, 0) == 0 by { close(); }
     step_until(function.exit);
-    solve();
+    close();
 }
 ```
 

@@ -26,20 +26,20 @@ int32 count_to_bound(int32 n) {
         loop {
             decreases n - i;
             invariant 0 <= i and i <= n;
-            initialize by solve();
+            initialize by close();
             maintain by { step(); }
         }
         step_until(function.exit);
-        solve();
+        close();
     } else {
         loop {
             decreases n - i + 1;
             invariant 0 <= i and i <= n;
-            initialize by solve();
+            initialize by close();
             maintain by { step(); }
         }
         step_until(function.exit);
-        solve();
+        close();
     }
 }
 ```

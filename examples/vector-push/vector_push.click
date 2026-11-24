@@ -23,5 +23,5 @@ int32 vector_push(struct vector* owner, int32 value) {
 } by {
     step_until(function.exit);
     fold(nonempty_vector(owner));
-    solve();
+    close();
 }

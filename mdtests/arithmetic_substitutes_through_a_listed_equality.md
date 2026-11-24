@@ -25,7 +25,7 @@ int32 same(int32 x, int32 y) {
     have y >= 0 by { close() using { x == y; 0 <= x; }; }
     have y < 10 by { close() using { x < 10; y == x; }; }
     step();
-    solve();
+    close();
 }
 ```
 

@@ -45,7 +45,7 @@ theorem frame_null_is_null(up: struct cell*) {
 
     ensures up == 0 by {
         if up == 0 {
-            known();
+            close();
         } else {
             have frame_null(Frame::Above(up)) != 1 by {
                 unfold(frame_null(Frame::Above(up)));
@@ -64,18 +64,18 @@ void keep(struct cell* c) {
         Frame::Above(up) => {
             have frame_null(Frame::Above(up)) == 1 by {
                 rewrite(Frame::Above(up), f.model);
-                known();
+                close();
             }
             have up == 0 by {
                 apply(frame_null_is_null(up));
-                known();
+                close();
             }
             have address(up) + 1 == 1 by {
                 rewrite(up, 0);
-                known();
+                close();
             }
             step_until(function.exit);
-            solve();
+            close();
         },
     }
 }

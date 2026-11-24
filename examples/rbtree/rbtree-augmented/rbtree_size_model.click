@@ -98,11 +98,11 @@ theorem sized_child_descent(identity: struct rb_node*, parent: struct rb_node*, 
                            value: int32, left: SizedTree, right: SizedTree) {
     ensures 0 <= rb_subtree_size(sized_shape(left)) by {
         apply(rb_subtree_size_nonnegative(sized_shape(left)));
-        known();
+        close();
     }
     ensures 0 <= rb_subtree_size(sized_shape(right)) by {
         apply(rb_subtree_size_nonnegative(sized_shape(right)));
-        known();
+        close();
     }
     ensures rb_subtree_size(sized_shape(left)) < rb_subtree_size(sized_shape(SizedTree::Node(identity, parent, color, value, left, right))) by {
         apply(rb_subtree_size_nonnegative(sized_shape(right)));
@@ -134,14 +134,14 @@ tactic certify_size(p: struct rb_node*) {
             have sized_counts_valid(checked.model) == 1 by {
                 rewrite(checked.model, SizedTree::Empty);
                 unfold(sized_counts_valid(SizedTree::Empty));
-                known();
+                close();
             }
             have to_integer(sized_value(checked.model)) == rb_subtree_size(sized_shape(checked.model)) by {
                 rewrite(checked.model, SizedTree::Empty);
                 unfold(sized_value(SizedTree::Empty));
                 unfold(sized_shape(SizedTree::Empty));
                 unfold(rb_subtree_size(RbTree::Empty));
-                known();
+                close();
             }
         },
         SizedTree::Node(identity, parent, color, value, left_model, right_model) => {
@@ -151,35 +151,35 @@ tactic certify_size(p: struct rb_node*) {
                 rewrite(old(tree.model), SizedTree::Node(identity, parent, color, value, left_model, right_model));
                 unfold(sized_shape(SizedTree::Node(identity, parent, color, value, left_model, right_model)));
                 unfold(rb_subtree_size(RbTree::Node(identity, parent, color, sized_shape(left_model), sized_shape(right_model))));
-                known();
+                close();
             }
             have 0 <= rb_subtree_size(sized_shape(left.model)) by {
                 rewrite(left.model, left_model);
-                known();
+                close();
             }
             have rb_subtree_size(sized_shape(left.model)) < rb_subtree_size(sized_shape(old(tree.model))) by {
                 rewrite(left.model, left_model);
                 rewrite(old(tree.model), SizedTree::Node(identity, parent, color, value, left_model, right_model));
-                known();
+                close();
             }
             let { checked: left } = certify_size(p->rb_left, { tree: left });
             have 0 <= rb_subtree_size(sized_shape(right.model)) by {
                 rewrite(right.model, right_model);
-                known();
+                close();
             }
             have rb_subtree_size(sized_shape(right.model)) < rb_subtree_size(sized_shape(old(tree.model))) by {
                 rewrite(right.model, right_model);
                 rewrite(old(tree.model), SizedTree::Node(identity, parent, color, value, left_model, right_model));
-                known();
+                close();
             }
             let { checked: right } = certify_size(p->rb_right, { tree: right });
             have to_integer(sized_value(left_model)) == rb_subtree_size(sized_shape(left_model)) by {
                 rewrite(left_model, left.model);
-                known();
+                close();
             }
             have to_integer(sized_value(right_model)) == rb_subtree_size(sized_shape(right_model)) by {
                 rewrite(right_model, right.model);
-                known();
+                close();
             }
             have to_integer(value) == rb_subtree_size(sized_shape(old(tree.model))) by {
                 close() using {
@@ -189,8 +189,8 @@ tactic certify_size(p: struct rb_node*) {
                     rb_subtree_size(sized_shape(old(tree.model))) == rb_subtree_size(sized_shape(left_model)) + rb_subtree_size(sized_shape(right_model)) + 1;
                 };
             }
-            have sized_counts_valid(left_model) == 1 by { rewrite(left_model, left.model); known(); }
-            have sized_counts_valid(right_model) == 1 by { rewrite(right_model, right.model); known(); }
+            have sized_counts_valid(left_model) == 1 by { rewrite(left_model, left.model); close(); }
+            have sized_counts_valid(right_model) == 1 by { rewrite(right_model, right.model); close(); }
             let checked = fold(sized_at(p), { model: SizedTree::Node(identity, parent, color, value, left_model, right_model), metadata: metadata, left: left, right: right });
             have checked.model == old(tree.model);
             have sized_counts_valid(checked.model) == 1 by {
@@ -206,7 +206,7 @@ tactic certify_size(p: struct rb_node*) {
                 rewrite(checked.model, SizedTree::Node(identity, parent, color, value, left_model, right_model));
                 unfold(sized_value(SizedTree::Node(identity, parent, color, value, left_model, right_model)));
                 rewrite(SizedTree::Node(identity, parent, color, value, left_model, right_model), old(tree.model));
-                known();
+                close();
             }
         },
     }
@@ -221,13 +221,13 @@ theorem sized_parent_is_shape(tree: SizedTree, parent: struct rb_node*) {
                 unfold(sized_parent_is(SizedTree::Empty, parent));
                 unfold(sized_shape(SizedTree::Empty));
                 unfold(rb_parent_is(RbTree::Empty, parent));
-                solve();
+                close();
             },
             SizedTree::Node(identity, before, color, value, left, right) => {
                 unfold(sized_parent_is(SizedTree::Node(identity, before, color, value, left, right), parent));
                 unfold(sized_shape(SizedTree::Node(identity, before, color, value, left, right)));
                 unfold(rb_parent_is(RbTree::Node(identity, before, color, sized_shape(left), sized_shape(right)), parent));
-                solve();
+                close();
             },
         }
     }

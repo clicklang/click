@@ -20,10 +20,10 @@ int32 invoke(int32 (*callback)(int32), int32 x) {
  ensures result == x;
 } by {
  step_until(function.exit);
- have result <= x by known();
+ have result <= x by close();
  have x <= result;
  apply(int32_le_antisymmetric(result, x));
- solve();
+ close();
 }
 ```
 

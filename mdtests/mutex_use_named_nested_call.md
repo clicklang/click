@@ -34,14 +34,14 @@ void inner(struct holder *holder) {
     step();
     step();
     step();
-    solve();
+    close();
 }
 void outer(struct holder *holder) {
     owns access: mutex_use(&holder->mu);
 } by {
     step(inner, { access: access });
     step();
-    solve();
+    close();
 }
 int32 run(struct holder *holder) {
     owns holder->mu;
@@ -54,7 +54,7 @@ int32 run(struct holder *holder) {
     step(outer, { access: lifetime });
     step(pthread_mutex_destroy, { lifetime: lifetime });
     step();
-    solve();
+    close();
 }
 ```
 

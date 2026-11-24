@@ -38,7 +38,7 @@ void use(int32* p) {
     ensures *p == 7;
 } by {
     step_until(function.exit);
-    solve();
+    close();
 }
 ```
 

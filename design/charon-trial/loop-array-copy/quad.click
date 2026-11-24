@@ -57,5 +57,5 @@ fn quad::walk(bytes: &[u8]) -> u32 {
         }
     }
     step_until(function.exit);
-    solve();
+    close();
 }

@@ -11,7 +11,7 @@ fn sum(bytes: &[u8]) -> i32 {
 } by {
     step_until(loop(0).entry);
     have prefix(bytes, i) == 0 by {
-        unfold(prefix(bytes, i)); solve();
+        unfold(prefix(bytes, i)); close();
     }
     loop {
         decreases bytes.len() - i;
@@ -23,7 +23,7 @@ fn sum(bytes: &[u8]) -> i32 {
             have i < 18446744073709551615u64;
             have prefix(bytes, i + 1u64) == prefix(bytes, i) + to_integer(bytes[i] as i32) by {
                 unfold(prefix(bytes, i + 1u64));
-                solve();
+                close();
             }
             step_until(assignment(i, 1).entry);
             have 0 <= total;
@@ -35,6 +35,6 @@ fn sum(bytes: &[u8]) -> i32 {
     have i == bytes.len();
     have prefix(bytes, i) == prefix(bytes, bytes.len()) by {
         rewrite(i, bytes.len());
-        solve();
+        close();
     }
 }

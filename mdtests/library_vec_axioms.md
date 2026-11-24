@@ -10,11 +10,11 @@ theorem push_then_read(v: Vec<uint32>, x: uint32, i: uint64) {
     requires vec::len(v) < 10u64;
     requires i < vec::len(v);
     ensures vec::len(vec::push(v, x)) == vec::len(v) + 1 by {
-        have vec::len(v) < 18446744073709551615u64 by { solve(); }
+        have vec::len(v) < 18446744073709551615u64 by { close(); }
         apply(vec::len_push(v, x));
     }
     ensures vec::get(vec::push(v, x), vec::len(v)) == x by {
-        have vec::len(v) < 18446744073709551615u64 by { solve(); }
+        have vec::len(v) < 18446744073709551615u64 by { close(); }
         apply(vec::get_push_last(v, x));
     }
     ensures vec::get(vec::push(v, x), i) == vec::get(v, i) by {

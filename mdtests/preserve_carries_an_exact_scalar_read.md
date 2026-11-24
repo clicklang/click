@@ -34,7 +34,7 @@ void touch(struct Pair* p) {
         preserve(memory((&p->second)[0..1]), statement(0));
     }
     step_until(function.exit);
-    solve();
+    close();
 }
 ```
 

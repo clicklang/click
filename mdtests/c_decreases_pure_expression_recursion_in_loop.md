@@ -48,23 +48,23 @@ int32 walk(int32 n) {
         invariant i >= 0;
         invariant i <= n;
         invariant result == 0;
-        initialize by solve();
+        initialize by close();
         maintain by {
             have 0 <= level(i) by {
                 unfold(level(i));
-                solve();
+                close();
             }
             have level(i) < level(n) by {
                 unfold(level(i));
                 unfold(level(n));
-                solve();
+                close();
             }
             step();
             step();
         }
     }
     step();
-    solve();
+    close();
 }
 ```
 

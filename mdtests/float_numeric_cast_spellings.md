@@ -25,11 +25,11 @@ float narrow(double x) {
 }
 
 theorem numeric_cast_bits() {
-    ensures 16777217 as float == float32_from_bits(0x4b800000) by { known(); }
-    ensures 16777217 as double == float64_from_bits(0x4170000010000000) by { known(); }
-    ensures float64_from_bits(0x3ff0000010000000) as float == float32_from_bits(0x3f800000) by { known(); }
-    ensures float64_from_bits(0x3ff0000000000000) / (float32_from_bits(0x80000000) as double) == float64_from_bits(0xfff0000000000000) by { known(); }
-    ensures isnan(float32_from_bits(0x7fc00123) as double) by { known(); }
+    ensures 16777217 as float == float32_from_bits(0x4b800000) by { close(); }
+    ensures 16777217 as double == float64_from_bits(0x4170000010000000) by { close(); }
+    ensures float64_from_bits(0x3ff0000010000000) as float == float32_from_bits(0x3f800000) by { close(); }
+    ensures float64_from_bits(0x3ff0000000000000) / (float32_from_bits(0x80000000) as double) == float64_from_bits(0xfff0000000000000) by { close(); }
+    ensures isnan(float32_from_bits(0x7fc00123) as double) by { close(); }
 }
 ```
 

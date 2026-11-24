@@ -12,7 +12,7 @@ fn times_three(value: u32) -> u32 {
     step_until(function.exit);
     have 3u32 == 0u32 or value <= (4294967295u32 / 3u32);
     apply(u32::multiply_to_integer(value, 3u32));
-    solve();
+    close();
 }
 
 fn reduce(value: u32) -> u32 {

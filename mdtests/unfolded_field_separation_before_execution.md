@@ -24,7 +24,7 @@ void update(struct node* parent, struct node* child) {
     owns c: cell(child);
 } by {
     unfold(c);
-    have separate(memory(parent->word), memory(child->word)) by known();
+    have separate(memory(parent->word), memory(child->word)) by close();
     step();
     step();
     let c = fold(cell(child), { value: 1u64 });

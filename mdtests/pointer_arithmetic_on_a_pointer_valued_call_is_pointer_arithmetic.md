@@ -18,19 +18,19 @@ function first(p: uint8*) -> uint8* {
 theorem offsets(s: Slice<uint8>, t: Slice<uint8>, k: uint64) {
     requires t.as_ptr() == s.as_ptr() + 1;
     ensures slice::as_ptr(s) + k == slice::as_ptr(s) + k by {
-        solve();
+        close();
     }
     ensures slice::as_ptr(t) == slice::as_ptr(s) + 1 by {
-        solve();
+        close();
     }
     ensures s.as_ptr() + k == s.as_ptr() + k by {
-        solve();
+        close();
     }
 }
 
 theorem local_pointer_result(p: uint8*, k: uint64) {
     ensures first(p) + k == first(p) + k by {
-        solve();
+        close();
     }
 }
 ```

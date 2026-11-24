@@ -41,7 +41,7 @@ uint8 fill_byte_tail(uint8 p[], int32 n) {
         maintain by {
             mark before_store;
             unfold(first_byte(p));
-            have p[0] == old(first_byte(p)) by { known(); }
+            have p[0] == old(first_byte(p)) by { close(); }
             have i != 0 by { close() using { i >= 1; }; }
             apply(click::separation::separate_elements(p, i, 0));
             step();
@@ -53,26 +53,26 @@ uint8 fill_byte_tail(uint8 p[], int32 n) {
             }
             have p[0] == old(first_byte(p)) by {
                 rewrite(p[0], at(before_store, p[0]));
-                known();
+                close();
             }
             step();
-            have first_byte(p) == p[0] by { unfold(first_byte(p)); known(); }
+            have first_byte(p) == p[0] by { unfold(first_byte(p)); close(); }
             have first_byte(p) == old(first_byte(p)) by {
                 rewrite(first_byte(p), p[0]);
-                known();
+                close();
             }
-            solve();
+            close();
         }
         otherwise {
-            have first_byte(p) == p[0] by { unfold(first_byte(p)); known(); }
+            have first_byte(p) == p[0] by { unfold(first_byte(p)); close(); }
             have p[0] == old(first_byte(p)) by {
                 rewrite(p[0], first_byte(p));
-                known();
+                close();
             }
         }
     }
     step();
-    solve();
+    close();
 }
 ```
 

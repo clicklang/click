@@ -12,7 +12,7 @@ theorem zlib_batch_count_bounds(n: uint32) {
   have to_integer(n as int32) == to_integer(n) by { close() using { 0 <= to_integer(n); to_integer(n) <= 347; }; }
   have 0 <= to_integer(n as int32) by close() using { 0 <= to_integer(n); to_integer(n as int32) == to_integer(n); };
   have to_integer(n as int32) <= 347 by close() using { to_integer(n) <= 347; to_integer(n as int32) == to_integer(n); };
-  solve();
+  close();
  }
 }
 theorem zlib_batch_native_capacity_observation(n: uint32) {
@@ -41,7 +41,7 @@ theorem zlib_batch_remaining_limit(n: uint32) {
  ensures zlib_batch_remaining(n) <= 5552u64 by {
   apply(zlib_batch_remaining_bounds(n));
   have to_integer(zlib_batch_remaining(n)) <= 5552 by close() using { to_integer(zlib_batch_remaining(n)) == 16 * to_integer(n); to_integer(n) <= 347; };
-  known();
+  close();
  }
 }
 theorem zlib_batch_prefix_observation(n: uint32) {
@@ -64,7 +64,7 @@ theorem zlib_batch_prefix_limit(n: uint32) {
   have 0 <= to_integer(n); have to_integer(n) <= 4294967295;
   have 0 <= to_integer(zlib_batch_count(n)) by close() using { to_integer(zlib_batch_count(n)) == 5552 - 16 * to_integer(n); to_integer(n) <= 347; };
   have to_integer(zlib_batch_count(n)) <= 5552 by close() using { to_integer(zlib_batch_count(n)) == 5552 - 16 * to_integer(n); 0 <= to_integer(n); };
-  solve();
+  close();
  }
 }
 theorem zlib_batch_nonempty_prefix(n: uint32) {
@@ -73,7 +73,7 @@ theorem zlib_batch_nonempty_prefix(n: uint32) {
  ensures zlib_batch_count(n) <= 5536 by {
   apply(zlib_batch_prefix_observation(n));
   have to_integer(zlib_batch_count(n)) <= 5536 by close() using { to_integer(zlib_batch_count(n)) == 5552 - 16 * to_integer(n); to_integer(1u32) <= to_integer(n); };
-  known();
+  close();
  }
 }
 theorem zlib_batch_empty_components(bytes: uint8[]) {
@@ -91,13 +91,13 @@ theorem zlib_batch_predecessor(n: uint32) {
  ensures to_integer(n - 1u32) <= to_integer(347u32) by {
   have to_integer(n - 1u32) == to_integer(n) - to_integer(1u32);
   have to_integer(n - 1u32) <= 347 by close() using { to_integer(n - 1u32) == to_integer(n) - to_integer(1u32); to_integer(n) <= 347; };
-  known();
+  close();
  }
 }
 theorem zlib_batch_prefix_step(n: uint32) {
  requires 1u32 <= n;
  requires n <= 347u32;
- ensures to_integer(n - 1u32) <= to_integer(347u32) by { apply(zlib_batch_predecessor(n)); known(); }
+ ensures to_integer(n - 1u32) <= to_integer(347u32) by { apply(zlib_batch_predecessor(n)); close(); }
  ensures zlib_batch_count(n - 1u32) == zlib_batch_count(n) + 16 by {
   apply(zlib_batch_predecessor(n));
   apply(zlib_batch_prefix_observation(n));
@@ -105,7 +105,7 @@ theorem zlib_batch_prefix_step(n: uint32) {
   apply(zlib_batch_nonempty_prefix(n));
   apply(zlib_batch_prefix_limit(n));
   have to_integer(n - 1u32) == to_integer(n) - to_integer(1u32);
-  have defined(zlib_batch_count(n) + 16) by solve();
+  have defined(zlib_batch_count(n) + 16) by close();
   have to_integer(zlib_batch_count(n) + 16) == to_integer(zlib_batch_count(n)) + to_integer(16);
   have to_integer(zlib_batch_count(n - 1u32)) == to_integer(zlib_batch_count(n) + 16) by close() using {
    to_integer(zlib_batch_count(n - 1u32)) == 5552 - 16 * to_integer(n - 1u32);
@@ -113,14 +113,14 @@ theorem zlib_batch_prefix_step(n: uint32) {
    to_integer(zlib_batch_count(n)) == 5552 - 16 * to_integer(n);
    to_integer(zlib_batch_count(n) + 16) == to_integer(zlib_batch_count(n)) + to_integer(16);
   };
-  known();
+  close();
  }
 }
 theorem zlib_batch_prefix_initial() {
  ensures zlib_batch_count(347u32) == 0 by {
   apply(zlib_batch_prefix_observation(347u32));
   have to_integer(zlib_batch_count(347u32)) == to_integer(0) by close() using { to_integer(zlib_batch_count(347u32)) == 5552 - 16 * to_integer(347u32); };
-  known();
+  close();
  }
 }
 // The sum is defined, stated apart so the observations of it in
@@ -133,7 +133,7 @@ theorem zlib_batch_lane_defined(n: uint32, lane: int32) {
  ensures defined(zlib_batch_count(n) + lane) by {
   apply(zlib_batch_prefix_limit(n));
   apply(zlib_batch_nonempty_prefix(n));
-  solve();
+  close();
  }
 }
 
@@ -156,7 +156,7 @@ theorem zlib_batch_lane(n: uint32, lane: int32) {
    to_integer(zlib_batch_count(n)) <= 5536; to_integer(lane) <= 15;
   };
   all {
-   0 <= to_integer(zlib_batch_count(n) + lane) => { known(); }
+   0 <= to_integer(zlib_batch_count(n) + lane) => { close(); }
    to_integer(zlib_batch_count(n) + lane) < 5552 => { close() using { to_integer(zlib_batch_count(n) + lane) <= 5551; }; }
   }
  }
@@ -169,7 +169,7 @@ theorem zlib_batch_cursor(base: const uint8*, n: uint32) {
   have 0 <= to_integer(zlib_batch_remaining(n)); have to_integer(zlib_batch_remaining(n)) <= 18446744073709551615;
   have to_integer(5552u64 - zlib_batch_remaining(n)) <= 22208 by close() using { to_integer(5552u64 - zlib_batch_remaining(n)) == to_integer(5552u64) - to_integer(zlib_batch_remaining(n)); 0 <= to_integer(zlib_batch_remaining(n)); };
   apply(zlib_prefix_pointer(base, 5552u64, zlib_batch_remaining(n)));
-  unfold(zlib_batch_count(n)); solve();
+  unfold(zlib_batch_count(n)); close();
  }
 }
 theorem zlib_batch_nonempty_remaining(n: uint32) {
@@ -178,7 +178,7 @@ theorem zlib_batch_nonempty_remaining(n: uint32) {
  ensures 16u64 <= zlib_batch_remaining(n) by {
   apply(zlib_batch_remaining_bounds(n));
   have to_integer(16u64) <= to_integer(zlib_batch_remaining(n)) by close() using { to_integer(zlib_batch_remaining(n)) == 16 * to_integer(n); to_integer(1u32) <= to_integer(n); };
-  known();
+  close();
  }
 }
 theorem zlib_batch_read_bound(n: uint32, lane: uint64) {
@@ -204,7 +204,7 @@ theorem zlib_batch_byte_lane(bytes: uint8[], n: uint32, lane: int32) {
   apply(zlib_batch_lane_defined(n, lane)); apply(zlib_batch_lane(n, lane));
   apply(zlib_batch_prefix_limit(n));
   apply(zlib_batch_nonempty_prefix(n));
-  have defined(zlib_batch_count(n) + lane) by solve();
+  have defined(zlib_batch_count(n) + lane) by close();
   have bytes + zlib_batch_count(n) + lane == bytes + (zlib_batch_count(n) + lane) by {
    normalize() using { defined(zlib_batch_count(n) + lane); };
   }
@@ -218,7 +218,7 @@ theorem zlib_batch_positive(n: uint32) {
   apply(integer::uint32_remainder_less_than_divisor(0u32, n));
   have 0 <= to_integer(0u32 % n); have to_integer(0u32 % n) <= 4294967295;
   have 1 <= to_integer(n) by close() using { 0 <= to_integer(0u32 % n); to_integer(0u32 % n) < to_integer(n); };
-  known();
+  close();
  }
 }
 
@@ -233,7 +233,7 @@ theorem zlib_batch_capacity_step(n: uint32) {
   unfold(zlib_batch_remaining(n));
   unfold(zlib_batch_remaining(n - 1u32));
   have to_integer(n - 1u32) == to_integer(n) - to_integer(1u32);
-  have to_integer(16u64) <= to_integer(16u64 * n as uint64) by solve();
+  have to_integer(16u64) <= to_integer(16u64 * n as uint64) by close();
   have to_integer((16u64 * n as uint64) - 16u64) == to_integer(16u64 * n as uint64) - to_integer(16u64);
   apply(zlib_batch_native_capacity_observation(n));
   apply(zlib_batch_native_capacity_observation(n - 1u32));
@@ -243,7 +243,7 @@ theorem zlib_batch_capacity_step(n: uint32) {
    to_integer(n - 1u32) == to_integer(n) - to_integer(1u32);
    to_integer(16u64 * n as uint64 - 16u64) == to_integer(16u64 * n as uint64) - to_integer(16u64);
   };
-  known();
+  close();
  }
 }
 
@@ -253,7 +253,7 @@ theorem zlib_batch_prefix_final() {
   have to_integer(zlib_batch_count(0u32)) == to_integer(5552) by close() using {
    to_integer(zlib_batch_count(0u32)) == 5552 - 16 * to_integer(0u32);
   };
-  known();
+  close();
  }
 }
 
@@ -264,7 +264,7 @@ theorem zlib_batch_reduced_components(bytes: uint8[], a: uint64, b: uint64) {
   apply(integer::uint64_remainder_to_integer(a, 65521u64));
   unfold(adler_spec_a(bytes, 5552, 1));
   rewrite(1 + adler_byte_sum(bytes, 5552), to_integer(a));
-  known();
+  close();
  }
  ensures to_integer(b % 65521u64) == adler_spec_b(bytes, 5552, 1, 0) by {
   apply(integer::uint64_remainder_to_integer(b, 65521u64));
@@ -273,6 +273,6 @@ theorem zlib_batch_reduced_components(bytes: uint8[], a: uint64, b: uint64) {
    to_integer(b) == to_integer(5552) + adler_weighted_sum(bytes, 5552, 5552);
   };
   rewrite(0 + to_integer(5552) * 1 + adler_weighted_sum(bytes, 5552, 5552), to_integer(b));
-  known();
+  close();
  }
 }

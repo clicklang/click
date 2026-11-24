@@ -17,7 +17,7 @@ int32 first_outputs_repeat() {
     // Seeding leaves a known state. Each draw's output is the XSH-RR
     // formula on the state its call started from, evaluated once that
     // state is known.
-    step() { requires aligned(&pcg::pcg32_global.state, 8) by known(); }
+    step() { requires aligned(&pcg::pcg32_global.state, 8) by close(); }
     step_until(region(2).entry);
     have pcg::pcg32_global.state == 1753877967969059832u64 by {
         unfold(integer::uint64_wrapping_mul(0u64, 6364136223846793005u64));
@@ -25,16 +25,16 @@ int32 first_outputs_repeat() {
         unfold(integer::uint64_wrapping_add(integer::uint64_wrapping_add(integer::uint64_wrapping_mul(0u64, 6364136223846793005u64), ((54u64 << 1u64) | 1u64)), 42u64));
         unfold(integer::uint64_wrapping_mul(integer::uint64_wrapping_add(integer::uint64_wrapping_add(integer::uint64_wrapping_mul(0u64, 6364136223846793005u64), ((54u64 << 1u64) | 1u64)), 42u64), 6364136223846793005u64));
         unfold(integer::uint64_wrapping_add(integer::uint64_wrapping_mul(integer::uint64_wrapping_add(integer::uint64_wrapping_add(integer::uint64_wrapping_mul(0u64, 6364136223846793005u64), ((54u64 << 1u64) | 1u64)), 42u64), 6364136223846793005u64), ((54u64 << 1u64) | 1u64)));
-        solve();
+        close();
     }
-    have pcg::pcg32_global.inc == 109u64 by { solve(); }
-    step() { requires aligned(&pcg::pcg32_global.state, 8) by known(); }
+    have pcg::pcg32_global.inc == 109u64 by { close(); }
+    step() { requires aligned(&pcg::pcg32_global.state, 8) by close(); }
     step_until(region(5).entry);
-    step() { requires aligned(&pcg::pcg32_global.state, 8) by known(); }
+    step() { requires aligned(&pcg::pcg32_global.state, 8) by close(); }
     step();
-    step() { requires aligned(&pcg::pcg32_global.state, 8) by known(); }
+    step() { requires aligned(&pcg::pcg32_global.state, 8) by close(); }
     step_until(region(9).entry);
-    step() { requires aligned(&pcg::pcg32_global.state, 8) by known(); }
+    step() { requires aligned(&pcg::pcg32_global.state, 8) by close(); }
     step_until(region(11).entry);
     have at(region(5).entry, pcg::pcg32_global.state) == 3118741472915405573u64 by {
         rewrite(at(region(5).entry, pcg::pcg32_global.state), at(region(2).entry, integer::uint64_wrapping_add(integer::uint64_wrapping_mul(pcg::pcg32_global.state, 6364136223846793005u64), pcg::pcg32_global.inc)));
@@ -42,25 +42,25 @@ int32 first_outputs_repeat() {
         rewrite(at(region(2).entry, pcg::pcg32_global.inc), 109u64);
         unfold(integer::uint64_wrapping_mul(1753877967969059832u64, 6364136223846793005u64));
         unfold(integer::uint64_wrapping_add(3118741472915405464u64, 109u64));
-        known();
+        close();
     }
-    have at(region(8).entry, pcg::pcg32_global.state) == 1753877967969059832u64 by { solve(); }
-    have first == at(region(2).entry, ((((((pcg::pcg32_global.state >> 18u64) ^ pcg::pcg32_global.state) >> 27u64) as uint32) >> ((pcg::pcg32_global.state >> 59u64) as uint32)) | (((((pcg::pcg32_global.state >> 18u64) ^ pcg::pcg32_global.state) >> 27u64) as uint32) << ((0u32 - (pcg::pcg32_global.state >> 59u64) as uint32) & 31u32)))) by { solve(); }
+    have at(region(8).entry, pcg::pcg32_global.state) == 1753877967969059832u64 by { close(); }
+    have first == at(region(2).entry, ((((((pcg::pcg32_global.state >> 18u64) ^ pcg::pcg32_global.state) >> 27u64) as uint32) >> ((pcg::pcg32_global.state >> 59u64) as uint32)) | (((((pcg::pcg32_global.state >> 18u64) ^ pcg::pcg32_global.state) >> 27u64) as uint32) << ((0u32 - (pcg::pcg32_global.state >> 59u64) as uint32) & 31u32)))) by { close(); }
     have first == 2707161783u32 by {
         rewrite(first, at(region(2).entry, ((((((pcg::pcg32_global.state >> 18u64) ^ pcg::pcg32_global.state) >> 27u64) as uint32) >> ((pcg::pcg32_global.state >> 59u64) as uint32)) | (((((pcg::pcg32_global.state >> 18u64) ^ pcg::pcg32_global.state) >> 27u64) as uint32) << ((0u32 - (pcg::pcg32_global.state >> 59u64) as uint32) & 31u32)))));
         rewrite(at(region(2).entry, pcg::pcg32_global.state), 1753877967969059832u64);
-        known();
+        close();
     }
-    have second == at(region(5).entry, ((((((pcg::pcg32_global.state >> 18u64) ^ pcg::pcg32_global.state) >> 27u64) as uint32) >> ((pcg::pcg32_global.state >> 59u64) as uint32)) | (((((pcg::pcg32_global.state >> 18u64) ^ pcg::pcg32_global.state) >> 27u64) as uint32) << ((0u32 - (pcg::pcg32_global.state >> 59u64) as uint32) & 31u32)))) by { solve(); }
+    have second == at(region(5).entry, ((((((pcg::pcg32_global.state >> 18u64) ^ pcg::pcg32_global.state) >> 27u64) as uint32) >> ((pcg::pcg32_global.state >> 59u64) as uint32)) | (((((pcg::pcg32_global.state >> 18u64) ^ pcg::pcg32_global.state) >> 27u64) as uint32) << ((0u32 - (pcg::pcg32_global.state >> 59u64) as uint32) & 31u32)))) by { close(); }
     have second == 2068313097u32 by {
         rewrite(second, at(region(5).entry, ((((((pcg::pcg32_global.state >> 18u64) ^ pcg::pcg32_global.state) >> 27u64) as uint32) >> ((pcg::pcg32_global.state >> 59u64) as uint32)) | (((((pcg::pcg32_global.state >> 18u64) ^ pcg::pcg32_global.state) >> 27u64) as uint32) << ((0u32 - (pcg::pcg32_global.state >> 59u64) as uint32) & 31u32)))));
         rewrite(at(region(5).entry, pcg::pcg32_global.state), 3118741472915405573u64);
-        known();
+        close();
     }
-    have again == at(region(8).entry, ((((((pcg::pcg32_global.state >> 18u64) ^ pcg::pcg32_global.state) >> 27u64) as uint32) >> ((pcg::pcg32_global.state >> 59u64) as uint32)) | (((((pcg::pcg32_global.state >> 18u64) ^ pcg::pcg32_global.state) >> 27u64) as uint32) << ((0u32 - (pcg::pcg32_global.state >> 59u64) as uint32) & 31u32)))) by { solve(); }
+    have again == at(region(8).entry, ((((((pcg::pcg32_global.state >> 18u64) ^ pcg::pcg32_global.state) >> 27u64) as uint32) >> ((pcg::pcg32_global.state >> 59u64) as uint32)) | (((((pcg::pcg32_global.state >> 18u64) ^ pcg::pcg32_global.state) >> 27u64) as uint32) << ((0u32 - (pcg::pcg32_global.state >> 59u64) as uint32) & 31u32)))) by { close(); }
     have again == 2707161783u32 by {
         rewrite(again, at(region(8).entry, ((((((pcg::pcg32_global.state >> 18u64) ^ pcg::pcg32_global.state) >> 27u64) as uint32) >> ((pcg::pcg32_global.state >> 59u64) as uint32)) | (((((pcg::pcg32_global.state >> 18u64) ^ pcg::pcg32_global.state) >> 27u64) as uint32) << ((0u32 - (pcg::pcg32_global.state >> 59u64) as uint32) & 31u32)))));
         rewrite(at(region(8).entry, pcg::pcg32_global.state), 1753877967969059832u64);
-        known();
+        close();
     }
 }

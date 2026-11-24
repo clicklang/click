@@ -64,13 +64,13 @@ int spin(struct node* p, int n) {
                 invariant i <= n;
                 invariant t.model == Tree::Node(id, value, left_model);
 
-                initialize by solve();
+                initialize by close();
                 maintain by {
                     step();
                 }
             }
             step();
-            solve();
+            close();
         },
     }
 }

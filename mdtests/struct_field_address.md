@@ -43,7 +43,7 @@ int32 update_nested(struct outer* packet) {
     step();
     step();
     step();
-    solve();
+    close();
 }
 
 int32 update_direct(struct outer* packet) {
@@ -55,7 +55,7 @@ int32 update_direct(struct outer* packet) {
     step();
     step();
     step();
-    solve();
+    close();
 }
 ```
 

@@ -37,7 +37,7 @@ void use(struct rb_node* n, struct rb_node* g) {
     requires aligned(n->rb_left, 8);
 } by {
     step(); step(); step(); step();
-    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == p by { known(); }
+    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == p by { close(); }
     step_until(function.exit);
 }
 ```

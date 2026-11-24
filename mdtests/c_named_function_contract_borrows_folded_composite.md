@@ -57,7 +57,7 @@ int32 spend_bundle(int32 key) {
 theorem inspect_bundle_satisfies_InspectBundle() {
     ensures InspectBundle(&inspect_bundle) by {
         unfold(InspectBundle(&inspect_bundle));
-        solve();
+        close();
     }
 }
 

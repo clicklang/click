@@ -47,7 +47,7 @@ theorem length_nonnegative<T>(xs: List<T>) {
         match xs {
             List::Nil => {
                 unfold(length(List<T>::Nil));
-                solve();
+                close();
             }
             List::Cons(value, rest) => {
                 apply(ih(rest));
@@ -129,7 +129,7 @@ impl<T> generic_stack::Stack<T> {
         let after = fold(nodes<T>(self.head), { values: List::Cons(value, old(before.values)), tail: before });
         unfold(length(List::Cons(value, old(before.values))));
         have to_integer(old(self.len) + 1u64) == to_integer(old(self.len)) + to_integer(1u64);
-        solve();
+        close();
     }
 
     fn pop(&mut self) -> Option<T> {
@@ -175,7 +175,7 @@ impl<T> generic_stack::Stack<T> {
                             length(List::Cons(v, List<T>::Nil)) == length(List<T>::Nil) + 1;
                             length(List<T>::Nil) == 0;
                         };
-                        solve();
+                        close();
                     }
                     List::Cons(w, more) => {
                         let { tail: next } = unfold(tail);
@@ -186,7 +186,7 @@ impl<T> generic_stack::Stack<T> {
                             to_integer(old(self.len)) == length(List::Cons(v, List::Cons(w, more)));
                             length(List::Cons(v, List::Cons(w, more))) == length(List::Cons(w, more)) + 1;
                         };
-                        solve();
+                        close();
                     }
                 }
             }

@@ -57,7 +57,7 @@ int32 swap_get(int32 data[]) {
     step();
     step();
     step();
-    solve();
+    close();
 }
 ```
 

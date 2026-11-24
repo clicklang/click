@@ -48,14 +48,14 @@ tactic word_metadata_separation(p: struct node*, q: struct node*) {
     owns b: metadata(q);
     ensures b.value == old(b.value);
     ensures separate(memory(p->word), memory((q as (void *) as (struct sized *))->size));
-} by { unfold(b); have separate(memory(p->word), memory((q as (void *) as (struct sized *))->size)) by known(); fold(b); }
+} by { unfold(b); have separate(memory(p->word), memory((q as (void *) as (struct sized *))->size)) by close(); fold(b); }
 verifying "frame.c";
 void update(struct node* p, struct node* q) {
     owns a: metadata(p);
     owns b: metadata(q);
     ensures a.value == 1;
     ensures b.value == 2;
-} by { unfold(a); unfold(b); step_until(function.exit); let a = fold(metadata(p), { value: 1 }); let b = fold(metadata(q), { value: 2 }); solve(); }
+} by { unfold(a); unfold(b); step_until(function.exit); let a = fold(metadata(p), { value: 1 }); let b = fold(metadata(q), { value: 2 }); close(); }
 struct node* caller(struct node* p, struct node* q, struct node* parent) {
     consumes f: framed(p, q, parent);
     ensures result == parent;
@@ -65,12 +65,12 @@ struct node* caller(struct node* p, struct node* q, struct node* parent) {
     have separate(memory(p->word), memory((p as (void *) as (struct sized *))->size));
     word_metadata_separation(p, q, { b: b });
     mark before_update;
-    have ((p->word & ~3) as (struct node *)) == parent by solve();
+    have ((p->word & ~3) as (struct node *)) == parent by close();
     let kept = fold(packed(p, parent), { bits: saved_bits });
     step(update, { a: a, b: b });
     unfold(kept);
-    have p->word == at(before_update, p->word) by { known(); }
-    have ((p->word & ~3) as (struct node *)) == parent by { known(); }
+    have p->word == at(before_update, p->word) by { close(); }
+    have ((p->word & ~3) as (struct node *)) == parent by { close(); }
 }
 ```
 

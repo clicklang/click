@@ -43,25 +43,25 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
         SizedTree::Node(identity, ancestor, shade, value, left_model, right_model) => {
             let { tree: tree, parent_tag: parent_tag } = unfold(state);
             let { metadata: metadata, left: left, right: right } = unfold(tree);
-            have shade == Color::Red by solve();
+            have shade == Color::Red by close();
             have (node->__rb_parent_color & 1) == color_bit(Color::Red) by {
-                rewrite(Color::Red, shade); known();
+                rewrite(Color::Red, shade); close();
             }
             unfold(color_bit(Color::Red));
             have (node->__rb_parent_color & 1) == 0 by {
                 rewrite((node->__rb_parent_color & 1), color_bit(Color::Red));
-                rewrite(color_bit(Color::Red), 0); known();
+                rewrite(color_bit(Color::Red), 0); close();
             }
             have node->__rb_parent_color == address(ancestor) by {
                 rewrite(node->__rb_parent_color, address(ancestor) + (node->__rb_parent_color & 1));
-                rewrite((node->__rb_parent_color & 1), 0); known();
+                rewrite((node->__rb_parent_color & 1), 0); close();
             }
-            have ancestor->__rb_parent_color == parent_tag by known();
+            have ancestor->__rb_parent_color == parent_tag by close();
             let observation = fold(black_parent_observation(ancestor), { tag: parent_tag });
             step(); step(); step(); step();
             unfold(observation);
-            have ancestor->__rb_parent_color == parent_tag by known();
-            have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == ancestor by solve();
+            have ancestor->__rb_parent_color == parent_tag by close();
+            have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == ancestor by close();
             let tree = fold(sized_at(node), { model: old(state.model), metadata: metadata, left: left, right: right });
             let state = fold(sized_black_parent_at(node), { model: old(state.model), parent_tag: parent_tag, tree: tree });
             step(); // Declare tmp before the C loop.
@@ -73,19 +73,19 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                 invariant state.model == SizedTree::Node(identity, ancestor, Color::Red, value, left_model, right_model);
                 invariant state.model == old(state.model);
                 invariant state.parent_tag == old(state.parent_tag);
-                initialize by solve();
+                initialize by close();
                 maintain by {
                     let { tree: tree, parent_tag: loop_tag } = unfold(state);
-                    have ancestor->__rb_parent_color == loop_tag by known();
+                    have ancestor->__rb_parent_color == loop_tag by close();
                     let observation = fold(black_parent_observation(ancestor), { tag: loop_tag });
                     step(); step();
                     unfold(observation);
-                    have ancestor->__rb_parent_color == loop_tag by known();
+                    have ancestor->__rb_parent_color == loop_tag by close();
                     let state = fold(sized_black_parent_at(node), { model: old(state.model), parent_tag: loop_tag, tree: tree });
                     step(); step();
                 }
             }
-            have node == old(node) by { known(); }
+            have node == old(node) by { close(); }
             step_until(function.exit);
         },
     }
@@ -107,6 +107,6 @@ void rb_insert_augmented(struct rb_node* node, struct rb_root* root,
     ensures state.model == old(state.model);
     ensures state.parent_tag == old(state.parent_tag);
 } by {
-    have separate(state, memory(augment->rotate)) by known();
+    have separate(state, memory(augment->rotate)) by close();
     step(__rb_insert_augmented, { state: state });
 }

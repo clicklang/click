@@ -20,11 +20,11 @@ int32 inspect(struct node *a, struct node *b) {
     ensures result == 1;
 } by {
     step(); step();
-    have tmp == b by known();
-    have separate(memory(a->word), memory(b->word)) by known();
-    have a != b by known();
-    have a != tmp by known();
-    have address(a) != address(b) by solve();
+    have tmp == b by close();
+    have separate(memory(a->word), memory(b->word)) by close();
+    have a != b by close();
+    have a != tmp by close();
+    have address(a) != address(b) by close();
     step();
 }
 ```

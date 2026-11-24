@@ -132,9 +132,9 @@ int32 detachable_buffer_pipeline(
     step();
     step();
     step();
-    known();
-    known();
-    known();
-    known();
-    known();
+    close();
+    close();
+    close();
+    close();
+    close();
 }

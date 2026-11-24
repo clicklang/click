@@ -38,9 +38,9 @@ theorem readable_len_unique(bytes: uint8[], left: uint64, right: uint64) {
     ensures left == right by {
         have left < right or not (left < right) by {
             if left < right {
-                known();
+                close();
             } else {
-                known();
+                close();
             }
         }
         cases {
@@ -51,9 +51,9 @@ theorem readable_len_unique(bytes: uint8[], left: uint64, right: uint64) {
             not (left < right) => {
                 have right < left or not (right < left) by {
                     if right < left {
-                        known();
+                        close();
                     } else {
-                        known();
+                        close();
                     }
                 }
                 cases {
@@ -62,10 +62,10 @@ theorem readable_len_unique(bytes: uint8[], left: uint64, right: uint64) {
                         contradiction();
                     }
                     not (right < left) => {
-                        have to_integer(left) <= to_integer(right) by known();
-                        have to_integer(right) <= to_integer(left) by known();
+                        have to_integer(left) <= to_integer(right) by close();
+                        have to_integer(right) <= to_integer(left) by close();
                         apply(integer::le_antisymmetric(to_integer(left), to_integer(right)));
-                        known();
+                        close();
                     }
                 }
             }
@@ -105,7 +105,7 @@ theorem len_is_viewable(bytes: uint8[], len: uint64) {
 
     ensures viewable(bytes[0..len + 1u64]) by {
         unfold(string::len(bytes, len));
-        solve();
+        close();
     }
 }
 
@@ -114,7 +114,7 @@ theorem len_has_prefix(bytes: uint8[], len: uint64) {
 
     ensures string::prefix(bytes, len) by {
         unfold(string::len(bytes, len));
-        solve();
+        close();
     }
 }
 
@@ -123,7 +123,7 @@ theorem len_has_terminator(bytes: uint8[], len: uint64) {
 
     ensures bytes[len] == '\0' by {
         unfold(string::len(bytes, len));
-        solve();
+        close();
     }
 }
 

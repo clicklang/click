@@ -19,7 +19,7 @@ void always_break(int32 n) {
     loop {
         decreases 0;
         otherwise {
-            have n == 0 by known();
+            have n == 0 by close();
         }
     }
 }

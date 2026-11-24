@@ -7,7 +7,7 @@ theorem integer_exists_choose_after_intro() {
         intro();
         let candidate = obtain(exists (candidate: Integer) { candidate == candidate });
         witness(candidate);
-        known();
+        close();
     }
 }
 ```

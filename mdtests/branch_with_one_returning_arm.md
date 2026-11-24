@@ -29,13 +29,13 @@ int32 early_exit(int32 c) {
     branch {
         true => {
             step();
-            solve();
+            close();
         }
         false => {}
     }
     step();
     step();
-    solve();
+    close();
 }
 ```
 

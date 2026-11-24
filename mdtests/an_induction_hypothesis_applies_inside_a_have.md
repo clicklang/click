@@ -30,7 +30,7 @@ theorem block_have(n: int32) {
             have cd(n - 1) == 0 by { apply(ih(n - 1)); }
             unfold(cd(n));
             rewrite(cd(n - 1), 0);
-            known();
+            close();
         }
     }
 }
@@ -48,7 +48,7 @@ theorem bare_have(n: int32) {
             have cd(n - 1) == 0 by apply(ih(n - 1));
             unfold(cd(n));
             rewrite(cd(n - 1), 0);
-            known();
+            close();
         }
     }
 }

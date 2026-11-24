@@ -51,13 +51,13 @@ int32 run(struct cell *p) {
     branch {
         true => {
             step();
-            solve();
+            close();
         }
         false => {}
     }
     step();
     step();
-    solve();
+    close();
 }
 ```
 

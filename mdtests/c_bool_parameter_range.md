@@ -4,7 +4,7 @@ A C `_Bool` object holds only `0` or `1`, and returning one from an `int`
 function converts it to that same integer, the cast `flag as int32` of the
 `Bool` it holds. Both facts are usable without a case split: the entry value
 of a `bool` parameter carries its range `flag == 0 or flag == 1`, so
-`solve()` proves the range disjunction of the converted result as well as
+`close()` proves the range disjunction of the converted result as well as
 its equality with the parameter's cast. A `Bool` has no integer value of its
 own, so the equality is written with the cast. A caller that passes a
 `bool`, or an integer converted to `bool` at the call, uses the callee's

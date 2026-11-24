@@ -22,7 +22,7 @@ int32 probe(int32 a[], int32 n, int32 k) {
 } by {
     step();
     apply(click::integer::int32_less_equal_transitive(0, k, n));
-    have separate(statement(0).footprint, memory(a[0..n])) by { known(); }
+    have separate(statement(0).footprint, memory(a[0..n])) by { close(); }
     have viewable(a[0..n]) by {
         preserve(memory(a[0..n]), statement(0));
     }
@@ -30,7 +30,7 @@ int32 probe(int32 a[], int32 n, int32 k) {
     have viewable(a[0..k]) by {
         apply(click::separation::viewable_restrict(memory(a[0..n]), memory(a[0..k])));
     }
-    solve();
+    close();
 }
 ```
 

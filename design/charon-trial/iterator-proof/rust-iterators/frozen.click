@@ -10,7 +10,7 @@ fn sum(bytes: &[u8]) -> i32 {
     ensures to_integer(result) == old(prefix(bytes, ((bytes.len() as uint32) as int32)));
 } by {
     step_until(region(9).entry);
-    have 0 <= ((bytes.len() as uint32) as int32) by { solve(); }
+    have 0 <= ((bytes.len() as uint32) as int32) by { close(); }
     have viewable(bytes[0..((bytes.len() as uint32) as int32)]) by {
         transport(at(function.entry, viewable(bytes[0..((bytes.len() as uint32) as int32)])), viewable(bytes[0..((bytes.len() as uint32) as int32)])) using {
             at(function.entry, viewable(bytes[0..((bytes.len() as uint32) as int32)]));
@@ -18,10 +18,10 @@ fn sum(bytes: &[u8]) -> i32 {
         }
     }
     have prefix(bytes, (((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining)) == 0 by {
-        unfold(prefix(bytes, (((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining))); solve();
+        unfold(prefix(bytes, (((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining))); close();
     }
     have to_integer(total) == 0 by {
-        solve();
+        close();
     }
     have to_integer(total) == prefix(bytes, (((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining)) by {
         close() using {
@@ -61,8 +61,8 @@ fn sum(bytes: &[u8]) -> i32 {
                 apply(integer::int32_nonnegative_predecessor_upper_bound(__rust_iter_3_5_remaining, ((bytes.len() as uint32) as int32)));
             }
             step_until(region(15).entry);
-            have 0 <= __rust_iter_3_5_remaining by { solve(); }
-            have __rust_iter_3_5_remaining <= ((bytes.len() as uint32) as int32) by { solve(); }
+            have 0 <= __rust_iter_3_5_remaining by { close(); }
+            have __rust_iter_3_5_remaining <= ((bytes.len() as uint32) as int32) by { close(); }
             have (((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1) < ((bytes.len() as uint32) as int32) by { close() using {
                 at(region(10).entry, 0 < __rust_iter_3_5_remaining);
                 at(region(10).entry, __rust_iter_3_5_remaining <= ((bytes.len() as uint32) as int32));
@@ -75,7 +75,7 @@ fn sum(bytes: &[u8]) -> i32 {
                     0 <= ((bytes.len() as uint32) as int32); 1000 >= ((bytes.len() as uint32) as int32);
                 }
             }
-            have 0 <= ((bytes.len() as uint32) as int32) by { solve(); }
+            have 0 <= ((bytes.len() as uint32) as int32) by { close(); }
             have (((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1) == at(region(10).entry, ((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining) by {
                 close() using {
                     at(region(10).entry, 0 < __rust_iter_3_5_remaining);
@@ -83,24 +83,24 @@ fn sum(bytes: &[u8]) -> i32 {
                     0 <= ((bytes.len() as uint32) as int32); 1000 >= ((bytes.len() as uint32) as int32);
                 }
             }
-            have __rust_iter_3_5_item == bytes + at(region(10).entry, ((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining) by { solve(); }
+            have __rust_iter_3_5_item == bytes + at(region(10).entry, ((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining) by { close(); }
             have __rust_iter_3_5_item == bytes + (((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1) by {
                 rewrite((((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1), at(region(10).entry, ((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining));
-                solve();
+                close();
             }
             step_until(region(23).entry);
-            have bytes + (((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1) == __rust_iter_3_5_item by { solve(); }
-            have 0 <= __rust_checked_1 and 255 >= __rust_checked_1 by { solve(); }
-            have 0 <= (load<uint8>(__rust_iter_3_5_item) as int32) and 255 >= (load<uint8>(__rust_iter_3_5_item) as int32) by { solve(); }
+            have bytes + (((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1) == __rust_iter_3_5_item by { close(); }
+            have 0 <= __rust_checked_1 and 255 >= __rust_checked_1 by { close(); }
+            have 0 <= (load<uint8>(__rust_iter_3_5_item) as int32) and 255 >= (load<uint8>(__rust_iter_3_5_item) as int32) by { close(); }
             have ((load<uint8>(__rust_iter_3_5_item) as int32)) == (bytes[(((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1)] as int32) by {
                 rewrite(__rust_iter_3_5_item, bytes + (((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1));
-                solve();
+                close();
             }
             have 0 <= (bytes[(((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1)] as int32) and 255 >= (bytes[(((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1)] as int32) by {
-                rewrite(bytes + (((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1), __rust_iter_3_5_item); solve();
+                rewrite(bytes + (((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1), __rust_iter_3_5_item); close();
             }
             have defined(((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining) by {
-                apply(integer::int32_nonnegative_subtract_within_value_is_defined(((bytes.len() as uint32) as int32), __rust_iter_3_5_remaining)); solve();
+                apply(integer::int32_nonnegative_subtract_within_value_is_defined(((bytes.len() as uint32) as int32), __rust_iter_3_5_remaining)); close();
             }
             have 1 <= ((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining by {
                 close() using {
@@ -110,7 +110,7 @@ fn sum(bytes: &[u8]) -> i32 {
                 }
             }
             have defined(((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1) by {
-                apply(integer::int32_nonnegative_subtract_within_value_is_defined(((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining, 1)); solve();
+                apply(integer::int32_nonnegative_subtract_within_value_is_defined(((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining, 1)); close();
             }
             have viewable(bytes[0..((bytes.len() as uint32) as int32)]) by {
                 transport(at(region(10).entry, viewable(bytes[0..((bytes.len() as uint32) as int32)])), viewable(bytes[0..((bytes.len() as uint32) as int32)])) using {
@@ -146,7 +146,7 @@ fn sum(bytes: &[u8]) -> i32 {
                 }
             }
             have defined(total + (bytes[(((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1)] as int32)) by {
-                apply(integer::int32_add_defined_by_integer_bounds(total, (bytes[(((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1)] as int32))); solve();
+                apply(integer::int32_add_defined_by_integer_bounds(total, (bytes[(((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1)] as int32))); close();
             }
             have to_integer(total + (bytes[(((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1)] as int32)) == to_integer(total) + to_integer((bytes[(((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1)] as int32)) by {
                 apply(integer::int32_add_to_integer(total, (bytes[(((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1)] as int32)));
@@ -159,10 +159,10 @@ fn sum(bytes: &[u8]) -> i32 {
                 }
             }
             have to_integer(total) == prefix(bytes, (((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1)) by {
-                rewrite((((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1), at(region(10).entry, ((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining)); solve();
+                rewrite((((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1), at(region(10).entry, ((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining)); close();
             }
             have to_integer((((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1)) == at(region(10).entry, to_integer(((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining)) by {
-                rewrite((((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1), at(region(10).entry, ((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining)); solve();
+                rewrite((((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1), at(region(10).entry, ((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining)); close();
             }
             have to_integer(total) <= 255 * to_integer((((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1)) by {
                 close() using {
@@ -175,7 +175,7 @@ fn sum(bytes: &[u8]) -> i32 {
             }
             have prefix(bytes, (((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1) + 1) == prefix(bytes, (((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1)) + to_integer((bytes[(((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1)] as int32)) by {
                 unfold(prefix(bytes, (((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1) + 1));
-                solve();
+                close();
             }
             have to_integer(total + (bytes[(((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1)] as int32)) == prefix(bytes, (((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1) + 1) by {
                 close() using {
@@ -185,7 +185,7 @@ fn sum(bytes: &[u8]) -> i32 {
                 }
             }
             have defined((((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1) + 1) by {
-                apply(integer::int32_increment_below_max_is_defined((((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1))); solve();
+                apply(integer::int32_increment_below_max_is_defined((((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1))); close();
             }
             have to_integer((((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1) + 1) == to_integer((((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1)) + 1 by {
                 apply(integer::int32_add_to_integer((((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1), 1));
@@ -245,10 +245,10 @@ fn sum(bytes: &[u8]) -> i32 {
             }
             have __rust_iter_3_5_cursor == bytes + (((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining) by {
                 rewrite((((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining), at(region(10).entry, ((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining) + 1);
-                solve();
+                close();
             }
             have to_integer(((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining) == to_integer((((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1) + 1) by {
-                rewrite((((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining), (((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1) + 1); solve();
+                rewrite((((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining), (((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1) + 1); close();
             }
             have to_integer(total + (bytes[(((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1)] as int32)) <= 255 * to_integer(((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining) by {
                 close() using {
@@ -257,20 +257,20 @@ fn sum(bytes: &[u8]) -> i32 {
                 }
             }
             have prefix(bytes, (((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1) + 1) == prefix(bytes, ((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining) by {
-                rewrite((((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining), (((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1) + 1); solve();
+                rewrite((((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining), (((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1) + 1); close();
             }
-            have ((bytes[(((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1)] as int32)) == (load<uint8>(__rust_iter_3_5_item) as int32) by { solve(); }
+            have ((bytes[(((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1)] as int32)) == (load<uint8>(__rust_iter_3_5_item) as int32) by { close(); }
             have defined(total + (load<uint8>(__rust_iter_3_5_item) as int32)) by {
-                rewrite(((load<uint8>(__rust_iter_3_5_item) as int32)), (bytes[(((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1)] as int32)); solve();
+                rewrite(((load<uint8>(__rust_iter_3_5_item) as int32)), (bytes[(((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1)] as int32)); close();
             }
             // Connect Rust's captured addition operands to the mathematical sum.
-            have __rust_checked_1 == (load<uint8>(__rust_iter_3_5_item) as int32) by { solve(); }
-            have __rust_checked_0 == total by { solve(); }
-            have defined(__rust_checked_0 + __rust_checked_1) by { solve(); }
+            have __rust_checked_1 == (load<uint8>(__rust_iter_3_5_item) as int32) by { close(); }
+            have __rust_checked_0 == total by { close(); }
+            have defined(__rust_checked_0 + __rust_checked_1) by { close(); }
             have to_integer(__rust_checked_0 + __rust_checked_1) == to_integer(total + (bytes[(((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1)] as int32)) by {
                 rewrite(__rust_checked_0, total);
                 rewrite(__rust_checked_1, (load<uint8>(__rust_iter_3_5_item) as int32));
-                rewrite(((load<uint8>(__rust_iter_3_5_item) as int32)), (bytes[(((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1)] as int32)); solve();
+                rewrite(((load<uint8>(__rust_iter_3_5_item) as int32)), (bytes[(((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1)] as int32)); close();
             }
             have 0 <= to_integer(__rust_checked_0 + __rust_checked_1) by {
                 close() using {
@@ -300,10 +300,10 @@ fn sum(bytes: &[u8]) -> i32 {
             }
         }
     }
-    have __rust_iter_3_5_remaining == 0 by { solve(); }
-    have (((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining) == ((bytes.len() as uint32) as int32) by { solve(); }
+    have __rust_iter_3_5_remaining == 0 by { close(); }
+    have (((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining) == ((bytes.len() as uint32) as int32) by { close(); }
     have prefix(bytes, (((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining)) == prefix(bytes, ((bytes.len() as uint32) as int32)) by {
-        rewrite((((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining), ((bytes.len() as uint32) as int32)); solve();
+        rewrite((((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining), ((bytes.len() as uint32) as int32)); close();
     }
     have to_integer(total) == prefix(bytes, ((bytes.len() as uint32) as int32)) by {
         close() using {
@@ -312,7 +312,7 @@ fn sum(bytes: &[u8]) -> i32 {
         }
     }
     step_until(function.exit);
-    solve();
+    close();
 }
 
 import click::integer;

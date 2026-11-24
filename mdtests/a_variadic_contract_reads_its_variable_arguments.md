@@ -6,7 +6,7 @@ first argument first, each after the default argument promotions. Here the
 contract requires the first variable argument to be an `int` and returns
 it, and the call passes `a` before `b`, so the precondition holds and `run`
 returns `a`. The step's precondition is stated over the list the call
-passes, and `solve()` proves it by evaluating `first_is_int` on it.
+passes, and `close()` proves it by evaluating `first_is_int` on it.
 
 ```c filename=a_variadic_contract_reads_its_variable_arguments.c
 int first(int count, ...);
@@ -52,9 +52,9 @@ int32 run(int32 a, uint32 b) {
     ensures result == a;
 } by {
     have first_is_int(List::Cons(VarArg::Int(a), List::Cons(VarArg::UInt(b), List::Nil))) by {
-        solve();
+        close();
     }
-    step() by { known(); }
+    step() by { close(); }
     step();
 }
 ```

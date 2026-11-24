@@ -36,11 +36,11 @@ int32 box_destroy(struct box* box) {
     if box != 0 {
         unfold(owned_box(box));
         step_until(function.exit);
-        solve();
+        close();
     } else {
         unfold(owned_box(box));
         step_until(function.exit);
-        solve();
+        close();
     }
 }
 ```

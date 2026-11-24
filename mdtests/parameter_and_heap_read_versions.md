@@ -40,9 +40,9 @@ int32 parameter(int32 *p) {
     step();
     mark stored;
     step();
-    have p[0] == at(stored, p[0]) by known();
+    have p[0] == at(stored, p[0]) by close();
     step();
-    solve();
+    close();
 }
 
 int32 relative(int32 *p, int32 i) {
@@ -54,9 +54,9 @@ int32 relative(int32 *p, int32 i) {
     step(); step(); step();
     mark stored;
     step();
-    have cursor[0] == at(stored, cursor[0]) by known();
+    have cursor[0] == at(stored, cursor[0]) by close();
     step();
-    solve();
+    close();
 }
 
 int32 heap() {

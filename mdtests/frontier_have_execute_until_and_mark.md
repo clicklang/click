@@ -49,7 +49,7 @@ int32 fill_zero(int32 p[], int32 n) {
     step();
     step();
     have i == 0 by {
-        solve();
+        close();
     }
     loop fill {
         decreases n - i;
@@ -58,7 +58,7 @@ int32 fill_zero(int32 p[], int32 n) {
         invariant i <= n;
     }
     step();
-    solve();
+    close();
 }
 
 int32 state_y(int32 x) {
@@ -66,11 +66,11 @@ int32 state_y(int32 x) {
 } by {
     step_until(region(4).entry);
     have y >= 0 by {
-        solve();
+        close();
     }
     step();
     have at(region(4).entry, y) >= 0 by {
-        known();
+        close();
     }
 }
 
@@ -81,7 +81,7 @@ int32 bump_first(int32 p[]) {
 } by {
     mark before_write;
     step();
-    have p[0] == at(before_write, p[0]) + 1 by solve();
+    have p[0] == at(before_write, p[0]) + 1 by close();
 }
 ```
 

@@ -24,7 +24,7 @@ fn mul_i32(a: i32, b: i32) -> i32 {
     have to_integer(a * b) == to_integer(a) * to_integer(b) by {
         close() using { -2147483648 <= to_integer(a) * to_integer(b); to_integer(a) * to_integer(b) <= 2147483647; };
     };
-    solve();
+    close();
 }
 
 fn above_int32_max() -> u32 {
@@ -108,10 +108,10 @@ fn narrow_i8(x: i32) -> i8 {
         have to_integer(result) == to_integer(x) by {
             close() using { -128 <= to_integer(x); to_integer(x) <= 127; };
         };
-        solve();
+        close();
     } else {
         step_until(function.exit);
-        solve();
+        close();
     }
 }
 
@@ -137,8 +137,8 @@ fn below_i32(a: i32, b: i32) -> bool {
     ensures a < b implies result;
     ensures (a == -2147483648 and b == 0) implies result;
 } by {
-    if a == -2147483648 and b == 0 { step_until(function.exit); solve(); }
-    else { step_until(function.exit); solve(); }
+    if a == -2147483648 and b == 0 { step_until(function.exit); close(); }
+    else { step_until(function.exit); close(); }
 }
 
 fn below_u32(a: u32, b: u32) -> bool {
@@ -146,8 +146,8 @@ fn below_u32(a: u32, b: u32) -> bool {
     ensures a < b implies result;
     ensures (a == 2147483648u32 and b == 0u32) implies not result;
 } by {
-    if a == 2147483648u32 and b == 0u32 { step_until(function.exit); solve(); }
-    else { step_until(function.exit); solve(); }
+    if a == 2147483648u32 and b == 0u32 { step_until(function.exit); close(); }
+    else { step_until(function.exit); close(); }
 }
 
 fn sign_bit_set(u: u32) -> bool {

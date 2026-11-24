@@ -26,12 +26,12 @@ int32 keep_local() {
 } by {
     step();
     step();
-    have first_is(a, 7) by { unfold(first_is(a, 7)); solve(); }
+    have first_is(a, 7) by { unfold(first_is(a, 7)); close(); }
     step();
     step();
-    have first_is(a, 7) by { known(); }
+    have first_is(a, 7) by { close(); }
     step_until(function.exit);
-    solve();
+    close();
 }
 ```
 

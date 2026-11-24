@@ -21,11 +21,11 @@ void touch(struct node* h, int32* q) {
     owns *q;
     ensures *q == 1;
 } by {
-    have exact(h->next) == h->next by known();
-    have exact(h->next)->v == h->next->v by known();
+    have exact(h->next) == h->next by close();
+    have exact(h->next)->v == h->next->v by close();
     step_until(function.exit);
-    have old(exact(h->next)) == old(h->next) by known();
-    have old(exact(h->next)->v) == old(h->next->v) by known();
+    have old(exact(h->next)) == old(h->next) by close();
+    have old(exact(h->next)->v) == old(h->next->v) by close();
 }
 ```
 

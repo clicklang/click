@@ -2,7 +2,7 @@
 
 The `maintain` script ends after its last `step()`, and the back edge owes the
 exact bundle: each invariant and, for `decreases 3 - i`, its ranking members.
-Each member is closed by `solve()`, as a function's exit closes each
+Each member is closed by `close()`, as a function's exit closes each
 `ensures`. Read-safety obligations are part of the bundle, not assumptions
 supplied to it.
 
@@ -27,14 +27,14 @@ int32 count() { ensures result == 3; } by {
         decreases 3 - i;
         invariant i >= 0;
         invariant i <= 3;
-        initialize by solve();
+        initialize by close();
         maintain by {
             mark iteration;
             step();
         }
     }
     step();
-    solve();
+    close();
 }
 ```
 

@@ -43,7 +43,7 @@ int32 walk(int32 n) {
         }
     }
     step();
-    solve();
+    close();
 }
 ```
 

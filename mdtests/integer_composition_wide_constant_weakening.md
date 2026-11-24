@@ -8,7 +8,7 @@ theorem widen(z: Integer) {
     requires 0 <= z;
     requires z <= 4000;
     ensures z <= 18446744073709551615 by {
-        solve();
+        close();
     }
 }
 

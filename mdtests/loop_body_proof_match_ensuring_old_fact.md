@@ -54,7 +54,7 @@ void spin(struct cell* node, int32 n) {
         invariant i <= n;
         invariant c.model == old(c.model);
 
-        initialize by solve();
+        initialize by close();
         maintain by {
             match c.model ensuring {
                 owns c: cell(node);
@@ -63,23 +63,23 @@ void spin(struct cell* node, int32 n) {
                 Sign::Neg(value) => {
                     have Sign::Neg(value) == old(c.model) by {
                         rewrite(Sign::Neg(value), c.model);
-                        known();
+                        close();
                     }
                     unfold(c);
                     let c = fold(cell(node), { model: Sign::Neg(value) });
                     have c.model == old(c.model) by {
-                        known();
+                        close();
                     }
                 }
                 Sign::Pos(value) => {
                     have Sign::Pos(value) == old(c.model) by {
                         rewrite(Sign::Pos(value), c.model);
-                        known();
+                        close();
                     }
                     unfold(c);
                     let c = fold(cell(node), { model: Sign::Pos(value) });
                     have c.model == old(c.model) by {
-                        known();
+                        close();
                     }
                 }
             }
@@ -87,7 +87,7 @@ void spin(struct cell* node, int32 n) {
         }
     }
     step();
-    solve();
+    close();
 }
 ```
 

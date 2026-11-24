@@ -39,17 +39,17 @@ int32 check(int32 *p, Bool flag) {
     step(); step(); step(); step(); step();
     mark written;
     step();
-    have exact(values.integer) == at(written, exact(values.integer)) by known();
-    have values.flag == flag by known();
-    have exact(values.flag) == values.flag by known();
-    have values.flag == at(written, values.flag) by known();
+    have exact(values.integer) == at(written, exact(values.integer)) by close();
+    have values.flag == flag by close();
+    have exact(values.flag) == values.flag by close();
+    have values.flag == at(written, values.flag) by close();
     have values.pointer == p;
-    have exact(values.pointer) == values.pointer by known();
-    have exact(values.callback) == values.callback by known();
-    have values.pointer == at(written, values.pointer) by known();
-    have values.callback == at(written, values.callback) by known();
+    have exact(values.pointer) == values.pointer by close();
+    have exact(values.callback) == values.callback by close();
+    have values.pointer == at(written, values.pointer) by close();
+    have values.callback == at(written, values.callback) by close();
     step_until(function.exit);
-    solve();
+    close();
 }
 ```
 

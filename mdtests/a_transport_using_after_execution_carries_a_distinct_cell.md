@@ -34,7 +34,7 @@ void mark_one(int32 a[], int32 n, int32 i, int32 m) {
     have at(statement(0).exit, a[m]) == at(entry, a[m]) by {
         preserve(memory(a[m]), statement(0));
     }
-    solve();
+    close();
 }
 ```
 

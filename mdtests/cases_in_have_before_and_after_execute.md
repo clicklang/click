@@ -16,10 +16,10 @@ int32 before(int32 n) {
     ensures result <= 1;
 } by {
     have 0 <= n by {
-        cases { n == 0 => { solve(); } n == 1 => { solve(); } }
+        cases { n == 0 => { close(); } n == 1 => { close(); } }
     }
     have n <= 1 by {
-        cases { n == 0 => { solve(); } n == 1 => { solve(); } }
+        cases { n == 0 => { close(); } n == 1 => { close(); } }
     }
 }
 int32 after(int32 n) {
@@ -29,12 +29,12 @@ int32 after(int32 n) {
 } by {
     step_until(function.exit);
     have 0 <= result by {
-        cases { n == 0 => { solve(); } n == 1 => { solve(); } }
+        cases { n == 0 => { close(); } n == 1 => { close(); } }
     }
     have result <= 1 by {
-        cases { n == 0 => { solve(); } n == 1 => { solve(); } }
+        cases { n == 0 => { close(); } n == 1 => { close(); } }
     }
-    solve();
+    close();
 }
 ```
 

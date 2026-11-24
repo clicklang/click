@@ -23,7 +23,7 @@ theorem rb_erase_root_child_nonempty_left(node: struct rb_node*, parent: struct 
             }
             RbTree::Node(a, b, c, l, r) => {
                 unfold(rb_erase_root_child(RbTree::Node(node, parent, color, RbTree::Node(a, b, c, l, r),
-                    right))); known();
+                    right))); close();
             }
         }
     }
@@ -36,11 +36,11 @@ theorem rb_erase_root_child_no_right(node: struct rb_node*, parent: struct rb_no
         match left {
             RbTree::Empty => {
                 unfold(rb_erase_root_child(RbTree::Node(node, parent, color, RbTree::Empty,
-                    RbTree::Empty))); known();
+                    RbTree::Empty))); close();
             }
             RbTree::Node(a, b, c, l, r) => {
                 unfold(rb_erase_root_child(RbTree::Node(node, parent, color, RbTree::Node(a, b, c, l, r),
-                    RbTree::Empty))); known();
+                    RbTree::Empty))); close();
             }
         }
     }
@@ -52,7 +52,7 @@ theorem rb_erase_root_child_is_rb(tree: RbTree) {
         let ih = induct(tree);
         match tree {
             RbTree::Empty => {
-                unfold(rb_erase_root_child(RbTree::Empty)); known();
+                unfold(rb_erase_root_child(RbTree::Empty)); close();
             }
             RbTree::Node(node, parent, color, left, right) => {
                 apply(is_rb_node_left(node, parent, color, left, right));
@@ -60,11 +60,11 @@ theorem rb_erase_root_child_is_rb(tree: RbTree) {
                 if left == RbTree::Empty {
                     rewrite(left, RbTree::Empty);
                     unfold(rb_erase_root_child(RbTree::Node(node, parent, color, RbTree::Empty, right)));
-                    known();
+                    close();
                 } else {
                     apply(rb_erase_root_child_nonempty_left(node, parent, color, left, right));
                     rewrite(rb_erase_root_child(RbTree::Node(node, parent, color, left, right)), left);
-                    known();
+                    close();
                 }
             }
         }
@@ -102,7 +102,7 @@ theorem rb_erase_root_child_inorder(tree: RbTree) {
                 unfold(rb_left(RbTree::Empty)); unfold(rb_right(RbTree::Empty));
                 unfold(rb_inorder(RbTree::Empty));
                 unfold(list::append(List<struct rb_node*>::Nil, List<struct rb_node*>::Nil));
-                known();
+                close();
             }
             RbTree::Node(node, parent, color, left, right) => {
                 unfold(rb_left(RbTree::Node(node, parent, color, left, right)));
@@ -117,7 +117,7 @@ theorem rb_erase_root_child_inorder(tree: RbTree) {
                         unfold(rb_right(RbTree::Node(node, parent, color, RbTree::Empty, right)));
                         unfold(rb_inorder(RbTree::Empty));
                         unfold(list::append(List::Nil, rb_inorder(right)));
-                        known();
+                        close();
                     }
                     rb_right(RbTree::Node(node, parent, color, left, right)) == RbTree::Empty => {
                         rewrite(right, RbTree::Empty);
@@ -128,7 +128,7 @@ theorem rb_erase_root_child_inorder(tree: RbTree) {
                         rewrite(list::append(rb_inorder(left), List::Nil), rb_inorder(left));
                         apply(rb_erase_root_child_no_right(node, parent, color, left));
                         rewrite(rb_erase_root_child(RbTree::Node(node, parent, color, left, RbTree::Empty)), left);
-                        known();
+                        close();
                     }
                 }
             }
@@ -142,7 +142,7 @@ theorem rb_erase_root_no_deficit(tree: RbTree) {
     ensures is_rb_root(rb_reparent(rb_recolor(rb_erase_root_child(tree), Color::Black), 0)) == 1 by {
         apply(rb_erase_root_child_is_rb(tree));
         apply(rb_blacken_reparent_is_rb_root(rb_erase_root_child(tree), 0));
-        known();
+        close();
     }
     ensures rb_inorder(rb_reparent(rb_recolor(rb_erase_root_child(tree), Color::Black), 0))
     == list::append(rb_inorder(rb_left(tree)), rb_inorder(rb_right(tree))) by {
@@ -151,6 +151,6 @@ theorem rb_erase_root_no_deficit(tree: RbTree) {
         apply(rb_reparent_preserves_inorder(rb_recolor(rb_erase_root_child(tree), Color::Black), 0));
         rewrite(rb_inorder(rb_reparent(rb_recolor(rb_erase_root_child(tree), Color::Black), 0)), rb_inorder(rb_recolor(rb_erase_root_child(tree), Color::Black)));
         rewrite(rb_inorder(rb_recolor(rb_erase_root_child(tree), Color::Black)), rb_inorder(rb_erase_root_child(tree)));
-        known();
+        close();
     }
 }

@@ -10,5 +10,5 @@ fn program_bindings::count(n: u32) -> u32 {
         invariant program::iterations <= n;
         invariant program::iterations == iterations;
     }
-    have loop(0).iterations == n by { solve(); }
+    have loop(0).iterations == n by { close(); }
 }

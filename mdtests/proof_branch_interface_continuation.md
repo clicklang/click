@@ -37,7 +37,7 @@ int32 advance_nested_join(int32 x) {
         }
         step();
         step();
-        solve();
+        close();
     }
 }
 ```

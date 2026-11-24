@@ -47,7 +47,7 @@ function icount(p: int32[], lo: int32, hi: int32) -> Integer {
 theorem start_below(lo: int32, n: int32) {
     requires 0 <= lo;
     requires lo <= n;
-    ensures 0 <= n by solve();
+    ensures 0 <= n by close();
 }
 
 theorem last_cell(a: int32[], n: int32) {
@@ -57,7 +57,7 @@ theorem last_cell(a: int32[], n: int32) {
     views a[0..n + 1];
     ensures a[n] == 0 by {
         instantiate(forall (k: int32) { 0 <= k and k <= n implies a[k] == 0 }, n);
-        known();
+        close();
     }
 }
 
@@ -75,7 +75,7 @@ void empty_prefix(int32 a[], int32 n) {
     step();
     have icount(a, 0, 0) == 0 by {
         unfold(icount(a, 0, 0));
-        known();
+        close();
     }
 }
 
@@ -86,7 +86,7 @@ void empty_suffix(int32 a[], int32 n) {
     step();
     have icount(a, n, n) == 0 by {
         unfold(icount(a, n, n));
-        known();
+        close();
     }
 }
 
@@ -96,7 +96,7 @@ int32 probe(int32 n) {
 } by {
     step();
     apply(start_below(n, n));
-    solve();
+    close();
 }
 
 int32 span(int32 lo, int32 hi) {

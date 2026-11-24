@@ -33,7 +33,7 @@ int32 doubled(int32 n) {
         invariant i == iterations;
         invariant total == 2 * iterations;
     }
-    have loop(0).iterations == n by { solve(); }
+    have loop(0).iterations == n by { close(); }
 }
 ```
 

@@ -34,7 +34,7 @@ void use(int32* p) {
     step();
     fold(cursor(p));
     step_until(function.exit);
-    solve();
+    close();
 }
 ```
 

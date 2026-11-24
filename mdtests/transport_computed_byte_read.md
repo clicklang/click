@@ -25,7 +25,7 @@ int32 iterator_read(const uint8* bytes, uint64 bytes_len, int32 remaining) {
         instantiate(forall (k: int32) {
             0 <= k and k < bytes_len as uint32 as int32 implies defined(bytes[k])
         }, remaining - 1);
-        known();
+        close();
     }
 }
 ```

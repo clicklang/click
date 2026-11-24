@@ -43,7 +43,7 @@ theorem migrate() executes noop(int32* p) {
                 unfold(child);
                 step(noop);
                 let output = fold(Output(p), { value: value });
-                solve();
+                close();
             },
         }
     }
@@ -58,7 +58,7 @@ theorem migrate_other() executes noop(int32* p) {
         let { revision: value } = unfold(before);
         step(noop);
         let after = fold(Output(p), { value: value });
-        solve();
+        close();
     }
 }
 ```

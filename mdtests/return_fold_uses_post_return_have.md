@@ -16,9 +16,9 @@ int32 f(int32* p) {
     ensures result == 0;
 } by {
     step_until(function.exit);
-    have reflexive(p) == 1 by { unfold(reflexive(p)); known(); }
+    have reflexive(p) == 1 by { unfold(reflexive(p)); close(); }
     let out = fold(Cell(p), { tag: 1 });
-    solve();
+    close();
 }
 ```
 ```expect

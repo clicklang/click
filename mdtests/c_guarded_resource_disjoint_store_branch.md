@@ -43,11 +43,11 @@ int32 f(struct cell* root) {
                         at(before_store, ((root->base.left as (void *)) as (struct cell *))->value);
                 };
             }
-            known();
+            close();
         }
-        fold(child); solve();
+        fold(child); close();
     } else {
-        unfold(child); step_until(function.exit); fold(child); solve();
+        unfold(child); step_until(function.exit); fold(child); close();
     }
 }
 ```

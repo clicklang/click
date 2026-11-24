@@ -3,8 +3,8 @@
 This page is the reference inventory of the tactics in Click's specification
 language. A tactic is either **smart**, **simple**, or **control**:
 
-- Smart tactics search. Written forms include `solve()`, `close()`,
-  `close() using`, and `step_until`, which steps to a target and proves what
+- Smart tactics search. Written forms include `close()`, `close() using`,
+  and `step_until`, which steps to a target and proves what
   each step needs. Smart tactics also include the implicit closer, which
   ends proofs including loop `maintain` scripts and finishes a `step()` or
   `fold`, and forms whose search fills an elided argument:
@@ -93,18 +93,10 @@ when the default misses or when a proof must not search.
   are what the tail does at a C `if` or loop, written out to state what each
   arm or iteration proves; a proof `if` before the C splits the paths that
   return differently, each arm stepping to exit.
-- **Closing a proposition: `solve`, `known`, `normalize`,
-  `apply(fact)`.** Letting the script end,
-  so that the
-  implicit closer closes the goal, is the default, and `solve()` closes the
-  first open goal where a script continues after it. Write
-  `close() using { ... }` for a goal that follows from named facts, an
-  integer bound or equality among them: it tries arithmetic over the listed
-  premises last. `known()`
-  (the goal is an available fact) and `normalize()` (the goal is true by
-  evaluation) do no search. They are
-  what expansion writes; write them by hand only in a proof that must not
-  search.
+- **Closing a proposition.** Let the implicit closer finish the script,
+  or write `close()` to close the first open goal and continue. Use
+  `close() using { ... }` to restrict proof search to listed facts.
+  For a proof that must replay without search, use `click verify --checked-only`.
 - **Equalities and states: `rewrite`, `transport`.** `rewrite(from, to)` is the
   default: it rewrites the goal with an equality at the current state.
   `transport(P, Q)` carries a fact stated at an earlier state to the current
@@ -1129,13 +1121,13 @@ step is still checked.
 | --- | --- | --- | --- | --- |
 | `all { P => { ... } Q => { ... } }` | control | Expansion output | Prove each conjunct. | [Reference](#conjunctions) |
 | `outcomes { returned => { ... } threw => { ... } }` | control | Specialized | Prove each returned or exceptional outcome. | [Reference](#execution-outcomes) |
-| `solve()` | smart | Core | Close one goal from available facts and bounded rules. | [Reference](#simplification) |
+| `solve()` | smart | Compatibility | Close one goal from available facts and bounded rules. | [Reference](#simplification) |
 | `close() using { P; ... }` | smart | Specialized | Close one goal from written premises only. | [Reference](#simplification-with-selected-premises) |
 | `check_termination_local("f")` | simple | Expansion output | Establish the generated local descent classification. | [Reference](#termination-checks) |
 | `check_termination_component("f", mode)` | simple | Expansion output | Classify a generated recursive component using established premises. | [Reference](#termination-checks) |
 | `check_termination_callbacks()` | simple | Expansion output | Classify callback safety using established strict return premises. | [Reference](#termination-checks) |
 | `close()` | smart | Core | Try the direct goal check, then search if it fails. | [Reference](#closing-a-goal) |
-| `known()` | simple | Specialized | Require a direct goal check. | [Reference](#available-facts) |
+| `known()` | simple | Compatibility | Require a direct goal check. | [Reference](#available-facts) |
 | `normalize()` | simple | Compatibility | Close a goal by evaluation without context. | [Reference](#context-free-normalization) |
 | `normalize() using { P; ... }` | simple | Compatibility | Check normalization against written premises. | [Reference](#normalization-with-selected-premises) |
 | `preserve(resource, region)` | simple | Specialized | Preserve a selected read across a separated effect. | [Reference](#preservation) |
@@ -1632,9 +1624,10 @@ The former form `assumption()` is refused with a diagnostic naming
 `known()`. It reuses available facts and also checks the computational leaves
 described below.
 
-**Specialized.** Use `known()` when the preceding steps should have made the
-goal directly available, for example after a `rewrite`. It refuses when the
-direct check fails. Expansion writes this checked operation as `close()`.
+**Compatibility.** Existing proofs can use `known()` to require a direct
+check at one step. New proofs use `close()`. To check that the proof
+replays without search, run `click verify --checked-only`. Expansion writes
+the checked operation as `close()`.
 
 Smart closure uses `known()` for computational leaves, including residuals
 after a rewrite or unfold and leaves inside logical proofs. Proof strategies
@@ -2891,7 +2884,7 @@ steps see the established conclusion, as after theorem application.
 
 <!-- verified-example: mdtests/apply_implication_fact.md -->
 ```click
-have h: x > 0 implies y > 0 by known();
+have h: x > 0 implies y > 0 by close();
 apply(h);
 ```
 

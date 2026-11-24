@@ -14,7 +14,7 @@ theorem instantiate_at_the_witness(x: int32) {
     ensures x < 1000 by {
         let k = obtain(exists (k: int32) { k > x });
         instantiate(forall (j: int32) { j > x implies x < 1000 }, k);
-        known();
+        close();
     }
 }
 
@@ -24,7 +24,7 @@ theorem quantifier_binder_shadows_the_witness(x: int32) {
     ensures x < 1000 by {
         let k = obtain(exists (k: int32) { k > x });
         instantiate(forall (k: int32) { k > x implies x < 1000 }, k);
-        known();
+        close();
     }
 }
 
@@ -35,8 +35,8 @@ theorem two_witnesses_reach_a_contradiction(x: int32) {
     ensures 0 == 1 by {
         let k = obtain(exists (k: int32) { k > x });
         let m = obtain(exists (m: int32) { m < x });
-        have k > x by known();
-        have m < x by known();
+        have k > x by close();
+        have m < x by close();
         instantiate(forall (j: int32) { j > x implies j <= x }, k);
         contradiction(k > x);
     }

@@ -18,7 +18,7 @@ struct node* list_empty() {
 } by {
     step_until(function.exit);
     fold(list(result));
-    solve();
+    close();
 }
 
 int32 list_head(struct node* node) {
@@ -46,7 +46,7 @@ int32 list_push_front(
 } by {
     step_until(function.exit);
     fold(list(node));
-    solve();
+    close();
 }
 
 int32 list_pop_front(

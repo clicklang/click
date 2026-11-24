@@ -33,14 +33,14 @@ int32 loop_final_iteration_free(int32* data) {
         decreases 1 - i;
         invariant i >= 0;
         invariant i <= 1;
-        initialize by solve();
+        initialize by close();
         maintain by {
             step();
             step();
         }
     }
     step();
-    solve();
+    close();
 }
 ```
 

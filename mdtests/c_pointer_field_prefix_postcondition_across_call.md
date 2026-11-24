@@ -67,11 +67,11 @@ int32 vector_push(struct vector* owner, int32 value) {
             if old(owner->len) == k {
                 have not (k < old(owner->len)) by {
                     rewrite(old(owner->len), k);
-                    known();
+                    close();
                 }
                 contradiction(k < old(owner->len));
             } else {
-                known();
+                close();
             }
         }
         have separate(memory(old(owner->data)[old(owner->len)]), memory(old(owner->data)[k])) by {
@@ -100,30 +100,30 @@ int32 vector_push(struct vector* owner, int32 value) {
         have at(statement(5).exit, owner->data[k]) == at(statement(5).entry, owner->data[k]) by {
             preserve(memory(old(owner->data)[k]), statement(5));
         }
-        known();
+        close();
     }
     step();
     have owner->data == old(owner->data) by {
-        solve();
+        close();
     }
     have owner->data[old(owner->len)] == value by {
-        solve();
+        close();
     }
     fold(vector_storage(owner));
-    known();
-    known();
-    known();
-    known();
-    known();
-    known();
-    known();
+    close();
+    close();
+    close();
+    close();
+    close();
+    close();
+    close();
 }
 
 int32 caller(struct vector* owner, int32 value) {
     requires owner->len < owner->cap;
     owns vector_storage(owner);
     ensures forall (k: int32) { 0 <= k and k < old(owner->len) implies owner->data[k] == old(owner->data[k]) };
-} by { step_until(function.exit); known(); solve(); }
+} by { step_until(function.exit); close(); close(); }
 ```
 
 ```expect

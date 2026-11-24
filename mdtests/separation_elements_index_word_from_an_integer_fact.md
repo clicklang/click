@@ -35,11 +35,11 @@ int32 read_first(int32 m) {
     if q == 0 {
     } else {
         step_until(statement(3).entry);
-        have q[0] == 7 by solve();
+        have q[0] == 7 by close();
         mark before_store;
         step();
-        have defined(m - 1) by solve();
-        have ((m - 1) as int32) != 0 by solve();
+        have defined(m - 1) by close();
+        have ((m - 1) as int32) != 0 by close();
         have separate(memory(q[m - 1]), memory(q[0])) by {
             apply(separation::separate_elements(q, m - 1, 0));
         }
@@ -49,7 +49,7 @@ int32 read_first(int32 m) {
         have q[0] == at(before_store, q[0]) by {
             preserve(memory(q[0]), statement(3));
         }
-        have q[0] == 7 by solve();
+        have q[0] == 7 by close();
         step_until(function.exit);
     }
 }

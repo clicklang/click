@@ -1,7 +1,7 @@
 # A stored pointer retains its value after a call
 
 `link` stores `p` into `q->left` and then calls a function that changes only
-`p->tag`. After the call, `known()` checks that the current link read has the
+`p->tag`. After the call, `close()` checks that the current link read has the
 recorded value `p`. The fixture checks that the verifier retains the stored
 pointer across the call.
 
@@ -23,7 +23,7 @@ void link(struct node *p, struct node *q) {
 } by {
     step();
     step(touch);
-    have q->left == p by { known(); }
+    have q->left == p by { close(); }
 }
 ```
 

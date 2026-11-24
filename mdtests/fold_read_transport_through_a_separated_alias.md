@@ -25,7 +25,7 @@ void mark_other(int32 *a, int32 *b, int32 j, int32 n) {
     ensures zeros(a, 0, n) == old(zeros(a, 0, n));
 } by {
     mark entry;
-    have zeros(at(entry, a), 0, n) == zeros(at(entry, a), 0, n) by known();
+    have zeros(at(entry, a), 0, n) == zeros(at(entry, a), 0, n) by close();
     have contains(memory(b[0..n]), memory(b[j])) by {
         apply(click::separation::contains_element(b, 0, n, j));
     }
@@ -35,9 +35,9 @@ void mark_other(int32 *a, int32 *b, int32 j, int32 n) {
     have separate(memory(b[j]), memory(a[0..n])) by {
         apply(click::separation::separate_restrict(memory(b[0..n]), memory(a[0..n]), memory(b[j]), memory(a[0..n])));
     }
-    have 0 <= 0 by { known(); }
-    have 0 <= n by { solve(); }
-    have viewable(a[0..n]) by { observe(a[0..n]); known(); }
+    have 0 <= 0 by { close(); }
+    have 0 <= n by { close(); }
+    have viewable(a[0..n]) by { observe(a[0..n]); close(); }
     step();
     have zeros(at(entry, a), 0, n) == zeros(a, 0, n) by {
         have forall (k: int32) { 0 <= k and k < n implies a[k] == at(entry, a[k]) } by {
@@ -56,9 +56,9 @@ void mark_other(int32 *a, int32 *b, int32 j, int32 n) {
             }
             preserve(memory(a[k]), statement(0));
         }
-        have viewable(a[0..n]) by { observe(a[0..n]); known(); }
+        have viewable(a[0..n]) by { observe(a[0..n]); close(); }
         apply(same_zeros(a, at(entry, a), 0, n, n));
-        known();
+        close();
     }
 }
 ```

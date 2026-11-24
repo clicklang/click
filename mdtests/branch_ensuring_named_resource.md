@@ -46,7 +46,7 @@ void set_sign(struct cell* node, int32 x) {
         }
     }
     step();
-    solve();
+    close();
 }
 ```
 

@@ -20,14 +20,14 @@ theorem partial_restoration(whole: uint64, removed: uint64, restored: uint64, up
             to_integer(restored) <= to_integer(removed);
             to_integer(whole) <= to_integer(upper);
         };
-        have to_integer(upper) <= 18446744073709551615 by known();
+        have to_integer(upper) <= 18446744073709551615 by close();
         have to_integer(whole - removed) + to_integer(restored) <= 18446744073709551615 by close() using {
             to_integer(whole - removed) + to_integer(restored) <= to_integer(upper);
             to_integer(upper) <= 18446744073709551615;
         };
         apply(integer::uint64_add_to_integer(whole - removed, restored));
         rewrite(to_integer((whole - removed) + (restored)), to_integer(whole - removed) + to_integer(restored));
-        known();
+        close();
     }
     ensures to_integer(restored + (whole - removed)) <= to_integer(upper) by {
         have to_integer(removed) <= to_integer(whole) by close() using { removed <= whole; };
@@ -39,14 +39,14 @@ theorem partial_restoration(whole: uint64, removed: uint64, restored: uint64, up
             to_integer(restored) <= to_integer(removed);
             to_integer(whole) <= to_integer(upper);
         };
-        have to_integer(upper) <= 18446744073709551615 by known();
+        have to_integer(upper) <= 18446744073709551615 by close();
         have to_integer(restored) + to_integer(whole - removed) <= 18446744073709551615 by close() using {
             to_integer(restored) + to_integer(whole - removed) <= to_integer(upper);
             to_integer(upper) <= 18446744073709551615;
         };
         apply(integer::uint64_add_to_integer(restored, whole - removed));
         rewrite(to_integer((restored) + (whole - removed)), to_integer(restored) + to_integer(whole - removed));
-        known();
+        close();
     }
 }
 ```

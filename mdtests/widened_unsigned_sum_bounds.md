@@ -26,7 +26,7 @@ int64 add_byte(uint32 sum, uint8 byte) {
     have result <= 4294967295i64 by {
         close() using { (byte as uint32) <= 255u32; sum <= 4294967040u32; };
     }
-    solve();
+    close();
 }
 ```
 

@@ -25,12 +25,12 @@ void mark_any(int32 *v, int32 lo, int32 hi, int32 j, int32 n) {
     ensures zeros(v, lo, hi) == old(zeros(v, lo, hi));
 } by {
     mark entry;
-    have zeros(at(entry, v), lo, hi) == zeros(at(entry, v), lo, hi) by known();
+    have zeros(at(entry, v), lo, hi) == zeros(at(entry, v), lo, hi) by close();
     step();
     have zeros(v, lo, hi) == zeros(at(entry, v), lo, hi) by {
         unfold(zeros(v, lo, hi));
         unfold(zeros(at(entry, v), lo, hi));
-        known();
+        close();
     }
 }
 ```

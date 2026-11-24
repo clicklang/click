@@ -14,12 +14,12 @@ void dispose(int32 *p) {
     ensures at(function.entry, viewable(token(0))) by {
         step();
         step();
-        known();
+        close();
     }
     ensures at(function.entry, viewable(memory(p[0..1]))) by {
         step();
         step();
-        known();
+        close();
     }
 }
 ```

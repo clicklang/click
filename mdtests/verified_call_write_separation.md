@@ -21,7 +21,7 @@ void write_beside_view(int *target, const int *viewed) {
     owns target[0..1];
     views viewed[0..1];
 } by {
-    step() by { solve(); }
+    step() by { close(); }
 }
 ```
 

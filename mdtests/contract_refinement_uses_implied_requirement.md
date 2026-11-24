@@ -42,7 +42,7 @@ void invoke_guarded(void (*callback)(int32, int32), int32 flag, int32 n) {
 theorem use_seven_is_guarded() {
     ensures Guarded(&use_seven) by {
         unfold(Guarded(&use_seven));
-        solve();
+        close();
     }
 }
 

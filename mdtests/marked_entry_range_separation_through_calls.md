@@ -2,7 +2,7 @@
 
 The entry mark names the destination range before the parameter copy.
 The pointer and size returned by the observers equal those incoming fields,
-so `solve()` can cite the marked separation after rewriting both results.
+so `close()` can cite the marked separation after rewriting both results.
 
 ```c filename=range.c
 struct Slice {
@@ -47,7 +47,7 @@ uint64 probe(struct Slice dst, const uint8* src, uint64 n) {
     step_until(call(length, 0).entry);
     step();
     have separate(memory(at(call(data, 0).exit, call(data, 0).result)[0u64..call(length, 0).result]), memory(src[0..n])) by {
-        solve();
+        close();
     }
 }
 ```

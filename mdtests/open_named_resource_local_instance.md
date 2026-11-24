@@ -24,12 +24,12 @@ int32 read_local(int32* p) {
     requires *p == 7;
     ensures result == 7;
 } by {
-    let c = fold(exact_cell(p), { value: 7 }) by { known(); }
+    let c = fold(exact_cell(p), { value: 7 }) by { close(); }
     with(c) { step(); }
-    have c.value == 7 by { known(); }
+    have c.value == 7 by { close(); }
     unfold(c);
     step_until(function.exit);
-    solve();
+    close();
 }
 ```
 

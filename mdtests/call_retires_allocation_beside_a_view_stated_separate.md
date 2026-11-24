@@ -52,7 +52,7 @@ void box_release(struct box* box, struct box* other, int32* q, int32 n) {
     have contains(
         memory(((box->data as (void *)) as (uint8 *))[0..4 * n]),
         memory(((box->data as (void *)) as (uint8 *))[0..4])
-    ) by { solve(); }
+    ) by { close(); }
     apply(separation::contains_refl(memory(q[0..1])));
     apply(separation::separate_restrict(
         memory(((box->data as (void *)) as (uint8 *))[0..4 * n]),
@@ -61,11 +61,11 @@ void box_release(struct box* box, struct box* other, int32* q, int32 n) {
         memory(q[0..1])
     ));
     unfold(boxed(box));
-    have separate(memory((box as (int32 *))[0..2]), memory(q[0..1])) by { known(); }
+    have separate(memory((box as (int32 *))[0..2]), memory(q[0..1])) by { close(); }
     fold(boxed(box));
     step() {
-        requires separate(memory((box as (int32 *))[0..2]), memory(q[0..1])) by { known(); }
-        requires separate(memory(((box->data as (void *)) as (uint8 *))[0..4]), memory(q[0..1])) by { known(); }
+        requires separate(memory((box as (int32 *))[0..2]), memory(q[0..1])) by { close(); }
+        requires separate(memory(((box->data as (void *)) as (uint8 *))[0..4]), memory(q[0..1])) by { close(); }
     }
 }
 ```

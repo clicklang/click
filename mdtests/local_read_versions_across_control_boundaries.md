@@ -58,9 +58,9 @@ int32 joined(int32 value, int32 selector) {
         true => { step(); }
         false => { step(); }
     }
-    have box.left == at(saved, box.left) by known();
+    have box.left == at(saved, box.left) by close();
     step();
-    solve();
+    close();
 }
 
 int32 called(int32 value) {
@@ -69,9 +69,9 @@ int32 called(int32 value) {
     step(); step(); step(); step();
     mark saved;
     step();
-    have box.left == at(saved, box.left) by known();
+    have box.left == at(saved, box.left) by close();
     step();
-    solve();
+    close();
 }
 
 int32 looped(int32 value, int32 selector) {
@@ -82,15 +82,15 @@ int32 looped(int32 value, int32 selector) {
     loop {
         decreases 0;
         invariant box.left == value;
-        initialize by solve();
+        initialize by close();
         maintain by {
-            have box.left == at(saved, box.left) by known();
+            have box.left == at(saved, box.left) by close();
             step(); step();
         }
     }
-    have box.left == at(saved, box.left) by known();
+    have box.left == at(saved, box.left) by close();
     step();
-    solve();
+    close();
 }
 ```
 

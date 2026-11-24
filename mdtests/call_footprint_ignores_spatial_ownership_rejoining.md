@@ -8,7 +8,7 @@ void caller(struct box *q) { update(q); }
 
 ```click
 verifying "call_frame.c";
-void update(struct box *q) { owns q->tag; } by { step(); step(); solve(); }
+void update(struct box *q) { owns q->tag; } by { step(); step(); close(); }
 void caller(struct box *q) {
     owns *q;
     ensures q->data == old(q->data);
@@ -23,7 +23,7 @@ void caller(struct box *q) {
         preserve(memory(q->data), statement(0));
     }
     step();
-    known();
+    close();
 }
 ```
 

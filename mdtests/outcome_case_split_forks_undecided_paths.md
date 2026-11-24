@@ -24,7 +24,7 @@ int32 clamp_positive(int32 a) {
 } by {
     if a == 5 {
         step_until(function.exit);
-        solve();
+        close();
     } else {}
 }
 ```

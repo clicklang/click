@@ -18,9 +18,9 @@ theorem unequal_prefix(left: uint8[], right: uint8[]) {
             intro();
             unfold(bytes::equal_range(left, right, 0u64, k));
             instantiate((0u64..k).all(|j| { left[j] == right[j] }), 0u64);
-            solve();
+            close();
         }
-        solve();
+        close();
     }
 }
 ```

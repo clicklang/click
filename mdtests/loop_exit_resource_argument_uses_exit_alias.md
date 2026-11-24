@@ -28,7 +28,7 @@ tactic keep(p: int32*, anchor: int32*) {
 } by {
     unfold(a);
     let b = fold(cursor(address(p), anchor), { tag: old(a.tag) });
-    have b.tag == old(a.tag) by known();
+    have b.tag == old(a.tag) by close();
 }
 void choose(int32* p, int32* q, int32* anchor, int32 flag) {
     consumes c: cursor(address(p), anchor);

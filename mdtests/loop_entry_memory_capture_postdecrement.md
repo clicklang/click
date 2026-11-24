@@ -22,18 +22,18 @@ uint64 post(const uint8* p, uint64 n) {
   decreases to_integer(n);
   views p[0u64..n];
   invariant to_integer(n) <= 15;
-  initialize by { have to_integer(n) <= to_integer(15u64); solve(); }
+  initialize by { have to_integer(n) <= to_integer(15u64); close(); }
   maintain by {
    if n == 0u64 {
     step(); step();
-    have at(statement(0).region(1).entry, n) == 0u64 by known();
-    have n == 18446744073709551615u64 by { rewrite(at(statement(0).region(1).entry, n), 0u64); known(); }
+    have at(statement(0).region(1).entry, n) == 0u64 by close();
+    have n == 18446744073709551615u64 by { rewrite(at(statement(0).region(1).entry, n), 0u64); close(); }
    } else {
-    have 0u64 <= n by known();
+    have 0u64 <= n by close();
     have 0u64 < n by {
-     if 0u64 < n { known(); } else {
+     if 0u64 < n { close(); } else {
       have 0u64 == n;
-      have n == 0u64 by { rewrite(0u64, n); known(); }
+      have n == 0u64 by { rewrite(0u64, n); close(); }
       contradiction(n == 0u64);
      }
     }
@@ -45,7 +45,7 @@ uint64 post(const uint8* p, uint64 n) {
    have to_integer(n - 1u64) == to_integer(n) - to_integer(1u64);
    mark before_decrement;
    step(); step();
-   have to_integer(n) == at(before_decrement, to_integer(n)) - 1 by known();
+   have to_integer(n) == at(before_decrement, to_integer(n)) - 1 by close();
    have to_integer(n) <= 15 by close() using { to_integer(n) == at(before_decrement, to_integer(n)) - 1; at(before_decrement, to_integer(n)) <= 15; };
    have 0 <= to_integer(n) by close() using { to_integer(n) == at(before_decrement, to_integer(n)) - 1; to_integer(1u64) <= at(before_decrement, to_integer(n)); };
    have to_integer(n) < at(before_decrement, to_integer(n)) by close() using { to_integer(n) == at(before_decrement, to_integer(n)) - 1; };

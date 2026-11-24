@@ -9,25 +9,25 @@ function zlib_prefix_count(total: uint64, remaining: uint64) -> int32 {
 theorem zlib_prefix_observation(total: uint64, remaining: uint64) {
  requires to_integer(total - remaining) <= 22208;
  ensures to_integer(zlib_prefix_count(total, remaining)) == to_integer(total - remaining) by {
-  have to_integer(total - remaining) <= 22208 by known();
+  have to_integer(total - remaining) <= 22208 by close();
   apply(adler_count_observation(total - remaining));
   unfold(zlib_prefix_count(total, remaining));
-  known();
+  close();
  }
  ensures 0 <= zlib_prefix_count(total, remaining) and zlib_prefix_count(total, remaining) <= 22208 by {
-  have to_integer(total - remaining) <= 22208 by known();
+  have to_integer(total - remaining) <= 22208 by close();
   apply(adler_count_bounds(total - remaining));
   unfold(zlib_prefix_count(total, remaining));
-  known();
+  close();
  }
 }
 theorem zlib_prefix_pointer(base: const uint8*, total: uint64, remaining: uint64) {
  requires to_integer(total - remaining) <= 22208;
  ensures base + (total - remaining) == base + zlib_prefix_count(total, remaining) by {
-  have to_integer(total - remaining) <= 22208 by known();
+  have to_integer(total - remaining) <= 22208 by close();
   apply(adler_count_byte_pointer(base, total - remaining));
   unfold(zlib_prefix_count(total, remaining));
-  known();
+  close();
  }
 }
 
@@ -36,7 +36,7 @@ function zlib_byte_integer(value: uint8) -> Integer {
 }
 theorem zlib_byte_integer_identity(value: uint8) {
  ensures zlib_byte_integer(value) == to_integer(value as int32) by {
-  unfold(zlib_byte_integer(value)); known();
+  unfold(zlib_byte_integer(value)); close();
  }
 }
 theorem zlib_prefix_append(bytes: uint8[], total: uint64, remaining: uint64) {
@@ -44,7 +44,7 @@ theorem zlib_prefix_append(bytes: uint8[], total: uint64, remaining: uint64) {
  ensures adler_byte_sum(bytes, zlib_prefix_count(total, remaining)) == adler_byte_sum(bytes, zlib_prefix_count(total, remaining) - 1) + zlib_byte_integer(bytes[zlib_prefix_count(total, remaining) - 1]) by {
   apply(adler_sum_append(bytes, zlib_prefix_count(total, remaining)));
   unfold(zlib_byte_integer(bytes[zlib_prefix_count(total, remaining) - 1]));
-  known();
+  close();
  }
 }
 theorem zlib_positive_count(value: int32) {
@@ -56,7 +56,7 @@ theorem zlib_equal_byte_integers(left: uint8, right: uint8) {
  ensures zlib_byte_integer(left) == zlib_byte_integer(right) by {
   unfold(zlib_byte_integer(left));
   unfold(zlib_byte_integer(right));
-  known();
+  close();
  }
 }
 
@@ -76,7 +76,7 @@ theorem zlib_short_result(bytes: uint8[], length: int32, a: uint64, b: uint64) {
   have adler_spec_a(bytes, length, 1) == to_integer(a) by {
    unfold(adler_spec_a(bytes, length, 1));
    rewrite(1 + adler_byte_sum(bytes, length), to_integer(a));
-   known();
+   close();
   }
   apply(integer::uint64_remainder_to_integer(b, 65521u64));
   apply(integer::positive_divisor_remainder_upper(to_integer(b), 65521));

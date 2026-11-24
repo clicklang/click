@@ -42,10 +42,10 @@ int32 grid(int32 n) {
                 invariant 0 <= j and j <= n;
                 invariant j == iterations;
             }
-            have loop(1).iterations == to_integer(n) by { solve(); }
+            have loop(1).iterations == to_integer(n) by { close(); }
         }
     }
-    have loop(0).iterations == to_integer(n) by { solve(); }
+    have loop(0).iterations == to_integer(n) by { close(); }
 }
 ```
 

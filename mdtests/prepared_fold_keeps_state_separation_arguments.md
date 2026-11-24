@@ -14,7 +14,7 @@ void make(int32* p, int32* q) {
 } by {
     fold(separated(old(p), old(q)));
     step_until(function.exit);
-    solve();
+    close();
 }
 ```
 ```expect

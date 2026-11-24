@@ -2357,9 +2357,9 @@ theorem set_one_is_make_positive() {
         unfold(MakePositive(&set_one_if_active));
 
         if active != 0 {
-            solve();
+            close();
         } else {
-            solve();
+            close();
         }
     }
 }
@@ -2423,7 +2423,7 @@ theorem exact_increment_is_progress(
     ensures ProgressPair(step) by {
         unfold(ExactIncrement(step));
         unfold(ProgressPair(step));
-        solve();
+        close();
     }
 }
 ```

@@ -51,7 +51,7 @@ void clear_left(struct rb_node* old) {
     unfold(before);
     step_until(function.exit);
     let after = fold(sized_link(old, (old as (void *) as (struct sized_node *))->size), { model: old(before.model) });
-    solve();
+    close();
 }
 
 int32 clear_and_size(struct rb_node* node) {

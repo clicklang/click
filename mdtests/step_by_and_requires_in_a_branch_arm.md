@@ -27,14 +27,14 @@ int32 compare_by(uint8 bytes[], int32 c) {
     ensures 1 == 1 by {
         branch {
             true => {
-                step() by { solve(); }
+                step() by { close(); }
                 step();
-                solve();
+                close();
             }
             false => {}
         }
         step();
-        solve();
+        close();
     }
 }
 
@@ -44,15 +44,15 @@ int32 compare_requires(uint8 bytes[], int32 c) {
         branch {
             true => {
                 step() {
-                    requires forall (k: uint64) { k < 2 implies defined(bytes[k]) and defined(bytes[k]) } by solve();
+                    requires forall (k: uint64) { k < 2 implies defined(bytes[k]) and defined(bytes[k]) } by close();
                 }
                 step();
-                solve();
+                close();
             }
             false => {}
         }
         step();
-        solve();
+        close();
     }
 }
 ```

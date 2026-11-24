@@ -14,14 +14,14 @@ int32 identity(int32 x, int32 choice) {
     ensures result == old(identity.parameter(0));
 } by {
     step_until(statement(1).entry);
-    have identity.local(0) == identity.statement(0).local(y) by { known(); }
-    have identity.local(0) == identity.parameter(0) by { known(); }
+    have identity.local(0) == identity.statement(0).local(y) by { close(); }
+    have identity.local(0) == identity.parameter(0) by { close(); }
     if identity.parameter(1) != 0 {
         step_until(function.exit);
-        known();
+        close();
     } else {
         step_until(function.exit);
-        known();
+        close();
     }
 }
 ```

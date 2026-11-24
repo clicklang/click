@@ -47,7 +47,7 @@ theorem adler_lane_a_reduction(a: Integer, a0: Integer, a1: Integer, a2: Integer
   have 0 <= adler_lane_a(a, truncating_remainder(a0, 65521), truncating_remainder(a1, 65521), truncating_remainder(a2, 65521), truncating_remainder(a3, 65521)) by { unfold(adler_lane_a(a, truncating_remainder(a0, 65521), truncating_remainder(a1, 65521), truncating_remainder(a2, 65521), truncating_remainder(a3, 65521))); close() using { 0 <= a; 0 <= truncating_remainder(a0, 65521); 0 <= truncating_remainder(a1, 65521); 0 <= truncating_remainder(a2, 65521); 0 <= truncating_remainder(a3, 65521); }; }
   have adler_lane_a(a, a0, a1, a2, a3) == adler_lane_a(a, truncating_remainder(a0, 65521), truncating_remainder(a1, 65521), truncating_remainder(a2, 65521), truncating_remainder(a3, 65521)) + 65521 * (truncating_quotient(a0, 65521) + truncating_quotient(a1, 65521) + truncating_quotient(a2, 65521) + truncating_quotient(a3, 65521)) by { unfold(adler_lane_a(a, a0, a1, a2, a3)); unfold(adler_lane_a(a, truncating_remainder(a0, 65521), truncating_remainder(a1, 65521), truncating_remainder(a2, 65521), truncating_remainder(a3, 65521))); close() using { a0 == truncating_quotient(a0, 65521) * 65521 + truncating_remainder(a0, 65521); a1 == truncating_quotient(a1, 65521) * 65521 + truncating_remainder(a1, 65521); a2 == truncating_quotient(a2, 65521) * 65521 + truncating_remainder(a2, 65521); a3 == truncating_quotient(a3, 65521) * 65521 + truncating_remainder(a3, 65521); }; }
   apply(adler_residue_congruent(adler_lane_a(a, a0, a1, a2, a3), adler_lane_a(a, truncating_remainder(a0, 65521), truncating_remainder(a1, 65521), truncating_remainder(a2, 65521), truncating_remainder(a3, 65521)), truncating_quotient(a0, 65521) + truncating_quotient(a1, 65521) + truncating_quotient(a2, 65521) + truncating_quotient(a3, 65521)));
-  known();
+  close();
  }
 }
 
@@ -155,7 +155,7 @@ theorem adler_lane_b_reduction(b: Integer, a1: Integer, a2: Integer, a3: Integer
    };
   }
   apply(adler_residue_congruent(adler_lane_b(b, a1, a2, a3, b0, b1, b2, b3), adler_lane_b(truncating_remainder(b, 65521), truncating_remainder(a1, 65521), truncating_remainder(a2, 65521), truncating_remainder(a3, 65521), truncating_remainder(b0, 65521), truncating_remainder(b1, 65521), truncating_remainder(b2, 65521), truncating_remainder(b3, 65521)), truncating_quotient(b, 65521) + 4 * (truncating_quotient(b0, 65521) + truncating_quotient(b1, 65521) + truncating_quotient(b2, 65521) + truncating_quotient(b3, 65521)) - truncating_quotient(a1, 65521) - 2 * truncating_quotient(a2, 65521) - 3 * truncating_quotient(a3, 65521)));
-  known();
+  close();
  }
 }
 
@@ -182,14 +182,14 @@ theorem adler_prefix_a_step_four(bytes: uint8[], n: int32, seed: Integer, repres
   apply(adler_residue_add(representative, (to_integer(bytes[n] as int32) + to_integer(bytes[n + 1] as int32) + to_integer(bytes[n + 2] as int32) + to_integer(bytes[n + 3] as int32))));
   apply(adler_residue_add((seed + adler_byte_sum(bytes, n)), (to_integer(bytes[n] as int32) + to_integer(bytes[n + 1] as int32) + to_integer(bytes[n + 2] as int32) + to_integer(bytes[n + 3] as int32))));
   apply(adler_sum_append_four(bytes, n));
-  have truncating_remainder(representative, 65521) == truncating_remainder((seed + adler_byte_sum(bytes, n)), 65521) by { rewrite(truncating_remainder(representative, 65521), adler_spec_a(bytes, n, seed)); unfold(adler_spec_a(bytes, n, seed)); solve(); }
+  have truncating_remainder(representative, 65521) == truncating_remainder((seed + adler_byte_sum(bytes, n)), 65521) by { rewrite(truncating_remainder(representative, 65521), adler_spec_a(bytes, n, seed)); unfold(adler_spec_a(bytes, n, seed)); close(); }
   have seed + adler_byte_sum(bytes, n + 4) == (seed + adler_byte_sum(bytes, n)) + (to_integer(bytes[n] as int32) + to_integer(bytes[n + 1] as int32) + to_integer(bytes[n + 2] as int32) + to_integer(bytes[n + 3] as int32)) by { rewrite(adler_byte_sum(bytes, n + 4), adler_byte_sum(bytes, n) + to_integer(bytes[n] as int32) + to_integer(bytes[n + 1] as int32) + to_integer(bytes[n + 2] as int32) + to_integer(bytes[n + 3] as int32)); close() using {}; }
   unfold(adler_spec_a(bytes, n + 4, seed));
   rewrite(seed + adler_byte_sum(bytes, n + 4), (seed + adler_byte_sum(bytes, n)) + (to_integer(bytes[n] as int32) + to_integer(bytes[n + 1] as int32) + to_integer(bytes[n + 2] as int32) + to_integer(bytes[n + 3] as int32)));
   rewrite(truncating_remainder(representative + (to_integer(bytes[n] as int32) + to_integer(bytes[n + 1] as int32) + to_integer(bytes[n + 2] as int32) + to_integer(bytes[n + 3] as int32)), 65521), truncating_remainder(truncating_remainder(representative, 65521) + truncating_remainder((to_integer(bytes[n] as int32) + to_integer(bytes[n + 1] as int32) + to_integer(bytes[n + 2] as int32) + to_integer(bytes[n + 3] as int32)), 65521), 65521));
   rewrite(truncating_remainder((seed + adler_byte_sum(bytes, n)) + (to_integer(bytes[n] as int32) + to_integer(bytes[n + 1] as int32) + to_integer(bytes[n + 2] as int32) + to_integer(bytes[n + 3] as int32)), 65521), truncating_remainder(truncating_remainder((seed + adler_byte_sum(bytes, n)), 65521) + truncating_remainder((to_integer(bytes[n] as int32) + to_integer(bytes[n + 1] as int32) + to_integer(bytes[n + 2] as int32) + to_integer(bytes[n + 3] as int32)), 65521), 65521));
   rewrite(truncating_remainder(representative, 65521), truncating_remainder((seed + adler_byte_sum(bytes, n)), 65521));
-  solve();
+  close();
  }
 }
 
@@ -208,8 +208,8 @@ theorem adler_prefix_a_step_one(bytes: uint8[], n: int32, seed: Integer, represe
   have defined(n + 1) by close() using { 0 <= n; n <= 2147483646; };
   have 0 < to_integer(n + 1) by close() using { 0 <= n; n <= 2147483646; };
   apply(adler_sum_append(bytes, n + 1));
-  have adler_byte_sum(bytes, n + 1) == adler_byte_sum(bytes, n) + to_integer(bytes[n] as int32) by { rewrite(adler_byte_sum(bytes, n + 1), adler_byte_sum(bytes, n + 1 - 1) + to_integer(bytes[n + 1 - 1] as int32)); known(); }
-  have truncating_remainder(representative, 65521) == truncating_remainder(seed + adler_byte_sum(bytes, n), 65521) by { rewrite(truncating_remainder(representative, 65521), adler_spec_a(bytes, n, seed)); unfold(adler_spec_a(bytes, n, seed)); solve(); }
+  have adler_byte_sum(bytes, n + 1) == adler_byte_sum(bytes, n) + to_integer(bytes[n] as int32) by { rewrite(adler_byte_sum(bytes, n + 1), adler_byte_sum(bytes, n + 1 - 1) + to_integer(bytes[n + 1 - 1] as int32)); close(); }
+  have truncating_remainder(representative, 65521) == truncating_remainder(seed + adler_byte_sum(bytes, n), 65521) by { rewrite(truncating_remainder(representative, 65521), adler_spec_a(bytes, n, seed)); unfold(adler_spec_a(bytes, n, seed)); close(); }
   unfold(adler_spec_a(bytes, n + 1, seed));
   rewrite(adler_byte_sum(bytes, n + 1), adler_byte_sum(bytes, n) + to_integer(bytes[n] as int32));
   have seed + (adler_byte_sum(bytes, n) + to_integer(bytes[n] as int32)) == (seed + adler_byte_sum(bytes, n)) + to_integer(bytes[n] as int32) by close() using {};
@@ -217,7 +217,7 @@ theorem adler_prefix_a_step_one(bytes: uint8[], n: int32, seed: Integer, represe
   rewrite(truncating_remainder(representative + to_integer(bytes[n] as int32), 65521), truncating_remainder(truncating_remainder(representative, 65521) + truncating_remainder(to_integer(bytes[n] as int32), 65521), 65521));
   rewrite(truncating_remainder((seed + adler_byte_sum(bytes, n)) + to_integer(bytes[n] as int32), 65521), truncating_remainder(truncating_remainder(seed + adler_byte_sum(bytes, n), 65521) + truncating_remainder(to_integer(bytes[n] as int32), 65521), 65521));
   rewrite(truncating_remainder(representative, 65521), truncating_remainder(seed + adler_byte_sum(bytes, n), 65521));
-  solve();
+  close();
  }
 }
 
@@ -273,8 +273,8 @@ theorem adler_prefix_b_step_four(bytes: uint8[], n: int32, a_seed: Integer, b_se
    rewrite((to_integer(n) + to_integer(4)) * a_seed, to_integer(n) * a_seed + 4 * a_seed);
    rewrite(adler_weighted_sum(bytes, n + 4, n + 4), adler_weighted_sum(bytes, n, n) + 4 * adler_byte_sum(bytes, n) + 4 * to_integer(bytes[n] as int32) + 3 * to_integer(bytes[n + 1] as int32) + 2 * to_integer(bytes[n + 2] as int32) + to_integer(bytes[n + 3] as int32)); close() using {};
   }
-  have truncating_remainder(a_rep, 65521) == truncating_remainder((a_seed + adler_byte_sum(bytes, n)), 65521) by { rewrite(truncating_remainder(a_rep, 65521), adler_spec_a(bytes, n, a_seed)); unfold(adler_spec_a(bytes, n, a_seed)); solve(); }
-  have truncating_remainder(b_rep, 65521) == truncating_remainder((b_seed + to_integer(n) * a_seed + adler_weighted_sum(bytes, n, n)), 65521) by { rewrite(truncating_remainder(b_rep, 65521), adler_spec_b(bytes, n, a_seed, b_seed)); unfold(adler_spec_b(bytes, n, a_seed, b_seed)); solve(); }
+  have truncating_remainder(a_rep, 65521) == truncating_remainder((a_seed + adler_byte_sum(bytes, n)), 65521) by { rewrite(truncating_remainder(a_rep, 65521), adler_spec_a(bytes, n, a_seed)); unfold(adler_spec_a(bytes, n, a_seed)); close(); }
+  have truncating_remainder(b_rep, 65521) == truncating_remainder((b_seed + to_integer(n) * a_seed + adler_weighted_sum(bytes, n, n)), 65521) by { rewrite(truncating_remainder(b_rep, 65521), adler_spec_b(bytes, n, a_seed, b_seed)); unfold(adler_spec_b(bytes, n, a_seed, b_seed)); close(); }
   apply(adler_representative_delta(a_rep, (a_seed + adler_byte_sum(bytes, n))));
   apply(adler_representative_delta(b_rep, (b_seed + to_integer(n) * a_seed + adler_weighted_sum(bytes, n,
     n))));
@@ -301,7 +301,7 @@ theorem adler_prefix_b_step_four(bytes: uint8[], n: int32, a_seed: Integer, b_se
   have 0 <= (b_seed + to_integer(n) * a_seed + adler_weighted_sum(bytes, n, n)) + 4 * (a_seed + adler_byte_sum(bytes, n)) by close() using { 0 <= (b_seed + to_integer(n) * a_seed + adler_weighted_sum(bytes, n, n)); 0 <= (a_seed + adler_byte_sum(bytes, n)); };
   have 0 <= (b_seed + to_integer(n + 4) * a_seed + adler_weighted_sum(bytes, n + 4, n + 4)) by { rewrite((b_seed + to_integer(n + 4) * a_seed + adler_weighted_sum(bytes, n + 4, n + 4)), (b_seed + to_integer(n) * a_seed + adler_weighted_sum(bytes, n, n)) + 4 * (a_seed + adler_byte_sum(bytes, n)) + (4 * to_integer(bytes[n] as int32) + 3 * to_integer(bytes[n + 1] as int32) + 2 * to_integer(bytes[n + 2] as int32) + to_integer(bytes[n + 3] as int32))); close() using { 0 <= (b_seed + to_integer(n) * a_seed + adler_weighted_sum(bytes, n, n)) + 4 * (a_seed + adler_byte_sum(bytes, n)); 0 <= (4 * to_integer(bytes[n] as int32) + 3 * to_integer(bytes[n + 1] as int32) + 2 * to_integer(bytes[n + 2] as int32) + to_integer(bytes[n + 3] as int32)); }; }
   apply(adler_residue_congruent((b_rep + 4 * a_rep + (4 * to_integer(bytes[n] as int32) + 3 * to_integer(bytes[n + 1] as int32) + 2 * to_integer(bytes[n + 2] as int32) + to_integer(bytes[n + 3] as int32))), (b_seed + to_integer(n + 4) * a_seed + adler_weighted_sum(bytes, n + 4, n + 4)), (truncating_quotient(b_rep, 65521) - truncating_quotient((b_seed + to_integer(n) * a_seed + adler_weighted_sum(bytes, n, n)), 65521) + 4 * (truncating_quotient(a_rep, 65521) - truncating_quotient((a_seed + adler_byte_sum(bytes, n)), 65521)))));
-  unfold(adler_spec_b(bytes, n + 4, a_seed, b_seed)); known();
+  unfold(adler_spec_b(bytes, n + 4, a_seed, b_seed)); close();
  }
 }
 theorem adler_weighted_append_one(bytes: uint8[], n: int32) {
@@ -316,7 +316,7 @@ theorem adler_weighted_append_one(bytes: uint8[], n: int32) {
   rewrite(adler_weighted_sum(bytes, n + 1, n + 1), adler_weighted_sum(bytes, (n + 1) - 1, (n + 1) - 1) + adler_byte_sum(bytes, n + 1));
   rewrite(adler_byte_sum(bytes, n + 1), adler_byte_sum(bytes, (n + 1) - 1) + to_integer(bytes[(n + 1) - 1] as int32));
   rewrite(to_integer((n + 1) - 1), to_integer(n));
-  solve();
+  close();
  }
 }
 
@@ -347,8 +347,8 @@ theorem adler_prefix_b_step_one(bytes: uint8[], n: int32, a_seed: Integer, b_see
    rewrite((to_integer(n) + to_integer(1)) * a_seed, to_integer(n) * a_seed + a_seed);
    rewrite(adler_weighted_sum(bytes, n + 1, n + 1), adler_weighted_sum(bytes, n, n) + adler_byte_sum(bytes, n) + to_integer(bytes[n] as int32)); close() using {};
   }
-  have truncating_remainder(a_rep, 65521) == truncating_remainder((a_seed + adler_byte_sum(bytes, n)), 65521) by { rewrite(truncating_remainder(a_rep, 65521), adler_spec_a(bytes, n, a_seed)); unfold(adler_spec_a(bytes, n, a_seed)); solve(); }
-  have truncating_remainder(b_rep, 65521) == truncating_remainder((b_seed + to_integer(n) * a_seed + adler_weighted_sum(bytes, n, n)), 65521) by { rewrite(truncating_remainder(b_rep, 65521), adler_spec_b(bytes, n, a_seed, b_seed)); unfold(adler_spec_b(bytes, n, a_seed, b_seed)); solve(); }
+  have truncating_remainder(a_rep, 65521) == truncating_remainder((a_seed + adler_byte_sum(bytes, n)), 65521) by { rewrite(truncating_remainder(a_rep, 65521), adler_spec_a(bytes, n, a_seed)); unfold(adler_spec_a(bytes, n, a_seed)); close(); }
+  have truncating_remainder(b_rep, 65521) == truncating_remainder((b_seed + to_integer(n) * a_seed + adler_weighted_sum(bytes, n, n)), 65521) by { rewrite(truncating_remainder(b_rep, 65521), adler_spec_b(bytes, n, a_seed, b_seed)); unfold(adler_spec_b(bytes, n, a_seed, b_seed)); close(); }
   apply(adler_representative_delta(a_rep, (a_seed + adler_byte_sum(bytes, n))));
   apply(adler_representative_delta(b_rep, (b_seed + to_integer(n) * a_seed + adler_weighted_sum(bytes, n,
     n))));
@@ -373,6 +373,6 @@ theorem adler_prefix_b_step_one(bytes: uint8[], n: int32, a_seed: Integer, b_see
   have 0 <= (b_seed + to_integer(n) * a_seed + adler_weighted_sum(bytes, n, n)) + (a_seed + adler_byte_sum(bytes, n)) by close() using { 0 <= (b_seed + to_integer(n) * a_seed + adler_weighted_sum(bytes, n, n)); 0 <= (a_seed + adler_byte_sum(bytes, n)); };
   have 0 <= (b_seed + to_integer(n + 1) * a_seed + adler_weighted_sum(bytes, n + 1, n + 1)) by { rewrite((b_seed + to_integer(n + 1) * a_seed + adler_weighted_sum(bytes, n + 1, n + 1)), (b_seed + to_integer(n) * a_seed + adler_weighted_sum(bytes, n, n)) + (a_seed + adler_byte_sum(bytes, n)) + to_integer(bytes[n] as int32)); close() using { 0 <= (b_seed + to_integer(n) * a_seed + adler_weighted_sum(bytes, n, n)) + (a_seed + adler_byte_sum(bytes, n)); 0 <= to_integer(bytes[n] as int32); }; }
   apply(adler_residue_congruent((b_rep + a_rep + to_integer(bytes[n] as int32)), (b_seed + to_integer(n + 1) * a_seed + adler_weighted_sum(bytes, n + 1, n + 1)), (truncating_quotient(b_rep, 65521) - truncating_quotient((b_seed + to_integer(n) * a_seed + adler_weighted_sum(bytes, n, n)), 65521) + (truncating_quotient(a_rep, 65521) - truncating_quotient((a_seed + adler_byte_sum(bytes, n)), 65521)))));
-  unfold(adler_spec_b(bytes, n + 1, a_seed, b_seed)); known();
+  unfold(adler_spec_b(bytes, n + 1, a_seed, b_seed)); close();
  }
 }

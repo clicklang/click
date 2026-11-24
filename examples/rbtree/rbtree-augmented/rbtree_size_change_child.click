@@ -72,10 +72,10 @@ void insert::__rb_change_child(struct rb_node* old, struct rb_node* new,
             let after = fold(sized_link_at(new,root, old((old as (uint8 *) as (struct sized_node *))->size)), { model: SizedContext::Top, frames: frames });
             unfold(old_tag);
             unfold(old_size);
-            have (old as (uint8 *) as (struct sized_node *))->size == old((old as (uint8 *) as (struct sized_node *))->size) by known();
-            have old->__rb_parent_color == old(old->__rb_parent_color) by known();
-            have ((old->__rb_parent_color & ~3) as (struct rb_node *)) == old(((old->__rb_parent_color & ~3) as (struct rb_node *))) by known();
-            solve();
+            have (old as (uint8 *) as (struct sized_node *))->size == old((old as (uint8 *) as (struct sized_node *))->size) by close();
+            have old->__rb_parent_color == old(old->__rb_parent_color) by close();
+            have ((old->__rb_parent_color & ~3) as (struct rb_node *)) == old(((old->__rb_parent_color & ~3) as (struct rb_node *))) by close();
+            close();
         },
         SizedContext::Left(a, above, shade, value, sibling_model, up_model) => {
             have parent == a by {
@@ -85,12 +85,12 @@ void insert::__rb_change_child(struct rb_node* old, struct rb_node* new,
             }
             let { frames: frames } = unfold(before);
             let { metadata: a_size, sibling: sibling, up: up } = unfold(frames);
-            have parent != 0 by { rewrite(parent, a); known(); }
+            have parent != 0 by { rewrite(parent, a); close(); }
             have new != a by {
                 rewrite(a, parent);
                 cases {
                     parent == 0 => { contradiction(parent == 0); }
-                    new != parent => { known(); }
+                    new != parent => { close(); }
                 }
             }
             let tag = fold(change_child_parent_tag(a, above), { color: shade });
@@ -99,15 +99,15 @@ void insert::__rb_change_child(struct rb_node* old, struct rb_node* new,
             step(); step(); step();
             step_until(function.exit);
             unfold(tag); unfold(sibling_link); unfold(root_link);
-            have root->rb_node == old(root->rb_node) by known();
+            have root->rb_node == old(root->rb_node) by close();
             let frames = fold(sized_context_at(new,old(root->rb_node),0, old((old as (uint8 *) as (struct sized_node *))->size)), { model: SizedContext::Left(a, above, shade, value, sibling_model, up_model), metadata: a_size, sibling: sibling, up: up });
             let after = fold(sized_link_at(new,root, old((old as (uint8 *) as (struct sized_node *))->size)), { model: SizedContext::Left(a, above, shade, value, sibling_model, up_model), frames: frames });
             unfold(old_tag);
             unfold(old_size);
-            have (old as (uint8 *) as (struct sized_node *))->size == old((old as (uint8 *) as (struct sized_node *))->size) by known();
-            have old->__rb_parent_color == old(old->__rb_parent_color) by known();
-            have ((old->__rb_parent_color & ~3) as (struct rb_node *)) == old(((old->__rb_parent_color & ~3) as (struct rb_node *))) by known();
-            solve();
+            have (old as (uint8 *) as (struct sized_node *))->size == old((old as (uint8 *) as (struct sized_node *))->size) by close();
+            have old->__rb_parent_color == old(old->__rb_parent_color) by close();
+            have ((old->__rb_parent_color & ~3) as (struct rb_node *)) == old(((old->__rb_parent_color & ~3) as (struct rb_node *))) by close();
+            close();
         },
         SizedContext::Right(a, above, shade, value, sibling_model, up_model) => {
             have parent == a by {
@@ -117,21 +117,21 @@ void insert::__rb_change_child(struct rb_node* old, struct rb_node* new,
             }
             let { frames: frames } = unfold(before);
             let { metadata: a_size, sibling: sibling, up: up } = unfold(frames);
-            have parent != 0 by { rewrite(parent, a); known(); }
+            have parent != 0 by { rewrite(parent, a); close(); }
             have new != a by {
                 rewrite(a, parent);
                 cases {
                     parent == 0 => { contradiction(parent == 0); }
-                    new != parent => { known(); }
+                    new != parent => { close(); }
                 }
             }
             match sibling.model {
                 SizedTree::Empty => {
                     unfold(sibling);
-                    have a->rb_left == 0 by known();
+                    have a->rb_left == 0 by close();
                     have parent->rb_left != old by {
                         rewrite(parent, a);
-                        rewrite(a->rb_left, 0); known();
+                        rewrite(a->rb_left, 0); close();
                     }
                     let sibling = fold(sized_at(0), { model: SizedTree::Empty });
                     let tag = fold(change_child_parent_tag(a, above), { color: shade });
@@ -140,25 +140,25 @@ void insert::__rb_change_child(struct rb_node* old, struct rb_node* new,
                     step(); step(); step();
                     step_until(function.exit);
                     unfold(tag); unfold(sibling_link); unfold(root_link);
-                    have root->rb_node == old(root->rb_node) by known();
+                    have root->rb_node == old(root->rb_node) by close();
                     let frames = fold(sized_context_at(new,old(root->rb_node),0, old((old as (uint8 *) as (struct sized_node *))->size)), { model: SizedContext::Right(a, above, shade, value, sibling_model, up_model), metadata: a_size, sibling: sibling, up: up });
                     let after = fold(sized_link_at(new,root, old((old as (uint8 *) as (struct sized_node *))->size)), { model: SizedContext::Right(a, above, shade, value, sibling_model, up_model), frames: frames });
                     unfold(old_tag);
                     unfold(old_size);
-                    have (old as (uint8 *) as (struct sized_node *))->size == old((old as (uint8 *) as (struct sized_node *))->size) by known();
-                    have old->__rb_parent_color == old(old->__rb_parent_color) by known();
-                    have ((old->__rb_parent_color & ~3) as (struct rb_node *)) == old(((old->__rb_parent_color & ~3) as (struct rb_node *))) by known();
-                    solve();
+                    have (old as (uint8 *) as (struct sized_node *))->size == old((old as (uint8 *) as (struct sized_node *))->size) by close();
+                    have old->__rb_parent_color == old(old->__rb_parent_color) by close();
+                    have ((old->__rb_parent_color & ~3) as (struct rb_node *)) == old(((old->__rb_parent_color & ~3) as (struct rb_node *))) by close();
+                    close();
                 },
                 SizedTree::Node(identity, sp, sc, size, sl, sr) => {
                     let { metadata: s_size, left: s_left, right: s_right } = unfold(sibling);
-                    have a->rb_left == identity by known();
+                    have a->rb_left == identity by close();
                     unfold(old_tag);
-                    have separate(memory(identity->__rb_parent_color), memory(old->__rb_parent_color)) by known();
-                    have identity != old by known();
+                    have separate(memory(identity->__rb_parent_color), memory(old->__rb_parent_color)) by close();
+                    have identity != old by close();
                     have parent->rb_left != old by {
                         rewrite(parent, a);
-                        rewrite(a->rb_left, identity); known();
+                        rewrite(a->rb_left, identity); close();
                     }
                     let old_tag = fold(change_child_old_tag(old), { word: old(old->__rb_parent_color), parent: old(((old->__rb_parent_color & ~3) as (struct rb_node *))) });
                     let sibling = fold(sized_at(identity), { model: SizedTree::Node(identity,sp,sc,size,sl,sr), metadata: s_size, left: s_left, right: s_right });
@@ -168,15 +168,15 @@ void insert::__rb_change_child(struct rb_node* old, struct rb_node* new,
                     step(); step(); step();
                     step_until(function.exit);
                     unfold(tag); unfold(sibling_link); unfold(root_link);
-                    have root->rb_node == old(root->rb_node) by known();
+                    have root->rb_node == old(root->rb_node) by close();
                     let frames = fold(sized_context_at(new,old(root->rb_node),0, old((old as (uint8 *) as (struct sized_node *))->size)), { model: SizedContext::Right(a, above, shade, value, sibling_model, up_model), metadata: a_size, sibling: sibling, up: up });
                     let after = fold(sized_link_at(new,root, old((old as (uint8 *) as (struct sized_node *))->size)), { model: SizedContext::Right(a, above, shade, value, sibling_model, up_model), frames: frames });
                     unfold(old_tag);
                     unfold(old_size);
-                    have (old as (uint8 *) as (struct sized_node *))->size == old((old as (uint8 *) as (struct sized_node *))->size) by known();
-                    have old->__rb_parent_color == old(old->__rb_parent_color) by known();
-                    have ((old->__rb_parent_color & ~3) as (struct rb_node *)) == old(((old->__rb_parent_color & ~3) as (struct rb_node *))) by known();
-                    solve();
+                    have (old as (uint8 *) as (struct sized_node *))->size == old((old as (uint8 *) as (struct sized_node *))->size) by close();
+                    have old->__rb_parent_color == old(old->__rb_parent_color) by close();
+                    have ((old->__rb_parent_color & ~3) as (struct rb_node *)) == old(((old->__rb_parent_color & ~3) as (struct rb_node *))) by close();
+                    close();
                 },
             }
         },

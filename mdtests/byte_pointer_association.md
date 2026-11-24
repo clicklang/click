@@ -25,7 +25,7 @@ void keep(const uint8* p, int32 i) {
    have defined(i + 4) by { close() using { 0 <= i; i <= 22200; }; }
    have (q + i) + 4 == q + (i + 4) by { close() using { defined(i + 4); }; }
    let h = fold(Cell(p, i), { model: Link::Node(q) });
-   step_until(function.exit); solve();
+   step_until(function.exit); close();
   },
  }
 }

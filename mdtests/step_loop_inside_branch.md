@@ -30,11 +30,11 @@ int32 branch_count_to_one(int32 flag, int32 i) {
         and at(region(4).entry, i) == 1;
 } by {
     have flag != 0 by {
-        known();
+        close();
     }
     step();
     have i == 1 by {
-        known();
+        close();
     }
     loop count {
         decreases 0;
@@ -42,7 +42,7 @@ int32 branch_count_to_one(int32 flag, int32 i) {
     }
     have at(count.exit, i) == 1;
     step();
-    solve();
+    close();
 }
 ```
 

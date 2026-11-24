@@ -23,7 +23,7 @@ int32 array_fold_append_at_zero(int32 a[]) {
         apply(integer_range_fold_append(
             (0..0).fold(0, |acc, k| { acc + to_integer(a[k]) })
         ));
-        solve();
+        close();
     }
 }
 ```

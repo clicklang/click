@@ -25,8 +25,8 @@ int32 read_right(int32 value) {
     step_until(statement(2).entry);
     mark written;
     step();
-    have pair.right == value by solve();
-    have separate(memory(pair.left), memory(pair.right)) by known();
+    have pair.right == value by close();
+    have separate(memory(pair.left), memory(pair.right)) by close();
     have separate(statement(2).footprint, memory(pair.right)) by {
         close() using { separate(memory(pair.left), memory(pair.right)); };
     }
@@ -34,7 +34,7 @@ int32 read_right(int32 value) {
         preserve(memory(pair.right), statement(2));
     }
     step_until(function.exit);
-    solve();
+    close();
 }
 ```
 

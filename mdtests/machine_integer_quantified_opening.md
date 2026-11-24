@@ -6,7 +6,7 @@ theorem opened_wide() {
     ensures exists (y: int64) { y == 4294967296i64 } by {
         let candidate = obtain(exists (candidate: int64) { candidate == 4294967296i64 });
         witness(candidate);
-        solve();
+        close();
     }
 }
 
@@ -15,7 +15,7 @@ theorem opened_byte() {
     ensures exists (y: uint8) { y == 'a' } by {
         let candidate = obtain(exists (candidate: uint8) { candidate == 'a' });
         witness(candidate);
-        solve();
+        close();
     }
 }
 ```

@@ -18,7 +18,7 @@ void f(struct node* p, int32 more) {
     loop {
         decreases more;
         invariant 0 <= more;
-        initialize by solve();
+        initialize by close();
         maintain by { step(); step(); }
     }
 }

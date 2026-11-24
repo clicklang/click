@@ -72,7 +72,7 @@ fn trait_objects::through_bound(scale: i32) -> i32 {
 } by {
     step_until(statement(1).call(0).entry);
     let { object_resource(): packed } = step(__rust_q_T36___rust_q_I13_trait_objects_I6_Square_R35___rust_q_I13_trait_objects_I5_Shape_I13___pack_shared);
-    have packed.size == 3 by known();
+    have packed.size == 3 by close();
     step_until(function.exit);
 }
 
@@ -82,7 +82,7 @@ fn trait_objects::through_dyn(scale: i32) -> i32 {
 } by {
     step_until(statement(1).call(0).entry);
     let { object_resource(): packed } = step(__rust_q_T36___rust_q_I13_trait_objects_I6_Circle_R35___rust_q_I13_trait_objects_I5_Shape_I13___pack_shared);
-    have packed.size == 4 by known();
+    have packed.size == 4 by close();
     step_until(function.exit);
 }
 
@@ -117,7 +117,7 @@ fn trait_objects::default_square(scale: i32) -> i32 {
 } by {
     step_until(statement(1).call(0).entry);
     let { object_resource(): packed } = step(__rust_q_T36___rust_q_I13_trait_objects_I6_Square_R35___rust_q_I13_trait_objects_I5_Shape_I13___pack_shared);
-    have packed.size == 3 by known();
+    have packed.size == 3 by close();
     step_until(function.exit);
 }
 
@@ -129,7 +129,7 @@ fn trait_objects::tag_after_dyn(scale: i32) -> i32 {
 } by {
     step_until(statement(1).call(0).entry);
     let { object_resource(): packed } = step(__rust_q_T36___rust_q_I13_trait_objects_I6_Tagged_R35___rust_q_I13_trait_objects_I5_Shape_I13___pack_shared);
-    have packed.size == 3 by known();
+    have packed.size == 3 by close();
     step_until(function.exit);
 }
 
@@ -139,6 +139,6 @@ fn trait_objects::tag_after_bound(scale: i32) -> i32 {
 } by {
     step_until(statement(1).call(0).entry);
     let { object_resource(): packed } = step(__rust_q_T36___rust_q_I13_trait_objects_I6_Tagged_R35___rust_q_I13_trait_objects_I5_Shape_I13___pack_shared);
-    have packed.size == 3 by known();
+    have packed.size == 3 by close();
     step_until(function.exit);
 }

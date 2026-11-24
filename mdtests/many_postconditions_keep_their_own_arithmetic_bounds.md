@@ -25,7 +25,7 @@ int32 caller(int32 x) {
  ensures result >= x - 13;
  ensures result >= x - 14;
  ensures result >= x - 15;
-} by { step(); solve(); }
+} by { step(); close(); }
 ```
 
 ```expect

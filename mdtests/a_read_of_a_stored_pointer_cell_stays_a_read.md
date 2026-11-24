@@ -23,8 +23,8 @@ void set_pointer(int32** a, int32* q, int32 i, int32 j) {
     ensures a[j] == q;
 } by {
     step_until(function.exit);
-    have a[i] == q by known();
-    known();
+    have a[i] == q by close();
+    close();
     rewrite(j, i);
 }
 ```

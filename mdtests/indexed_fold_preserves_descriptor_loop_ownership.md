@@ -93,8 +93,8 @@ void release_run(struct arena* arena, int32 start, int32 end) {
     produces arena_cells(arena->data, arena->occupied, arena->capacity);
 } by {
     let { next: initial_next } = unfold(w);
-    have 0 <= arena->capacity by { solve(); }
-    have separate(memory(arena->occupied[0..arena->capacity]), memory(*arena)) by { known(); }
+    have 0 <= arena->capacity by { close(); }
+    have separate(memory(arena->occupied[0..arena->capacity]), memory(*arena)) by { close(); }
     have contains(memory(arena->occupied[0..arena->capacity]), memory(arena->occupied[0..arena->capacity])) by { apply(click::separation::contains_refl(memory(arena->occupied[0..arena->capacity]))); }
     have contains(memory(*arena), memory(arena->data)) by { normalize(); }
     have separate(memory(arena->occupied[0..arena->capacity]), memory(arena->data)) by {
@@ -108,7 +108,7 @@ void release_run(struct arena* arena, int32 start, int32 end) {
     have separate(memory(arena->occupied[0..arena->capacity]), memory(arena->capacity)) by {
         apply(separation::separate_restrict(memory(arena->occupied[0..arena->capacity]), memory(*arena), memory(arena->occupied[0..arena->capacity]), memory(arena->capacity)));
     }
-    have 0 <= initial_next by { solve(); }
+    have 0 <= initial_next by { close(); }
     have contains(memory(arena->data[0..arena->capacity]), memory(arena->data[initial_next..end])) by {
         apply(separation::contains_subrange(arena->data, 0, arena->capacity, initial_next, end));
     }
@@ -135,7 +135,7 @@ void release_run(struct arena* arena, int32 start, int32 end) {
             end <= k and k < arena->capacity implies
                 arena->occupied[k] == at(clear_occupied.entry, arena->occupied[k])
         };
-        initialize by solve();
+        initialize by close();
         maintain by {
             let { next: m } = unfold(w);
             have m == i;
@@ -145,8 +145,8 @@ void release_run(struct arena* arena, int32 start, int32 end) {
             have 0 <= i;
             have end <= arena->capacity;
             have i < arena->capacity;
-            have 0 < arena->capacity by { solve(); }
-            have separate(memory(arena->occupied[0..arena->capacity]), memory(arena->data)) by { known(); }
+            have 0 < arena->capacity by { close(); }
+            have separate(memory(arena->occupied[0..arena->capacity]), memory(arena->data)) by { close(); }
             have separate(memory(arena->occupied[i]), memory(arena->data)) by {
                 apply(separation::separate_symm(memory(arena->occupied[0..arena->capacity]), memory(arena->data)));
                 apply(separation::contains_refl(memory(arena->data)));
@@ -168,28 +168,28 @@ void release_run(struct arena* arena, int32 start, int32 end) {
             have contains(memory(arena->occupied[0..arena->capacity]), memory(arena->occupied[i])) by {
                 apply(separation::contains_element(arena->occupied, 0, arena->capacity, i));
             }
-            have contains(memory(*arena), memory(*arena)) by { known(); }
+            have contains(memory(*arena), memory(*arena)) by { close(); }
             have separate(memory(arena->occupied[i]), memory(*arena)) by {
                 apply(separation::separate_restrict(memory(arena->occupied[0..arena->capacity]), memory(*arena), memory(arena->occupied[i]), memory(*arena)));
             }
             mark opened;
             step();
             have at(opened, separate(loop(0).statement(0).footprint, memory(arena->data))) by {
-                known();
+                close();
             }
             have arena->data == at(opened, arena->data) by {
                 preserve(at(opened, memory(arena->data)), loop(0).statement(0));
             }
             have at(opened, separate(loop(0).statement(0).footprint, memory(arena->occupied))) by {
-                known();
+                close();
             }
             have arena->occupied == at(opened, arena->occupied) by {
                 preserve(at(opened, memory(arena->occupied)), loop(0).statement(0));
             }
             have at(opened, separate(loop(0).statement(0).footprint, memory(arena->capacity))) by {
-                known();
+                close();
             }
-            have arena->capacity == at(opened, arena->capacity) by { known(); }
+            have arena->capacity == at(opened, arena->capacity) by { close(); }
             fold(at(opened, arena_clear_window(arena->data, arena->occupied, arena->capacity, start, end))[i]);
             step();
             have to_integer(start) <= to_integer(at(opened, i) + 1);
@@ -210,7 +210,7 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                                 at(opened, j) < at(opened, m) implies
                                 at(opened, arena->occupied[j]) == at(opened, 0)
                         }, k);
-                        known();
+                        close();
                     }
                     have 0 <= k;
                     have at(opened, i) != k by { close() using { k < at(opened, i); }; }
@@ -218,7 +218,7 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                         apply(separation::separate_elements(at(opened, arena->occupied), at(opened, i), k));
                     }
                     have at(opened, separate(loop(0).statement(0).footprint, memory(arena->occupied[k]))) by {
-                        known();
+                        close();
                     }
                     have at(loop(0).statement(0).exit, arena->occupied[k]) == at(opened, arena->occupied[k]) by {
                         preserve(at(opened, memory(arena->occupied[k])), loop(0).statement(0));
@@ -229,12 +229,12 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                     have arena->occupied[k] == at(loop(0).statement(1).entry, arena->occupied[k]) by {
                         preserve(memory(arena->occupied[k]), loop(0).statement(1));
                     }
-                    known();
+                    close();
                 } else {
                     have k <= at(opened, i);
                     have k == at(opened, i);
                     rewrite(k, at(opened, i));
-                    known();
+                    close();
                 }
             }
             have forall (k: int32) {
@@ -255,7 +255,7 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                             at(opened, arena->occupied[j]) ==
                                 at(clear_occupied.entry, arena->occupied[j])
                     }, k);
-                    known();
+                    close();
                 }
                 have k < at(opened, i);
                 have at(opened, i) != k by { close() using { k < at(opened, i); }; }
@@ -263,7 +263,7 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                     apply(separation::separate_elements(at(opened, arena->occupied), at(opened, i), k));
                 }
                 have at(opened, separate(loop(0).statement(0).footprint, memory(arena->occupied[k]))) by {
-                    known();
+                    close();
                 }
                 have at(loop(0).statement(0).exit, arena->occupied[k]) == at(opened, arena->occupied[k]) by {
                     preserve(at(opened, memory(arena->occupied[k])), loop(0).statement(0));
@@ -274,7 +274,7 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                 have arena->occupied[k] == at(loop(0).statement(1).entry, arena->occupied[k]) by {
                     preserve(memory(arena->occupied[k]), loop(0).statement(1));
                 }
-                known();
+                close();
             }
             have forall (k: int32) {
                 end <= k and k < arena->capacity implies
@@ -294,7 +294,7 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                             at(opened, arena->occupied[j]) ==
                                 at(clear_occupied.entry, arena->occupied[j])
                     }, k);
-                    known();
+                    close();
                 }
                 have at(opened, i) < k;
                 have at(opened, i) <= k;
@@ -304,7 +304,7 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                     apply(separation::separate_elements(at(opened, arena->occupied), at(opened, i), k));
                 }
                 have at(opened, separate(loop(0).statement(0).footprint, memory(arena->occupied[k]))) by {
-                    known();
+                    close();
                 }
                 have at(loop(0).statement(0).exit, arena->occupied[k]) == at(opened, arena->occupied[k]) by {
                     preserve(at(opened, memory(arena->occupied[k])), loop(0).statement(0));
@@ -315,7 +315,7 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                 have arena->occupied[k] == at(loop(0).statement(1).entry, arena->occupied[k]) by {
                     preserve(memory(arena->occupied[k]), loop(0).statement(1));
                 }
-                known();
+                close();
             }
             have arena->data == old(arena->data);
             have arena->occupied == old(arena->occupied);
@@ -324,7 +324,7 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                 rewrite(arena->data, old(arena->data));
                 rewrite(arena->occupied, old(arena->occupied));
                 rewrite(arena->capacity, old(arena->capacity));
-                known();
+                close();
             }
             let w = fold(arena_clear_window(old(arena->data), old(arena->occupied), old(arena->capacity), start, end), {
                 next: at(opened, i) + 1
@@ -335,14 +335,14 @@ void release_run(struct arena* arena, int32 start, int32 end) {
     let { next: n } = unfold(w);
     have n <= end;
     have n == i;
-    have not (n < end) by { rewrite(n, i); known(); }
+    have not (n < end) by { rewrite(n, i); close(); }
     have n == end;
     step_until(function.exit);
     have arena->data == old(arena->data);
     have arena->occupied == old(arena->occupied);
     have arena->capacity == old(arena->capacity);
     fold(arena_cells(old(arena->data), old(arena->occupied), old(arena->capacity)));
-    solve();
+    close();
 }
 ```
 

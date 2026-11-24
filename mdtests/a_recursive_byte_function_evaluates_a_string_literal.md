@@ -5,7 +5,7 @@ zero, so it returns a list while its measure is an `int32`. The contract
 states what `emit` records as `output_from` of its argument, here the
 literal `"hi"`, whose `char` is signed. The literal is read as unsigned bytes
 and each call is the same term wherever it is written, so proving the output
-bottom-up takes one `unfold` and one `solve()` per byte.
+bottom-up takes one `unfold` and one `close()` per byte.
 
 ```c filename=a_recursive_byte_function_evaluates_a_string_literal.c
 #include <stdio.h>
@@ -50,15 +50,15 @@ int32 greet(FILE* file) {
     step();
     have output_from("a_recursive_byte_function_evaluates_a_string_literal.c"::greet.string_literal(0), 2u64, 0) == List::Nil by {
         unfold(output_from("a_recursive_byte_function_evaluates_a_string_literal.c"::greet.string_literal(0), 2u64, 0));
-        solve();
+        close();
     }
     have output_from("a_recursive_byte_function_evaluates_a_string_literal.c"::greet.string_literal(0), 1u64, 1) == b"i" by {
         unfold(output_from("a_recursive_byte_function_evaluates_a_string_literal.c"::greet.string_literal(0), 1u64, 1));
-        solve();
+        close();
     }
     have output_from("a_recursive_byte_function_evaluates_a_string_literal.c"::greet.string_literal(0), 0u64, 2) == b"hi" by {
         unfold(output_from("a_recursive_byte_function_evaluates_a_string_literal.c"::greet.string_literal(0), 0u64, 2));
-        solve();
+        close();
     }
     step();
 }

@@ -36,11 +36,11 @@ int32 red_bit(int32 n) {
 } by {
     have color_bit(Color::Red) == 0 by {
         unfold(color_bit(Color::Red));
-        known();
+        close();
     }
     have red_bit_value() == 0 by {
         unfold(red_bit_value());
-        known();
+        close();
     }
 }
 ```

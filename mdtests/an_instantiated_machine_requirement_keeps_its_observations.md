@@ -7,7 +7,7 @@ turning the argument into unbounded subtraction.
 ```click
 theorem big(a: uint64) {
     requires 100u64 < a;
-    ensures true by { solve(); }
+    ensures true by { close(); }
 }
 
 theorem wrapped(n: uint64, k: uint64) {
@@ -15,7 +15,7 @@ theorem wrapped(n: uint64, k: uint64) {
     requires k == 30u64;
     ensures true by {
         apply(big(n - k));
-        solve();
+        close();
     }
 }
 ```

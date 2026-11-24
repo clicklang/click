@@ -20,7 +20,7 @@ void increment(int32* state) {
     unfold(first);
     step_until(function.exit);
     let first = fold(Counter(), { revision: 1 });
-    solve();
+    close();
 }
 
 void caller(int32* state) {
@@ -30,7 +30,7 @@ void caller(int32* state) {
     step(increment, { first: c });
     have at(region(0).exit, c.revision) < 1000 by {
         rewrite(c.revision, 1);
-        known();
+        close();
     }
 }
 ```

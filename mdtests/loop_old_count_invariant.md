@@ -34,15 +34,15 @@ int32 loop_old_count_invariant(int32 p[3]) {
             have i >= 0 and i <= 3 by {
                 all {
                     i >= 0 => {
-                        known();
+                        close();
                     }
                     i <= 3 => {
-                        known();
+                        close();
                     }
                 }
             }
             have old(permutation::count(p, 0, 3, p[0])) == old(permutation::count(p, 0, 3, p[0])) by {
-                known();
+                close();
             }
         }
         maintain by {
@@ -68,7 +68,7 @@ int32 loop_old_count_invariant(int32 p[3]) {
             not at(loop(0).exit, i) < at(loop(0).exit, 3);
         };
     }
-    known();
+    close();
 }
 ```
 

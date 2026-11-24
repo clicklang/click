@@ -95,8 +95,8 @@ theorem sized_flip_depth_nonnegative(chain: SizedFlipChain) {
     ensures 0 <= sized_flip_depth(chain) by {
         let ih = induct(chain);
         match chain {
-            SizedFlipChain::Root => { unfold(sized_flip_depth(SizedFlipChain::Root)); known(); },
-            SizedFlipChain::Stop(ctx) => { unfold(sized_flip_depth(SizedFlipChain::Stop(ctx))); known(); },
+            SizedFlipChain::Root => { unfold(sized_flip_depth(SizedFlipChain::Root)); close(); },
+            SizedFlipChain::Stop(ctx) => { unfold(sized_flip_depth(SizedFlipChain::Stop(ctx))); close(); },
             SizedFlipChain::LL(p, g, pv, gv, other, uncle, up) => { apply(ih(up)); unfold(sized_flip_depth(SizedFlipChain::LL(p, g, pv, gv, other, uncle, up))); close() using { 0 <= sized_flip_depth(up); }; },
             SizedFlipChain::LR(p, g, pv, gv, other, uncle, up) => { apply(ih(up)); unfold(sized_flip_depth(SizedFlipChain::LR(p, g, pv, gv, other, uncle, up))); close() using { 0 <= sized_flip_depth(up); }; },
             SizedFlipChain::RL(p, g, pv, gv, other, uncle, up) => { apply(ih(up)); unfold(sized_flip_depth(SizedFlipChain::RL(p, g, pv, gv, other, uncle, up))); close() using { 0 <= sized_flip_depth(up); }; },
@@ -112,36 +112,36 @@ theorem sized_flip_context_parent(chain: SizedFlipChain) {
                 rewrite(chain, SizedFlipChain::Root);
                 unfold(sized_flip_context(SizedFlipChain::Root));
                 unfold(sized_context_parent(SizedContext::Top, 0));
-                unfold(sized_flip_parent(SizedFlipChain::Root)); known();
+                unfold(sized_flip_parent(SizedFlipChain::Root)); close();
             },
             SizedFlipChain::Stop(ctx) => {
                 rewrite(chain, SizedFlipChain::Stop(ctx));
                 unfold(sized_flip_context(SizedFlipChain::Stop(ctx)));
-                unfold(sized_flip_parent(SizedFlipChain::Stop(ctx))); known();
+                unfold(sized_flip_parent(SizedFlipChain::Stop(ctx))); close();
             },
             SizedFlipChain::LL(p, g, pv, gv, other, uncle, up) => {
                 rewrite(chain, SizedFlipChain::LL(p, g, pv, gv, other, uncle, up));
                 unfold(sized_flip_context(SizedFlipChain::LL(p, g, pv, gv, other, uncle, up)));
                 unfold(sized_context_parent(SizedContext::Left(p, g, Color::Red, pv, other, SizedContext::Left(g, sized_flip_parent(up), Color::Black, gv, uncle, sized_flip_context(up))), 0));
-                unfold(sized_flip_parent(SizedFlipChain::LL(p, g, pv, gv, other, uncle, up))); known();
+                unfold(sized_flip_parent(SizedFlipChain::LL(p, g, pv, gv, other, uncle, up))); close();
             },
             SizedFlipChain::LR(p, g, pv, gv, other, uncle, up) => {
                 rewrite(chain, SizedFlipChain::LR(p, g, pv, gv, other, uncle, up));
                 unfold(sized_flip_context(SizedFlipChain::LR(p, g, pv, gv, other, uncle, up)));
                 unfold(sized_context_parent(SizedContext::Right(p, g, Color::Red, pv, other, SizedContext::Left(g, sized_flip_parent(up), Color::Black, gv, uncle, sized_flip_context(up))), 0));
-                unfold(sized_flip_parent(SizedFlipChain::LR(p, g, pv, gv, other, uncle, up))); known();
+                unfold(sized_flip_parent(SizedFlipChain::LR(p, g, pv, gv, other, uncle, up))); close();
             },
             SizedFlipChain::RL(p, g, pv, gv, other, uncle, up) => {
                 rewrite(chain, SizedFlipChain::RL(p, g, pv, gv, other, uncle, up));
                 unfold(sized_flip_context(SizedFlipChain::RL(p, g, pv, gv, other, uncle, up)));
                 unfold(sized_context_parent(SizedContext::Left(p, g, Color::Red, pv, other, SizedContext::Right(g, sized_flip_parent(up), Color::Black, gv, uncle, sized_flip_context(up))), 0));
-                unfold(sized_flip_parent(SizedFlipChain::RL(p, g, pv, gv, other, uncle, up))); known();
+                unfold(sized_flip_parent(SizedFlipChain::RL(p, g, pv, gv, other, uncle, up))); close();
             },
             SizedFlipChain::RR(p, g, pv, gv, other, uncle, up) => {
                 rewrite(chain, SizedFlipChain::RR(p, g, pv, gv, other, uncle, up));
                 unfold(sized_flip_context(SizedFlipChain::RR(p, g, pv, gv, other, uncle, up)));
                 unfold(sized_context_parent(SizedContext::Right(p, g, Color::Red, pv, other, SizedContext::Right(g, sized_flip_parent(up), Color::Black, gv, uncle, sized_flip_context(up))), 0));
-                unfold(sized_flip_parent(SizedFlipChain::RR(p, g, pv, gv, other, uncle, up))); known();
+                unfold(sized_flip_parent(SizedFlipChain::RR(p, g, pv, gv, other, uncle, up))); close();
             },
     }
     }

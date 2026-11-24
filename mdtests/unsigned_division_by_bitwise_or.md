@@ -11,19 +11,19 @@ verifying "divide.c";
 uint32 divide(uint32 n, uint32 d) {
     ensures true;
 } by {
-    step() by { solve(); }
-    known();
+    step() by { close(); }
+    close();
 }
 
 uint64 remainder(uint64 n, uint64 d) {
     ensures true;
 } by {
-    step() by { solve(); }
-    known();
+    step() by { close(); }
+    close();
 }
 
 theorem observed_divisor(d: uint32) {
-    ensures to_integer(d | 1u32) != 0 by { known(); }
+    ensures to_integer(d | 1u32) != 0 by { close(); }
 }
 ```
 

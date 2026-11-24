@@ -27,7 +27,7 @@ void probe(struct buffer* b, int32* slot) {
 } by {
     step(idle, { r: r });
     let { lo: lo, hi: hi } = unfold(r);
-    have separate(memory(*slot), memory(b->data[(lo as int32)..(hi as int32)])) by { known(); }
+    have separate(memory(*slot), memory(b->data[(lo as int32)..(hi as int32)])) by { close(); }
     let r = fold(buffer(b), { lo: lo, hi: hi });
 }
 ```

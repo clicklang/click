@@ -25,23 +25,23 @@ uint64 seed(uint64 word, uint64 len) {
   invariant word == decode(old(word));
   initialize by {
    have to_integer(len) <= to_integer(15u64);
-   have count(old(len), len) == 0 by { unfold(count(old(len), len)); solve(); }
-   have word == decode(old(word)) by solve();
+   have count(old(len), len) == 0 by { unfold(count(old(len), len)); close(); }
+   have word == decode(old(word)) by close();
    have to_integer(word) == observe(count(old(len), len), to_integer(decode(old(word)))) by {
     rewrite(count(old(len), len), 0);
     rewrite(word, decode(old(word)));
     close() using { observe(0, to_integer(decode(old(word)))) == to_integer(decode(old(word))); };
    }
-   solve();
+   close();
   }
   maintain by {
-   have len > 0u64 by known();
+   have len > 0u64 by close();
    have 0u64 < len by {
-    if 0u64 < len { known(); } else {
-     have 0u64 <= len by known();
+    if 0u64 < len { close(); } else {
+     have 0u64 <= len by close();
      have 0u64 == len;
-     have len == 0u64 by { rewrite(0u64, len); known(); }
-     have not (len > 0u64) by { rewrite(len, 0u64); known(); }
+     have len == 0u64 by { rewrite(0u64, len); close(); }
+     have not (len > 0u64) by { rewrite(len, 0u64); close(); }
      contradiction(len > 0u64);
     }
    }
@@ -53,7 +53,7 @@ uint64 seed(uint64 word, uint64 len) {
    have to_integer(len - 1u64) == to_integer(len) - to_integer(1u64);
    mark before_decrement;
    step();
-   have to_integer(len) == at(before_decrement, to_integer(len)) - 1 by known();
+   have to_integer(len) == at(before_decrement, to_integer(len)) - 1 by close();
    have to_integer(len) <= 15 by close() using { to_integer(len) == at(before_decrement, to_integer(len)) - 1; at(before_decrement, to_integer(len)) <= 15; };
    have 0 <= to_integer(len) by close() using { to_integer(len) == at(before_decrement, to_integer(len)) - 1; to_integer(1u64) <= at(before_decrement, to_integer(len)); };
    have to_integer(len) < at(before_decrement, to_integer(len)) by close() using { to_integer(len) == at(before_decrement, to_integer(len)) - 1; };

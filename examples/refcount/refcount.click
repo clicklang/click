@@ -93,7 +93,7 @@ int32 refcount_pipeline(int32 amount) {
     branch {
         true => {
             step();
-            solve();
+            close();
         }
         false => {}
     }
@@ -111,5 +111,5 @@ int32 refcount_pipeline(int32 amount) {
     }
     step();
     step();
-    solve();
+    close();
 }

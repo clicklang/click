@@ -36,7 +36,7 @@ uint32 reduce_lane(uint32 value) {
 } by {
     step_until(function.exit);
     apply(byte_lane(value));
-    solve();
+    close();
 }
 ```
 

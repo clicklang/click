@@ -7,7 +7,7 @@ theorem small_remainder(n: uint64, d: uint64) {
     requires n < d;
     ensures n % d == n by {
         have to_integer(n) < to_integer(d) by close() using { n < d; };
-        have 0 <= to_integer(n) by known();
+        have 0 <= to_integer(n) by close();
         have 1 <= to_integer(d) by close() using { 0 <= to_integer(n); to_integer(n) < to_integer(d); };
         have to_integer(d) != 0 by close() using { 1 <= to_integer(d); };
         have d != 0u64 by close() using { to_integer(d) != 0; };
@@ -15,8 +15,8 @@ theorem small_remainder(n: uint64, d: uint64) {
         have to_integer(n) <= to_integer(d) - 1 by close() using { to_integer(n) < to_integer(d); };
         apply(integer::small_remainder_interval(to_integer(n), to_integer(d), 0, to_integer(n), to_integer(d)));
         apply(integer::uint64_remainder_to_integer(n, d));
-        have to_integer(n % d) == to_integer(n) by known();
-        known();
+        have to_integer(n % d) == to_integer(n) by close();
+        close();
     }
 }
 

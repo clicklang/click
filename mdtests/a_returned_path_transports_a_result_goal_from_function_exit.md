@@ -1,7 +1,7 @@
 # A returned path uses its recorded result fact
 
 `return a < b;` forks inside one expression, so each returned path has its
-own `result`. After reaching function exit, `known()` closes the disjunction
+own `result`. After reaching function exit, `close()` closes the disjunction
 from that path's recorded result fact without naming its value.
 
 ```c filename=exit_transport.c
@@ -18,9 +18,9 @@ int32 is_less(uint32 a, uint32 b) {
 } by {
     step_until(function.exit);
     have result == 0 or result == 1 by {
-        known();
+        close();
     }
-    known();
+    close();
 }
 ```
 

@@ -33,7 +33,7 @@ int32 never_negative(char buf[], int32 len, uint32 value, char name[]) {
     ensures result as uint64 < len as uint64 implies buf[result as uint64] == 0u8;
     ensures result as uint64 >= len as uint64 implies buf[len as uint64 - 1u64] == 0u8;
 } by {
-    have 0 <= len and len <= 2147483647 by solve();
+    have 0 <= len and len <= 2147483647 by close();
     have to_integer(len as uint64) == to_integer(len) by {
         close() using { 0 <= to_integer(len); to_integer(len) <= 2147483647; };
     }

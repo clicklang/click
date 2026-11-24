@@ -47,12 +47,12 @@ int32 keep(int32* flags, int32* data, int32 n, struct box* b) {
 } by {
     mark m0;
     step() {
-        requires separate(memory(flags[0..n]), memory(b->v)) by known();
-        requires separate(memory(data[0..n]), memory(b->v)) by known();
+        requires separate(memory(flags[0..n]), memory(b->v)) by close();
+        requires separate(memory(data[0..n]), memory(b->v)) by close();
     }
     step() {
-        requires separate(memory(flags[0..n]), memory(b->v)) by known();
-        requires separate(memory(data[0..n]), memory(b->v)) by known();
+        requires separate(memory(flags[0..n]), memory(b->v)) by close();
+        requires separate(memory(data[0..n]), memory(b->v)) by close();
     }
     have b->v == old(b->v) by {
         have b->v == old(b->v) by {
@@ -60,7 +60,7 @@ int32 keep(int32* flags, int32* data, int32 n, struct box* b) {
                 at(m0, b->v) == old(b->v);
             };
         }
-        known();
+        close();
     }
 }
 ```

@@ -31,13 +31,13 @@ int32 byte_slice_range_predicates(uint8 p[], int32 n) {
             0u64 <= found and found < n as uint64 and p[found] == 'x'
         });
         witness(found);
-        solve();
+        close();
     }
 
     ensures second_prefix_byte_is_not_y: p[1] != 'y' by {
         step_until(function.exit);
         unfold(bytes::all_not_equal(p, 0, 3, 'y'));
-        solve();
+        close();
     }
 }
 ```

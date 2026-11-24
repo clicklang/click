@@ -13,7 +13,7 @@ theorem symmetric<T>(left: T, right: T) {
     requires left == right;
     ensures right == left by {
         rewrite(left, right);
-        known();
+        close();
     }
 }
 
@@ -22,7 +22,7 @@ int32 passthrough(int32 value) {
 } by {
     step_until(function.exit);
     apply(symmetric(result, value));
-    solve();
+    close();
 }
 ```
 

@@ -24,16 +24,16 @@ theorem exact_signed_index(wide: uint64, index: int32) {
     ensures wide <= 2147483647u64 and (wide as int32) == index by {
         have to_integer(wide) <= 2147483647 by {
             rewrite(to_integer(wide), to_integer(index));
-            known();
+            close();
         }
         have -2147483648 <= to_integer(wide) by {
             rewrite(to_integer(wide), to_integer(index));
-            known();
+            close();
         }
-        have wide <= 2147483647u64 by known();
-        have to_integer(wide as int32) == to_integer(wide) by known();
-        have (wide as int32) == index by known();
-        known();
+        have wide <= 2147483647u64 by close();
+        have to_integer(wide as int32) == to_integer(wide) by close();
+        have (wide as int32) == index by close();
+        close();
     }
 }
 
@@ -44,10 +44,10 @@ uint8 byte_write_read(uint8 *bytes, uint64 wide, int32 index, uint8 value) {
 } by {
     have bytes + wide == bytes + index by {
         apply(exact_signed_index(wide, index));
-        have bytes + wide == bytes + (wide as int32) by known();
+        have bytes + wide == bytes + (wide as int32) by close();
         rewrite(bytes + wide, bytes + (wide as int32));
         rewrite(wide as int32, index);
-        known();
+        close();
     }
 }
 uint32 word_write_read(uint32 *words, uint64 wide, int32 index, uint32 value) {
@@ -57,10 +57,10 @@ uint32 word_write_read(uint32 *words, uint64 wide, int32 index, uint32 value) {
 } by {
     have words + index == words + wide by {
         apply(exact_signed_index(wide, index));
-        have words + wide == words + (wide as int32) by known();
+        have words + wide == words + (wide as int32) by close();
         rewrite(words + wide, words + (wide as int32));
         rewrite(wide as int32, index);
-        known();
+        close();
     }
 }
 ```

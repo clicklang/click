@@ -65,7 +65,7 @@ int32 keep(int32* flags, int32* data, int32 n, struct box* b) {
     mark m;
     step();
     have b->v == at(m, b->v) by {
-        solve();
+        close();
     }
 }
 ```

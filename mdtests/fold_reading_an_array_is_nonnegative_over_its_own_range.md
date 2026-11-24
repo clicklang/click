@@ -39,7 +39,7 @@ theorem unmarked_nonnegative(v: int32[], lo: int32, hi: int32) {
         let ih = induct(hi);
         if hi <= lo {
             unfold(unmarked(v, lo, hi));
-            solve();
+            close();
         } else {
             have lo < hi;
             apply(array_fold_induction_bounds(lo, hi));

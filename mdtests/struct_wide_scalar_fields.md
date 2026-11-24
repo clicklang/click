@@ -51,7 +51,7 @@ uint64 update_wide_packet(struct wide_packet* packet) {
     step();
     step();
     step();
-    solve();
+    close();
 }
 
 struct wide_value replace_wide_value(struct wide_value value) {

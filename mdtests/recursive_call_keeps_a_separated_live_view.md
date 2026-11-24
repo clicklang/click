@@ -29,7 +29,7 @@ int32 caller(struct node* p, const int32* slot) {
     ensures result == old(*slot);
 } by {
     step() {
-        requires separate(list(p), memory(*slot)) by known();
+        requires separate(list(p), memory(*slot)) by close();
     }
     step();
 }

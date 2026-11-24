@@ -33,7 +33,7 @@ int32 clear(size_t n) {
     branch {
         true => {
             step_until(function.exit);
-            solve();
+            close();
         }
         false => {}
     }
@@ -44,7 +44,7 @@ int32 clear(size_t n) {
         owns p[0..n];
     }
     step_until(function.exit);
-    solve();
+    close();
 }
 ```
 

@@ -9,7 +9,7 @@ The body writes only `i`, so the array argument `count` folds over names the
 same state at the back edge as at the iteration's start, and the
 permutation invariant is preserved without a step of its own. The bundle the
 closer sees is therefore the two `decreases` obligations; the invariant used
-to need an `intro(); solve();` leaf beside them, when every statement renamed
+to need an `intro(); close();` leaf beside them, when every statement renamed
 that argument.
 
 ```c filename=loop_stdlib_permutation_invariant.c
@@ -40,7 +40,7 @@ int32 loop_stdlib_permutation_invariant(int32 p[3]) {
         invariant permutation::permutation(p, old(p), 0, 3);
         initialize by {
             unfold(permutation::permutation(p, old(p), 0, 3));
-            solve();
+            close();
         }
         maintain by {
             mark iteration;
@@ -51,7 +51,7 @@ int32 loop_stdlib_permutation_invariant(int32 p[3]) {
     }
     step();
     unfold(permutation::permutation(p, old(p), 0, 3));
-    solve();
+    close();
 }
 ```
 

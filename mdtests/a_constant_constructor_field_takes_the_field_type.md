@@ -14,10 +14,10 @@ spec enum Seq<T> {
 
 theorem constant_fields() {
     ensures Seq<int64>::Cons(3 - 1, Seq<int64>::Nil) == Seq<int64>::Cons(2, Seq<int64>::Nil) by {
-        solve();
+        close();
     }
     ensures Seq<int64>::Cons(2 * 3 + -7, Seq<int64>::Nil) == Seq<int64>::Cons(-1, Seq<int64>::Nil) by {
-        solve();
+        close();
     }
 }
 ```

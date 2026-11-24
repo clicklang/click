@@ -30,7 +30,7 @@ int32 use() {
     step_until(statement(5).entry);
     release_view(*p);
     step_until(function.exit);
-    solve();
+    close();
 }
 ```
 

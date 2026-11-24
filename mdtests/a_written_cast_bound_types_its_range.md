@@ -26,7 +26,7 @@ int32 a_written_cast_range_bound(uint8 p[], int32 n) {
             0u64 <= found and found < n as uint64 and p[found] == 'x'
         });
         witness(found);
-        solve();
+        close();
     }
 }
 ```

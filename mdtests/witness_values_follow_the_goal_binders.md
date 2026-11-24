@@ -8,7 +8,7 @@ Binder names do not appear in the tactic.
 theorem batch() {
     ensures exists (x: int32, y: int32) { x == 3 and y == 4 } by {
         witness(3, 4);
-        solve();
+        close();
     }
 }
 theorem partial() {
@@ -16,7 +16,7 @@ theorem partial() {
         witness(3);
         have 4 == 4;
         witness(4);
-        solve();
+        close();
     }
 }
 theorem generated_binders() {
@@ -24,7 +24,7 @@ theorem generated_binders() {
         first == 3 and second == 4
     } by {
         witness(3, 4);
-        solve();
+        close();
     }
 }
 ```

@@ -34,8 +34,8 @@ int64 read_signed(int64 value) {
     step_until(statement(5).entry);
     mark written;
     step();
-    have *p == value by solve();
-    have separate(memory(*q), memory(*p)) by known();
+    have *p == value by close();
+    have separate(memory(*q), memory(*p)) by close();
     have separate(statement(5).footprint, memory(*p)) by {
         close() using { separate(memory(*q), memory(*p)); };
     }
@@ -43,7 +43,7 @@ int64 read_signed(int64 value) {
         preserve(memory(*p), statement(5));
     }
     step_until(function.exit);
-    solve();
+    close();
 }
 
 uint64 read_unsigned(uint64 value) {
@@ -52,8 +52,8 @@ uint64 read_unsigned(uint64 value) {
     step_until(statement(5).entry);
     mark written;
     step();
-    have *p == value by solve();
-    have separate(memory(*q), memory(*p)) by known();
+    have *p == value by close();
+    have separate(memory(*q), memory(*p)) by close();
     have separate(statement(5).footprint, memory(*p)) by {
         close() using { separate(memory(*q), memory(*p)); };
     }
@@ -61,7 +61,7 @@ uint64 read_unsigned(uint64 value) {
         preserve(memory(*p), statement(5));
     }
     step_until(function.exit);
-    solve();
+    close();
 }
 ```
 

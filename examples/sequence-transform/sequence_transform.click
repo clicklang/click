@@ -49,9 +49,9 @@ int32 sequence_contains3(int32 values[], int32 target) {
             } else {
                 step_until(function.exit);
                 if target in [values[0], values[1], values[2]] {
-                    solve();
+                    close();
                 } else {
-                    solve();
+                    close();
                 }
             }
         }

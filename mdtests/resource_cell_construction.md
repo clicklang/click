@@ -24,7 +24,7 @@ void init(int32* p, int32 value) {
 } by {
     step_until(function.exit);
     let c = fold(cell(p), { value: value });
-    solve();
+    close();
 }
 
 void set(int32* p, int32 value) {
@@ -34,7 +34,7 @@ void set(int32* p, int32 value) {
     unfold(c);
     step_until(function.exit);
     let c = fold(cell(p), { value: value });
-    solve();
+    close();
 }
 ```
 

@@ -43,7 +43,7 @@ int32 scan(int32* a, int32 n) {
         invariant 0 <= i and i <= n;
     }
     step();
-    solve();
+    close();
 }
 ```
 

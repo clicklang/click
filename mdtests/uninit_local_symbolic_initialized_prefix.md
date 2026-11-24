@@ -18,12 +18,12 @@ int32 local_prefix(int32 i) {
             have i <= 0;
             have i == 0;
             step_until(function.exit);
-            solve();
+            close();
         } else {
             have i <= 1;
             have i == 1;
             step_until(function.exit);
-            solve();
+            close();
         }
     }
 }

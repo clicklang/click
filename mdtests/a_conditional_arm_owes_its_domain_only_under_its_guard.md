@@ -19,26 +19,26 @@ function zero_or_shifted(a: uint64, d: uint64) -> uint64 {
 theorem unfolds_without_a_count_premise(a: uint64, d: uint64) {
     ensures shifted_or_zero(a, d) == shifted_or_zero(a, d) by {
         unfold(shifted_or_zero(a, d));
-        solve();
+        close();
     }
 }
 
 theorem the_else_arm_is_guarded_too(a: uint64, d: uint64) {
     ensures zero_or_shifted(a, d) == zero_or_shifted(a, d) by {
         unfold(zero_or_shifted(a, d));
-        solve();
+        close();
     }
 }
 
 theorem a_stated_conditional_needs_no_premise(a: uint64, d: uint64) {
     ensures (if d < 64u64 { a << d } else { 0u64 }) == (if d < 64u64 { a << d } else { 0u64 }) by {
-        solve();
+        close();
     }
 }
 
 theorem an_integer_conditional(a: Integer, d: Integer) {
     ensures (if d != 0 { truncating_quotient(a, d) } else { 0 }) == (if d != 0 { truncating_quotient(a, d) } else { 0 }) by {
-        solve();
+        close();
     }
 }
 ```

@@ -14,17 +14,17 @@ void unused(void) {}
 verifying "normalize_compares_integer_sums_exactly.c";
 
 theorem observations(x: int32, y: uint64) {
-    ensures 1 + to_integer(x) == to_integer(x) + 1 by { known(); }
-    ensures to_integer(x) + (to_integer(y) + 3) == (to_integer(x) + to_integer(y)) + 3 by { known(); }
-    ensures to_integer(x) - (to_integer(y) - 4) == to_integer(x) - to_integer(y) + 4 by { known(); }
-    ensures -to_integer(x) + to_integer(x) == 0 by { known(); }
-    ensures to_integer(x) + 1 != to_integer(x) by { known(); }
-    ensures to_integer(x) + 1 > to_integer(x) by { known(); }
-    ensures to_integer(y) - 2 <= to_integer(y) by { known(); }
+    ensures 1 + to_integer(x) == to_integer(x) + 1 by { close(); }
+    ensures to_integer(x) + (to_integer(y) + 3) == (to_integer(x) + to_integer(y)) + 3 by { close(); }
+    ensures to_integer(x) - (to_integer(y) - 4) == to_integer(x) - to_integer(y) + 4 by { close(); }
+    ensures -to_integer(x) + to_integer(x) == 0 by { close(); }
+    ensures to_integer(x) + 1 != to_integer(x) by { close(); }
+    ensures to_integer(x) + 1 > to_integer(x) by { close(); }
+    ensures to_integer(y) - 2 <= to_integer(y) by { close(); }
 }
 
 theorem integers(a: Integer, b: Integer) {
-    ensures a + b == b + a by { known(); }
+    ensures a + b == b + a by { close(); }
 }
 ```
 

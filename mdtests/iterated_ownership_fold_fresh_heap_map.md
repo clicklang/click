@@ -46,7 +46,7 @@ void with_fresh_map(int32* data, int32 capacity) {
     branch {
         true => {
             step_until(function.exit);
-            solve();
+            close();
         }
         false => {}
     }
@@ -64,12 +64,12 @@ void with_fresh_map(int32* data, int32 capacity) {
         0 <= k and k < capacity implies occupied[k] == 0
     } by {
         rewrite(capacity, i);
-        known();
+        close();
     }
     fold(arena_cells(data, occupied, capacity)[..]);
     unfold(arena_cells(data, occupied, capacity)[..]);
     step_until(function.exit);
-    solve();
+    close();
 }
 ```
 

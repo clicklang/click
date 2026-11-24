@@ -16,7 +16,7 @@ theorem pointer_disequality_symmetry(a: int32*, b: int32*) {
 
     ensures 1 == 1 by {
         have b != a;
-        known();
+        close();
     }
 }
 

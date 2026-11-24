@@ -16,7 +16,7 @@ theorem countdown_three_is_zero() {
         unfold(countdown(3 - 1));
         unfold(countdown((3 - 1) - 1));
         unfold(countdown(((3 - 1) - 1) - 1));
-        known();
+        close();
     }
 }
 ```

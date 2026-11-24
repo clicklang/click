@@ -37,7 +37,7 @@ function parent_is(tree: Tree, q: struct node*) -> int32 {
 theorem parent_is_holds(tree: Tree, q: struct node*) {
     requires parent_is(tree, q) == 1;
 
-    ensures parent_is(tree, q) == 1 by known();
+    ensures parent_is(tree, q) == 1 by close();
 }
 
 resource tree_at(p: struct node*) {
@@ -67,18 +67,18 @@ int read_parent_value(struct node* n) {
             have parent_is(t.model, node_parent) == 1 by {
                 rewrite(t.model, Tree::Node(identity, node_parent, value));
                 unfold(parent_is(Tree::Node(identity, node_parent, value), node_parent));
-                known();
+                close();
             }
             have parent_is(t.model, node_parent) == 1 by {
                 apply(parent_is_holds(t.model, node_parent));
-                known();
+                close();
             }
             unfold(t);
             step();
             step();
             let u = fold(tree_at(n), { model: Tree::Node(identity, node_parent, value) });
             step_until(function.exit);
-            solve();
+            close();
         },
     }
 }

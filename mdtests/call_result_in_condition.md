@@ -45,7 +45,7 @@ int classify(int x) {
                 unfold(classified(x));
                 close() using { x == 0; };
             }
-            solve();
+            close();
         }
         false => {}
     }
@@ -54,7 +54,7 @@ int classify(int x) {
         unfold(classified(x));
         close() using { not(x == 0); };
     }
-    solve();
+    close();
 }
 
 int has_class(int x) {
@@ -68,7 +68,7 @@ int has_class(int x) {
             have classified(x) != 0 by {
                 close() using { r != 0; r == classified(x); };
             }
-            solve();
+            close();
         }
         false => {}
     }
@@ -76,7 +76,7 @@ int has_class(int x) {
     have classified(x) == 0 by {
         close() using { r == 0; r == classified(x); };
     }
-    solve();
+    close();
 }
 
 int forward_class(int x) {
@@ -86,9 +86,9 @@ int forward_class(int x) {
     step();
     have result == classified(x) by {
         rewrite(r, classified(x));
-        known();
+        close();
     }
-    solve();
+    close();
 }
 ```
 

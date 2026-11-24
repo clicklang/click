@@ -47,17 +47,17 @@ function wrap(f: fn(Integer) -> Integer, x: Integer) -> Boxed { Boxed::Value(f(x
 function accepts(p: fn(Integer) -> Prop, b: Boxed) -> Prop { b == Boxed::Value(4) and p(4) }
 theorem algebraic_callbacks() {
     ensures wrap(|x: Integer| -> Integer { x + 1 }, 3) == Boxed::Value(4) by {
-        unfold(wrap(|x: Integer| -> Integer { x + 1 }, 3)); have to_integer(3) + 1 == 4 by solve(); solve();
+        unfold(wrap(|x: Integer| -> Integer { x + 1 }, 3)); have to_integer(3) + 1 == 4 by close(); close();
     }
-    ensures accepts(|x: Integer| -> Prop { x == 4 }, Boxed::Value(4)) by solve();
+    ensures accepts(|x: Integer| -> Prop { x == 4 }, Boxed::Value(4)) by close();
 }
 
 theorem imported_callbacks(lo: int32, hi: int32) {
     ensures imported_twice(|x: Integer| -> Integer { x + 1 }, 3) == 5 by {
-        unfold(imported_twice(|x: Integer| -> Integer { x + 1 }, 3)); solve();
+        unfold(imported_twice(|x: Integer| -> Integer { x + 1 }, 3)); close();
     }
     ensures imported_every(|i: int32| -> Prop { i < hi }, lo, hi) by {
-        intro(); intro(); solve();
+        intro(); intro(); close();
     }
 }
 
@@ -65,18 +65,18 @@ theorem application() {
     let increment = |x: Integer| -> Integer { x + 1 };
     ensures twice(increment, 3) == 5 by {
         unfold(twice(increment, 3));
-        solve();
+        close();
     }
-    ensures captured(5) == 13 by { unfold(captured(5)); solve(); }
+    ensures captured(5) == 13 by { unfold(captured(5)); close(); }
 }
 
 theorem range_callbacks(lo: int32, hi: int32, offset: Integer) {
     let step = |acc: Integer, i: int32| -> Integer { acc + to_integer(i) + offset };
     let predicate = |i: int32| -> Prop { i < hi };
     ensures reduce(step, lo, hi, 0) == (lo..hi).fold(0, step) by {
-        unfold(reduce(step, lo, hi, 0)); solve();
+        unfold(reduce(step, lo, hi, 0)); close();
     }
-    ensures every(predicate, lo, hi) by { intro(); intro(); solve(); }
+    ensures every(predicate, lo, hi) by { intro(); intro(); close(); }
 }
 
 theorem callback_fold_append(lo: int32, hi: int32) {
@@ -84,7 +84,7 @@ theorem callback_fold_append(lo: int32, hi: int32) {
     requires hi < 2147483647;
     ensures reduce(|acc: Integer, i: int32| -> Integer { acc + to_integer(i) }, lo, hi + 1, 0) == reduce(|acc: Integer, i: int32| -> Integer { acc + to_integer(i) }, lo, hi, 0) + to_integer(hi) by {
         unfold(reduce(|acc: Integer, i: int32| -> Integer { acc + to_integer(i) }, lo, hi + 1, 0));
-        solve();
+        close();
     }
 }
 
@@ -94,16 +94,16 @@ function math_total(step: fn(Integer, Integer) -> Integer, lo: Integer, hi: Inte
 theorem mathematical_callback_fold_append(lo: Integer, hi: Integer) {
     requires lo <= hi;
     ensures math_total(|acc: Integer, i: Integer| -> Integer { acc + i }, lo, hi + 1) == math_total(|acc: Integer, i: Integer| -> Integer { acc + i }, lo, hi) + hi by {
-        have hi + 1 - 1 == hi by solve();
-        have lo <= hi + 1 - 1 by solve();
+        have hi + 1 - 1 == hi by close();
+        have lo <= hi + 1 - 1 by close();
         unfold(math_total(|acc: Integer, i: Integer| -> Integer { acc + i }, lo, hi + 1));
-        solve();
+        close();
     }
 }
 
 theorem existential_callback(lo: int32, hi: int32) {
     requires lo < hi;
-    ensures some(|i: int32| -> Prop { i == lo }, lo, hi) by { witness(lo); solve(); }
+    ensures some(|i: int32| -> Prop { i == lo }, lo, hi) by { witness(lo); close(); }
 }
 
 void write(int32* p) {
@@ -112,7 +112,7 @@ void write(int32* p) {
     ensures access(|i: int32| -> Integer { to_integer(p[i]) }, 0) == 5 by {
         step_until(function.exit);
         unfold(access(|i: int32| -> Integer { to_integer(p[i]) }, 0));
-        solve();
+        close();
     }
 }
 ```

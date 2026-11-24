@@ -9,7 +9,7 @@ fn count(n: i32) -> i32 {
         decreases n - i;
         invariant 0 <= i and i <= n;
     }
-    step_until(function.exit); solve();
+    step_until(function.exit); close();
 }
 
 fn accumulate(n: i32, value: i32) -> i32 {
@@ -23,7 +23,7 @@ fn accumulate(n: i32, value: i32) -> i32 {
         invariant 0 <= i and i <= n;
         invariant sum == i;
     }
-    step_until(function.exit); solve();
+    step_until(function.exit); close();
 }
 
 fn walk(bytes: &[u8]) -> usize {
@@ -36,7 +36,7 @@ fn walk(bytes: &[u8]) -> usize {
         decreases bytes.len() - i;
         invariant i <= bytes.len();
     }
-    step_until(function.exit); solve();
+    step_until(function.exit); close();
 }
 
 import click::integer;

@@ -37,14 +37,14 @@ int32 frontier_local_statement_facts(int32 flag) {
             }
         }
         have y >= 0 by {
-            solve();
+            close();
         }
         step();
         have y == 2 by {
-            solve();
+            close();
         }
         step();
-        solve();
+        close();
     }
 }
 ```

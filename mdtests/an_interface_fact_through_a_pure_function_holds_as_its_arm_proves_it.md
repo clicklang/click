@@ -34,12 +34,12 @@ int32 n(int32 j) {
     if j == 1 ensuring {
         fact tmp[tl(j)] == 0u8;
     } then {
-        have tl(j) == 2u64 by { unfold(tl(j)); solve(); }
-        have tmp[tl(j)] == 0u8 by { rewrite(tl(j), 2u64); known(); }
+        have tl(j) == 2u64 by { unfold(tl(j)); close(); }
+        have tmp[tl(j)] == 0u8 by { rewrite(tl(j), 2u64); close(); }
     } else {
         have j == 2 by { close() using { 1 <= j; j <= 2; j != 1; }; }
-        have tl(j) == 3u64 by { unfold(tl(j)); solve(); }
-        have tmp[tl(j)] == 0u8 by { rewrite(tl(j), 3u64); known(); }
+        have tl(j) == 3u64 by { unfold(tl(j)); close(); }
+        have tmp[tl(j)] == 0u8 by { rewrite(tl(j), 3u64); close(); }
     }
 }
 ```

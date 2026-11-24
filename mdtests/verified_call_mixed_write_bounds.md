@@ -38,8 +38,8 @@ int32 read_saved(struct cells* p, int32 enabled) {
     ensures result == old(p->saved);
 } by {
     step() {
-        requires separate(memory(p->first), memory(p->saved)) by known();
-        requires separate(memory(p->second), memory(p->saved)) by known();
+        requires separate(memory(p->first), memory(p->saved)) by close();
+        requires separate(memory(p->second), memory(p->saved)) by close();
     }
 }
 ```

@@ -19,17 +19,17 @@ int32 answer() { ensures result == 2; } by {
             step(); step();
             if i < 2 {
                 step();
-                have -2147483648 <= to_integer(i) + 1 by { solve(); }
-                have to_integer(i) + 1 <= 2147483647 by { solve(); }
+                have -2147483648 <= to_integer(i) + 1 by { close(); }
+                have to_integer(i) + 1 <= 2147483647 by { close(); }
                 have to_integer(i + 1) == to_integer(i) + 1 by {
                     close() using {
                         -2147483648 <= to_integer(i) + 1;
                         to_integer(i) + 1 <= 2147483647;
                     };
                 }
-                have 0 <= to_integer(i + 1) and to_integer(i + 1) <= 2 by { solve(); }
-                have 0 <= 2 - to_integer(i + 1) by { solve(); }
-                have 2 - to_integer(i + 1) < 2 - to_integer(i) by { solve(); }
+                have 0 <= to_integer(i + 1) and to_integer(i + 1) <= 2 by { close(); }
+                have 0 <= 2 - to_integer(i + 1) by { close(); }
+                have 2 - to_integer(i + 1) < 2 - to_integer(i) by { close(); }
                 step();
             } else {
                 step();

@@ -35,9 +35,9 @@ fn radius(s: Shape) -> u32 {
     ensures result == match s { Shape::Circle(r) => r, Shape::Rect(w, h) => 0u32, Shape::Empty => 0u32 };
 } by {
     match s {
-        Shape::Circle(r) => { step_until(function.exit); solve(); },
-        Shape::Rect(w, h) => { step_until(function.exit); solve(); },
-        Shape::Empty => { step_until(function.exit); solve(); },
+        Shape::Circle(r) => { step_until(function.exit); close(); },
+        Shape::Rect(w, h) => { step_until(function.exit); close(); },
+        Shape::Empty => { step_until(function.exit); close(); },
     }
 }
 

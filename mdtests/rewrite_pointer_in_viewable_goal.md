@@ -29,11 +29,11 @@ void keep(struct cell* c) {
             unfold(h);
             have viewable(q[0..1]) by {
                 rewrite(q, c);
-                known();
+                close();
             }
             let h = fold(Cell(c), { model: Link::Node(q) });
             step_until(function.exit);
-            solve();
+            close();
         },
     }
 }

@@ -44,7 +44,7 @@ theorem tree_size_is_nonnegative(m: Tree) {
         match m {
             Tree::Leaf => {
                 unfold(tree_size(Tree::Leaf));
-                known();
+                close();
             }
             Tree::Node(child, sibling) => {
                 apply(ih(child));
@@ -84,7 +84,7 @@ void destroy(struct tree* t) {
         decreases tree_size(x.model);
         invariant tree_size(x.model) <= tree_size(old(x.model));
 
-        initialize by solve();
+        initialize by close();
         maintain by {
             match x.model {
                 Tree::Leaf => { contradiction(x.model == Tree::Leaf); },
@@ -94,7 +94,7 @@ void destroy(struct tree* t) {
                     have tree_size(x.model) == tree_size(child_model) + tree_size(sibling_model) + 1 by {
                         rewrite(x.model, Tree::Node(child_model, sibling_model));
                         unfold(tree_size(Tree::Node(child_model, sibling_model)));
-                        known();
+                        close();
                     }
                     have tree_size(child_model) < tree_size(old(x.model)) by {
                         close() using {
@@ -118,19 +118,19 @@ void destroy(struct tree* t) {
                     let { child: c, sibling: s } = unfold(x);
                     have 0 <= tree_size(c.model) by {
                         rewrite(c.model, child_model);
-                        known();
+                        close();
                     }
                     have tree_size(c.model) < tree_size(old(x.model)) by {
                         rewrite(c.model, child_model);
-                        known();
+                        close();
                     }
                     have tree_size(s.model) <= tree_size(old(x.model)) by {
                         rewrite(s.model, sibling_model);
-                        known();
+                        close();
                     }
                     have 0 <= tree_size(s.model) by {
                         rewrite(s.model, sibling_model);
-                        known();
+                        close();
                     }
                     step();
                     step();
@@ -143,7 +143,7 @@ void destroy(struct tree* t) {
     }
     unfold(x);
     step();
-    solve();
+    close();
 }
 ```
 

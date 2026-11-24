@@ -20,7 +20,7 @@ void check(struct Node* p, struct Node* q) {
 } by {
     step(); step();
     have r == q;
-    have (r->tag & 1) == 1 by known();
+    have (r->tag & 1) == 1 by close();
 }
 ```
 

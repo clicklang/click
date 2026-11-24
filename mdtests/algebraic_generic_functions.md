@@ -62,28 +62,28 @@ theorem generic_list_instances(
 ) {
     ensures example_list_length(TestList<int32>::Nil) == 0 by {
         unfold(example_list_length(TestList<int32>::Nil));
-        solve();
+        close();
     }
     ensures append(TestList<int32>::Cons(value, tail), ys)
         == TestList<int32>::Cons(value, append(tail, ys)) by {
         unfold(append(TestList<int32>::Cons(value, tail), ys));
-        solve();
+        close();
     }
     ensures is_empty(TestList<int32>::Nil) by {
         unfold(is_empty(TestList<int32>::Nil));
-        solve();
+        close();
     }
     ensures identity(7) == 7 by {
         unfold(identity(7));
-        solve();
+        close();
     }
     ensures head_or(TestList<int32>::Cons(value, tail), 0) == value by {
         unfold(head_or(TestList<int32>::Cons(value, tail), 0));
-        solve();
+        close();
     }
     ensures same(value, value) by {
         unfold(same(value, value));
-        solve();
+        close();
     }
 }
 
@@ -92,7 +92,7 @@ int32 passthrough(int32 value) {
 } by {
     unfold(identity(value));
     step();
-    solve();
+    close();
 }
 ```
 

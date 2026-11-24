@@ -1,6 +1,6 @@
 # a known fold body fact still accepts an explicit proof
 
-The requirement states the body fact exactly. Folding still generates that obligation; the written proof can close it by `known()`.
+The requirement states the body fact exactly. Folding still generates that obligation; the written proof can close it by `close()`.
 
 ```c filename=fold_by_proves_an_already_known_body_fact.c
 void make(int32 x) { }
@@ -13,7 +13,7 @@ void make(int32 x) {
     requires x > 0;
     produces positive(x);
 } by {
-    fold(positive(x)) by { solve(); }
+    fold(positive(x)) by { close(); }
 }
 ```
 

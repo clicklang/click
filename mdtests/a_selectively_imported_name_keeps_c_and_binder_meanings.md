@@ -38,7 +38,7 @@ theorem appended(xs: List<int32>) {
     ensures append(List<int32>::Nil, xs) == xs by {
         apply(click::list::append_left_identity(xs));
     }
-    ensures length(xs) == length(xs) by solve();
+    ensures length(xs) == length(xs) by close();
 }
 ```
 

@@ -33,10 +33,10 @@ int32 keep(int32 a[]) {
 } by {
     step_until(call(0).entry);
     step();
-    have first_is(a, 7) by { known(); }
+    have first_is(a, 7) by { close(); }
     unfold(first_is(a, 7));
     step_until(function.exit);
-    solve();
+    close();
 }
 ```
 
