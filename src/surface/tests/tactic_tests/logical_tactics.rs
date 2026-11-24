@@ -538,7 +538,7 @@ fn capture_avoiding_contract_lets_preserve_written_proof_names_and_expansion() {
     verify_c_sources(source, &[]).expect("written binder names should remain usable");
     let expanded = expand_c_claim_source_by_label(source, &[], "universal.ensures_0")
         .expect("the hygienically renamed universal should expand");
-    assert!(expanded.contains("intro();"), "{expanded}");
+    assert!(expanded.contains("intro()"), "{expanded}");
     verify_c_sources(&expanded, &[]).expect("the expanded proof should independently reverify");
 }
 

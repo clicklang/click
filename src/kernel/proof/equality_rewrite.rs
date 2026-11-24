@@ -837,12 +837,13 @@ fn rewrite_through_loaded_address_base(
 ) -> Option<Address> {
     fn name_read(
         memory: SharedMemory,
+        site: Option<&crate::kernel::ProgramPoint>,
         address: Address,
         kind: Option<LoadKind>,
     ) -> Option<Address> {
         crate::instrumentation::record_deterministic_work(1);
         let Some(kind) = kind else {
-            return Some(Address::version_read(&memory, &address));
+            return Some(Address::version_read_at(&memory, site, &address));
         };
         // Name the legacy scalar-carrier read, too: folding stored bits can
         // discard the rewritten read or cease to be a pointer carrier.
@@ -870,8 +871,10 @@ fn rewrite_through_loaded_address_base(
             break None;
         }
         let definition = match &cursor.base {
+            // A rewritten pointer read is made where the read it rewrites was.
             AddressBase::Load(load) => Some((
                 load.point().shared_memory().clone(),
+                Some(load.point().clone()),
                 load.cell().clone(),
                 None,
             )),
@@ -879,27 +882,28 @@ fn rewrite_through_loaded_address_base(
                 crate::kernel::registered_load_origin_for_variable(variable)
                     .or_else(|| crate::kernel::registered_load_for_variable(variable))
                     .zip(crate::kernel::registered_load_kind_for_variable(variable))
-                    .map(|((memory, address), kind)| (memory, address, Some(kind)))
+                    .map(|((memory, address), kind)| (memory, None, address, Some(kind)))
             }
             _ => None,
         };
-        let Some((memory, address, kind)) = definition else {
+        let Some((memory, site, address, kind)) = definition else {
             cache.borrow_mut().insert(cursor.base, None);
             break None;
         };
         let rewritten = rewrite_pointer(&address);
         if rewritten != address {
-            let named = name_read(memory, rewritten, kind);
+            let named = name_read(memory, site.as_ref(), rewritten, kind);
             cache.borrow_mut().insert(cursor.base, named.clone());
             break named;
         }
-        frames.push((cursor.base, memory, kind, address.offset.clone()));
+        frames.push((cursor.base, memory, site, kind, address.offset.clone()));
         cursor = address;
     };
-    for (block, memory, kind, displacement) in frames.into_iter().rev() {
+    for (block, memory, site, kind, displacement) in frames.into_iter().rev() {
         result = result.and_then(|address| {
             name_read(
                 memory,
+                site.as_ref(),
                 Address {
                     base: address.base,
                     offset: AddressOffset::add(address.offset, displacement),
@@ -2888,7 +2892,7 @@ mod tests {
             to.clone(),
             ProgramValue::pointer(Address::symbolic(Variable(998_943))),
         );
-        let _ = later.symbolic_pointer_version_load(&to, ProgramType::Int32Pointer);
+        let _ = later.symbolic_pointer_version_load(None, &to, ProgramType::Int32Pointer);
         let goal = Proposition::condition_is(
             ConditionTerm::address_equal(input.offset_by_bytes(8), from.clone()),
             true,

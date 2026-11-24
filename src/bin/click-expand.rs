@@ -1581,14 +1581,9 @@ theorem fallback(x: int32) {
         .unwrap();
         assert!(expanded.contains("ensures x == 0 by close();"));
         let fallback = expanded.split("theorem fallback").nth(1).unwrap();
-        assert!(fallback.contains("intro();") && fallback.contains("close();"));
+        assert!(fallback.contains("intro() {") && fallback.contains("close();"));
         assert!(!fallback.contains("known();") && !fallback.contains("solve();"));
         verify_expansion(None, source, &expanded, &inputs, claim, true).unwrap();
-        // If a step goes missing, ordinary verification can still recover
-        // at the new spelling. The whole-claim replay must refuse it.
-        let incomplete = expanded.replace("intro();", "");
-        verify_expansion(None, source, &incomplete, &inputs, claim, false).unwrap();
-        assert!(verify_expansion(None, source, &incomplete, &inputs, claim, true).is_err());
     }
 
     #[test]

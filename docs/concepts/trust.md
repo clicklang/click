@@ -158,7 +158,7 @@ theorem certification consumes checks that theorem once. A proved library
 theorem is trusted to the extent that the check of its proof is; a kernel
 standard theorem is trusted to the extent that its builder is.
 
-The library also declares 93 `axiom`s, which are trusted, not proved.
+The library also declares 127 `axiom`s, which are trusted, not proved.
 Seven are the laws of the primitive type `Vec<T>` in
 `library/rust/vec.click`, which relate its bodyless operations `vec::len`,
 `vec::get`, `vec::push` and `vec::set`
@@ -217,7 +217,9 @@ The six floating-point order axioms in `library/float_order.click` give
 transitivity for two non-strict comparisons and for either order of a strict
 and a non-strict comparison. Each premise is a true IEEE comparison, so the
 operands are ordered values. No separate finiteness hypothesis is needed.
-The same laws apply to infinities and to both zeros.
+The same laws apply to infinities and to both zeros. Two further order laws
+state that a strict comparison implies the corresponding non-strict
+comparison at either precision.
 
 The rounded addition axioms in the same module compare a sum with the sum
 of its two finite lower or upper endpoints. The ordered premises exclude
@@ -227,8 +229,42 @@ Neither case admits a sum of infinities of opposite sign. Each sum rounds
 at the law's stated precision.
 The float32 scaling axioms multiply both sides of an ordered comparison
 by one finite positive factor and round both products at float32 precision.
+The library gives separate laws for the two operand orders.
 A positive finite factor excludes both zero-times-infinity and
 infinity-times-zero.
+
+The rounded subtraction axioms preserve order in the first operand and
+reverse order in the second. The finite endpoints exclude same-sign
+infinities in the allowed operand domain, which excludes indeterminate
+infinity subtraction. Their ordered premises also exclude NaNs.
+
+Two narrowing axioms in `library/float_order.click` preserve an ordered
+`double` comparison as a non-strict `float` comparison after rounding both
+operands. The true input comparison excludes NaNs. Rounding preserves
+order for finite values, infinities and signed zeros.
+
+The rounded product axioms distinguish two positive lower endpoints from
+two finite operand intervals. A positive lower endpoint rules out zero,
+negative values, and NaN, so multiplying the two endpoints bounds the
+product below even when an operand is infinite. Finite operand intervals
+rule out NaNs and infinities. The real product reaches its extrema at a
+corner of the interval rectangle, and monotone IEEE rounding preserves
+each non-strict bound, including on overflow to infinity.
+The finiteness laws infer a finite value between two finite endpoints,
+which supplies the guard on multiplication by zero. The square laws give
+a zero lower bound and use the larger rounded endpoint square above.
+
+The floating reciprocal laws in `library/float_order.click` use a positive
+finite numerator and a positive bound on the divisor. An infinite positive
+divisor gives positive zero. The signed variants use a finite numerator
+and a divisor bound on either side of zero. The quotient lies numerically
+between zero and the rounded quotient at that bound. The positive minimum
+laws use the least positive subnormal value after a strict comparison
+against either signed zero. The floating quotient laws bound two
+finite operand intervals by the four rounded endpoint combinations.
+The divisor interval lies on one side of zero, so each corner is defined
+and ordinary IEEE rounding preserves the order bounds. The two-sided
+operand bounds exclude NaN and infinity from the operands.
 
 Only the built-in library modules may declare a primitive `type`, a bodyless
 `function` or an `axiom`; the parser refuses each in any other file. The
@@ -252,6 +288,7 @@ proved. Each family is an assumption in the same sense:
 | --- | --- | --- | --- |
 | Your `extern` contracts | `extern` | Each `extern` block a sidecar declares | Your sidecars |
 | C library | `C library` | `memcpy`, `memcmp`, `memset` and `strlen` meet their contracts | `library/c/string.interface.click` |
+| C library objects | `C library` | A linked library-provided scalar or pointer object has a stable value of its declared type | The C object's declaration in an imported `*.interface.click` |
 | Allocator | `allocator` | `malloc`, `calloc`, `realloc` and `free` behave as the kernel's allocation model: a fresh block or null, released once | Built in, as a language primitive: the C front end and the kernel (`allocation` resource), documented in [heap allocation](../reference/language/c.md#heap-allocation) |
 | Formatted output | `snprintf` | One contract per `snprintf` format a program uses, written from the format ([formatted output](../reference/language/c.md#formatted-output)) | `src/languages/c/formatted_output.rs` |
 | Formatted stream output | `printf` | The `fprintf` transition on the hosted `stdout` stream | `library/c/printf.interface.click` |

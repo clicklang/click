@@ -705,6 +705,9 @@ pub enum CppExpression {
         value_type: CppType,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         returned_member: Option<Box<CppReturnedMember>>,
+        /// Read the scalar at the address returned by this call.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reference_load: Option<Box<CppType>>,
         span: CppSpan,
     },
     IntegerLiteral {
@@ -1066,6 +1069,19 @@ pub enum CppScalarCastKind {
     ReferenceLoad,
 }
 
+fn validate_reference_load(reference_type: &CppType, value_type: &CppType) -> Result<(), String> {
+    let CppType::LvalueReference { pointee } = reference_type else {
+        return Err("C++ reference load requires a returned reference".into());
+    };
+    if Scalar::pointer_element(pointee, true).is_some()
+        && same_scalar_type(&super::scalar::scalar_value_type(pointee), value_type)
+    {
+        Ok(())
+    } else {
+        Err("C++ reference load must read the referent's native type".into())
+    }
+}
+
 impl CppScalarConversion {
     fn validate(&self, source: &CppType, logical_source: &str) -> Result<(), String> {
         self.span.validate(logical_source)?;
@@ -1073,17 +1089,10 @@ impl CppScalarConversion {
             return Err("C++ call conversion chain has a mismatched source type".into());
         }
         if self.cast_kind == CppScalarCastKind::ReferenceLoad {
-            let CppType::LvalueReference { pointee } = &self.source_type else {
-                return Err("C++ reference load requires a returned reference".into());
-            };
-            return if !self.explicit
-                && Scalar::pointer_element(pointee, true).is_some()
-                && same_scalar_type(&super::scalar::scalar_value_type(pointee), &self.value_type)
-            {
-                Ok(())
-            } else {
-                Err("C++ reference load must read the referent's native type".into())
-            };
+            if self.explicit {
+                return Err("C++ reference load must read the referent's native type".into());
+            }
+            return validate_reference_load(&self.source_type, &self.value_type);
         }
         if matches!(source, CppType::LvalueReference { .. }) {
             return Err("C++ call conversion of a reference must first load it".into());
@@ -4638,6 +4647,7 @@ fn observer_argument(value: &CppExpression) -> bool {
         value,
         CppExpression::ObserverCall {
             returned_member: None,
+            reference_load: None,
             ..
         }
     )
@@ -5088,8 +5098,15 @@ impl CppExpression {
                 arguments,
                 value_type,
                 returned_member,
+                reference_load,
                 span,
             } => {
+                if let Some(reference_type) = reference_load {
+                    if returned_member.is_some() {
+                        return Err("C++ observer cannot both load a scalar reference and read a returned member".into());
+                    }
+                    validate_reference_load(reference_type, value_type)?;
+                }
                 if let Some(member) = returned_member {
                     member.field.span.validate(logical_source)?;
                     let (field_type, _) =
@@ -6646,6 +6663,7 @@ fn collect_expression_calls<'a>(value: &'a CppExpression, calls: &mut Vec<Collec
             arguments,
             value_type,
             returned_member,
+            reference_load,
             ..
         } => {
             calls.push(CollectedCall::Ordinary {
@@ -6654,7 +6672,9 @@ fn collect_expression_calls<'a>(value: &'a CppExpression, calls: &mut Vec<Collec
                 destination: Some(
                     returned_member
                         .as_ref()
-                        .map_or(value_type, |member| &member.reference_type),
+                        .map_or(reference_load.as_deref().unwrap_or(value_type), |member| {
+                            &member.reference_type
+                        }),
                 ),
                 observer: true,
                 scalar_initialization: false,

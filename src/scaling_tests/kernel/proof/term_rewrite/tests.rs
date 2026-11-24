@@ -1263,8 +1263,11 @@ fn full_pointer_read_version_rewrite_work(count: u64, unrelated: u64) -> usize {
                 Address::symbolic(Variable(999_500 + index)),
                 ProgramType::Int32PointerPointer,
             );
-            let read =
-                memory.symbolic_pointer_version_load(from.address(), ProgramType::Int32Pointer);
+            let read = memory.symbolic_pointer_version_load(
+                None,
+                from.address(),
+                ProgramType::Int32Pointer,
+            );
             (from, read)
         })
         .collect::<Vec<_>>();
@@ -1274,7 +1277,8 @@ fn full_pointer_read_version_rewrite_work(count: u64, unrelated: u64) -> usize {
             .map(|(from, read)| TermRewrite::for_pointer_value_exact(from, &to).value(read))
             .collect::<Vec<_>>()
     });
-    let expected = memory.symbolic_pointer_version_load(to.address(), ProgramType::Int32Pointer);
+    let expected =
+        memory.symbolic_pointer_version_load(None, to.address(), ProgramType::Int32Pointer);
     assert_ne!(expected, stored);
     assert!(rewritten.iter().all(|value| *value == expected));
     work

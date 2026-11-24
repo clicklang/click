@@ -1106,7 +1106,8 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         let bridge_available = |goal: &Proposition| {
             if super::fact_reasoning::known_uint32_from_defined_bytes(goal, |byte| {
                 facts.contains(byte)
-            }) {
+            }) || super::fact_reasoning::known_shifted_one(goal, &|bound| facts.contains(bound))
+            {
                 return true;
             }
             super::fact_reasoning::known_bridge_leaf(goal, &|premise| {

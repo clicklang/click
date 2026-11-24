@@ -7062,7 +7062,7 @@ fn mixed_float_boolean_calls_round_trip_existing_surface_syntax() {
     assert!(
         root.children()
             .iter()
-            .all(|child| !matches!(child.node(), crate::kernel::KernelTermNode::Legacy(_)))
+            .all(|child| !child.requires_native_argument_input())
     );
     let surface = raise_kernel_term(&root, ParameterBinding::default(), &state, &names).unwrap();
     let text = diagnostics::describe_contract_expression(&surface);

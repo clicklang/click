@@ -1676,11 +1676,16 @@ impl PureFactContext {
                 // One checked concrete formation, not an alias-member search.
                 // Equality is trusted kernel evidence; the formation rule still
                 // proves the alignment and retains any explicit base premise.
-                let storage = self.equality_graph.storage_address(pointer);
-                (storage != *pointer)
-                    .then(|| self.pointer_formation_alignment_decision(&storage, alignment, true))
-                    .flatten()
+                let storage = self.alignment_storage_address(pointer)?;
+                self.pointer_formation_alignment_decision(&storage, alignment, true)
             })
+    }
+
+    /// The concrete address used by the alignment decision when the named
+    /// pointer is an alias. The planner uses this same address for a rewrite.
+    pub(crate) fn alignment_storage_address(&self, pointer: &Address) -> Option<Address> {
+        let storage = self.equality_graph.storage_address(pointer);
+        (storage != *pointer).then_some(storage)
     }
 
     /// The existing single-premise alignment certificate encodes formation

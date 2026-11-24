@@ -1052,8 +1052,9 @@ Supported C surface includes:
 - file-scope scalar definitions for the modeled integer, floating-point, and
   data-pointer types, with literal, null-pointer, or address-constant
   initializers (or zero initialization); compatible
-  `extern` declarations may be shared through project-local headers, and the
-  linker requires a definition for each external object used by verified C.
+  `extern` declarations may be shared through project-local headers. Each
+  external object used by verified C needs a definition or a matching const
+  object declaration in an imported [library interface](../../concepts/library-interfaces.md).
   Unused declarations remain checked for compatible types without allocating
   storage. File-scope `static` definitions use private storage for their
   own source file, so same-named statics in different files are independent;

@@ -52,6 +52,16 @@ impl<'a> ProofScope<'a> {
         &self.body
     }
 
+    /// Scope a checked introduction before publishing this nested proof.
+    pub(in crate::surface::proof) fn finish_generated_intro(
+        mut self,
+        parent: &Proof<'a>,
+        introduced: &Proof<'a>,
+    ) -> Result<Self, ClickError> {
+        self.body = parent.finish_generated_intro(introduced, self.body)?;
+        Ok(self)
+    }
+
     /// Attributes the next checked execution operation inside this scope to
     /// its own source tactic without changing the enclosing scope root.
     pub(in crate::surface::proof) fn with_execution_tactic_index(
@@ -638,6 +648,16 @@ impl<'a> ProofScope<'a> {
                 if let Some((surface, kernel)) = &local_spelling {
                     successor = successor.with_local_surface_fact(surface, kernel)?;
                 }
+                if crate::surface::proof::raise_lower_audit::enabled() {
+                    for fact in successor.state().checked_facts() {
+                        if !fact.is_kernel_authority() {
+                            successor.record_raise_lower_proposition("fact", fact, "have");
+                        }
+                    }
+                    if let Some(goal) = successor.goal() {
+                        successor.record_raise_lower_proposition("goal", goal, "have");
+                    }
+                }
                 if let Some(source) = trace_source {
                     let location = self
                         .root
@@ -847,25 +867,41 @@ impl<'a> Proof<'a> {
             })
     }
 
-    /// A solver can close the implication as a whole after opening the
-    /// binder. Compact only a checked continuation that introduced it.
-    pub(in crate::surface::proof) fn finish_generated_range_intro(
+    /// Retain a generated introduction over the checked continuation that
+    /// finished its goal. A written range's scope also opens its membership
+    /// guard, so absorb that introduction when the continuation took it.
+    pub(in crate::surface::proof) fn finish_generated_intro(
         &self,
         introduced: &Self,
         completed: Self,
     ) -> Result<Self, ClickError> {
-        if !self.opens_scoped_range(introduced) {
+        let range = self.opens_scoped_range(introduced);
+        if !range
+            && !matches!(
+                (self.surface_goal(), self.goal()),
+                (
+                    Some(ClickProposition::ForAll { .. }),
+                    Some(Proposition::ForAll { .. })
+                ) | (
+                    Some(ClickProposition::Implies(..)),
+                    Some(Proposition::Implies(..))
+                )
+            )
+        {
             return Ok(completed);
         }
         let continuation = completed.certificate_since(&introduced.checkpoint())?;
-        let [ProofStep::Intro, body @ ..] = continuation.steps() else {
-            return Ok(completed);
+        let body = if range {
+            match continuation.steps() {
+                [ProofStep::Intro, body @ ..] => ProofCertificate::from_steps(body.to_vec())?,
+                [ProofStep::IntroBlock { binder: None, body }] => body.as_ref().clone(),
+                // Search can prove the membership implication as a whole.
+                _ => return Ok(completed),
+            }
+        } else {
+            continuation
         };
-        self.retain_scoped_intro(
-            introduced,
-            ProofCertificate::from_steps(body.to_vec())?,
-            completed,
-        )
+        self.retain_scoped_intro(introduced, body, completed)
     }
 
     /// Retain a checked binder or premise, its optional range guard, and

@@ -156,12 +156,6 @@ impl AlgebraicStorageKey {
                     )),
                 ]);
             }
-            KernelTermNode::Legacy(value) => {
-                let PureFunctionArgument::Algebraic(value) = value.value() else {
-                    unreachable!("legacy algebraic key")
-                };
-                return Self::native(value);
-            }
             _ => unreachable!("algebraic key node"),
         }
         Self::list(parts)

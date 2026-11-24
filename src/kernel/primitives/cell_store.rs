@@ -845,15 +845,17 @@ pub(crate) fn cell_run_value(element_type: ProgramType, load: MachineTerm) -> Pr
                 definition
             {
                 crate::kernel::equality_graph::EqualityGraph::default()
-                    .register_pointer_read_definition(
+                    .register_pointer_read_definition_at(
                         &value,
                         retained_state.shared_memory(),
+                        Some(&retained_state),
                         &address,
                     );
-                return ProgramValue::Pointer(crate::kernel::Pointer::from_read(
+                return ProgramValue::Pointer(crate::kernel::Pointer::from_read_at(
                     value,
                     program_type,
                     retained_state.shared_memory(),
+                    Some(&retained_state),
                     &address,
                 ));
             }

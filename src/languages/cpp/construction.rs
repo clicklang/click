@@ -325,9 +325,11 @@ impl Eligibility<'_, '_> {
                 callee,
                 arguments,
                 returned_member,
+                reference_load,
                 ..
             } => {
                 returned_member.is_none()
+                    && reference_load.is_none()
                     && self.arguments(arguments, values)?
                     && self.function(callee)?
             }

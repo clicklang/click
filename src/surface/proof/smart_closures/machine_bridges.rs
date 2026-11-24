@@ -15,12 +15,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         };
         let readings =
             crate::kernel::machine_integer::comparison::integer_readings_with_promotions(goal);
-        let check = |available: &dyn Fn(&Proposition) -> bool| {
-            crate::kernel::proof::fact_reasoning::known_bridge_leaf(goal, &available)
-                || readings.iter().any(|reading| {
-                    crate::kernel::proof::fact_reasoning::known_bridge_leaf(reading, &available)
-                })
-        };
         let mut selected = Vec::with_capacity(premises.len());
         for premise in premises {
             let kernel =
@@ -35,7 +29,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // `close()`. Keep restricted search tied to the selected facts.
         let mirrored =
             crate::kernel::mirrored_equality(goal).is_some_and(|premise| facts.contains(&premise));
-        Ok(mirrored || check(&|p| facts.pure_known_available(p)))
+        use crate::kernel::proof::fact_reasoning::{known_bridge_leaf, known_shifted_one};
+        let check = |goal| {
+            known_shifted_one(goal, &|bound| facts.contains(bound))
+                || known_bridge_leaf(goal, &|p| facts.pure_known_available(p))
+        };
+        Ok(mirrored || check(goal) || readings.iter().any(check))
     }
 }
 
@@ -385,6 +384,93 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         Self::try_integer_composition_using(&proof, &sources)
     }
 
+    /// A selected upper bound of zero pins an unsigned 64-bit word to zero.
+    /// Carry the bound to Integer and use antisymmetry with the type minimum.
+    fn try_uint64_zero_equality_using(
+        input: &Proof<'a>,
+        premises: &[ClickProposition],
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_uint64_zero_equality_using");
+        let Some(goal) = input.goal() else {
+            return Ok(None);
+        };
+        let Some((
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::Equal,
+                left,
+                right,
+            },
+            true,
+        )) = goal.condition_native()
+        else {
+            return Ok(None);
+        };
+        let value = match (left.bitvector64_as_const(), right.bitvector64_as_const()) {
+            (_, Some(0)) => left,
+            (Some(0), _) => right,
+            _ => return Ok(None),
+        };
+        let upper = Proposition::condition_is(
+            ConditionTerm::uint64_less_equal(
+                value.as_ref().clone(),
+                MachineTerm::uint64_constant(0),
+            ),
+            true,
+        );
+        let forms = crate::surface::proof::order_claim_forms(&upper);
+        let mut selected = None;
+        for premise in premises {
+            check_verification_deadline()?;
+            let kernel = input.lower_cited_surface_proposition(premise, "uint64 zero premise")?;
+            if !input.facts().listed_premise_available(&kernel, &[], false) {
+                return Ok(None);
+            }
+            if selected.is_none() && (kernel == upper || forms.contains(&kernel)) {
+                selected = Some((kernel, premise));
+            }
+        }
+        let Some((kernel, surface)) = selected else {
+            return Ok(None);
+        };
+        let observed = observed_native_surface_comparison(&kernel, surface);
+        let Some(ClickProposition::Comparison {
+            left: value,
+            operator: ComparisonOperator::LessEqual,
+            ..
+        }) = integer_composition::canonical_surface(&observed)
+        else {
+            return Ok(None);
+        };
+        let zero = number(0);
+        let upper = le(value.clone(), zero.clone());
+        let lower = le(zero.clone(), value.clone());
+        let equation = eq(value.clone(), zero.clone());
+        let have = super::super::wide_arithmetic::have;
+        attempt::candidate_outcome(
+            input
+                .driver()
+                .apply_step(have(upper.clone(), vec![ProofStep::Known]))
+                .and_then(|proof| {
+                    proof
+                        .driver()
+                        .apply_step(have(lower.clone(), vec![ProofStep::Known]))
+                })
+                .and_then(|proof| {
+                    proof.driver().apply_step(have(
+                        equation,
+                        vec![application(
+                            "le_antisymmetric",
+                            vec![value, zero],
+                            vec![upper, lower],
+                        )],
+                    ))
+                })
+                .and_then(|proof| proof.driver().apply_step(ProofStep::Known)),
+        )
+    }
+
     /// Prove one explicitly bounded shift or mask through local observation
     /// facts. The arithmetic in this route uses only the ordinary emitter.
     pub(in crate::surface::proof) fn try_machine_bridge_using(
@@ -393,6 +479,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_machine_bridge_using");
+        if let Some(closed) = Self::try_uint64_zero_equality_using(input, premises)? {
+            return Ok(Some(closed));
+        }
         use crate::kernel::IntegerTerm as I;
         let Some(goal) = input.goal() else {
             return Ok(None);

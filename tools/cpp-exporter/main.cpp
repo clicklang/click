@@ -5021,11 +5021,23 @@ private:
       }
       result["kind"] = "dereference";
       result["pointer"] = std::move(*pointer);
-    } else if (source->isLValue() && llvm::isa<clang::CallExpr>(source)) {
-      fail(source->getExprLoc(),
-           "reading a C++ call's reference result inside a larger expression is unsupported; "
-           "use the call directly as a scalar initializer or return value");
-      return std::nullopt;
+    } else if (const auto *call = llvm::dyn_cast<clang::CallExpr>(source);
+               call != nullptr && source->isLValue()) {
+      const auto *callee = call->getDirectCallee();
+      const auto *reference = callee == nullptr ? nullptr :
+          callee->getReturnType()->getAs<clang::LValueReferenceType>();
+      if (reference == nullptr || !supported_pointer_element(reference->getPointeeType())) {
+        fail(source->getExprLoc(),
+             "C++ expression reference reads require a direct call returning a supported scalar lvalue reference");
+        return std::nullopt;
+      }
+      auto operation = lower_call_operation(call, function, true);
+      auto reference_type = lower_type(callee->getReturnType(), call->getExprLoc());
+      if (!operation || !reference_type) return std::nullopt;
+      result["kind"] = "observer_call";
+      result["callee"] = std::move(operation->callee);
+      result["arguments"] = std::move(operation->arguments);
+      result["reference_load"] = std::move(*reference_type);
     } else {
       auto place = lower_place_reference(source, function);
       if (!place) {

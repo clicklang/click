@@ -138,7 +138,6 @@ pub(super) fn algebraic_integer_variables(root: &KernelTerm, free: bool) -> Vari
     let mut result = BTreeSet::new();
     let mut pending = vec![root];
     let mut seen = std::collections::HashSet::new();
-    let mut native_seen = SeenTerms::default();
     let mut summaries = std::collections::HashMap::new();
     while let Some(term) = pending.pop() {
         if checked_collection_checkpoint() {
@@ -171,26 +170,10 @@ pub(super) fn algebraic_integer_variables(root: &KernelTerm, free: bool) -> Vari
                 pending.extend(constructor.fields.iter().rev())
             }
             KernelTermNode::Variable(_) if matches!(term.ty(), KernelType::Algebraic(_)) => {}
-            KernelTermNode::Legacy(value) if matches!(term.ty(), KernelType::Algebraic(_)) => {
-                let PureFunctionArgument::Algebraic(value) = value.value() else {
-                    unreachable!()
-                };
-                if free {
-                    collect_algebraic_free_integer_variables(value, &mut result, &mut native_seen);
-                } else {
-                    collect_algebraic_integer_variables(value, &mut result, &mut native_seen);
-                }
-            }
             _ if !free && term.ty() == &KernelType::Integer => match term.node() {
                 KernelTermNode::Variable(variable) => {
                     result.insert(*variable);
                 }
-                KernelTermNode::Legacy(value) => collect_argument(
-                    value.value(),
-                    FoldVariableRead::IntegerFree,
-                    &mut result,
-                    &mut native_seen,
-                ),
                 KernelTermNode::Call { arguments, .. } => pending.extend(
                     arguments
                         .iter()
@@ -310,6 +293,14 @@ pub(super) fn common_variables(
                     &mut leaf_variables,
                 );
             }
+            KernelTermNode::ImportedScalar(input) => {
+                collect_machine_leaf(
+                    input.value(),
+                    mode,
+                    &mut leaf_variables,
+                    &mut SeenTerms::default(),
+                );
+            }
             KernelTermNode::MachineObservationInput { .. } | KernelTermNode::WrittenMachine(_) => {
                 collect_machine_leaf(
                     term.retained_machine_input().unwrap(),
@@ -318,7 +309,9 @@ pub(super) fn common_variables(
                     &mut SeenTerms::default(),
                 );
             }
-            KernelTermNode::Legacy(_) | KernelTermNode::CallArgument(_) => {
+            KernelTermNode::NativeDescriptor(_)
+            | KernelTermNode::ObservedArgument(_)
+            | KernelTermNode::CallArgument(_) => {
                 // Each opaque leaf gets its complete intrinsic answer. A seen
                 // set belonging to another leaf would discard shared payload
                 // variables before the enclosing body can filter its binders.
