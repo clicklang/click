@@ -2609,6 +2609,22 @@ fn exact_goal_solve_stops_at_known_as_related_and_unrelated_facts_grow() {
                 &[],
             );
             let scope = root.driver().open_have(surface.clone()).unwrap();
+            let check = |tactic| {
+                crate::instrumentation::measure_deterministic_work(|| {
+                    let _fast =
+                        crate::kernel::search::FastOperationScope::enter("closing an exact fact");
+                    scope
+                        .body()
+                        .driver()
+                        .try_authoritative_linear_script(&[tactic])
+                        .unwrap()
+                        .unwrap()
+                })
+            };
+            let (_, known_work) = check(ProofTactic::Known);
+            let (close, close_work) = check(ProofTactic::Close);
+            assert_eq!(close.certificate().steps(), &[ProofStep::Known]);
+            assert_eq!(close_work, known_work, "related={related}, size={size}");
             let (closed, work) = crate::instrumentation::measure_deterministic_work(|| {
                 scope.driver().try_solve_closure().unwrap().unwrap()
             });

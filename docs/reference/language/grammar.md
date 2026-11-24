@@ -151,7 +151,7 @@ documentation inventory keep the following accepted words synchronized.
 | `apply`, `have`, `if`, `cases`, `all`, `branch`, `outcomes`, `loop` | Theorem application and structural proof tactics. |
 | `both` | Retired conjunction tactic. Use `all { P => { ... } Q => { ... } }`. |
 | `witness`, `obtain` | Existential introduction and elimination. `let` binds what an operation produces. |
-| `known`, `normalize`, `intro`, `enumerate`, `contradiction` | Explicit proposition tactics. |
+| `close`, `known`, `normalize`, `intro`, `enumerate`, `contradiction` | Explicit proposition tactics. |
 | `sorry` | Dev-only proof hole `sorry()`. It parses only under `click verify --allow-sorry`; see [Dev-only proof hole](../cli/verify.md#dev-only-proof-hole). A user-defined tactic may not take the name. |
 | `assumption`, `auto`, `arithmetic`, `execute`, `execute_until` | Removed tactic names. The parser refuses each with a diagnostic that names its replacement: `known()` for `assumption()`; the omitted proof for `by auto();` and `solve();` for a written `auto();`; `solve() using { ... }` for `arithmetic() using { ... }` and `solve() using {}` for bare `arithmetic()`; the implicit tail, or `step_until(function.exit)` to work at function exit, for `execute()`; and `step_until` for `execute_until`. |
 | `close_invariants` | Retired loop tactic, still reserved. The parser rejects it with `` `close_invariants` is retired ``; a loop's back edge now closes each bundle member with `solve()`, helped by `have` facts proved before it. |

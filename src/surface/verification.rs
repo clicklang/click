@@ -7710,6 +7710,7 @@ pub(in crate::surface) fn validate_loop_initialization_tactics(
             | ProofTactic::ApplyTheoremUsing { .. }
             | ProofTactic::Have(_)
             | ProofTactic::Known
+            | ProofTactic::Close
             | ProofTactic::Normalize
             | ProofTactic::NormalizeUsing(_)
             | ProofTactic::CompatibilityNormalize(_)

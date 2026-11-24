@@ -148,6 +148,11 @@ path = "mdtests/integer_exists_choose.md"
 needle = "let candidate = obtain(exists (k: Integer) { k == k });"
 
 [[form]]
+id = "close"
+path = "mdtests/close_tactic.md"
+needle = "close();"
+
+[[form]]
 id = "known"
 path = "mdtests/known_uses_equality_congruence.md"
 needle = "known();"

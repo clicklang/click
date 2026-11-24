@@ -1205,6 +1205,7 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             &prefix,
             &format!("apply({});", source_click_proposition(fact)),
         ),
+        ProofTactic::Close => line(output, &prefix, "close();"),
         ProofTactic::Known => line(output, &prefix, "known();"),
         ProofTactic::CompatibilityNormalize(_) => {
             line(output, &prefix, COMPATIBILITY_NORMALIZATION)
