@@ -870,10 +870,11 @@ fn rewrite_through_loaded_address_base(
             break None;
         }
         let definition = match &cursor.base {
-            AddressBase::LoadedPointer(identity) => {
-                crate::kernel::eval::registered_pointer_load(*identity)
-                    .map(|(memory, address)| (memory, address, None))
-            }
+            AddressBase::Load(load) => Some((
+                load.point().shared_memory().clone(),
+                load.cell().clone(),
+                None,
+            )),
             AddressBase::Symbolic(variable) if crate::kernel::is_load_variable(variable) => {
                 crate::kernel::registered_load_origin_for_variable(variable)
                     .or_else(|| crate::kernel::registered_load_for_variable(variable))

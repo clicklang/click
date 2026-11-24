@@ -29,7 +29,7 @@ fn graph_for_memory_query(assumptions: &PureFactContext, pointer: &Address) -> E
     // same complete-cell endpoint evidence, into this query-local graph.
     // Only a pointer the checked walk found stored in the cell is united
     // with the read; another state's read of the same cell is not.
-    if matches!(pointer.base, AddressBase::LoadedPointer(_)) {
+    if matches!(pointer.base, AddressBase::Load(_)) {
         let read = Address {
             base: pointer.base.clone(),
             offset: AddressOffset::Constant(0),
@@ -1595,7 +1595,7 @@ impl ResourceContext {
             && matches!(
                 range.base().base,
                 AddressBase::Symbolic(_)
-                    | AddressBase::LoadedPointer(_)
+                    | AddressBase::Load(_)
                     | AddressBase::FunctionSymbolic(_)
                     | AddressBase::ExternalArgument
                     | AddressBase::ExternalObject(_)
@@ -1611,7 +1611,7 @@ impl ResourceContext {
         if physical_automatic_frame
             && matches!(
                 range.base().base,
-                AddressBase::LoadedPointer(_) | AddressBase::Symbolic(_)
+                AddressBase::Load(_) | AddressBase::Symbolic(_)
             )
         {
             let graph = graph_for_memory_query(assumptions, range.base());
@@ -1810,7 +1810,7 @@ impl ResourceContext {
             // checked read definitions and footprint endpoints locally, never
             // prepare or enumerate an ambient resource input. A complete
             // class miss is the same negative check a published index makes.
-            if matches!(range.base().base, AddressBase::LoadedPointer(_)) {
+            if matches!(range.base().base, AddressBase::Load(_)) {
                 let mut selected = assumptions.clone();
                 selected.equality_graph = graph_for_memory_query(assumptions, held.base());
                 selected.equality_graph = graph_for_memory_query(&selected, range.base());
@@ -2074,7 +2074,7 @@ impl ResourceContext {
         // in the caller's structural lookup. Do not resolve an opaque pointer
         // read merely to discover whether its pointee might have a supplier.
         if self.flat_owned_memory_ranges().is_empty()
-            && (matches!(&pointer.base, AddressBase::LoadedPointer(_))
+            && (matches!(&pointer.base, AddressBase::Load(_))
                 || matches!(&pointer.base, AddressBase::Symbolic(variable)
                     if crate::kernel::is_load_variable(variable)))
         {
@@ -2893,7 +2893,7 @@ impl ResourceContext {
         // fragment complete; a simple lookup must never register the entire
         // input itself.
         let load_block = match &pointer.base {
-            AddressBase::LoadedPointer(_) => true,
+            AddressBase::Load(_) => true,
             AddressBase::Symbolic(variable) => crate::kernel::is_load_variable(variable),
             _ => false,
         };

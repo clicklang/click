@@ -3643,7 +3643,7 @@ fn read_retained_lvalue_paths_without_ranges(
                         .is_some();
                 let may_use_loaded_entry_version = has_read_resource
                     && can_name_read
-                    && matches!(pointer.base, AddressBase::LoadedPointer(_))
+                    && matches!(pointer.base, AddressBase::Load(_))
                     && is_integer;
                 let may_use_recorded_integer_version = can_name_read
                     && ((is_integer && ProgramPoint::supports_local_call_output(pointer))

@@ -3056,7 +3056,7 @@ fn collect_pointer_bound_variables(pointer: &Address, variables: &mut BTreeSet<V
         | AddressBase::StringLiteral { .. }
         | AddressBase::Function(_)
         | AddressBase::ExternalArgument
-        | AddressBase::LoadedPointer(_)
+        | AddressBase::Load(_)
         | AddressBase::Heap(_)
         | AddressBase::Temporary(_) => {}
     }

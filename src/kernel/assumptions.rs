@@ -115,26 +115,18 @@ fn address_bases_equal_with_load_atoms(
 ) -> bool {
     left == right
         || match (left, right) {
-            (AddressBase::LoadedPointer(a), AddressBase::LoadedPointer(b)) => {
-                let (Some((am, ap)), Some((bm, bp))) = (
-                    crate::kernel::eval::registered_pointer_load(*a),
-                    crate::kernel::eval::registered_pointer_load(*b),
-                ) else {
-                    return false;
-                };
-                loads_match(
-                    &crate::kernel::MachineTerm::read_named(
-                        ProgramPoint::at(&am),
-                        ap,
-                        LoadKind::Bits64,
-                    ),
-                    &crate::kernel::MachineTerm::read_named(
-                        ProgramPoint::at(&bm),
-                        bp,
-                        LoadKind::Bits64,
-                    ),
-                )
-            }
+            (AddressBase::Load(a), AddressBase::Load(b)) => loads_match(
+                &crate::kernel::MachineTerm::read_named(
+                    ProgramPoint::at(a.point().shared_memory()),
+                    a.cell().clone(),
+                    LoadKind::Bits64,
+                ),
+                &crate::kernel::MachineTerm::read_named(
+                    ProgramPoint::at(b.point().shared_memory()),
+                    b.cell().clone(),
+                    LoadKind::Bits64,
+                ),
+            ),
             (AddressBase::Symbolic(_), AddressBase::Symbolic(_)) => {
                 let base = |block: &AddressBase| Address {
                     base: block.clone(),

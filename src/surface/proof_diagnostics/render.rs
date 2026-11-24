@@ -2598,8 +2598,8 @@ impl Renderer<'_> {
                 self.push(&name);
             }
             crate::kernel::AddressBase::ExternalArgument => self.push("external"),
-            crate::kernel::AddressBase::LoadedPointer(identity) => {
-                self.fmt(format_args!("loaded-pointer#{}", identity.0))
+            crate::kernel::AddressBase::Load(load) => {
+                self.fmt(format_args!("loaded-pointer#{}", load.id()))
             }
             crate::kernel::AddressBase::StringLiteral { identity, .. } => {
                 self.push(&identity.to_string())

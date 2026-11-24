@@ -136,7 +136,7 @@ fn storage_of(block: &AddressBase) -> &'static str {
         AddressBase::Function(_) | AddressBase::FunctionSymbolic(_) => "function",
         AddressBase::ExternalArgument | AddressBase::ExternalObject(_) => "external",
         AddressBase::Symbolic(_) => "symbolic",
-        AddressBase::LoadedPointer(_) => "loaded pointer",
+        AddressBase::Load(_) => "loaded pointer",
         AddressBase::PureFunctionApplication(_) => "pure application",
         AddressBase::Heap(_) => "heap",
         AddressBase::Temporary(_) => "temporary",

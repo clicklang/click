@@ -1352,7 +1352,7 @@ fn execute_program_indirect_call_paths(
                     }
                     AddressBase::FunctionSymbolic(_)
                     | AddressBase::Function(_)
-                    | AddressBase::LoadedPointer(_)
+                    | AddressBase::Load(_)
                         if matches!(pointer.program_type(), ProgramType::FunctionPointer(_)) =>
                     {
                         let target_assumptions =

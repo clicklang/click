@@ -1,6 +1,7 @@
 # Pointers, loads and stores
 
-Status: approved (2026-11-23). Nothing here is implemented.
+Status: approved (2026-11-23). Steps 0, 1 and 2 of the migration are
+implemented; the rest is not.
 
 ## Scope
 
@@ -292,6 +293,22 @@ is one PR, measured with the gate harnesses, the raise-lower audit and
 2. **`Load` and `AddressBase::Load`.** Introduce the interned `Load` and use it
    as the pointer base, replacing `LoadedPointer(PointerLoadId)` and the
    registry. Function-pointer loads move from load variables to it.
+   *Done.* `Load` (`src/kernel/primitives/load.rs`) carries its point and
+   cell and is interned by `(point.read_key(), cell)`; `Load::at` and
+   `Load::base` are the only constructors, held by
+   `build_support/read_construction.rs`. The category, object or function, is
+   no part of the load: it is the decoding's, the type of the `Pointer` term,
+   and a store lookup for a typed value passes it
+   (`pointer_read_over_write_decoded_value`); a lookup about the base as an
+   address asks about the cell's bytes and accepts a store of either
+   category. Function-pointer reads already took the load base in step 1: an
+   instrumented run of both gate harnesses minted no `FunctionSymbolic` load
+   variable and resolved none, so the three adapters that read one as a load
+   (`logical_pointer_read_term`, the graph's read definitions, and its input
+   read test) are removed; `FunctionSymbolic` remains for function-pointer
+   binders.
+   `Address::loaded_value_at` names a memory-named load at the caller's
+   point, keeping its legacy selection and so its identity.
 3. **Integer and float loads on `Load`**, in two PRs, with the program-point
    session, whose constructors and ratchet gate these terms. Neither overlaps
    that session's own read-identity changes (its P1 producer moves); the two
@@ -363,7 +380,14 @@ Design check
    its own format; check that effective-type checking accepts it for every
    such cell. A refusal leaves that load with no spelling, and is the defect
    to fix.
-2. **Exactness.** Integer load equality compares only `read_key()`, so an
+2. **Exactness.** *Resolved in step 2:* a load's identity is its read key
+   and cell, so an `Exact` and an indexed selection of one point are one
+   `Load`, as integer reads compare only `read_key()`. The load keeps the
+   selection it was first built from; store lookups from either selection
+   return the same store, and raising spells the kept selection, which lowers
+   to the same read key
+   (`mdtests/an_exact_and_an_ordinary_read_of_one_pointer_cell_are_one_load.md`).
+   Integer load equality compares only `read_key()`, so an
    `Exact` and an `IndexedCell` selection of one point are one term; pointer
    loads match. Substitution and rewriting keep an exact load's point when
    they rewrite its address, and `exact-reads.md` E3 makes a pointer load's
@@ -373,4 +397,11 @@ Design check
    pointer form of the 53 integer cases. The mixed-name census
    (`kernel::mixed_read_names`) extends to pointer loads once step 2 gives
    them one constructor.
-3. **Interning cost** of `Load`, confirmed by the scaling tests before step 2.
+3. **Interning cost** of `Load`. *Resolved in step 2:* interning is one hash
+   probe on `(read_key, cell)`, charged one work unit only on a slot
+   collision, and equality, hashing and ordering compare one id
+   (`src/scaling_tests/kernel/primitives/load.rs`): the work to intern a new
+   load or find an interned one is the same with 16, 256 or 4,096 other loads
+   interned; comparing two loads of a cell nested 4, 64 or 512 loads deep is
+   the same; and 4, 64 or 512 reads of one cell, alternating exact and indexed
+   selections and object- and function-pointer types, intern one load.

@@ -2984,7 +2984,7 @@ fn store_member_probe_bases(pointer: &Address, assumptions: &PureFactContext) ->
             // A loaded pointer's displacement is all of its offset: the
             // read itself, at displacement zero, is the object's base.
             AddressOffset::Int32Scaled { .. } | AddressOffset::Int64Scaled { .. }
-                if matches!(base.base, AddressBase::LoadedPointer(_)) =>
+                if matches!(base.base, AddressBase::Load(_)) =>
             {
                 AddressOffset::Constant(0)
             }
@@ -3147,7 +3147,7 @@ pub(in crate::kernel) fn complete_pointer_reads_equal_across_frame(
         let stores_read = |cell: &MemoryDagCell, read: &LoadedPointerView| {
             matches!(cell, MemoryDagCell::Stored { value, .. }
                 if matches!(value.native(), ProgramValue::Pointer(value)
-                    if value.address() == &Address::loaded_value(&read.defining_memory, &read.defining_address)))
+                    if value.address() == &Address::loaded_value_at(&read.point, &read.defining_address)))
         };
         left.node() == right.node() || stores_read(&left, &b) || stores_read(&right, &a)
     })
@@ -6338,7 +6338,7 @@ pub(super) fn store_value_equation_at(
         // The producer knows this exact store's value. Retain its read equation;
         // registration relates aliases by congruence, without looking in cells.
         let read = Pointer::new(
-            Address::loaded_value(after.shared_memory(), pointer),
+            Address::loaded_value_at(after, pointer),
             value.program_type(),
         );
         return Some(Proposition::condition_is(

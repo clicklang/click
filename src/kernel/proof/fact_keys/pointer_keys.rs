@@ -287,7 +287,7 @@ pub(super) fn state_address(pointer: &SharedAddress) -> MemoryErasedAddressKey {
     let block = pointer.node().base.native_atom();
     // Existing depth bound and registry authority; never export the offset.
     let read = match block {
-        AddressBase::LoadedPointer(_) if depth < 3 => Address {
+        AddressBase::Load(_) if depth < 3 => Address {
             base: block.clone(),
             offset: AddressOffset::Constant(0),
         }

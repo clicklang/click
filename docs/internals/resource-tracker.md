@@ -1023,7 +1023,7 @@ stated exact equality places the pointer in such a local.
 `a_symbolic_store_skips_locals_whose_address_is_never_taken`
 (`src/scaling_tests/kernel/tests/memory_scaling_tests.rs`) is the regression.
 
-A load through a `Symbolic` or `LoadedPointer` pointer reads the same map,
+A load through a `Symbolic` or `AddressBase::Load` pointer reads the same map,
 which holds each reachable cell's value as well as its key
 (`CellStore::caught_up_pointer_reachable`). Such a load observes every
 reachable cell except, for a loaded pointer, locals declared after it was

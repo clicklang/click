@@ -357,9 +357,11 @@ fn pointer_read_observations_check_frames_scope_and_scaling() {
     assert!(decode(&scalar).is_none());
     assert!(!equal(&left, &scalar, &facts));
     restore_load_variable_registry(&saved);
-    assert_eq!(decode(&left), Some(original));
+    assert_eq!(decode(&left), Some(original.clone()));
+    // The load carries its point and cell, so clearing the interner leaves
+    // the term's own definition in place (`design/loads.md`, "Terms").
     clear_load_variable_registry();
-    assert!(decode(&left).is_none());
+    assert_eq!(decode(&left), Some(original));
 }
 
 // Model arms can share a canonical word but have different live DAGs.
@@ -2359,7 +2361,7 @@ fn narrow_read_selection_ignores_unrelated_wide_observations() {
 
 /// A pointer load's identity is its version point and cell, never the
 /// pointee type it is decoded at (`design/loads.md`, "Pointers"). Reading
-/// one cell at N object-pointer types interns one `PointerLoadId`, and the
+/// one cell at N object-pointer types interns one `Load`, and the
 /// next differently typed read costs the same whatever N is.
 #[test]
 fn differently_typed_reads_of_one_pointer_cell_intern_one_load() {
@@ -2373,7 +2375,7 @@ fn differently_typed_reads_of_one_pointer_cell_intern_one_load() {
         ProgramType::Float64Pointer,
         ProgramType::Int32PointerPointer,
     ];
-    let registry_len = || POINTER_LOAD_REGISTRY.with(|registry| registry.borrow().len());
+    let registry_len = crate::kernel::interned_load_count;
     let mut samples = Vec::new();
     for reads in [4, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();

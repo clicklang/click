@@ -7959,7 +7959,7 @@ fn function_contract_requirement_is_proven(
                     offset: AddressOffset::Constant(0),
                 } => Some(target),
                 Address {
-                    base: AddressBase::FunctionSymbolic(_) | AddressBase::LoadedPointer(_),
+                    base: AddressBase::FunctionSymbolic(_) | AddressBase::Load(_),
                     offset: AddressOffset::Constant(0),
                 } if matches!(pointer.program_type(), ProgramType::FunctionPointer(_)) => None,
                 _ => return Ok(false),
