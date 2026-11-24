@@ -1,5 +1,24 @@
 # Roadmap
 
+## P1: before launch (5)
+
+The launch covers C, C++, and Rust, with Linux rbtree as the main
+demonstration. Reproduced false acceptances are P1.
+
+- [Verify the pinned Linux rbtree implementation](rbtree-example.md)
+- [Ship Rust on both launch hosts and support crates with dependencies](rust-support.md)
+- [Deliver a Rust language baseline that ordinary small crates meet](rust-language-baseline.md)
+- [Finish the smart-tactic checking and search boundaries](smart-tactics.md)
+- [Finish the KernelTerm / SurfaceTerm split](kernel-term-split.md)
+
+## P2: after launch (1)
+
+- [Eliminate quadratic work in simple checking](scaling.md)
+
+Use feedback from real projects to prioritize additional work after launch.
+
+## Maintaining the roadmap
+
 Each file here is one roadmap item: a missing feature, design gap, deferred
 work, or milestone. Agents must not create new roadmap items unless the user
 explicitly asks them to. Discovering a roadmap gap during other work is not
@@ -50,133 +69,3 @@ A suspected false acceptance stays `soundness-adjacent` until it is
 reproduced. To move a file off `unsound`, the reproduction must stop
 verifying. Narrowing the documented claim does not count. Re-check the label
 whenever the file's reproduction or scope changes.
-
-## P1: before launch (5)
-
-The launch strategy is to complete P1, deliver the minimum viable rbtree
-(MVR), and launch publicly with rbtree as the key demo. MVR is the smallest
-result that supports a public claim that Click verified the Linux kernel
-rbtree implementation. It verifies an unchanged, pinned upstream `lib/rbtree.c`,
-the inline helpers from `rbtree.h` and `rbtree_augmented.h` that it uses, and
-`rb_link_node`, under one pinned compiler configuration and LP64 target. By
-user direction (2026-11-24), the newer inline API built on that core
-(`rb_add`, `rb_find`, and the `*_cached` variants) is outside the launch
-claim.
-
-The proof must establish sequential memory safety and defined behavior;
-parent/child consistency and acyclicity; preservation of the red-black color
-and black-height invariants by insertion and erasure; preservation of the
-exact node set and in-order sequence by rotations, insertion, erasure, and
-replacement; correct traversal results; termination of finite-tree traversal
-and rebalancing loops; and modular correctness for caller-supplied augmentation
-callbacks.
-
-MVR checks the sequential store effect of `WRITE_ONCE`, `READ_ONCE`, and
-`rcu_assign_pointer`, but makes no claim about concurrent readers, atomic
-ordering, RCU grace periods, or data races. Those belong to
-[concurrency-and-atomics.md](concurrency-and-atomics.md). MVR also fixes one
-compiler/target profile; cross-compiler and cross-architecture verification
-belongs to [multiple-compilers.md](multiple-compilers.md).
-
-P1 is the work that has to land before launch. The list is a
-dependency marker, not a prescribed implementation order. Every file labelled
-`Soundness: unsound` is P1 whatever it is about, and that includes `bugs/`
-files, which need no list entry. The claim is worthless if the verifier
-accepts false contracts, so soundness bugs come first even when rbtree does
-not exercise them. When the full feature is not launch work, refusing the
-construct with a diagnostic that names it satisfies the P1 requirement, and
-the full feature can stay P2. `incomplete` and `soundness-adjacent` files are
-prioritized by launch need, not by label. A gap that only a different program
-would hit is normally P2. The
-selected control-flow, byte-representation, arena, and basic C++ milestones
-have landed with bounded support claims. By user direction (2026-10-14),
-C++ and Rust front-end delivery were made P1: the delivered Bitcoin Core
-slices and adler2 Adler-32 checksum are sufficient demonstrations. The
-[Rust frontend milestone](../design/rust-charon-assessment.md#completed-linux-frontend-delivery)
-is complete for the agreed Linux x86-64 GNU launch scope. The remaining C++
-front-end work concerns the installed pipeline, not more examples. By user
-direction (2026-11-10), the public claim is support for C, C++, and Rust
-with no ranking among them, and four gaps that contradicted it were made
-P1. The C++ two, a released C++ front end and projects of several
-translation units, are delivered (2026-11-13; see
-[cpp-support.md](cpp-support.md#p1-front-end-delivered)). The Rust two, the
-Rust front end on the C++ front end's two hosts (Linux x86-64 GNU and macOS
-AArch64) and crates with third-party dependencies, are in
-[rust-support.md](rust-support.md). By user direction (2026-11-24), the other
-release hosts are P2 for both front ends. Broader language, synchronization, and graph coverage remain
-P2.
-
-Program import and execution:
-
-- [Rust support on both launch hosts and for crates with dependencies](rust-support.md)
-- [A Rust language baseline that ordinary small crates meet](rust-language-baseline.md)
-
-The generic stack is complete: a recursive `Stack<T>` with `push`, `pop` and
-`size`, verified once for every type and imported unchanged, in Rust
-([`design/charon-trial/generic-stack`](../design/charon-trial/generic-stack/),
-and as a `Container<T>` trait object in
-[`generic-container`](../design/charon-trial/generic-container/)) and C++
-([`examples/cpp-stack/`](../examples/cpp-stack/README.md), and as a
-`Container<T>` in `mdtests/cpp_generic_stack_is_a_container.md`).
-The completed [basic C++ example](../examples/basic-cpp/README.md) verifies
-references, checked scoped cleanup, and a modular caller. Unchanged Bitcoin
-Core functions under their real Clang project profile, from `MoneyRange`
-through the fee arithmetic and `SpanPopBack`, are verified in
-[`integrations/bitcoin-core-money-range/`](../integrations/bitcoin-core-money-range/);
-further Bitcoin coverage is after-launch work recorded in
-[cpp-support.md](cpp-support.md).
-The first [cross-call exception mdtest](../mdtests/cpp_one_guard_unwind.md)
-also verifies one `noexcept` guard constructed inside a `try`: its destructor
-restores caller memory before either normal continuation or the matching
-`catch` observes it. The selected control-flow demo is now complete through
-its two-guard and conditional-lifetime acceptance cases, including a
-conditional guard whose normal call outcome continues while the caught outcome
-returns, plus hostile cleanup proofs and a deterministic scaling regression.
-General backward/irreducible `goto`, multi-compiler support, and broad C++
-coverage remain outside the delivered slices. The completed
-[byte-representation example](../examples/byte-representation/README.md)
-verifies a record's representation copied through a byte buffer and back,
-preserving its scalar and pointer identity without granting pointee
-authority; its design record is
-[Byte representation](../docs/internals/byte-representation.md). The
-frozen sequential shared-heap program does not depend on goto or C++. Its
-resource-invariant design must also state how a future concurrent
-reference-counted version differs from the sequential one.
-
-Specification and proof:
-
-- [Verify the Linux rbtree example on the recursive structure models](rbtree-example.md)
-
-Proof tooling:
-
-- [Smart tactics: fast checking and enforceable search boundaries](smart-tactics.md)
-- [KernelTerm / SurfaceTerm: finish the representation split](kernel-term-split.md)
-
-## P2: after launch (13)
-
-Worth doing, not worth blocking the rbtree claim on. Promote one to P1 when
-it turns out to block that claim: if P1 work exposes one of the tooling
-failures described in `AGENTS.md`, that item becomes a blocker under the
-normal tooling-first policy and moves up.
-
-C language coverage:
-
-- [Support general backward and irreducible goto](goto.md)
-- [Extend static-storage initializers and string-literal coverage](global-variables.md)
-- [Import kernel-scale preprocessed translation units](kernel-scale-preprocessing.md)
-- [Support multiple C compilers and target ABIs](multiple-compilers.md)
-- [Extend bounded control flow](control-flow.md)
-- [Model concurrency and atomics](concurrency-and-atomics.md)
-
-Additional languages:
-
-- [C++ coverage toward Bitcoin Core](cpp-support.md)
-- [Model C++ exceptions with class types and exceptional resources](cpp-exceptions.md)
-- [Support unsafe Rust](unsafe-rust.md)
-
-Proof language and tooling:
-
-- [Extend modules and imports beyond the delivered rbtree slice](specification-imports.md)
-- [Scaling: stamp out quadratic work in simple checking](scaling.md)
-- [Complete general-purpose algebraic data type support](algebraic-data-types.md)
-- [One source-tactic interpreter for every proof context](one-tactic-interpreter.md)

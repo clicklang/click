@@ -28,8 +28,9 @@ and rebalancing loops; and modular correctness for caller-supplied augmentation
 callbacks. It checks the sequential store effect of `WRITE_ONCE`, `READ_ONCE`,
 and `rcu_assign_pointer`, and claims nothing about concurrent readers, atomic
 ordering, RCU grace periods, or data races
-([concurrency-and-atomics.md](concurrency-and-atomics.md)). Other compilers and
-targets belong to [multiple-compilers.md](multiple-compilers.md).
+([concurrency model](../docs/internals/concurrency-contracts-and-diagnostics.md#remaining-gaps)).
+Compiler and target assumptions are described in the
+[C ABI documentation](../docs/internals/kernel.md#c-abi-and-memory-layout).
 
 ## Where the delivered work is
 
@@ -193,10 +194,7 @@ regression. Depends on 14 and 23.
   back edge has a structural termination measure.
 - Every function in the launch claim verifies on the imported pinned unit with
   original file and line attribution and unchanged linkage identity; fixture
-  provisioning follows [kernel-scale-preprocessing.md](kernel-scale-preprocessing.md)
+  provisioning follows [the pinned preprocessing inventory](../design/kernel-preprocessing-inventory.md)
   (no downloads in the gate, no silent skips).
 - Positive and negative rotation and insert/erase regressions, the rbtree
   nightly example tests and expansion audit, and `scripts/check.sh` pass.
-
-Related: [kernel-scale-preprocessing.md](kernel-scale-preprocessing.md),
-[algebraic-data-types.md](algebraic-data-types.md).

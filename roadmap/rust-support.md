@@ -24,7 +24,7 @@ Maintainer direction, 2026-11-24, settles the scope of both:
   x86-64 and AArch64, Linux GNU on AArch64, Windows on x86-64 and AArch64,
   and macOS x86-64) are P2 for both front ends; they keep the
   unavailable-platform diagnostic. The C++ side is recorded in
-  [cpp-support.md](cpp-support.md#p1-front-end-delivered).
+  [C++ installation](../docs/reference/cli/versions.md#languages).
 - **Dependencies.** A third-party crate is a library under the
   [library-interface rule](../docs/concepts/library-interfaces.md): Click
   never imports, verifies or re-implements a dependency's code and sees it
@@ -41,8 +41,9 @@ This supersedes the 2026-10-15 decision that Linux x86-64 GNU is the whole
 Rust launch scope. The
 [completed Linux front-end delivery](../design/rust-charon-assessment.md#completed-linux-frontend-delivery)
 stays as delivered; this item extends it. Broader Rust language coverage is
-not part of this item: unsafe code is [unsafe-rust.md](unsafe-rust.md), and
-the rest of the subset is in the [Rust reference](../docs/reference/rust.md).
+not part of this item. See the [Rust reference](../docs/reference/rust.md)
+for the supported subset and [pointer model](../design/pointer-model.md#rust-raw-pointers)
+for constraints on unsafe Rust.
 
 ## Today
 
@@ -63,7 +64,7 @@ the rest of the subset is in the [Rust reference](../docs/reference/rust.md).
 - **Release.** No tagged Click release exists yet. A first tagged release
   whose assets carry both front ends, installed clean-room on each launch
   host, is part of launch for this item and for
-  [cpp-support.md](cpp-support.md#p1-front-end-delivered).
+  [C++ installation](../docs/reference/cli/versions.md#languages).
 
 ## Requirements
 
@@ -160,7 +161,7 @@ dependencies.
 
 This section is the shared design for the C++ and Rust front ends, moved
 here when the C++ front end was delivered
-([cpp-support.md](cpp-support.md#p1-front-end-delivered)); the Rust front
+([C++ installation](../docs/reference/cli/versions.md#languages)); the Rust front
 end follows it.
 [Project units](../docs/reference/cli/capture.md#project-units) describes project configuration and the lock
 format for all three languages.

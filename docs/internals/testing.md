@@ -165,7 +165,7 @@ of its driver and `cc1`; Ubuntu 24.04's GCC 13 package is that compiler. On
 another compiler that part reports `linux-rbtree: NOT CHECKED` and passes,
 unless `CLICK_LINUX_RBTREE_REQUIRE_TOOLCHAIN=1` is set. When a C frontend
 change moves the pinned rejection, update the pin and the inventory in
-`roadmap/kernel-scale-preprocessing.md` in the same change.
+`design/kernel-preprocessing-inventory.md` in the same change.
 
 The Linux fixtures cover compiler conditional selection, token pasting and
 macro rescanning, contextual headers, configured dependencies, refresh after
