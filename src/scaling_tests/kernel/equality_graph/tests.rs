@@ -706,9 +706,10 @@ fn shifted_raw_read_dependency_lookup_ignores_unrelated_definitions() {
         let mut graph = EqualityGraph::default();
         for item in 0..size {
             let address = Address::symbolic(Variable(1_200_000 + item));
-            let _ = memory
-                .memory()
-                .symbolic_pointer_load(&address, ProgramType::Int32Pointer);
+            let _ =
+                memory
+                    .memory()
+                    .symbolic_pointer_load(None, &address, ProgramType::Int32Pointer);
             graph.add_equality(
                 &Address::symbolic(Variable(1_300_000 + item)),
                 &Address::symbolic(Variable(1_400_000 + item)),
@@ -716,9 +717,10 @@ fn shifted_raw_read_dependency_lookup_ignores_unrelated_definitions() {
         }
         let address = Address::symbolic(Variable(1_500_000));
         let model = Address::symbolic(Variable(1_500_001));
-        let ProgramValue::Pointer(raw) = memory
-            .memory()
-            .symbolic_pointer_load(&address, ProgramType::Int32Pointer)
+        let ProgramValue::Pointer(raw) =
+            memory
+                .memory()
+                .symbolic_pointer_load(None, &address, ProgramType::Int32Pointer)
         else {
             panic!("typed pointer read");
         };

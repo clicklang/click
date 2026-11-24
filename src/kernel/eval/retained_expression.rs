@@ -936,7 +936,7 @@ mod tests {
         let cell = Address::symbolic(Variable(1021001));
         let assumptions = PureFactContext::new();
         let memory = SymbolicMemory::new();
-        let native = memory.symbolic_pointer_load(&cell, ProgramType::Int32Pointer);
+        let native = memory.symbolic_pointer_load(None, &cell, ProgramType::Int32Pointer);
         let ProgramValue::Pointer(pointer) = &native else {
             unreachable!()
         };
@@ -1962,9 +1962,11 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let source_memory = SymbolicMemory::new();
         let source_address = Address::symbolic(Variable(1027900));
-        let read = ExecutionValue::retain_native(
-            source_memory.symbolic_pointer_load(&source_address, ProgramType::Int32Pointer),
-        );
+        let read = ExecutionValue::retain_native(source_memory.symbolic_pointer_load(
+            None,
+            &source_address,
+            ProgramType::Int32Pointer,
+        ));
         let read_root = read.shared().unwrap().clone();
         let call_root = KernelTerm::shared_pointer_call(
             KernelTerm::checked_call(

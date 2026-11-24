@@ -1564,6 +1564,15 @@ impl ProgramPoint {
         }
     }
 
+    /// [`ProgramPoint::at_read_site`] when the caller has a read site, else
+    /// [`ProgramPoint::at`]: the same point either way.
+    pub(crate) fn at_optional_read_site(memory: &SharedMemory, site: Option<&Self>) -> Self {
+        match site {
+            Some(site) => Self::at_read_site(memory, site),
+            None => Self::at(memory),
+        }
+    }
+
     /// The point on a path a read through this point was made at: the
     /// point's own path when it has one, else the read site a legacy read
     /// recorded. `None` for a read built from a bare memory.

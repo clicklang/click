@@ -1313,8 +1313,10 @@ pub(super) fn copy_aggregate_fields_from(
                             })
                             .map(ProgramValue::Pointer)
                             .or_else(|| {
+                                // The copy reads the source at its point.
                                 crate::kernel::eval::symbolic_storage_cell_value(
                                     &memory,
+                                    captured_point(),
                                     &source_field,
                                     element_type,
                                     true,
@@ -1399,7 +1401,8 @@ fn copy_retained_aggregate_union_member<'a>(
         return None;
     }
     if element_type.is_object_pointer() {
-        return captured_point()
+        let point = captured_point();
+        return point
             .and_then(|point| {
                 crate::kernel::eval::point_named_pointer_cell_read(
                     point,
@@ -1411,6 +1414,7 @@ fn copy_retained_aggregate_union_member<'a>(
             .or_else(|| {
                 crate::kernel::eval::symbolic_storage_cell_value(
                     memory,
+                    point,
                     source_field,
                     element_type,
                     true,
