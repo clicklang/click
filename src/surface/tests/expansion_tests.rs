@@ -28134,7 +28134,7 @@ fn arithmetic_certificates_cold_replay_or_report_legacy_normalization() {
         ),
         (
             "float_bound_composition",
-            &[("negate_scaled", false), ("widen_scaled", false)][..],
+            &[("negate_scaled", true), ("widen_scaled", true)][..],
         ),
         ("signed_odd_divisor", &[("divide", true)][..]),
         ("negative_signed_product", &[("product", true)][..]),

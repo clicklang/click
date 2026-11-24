@@ -3794,8 +3794,68 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         Self::try_float_bound_weakening(&proof, &plan, intermediate)
     }
 
-    /// Materialize the selected chain as one checked normalization per
-    /// operation. Each have cites the previous bound, with its own endpoint.
+    fn try_float_scale_bound(
+        input: &Proof<'a>,
+        source: &Proposition,
+        goal: &Proposition,
+        source_surface: &ClickProposition,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_float_scale_bound");
+        use crate::kernel::proof::arithmetic_special::float_scale_bound_weakening;
+        let Some((plan, factor)) = float_scale_bound_weakening(source, goal) else {
+            return Ok(None);
+        };
+        let source_order = surface_comparison_with_anchored_operands(source_surface);
+        let Some((left, right)) = surface_nonstrict_parts(&source_order) else {
+            return Ok(None);
+        };
+        let (x, endpoint) = if plan.lower {
+            (right, left)
+        } else {
+            (left, right)
+        };
+        let Some(intermediate) = input.structural_proposition_candidate(&plan.intermediate) else {
+            return Ok(None);
+        };
+        let literal = |bits| {
+            ContractExpression::ProgramExpression(
+                crate::kernel::program_expression::float32_literal(bits),
+            )
+        };
+        let factor = literal(factor);
+        let finite = ClickProposition::FloatClassification {
+            expression: factor.clone(),
+            classification: syntax::CFloatClassification::Finite,
+        };
+        let positive = ClickProposition::Comparison {
+            left: literal(0),
+            operator: ComparisonOperator::LessThan,
+            right: factor.clone(),
+        };
+        let name = if plan.lower {
+            "float32_scale_lower"
+        } else {
+            "float32_scale_upper"
+        };
+        let application = ProofStep::ApplyPlannedTheorem {
+            application: TheoremApplication {
+                name: format!("click::float_order::{name}"),
+                arguments: vec![factor, x, endpoint],
+            },
+            premises: vec![source_surface.clone(), finite, positive],
+        };
+        let Some(proof) = attempt::candidate_outcome(input.driver().apply_step(
+            super::super::wide_arithmetic::have(intermediate.clone(), vec![application]),
+        ))?
+        else {
+            return Ok(None);
+        };
+        Self::try_float_bound_weakening(&proof, &plan, intermediate)
+    }
+
+    /// Materialize each link of a selected bound chain. Each have cites the
+    /// previous bound, with its own endpoint.
     fn try_float_bound_chain(
         input: &Proof<'a>,
         bounds: &[Proposition],
@@ -3815,6 +3875,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         };
         let mut proof = input.clone();
+        let mut previous_bound = source;
         for bound in intermediate {
             check_verification_deadline()?;
             let Some(surface) = proof.structural_proposition_candidate(bound) else {
@@ -3825,6 +3886,22 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             else {
                 return Ok(None);
             };
+            if let Some(closed) =
+                Self::try_exact_float_bound_transfer(scope.body(), previous_bound, bound)?
+            {
+                proof = closed.join()?;
+                previous = surface;
+                previous_bound = bound;
+                continue;
+            }
+            if let Some(closed) =
+                Self::try_float_scale_bound(scope.body(), previous_bound, bound, &previous)?
+            {
+                proof = closed.join()?;
+                previous = surface;
+                previous_bound = bound;
+                continue;
+            }
             let Some(closed) = attempt::candidate_outcome(
                 scope
                     .driver()
@@ -3835,6 +3912,19 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             };
             proof = closed.join()?;
             previous = surface;
+            previous_bound = bound;
+        }
+        if let Some(goal) = proof.goal() {
+            if let Some(closed) =
+                Self::try_exact_float_bound_transfer(&proof, previous_bound, goal)?
+            {
+                return Ok(Some(closed));
+            }
+            if let Some(closed) =
+                Self::try_float_scale_bound(&proof, previous_bound, goal, &previous)?
+            {
+                return Ok(Some(closed));
+            }
         }
         attempt::candidate_outcome(
             proof

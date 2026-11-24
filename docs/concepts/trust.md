@@ -225,6 +225,10 @@ NaNs. For an upper bound the finite endpoints rule out positive infinity
 in the inputs, and for a lower bound they rule out negative infinity.
 Neither case admits a sum of infinities of opposite sign. Each sum rounds
 at the law's stated precision.
+The float32 scaling axioms multiply both sides of an ordered comparison
+by one finite positive factor and round both products at float32 precision.
+A positive finite factor excludes both zero-times-infinity and
+infinity-times-zero.
 
 Only the built-in library modules may declare a primitive `type`, a bodyless
 `function` or an `axiom`; the parser refuses each in any other file. The

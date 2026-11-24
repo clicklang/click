@@ -897,3 +897,7 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_bounded_arith
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_float_sum_bound	resolve_solve_premises_unmeasured	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_float_sum_bound	driver	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_float_sum_bound	try_float_bound_weakening	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_float_bound_chain	try_float_scale_bound	2
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_float_bound_chain	try_exact_float_bound_transfer	2
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_float_scale_bound	driver	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_float_scale_bound	try_float_bound_weakening	1

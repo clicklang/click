@@ -10224,3 +10224,27 @@ axiom float64_add_upper(x: double, y: double, a: double, b: double) {
     ensures x + y <= a + b;
 }
 ```
+
+A finite positive factor preserves non-strict float32 bounds through rounded multiplication.
+
+### `float_order::float32_scale_lower`
+
+```click
+axiom float32_scale_lower(factor: float, x: float, bound: float) {
+    requires x >= bound;
+    requires isfinite(factor);
+    requires float32_from_bits(0) < factor;
+    ensures factor * x >= factor * bound;
+}
+```
+
+### `float_order::float32_scale_upper`
+
+```click
+axiom float32_scale_upper(factor: float, x: float, bound: float) {
+    requires x <= bound;
+    requires isfinite(factor);
+    requires float32_from_bits(0) < factor;
+    ensures factor * x <= factor * bound;
+}
+```

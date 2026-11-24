@@ -3667,6 +3667,36 @@ pub(crate) fn float_sum_bound_weakening(
     FloatBoundWeakening::from_goal(goal, endpoint, false)
 }
 
+/// Rounded float32 multiplication by a positive finite literal on the left.
+pub(crate) fn float_scale_bound_weakening(
+    source: &Proposition,
+    goal: &Proposition,
+) -> Option<(FloatBoundWeakening, u32)> {
+    let input = float_bound(source)?;
+    let result = float_bound(goal)?;
+    let (_, operation) = float_literal_operation(result.operand)?;
+    let FloatBoundOperation::Binary {
+        operator: crate::kernel::FloatBinaryOperator::Multiply,
+        literal,
+        literal_on_left: true,
+        increasing: true,
+    } = operation
+    else {
+        return None;
+    };
+    if result.format != KernelFloatType::Float32
+        || input.strict
+        || !float_bound_weakens(source, goal)
+    {
+        return None;
+    }
+    let (endpoint, strict) = operation.apply(result.format, input.endpoint, false);
+    Some((
+        FloatBoundWeakening::from_goal(goal, endpoint, strict)?,
+        literal as u32,
+    ))
+}
+
 /// Planning only. Pick a suffix that starts at the selected bound and
 /// carry its endpoint through each operation at that operation's precision.
 pub(crate) fn float_bound_chain(
