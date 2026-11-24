@@ -2248,10 +2248,17 @@ fn outcome_arithmetic_is_independent_of_postcondition_count() {
 fn uint64_measure_induction_verifies_without_narrowing() {
     let (source, _) = mdtest_sources("mdtests/uint64_measure_induction_counts_a_range_fold.md");
     verify_click_theorems(&source).unwrap();
-    assert_compatibility_normalization_refusal(
-        expand_c_claim_source_by_label(&source, &[], "full_width_count_is_its_length.ensures_0")
-            .unwrap_err(),
+    let claim = "full_width_count_is_its_length.ensures_0";
+    let expanded = expand_c_claim_source_by_label(&source, &[], claim).unwrap();
+    assert!(!expanded.contains("normalize()"), "{expanded}");
+    assert!(
+        expanded.contains("click::integer::le_antisymmetric"),
+        "{expanded}"
     );
+    crate::surface::check_audit_claim(claim, true, || {
+        verify_click_theorems(&expanded).map_err(|error| error.report())
+    })
+    .unwrap();
     let false_result = source.replacen(
         "ensures full_width_count(n) == to_integer(n)",
         "ensures full_width_count(n) == to_integer(n) + 1",

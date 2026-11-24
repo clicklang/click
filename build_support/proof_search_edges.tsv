@@ -728,6 +728,8 @@ src/surface/proof/smart_closures/division.rs	search	ProofSearch::apply_division_
 src/surface/proof/smart_closures/division.rs	search	ProofSearch::apply_division_have	driver	3
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::apply_normalization_closure	known_bridge_using	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::apply_normalization_closure	try_machine_bridge_using	1
+src/surface/proof/smart_closures/machine_bridges.rs	search	ProofSearch::try_machine_bridge_using	try_uint64_zero_equality_using	1
+src/surface/proof/smart_closures/machine_bridges.rs	search	ProofSearch::try_uint64_zero_equality_using	driver	4
 src/surface/proof/smart_closures/machine_bridges.rs	search	ProofSearch::try_machine_bridge_using	driver	19
 src/surface/proof/smart_closures/machine_bridges.rs	search	ProofSearch::try_machine_bridge_using	try_integer_composition_using	4
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::apply_normalization_closure	try_conditional_bridge_using	1

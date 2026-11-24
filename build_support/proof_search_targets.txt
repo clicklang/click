@@ -244,6 +244,7 @@ apply_division_steps
 apply_division_have
 known_bridge_using
 try_machine_bridge_using
+try_uint64_zero_equality_using
 try_conditional_bridge_using
 try_conditional_bound_using
 try_direct_logical_leaf
