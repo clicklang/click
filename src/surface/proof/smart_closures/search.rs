@@ -13113,12 +13113,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
 
             // The selected view holds at the oldest endpoint. Replay one
             // explicitly separated transition at a time towards the goal.
+            // An empty premise list checks each named footprint structurally.
             let mut current = search_input.clone();
             let separation_proof =
-                ProofCertificate::from_steps(vec![ProofStep::CompatibilityNormalize(Some(
-                    Vec::new(),
-                ))])
-                .expect("footprint separation uses an ordinary proof step");
+                ProofCertificate::from_steps(vec![ProofStep::NormalizeUsing(Vec::new())])
+                    .expect("footprint separation uses an ordinary proof step");
             for (index, region) in regions.iter().enumerate().rev() {
                 let separation = ClickProposition::Separate {
                     left: ResourceSubject::Footprint(region.clone()),

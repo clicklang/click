@@ -29,7 +29,7 @@ void tag(struct node* n, struct node* p, int32 color) {
     }
     have (n->word & ~3) == address(p) by {
         rewrite(color, 1);
-        close() using { aligned(p, 8); };
+        normalize() using { aligned(p, 8); };
     }
     have ((n->word & ~3) as (struct node *)) == p by {
         close();
