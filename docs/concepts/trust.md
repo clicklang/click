@@ -158,7 +158,7 @@ theorem certification consumes checks that theorem once. A proved library
 theorem is trusted to the extent that the check of its proof is; a kernel
 standard theorem is trusted to the extent that its builder is.
 
-The library also declares 97 `axiom`s, which are trusted, not proved.
+The library also declares 99 `axiom`s, which are trusted, not proved.
 Seven are the laws of the primitive type `Vec<T>` in
 `library/rust/vec.click`, which relate its bodyless operations `vec::len`,
 `vec::get`, `vec::push` and `vec::set`
@@ -234,6 +234,11 @@ The rounded subtraction axioms preserve order in the first operand and
 reverse order in the second. The finite endpoints exclude same-sign
 infinities in the allowed operand domain, which excludes indeterminate
 infinity subtraction. Their ordered premises also exclude NaNs.
+
+Two narrowing axioms in `library/float_order.click` preserve an ordered
+`double` comparison as a non-strict `float` comparison after rounding both
+operands. The true input comparison excludes NaNs. Rounding preserves
+order for finite values, infinities and signed zeros.
 
 Only the built-in library modules may declare a primitive `type`, a bodyless
 `function` or an `axiom`; the parser refuses each in any other file. The

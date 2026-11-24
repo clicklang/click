@@ -3991,6 +3991,63 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         Self::try_float_bound_weakening(&proof, &plan, intermediate)
     }
 
+    fn try_float_narrow_bound(
+        input: &Proof<'a>,
+        source: &Proposition,
+        goal: &Proposition,
+        source_surface: &ClickProposition,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_float_narrow_bound");
+        use crate::kernel::proof::arithmetic_special::float_narrow_bound_weakening;
+        let Some((plan, strict)) = float_narrow_bound_weakening(source, goal) else {
+            return Ok(None);
+        };
+        let comparison = surface_comparison_with_anchored_operands(source_surface);
+        let (parts, name) = if strict {
+            (
+                super::super::surface_certificates::surface_strict_parts(&comparison),
+                "click::float_order::float64_narrow_lt",
+            )
+        } else {
+            (
+                surface_nonstrict_parts(&comparison),
+                "click::float_order::float64_narrow_le",
+            )
+        };
+        let Some((left, right)) = parts else {
+            return Ok(None);
+        };
+        let Some(intermediate) = input.structural_proposition_candidate(&plan.intermediate) else {
+            return Ok(None);
+        };
+        let application = ProofStep::ApplyPlannedTheorem {
+            application: TheoremApplication {
+                name: name.into(),
+                arguments: vec![left, right],
+            },
+            premises: vec![source_surface.clone()],
+        };
+        let Some(scope) =
+            attempt::candidate_outcome(input.driver().open_have(intermediate.clone()))?
+        else {
+            return Ok(None);
+        };
+        let Some(mut scope) = attempt::candidate_outcome(scope.driver().apply_step(application))?
+        else {
+            return Ok(None);
+        };
+        if !scope.is_complete() {
+            let Some(closed) =
+                attempt::candidate_outcome(scope.driver().apply_step(ProofStep::Known))?
+            else {
+                return Ok(None);
+            };
+            scope = closed;
+        }
+        Self::try_float_bound_weakening(&scope.join()?, &plan, intermediate)
+    }
+
     pub(in crate::surface::proof) fn try_float_bound_link(
         input: &Proof<'a>,
         source: &Proposition,
@@ -4000,6 +4057,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_float_bound_link");
         if let Some(closed) = Self::try_exact_float_bound_transfer(input, source, goal)? {
+            return Ok(Some(closed));
+        }
+        if let Some(closed) = Self::try_float_narrow_bound(input, source, goal, source_surface)? {
             return Ok(Some(closed));
         }
         if let Some(closed) =

@@ -292,4 +292,5 @@ try_float_pair_bound
 try_float_literal_subtraction_bound
 try_apply_float_pair_bound
 try_float_scale_bound
+try_float_narrow_bound
 try_float_bound_link

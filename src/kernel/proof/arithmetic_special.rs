@@ -3651,6 +3651,26 @@ pub(crate) fn exact_float_bound_transfer(
     FloatBoundWeakening::from_goal(goal, endpoint, strict)
 }
 
+/// Narrowing rounds the bound at float32 precision and can merge distinct
+/// input values, so the transported comparison is always non-strict.
+pub(crate) fn float_narrow_bound_weakening(
+    premise: &Proposition,
+    goal: &Proposition,
+) -> Option<(FloatBoundWeakening, bool)> {
+    let source = float_bound(premise)?;
+    let bound = float_bound(goal)?;
+    let operand = bound.operand.narrowed_float64()?;
+    if source.lower != bound.lower || !same_float_operand(source.operand, operand) {
+        return None;
+    }
+    let (endpoint, strict) =
+        FloatBoundOperation::Narrow.apply(bound.format, source.endpoint, source.strict);
+    Some((
+        FloatBoundWeakening::from_goal(goal, endpoint, strict)?,
+        source.strict,
+    ))
+}
+
 impl FloatBoundWeakening {
     pub(crate) fn from_goal(goal: &Proposition, endpoint: u64, strict: bool) -> Option<Self> {
         Self::new(&float_bound(goal)?, endpoint, strict)

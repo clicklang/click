@@ -10299,3 +10299,26 @@ axiom float64_sub_upper(x: double, y: double, a: double, b: double) {
     ensures x - y <= a - b;
 }
 ```
+
+### `float_order::float64_narrow_le`
+
+Rounding from `double` to `float` preserves a true non-strict order.
+
+```click
+axiom float64_narrow_le(a: double, b: double) {
+    requires a <= b;
+    ensures (a as float) <= (b as float);
+}
+```
+
+### `float_order::float64_narrow_lt`
+
+Distinct double values can round to the same float. A strict input order
+therefore gives an inclusive bound on the result.
+
+```click
+axiom float64_narrow_lt(a: double, b: double) {
+    requires a < b;
+    ensures (a as float) <= (b as float);
+}
+```

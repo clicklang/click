@@ -5573,3 +5573,11 @@ path = "reference/library/index.md#float_orderfloat64_sub_lower"
 [[item]]
 id = "library.theorem.float_order::float64_sub_upper"
 path = "reference/library/index.md#float_orderfloat64_sub_upper"
+
+[[item]]
+id = "library.theorem.float_order::float64_narrow_le"
+path = "reference/library/index.md#float_orderfloat64_narrow_le"
+
+[[item]]
+id = "library.theorem.float_order::float64_narrow_lt"
+path = "reference/library/index.md#float_orderfloat64_narrow_lt"
