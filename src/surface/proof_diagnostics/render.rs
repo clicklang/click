@@ -2895,10 +2895,13 @@ impl Renderer<'_> {
 
 /// A read's kind as a proof trace spells it. A 32-bit read of either
 /// signedness reads one word, which the trace names `Bits32`; its
-/// signedness is the reader's tag, as for any variable.
+/// signedness is the reader's tag, as for any variable. A read of a value of
+/// algebraic type is named by its type, `read<T>`.
 fn trace_load_kind(kind: crate::kernel::LoadKind) -> String {
     if kind.is_word32() {
         "Bits32".into()
+    } else if let Some(algebraic_type) = kind.algebraic_type() {
+        algebraic_type.name().into()
     } else {
         format!("{kind:?}")
     }

@@ -922,6 +922,96 @@ mod tests {
         assert_ne!(int32, next, "another cell is another load");
     }
 
+    /// An algebraic read's stand-in is its cell decoded at its own algebraic
+    /// type (`design/loads.md`, step 3b PR 2), not an eight-byte integer
+    /// read: its kind names the type, for a type of the model's width as for
+    /// one of abstract size. Its identity is still `(Load, decoding)`: two
+    /// stand-ins of one cell at one type are one term, the integer read of
+    /// the cell and the decoding at another type share its load and are
+    /// other terms, and order goes by load first, then by decoding.
+    #[test]
+    fn an_algebraic_read_is_its_load_decoded_at_its_algebraic_type() {
+        use crate::kernel::{
+            AccessExtent, Address, AddressBase, AddressOffset, AlgebraicTermNode, AlgebraicType,
+            LoadKind, ProgramPoint, ProgramValue, SymbolicMemory, TypeParameterName,
+        };
+        use std::cmp::Ordering;
+        use std::hash::{Hash, Hasher};
+        let _session = crate::kernel::VerificationSession::enter();
+        let slot = Address {
+            base: AddressBase::Concrete("local:algebraic-read-slot".into()),
+            offset: AddressOffset::Constant(0),
+        };
+        let memory =
+            crate::kernel::intern_memory(SymbolicMemory::new().with_block(slot.base.clone(), 16));
+        let point = ProgramPoint::at(&memory);
+        let library_name = "load_tests::LibraryVec<uint32>";
+        TypeParameterName::declare_library_instance(library_name);
+        let library = AlgebraicType::parameter(library_name.into());
+        let opaque = AlgebraicType::parameter("load_tests::T".into());
+        assert!(!TypeParameterName::of(&library).has_abstract_size());
+        assert!(TypeParameterName::of(&opaque).has_abstract_size());
+        let hash = |term: &MachineTerm| {
+            let mut state = std::collections::hash_map::DefaultHasher::new();
+            term.hash(&mut state);
+            state.finish()
+        };
+        let parts = |term: &MachineTerm| match term {
+            MachineTerm::MemoryLoad(_, cell, kind) => (cell.load().clone(), *kind),
+            _ => unreachable!("a read"),
+        };
+        let word = MachineTerm::read_named(point.clone(), slot.clone(), LoadKind::Bits64);
+        let mut stand_ins = Vec::new();
+        for algebraic_type in [&library, &opaque] {
+            let read = AlgebraicTermNode::memory_load_carrier(&point, &slot, algebraic_type);
+            let (load, kind) = parts(&read);
+            let parameter = TypeParameterName::of(algebraic_type);
+            assert_eq!(
+                kind,
+                LoadKind::Algebraic(parameter),
+                "decoded at its own type"
+            );
+            assert_eq!(kind.algebraic_type(), Some(parameter));
+            assert_eq!(kind.extent(), AccessExtent::of_algebraic(algebraic_type));
+            let again = AlgebraicTermNode::memory_load_carrier(&point, &slot, algebraic_type);
+            assert_eq!(
+                read, again,
+                "one cell, one read key, one decoding: one term"
+            );
+            assert_eq!(hash(&read), hash(&again));
+            assert_ne!(read, word, "no integer read of the cell");
+            assert_eq!(load, parts(&word).0, "one cell's bytes, one load");
+            assert_eq!(read.cmp(&word), kind.cmp(&LoadKind::Bits64));
+            // The stand-in a walker left converts back to the algebraic
+            // read; an integer read of the cell does not.
+            assert_eq!(
+                AlgebraicTermNode::memory_load_from_carrier(&ProgramValue::UInt64(read.clone())),
+                Some(AlgebraicTermNode::MemoryLoad {
+                    point: point.clone(),
+                    pointer: Box::new(slot.clone()),
+                })
+            );
+            assert_eq!(
+                AlgebraicTermNode::memory_load_from_carrier(&ProgramValue::UInt64(word.clone())),
+                None
+            );
+            stand_ins.push(read);
+        }
+        let (library_read, opaque_read) = (&stand_ins[0], &stand_ins[1]);
+        assert_ne!(library_read, opaque_read, "two types, two decodings");
+        assert_eq!(parts(library_read).0, parts(opaque_read).0);
+        assert_eq!(
+            library_read.cmp(opaque_read),
+            parts(library_read).1.cmp(&parts(opaque_read).1)
+        );
+        // Another cell orders by its load, whatever the decodings.
+        let next_cell = slot.offset_by_bytes(8);
+        let next = AlgebraicTermNode::memory_load_carrier(&point, &next_cell, &opaque);
+        let by_load = parts(library_read).0.cmp(&parts(&next).0);
+        assert_ne!(by_load, Ordering::Equal);
+        assert_eq!(library_read.cmp(&next), by_load);
+    }
+
     /// Integer reads order and hash by content, not by when their loads were
     /// interned or how many sessions came before: proof search iterates
     /// term-keyed sets in this order. The same reads interned in reverse,

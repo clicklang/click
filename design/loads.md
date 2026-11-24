@@ -1,7 +1,7 @@
 # Pointers, loads and stores
 
 Status: approved (2026-11-23). Steps 0, 1, 2 and 3a-i of the migration, and
-PR 1 of step 3b, are implemented; the rest is not.
+PRs 1 and 2 of step 3b, are implemented; the rest is not.
 
 ## Scope
 
@@ -411,15 +411,43 @@ is one PR, measured with the gate harnesses, the raise-lower audit and
        `build_support/read_construction.rs` holds the bridge's callers (two
        each in `assumptions.rs` and `term_operations.rs`) and every
        production `LoadKind::Bits64` spelling, per file, at 37.
-     - **PR 2, the algebraic stand-in.** `LoadKind::of_algebraic` and
-       `memory_load_from_carrier` become a decoding at the algebraic type.
-       `Bits64` spellings of this class: `memory_load_from_carrier`
-       (`primitives.rs`), the native algebraic collector's havoc framing
-       (`reasoning/variable_collection/retained_folds.rs`), the algebraic
-       reads of `comparison_form_uncached` (`eval/memory_loads.rs`), and the
-       `Bits64 | Abstract(_)` arms that read a stand-in as a 64-bit integer
-       (`condition_reasoning/memory_conditions.rs`, the producer equation in
-       `eval/memory_loads.rs`, `primitives/term_width.rs`).
+     - **PR 2, the algebraic stand-in.** *Done.* An algebraic read
+       (`AlgebraicTermNode::MemoryLoad`) reaches walkers and load-atom
+       comparisons through a stand-in, `memory_load_carrier`. It was an
+       eight-byte integer read, `Bits64`, or `Abstract(T)` for a type known
+       only by name; it is now the cell decoded at its own type,
+       `LoadKind::Algebraic(T)`, which generalises `Abstract(T)` to every
+       algebraic type (`LoadKind::of_algebraic`). Its identity stays
+       `(Load, decoding)`: the stand-ins of one cell at two types, and the
+       cell's integer read, share the load and are three terms (unit test
+       `an_algebraic_read_is_its_load_decoded_at_its_algebraic_type`). Width
+       and extent are unchanged: the model's eight bytes, or `sizeof(T)` for
+       a type of abstract size (`LoadKind::extent`, `load_access_extent`).
+       Version selection is untouched: the stand-in names the point and
+       cell the algebraic read names. Each consumer that matched `Bits64`
+       or `Abstract` for a stand-in now matches `Algebraic`: resolution
+       against the cells (`resolve_memory_load_value`) returns the same
+       decoding at the state's own point, the comparison form's algebraic
+       read-over-write keeps excluding types of abstract size, and the
+       native and retained havoc-framing collectors follow registered
+       origins at the read's decoding. The value-level walkers
+       (substitution, rewriting, variable collection) still take the
+       stand-in through a `ProgramValue::UInt64` transport
+       (`memory_load_carrier_value`): the tag only routes them to their
+       machine-term arm, and unwrapping it would change their per-level
+       work accounting. Type interning, now on this path, looks a
+       structural type up among its name's candidates rather than scanning
+       every interned type
+       (`structural_type_lookup_and_algebraic_stand_in_do_not_scan_registered_types`).
+       Spellings that change: a trace prints a stand-in as `read<T>`, not
+       `read<Bits64>`, and a diagnostic describes one as "a value of an
+       algebraic type", not "an eight-byte word". Surface raising still
+       spells an unnamed stand-in as an `int64` load, as before; a
+       `load<T>` spelling belongs with open question 1. The production
+       `LoadKind::Bits64` spellings drop from 37 to 34
+       (`build_support/read_construction.rs`): none remains in
+       `primitives.rs` or the retained fold collector, and one fewer in
+       `eval/memory_loads.rs`.
      - **PR 3** adds the e-graph sign relation at 16 and 128 bits.
      - **PR 4** splits `Bits64` into `Int64` and `UInt64`. The remaining
        spellings are genuine 64-bit integer reads: their construction from a
@@ -432,7 +460,10 @@ is one PR, measured with the gate harnesses, the raise-lower audit and
        (`surface/`). The pointer-word bridge needs its cell-keyed
        replacement (PR 1) first, since neither signed nor unsigned is the
        decoding of a pointer's bytes.
-4. **Algebraic and abstract loads** become decodings of `Load`.
+4. **Algebraic and abstract loads** become decodings of `Load`. Step 3b
+   PR 2 gives their stand-in the decoding, `LoadKind::Algebraic(T)`; the
+   algebraic term itself (`AlgebraicTermNode::MemoryLoad`) still holds a
+   point and an address, not a `Load`.
 5. **Abstract bytes**: uninitialized bytes and provenance fragments.
 6. **`loaded_value`** and the remaining scalar load variables go with the
    legacy walk.
