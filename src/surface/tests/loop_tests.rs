@@ -2408,8 +2408,8 @@ fn changed_break_exit_does_not_label_head_invariants_as_exit_facts() {
     verify_c_sources(&expanded, &sources).unwrap();
     for fact in ["r == 0", "at(loop(0).exit, r) == at(loop(0).exit, 0)"] {
         let false_have = source.replace(
-            "    step();\n    solve();",
-            &format!("    have {fact} by {{ known(); }}\n    step();\n    solve();"),
+            "    step();\n    close();",
+            &format!("    have {fact} by {{ known(); }}\n    step();\n    close();"),
         );
         assert_ne!(source, false_have);
         let error = verify_c_sources(&false_have, &sources).unwrap_err();
