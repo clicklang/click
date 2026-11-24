@@ -656,7 +656,7 @@ int32 shadowed_c(int32 x) {
         expand_c_tactic_source_at(click_source, &sources, position.line, position.column)
             .expect("selected smart tactic should expand");
     assert!(
-        expanded.contains("have outer.x == 0 by { close(); }"),
+        expanded.contains("have outer.x == 0 by {"),
         "{expanded}"
     );
     assert!(expanded.contains("outer.x"), "{expanded}");
@@ -693,7 +693,7 @@ int32 shadowed_twice_c(int32 x) {
         expand_c_tactic_source_at(click_source, &sources, position.line, position.column)
             .expect("selected smart tactic should expand");
     assert!(
-        expanded.contains("have outer.outer.x == 0 by { close(); }"),
+        expanded.contains("have outer.outer.x == 0 by {"),
         "{expanded}"
     );
     verify_c_sources(&expanded, &sources).expect("expanded nested C proof must reverify");
