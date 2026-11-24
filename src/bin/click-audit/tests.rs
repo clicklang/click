@@ -958,6 +958,51 @@ fn cpp_mdtest_audit_inventories_imported_semantics() {
 }
 
 #[test]
+fn partial_theorem_audit_keeps_the_region_of_a_byte_identical_expansion() {
+    let source = r#"// déjà vu
+theorem identity(x: int32) {
+    requires x == 0;
+    ensures x == 0 by {
+        have x == 0 by {
+            close();
+        }
+        close();
+    }
+}
+
+theorem neighbor(x: int32) {
+    ensures x == 0 implies x == 0 by close();
+}
+"#;
+    let sites = c_smart_tactic_source_sites(source, &[]).unwrap();
+    let artifact = click::surface::expand_c_tactics_source_at(
+        source,
+        &[],
+        std::slice::from_ref(&sites[0].position),
+    )
+    .unwrap();
+    assert_eq!(artifact.source, source);
+    assert_eq!(artifact.replacement_spans.len(), 1);
+    assert_eq!(
+        artifact.replacement_spans[0],
+        source.find("by {").unwrap()..source.find("\n}\n").unwrap()
+    );
+
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("partial_theorem.click");
+    fs::write(&path, source).unwrap();
+    let arguments = parse_arguments([
+        "--claim".to_string(),
+        "identity.ensures_0".to_string(),
+        "--max-sites".to_string(),
+        "1".to_string(),
+        path.display().to_string(),
+    ])
+    .unwrap();
+    run_audit(arguments).unwrap();
+}
+
+#[test]
 fn partial_audit_checks_emitted_closers_and_leaves_other_search_available() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("partial.md");
