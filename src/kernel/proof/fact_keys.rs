@@ -845,14 +845,10 @@ pub(crate) fn integer_condition_alpha_key(
             arguments,
         } = root.node()
         {
-            if !arguments.iter().any(|operand| match operand.node() {
-                KernelTermNode::Fold(_) => true,
-                KernelTermNode::Legacy(payload) => matches!(
-                    payload.value(),
-                    PureFunctionArgument::Integer(value) if matches!(value.as_ref(), IntegerTerm::RangeFold { .. })
-                ),
-                _ => false,
-            }) {
+            if !arguments
+                .iter()
+                .any(|operand| matches!(operand.node(), KernelTermNode::Fold(_)))
+            {
                 return None;
             }
             if let Some(key) = fold_keys::unchanged_integer_comparison_key(*operator, arguments) {

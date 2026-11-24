@@ -32,11 +32,11 @@ theorem zlib_reduced_result(bytes: uint8[], length: int32, a: uint64, b: uint64)
   apply(integer::positive_divisor_remainder_upper(to_integer(b), 65521));
   have to_integer(a % 65521u64) <= 65535 by close() using {
    to_integer(a % 65521u64) == truncating_remainder(to_integer(a), 65521);
-   truncating_remainder(to_integer(a), 65521) <= to_integer(65521 - 1);
+   truncating_remainder(to_integer(a), 65521) <= (65521 - 1);
   };
   have to_integer(b % 65521u64) <= 65535 by close() using {
    to_integer(b % 65521u64) == truncating_remainder(to_integer(b), 65521);
-   truncating_remainder(to_integer(b), 65521) <= to_integer(65521 - 1);
+   truncating_remainder(to_integer(b), 65521) <= (65521 - 1);
   };
   apply(integer::uint64_pack_uint16_to_integer(a % 65521u64, b % 65521u64));
   have adler_spec_a(bytes, length, 1) == to_integer(a % 65521u64) by {

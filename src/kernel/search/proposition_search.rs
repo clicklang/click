@@ -360,7 +360,7 @@ impl super::ProofSearch<PureFactContext> {
     /// Selects an independent derivation without taking the goal's own exact
     /// ambient fact as a premise. Keep the ambient graph intact: dropping a
     /// fact from it would rebuild its equality closure just to avoid the
-    /// circular `known()` candidate.
+    /// circular `close()` candidate.
     pub(crate) fn derive_solve_proposition_without_exact_goal(
         context: &PureFactContext,
         proposition: &Proposition,
@@ -402,16 +402,18 @@ impl super::ProofSearch<PureFactContext> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("select_arithmetic_bound");
         use crate::kernel::proof::arithmetic_special::{
-            float_bound_weakens, is_float_bound, same_signed_max_shift_bound,
-            signed_max_shift_count_bound,
+            float_bound_weakens, is_float_bound, is_rounded_integer_float_bound,
+            rounded_integer_float_bound, same_signed_max_shift_bound, signed_max_shift_count_bound,
         };
         let float = is_float_bound(goal);
         if !float && signed_max_shift_count_bound(goal).is_none() {
             return None;
         }
-        Self::find_connected_arithmetic_bound(context, goal, float, |premise| {
+        let conversion = float && is_rounded_integer_float_bound(goal);
+        Self::find_connected_arithmetic_bound(context, goal, float && !conversion, |premise| {
             let checks = if float {
                 float_bound_weakens(premise, goal)
+                    || (conversion && rounded_integer_float_bound(goal, Some(premise)))
             } else {
                 same_signed_max_shift_bound(premise, goal)
             };

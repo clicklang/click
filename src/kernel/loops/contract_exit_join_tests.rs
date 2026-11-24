@@ -244,7 +244,8 @@ fn numeric_float_equality_does_not_materialize_positive_zero_bits() {
     };
     let memory = SymbolicMemory::new().with_block("shared", 4);
     let zero = ProgramValue::Float32(MachineTerm::constant(0));
-    let load = symbolic_storage_cell_value(&memory, &pointer, ProgramType::Float32, true).unwrap();
+    let load =
+        symbolic_storage_cell_value(&memory, None, &pointer, ProgramType::Float32, true).unwrap();
     // This equation also permits a negative-zero representation. Filling
     // the cache with positive-zero bits would make a later bitwise read false.
     let facts = [ExecutionPureFact::new(
@@ -275,9 +276,10 @@ fn joined_call_epochs_do_not_transport_uncached_loads_or_hide_real_blocks() {
         offset: AddressOffset::Constant(0),
     };
     let old_load =
-        symbolic_storage_cell_value(exits[0].memory(), &pointer, ProgramType::Int32, true).unwrap();
+        symbolic_storage_cell_value(exits[0].memory(), None, &pointer, ProgramType::Int32, true)
+            .unwrap();
     let new_load =
-        symbolic_storage_cell_value(successor.memory(), &pointer, ProgramType::Int32, true)
+        symbolic_storage_cell_value(successor.memory(), None, &pointer, ProgramType::Int32, true)
             .unwrap();
     let zero = int32(0);
     let old_fact =

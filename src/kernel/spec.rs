@@ -4684,17 +4684,10 @@ fn algebraic_case_paths_in(
             obligations: Vec::new(),
         }]);
     }
-    let native = match value.root().node() {
-        KernelTermNode::Legacy(legacy) => match legacy.value() {
-            PureFunctionArgument::Algebraic(term) => Some(term),
-            _ => None,
-        },
-        _ => value.native_constructor(),
-    };
     if let Some(AlgebraicTerm {
         node: AlgebraicTermNode::Constructor { variant, fields },
         ..
-    }) = native
+    }) = value.native_constructor()
     {
         return Ok(vec![SpecAlgebraicCasePath {
             variant: variant.clone(),

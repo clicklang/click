@@ -4432,7 +4432,10 @@ impl RetainedIntegerScopeSummaries {
                         &mut self.native,
                     )
                 }
-                Node::Legacy(_) | Node::CallArgument(_) => {
+                Node::ImportedScalar(input) => {
+                    collect_bitvector_scope_summary(input.value(), &mut self.native)
+                }
+                Node::NativeDescriptor(_) | Node::ObservedArgument(_) | Node::CallArgument(_) => {
                     collect_scope_summary_in_argument(term.written_argument()?, &mut self.native)
                 }
                 _ if children.is_some() => IntegerScopeSummary::default(),

@@ -1,8 +1,0 @@
-extends: existence
-message: "Remove '%s'; state the operation directly."
-level: suggestion
-ignorecase: true
-tokens:
-  - simply
-  - obviously
-  - just

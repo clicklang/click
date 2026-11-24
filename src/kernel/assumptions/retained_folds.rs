@@ -92,10 +92,16 @@ pub(super) fn collect_common_memory_loads(
                 pending.push((&fold.arguments[1], endpoint_width));
                 pending.push((&fold.arguments[0], endpoint_width));
             }
-            KernelTermNode::Legacy(_) | KernelTermNode::CallArgument(_) => match term
-                .written_argument()
-                .unwrap()
-            {
+            KernelTermNode::ImportedScalar(input) => collect_bitvector_memory_loads_with_width(
+                input.value(),
+                current_memory,
+                loads,
+                Some(input.carrier().byte_width()),
+                seen_integers,
+            )?,
+            KernelTermNode::NativeDescriptor(_)
+            | KernelTermNode::ObservedArgument(_)
+            | KernelTermNode::CallArgument(_) => match term.written_argument().unwrap() {
                 PureFunctionArgument::Integer(value) => collect_integer_memory_loads_with_width(
                     value,
                     current_memory,

@@ -46,6 +46,7 @@ fn retaining_pointer_read_results_ignores_unrelated_read_definitions() {
         let memory = SymbolicMemory::new();
         for n in 0..unrelated {
             memory.symbolic_pointer_load(
+                None,
                 &Address::symbolic(Variable(1019000 + n)),
                 ProgramType::Int32Pointer,
             );
@@ -55,6 +56,7 @@ fn retaining_pointer_read_results_ignores_unrelated_read_definitions() {
             let values = (0..size)
                 .map(|n| {
                     memory.symbolic_pointer_load(
+                        None,
                         &Address::symbolic(Variable(1020000 + n)),
                         ProgramType::Int32Pointer,
                     )

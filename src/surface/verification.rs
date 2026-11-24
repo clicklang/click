@@ -2407,19 +2407,26 @@ fn verify_program_in_context(
         let mut theorem_certification_facts = BTreeMap::<String, Vec<Proposition>>::new();
         let mut theorem_certification_authorities =
             BTreeMap::<String, Vec<KernelVerifiedPureTheorem>>::new();
-        record_theorem_certification_authority(
-            &verified_theorems,
-            &mut theorem_certification_facts,
-            &mut theorem_certification_authorities,
-        );
-        record_assumed_theorem_certification_authority(
-            assumed_theorem_certification_authorities(
-                &unselected_theorem_definitions,
-                spec_definitions,
-            )?,
-            &mut theorem_certification_facts,
-            &mut theorem_certification_authorities,
-        );
+        // Theorem-only verification uses the theorem environment above and
+        // needs no program-body certification assumptions.
+        if selected_functions
+            .as_ref()
+            .is_none_or(|selected| !selected.is_empty())
+        {
+            record_theorem_certification_authority(
+                &verified_theorems,
+                &mut theorem_certification_facts,
+                &mut theorem_certification_authorities,
+            );
+            record_assumed_theorem_certification_authority(
+                assumed_theorem_certification_authorities(
+                    &unselected_theorem_definitions,
+                    spec_definitions,
+                )?,
+                &mut theorem_certification_facts,
+                &mut theorem_certification_authorities,
+            );
+        }
         let theorem_environment =
             TheoremEnvironment::with_standard_library(file.theorem_definitions())?
                 .with_discovery_library(&file)?;
@@ -3635,8 +3642,24 @@ fn program_assumptions_parsed(
                 name: name.to_string(),
             }))
             .collect::<Vec<_>>();
+        for name in file.c_library_values.keys() {
+            if required.iter().any(|callee| {
+                parsed_sources.get(callee).is_some_and(|(_, function)| {
+                    function
+                        .globals()
+                        .get(name)
+                        .is_some_and(syntax::CGlobal::is_library_value)
+                })
+            }) {
+                assumed.push(ModelAssumption {
+                    family: ModelFamily::CLibrary,
+                    name: name.clone(),
+                });
+            }
+        }
         if !assumed.is_empty() {
             assumed.sort();
+            assumed.dedup();
             assumptions.insert(function.signature().name().to_string(), assumed);
         }
     }
@@ -5153,6 +5176,7 @@ pub(in crate::surface) fn parse_verified_sources_context_with_entry(
         file.selected_c_target(),
         file.selected_thread_runtime(),
         &external_functions,
+        &file.c_library_values,
         c_sources,
         build_storage,
     )
@@ -7893,7 +7917,7 @@ mod modeled_pthread_binding_tests {
     #[test]
     fn source_create_status_can_be_copied_and_tested_later() {
         let c = "#include <pthread.h>\n#include <stddef.h>\nstruct cell { int value; };\nvoid *worker(void *p) { struct cell *q = p; q->value = 77; return NULL; }\nint run(struct cell *p) { pthread_t h; int rc = pthread_create(&h, NULL, worker, p); int saved = rc; int unrelated = 7; if (saved != 0) return 0; pthread_join(h, NULL); return unrelated; }\n";
-        let click = "target \"x86_64-unknown-linux-gnu\";\nruntime \"modeled-pthread\";\nverifying \"fork_join.c\";\nvoid *worker(void *p) { owns (p as (struct cell *))->value; }\nint32 run(struct cell *p) { owns p->value; ensures result == 0 or result == 7; } by { step(); step(); step(); step(); step(); step(); step(); step(); branch { true => { step(); solve(); } false => {} } step(); step(); solve(); }\n";
+        let click = "target \"x86_64-unknown-linux-gnu\";\nruntime \"modeled-pthread\";\nverifying \"fork_join.c\";\nvoid *worker(void *p) { owns (p as (struct cell *))->value; }\nint32 run(struct cell *p) { owns p->value; ensures result == 0 or result == 7; } by { step(); step(); step(); step(); step(); step(); step(); step(); branch { true => { step(); close(); } false => {} } step(); step(); close(); }\n";
         verify_c_sources(click, &[("fork_join.c", c)])
             .expect("a saved status should choose the checked create outcome");
         let expanded = expand_c_claim_source(
@@ -8047,7 +8071,7 @@ int32 answer() {
     ensures result == 1;
 } by {
     step_until(function.exit);
-    solve();
+    close();
 }
 
 
@@ -8148,7 +8172,7 @@ int32 answer() {
         let sources = [("answer.c", C_SOURCE)];
         let (session, baseline) =
             ProgramVerificationSession::new(CLICK, &sources).expect("baseline verification");
-        let rewritten = CLICK.replace("solve();", "solve();\n    ");
+        let rewritten = CLICK.replace("close();", "close();\n    ");
         let (line, column) = position(&rewritten, "step_until(function.exit);");
         let verified = session
             .verify_at(&rewritten, line, column)
@@ -8684,7 +8708,7 @@ int32 f(struct s* p, int32 d[], int32 n) {{
     step();
     step();
     step();
-    solve();
+    close();
 }}
 "
         );
@@ -8713,7 +8737,7 @@ int32 f(struct s* p, int32 d[], int32 n) {{
     step();
     step();
     step();
-    solve();
+    close();
 }}
 "
         );
@@ -8851,14 +8875,14 @@ contract const int *{goal}(const int *p) {{
 }}
 theorem lift(callback: const int* (*)(const int*)) executes callback(const int* p) {{
     requires Exact(callback);
-    ensures {goal}(callback) by {{ step(Exact); solve(); }}
+    ensures {goal}(callback) by {{ step(Exact); close(); }}
 }}
 verifying "main.c";
 int read_view(const int *(*f)(const int *), const int *p) {{
     requires Exact(f);
     views p[0..1];
     ensures result == p[0];
-}} by {{ apply(lift(f)); step({goal}); step_until(function.exit); solve(); }}
+}} by {{ apply(lift(f)); step({goal}); step_until(function.exit); close(); }}
 "#
         )
     }

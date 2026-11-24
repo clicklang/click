@@ -858,7 +858,6 @@ fn static_syntax(root: &KernelTerm) -> Option<bool> {
                 | KernelTermNode::IntegerToMachine { .. }
                 | KernelTermNode::BoolCast { .. }
                 | KernelTermNode::MemoryLoad { .. }
-                | KernelTermNode::Legacy(_)
                 | KernelTermNode::MachineObservationInput { .. }
                 | KernelTermNode::WrittenMachine(_)
                 | KernelTermNode::IntegerAddress { .. }

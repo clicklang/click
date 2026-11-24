@@ -239,7 +239,7 @@ mod tests {
                 arguments: vec![MachineTerm::Variable(Variable(999971))],
             };
             let root = KernelTermImport::default().machine(target, &native);
-            assert!(matches!(root.node(), KernelTermNode::Legacy(_)));
+            assert!(matches!(root.node(), KernelTermNode::ImportedScalar(_)));
             assert_eq!(KernelTermExport::machine(&root).unwrap(), native);
         }
     }
@@ -331,7 +331,7 @@ mod tests {
                 arguments,
             };
             let root = KernelTermImport::default().float(KernelFloatType::Float32, &native);
-            assert!(matches!(root.node(), KernelTermNode::Legacy(_)));
+            assert!(matches!(root.node(), KernelTermNode::ImportedScalar(_)));
             assert_eq!(
                 KernelTermExport::float(&root).unwrap(),
                 ProgramValue::Float32(native)

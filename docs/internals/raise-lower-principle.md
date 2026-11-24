@@ -1,14 +1,21 @@
 # Raise-lower principle
 
-The raise-lower principle requires raising followed by lowering to preserve
-every kernel term and proposition retained in a proof state.
-
-For every kernel term or proposition `x` retained in a proof state, raising
-constructs a Surface AST that lowers back to `x` in the same context:
+Every proof-visible `KernelProposition`, whether it is a fact or a goal,
+must raise to a whole `SurfaceProposition` that lowers back to the same
+checked proposition in the same proof context, up to renaming bound
+variables.
 
 ```text
-lower(raise(x)) = x
+KernelProposition → SurfaceProposition → same KernelProposition
 ```
+
+This includes the logical structure, binder scopes, guards, program points,
+and the identities of all terms the proposition contains. For example, raising
+the operands of a read under `forall` preserves that read as part of the
+quantified claim. The complete round trip also preserves the quantifier and
+its scope. The `KernelTerm` to `SurfaceTerm` round trip applies to those
+operands in their enclosing scopes and to standalone terms that expansion
+writes directly, such as witnesses or call arguments.
 
 Raising preserves types, bindings, value identity, and snapshot identity. It
 uses names and origins retained where values are introduced; it does not
@@ -32,7 +39,7 @@ be writable, or the smart step cannot be expanded.
 When a fact has no Surface form, today's code works around it rather than failing:
 
 - a smart tactic declines a route whose premise it cannot cite, even though
-  the kernel holds the premise (`solve`, its arithmetic bridges, the implicit
+  the kernel holds the premise (`close()`, its arithmetic bridges, the implicit
   closer), so a provable goal fails as a bounded miss;
 - a recorded Surface form that does not check is dropped, so later steps cannot
   cite the fact;
@@ -331,7 +338,7 @@ A derived signed range for a native `uint32` value retains the conversion
 that conversion and lower to a different term. When the unsigned operand was
 already converted from an `int32` source, the range instead names that signed
 source. Admission and decision use the same structural rule; this does not
-change lowering or erase conversions elsewhere. The simple `known()` proofs
+change lowering or erase conversions elsewhere. The simple `close()` proofs
 in [the checked range fixture](https://github.com/clicklang/click/blob/master/mdtests/unsigned_small_bound_signed_facts_round_trip.md)
 exercise the exact derived facts.
 
@@ -392,8 +399,9 @@ it leaves focused, as goal presentation does
 (`Proof::structural_proposition_candidate`: the step's fixed state, its
 entry state and the path's recorded points, so `at(point, ..)`, `old(..)`
 and `<call>.result` forms are available), lowers that Surface form again,
-and records `same`, `polarity`
-(the same comparison at the other polarity), `differs`, `unlowered`,
+and compares the complete proposition up to bound-variable renaming. It records
+`same`, `polarity` (an equivalent comparison that changed representation),
+`differs`, `unlowered`,
 `unraised`, or `no-state`. It measures the raiser alone, not premise raising,
 which searches recorded Surface forms first and keeps only one that lowers
 back. It observes the steps the [census](#measuring-the-gap) does; a
@@ -508,7 +516,7 @@ comparisons nested under connectives and binders (so `contradiction(1 == 0)`
 matches a held `false`), in requirement matching, `normalize`, and
 assumption-free normalization. The fact store records a closed comparison
 that holds without indexing it. A closed goal is false or true whatever the
-facts, so `solve` treats a false one like the goal `false` and refutes the
+facts, so `close()` treats a false one like the goal `false` and refutes the
 path. Regressions: `mdtests/closed_machine_order_comparisons.md`,
 `mdtests/closed_machine_equality_comparisons.md`,
 `mdtests/an_infeasible_path_with_a_closed_order_goal_closes.md`, and the
@@ -677,7 +685,7 @@ Equality, disequality, and standalone order comparisons over a pure `int32`
 match with literal arms or direct `int32` payload selections keep the machine
 comparison and scoped match. Exact rewriting preserves the match.
 Normalization checks the selected constructor arm using the comparison's
-original machine format, and `known()` can use an available comparison
+original machine format, and `close()` can use an available comparison
 of the selected values.
 A rewrite that introduces an outer Boolean negation retains lowering's truth
 polarity: a false claim of `not p` is stored as a true claim of `p`. This does
@@ -759,7 +767,7 @@ forgetting alone preserves the version because it changes knowledge, not the
 object's initialization or lifetime. This identity is for definedness facts,
 not general state equality or permission to access memory.
 `mdtests/local_array_quantified_definedness_survives_disjoint_store.md` covers
-`known()` after a store to an unrelated local.
+`close()` after a store to an unrelated local.
 
 A scalar read handle retains its structural descriptor (memory version,
 address, and read kind) in the load registry. A generated read-definition fact
@@ -790,7 +798,7 @@ same form; they do not add tactic-specific fact searches.
   exact lookup also looks up the comparison form of what it looks up.
 - A kernel rule that compares a stated term with one it derives compares
   their comparison forms (identity, cast identity, affine conclusions).
-- `solve` tries a goal that reads stored cells over its stored values first
+- `close()` tries a goal that reads stored cells over its stored values first
   (`try_stored_value_goal`), the search the goal had before reads kept their
   names, and searches over the reads only when that misses.
 
@@ -828,7 +836,7 @@ placeholder, a skipped candidate, or a declining route to work around it.
 
 `click audit raise-lower` (`scripts/audit.sh raise-lower`) measures the
 canonical raiser over every example and mdtest; see above. Tests measure
-premise raising, the route `solve` takes, with the census
+premise raising, the route `close()` takes, with the census
 (`src/surface/proof/raise_lower_census.rs`): under its `capture`, each
 checked step records, for every fact it adds and for the goal it leaves
 focused, whether raising produces a checked Surface form. It separates steps a person wrote from

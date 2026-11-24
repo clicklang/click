@@ -131,7 +131,7 @@ pub fn click_source_is_declaration_module(source: &str) -> bool {
     parser::declares_only_definitions(source)
 }
 use parser::ContractLetBinding;
-pub use printing::{format_proof_certificate, format_proof_tactics, with_expansion_close_output};
+pub use printing::{format_proof_certificate, format_proof_tactics};
 use proof::*;
 pub(crate) use pure_fact_list::PureFactList;
 use source_registry::*;
@@ -828,6 +828,7 @@ pub struct ClickFile {
     /// their `library/` identities, once each in source order.
     library_imports: Vec<String>,
     verifying_sources: Vec<String>,
+    c_library_values: BTreeMap<String, CLibraryValue>,
     /// The C implementation target this file selects with a `target`
     /// directive. `None` selects the default target.
     c_target: Option<crate::languages::c::target::CTarget>,
@@ -860,6 +861,13 @@ pub struct ClickFile {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+struct CLibraryValue {
+    interface_type: InterfaceType,
+    struct_name: Option<String>,
+    pointee_constant: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ImportDeclaration {
     path: String,
     position: crate::source::SourcePosition,
@@ -874,6 +882,7 @@ enum DeclarationIdentity {
     Theorem(String),
     Contract(String),
     ProgramFunction(String),
+    CLibraryValue(String),
     Tactic(String),
 }
 
@@ -887,6 +896,7 @@ impl std::fmt::Display for DeclarationIdentity {
             Self::Theorem(name) => ("theorem", name),
             Self::Contract(name) => ("contract", name),
             Self::ProgramFunction(name) => ("C function", name),
+            Self::CLibraryValue(name) => ("C library value", name),
             Self::Tactic(name) => ("tactic", name),
         };
         write!(f, "{kind} `{name}`")
@@ -2404,16 +2414,16 @@ pub enum ResourceKind {
 }
 
 #[derive(Debug, Eq, PartialEq, Hash)]
-pub enum ClickProposition {
+pub enum SurfaceProposition {
     /// Assert a proposition-valued expression, such as a lambda application.
-    Value(ContractExpression),
+    Value(SurfaceTerm),
     Comparison {
-        left: ContractExpression,
+        left: SurfaceTerm,
         operator: ComparisonOperator,
-        right: ContractExpression,
+        right: SurfaceTerm,
     },
     FloatClassification {
-        expression: ContractExpression,
+        expression: SurfaceTerm,
         classification: syntax::CFloatClassification,
     },
     Separate {
@@ -2435,26 +2445,26 @@ pub enum ClickProposition {
     /// proposition, and it lowers `e` keeping native address checks
     /// (`checking_definedness`). See `docs/reference/glossary.md#special-forms`.
     Defined {
-        expression: ContractExpression,
+        expression: SurfaceTerm,
     },
     /// `at(point, P)`: the `at` special form in proposition position, the
     /// whole proposition `P` stated at `point`. `SurfaceTerm::At` is the term
     /// position.
     At {
         selector: ProgramPointSelector,
-        proposition: Box<ClickProposition>,
+        proposition: Box<SurfaceProposition>,
     },
-    And(Box<ClickProposition>, Box<ClickProposition>),
-    Or(Box<ClickProposition>, Box<ClickProposition>),
-    Not(Box<ClickProposition>),
-    Implies(Box<ClickProposition>, Box<ClickProposition>),
+    And(Box<SurfaceProposition>, Box<SurfaceProposition>),
+    Or(Box<SurfaceProposition>, Box<SurfaceProposition>),
+    Not(Box<SurfaceProposition>),
+    Implies(Box<SurfaceProposition>, Box<SurfaceProposition>),
     ForAll {
         click_type: ClickType,
         /// The hygienic name used while lowering the body.
         name: SurfaceBinder,
         /// The source spelling retained when hygiene changes `name`.
         written_name: Option<String>,
-        body: Box<ClickProposition>,
+        body: Box<SurfaceProposition>,
     },
     Exists {
         click_type: ClickType,
@@ -2462,40 +2472,43 @@ pub enum ClickProposition {
         name: SurfaceBinder,
         /// The source spelling retained when hygiene changes `name`.
         written_name: Option<String>,
-        body: Box<ClickProposition>,
+        body: Box<SurfaceProposition>,
     },
     RangeAll {
-        start: ContractExpression,
-        end: ContractExpression,
+        start: SurfaceTerm,
+        end: SurfaceTerm,
         /// The hygienic name used while lowering the body.
         item: SurfaceBinder,
         /// The source spelling retained when hygiene changes `item`.
         written_item: Option<String>,
-        body: Box<ClickProposition>,
+        body: Box<SurfaceProposition>,
     },
     RangeAny {
-        start: ContractExpression,
-        end: ContractExpression,
+        start: SurfaceTerm,
+        end: SurfaceTerm,
         /// The hygienic name used while lowering the body.
         item: SurfaceBinder,
         /// The source spelling retained when hygiene changes `item`.
         written_item: Option<String>,
-        body: Box<ClickProposition>,
+        body: Box<SurfaceProposition>,
     },
     PredicateCall {
         name: String,
-        arguments: Vec<ContractExpression>,
+        arguments: Vec<SurfaceTerm>,
     },
     /// `is_a<T>(p)`: the object `p` points to is a `T`. It holds exactly
     /// where the proof has type evidence for `p`, such as a resource body's
     /// typed call or a typed parameter, and lowers to that evidence's fact.
     IsA {
         class: crate::kernel::effective_type::CAccessClass,
-        pointer: ContractExpression,
+        pointer: SurfaceTerm,
     },
 }
 
-impl Clone for ClickProposition {
+/// Compatibility name for [`SurfaceProposition`].
+pub use self::SurfaceProposition as ClickProposition;
+
+impl Clone for SurfaceProposition {
     fn clone(&self) -> Self {
         clone_click_proposition_iteratively(self)
     }
@@ -2936,7 +2949,7 @@ fn clone_ensure_clause_iteratively(clause: &EnsureClause) -> EnsureClause {
     }
 }
 
-impl ClickProposition {
+impl SurfaceProposition {
     fn written_quantifier_name(&self) -> Option<&str> {
         match self {
             Self::ForAll { written_name, .. } | Self::Exists { written_name, .. } => {
@@ -6362,7 +6375,7 @@ pub enum ProofTactic {
     },
     Solve,
     /// The driver schedules ordinary `solve` for every remaining claim.
-    /// This has no written spelling; explicit `solve()` selects one goal.
+    /// This has no written spelling; explicit `close()` selects one goal.
     ImplicitSolve,
     SolveUsing(ProofSolveUsing),
 
@@ -6493,7 +6506,7 @@ pub enum SmartSite {
     /// A simple tactic whose argument a lookup fills.
     Elided(ElidedArgument),
     /// Bare `close_invariants()`: a fixed expansion into
-    /// `close_invariants() by { ... }` with `solve()` on each member.
+    /// `close_invariants() by { ... }` with `close()` on each member.
     CloseInvariants,
     /// What an omitted proof and the end of a script mean: execute the C
     /// that remains and `solve` each open goal.
@@ -6731,11 +6744,6 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
         class: "smart",
     },
     PublicTacticForm {
-        id: "known",
-        syntax: "known()",
-        class: "simple",
-    },
-    PublicTacticForm {
         id: "normalize",
         syntax: "normalize()",
         class: "simple",
@@ -6794,11 +6802,6 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
         id: "instantiate",
         syntax: "instantiate(F, value, ...)",
         class: "simple",
-    },
-    PublicTacticForm {
-        id: "solve",
-        syntax: "solve()",
-        class: "smart",
     },
     PublicTacticForm {
         id: "close-using",
@@ -6999,7 +7002,7 @@ impl ProofTactic {
 }
 
 impl SmartTactic {
-    /// Distinguish omitted-proof attribution from a written `solve()` site.
+    /// Distinguish omitted-proof attribution from a written `close()` site.
     pub fn site(self) -> SmartSite {
         match self {
             Self::ImplicitTail => SmartSite::Implicit,
@@ -11301,7 +11304,7 @@ impl ClickError {
                     context.push(legend);
                 }
             }
-            if self.failed_tactic == Some("known()")
+            if self.failed_tactic == Some("close")
                 && let Some(Proposition::Exists { .. }) = state.kernel_goal()
             {
                 context.push(

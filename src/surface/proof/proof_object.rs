@@ -3221,8 +3221,8 @@ impl<'a> Proof<'a> {
     /// private query shapes; actual goals still pass the exact lowering check.
     pub(in crate::surface::proof) fn structural_proposition_candidate(
         &self,
-        goal: &Proposition,
-    ) -> Option<ClickProposition> {
+        goal: &crate::kernel::KernelProposition,
+    ) -> Option<SurfaceProposition> {
         let _binder_names = self.induction_binder_name_scope();
         use super::surface_synthesis as synthesis;
         let _qualified = (self)
@@ -3943,7 +3943,7 @@ fn proof_step_source_name(step: &ProofStep) -> &'static str {
         ProofStep::CheckTerminationLocal(_) => "check_termination_local",
         ProofStep::CheckTerminationComponent { .. } => "check_termination_component",
         ProofStep::CheckTerminationCallbacks => "check_termination_callbacks",
-        ProofStep::Known => "known()",
+        ProofStep::Known => "close()",
         ProofStep::Normalize | ProofStep::NormalizeUsing(_) => "normalize()",
         ProofStep::CompatibilityNormalize(_) => "compatibility normalization",
         ProofStep::ArithmeticUsing(_) => "close() using",

@@ -1049,21 +1049,20 @@ pub(crate) fn retained_integer_observation_comparison(
     value: bool,
 ) -> Option<Option<NativeComparisonView<'static>>> {
     use KernelTermNode as Node;
-    if !arguments.iter().any(|argument| {
-        matches!(
-            argument.node(),
-            Node::MachineObservation { .. } | Node::Legacy(_)
-        )
-    }) || arguments.iter().any(|argument| {
-        matches!(
-            argument.node(),
-            Node::Variable(_)
-                | Node::Call { .. }
-                | Node::Fold(_)
-                | Node::IntegerIf { .. }
-                | Node::Match(_)
-        ) || matches!(argument.node(), Node::IntegerLiteral(value) if value.bits() > 128)
-    }) {
+    if !arguments
+        .iter()
+        .any(|argument| matches!(argument.node(), Node::MachineObservation { .. }))
+        || arguments.iter().any(|argument| {
+            matches!(
+                argument.node(),
+                Node::Variable(_)
+                    | Node::Call { .. }
+                    | Node::Fold(_)
+                    | Node::IntegerIf { .. }
+                    | Node::Match(_)
+            ) || matches!(argument.node(), Node::IntegerLiteral(value) if value.bits() > 128)
+        })
+    {
         // Only a machine observation or literal arithmetic can change its
         // outer form. A literal wider than any machine format has no bridge.
         return Some(None);

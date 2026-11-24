@@ -26,9 +26,6 @@ impl AlgebraicResult {
     }
     pub(super) fn is_constructor(&self) -> bool {
         matches!(self.root().node(), KernelTermNode::Constructor(_))
-            || (matches!(self, Self::Imported(_))
-                && matches!(self.root().node(), KernelTermNode::Legacy(_))
-                && self.native_constructor().is_some())
     }
     pub(super) fn retain_native(value: AlgebraicTerm, retain: bool) -> Self {
         let mut import = if retain {
@@ -45,10 +42,7 @@ impl AlgebraicResult {
     }
     pub(super) fn native_constructor(&self) -> Option<&AlgebraicTerm> {
         let root = self.root();
-        if !matches!(root.node(), KernelTermNode::Constructor(_))
-            && !(matches!(self, Self::Imported(_))
-                && matches!(root.node(), KernelTermNode::Legacy(_)))
-        {
+        if !self.is_constructor() {
             return None;
         }
         let value = root.algebraic_native_term()?;

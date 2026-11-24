@@ -38,8 +38,6 @@ impl<'a> Transport<'a> {
         let source =
             if let Some(source) = SharedMachineIntegerTerm::from_shared(format, root.clone()) {
                 source
-            } else if matches!(root.node(), KernelTermNode::Legacy(_)) {
-                SharedMachineIntegerTerm::index(format, root.machine_conversion_leaf()?.clone())
             } else {
                 return None;
             };

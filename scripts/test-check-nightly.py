@@ -21,7 +21,7 @@ with tempfile.TemporaryDirectory(prefix="click-check-nightly-") as directory:
     (root / "src/scaling_tests").mkdir(parents=True)
     shutil.copyfile(Path(__file__).with_name("check.sh"), scripts / "check.sh")
     (scripts / "test-nightly-report.py").write_text("")
-    for name in ["test-setup-environment.sh", "mdbook-build.sh", "docs-lint.sh"]:
+    for name in ["test-setup-environment.sh", "mdbook-build.sh"]:
         executable(scripts / name, "exit 0\n")
     # The copied driver runs this regression too during quality checks.
     (scripts / "test-check-nightly.py").write_text("")

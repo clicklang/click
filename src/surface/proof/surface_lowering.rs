@@ -421,9 +421,9 @@ impl<'a> Proof<'a> {
     /// merely associated with an indexed historical fact.
     pub(in crate::surface::proof) fn lower_surface_proposition_direct(
         &self,
-        surface: &ClickProposition,
+        surface: &SurfaceProposition,
         description: &str,
-    ) -> Result<Proposition, ClickError> {
+    ) -> Result<crate::kernel::KernelProposition, ClickError> {
         self.lower_direct_proposition(surface, description, false)
     }
 
@@ -580,7 +580,7 @@ impl<'a> Proof<'a> {
     /// Fact references may deliberately resolve through a recorded surface
     /// form, but a new goal may not: the same form can name facts
     /// retained from an older state. Selecting such a fact here would let
-    /// `have P by known()` check one kernel proposition and serialize a
+    /// `have P by close()` check one kernel proposition and serialize a
     /// surface `P` that independently lowers to another.
     pub(super) fn lower_surface_goal(
         &self,

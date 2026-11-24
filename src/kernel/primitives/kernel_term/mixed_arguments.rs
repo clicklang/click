@@ -53,7 +53,7 @@ fn mixed_call_arguments_import_structurally_and_keep_exact_native_forms() {
     assert!(
         roots
             .iter()
-            .all(|root| !matches!(root.node(), KernelTermNode::Legacy(_)))
+            .all(|root| !root.requires_native_argument_input())
     );
     assert_ne!(
         roots[0], roots[1],
@@ -71,7 +71,7 @@ fn mixed_call_arguments_import_structurally_and_keep_exact_native_forms() {
         assert!(
             call.children()
                 .iter()
-                .all(|root| !matches!(root.node(), KernelTermNode::Legacy(_)))
+                .all(|root| !root.requires_native_argument_input())
         );
     }
     assert_eq!(
@@ -241,10 +241,11 @@ fn opaque_call_children_borrow_their_producers_exact_argument_slot() {
         let [child] = call.children() else {
             panic!("one exact argument");
         };
-        let KernelTermNode::CallArgument(payload) = child.node() else {
-            panic!("opaque argument slot");
-        };
-        assert!(std::ptr::eq(payload.value(), &first.arguments()[0]));
+        assert!(matches!(child.node(), KernelTermNode::ImportedScalar(_)));
+        assert!(std::ptr::eq(
+            child.written_argument().unwrap(),
+            &first.arguments()[0],
+        ));
         assert_eq!(
             KernelTermExport::default().argument(child).unwrap(),
             argument
@@ -258,10 +259,11 @@ fn opaque_call_children_borrow_their_producers_exact_argument_slot() {
     let [child] = other.children() else {
         panic!("one exact argument");
     };
-    let KernelTermNode::CallArgument(payload) = child.node() else {
-        panic!("opaque argument slot");
-    };
-    assert!(std::ptr::eq(payload.value(), &second.arguments()[0]));
+    assert!(matches!(child.node(), KernelTermNode::ImportedScalar(_)));
+    assert!(std::ptr::eq(
+        child.written_argument().unwrap(),
+        &second.arguments()[0],
+    ));
     assert_eq!(
         KernelTermExport::default().integer(&integer).unwrap(),
         KernelTermExport::default().integer(&other).unwrap()
@@ -302,16 +304,34 @@ fn opaque_call_observation_borrows_the_written_argument_slot() {
         let producer =
             SharedPureApplication::intern("opaque_bool_input".into(), vec![native.clone()]);
         let call = KernelTermImport::default().machine_call(MachineIntegerType::Int32, &producer);
-        call.children()[0].clone()
+        let child = call.children()[0].clone();
+        assert!(std::ptr::eq(
+            child.written_argument().unwrap(),
+            &producer.arguments()[0],
+        ));
+        child
     };
     let first = build();
     let second = build();
-    assert!(matches!(first.node(), KernelTermNode::CallArgument(_)));
     assert_ne!(first, second);
-    let key = KernelTerm::observe_written_argument(&first);
+    let observe = |term: &KernelTerm| {
+        let KernelTermNode::ImportedScalar(input) = term.node() else {
+            panic!("expected a typed scalar input");
+        };
+        assert_eq!(input.carrier(), ProgramType::Bool);
+        term.observe_imported_scalar(input)
+    };
+    let key = observe(&first);
     assert!(std::ptr::eq(
         key.written_argument().unwrap(),
         first.written_argument().unwrap(),
     ));
-    assert_eq!(key, KernelTerm::observe_written_argument(&second));
+    assert_eq!(key, observe(&second));
+    let direct = KernelTermImport::default().argument(&native);
+    assert_ne!(direct, first);
+    assert_eq!(observe(&direct), key);
+    assert_eq!(KernelTermExport::default().argument(&key).unwrap(), native);
+    for root in [first, second, direct, key] {
+        assert!(!root.has_cached_native_argument());
+    }
 }

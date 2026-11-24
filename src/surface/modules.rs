@@ -405,6 +405,12 @@ fn local_identities(file: &ClickFile) -> Vec<DeclarationIdentity> {
             DeclarationIdentity::ProgramFunction(definition.signature().name().to_string())
         }))
         .chain(
+            file.c_library_values
+                .keys()
+                .cloned()
+                .map(DeclarationIdentity::CLibraryValue),
+        )
+        .chain(
             file.tactic_definitions()
                 .iter()
                 .map(|definition| DeclarationIdentity::Tactic(definition.name().to_string())),
@@ -450,6 +456,7 @@ fn merge_modules(
         imports: Vec::new(),
         library_imports: Vec::new(),
         verifying_sources: Vec::new(),
+        c_library_values: BTreeMap::new(),
         c_target: None,
         thread_runtime: Default::default(),
         algebraic_type_definitions: Vec::new(),
@@ -531,6 +538,12 @@ fn merge_modules(
             merged.imports = local.imports.clone();
             merged.verifying_sources = local.verifying_sources.clone();
         }
+        merged.c_library_values.extend(
+            local
+                .c_library_values
+                .iter()
+                .map(|(name, value)| (name.clone(), value.clone())),
+        );
         merged
             .contract_definitions
             .extend(local.contract_definitions.iter().cloned());
@@ -632,7 +645,7 @@ function list_head(xs: SmallList) -> int32 {
 predicate list_empty(xs: SmallList) { xs == SmallList::Nil }
 abstract resource list_token(key: int32);
 theorem imported_false(x: int32) {
-    ensures x == x + 1 by { solve(); }
+    ensures x == x + 1 by { close(); }
 }
 "#,
                     [],
@@ -728,7 +741,7 @@ void f(int32* p) {
     unfold(inner);
     step_until(function.exit);
     let leaf = fold(Leaf(p), { value: old(box.value) });
-    solve();
+    close();
 }
 "#;
         let project = |entry: &str| {
@@ -815,7 +828,7 @@ void f(int32* p) {
             r#"
 import "../models/tree.click";
 theorem local_conditional(x: int32) {
-    ensures x == x + 1 by { apply(imported_false(x)); known(); }
+    ensures x == x + 1 by { apply(imported_false(x)); close(); }
 }
 "#,
         );
@@ -870,7 +883,7 @@ theorem local_conditional(x: int32) {
             [
                 ClickModuleSource::new(
                     "library.click",
-                    "theorem false_step(x: int32) { ensures x == x + 1 by solve(); }",
+                    "theorem false_step(x: int32) { ensures x == x + 1 by close(); }",
                     [],
                 ),
                 ClickModuleSource::new(
@@ -882,7 +895,7 @@ int32 identity(int32 x) {
     ensures result == x + 1 by {
         step_until(function.exit);
         apply(false_step(result));
-        known();
+        close();
     }
 }
 "#,
@@ -904,8 +917,8 @@ int32 identity(int32 x) {
             "library.click",
             r#"
 verifying "test.c";
-int32 helper(int32 x) { ensures result == x + 1 by { step_until(function.exit); solve(); } }
-tactic impossible(x: int32) { ensures x == x + 1; } by { solve(); }
+int32 helper(int32 x) { ensures result == x + 1 by { step_until(function.exit); close(); } }
+tactic impossible(x: int32) { ensures x == x + 1; } by { close(); }
 "#,
             [],
         );
@@ -915,9 +928,9 @@ tactic impossible(x: int32) { ensures x == x + 1; } by { solve(); }
 import "library.click";
 verifying "test.c";
 int32 caller(int32 x) {
-    ensures result == x + 1 by { step_until(function.exit); solve(); }
+    ensures result == x + 1 by { step_until(function.exit); close(); }
 }
-void user() { ensures 0 == 1; } by { impossible(0); step_until(function.exit); solve(); }
+void user() { ensures 0 == 1; } by { impossible(0); step_until(function.exit); close(); }
 "#,
             ["library.click".to_string()],
         );
@@ -1048,7 +1061,7 @@ int32 identity(int32 x) { ensures result == x; }
         );
         let library = ClickModuleSource::new(
             "library.click",
-            "theorem library_fact(x: int32) { ensures x == x by solve(); }",
+            "theorem library_fact(x: int32) { ensures x == x by close(); }",
             [],
         );
         let c = [("test.c", "int identity(int x) { return x; }")];
@@ -1075,7 +1088,7 @@ int32 identity(int32 x) { ensures result == x; }
                 entry,
                 ClickModuleSource::new(
                     "library.click",
-                    "// changed imported input\ntheorem library_fact(x: int32) { ensures x == x by solve(); }",
+                    "// changed imported input\ntheorem library_fact(x: int32) { ensures x == x by close(); }",
                     [],
                 ),
             ],
@@ -1094,7 +1107,7 @@ int32 identity(int32 x) { ensures result == x; }
             [
                 ClickModuleSource::new(
                     "library.click",
-                    "theorem imported_bad() { ensures 0 == 1 by solve(); }",
+                    "theorem imported_bad() { ensures 0 == 1 by close(); }",
                     [],
                 ),
                 ClickModuleSource::new(
@@ -1128,7 +1141,7 @@ int32 identity(int32 x) { ensures result == x; }
         let rewritten = project.with_entry_source(expanded.clone());
         assert_eq!(
             rewritten.modules()[0].source(),
-            "theorem imported_bad() { ensures 0 == 1 by solve(); }"
+            "theorem imported_bad() { ensures 0 == 1 by close(); }"
         );
         let rewritten_position = expansion::project_tactic_source_position(
             &rewritten,
@@ -1161,7 +1174,7 @@ int32 identity(int32 x) { ensures result == x; }
             [
                 ClickModuleSource::new(
                     "library.click",
-                    "theorem imported_bad() { ensures 0 == 1 by solve(); }",
+                    "theorem imported_bad() { ensures 0 == 1 by close(); }",
                     [],
                 ),
                 ClickModuleSource::new(
@@ -1169,7 +1182,7 @@ int32 identity(int32 x) { ensures result == x; }
                     r#"
 import "library.click";
 theorem selected_ok() { ensures 0 == 0; }
-theorem sibling_bad() { ensures 0 == 1 by solve(); }
+theorem sibling_bad() { ensures 0 == 1 by close(); }
 "#,
                     ["library.click".to_string()],
                 ),
@@ -1204,7 +1217,7 @@ theorem sibling_bad() { ensures 0 == 1 by solve(); }
             [
                 ClickModuleSource::new(
                     "library.click",
-                    "theorem imported_ok(x: int32) { ensures x == x by solve(); }",
+                    "theorem imported_ok(x: int32) { ensures x == x by close(); }",
                     [],
                 ),
                 ClickModuleSource::new(
@@ -1327,11 +1340,65 @@ int32 caller(int32 x) { requires x >= 0; ensures result == x; }
     }
 
     #[test]
+    fn c_interface_constants_link_as_stable_values() {
+        let interface = r#"FILE *const stdout;
+const int32 library_status;
+FILE* library_output() { ensures result == stdout; }
+"#;
+        let native = r#"typedef struct stream { int count; } FILE;
+extern FILE *const stdout;
+extern const int library_status;
+extern FILE *library_output(void);
+FILE *output(void) { FILE *copy = stdout; return copy; }
+int status(void) { return library_status; }
+FILE *via_library(void) { return library_output(); }
+"#;
+        let sidecar = r#"verifying "caller.c";
+FILE* output() { ensures result == stdout; }
+int32 status() { ensures result == library_status; }
+FILE* via_library() { ensures result == stdout; }
+"#;
+        let verify = |interface: &str, native: &str, sidecar: &str| {
+            let project = ClickProject::new(
+                "caller.click",
+                [
+                    ClickModuleSource::new("values.interface.click", interface, []),
+                    ClickModuleSource::new(
+                        "caller.click",
+                        format!("import \"values.interface.click\";\n{sidecar}"),
+                        ["values.interface.click".to_string()],
+                    ),
+                ],
+            );
+            let inputs = ProgramInputs::Bundle(vec![("caller.c", native)]);
+            let (summary, result) = verify_project_with_summary(&project, &inputs)?;
+            result?;
+            Ok::<_, ClickError>(summary)
+        };
+        let summary = verify(interface, native, sidecar).unwrap_or_else(|error| panic!("{error}"));
+        assert!(summary.assumptions["output"].iter().any(|assumption| {
+            assumption.name == "stdout" && assumption.family == ModelFamily::CLibrary
+        }));
+        let nonnull = sidecar.replace("result == stdout", "result != 0");
+        assert!(verify(interface, native, &nonnull).is_err());
+        let mutable = native.replace("FILE *const stdout", "FILE *stdout");
+        let error = verify(interface, &mutable, sidecar).expect_err("mutable C object");
+        assert!(
+            error
+                .message()
+                .contains("does not match the const declaration"),
+            "{error}"
+        );
+        let error = verify("", native, sidecar).expect_err("missing library declaration");
+        assert!(error.message().contains("but has no definition"), "{error}");
+    }
+
+    #[test]
     fn an_interface_cannot_select_program_bodies_or_prove_its_contracts() {
         for (source, expected) in [
             ("verifying \"body.c\";", "interface file cannot select"),
             (
-                "int32 f() { ensures result == 1; } by { solve(); }",
+                "int32 f() { ensures result == 1; } by { close(); }",
                 "external function contracts cannot carry proof",
             ),
         ] {
@@ -1353,7 +1420,7 @@ int32 caller(int32 x) { requires x >= 0; ensures result == x; }
                 ClickModuleSource::new("library.click", "verifying \"library.c\";", []),
                 ClickModuleSource::new(
                     "entry.click",
-                    "import \"library.click\"; theorem ok() { ensures 0 == 0 by solve(); }",
+                    "import \"library.click\"; theorem ok() { ensures 0 == 0 by close(); }",
                     ["library.click".to_string()],
                 ),
             ],
@@ -1427,7 +1494,7 @@ int32 caller(int32 x) { requires x >= 0; ensures result == x; }
             ),
             ClickModuleSource::new(
                 "entry.click",
-                "import \"right.click\"; import \"left.click\"; theorem ok() { ensures 0 == 0 by solve(); }",
+                "import \"right.click\"; import \"left.click\"; theorem ok() { ensures 0 == 0 by close(); }",
                 ["right.click".to_string(), "left.click".to_string()],
             ),
         ];
@@ -1435,7 +1502,7 @@ int32 caller(int32 x) { requires x >= 0; ensures result == x; }
         let mut reversed = modules;
         reversed[3] = ClickModuleSource::new(
             "entry.click",
-            "import \"left.click\"; import \"right.click\"; theorem ok() { ensures 0 == 0 by solve(); }",
+            "import \"left.click\"; import \"right.click\"; theorem ok() { ensures 0 == 0 by close(); }",
             ["left.click".to_string(), "right.click".to_string()],
         );
         let second = ClickProject::new("entry.click", reversed);
@@ -1462,12 +1529,12 @@ int32 caller(int32 x) { requires x >= 0; ensures result == x; }
             [
                 ClickModuleSource::new(
                     "a.click",
-                    "import \"b.click\"; theorem a() { ensures 0 == 0 by solve(); }",
+                    "import \"b.click\"; theorem a() { ensures 0 == 0 by close(); }",
                     ["b.click".to_string()],
                 ),
                 ClickModuleSource::new(
                     "b.click",
-                    "import \"a.click\"; theorem b() { ensures 0 == 0 by solve(); }",
+                    "import \"a.click\"; theorem b() { ensures 0 == 0 by close(); }",
                     ["a.click".to_string()],
                 ),
             ],
@@ -1484,8 +1551,8 @@ int32 caller(int32 x) { requires x >= 0; ensures result == x; }
             [ClickModuleSource::new(
                 "cycle.click",
                 r#"
-theorem a() { ensures 0 == 0 by { apply(b()); known(); } }
-theorem b() { ensures 0 == 0 by { apply(a()); known(); } }
+theorem a() { ensures 0 == 0 by { apply(b()); close(); } }
+theorem b() { ensures 0 == 0 by { apply(a()); close(); } }
 "#,
                 [],
             )],
@@ -1501,7 +1568,7 @@ theorem b() { ensures 0 == 0 by { apply(a()); known(); } }
             "self.click",
             [ClickModuleSource::new(
                 "self.click",
-                "theorem self_cycle() { ensures 0 == 0 by { apply(self_cycle()); known(); } }",
+                "theorem self_cycle() { ensures 0 == 0 by { apply(self_cycle()); close(); } }",
                 [],
             )],
         );
@@ -1522,7 +1589,7 @@ theorem b() { ensures 0 == 0 by { apply(a()); known(); } }
                 ),
                 ClickModuleSource::new(
                     "entry.click",
-                    "import \"bad.click\"; theorem selected() { ensures 0 == 0 by solve(); }",
+                    "import \"bad.click\"; theorem selected() { ensures 0 == 0 by close(); }",
                     ["bad.click".to_string()],
                 ),
             ],
@@ -1546,7 +1613,7 @@ function finish(x: Countdown) -> int32 decreases x {
                 ),
                 ClickModuleSource::new(
                     "entry.click",
-                    "import \"good.click\"; theorem selected() { ensures 0 == 0 by solve(); }",
+                    "import \"good.click\"; theorem selected() { ensures 0 == 0 by close(); }",
                     ["good.click".to_string()],
                 ),
             ],

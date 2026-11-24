@@ -1,6 +1,6 @@
 //! A check that lowering undoes raising.
 //!
-//! Every kernel term a proof state holds must satisfy `lower(raise(x)) == x`
+//! Every proof-visible kernel proposition must satisfy `lower(raise(x)) == x`
 //! (`docs/internals/raise-lower-principle.md#the-raise-lower-principle`). Setting
 //! `CLICK_RAISE_LOWER=<path>` raises each fact a checked step adds, and the
 //! goal it leaves focused, with the canonical raiser goal presentation uses
@@ -11,13 +11,12 @@
 //!
 //! This checks the canonical Surface form. The raise-lower census separately
 //! measures facts that cannot be raised; a mismatch here is a raised form
-//! that lowers to a different term.
+//! that lowers to a different proposition.
 //!
 //! The audit only observes: it charges no budget, records no search note,
 //! and does not change the proof or its report.
 
-#[cfg(test)]
-use crate::kernel::Proposition;
+use crate::kernel::KernelProposition;
 
 #[cfg(test)]
 thread_local! {
@@ -41,16 +40,42 @@ pub(super) fn enabled() -> bool {
     crate::instrumentation::RAISE_LOWER_RECORDS.enabled()
 }
 
+thread_local! {
+    /// Why the raiser gave up on a read while one fact is being raised.
+    static REASONS: std::cell::RefCell<Option<std::collections::BTreeSet<String>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Notes why the raiser could not spell a read. Kept only while the audit
+/// raises a fact ([`collecting_reasons`]); `reason` is not built otherwise.
+pub(crate) fn note_reason(reason: impl FnOnce() -> String) {
+    REASONS.with(|reasons| {
+        if let Some(reasons) = reasons.borrow_mut().as_mut() {
+            reasons.insert(reason());
+        }
+    });
+}
+
+/// Runs `run` and returns the reasons the raiser noted during it.
+pub(super) fn collecting_reasons<R>(run: impl FnOnce() -> R) -> (R, String) {
+    let previous = REASONS.with(|reasons| reasons.replace(Some(Default::default())));
+    let result = run();
+    let noted = REASONS
+        .with(|reasons| reasons.replace(previous))
+        .unwrap_or_default();
+    (result, noted.into_iter().collect::<Vec<_>>().join("; "))
+}
+
 /// How one round trip ended.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum RoundTrip {
-    /// The raised form lowered back to the same term, up to bound names.
+    /// The raised form lowered back to the same proposition, up to bound names.
     Same,
     /// It lowered to the same comparison stated with the other polarity,
     /// such as `a < b` held false for `a >= b`: a normalization, not the
-    /// same term.
+    /// same proposition.
     Polarity,
-    /// It lowered to a different term.
+    /// It lowered to a different proposition.
     Differs,
     /// The raised form did not lower.
     Unlowered,
@@ -73,11 +98,8 @@ impl RoundTrip {
     }
 }
 
-/// Classifies the lowering of a raised form against the original term.
-pub(super) fn classify(
-    original: &crate::kernel::Proposition,
-    lowered: &crate::kernel::Proposition,
-) -> RoundTrip {
+/// Classifies the lowering of a raised form against the original proposition.
+pub(super) fn classify(original: &KernelProposition, lowered: &KernelProposition) -> RoundTrip {
     if crate::kernel::fact_stability::same_up_to_binders(original, lowered) {
         RoundTrip::Same
     } else if super::condition_polarity_equivalent(lowered, original) {
@@ -89,8 +111,9 @@ pub(super) fn classify(
 
 /// Appends one audit line: the outcome, the role (`fact` or `goal`), the
 /// census kind, the claim, the tactic, the origin (`written` or `smart`),
-/// the original term's diagnostic rendering, the raised form, and for
-/// `differs` the lowered term's rendering.
+/// the original proposition's diagnostic rendering, the raised form, for
+/// `differs` the lowered proposition's rendering, the container, and the reasons
+/// the raiser noted for reads it could not spell.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn record(
     outcome: RoundTrip,
@@ -101,6 +124,7 @@ pub(super) fn record(
     original: &str,
     raised: &str,
     lowered: &str,
+    reasons: &str,
 ) {
     if !enabled() {
         return;
@@ -120,12 +144,13 @@ pub(super) fn record(
     // The last field is the verifier thread's name, which names the proof
     // container under `click audit` and the mdtest harness.
     let line = format!(
-        "{}\t{role}\t{kind}\t{claim}\t{tactic}\t{origin}\t{}\t{}\t{}\t{}\n",
+        "{}\t{role}\t{kind}\t{claim}\t{tactic}\t{origin}\t{}\t{}\t{}\t{}\t{}\n",
         outcome.tag(),
         field(original),
         field(raised),
         field(lowered),
         std::thread::current().name().unwrap_or(""),
+        field(reasons),
     );
     #[cfg(test)]
     if CAPTURE.with(|lines| {
@@ -147,8 +172,8 @@ mod tests {
         CompareRelation, ConditionTerm, MachineIntegerType, MachineTerm, Variable,
     };
 
-    fn compare(relation: CompareRelation, value: bool) -> Proposition {
-        Proposition::condition_is(
+    fn compare(relation: CompareRelation, value: bool) -> KernelProposition {
+        KernelProposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation,
@@ -157,6 +182,40 @@ mod tests {
             },
             value,
         )
+    }
+
+    /// Reasons are kept only while a fact is being raised, once each, and
+    /// reach the record as its last field.
+    #[test]
+    fn a_raise_reason_is_recorded_once_and_only_while_collecting() {
+        note_reason(|| unreachable!("no fact is being raised"));
+        let ((), reasons) = collecting_reasons(|| {
+            note_reason(|| "point read: its version point has no name".to_string());
+            note_reason(|| "point read: its version point has no name".to_string());
+            note_reason(|| "a second reason".to_string());
+        });
+        assert_eq!(
+            reasons,
+            "a second reason; point read: its version point has no name"
+        );
+        let lines = capture(|| {
+            record(
+                RoundTrip::Unraised,
+                "fact",
+                "condition",
+                "f.contract",
+                "step",
+                "x == y",
+                "",
+                "",
+                &reasons,
+            );
+        });
+        assert_eq!(lines.len(), 1);
+        assert_eq!(
+            lines[0].trim_end().split('\t').nth(10),
+            Some(reasons.as_str())
+        );
     }
 
     #[test]
@@ -222,7 +281,7 @@ int32 probe(const struct Input* src, {index_type} n, {index_type} k, struct Opti
         instantiate(at(function.entry, forall (i: {index_type}) {{
             {zero} <= i and i < n implies defined(load<uint8>(src->data + i))
         }}), k);
-        known();
+        close();
     }}
     step();
 }}
@@ -246,13 +305,22 @@ int32 probe(const struct Input* src, {index_type} n, {index_type} k, struct Opti
     }
 
     #[test]
-    fn a_round_trip_is_classified_by_the_term_it_lowers_to() {
+    fn a_round_trip_is_classified_by_the_proposition_it_lowers_to() {
         let less = compare(CompareRelation::LessThan, true);
         assert_eq!(classify(&less, &less), RoundTrip::Same);
         assert_eq!(
             classify(&less, &compare(CompareRelation::Equal, true)),
             RoundTrip::Differs
         );
+    }
+
+    #[test]
+    fn a_round_trip_preserves_the_connective_even_with_identical_operands() {
+        use KernelProposition::{And, Or};
+        let lower = Box::new(compare(CompareRelation::LessThan, true));
+        let upper = Box::new(compare(CompareRelation::Equal, true));
+        let original = And(lower.clone(), upper.clone());
+        assert_eq!(classify(&original, &Or(lower, upper)), RoundTrip::Differs);
     }
 
     #[test]
@@ -470,7 +538,7 @@ int32 short_sum(int32 seed) {
             theorem nil_has_no_address(target: uint8*) {
                 ensures not list::contains(List<uint64>::Nil, address(target)) by {
                     unfold(list::contains(List<uint64>::Nil, address(target)));
-                    known();
+                    close();
                 }
             }
         "#;
@@ -503,7 +571,7 @@ int32 short_sum(int32 seed) {
             int32 touch(struct node* n) {
                 ensures result == 0;
             } by {
-                have is_null(0) == 1 by { unfold(is_null(0)); known(); }
+                have is_null(0) == 1 by { unfold(is_null(0)); close(); }
                 step_until(function.exit);
             }
         "#;
@@ -646,7 +714,7 @@ int32 f(struct holder* h, uint64 n, uint64 k) {
     step();
     have defined(load<uint8>(statement(0).call(make, 0).result + k)) by {
         instantiate(forall (i: uint64) { 0u64 <= i and i < n implies defined(load<uint8>(statement(0).call(make, 0).result + i)) }, k);
-        known();
+        close();
     }
     step_until(function.exit);
 }
@@ -703,7 +771,7 @@ int32 f(struct holder* h, uint64 n, uint64 k) {
 
     /// A 64-bit equality reads both words at its format, so a `uint64`
     /// call in it raises as the call, not cast to `int64`, which would lower
-    /// to a different term.
+    /// to a different proposition.
     #[test]
     fn a_wide_call_result_equality_round_trips_without_a_cast() {
         let lines = round_trips(
