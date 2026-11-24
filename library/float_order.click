@@ -431,3 +431,10 @@ axiom float64_square_interval(x: double, lo: double, hi: double, upper: double) 
     ensures x * x >= float64_from_bits(0u64);
     ensures x * x <= upper;
 }
+
+// Integer conversion rounds monotonically, but may round adjacent inputs
+// to the same value.
+axiom int32_to_float32_le(a: int32, b: int32) {
+    requires to_integer(a) <= to_integer(b);
+    ensures (a as float) <= (b as float);
+}

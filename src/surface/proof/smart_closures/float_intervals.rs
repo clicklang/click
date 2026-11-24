@@ -123,6 +123,83 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         )
     }
 
+    pub(in crate::surface::proof) fn try_rounded_int32_to_float32_bound(
+        input: &Proof<'a>,
+        source: &Proposition,
+        goal: &Proposition,
+        source_surface: &ClickProposition,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_rounded_int32_to_float32_bound");
+        use crate::kernel::proof::arithmetic_special::rounded_int32_to_float32_bound;
+        let Some((plan, endpoint, strict)) = rounded_int32_to_float32_bound(source, goal) else {
+            return Ok(None);
+        };
+        let comparison = surface_comparison_with_anchored_operands(source_surface);
+        let parts = if strict {
+            surface_strict_parts(&comparison)
+        } else {
+            surface_nonstrict_parts(&comparison)
+        };
+        let Some((left, right)) = parts else {
+            return Ok(None);
+        };
+        let value = if plan.lower { right } else { left };
+        let observation = super::super::wide_arithmetic::to_integer(&value);
+        let integer_literal = |n: i64| surface_signed_integer_literal(&BigInt::from(n));
+        let endpoint = i64::from(endpoint);
+        let ordered = |endpoint: ContractExpression| {
+            if plan.lower {
+                [endpoint, observation.clone()]
+            } else {
+                [observation.clone(), endpoint]
+            }
+        };
+        let [left, right] = ordered(integer_literal(endpoint));
+        let inclusive = at_most(left, right);
+        let proof_steps = if strict {
+            let (original, law) = if plan.lower {
+                (endpoint - 1, "lt_step_le")
+            } else {
+                (endpoint + 1, "lt_le_predecessor")
+            };
+            let [left, right] = ordered(integer_literal(original));
+            let strict = less(left.clone(), right.clone());
+            vec![
+                super::super::wide_arithmetic::have(strict.clone(), vec![ProofStep::Known]),
+                ProofStep::ApplyPlannedTheorem {
+                    application: TheoremApplication {
+                        name: format!("click::integer::{law}"),
+                        arguments: vec![left, right],
+                    },
+                    premises: vec![strict],
+                },
+                ProofStep::Known,
+            ]
+        } else {
+            vec![ProofStep::Known]
+        };
+        let Some(proof) = attempt::candidate_outcome(input.driver().apply_step(
+            super::super::wide_arithmetic::have(inclusive.clone(), proof_steps),
+        ))?
+        else {
+            return Ok(None);
+        };
+        let endpoint = integer_literal(endpoint);
+        let arguments = if plan.lower {
+            vec![endpoint, value]
+        } else {
+            vec![value, endpoint]
+        };
+        Self::try_apply_float_interval_bound(
+            &proof,
+            &plan,
+            "int32_to_float32_le",
+            arguments,
+            vec![inclusive],
+        )
+    }
+
     pub(in crate::surface::proof) fn try_float_zero_product_bound(
         input: &Proof<'a>,
         goal: &Proposition,

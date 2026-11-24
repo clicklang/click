@@ -1691,6 +1691,10 @@ id = "cli.expand.--claim"
 path = "reference/cli/expand.md#options"
 
 [[item]]
+id = "cli.expand.--check-normalize-removal"
+path = "reference/cli/expand.md#options"
+
+[[item]]
 id = "cli.expand.--migrate-normalize"
 path = "reference/cli/expand.md#options"
 
@@ -5679,3 +5683,7 @@ path = "reference/library/index.md#float_orderfloat64_finite_between"
 [[item]]
 id = "library.theorem.float_order::float64_square_interval"
 path = "reference/library/index.md#float_orderfloat64_square_interval"
+
+[[item]]
+id = "library.theorem.float_order::int32_to_float32_le"
+path = "reference/library/index.md#float_orderint32_to_float32_le"

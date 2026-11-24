@@ -10744,3 +10744,15 @@ axiom float64_square_interval(x: double, lo: double, hi: double, upper: double) 
     ensures x * x <= upper;
 }
 ```
+
+### `float_order::int32_to_float32_le`
+
+Rounding signed integers to float32 preserves non-strict order. Two distinct
+integers may round to the same float32 value.
+
+```click
+axiom int32_to_float32_le(a: int32, b: int32) {
+    requires to_integer(a) <= to_integer(b);
+    ensures (a as float) <= (b as float);
+}
+```
