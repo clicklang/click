@@ -604,7 +604,7 @@ fn c_linux_sequential_access_primitives_lower_to_ordered_kernel_accesses() {
 #define WRITE_ONCE(x, value) ({ typeof(x) __value = (value); (*(volatile typeof(x) *)&(x)) = __value; __value; })
 #define likely(x) __builtin_expect(!!(x), 1)
 #define unlikely(x) __builtin_expect(!!(x), 0)
-#define rcu_assign_pointer(p, v) ({ typeof(*(p)) __value = (v); WRITE_ONCE(*(p), __value); })
+#define rcu_assign_pointer(p, v) ({ typeof(p) __value = (v); WRITE_ONCE(p, __value); })
 int32 run(int32 value) {
     value = WRITE_ONCE(value, likely(value) + 1);
     rcu_assign_pointer(value, value);

@@ -181,7 +181,10 @@ enum MacroDefinition {
 /// Kernel-header macros whose semantics are modeled directly by the checked
 /// C lowering.  Keeping these as source-level operations is important: the
 /// GNU replacement text commonly contains statement expressions and helper
-/// macros that are outside the source expander's supported subset.
+/// macros that are outside the source expander's supported subset. Only a
+/// definition whose body is one of the recognized forms in
+/// [`kernel_primitive_for_macro`] becomes a primitive; the body is the
+/// evidence that the modeled meaning is the macro's meaning.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum KernelPrimitive {
     ReadOnce,
@@ -1902,50 +1905,131 @@ impl MacroDefinition {
     }
 }
 
+/// The macro bodies Click accepts as the sequential kernel access
+/// primitives. They are compared after [`normalized_macro_body`], so only
+/// whitespace between tokens may differ. A macro with one of these names and
+/// any other body is expanded as an ordinary macro, so its own body gives its
+/// meaning.
+const READ_ONCE_BODY: &str = "({ typeof(x) __value; __value = x; __value; })";
+const WRITE_ONCE_BODY: &str =
+    "({ typeof(x) __value = (value); (*(volatile typeof(x) *)&(x)) = __value; __value; })";
+const READ_ONCE_HELPER_CALL: &str = "__READ_ONCE(x)";
+const WRITE_ONCE_HELPER_CALL: &str = "__WRITE_ONCE(x, value)";
+const LIKELY_BODY: &str = "__builtin_expect(!!(x), 1)";
+const UNLIKELY_BODY: &str = "__builtin_expect(!!(x), 0)";
+const RCU_ASSIGN_POINTER_BODY: &str = "({ typeof(p) __value = (v); WRITE_ONCE(p, __value); })";
+
+/// Whether `replacement` is `form` up to whitespace between tokens.
+fn macro_body_is(replacement: &str, form: &str) -> bool {
+    normalized_macro_body(replacement) == normalized_macro_body(form)
+}
+
+/// Names whose recognized macro definition the C parser reads as a
+/// sequential access primitive. Outside such a definition a call spelled
+/// with one of them is refused, so the parser never sees one that a
+/// recognized macro did not produce.
+const KERNEL_PRIMITIVE_NAMES: [&str; 5] = [
+    "READ_ONCE",
+    "WRITE_ONCE",
+    "likely",
+    "unlikely",
+    "rcu_assign_pointer",
+];
+
+/// A macro body with its whitespace removed except between two identifier
+/// or number characters, where it separates tokens.
+fn normalized_macro_body(replacement: &str) -> String {
+    let mut normalized = String::with_capacity(replacement.len());
+    let mut pending_space = false;
+    for ch in replacement.trim().chars() {
+        if ch.is_whitespace() {
+            pending_space = true;
+            continue;
+        }
+        if pending_space
+            && normalized
+                .chars()
+                .last()
+                .is_some_and(is_identifier_continue)
+            && is_identifier_continue(ch)
+        {
+            normalized.push(' ');
+        }
+        pending_space = false;
+        normalized.push(ch);
+    }
+    normalized
+}
+
 fn kernel_primitive_for_macro(
     name: &str,
     parameters: &[String],
     replacement: &str,
 ) -> Option<KernelPrimitive> {
-    let has = |spelling: &str| replacement.contains(spelling);
+    let parameters_are = |expected: &[&str]| {
+        parameters
+            .iter()
+            .map(String::as_str)
+            .eq(expected.iter().copied())
+    };
+    let is = |form: &str| macro_body_is(replacement, form);
     match name {
         "READ_ONCE"
-            if parameters.len() == 1
-                && (has("typeof")
-                    || has("__typeof")
-                    || has("volatile")
-                    || has("READ_ONCE")
-                    || has("__READ_ONCE")) =>
+            if parameters_are(&["x"]) && (is(READ_ONCE_BODY) || is(READ_ONCE_HELPER_CALL)) =>
         {
             Some(KernelPrimitive::ReadOnce)
         }
         "WRITE_ONCE"
-            if parameters.len() == 2
-                && (has("typeof")
-                    || has("__typeof")
-                    || has("volatile")
-                    || has("WRITE_ONCE")
-                    || has("__WRITE_ONCE")) =>
+            if parameters_are(&["x", "value"])
+                && (is(WRITE_ONCE_BODY) || is(WRITE_ONCE_HELPER_CALL)) =>
         {
             Some(KernelPrimitive::WriteOnce)
         }
-        "likely" if parameters.len() == 1 && has("__builtin_expect") => {
-            Some(KernelPrimitive::Likely)
-        }
-        "unlikely" if parameters.len() == 1 && has("__builtin_expect") => {
+        "likely" if parameters_are(&["x"]) && is(LIKELY_BODY) => Some(KernelPrimitive::Likely),
+        "unlikely" if parameters_are(&["x"]) && is(UNLIKELY_BODY) => {
             Some(KernelPrimitive::Unlikely)
         }
-        "rcu_assign_pointer"
-            if parameters.len() == 2
-                && (has("rcu")
-                    || has("WRITE_ONCE")
-                    || has("smp_store_release")
-                    || has("volatile")) =>
-        {
+        "rcu_assign_pointer" if parameters_are(&["p", "v"]) && is(RCU_ASSIGN_POINTER_BODY) => {
             Some(KernelPrimitive::RcuAssignPointer)
         }
         _ => None,
     }
+}
+
+/// Whether the macros a recognized primitive definition delegates to are,
+/// where it is used, the recognized definitions too. `READ_ONCE(x)` spelled
+/// `__READ_ONCE(x)` needs the recognized `__READ_ONCE` body, and
+/// `rcu_assign_pointer` needs a recognized `WRITE_ONCE`. Otherwise the macro
+/// is expanded as written.
+fn kernel_primitive_is_grounded(
+    replacement: &str,
+    macros: &BTreeMap<String, MacroDefinition>,
+) -> bool {
+    let helper_has_body = |helper: &str, expected_parameters: &[&str], expected_body: &str| {
+        matches!(
+            macros.get(helper),
+            Some(MacroDefinition::FunctionLike { parameters, replacement, .. })
+                if parameters.iter().map(String::as_str).eq(expected_parameters.iter().copied())
+                    && macro_body_is(replacement, expected_body)
+        )
+    };
+    if macro_body_is(replacement, READ_ONCE_HELPER_CALL) {
+        return helper_has_body("__READ_ONCE", &["x"], READ_ONCE_BODY);
+    }
+    if macro_body_is(replacement, WRITE_ONCE_HELPER_CALL) {
+        return helper_has_body("__WRITE_ONCE", &["x", "value"], WRITE_ONCE_BODY);
+    }
+    if macro_body_is(replacement, RCU_ASSIGN_POINTER_BODY) {
+        return matches!(
+            macros.get("WRITE_ONCE"),
+            Some(MacroDefinition::FunctionLike {
+                primitive: Some(KernelPrimitive::WriteOnce),
+                replacement,
+                ..
+            }) if kernel_primitive_is_grounded(replacement, macros)
+        );
+    }
+    true
 }
 
 fn preprocessor_literal_value(literal: &str) -> Option<u64> {
@@ -2161,6 +2245,15 @@ fn expand_macro_text(
                 continue;
             }
             let Some(definition) = macros.get(&name).cloned() else {
+                if KERNEL_PRIMITIVE_NAMES.contains(&name.as_str())
+                    && macro_invocation_open(&chars, index).is_some()
+                {
+                    return Err(format!(
+                        "`{name}` is called here without a recognized `#define {name}`; \
+                         Click reads `{name}` as a sequential access primitive only through \
+                         one of the definitions in the C reference"
+                    ));
+                }
                 expanded.extend(chars[start..index].iter().copied());
                 continue;
             };
@@ -2172,8 +2265,10 @@ fn expand_macro_text(
                 MacroDefinition::FunctionLike {
                     parameters: _,
                     primitive: Some(primitive),
-                    ..
-                } if let Some(open) = macro_invocation_open(&chars, index) => {
+                    ref replacement,
+                } if let Some(open) = macro_invocation_open(&chars, index)
+                    && kernel_primitive_is_grounded(replacement, macros) =>
+                {
                     let (arguments, end) = parse_macro_arguments(&chars, open, &name)?;
                     let arguments = arguments
                         .iter()
@@ -2886,7 +2981,7 @@ mod tests {
 #define WRITE_ONCE(x, value) __WRITE_ONCE(x, value)
 #define likely(x) __builtin_expect(!!(x), 1)
 #define unlikely(x) __builtin_expect(!!(x), 0)
-#define rcu_assign_pointer(p, v) ({ typeof(*(p)) __value = (v); WRITE_ONCE(*(p), __value); })
+#define rcu_assign_pointer(p, v) ({ typeof(p) __value = (v); WRITE_ONCE(p, __value); })
 int32 run(int32 value) {
     value = WRITE_ONCE(value, likely(value) + 1);
     rcu_assign_pointer(value, value);

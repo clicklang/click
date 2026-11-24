@@ -18452,8 +18452,10 @@ impl Parser {
     /// Recognize the small, explicitly checked projection of Linux-style
     /// access macros. The macro expander preserves these calls instead of
     /// feeding their GNU statement-expression bodies to the ordinary C
-    /// parser. Direct spellings are accepted as well, which keeps the
-    /// imported semantics stable when a header only declares the macros.
+    /// parser. The expander emits these spellings only from a recognized
+    /// macro definition and refuses any other call spelled with them, so a
+    /// function or undefined name with one of these spellings never reaches
+    /// this point.
     fn parse_kernel_primitive_expression(
         &self,
         source_name: &str,

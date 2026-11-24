@@ -1,6 +1,8 @@
 # Pointer-to-const fields remain assignable and do not freeze aliases
 
 ```c filename=main.c
+#define READ_ONCE(x) ({ typeof(x) __value; __value = x; __value; })
+#define WRITE_ONCE(x, value) ({ typeof(x) __value = (value); (*(volatile typeof(x) *)&(x)) = __value; __value; })
 struct holder { const int *value; };
 const int *get(struct holder *h) { return h->value; }
 void set(struct holder *h, const int *p) { h->value = p; }
