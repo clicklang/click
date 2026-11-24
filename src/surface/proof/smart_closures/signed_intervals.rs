@@ -205,9 +205,9 @@ fn integer_order(
 }
 
 impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
-    /// Carry one checked native order to an exact Integer endpoint. A strict
-    /// endpoint needs an explicit discreteness law; the observation itself is
-    /// the same comparison. Keep the value at the cited read's exact state.
+    /// Carry one checked native order to an exact Integer endpoint. A change
+    /// in strictness needs an explicit discreteness law. Keep the value at the
+    /// cited read's exact state.
     pub(in crate::surface::proof) fn try_native_integer_bound(
         input: &Proof<'a>,
         source: &Proposition,
@@ -239,6 +239,37 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 && hi.value_read() == goal_hi.value_read()
             {
                 return attempt::candidate_outcome(input.driver().apply_step(ProofStep::Known));
+            }
+            if !strict
+                && goal_strict
+                && hi.value_read() == goal_hi.value_read()
+                && let (Some(successor), Some(lower)) = (lo.as_const(), goal_lo.as_const())
+                && &(lower + BigInt::one()) == successor
+            {
+                let observed = observed_native_surface_comparison(goal, written);
+                let Some((lower, ComparisonOperator::LessThan, upper)) =
+                    integer_surface_ordered_parts(&observed)
+                else {
+                    return Ok(None);
+                };
+                use super::super::wide_arithmetic::have;
+                let bound = le(add(lower.clone(), number(1)), upper.clone());
+                let strict_bound = ClickProposition::Comparison {
+                    left: lower.clone(),
+                    operator: ComparisonOperator::LessThan,
+                    right: upper.clone(),
+                };
+                let proof = (|| {
+                    let proof = input
+                        .driver()
+                        .apply_step(have(bound.clone(), vec![ProofStep::Known]))?;
+                    let proof = proof.driver().apply_step(have(
+                        strict_bound,
+                        vec![apply("step_le_lt", vec![lower, upper], vec![bound])],
+                    ))?;
+                    proof.driver().apply_step(ProofStep::Known)
+                })();
+                return attempt::candidate_outcome(proof);
             }
             if !strict || goal_strict {
                 continue;
