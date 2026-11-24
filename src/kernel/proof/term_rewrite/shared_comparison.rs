@@ -274,6 +274,7 @@ impl TermRewrite<'_> {
                 }
                 KernelTermNode::MachineLiteral(_) => term.clone(),
                 KernelTermNode::Legacy(_)
+                | KernelTermNode::MachineObservationInput { .. }
                 | KernelTermNode::Call { .. }
                 | KernelTermNode::IntegerAddress { .. } => {
                     let original = term

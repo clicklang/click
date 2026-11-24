@@ -88,8 +88,10 @@ pub(super) fn fingerprint(root: FloatOperandView<'_>, policy: OperandFingerprint
                 // The existing scalar selector owns integer syntax. Scoped scalar
                 // forms retain its selected native boundary until the closure audit.
                 let scalar = if let MachineOperandView::Shared(root) = operand
-                    && matches!(root.node(), KernelTermNode::Legacy(_))
-                {
+                    && matches!(
+                        root.node(),
+                        KernelTermNode::Legacy(_) | KernelTermNode::MachineObservationInput { .. }
+                    ) {
                     operand_fingerprint(MachineOperandView::Legacy(legacy_numeric(root)), policy)
                 } else if let MachineOperandView::Shared(root) = operand
                     && matches!(
@@ -243,7 +245,7 @@ pub(super) fn collect_load_keys(root: &KernelTerm, keys: &mut BTreeSet<(AddressB
             | KernelTermNode::FloatCall(_)
             | KernelTermNode::Match(_)
             | KernelTermNode::IntegerToMachine { .. } => {}
-            KernelTermNode::Legacy(_) => {
+            KernelTermNode::Legacy(_) | KernelTermNode::MachineObservationInput { .. } => {
                 let native = legacy_numeric(root);
                 collect_bitvector_memory_load_keys(native, keys);
             }
@@ -253,6 +255,9 @@ pub(super) fn collect_load_keys(root: &KernelTerm, keys: &mut BTreeSet<(AddressB
 }
 
 fn legacy_numeric(root: &KernelTerm) -> &MachineTerm {
+    if let Some(input) = root.retained_machine_input() {
+        return input;
+    }
     let KernelTermNode::Legacy(value) = root.node() else {
         unreachable!("numeric legacy operand");
     };

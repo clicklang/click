@@ -476,7 +476,7 @@ impl Hash for SharedIntegerRangeEndpoint {
 
 impl SharedIntegerRangeEndpoint {
     pub(crate) fn from_shared(root: KernelTerm) -> Option<Self> {
-        if let Some(node) = root.legacy_range_endpoint() {
+        if let Some(node) = root.retained_range_endpoint() {
             return Some(Self { node });
         }
         SharedMachineIntegerTerm::from_shared(
@@ -816,8 +816,7 @@ impl SharedMachineIntegerTerm {
             // observation here rather than exposing the intermediate payload
             // ID as a second numeric identity for the native carrier.
             let payload_identity = Self::intern_key(key);
-            let observation =
-                KernelTerm::machine_observation_leaf(ty, value.clone(), payload_identity);
+            let observation = KernelTerm::machine_observation_leaf(ty, payload_identity);
             let identity = Self::from_shared(ty, observation).expect("opaque call observation");
             return Self(Arc::new(SharedMachineIntegerNode {
                 id: identity.id(),

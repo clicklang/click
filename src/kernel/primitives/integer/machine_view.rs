@@ -54,6 +54,7 @@ pub(crate) fn shared_machine_syntax_variables(
                 | KernelTermNode::FloatConvert { .. }
                 | KernelTermNode::BoolCast { .. }
                 | KernelTermNode::Legacy(_)
+                | KernelTermNode::MachineObservationInput { .. }
                 | KernelTermNode::IntegerAddress { .. }
                 | KernelTermNode::MemoryLoad { .. }
                 | KernelTermNode::Call { .. }
@@ -126,6 +127,7 @@ pub(crate) fn shared_machine_conversion_leaves(
                     | KernelTermNode::FloatConvert { .. }
                     | KernelTermNode::BoolCast { .. }
                     | KernelTermNode::Legacy(_)
+                    | KernelTermNode::MachineObservationInput { .. }
                     | KernelTermNode::IntegerAddress { .. }
                     | KernelTermNode::Call { .. }
                     | KernelTermNode::MachineIf { .. }
@@ -651,10 +653,7 @@ impl<'a> MachineOperandView<'a> {
         let Self::Shared(root) = self else {
             return None;
         };
-        let KernelTermNode::Legacy(leaf) = root.node() else {
-            return None;
-        };
-        leaf.machine_operand()
+        root.retained_machine_input()
     }
 
     pub(crate) fn integer_conversion_destination(self) -> Option<MachineIntegerType> {
@@ -710,7 +709,7 @@ impl<'a> MachineOperandView<'a> {
         match self {
             Self::Shared(root) => match root.node() {
                 KernelTermNode::MemoryLoad { kind, .. } => Some(*kind),
-                KernelTermNode::Legacy(_) => {
+                KernelTermNode::Legacy(_) | KernelTermNode::MachineObservationInput { .. } => {
                     Self::Legacy(self.retained_native_input()?).read_kind()
                 }
                 _ => None,

@@ -6724,6 +6724,7 @@ impl<'a> TermRewrite<'a> {
                 KernelTermNode::IntegerToMachine { .. }
                 | KernelTermNode::BoolCast { .. }
                 | KernelTermNode::Legacy(_)
+                | KernelTermNode::MachineObservationInput { .. }
                 | KernelTermNode::Call { .. }
                 | KernelTermNode::IntegerAddress { .. } => {
                     if !shared

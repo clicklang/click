@@ -201,6 +201,14 @@ pub enum KernelTermNode {
         format: MachineIntegerType,
         operand: KernelTerm,
     },
+    /// An already retained observation whose written carrier has no shared root.
+    /// Numeric arguments use the observation identity directly. An exact
+    /// Integer producer keeps its own spelling when read as a machine operand.
+    MachineObservationInput {
+        format: MachineIntegerType,
+        observation: SharedMachineIntegerTerm,
+        exact: bool,
+    },
     MachineBinary {
         format: MachineIntegerType,
         operator: MachineBinaryOp,
@@ -241,8 +249,6 @@ pub struct KernelLegacyTerm {
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 enum LegacyIdentity {
     Machine(u64),
-    MachineObservation(SharedMachineIntegerTerm),
-    ExactIntegerObservation(SharedMachineIntegerTerm),
     NativeObservation(Box<PureFunctionArgument>),
     ApplicationArgument(SharedPureApplication, usize),
     ExactApplicationArgument {
@@ -444,15 +450,13 @@ impl NodeKey {
             | KernelTermNode::PointerEqual(_)
             | KernelTermNode::AlgebraicRead(_)
             | KernelTermNode::FloatRead(_) => true,
-            KernelTermNode::Legacy(value) => {
-                matches!(
-                    value.identity,
-                    LegacyIdentity::Fresh(_)
-                        | LegacyIdentity::ExactIntegerObservation(_)
-                        | LegacyIdentity::Machine(_)
-                        | LegacyIdentity::ExactApplicationArgument { .. }
-                )
-            }
+            KernelTermNode::MachineObservationInput { exact, .. } => *exact,
+            KernelTermNode::Legacy(value) => matches!(
+                value.identity,
+                LegacyIdentity::Fresh(_)
+                    | LegacyIdentity::Machine(_)
+                    | LegacyIdentity::ExactApplicationArgument { .. }
+            ),
             KernelTermNode::Call { .. } if matches!(ty, KernelType::Program(ty) if MachineIntegerType::from_program_type(ty).is_some()) => {
                 true
             }
@@ -532,12 +536,8 @@ impl NodeKey {
             }
             KernelTermNode::BoolCast { .. } => true,
             KernelTermNode::IntegerToMachine { .. } => !opaque_observation_boundary,
-            KernelTermNode::Legacy(value) => matches!(
-                value.identity,
-                LegacyIdentity::Machine(_)
-                    | LegacyIdentity::MachineObservation(_)
-                    | LegacyIdentity::ExactIntegerObservation(_)
-            ),
+            KernelTermNode::MachineObservationInput { .. } => true,
+            KernelTermNode::Legacy(value) => matches!(value.identity, LegacyIdentity::Machine(_)),
             KernelTermNode::Variable(_) => {
                 matches!(&ty, KernelType::Program(c) if MachineIntegerType::from_program_type(*c).is_some())
             }
@@ -558,12 +558,8 @@ impl NodeKey {
             KernelTermNode::MachineIf { .. } => true,
             KernelTermNode::FloatConvert { .. } => shared_machine_operand,
             KernelTermNode::IntegerToMachine { .. } | KernelTermNode::BoolCast { .. } => true,
-            KernelTermNode::Legacy(value) => matches!(
-                value.identity,
-                LegacyIdentity::Machine(_)
-                    | LegacyIdentity::MachineObservation(_)
-                    | LegacyIdentity::ExactIntegerObservation(_)
-            ),
+            KernelTermNode::MachineObservationInput { .. } => true,
+            KernelTermNode::Legacy(value) => matches!(value.identity, LegacyIdentity::Machine(_)),
             KernelTermNode::MachineBinary { arguments, .. } => {
                 arguments.iter().any(KernelTerm::has_machine_conversions)
             }
@@ -608,6 +604,7 @@ impl NodeKey {
             // Opaque domain leaves can contain conditions (If, folds, calls).
             // Their native walker owns those payloads; do not skip it merely
             // because the surrounding arithmetic now has shared parents.
+            KernelTermNode::MachineObservationInput { .. } => true,
             KernelTermNode::Legacy(value) => value.machine_operand().is_some(),
             _ => false,
         };
@@ -826,9 +823,15 @@ impl KernelTerm {
             .0
             .argument_leaf
             .get_or_init(|| {
-                Box::new(PureFunctionArgument::Value(
-                    crate::kernel::ExecutionValue::Shared(self.clone()).into_native(),
-                ))
+                let value = match self.node() {
+                    KernelTermNode::MachineObservationInput {
+                        format,
+                        observation,
+                        ..
+                    } => machine::wrap_exact(*format, observation.value().clone()),
+                    _ => crate::kernel::ExecutionValue::Shared(self.clone()).into_native(),
+                };
+                Box::new(PureFunctionArgument::Value(value))
             })
             .as_ref()
         else {
@@ -1127,8 +1130,11 @@ impl KernelTerm {
         let KernelTermNode::MachineObservation { format, operand } = self.node() else {
             return None;
         };
-        if let KernelTermNode::Legacy(leaf) = operand.node()
-            && let LegacyIdentity::ExactIntegerObservation(observation) = &leaf.identity
+        if let KernelTermNode::MachineObservationInput {
+            observation,
+            exact: true,
+            ..
+        } = operand.node()
         {
             return Some(observation.clone());
         }
@@ -1149,12 +1155,13 @@ impl KernelTerm {
         })
     }
 
-    pub(super) fn legacy_range_endpoint(&self) -> Option<SharedMachineIntegerTerm> {
-        let KernelTermNode::Legacy(leaf) = self.node() else {
-            return None;
-        };
-        match &leaf.identity {
-            LegacyIdentity::MachineObservation(value) => Some(value.clone()),
+    pub(super) fn retained_range_endpoint(&self) -> Option<SharedMachineIntegerTerm> {
+        match self.node() {
+            KernelTermNode::MachineObservationInput {
+                observation,
+                exact: false,
+                ..
+            } => Some(observation.clone()),
             _ => None,
         }
     }
@@ -1400,6 +1407,7 @@ impl KernelTerm {
         if matches!(
             self.node(),
             KernelTermNode::Legacy(_)
+                | KernelTermNode::MachineObservationInput { .. }
                 | KernelTermNode::Call { .. }
                 | KernelTermNode::IntegerAddress { .. }
         ) && rewritten == original
@@ -1422,12 +1430,23 @@ impl KernelTerm {
     /// and stored results retain their original producer metadata.
     pub(crate) fn machine_observation_leaf(
         format: MachineIntegerType,
-        value: MachineTerm,
-        identity: SharedMachineIntegerTerm,
+        observation: SharedMachineIntegerTerm,
     ) -> Self {
-        Self::legacy_at(
-            PureFunctionArgument::Value(machine::wrap_exact(format, value)),
-            LegacyIdentity::MachineObservation(identity),
+        Self::machine_observation_input(format, observation, false)
+    }
+
+    fn machine_observation_input(
+        format: MachineIntegerType,
+        observation: SharedMachineIntegerTerm,
+        exact: bool,
+    ) -> Self {
+        Self::intern(
+            KernelType::Program(format.program_type()),
+            KernelTermNode::MachineObservationInput {
+                format,
+                observation,
+                exact,
+            },
         )
     }
 
@@ -1599,10 +1618,7 @@ impl KernelTermImport {
                 KernelTerm::intern_native_integer(KernelTermNode::MachineObservation {
                     format: machine.ty(),
                     operand: machine.shared_operand().cloned().unwrap_or_else(|| {
-                        KernelTerm::legacy_at(
-                            PureFunctionArgument::SharedMachine(machine.clone()),
-                            LegacyIdentity::ExactIntegerObservation(machine.clone()),
-                        )
+                        KernelTerm::machine_observation_input(machine.ty(), machine.clone(), true)
                     }),
                 })
             }
@@ -2109,6 +2125,17 @@ impl KernelTermExport {
                 term.clone(),
             )));
         }
+        if let KernelTermNode::MachineObservationInput {
+            format,
+            observation,
+            ..
+        } = term.node()
+        {
+            return Ok(PureFunctionArgument::Value(machine::wrap_exact(
+                *format,
+                observation.value().clone(),
+            )));
+        }
         if let KernelType::Program(program_type) = term.ty()
             && let Some(format) = MachineIntegerType::from_program_type(*program_type)
             && !matches!(term.node(), KernelTermNode::Legacy(_))
@@ -2155,15 +2182,7 @@ impl KernelTermExport {
             KernelTermNode::ProgramParameter { operand } => PureFunctionArgument::Value(
                 ProgramValue::Parameter(Box::new(self.algebraic(operand)?)),
             ),
-            KernelTermNode::Legacy(value) => match &value.identity {
-                LegacyIdentity::ExactIntegerObservation(observation) => {
-                    PureFunctionArgument::Value(machine::wrap_exact(
-                        observation.ty(),
-                        observation.value().clone(),
-                    ))
-                }
-                _ => value.value().clone(),
-            },
+            KernelTermNode::Legacy(value) => value.value().clone(),
             _ => return Err("kernel term sort has not migrated to the checker bridge"),
         };
         self.values.insert(term.clone(), value.clone());

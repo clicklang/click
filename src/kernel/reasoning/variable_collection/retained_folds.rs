@@ -310,6 +310,14 @@ pub(super) fn common_variables(
                     &mut leaf_variables,
                 );
             }
+            KernelTermNode::MachineObservationInput { observation, .. } => {
+                collect_machine_leaf(
+                    observation.value(),
+                    mode,
+                    &mut leaf_variables,
+                    &mut SeenTerms::default(),
+                );
+            }
             KernelTermNode::Legacy(value) => {
                 // Each opaque leaf gets its complete intrinsic answer. A seen
                 // set belonging to another leaf would discard shared payload

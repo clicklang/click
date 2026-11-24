@@ -63,7 +63,7 @@ pub(in crate::kernel::primitives) fn normalize(root: &KernelTerm) -> KernelTerm 
                 _ => MachineIntegerType::UInt8,
             };
             if !finish
-                && matches!(term.node(), KernelTermNode::Legacy(_))
+                && matches!(term.node(), KernelTermNode::Legacy(_) | KernelTermNode::MachineObservationInput { .. })
                 && machine_payload(&term).is_some()
             {
                 let value = machine_payload(&term).expect("retained machine leaf");
@@ -145,6 +145,7 @@ pub(in crate::kernel::primitives) fn normalize(root: &KernelTerm) -> KernelTerm 
                 .into_term()
                 .with_machine_observation_type(format),
                 KernelTermNode::Legacy(_)
+                | KernelTermNode::MachineObservationInput { .. }
                 | KernelTermNode::Call { .. }
                 | KernelTermNode::IntegerAddress { .. }
                     if machine_payload(&term).is_some() =>
@@ -154,7 +155,7 @@ pub(in crate::kernel::primitives) fn normalize(root: &KernelTerm) -> KernelTerm 
                         format,
                         value.clone(),
                     ));
-                    KernelTerm::machine_observation_leaf(format, value.clone(), identity)
+                    KernelTerm::machine_observation_leaf(format, identity)
                 }
                 KernelTermNode::Legacy(value) => {
                     KernelTerm::native_observation_leaf(value.value().clone())

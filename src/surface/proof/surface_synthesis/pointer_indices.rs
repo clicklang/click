@@ -41,7 +41,9 @@ pub(super) fn source_index(
                     operand,
                     ..
                 } => Some(V::Shared(operand).retain(MachineIntegerType::UInt32)),
-                N::Legacy(_) => widened(V::Legacy(root.machine_conversion_leaf()?)),
+                N::Legacy(_) | N::MachineObservationInput { .. } => {
+                    widened(V::Legacy(root.machine_conversion_leaf()?))
+                }
                 _ => None,
             },
             V::Legacy(cast_term!(UInt64From32, index)) => {
@@ -60,7 +62,14 @@ pub(super) fn source_index(
 /// Inspect a literal without asking opaque common calls for a native adapter.
 pub(super) fn literal(view: V<'_>) -> Option<MachineTerm> {
     match view {
-        V::Shared(root) if !matches!(root.node(), N::MachineLiteral(_) | N::Legacy(_)) => None,
+        V::Shared(root)
+            if !matches!(
+                root.node(),
+                N::MachineLiteral(_) | N::Legacy(_) | N::MachineObservationInput { .. }
+            ) =>
+        {
+            None
+        }
         view => view.literal(),
     }
 }
@@ -104,10 +113,12 @@ pub(super) fn load_free(root: V<'_>) -> bool {
                 }
                 N::MachineIf { arguments } => pending.extend(arguments[1..].iter().map(V::Shared)),
                 N::Fold(fold) => pending.extend(fold.arguments.iter().map(V::Shared)),
-                N::Legacy(_) | N::IntegerAddress { .. } => match root.machine_conversion_leaf() {
-                    Some(value) => pending.push(V::Legacy(value)),
-                    None => return false,
-                },
+                N::Legacy(_) | N::MachineObservationInput { .. } | N::IntegerAddress { .. } => {
+                    match root.machine_conversion_leaf() {
+                        Some(value) => pending.push(V::Legacy(value)),
+                        None => return false,
+                    }
+                }
                 _ => return false,
             },
             V::Legacy(term) => match term {

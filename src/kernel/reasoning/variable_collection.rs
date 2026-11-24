@@ -4428,6 +4428,9 @@ impl RetainedIntegerScopeSummaries {
                     }
                     summary
                 }
+                Node::MachineObservationInput { observation, .. } => {
+                    collect_bitvector_scope_summary(observation.value(), &mut self.native)
+                }
                 Node::Legacy(payload) => {
                     collect_scope_summary_in_argument(payload.value(), &mut self.native)
                 }
