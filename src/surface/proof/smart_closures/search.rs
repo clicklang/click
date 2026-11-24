@@ -3624,18 +3624,32 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_exact_float_bound_transfer");
-        use crate::kernel::KernelFloatType;
         use crate::kernel::proof::arithmetic_special::exact_float_bound_transfer;
         let Some(plan) = exact_float_bound_transfer(source, goal) else {
             return Ok(None);
         };
-        let Some(intermediate @ ClickProposition::Comparison { .. }) =
-            input.structural_proposition_candidate(&plan.intermediate)
+        let Some(intermediate) = input.structural_proposition_candidate(&plan.intermediate) else {
+            return Ok(None);
+        };
+        let Some(proof) = attempt::candidate_outcome(input.driver().apply_step(
+            super::super::wide_arithmetic::have(intermediate.clone(), vec![ProofStep::Known]),
+        ))?
         else {
             return Ok(None);
         };
+        Self::try_float_bound_weakening(&proof, &plan, intermediate)
+    }
+
+    pub(in crate::surface::proof) fn try_float_bound_weakening(
+        proof: &Proof<'a>,
+        plan: &crate::kernel::proof::arithmetic_special::FloatBoundWeakening,
+        intermediate: ClickProposition,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_float_bound_weakening");
+        use crate::kernel::KernelFloatType;
         let ClickProposition::Comparison { left: operand, .. } = &intermediate else {
-            unreachable!("ordered bound")
+            return Ok(None);
         };
         let literal = |bits| {
             ContractExpression::ProgramExpression(match plan.format {
@@ -3670,12 +3684,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 ComparisonOperator::LessEqual
             },
             right,
-        };
-        let Some(proof) = attempt::candidate_outcome(input.driver().apply_step(
-            super::super::wide_arithmetic::have(intermediate.clone(), vec![ProofStep::Known]),
-        ))?
-        else {
-            return Ok(None);
         };
         if let Some(closed) =
             attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Known))?

@@ -885,7 +885,9 @@ src/kernel/search/proposition_search.rs	search	ProofSearch::select_arithmetic_bo
 src/kernel/search/proposition_search.rs	search	ProofSearch::select_float_bound_chain	find_connected_arithmetic_bound	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_bounded_arithmetic_closure	select_float_bound_chain	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_bounded_arithmetic_closure	try_exact_float_bound_transfer	1
-src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_exact_float_bound_transfer	driver	4
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_exact_float_bound_transfer	driver	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_exact_float_bound_transfer	try_float_bound_weakening	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_float_bound_weakening	driver	3
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_bounded_arithmetic_closure	try_float_bound_chain	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_float_bound_chain	driver	3
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_float_bound_chain	resolve_solve_premises_unmeasured	1

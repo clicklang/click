@@ -3473,7 +3473,7 @@ pub(crate) fn float_bound_weakens(premise: &Proposition, goal: &Proposition) -> 
 }
 
 /// One checked unary transfer followed by ordered endpoint weakening.
-pub(crate) struct ExactFloatBoundTransfer {
+pub(crate) struct FloatBoundWeakening {
     pub(crate) intermediate: Proposition,
     pub(crate) format: KernelFloatType,
     pub(crate) actual_endpoint: u64,
@@ -3486,7 +3486,7 @@ pub(crate) struct ExactFloatBoundTransfer {
 pub(crate) fn exact_float_bound_transfer(
     premise: &Proposition,
     goal: &Proposition,
-) -> Option<ExactFloatBoundTransfer> {
+) -> Option<FloatBoundWeakening> {
     let source = float_bound(premise)?;
     let bound = float_bound(goal)?;
     let (operand, operation @ (FloatBoundOperation::Negate | FloatBoundOperation::Widen)) =
@@ -3498,26 +3498,36 @@ pub(crate) fn exact_float_bound_transfer(
         return None;
     }
     let (endpoint, strict) = operation.apply(bound.format, source.endpoint, source.strict);
-    let endpoint_strict = bound.strict && float_endpoint_establishes(&bound, endpoint, false);
-    let intermediate_strict = bound.strict && !endpoint_strict;
-    if intermediate_strict && !strict {
-        return None;
+    FloatBoundWeakening::from_goal(goal, endpoint, strict)
+}
+
+impl FloatBoundWeakening {
+    pub(crate) fn from_goal(goal: &Proposition, endpoint: u64, strict: bool) -> Option<Self> {
+        Self::new(&float_bound(goal)?, endpoint, strict)
     }
-    Some(ExactFloatBoundTransfer {
-        intermediate: float_bound_proposition(
-            bound.format,
-            bound.operand,
-            endpoint,
-            bound.lower,
+
+    fn new(bound: &FloatBound<'_>, endpoint: u64, strict: bool) -> Option<Self> {
+        if !float_endpoint_establishes(bound, endpoint, strict) {
+            return None;
+        }
+        let endpoint_strict = bound.strict && float_endpoint_establishes(bound, endpoint, false);
+        let intermediate_strict = bound.strict && !endpoint_strict;
+        Some(Self {
+            intermediate: float_bound_proposition(
+                bound.format,
+                bound.operand,
+                endpoint,
+                bound.lower,
+                intermediate_strict,
+            )?,
+            format: bound.format,
+            actual_endpoint: endpoint,
+            requested_endpoint: bound.endpoint,
+            lower: bound.lower,
             intermediate_strict,
-        )?,
-        format: bound.format,
-        actual_endpoint: endpoint,
-        requested_endpoint: bound.endpoint,
-        lower: bound.lower,
-        intermediate_strict,
-        endpoint_strict,
-    })
+            endpoint_strict,
+        })
+    }
 }
 
 fn same_float_operand(left: FloatOperandView<'_>, right: FloatOperandView<'_>) -> bool {
