@@ -6377,6 +6377,30 @@ fn lower_spec_predicate_proposition_at_state_in(
             obligations: Vec::new(),
         }]);
     }
+    // `is_a<T>(p)` is the type-evidence fact about `p` alone, the same fact
+    // a typed call's domain records, with no state argument.
+    if crate::kernel::object_types::is_object_type_predicate_name(name) {
+        let [SpecPredicateArgument::Value(pointer)] = arguments else {
+            return Ok(Vec::new());
+        };
+        return Ok(evaluate_spec_expression_paths_with_algebraic_bindings_in(
+            scope,
+            pointer,
+            assumptions,
+            budget,
+        )?
+        .into_iter()
+        .map(|path| SpecPropositionPath {
+            introductions: Vec::new(),
+            proposition: Proposition::Predicate {
+                name: name.to_string(),
+                arguments: vec![Term::ProgramValue(path.value.into())],
+            },
+            facts: path.facts,
+            obligations: path.obligations,
+        })
+        .collect());
+    }
     // A function-contract fact describes the behavior of its pointer value;
     // it is independent of the caller's current resource-population state.
     // Keeping the uniform predicate state argument canonical lets a closed

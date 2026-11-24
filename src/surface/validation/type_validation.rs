@@ -151,6 +151,18 @@ fn validate_proposition_expression_types_one(
                 infer_contract_expression_type(expression, variables, click_functions, context)?;
             Ok(())
         }
+        // `is_a<T>(p)` is about the object a pointer points to.
+        ClickProposition::IsA { pointer, .. } => {
+            match infer_contract_expression_type(pointer, variables, click_functions, context)? {
+                Some(pointer_type) if !pointer_type.is_pointer() => Err(ClickError::new(format!(
+                    "{context}: `is_a<T>(p)` expects a C pointer `p`, got `{}`",
+                    crate::surface::validation::describe_click_type(&ClickType::Program(
+                        pointer_type
+                    ))
+                ))),
+                _ => Ok(()),
+            }
+        }
         ClickProposition::And(left, right)
         | ClickProposition::Or(left, right)
         | ClickProposition::Implies(left, right) => {
@@ -5318,9 +5330,11 @@ fn validate_predicate_calls_in_proposition_one(
         ClickProposition::Loadable { segment } => {
             validate_contract_segment_calls(segment, click_functions, context)
         }
-        ClickProposition::Defined { expression } => {
-            validate_contract_expression_calls(expression, click_functions, context)
-        }
+        ClickProposition::Defined { expression }
+        | ClickProposition::IsA {
+            pointer: expression,
+            ..
+        } => validate_contract_expression_calls(expression, click_functions, context),
         ClickProposition::And(left, right)
         | ClickProposition::Or(left, right)
         | ClickProposition::Implies(left, right) => {
@@ -5718,9 +5732,11 @@ fn validate_value_proposition_calls(
         ClickProposition::Loadable { segment } => {
             validate_contract_segment_calls(segment, click_functions, context)
         }
-        ClickProposition::Defined { expression } => {
-            validate_contract_expression_calls(expression, click_functions, context)
-        }
+        ClickProposition::Defined { expression }
+        | ClickProposition::IsA {
+            pointer: expression,
+            ..
+        } => validate_contract_expression_calls(expression, click_functions, context),
         ClickProposition::And(left, right)
         | ClickProposition::Or(left, right)
         | ClickProposition::Implies(left, right) => {

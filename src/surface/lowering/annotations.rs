@@ -3247,7 +3247,8 @@ fn proposition_supported_in_opaque_contract(proposition: &ClickProposition) -> b
         | ClickProposition::Contains { .. }
         | ClickProposition::Loadable { .. }
         | ClickProposition::Defined { .. } => true,
-        ClickProposition::At { .. } => false,
+        // Type evidence comes from a checked proof, not an assumed interface.
+        ClickProposition::At { .. } | ClickProposition::IsA { .. } => false,
         ClickProposition::And(left, right)
         | ClickProposition::Or(left, right)
         | ClickProposition::Implies(left, right) => {
@@ -4844,7 +4845,8 @@ impl AnnotationLowerer<'_> {
             | ClickProposition::ResourceViewable { .. }
             | ClickProposition::Contains { .. }
             | ClickProposition::Loadable { .. }
-            | ClickProposition::Defined { .. } => {
+            | ClickProposition::Defined { .. }
+            | ClickProposition::IsA { .. } => {
                 self.lower_atomic_proposition_to_spec(proposition, environment)
             }
         }
@@ -5877,6 +5879,15 @@ impl AnnotationLowerer<'_> {
                     self.lower_contract_expression_to_spec(expression, &checked_environment)?,
                 ))
             }
+            // The type-evidence fact about the pointer, as a typed call's
+            // domain records it.
+            ClickProposition::IsA { class, pointer } => Ok(SpecProposition::Predicate {
+                name: crate::kernel::object_type_predicate_name(class),
+                arguments: vec![crate::kernel::SpecPredicateArgument::Value(
+                    self.lower_contract_expression_to_spec(pointer, environment)?,
+                )],
+                resource_state_dependent: false,
+            }),
             _ => unreachable!("non-atomic proposition dispatched to leaf lowering"),
         }
     }

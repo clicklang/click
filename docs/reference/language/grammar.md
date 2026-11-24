@@ -143,6 +143,7 @@ documentation inventory keep the following accepted words synchronized.
 | `exact` | Point-selecting [special form](index.md#special-forms): `exact(place)` reads `place` named by the state in scope itself, with no version walk ([`exact(...)`](index.md#exact)). |
 | `float32_from_bits`, `float64_from_bits` | Literal-only IEEE bit-pattern expressions; see [exact float bit literals](#exact-float-bit-literals). |
 | `sizeof`, `byte_offset`, `address` | Supported scalar, pointer, and struct-layout sizes, byte-granularity pointer-offset expressions, and the LP64 integer representation of an object pointer. |
+| `is_a` | Type-evidence proposition `is_a<T>(p)`: the object `p` points to is a `T`, a struct type `struct S` or a pointer to one `struct S*`. It holds where the proof has that evidence, such as an opened resource body's typed call. See [Type evidence](#type-evidence). |
 | `load` | Typed memory read `load<T>(p)`: reads the object at `p` as `T`, a scalar, data pointer, or function pointer `R (*)(A, ...)`; `volatile T` makes the access volatile and `const T*` reads a pointer to `const T`. Expansion writes it for a read with no C place to name it. See [Typed loads](#typed-loads). |
 | `by`, `using` | Proof introduction and exact-premise syntax. |
 | `mark`, `step`, `step_until` | Execution tactics. |
@@ -359,7 +360,7 @@ A loop invariant does the same at the loop head. Entry and every back edge
 lower each invariant with ordinary lowering, so a typed helper call or model
 constructor there must find evidence for its pointer arguments, or the
 invariant cannot hold. The head then assumes those requirements for the fresh
-values of reassigned locals, as `object_type[...]` facts beside the
+values of reassigned locals, as `is_a<T>(p)` facts beside the
 invariant. In `while (parent != 0) { ...; parent = rb_parent(node); }` with
 `invariant ctx_node_is(c.model, parent) == 1`, the head types `parent`, and
 each back edge must show that the new `parent` has class `struct rb_node`
@@ -368,13 +369,40 @@ each back edge must show that the new `parent` has class `struct rb_node`
 `mdtests/a_loop_invariant_typed_call_domain_must_hold_at_the_back_edge.md`.
 A `branch ensuring` or `match ... ensuring` fact does the same at its join:
 every arm lowers it with ordinary lowering, so the join assumes its typed
-calls' requirements for the joined values and exports their `object_type[...]`
+calls' requirements for the joined values and exports their `is_a<T>(p)`
 facts beside it. See
 `mdtests/a_branch_interface_supplies_its_typed_call_domains_at_the_join.md` and
 `mdtests/a_branch_interface_typed_call_domain_must_hold_in_each_arm.md`. When
 the loop head cannot assume an invariant at all, the refusal names it by
 position and says whether it had no reading there or contradicted the
 invariants before it.
+
+### Type evidence
+
+`is_a<T>(p)` states that the object `p` points to is a `T`, where `T` is a
+struct type `struct S` or a pointer to one, `struct S*`. Like `load<T>(p)`, it
+takes the object's type, not the pointer's. It is the fact Click records when
+it learns a pointer's object type: opening a resource whose body calls a
+typed function on the pointer, a loop head or branch join that assumes a typed
+call's domain, or a typed parameter. A proof can state it or cite it, and it
+holds only where that evidence exists:
+
+<!-- verified-example: mdtests/is_a_holds_after_opening_a_typed_resource.md -->
+```click
+void keep(struct node* p) {
+    owns held: token(p);
+    ensures held.model == old(held.model);
+} by {
+    unfold(held);
+    step();
+    have is_a<struct node>(p) by known();
+    let held = fold(token(p), { model: old(held.model) });
+}
+```
+
+Before the token is opened, `is_a<struct node>(p)` is not known
+(`mdtests/is_a_needs_type_evidence.md`), and evidence for `struct node` is
+not evidence for `struct node*` (`mdtests/is_a_names_the_type_of_the_evidence.md`).
 
 A `malloc` or `calloc` result bound directly to a complete struct pointer
 establishes that struct's class when the checked allocation size contains

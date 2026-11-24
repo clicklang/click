@@ -2695,6 +2695,29 @@ fn synthesize_surface_atomic_proposition(
         if let Some(surface) = super::program_termination::predicate_spelling(name) {
             return Some(surface);
         }
+        // Type evidence about a pointer is `is_a<T>(p)`. Its class is the one
+        // the pointer's evidence carries, and names this exact fact.
+        if crate::kernel::is_object_type_predicate_name(name) {
+            let [argument] = kernel_arguments.as_slice() else {
+                return None;
+            };
+            let Some(ProgramValue::Pointer(pointer)) = argument.program_value_native() else {
+                return None;
+            };
+            let class = pointer.object_class()?;
+            if crate::kernel::object_type_predicate_name(&class) != *name {
+                return None;
+            }
+            return Some(ClickProposition::IsA {
+                class,
+                pointer: synthesize_surface_pointer_expression(
+                    pointer,
+                    parameter_binding,
+                    state,
+                    bound_variables,
+                )?,
+            });
+        }
         let mut call_arguments = Vec::new();
         let mut index = usize::from(matches!(
             kernel_arguments.first(),

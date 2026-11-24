@@ -557,6 +557,18 @@ int32 short_sum(int32 seed) {
         );
     }
 
+    #[test]
+    fn type_evidence_round_trips_as_is_a() {
+        let lines = round_trips(
+            "is_a_holds_after_opening_a_typed_resource.md",
+            include_str!("../../../mdtests/is_a_holds_after_opening_a_typed_resource.md"),
+        );
+        assert!(
+            lines.contains(&("same".to_string(), "is_a<struct node>(p)".to_string())),
+            "{lines:#?}"
+        );
+    }
+
     /// The round trips `fixture` records, as `(outcome, original)` pairs.
     fn round_trips(name: &str, text: &str) -> Vec<(String, String)> {
         let fixture = crate::cli::parse_mdtest(std::path::Path::new(name), text).unwrap();

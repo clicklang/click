@@ -480,6 +480,11 @@ pub(super) fn print_proposition(
         ClickProposition::Loadable { segment } => {
             format!("viewable({})", describe_contract_segment(segment))
         }
+        ClickProposition::IsA { class, pointer } => format!(
+            "is_a<{}>({})",
+            crate::kernel::object_class_spelling(class),
+            describe_contract_expression(pointer)
+        ),
         ClickProposition::Defined { expression } => {
             // Keep the indexed read when its base is an object address.
             // A bare local can lower to a held value and lose the typed

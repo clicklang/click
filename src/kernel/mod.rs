@@ -119,7 +119,10 @@ pub(crate) use integer_truncation_laws::{
 mod nat_integer;
 pub(crate) use nat_integer::{check_nat_integer_law, is_conversion_nat_type, is_nat_integer_image};
 mod object_types;
-pub(crate) use object_types::is_checked_call_type_fact;
+pub(crate) use object_types::{
+    is_checked_call_type_fact, is_object_type_predicate_name, object_class_spelling,
+    object_type_predicate_name, object_type_predicate_spelling,
+};
 mod primitives;
 #[cfg(test)]
 pub(crate) use primitives::take_whole_normalization_facts;

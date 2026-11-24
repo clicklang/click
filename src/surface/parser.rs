@@ -7961,6 +7961,40 @@ impl Parser {
         }
     }
 
+    /// `is_a<T>(p)`: the object `p` points to is a `T`, a struct type or a
+    /// pointer to one. Its class is the one a `T*` parameter gives its
+    /// argument, so it names the same type evidence.
+    fn parse_is_a_proposition(&mut self) -> Result<ClickProposition, ClickError> {
+        self.position += 2;
+        let parsed = self.parse_type()?;
+        self.expect(Token::GreaterThan)?;
+        // A struct type parses as its pointer carrier; `struct_pointer` says
+        // whether the written type is the struct itself or a pointer to it.
+        let pointer_type = match (&parsed.struct_name, parsed.interface_type) {
+            (Some(_), InterfaceType::Int32Pointer) if !parsed.struct_pointer => {
+                InterfaceType::Int32Pointer
+            }
+            (Some(_), InterfaceType::Int32Pointer) if parsed.struct_pointer => {
+                InterfaceType::Int32PointerPointer
+            }
+            _ => {
+                return Err(self.error(
+                    "`is_a<T>(p)` names a struct type `struct S` or a pointer to one, `struct S*`",
+                ));
+            }
+        };
+        let class = syntax::declared_pointee_class(
+            pointer_type,
+            parsed.struct_name.as_deref(),
+            &self.struct_layouts,
+        )
+        .ok_or_else(|| self.error("`is_a<T>(p)` has no object class for this type"))?;
+        self.expect(Token::LParen)?;
+        let pointer = self.parse_contract_expression()?;
+        self.expect(Token::RParen)?;
+        Ok(ClickProposition::IsA { class, pointer })
+    }
+
     fn parse_viewable_proposition(&mut self) -> Result<ClickProposition, ClickError> {
         let saved = self.position;
         self.expect_ident_spelling("viewable")?;
@@ -9584,6 +9618,10 @@ impl Parser {
 
         if self.peek_ident() == Some("viewable") && self.peek_next() == Some(&Token::LParen) {
             return self.parse_viewable_proposition();
+        }
+
+        if self.peek_ident() == Some("is_a") && self.peek_next() == Some(&Token::LessThan) {
+            return self.parse_is_a_proposition();
         }
 
         if self.peek_ident() == Some("aligned") && self.peek_next() == Some(&Token::LParen) {

@@ -5630,7 +5630,11 @@ fn proof_case_is_stable_program_point_condition(proposition: &ClickProposition) 
             ClickProposition::FloatClassification { expression, .. } => {
                 expression_is_stable(expression)
             }
-            ClickProposition::Defined { expression } => expression_is_stable(expression),
+            ClickProposition::Defined { expression }
+            | ClickProposition::IsA {
+                pointer: expression,
+                ..
+            } => expression_is_stable(expression),
             ClickProposition::At { .. } => true,
             ClickProposition::And(left, right)
             | ClickProposition::Or(left, right)
