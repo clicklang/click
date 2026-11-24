@@ -1172,18 +1172,6 @@ pub(super) fn normalizes_selected(goal: &Proposition, premises: &[Proposition]) 
     if premises.is_empty() {
         return pointer_alignment(None, goal);
     }
-    if let [premise] = premises
-        && (float_bound_weakens(premise, goal)
-            || float_zero_product_premise(goal).as_ref() == Some(premise))
-    {
-        return true;
-    }
-    if matches!(premises.len(), 2 | 4)
-        && let Some(bound) = FloatPairBound::new(goal)
-        && bound.check(premises)
-    {
-        return true;
-    }
     // Reject impossible arities before reading native operands. Convert each
     // explicit input once, shared by the fixed rule family, rather than once
     // per rejected checker (important for long native expression spines).
@@ -3373,6 +3361,29 @@ fn float_bound(proposition: &Proposition) -> Option<FloatBound<'_>> {
     }
 }
 
+impl FloatBound<'_> {
+    /// The adjacent float on the admitted side of a strict bound.
+    fn inclusive_endpoint(&self) -> Option<u64> {
+        if !self.strict {
+            return Some(self.endpoint);
+        }
+        let sign = float_sign_bit(self.format);
+        let magnitude = self.endpoint & !sign;
+        if magnitude >= float_infinity(self.format) {
+            return None;
+        }
+        if magnitude == 0 {
+            return Some(if self.lower { 1 } else { sign | 1 });
+        }
+        let negative = self.endpoint & sign != 0;
+        Some(if self.lower == negative {
+            self.endpoint - 1
+        } else {
+            self.endpoint + 1
+        })
+    }
+}
+
 pub(crate) fn is_float_bound(proposition: &Proposition) -> bool {
     float_bound(proposition).is_some()
 }
@@ -3584,29 +3595,12 @@ pub(crate) fn float_bound_weakens(premise: &Proposition, goal: &Proposition) -> 
         && premise.lower == goal.lower
         && same_float_operand(premise.operand, goal.operand)
     {
-        return float_endpoint_establishes(&goal, premise.endpoint, premise.strict);
+        return float_endpoint_establishes(&goal, premise.endpoint, premise.strict)
+            || premise
+                .inclusive_endpoint()
+                .is_some_and(|endpoint| float_endpoint_establishes(&goal, endpoint, false));
     }
-    if let Some((crate::kernel::FloatBinaryOperator::Divide, [numerator, divisor])) =
-        goal.operand.binary()
-        && let Some(numerator) = numerator.literal_bits()
-        && positive_finite_float(goal.format, numerator)
-        && premise.format == goal.format
-        && premise.lower
-        && positive_finite_float(goal.format, premise.endpoint)
-        && same_float_operand(premise.operand, divisor)
-    {
-        // The divisor is positive and may be +infinity. The reciprocal
-        // decreases to +0, and its upper endpoint rounds at this width.
-        let endpoint = if goal.lower {
-            0
-        } else {
-            crate::kernel::primitives::float_binary_bits_at(
-                goal.format,
-                numerator,
-                premise.endpoint,
-                crate::kernel::FloatBinaryOperator::Divide,
-            )
-        };
+    if let Some(endpoint) = float_reciprocal_endpoint(&premise, &goal) {
         return float_endpoint_establishes(&goal, endpoint, false);
     }
     let Some((operand, operation)) = float_bound_operation(goal.operand) else {
@@ -3620,6 +3614,46 @@ pub(crate) fn float_bound_weakens(premise: &Proposition, goal: &Proposition) -> 
     }
     let (endpoint, strict) = operation.apply(goal.format, premise.endpoint, premise.strict);
     float_endpoint_establishes(&goal, endpoint, strict)
+}
+
+fn float_reciprocal_endpoint(premise: &FloatBound<'_>, goal: &FloatBound<'_>) -> Option<u64> {
+    use crate::kernel::FloatBinaryOperator::Divide;
+    let (Divide, [numerator, divisor]) = goal.operand.binary()? else {
+        return None;
+    };
+    let sign = float_sign_bit(goal.format);
+    let numerator = numerator.literal_bits()?;
+    let near_zero = premise.inclusive_endpoint()?;
+    if !positive_finite_float(goal.format, numerator & !sign)
+        || premise.format != goal.format
+        || !same_float_operand(premise.operand, divisor)
+        || !(1..=float_infinity(goal.format)).contains(&(near_zero & !sign))
+        || premise.lower != (near_zero & sign == 0)
+    {
+        return None;
+    }
+    // The stated side of zero includes its infinity. The most distant
+    // quotient from zero occurs at the divisor endpoint nearest zero.
+    let negative = (numerator ^ near_zero) & sign != 0;
+    Some(if goal.lower == negative {
+        crate::kernel::primitives::float_binary_bits_at(goal.format, numerator, near_zero, Divide)
+    } else {
+        0
+    })
+}
+
+/// Check float bounds using only the cited comparisons and constant rounding.
+pub(crate) fn checks_selected_float_bounds(goal: &Proposition, premises: &[Proposition]) -> bool {
+    match premises {
+        [premise] => {
+            float_bound_weakens(premise, goal)
+                || float_zero_product_premise(goal).as_ref() == Some(premise)
+        }
+        [_, _] | [_, _, _, _] => {
+            FloatPairBound::new(goal).is_some_and(|bound| bound.check(premises))
+        }
+        _ => false,
+    }
 }
 
 /// One checked unary transfer followed by ordered endpoint weakening.
@@ -3802,6 +3836,7 @@ pub(crate) struct FloatPairBound<'a> {
     operator: crate::kernel::FloatBinaryOperator,
     operands: [FloatOperandView<'a>; 2],
     zero_product: bool,
+    square: bool,
 }
 
 impl<'a> FloatPairBound<'a> {
@@ -3817,6 +3852,9 @@ impl<'a> FloatPairBound<'a> {
             return None;
         }
         Some(Self {
+            square: operator == crate::kernel::FloatBinaryOperator::Multiply
+                && zero.is_none()
+                && same_float_operand(operands[0], operands[1]),
             goal,
             operator,
             operands: zero.map_or(operands, |operand| [operand; 2]),
@@ -3833,6 +3871,10 @@ impl<'a> FloatPairBound<'a> {
         }
     }
 
+    pub(crate) fn is_square(&self) -> bool {
+        self.square
+    }
+
     fn lower_operand_bound(&self, index: usize) -> bool {
         use crate::kernel::FloatBinaryOperator::*;
         if self.zero_product {
@@ -3847,11 +3889,20 @@ impl<'a> FloatPairBound<'a> {
 
     pub(crate) fn operand_endpoint(&self, index: usize, premise: &Proposition) -> Option<u64> {
         let premise = float_bound(premise)?;
-        (premise.endpoint & !float_sign_bit(premise.format) < float_infinity(premise.format)
-            && premise.format == self.goal.format
-            && premise.lower == self.lower_operand_bound(index)
-            && same_float_operand(premise.operand, self.operands[index % 2]))
-        .then_some(premise.endpoint)
+        let finite = |bits| bits & !float_sign_bit(premise.format) < float_infinity(premise.format);
+        if !finite(premise.endpoint)
+            || premise.format != self.goal.format
+            || premise.lower != self.lower_operand_bound(index)
+            || !same_float_operand(premise.operand, self.operands[index % 2])
+        {
+            return None;
+        }
+        Some(
+            premise
+                .inclusive_endpoint()
+                .filter(|&bits| finite(bits))
+                .unwrap_or(premise.endpoint),
+        )
     }
 
     pub(crate) fn stronger_endpoint(&self, index: usize, candidate: u64, previous: u64) -> bool {
@@ -3867,8 +3918,13 @@ impl<'a> FloatPairBound<'a> {
         if !matches!(premises.len(), 2 | 4) || premises.len() > self.premise_count() {
             return false;
         }
+        self.check_endpoints(premises, premises.len())
+            || (self.square && premises.len() == 2 && self.check_endpoints(premises, 4))
+    }
+
+    fn check_endpoints(&self, premises: &[Proposition], count: usize) -> bool {
         let mut endpoints = [0; 4];
-        for (index, endpoint) in endpoints.iter_mut().enumerate().take(premises.len()) {
+        for (index, endpoint) in endpoints.iter_mut().enumerate().take(count) {
             let Some(bound) = premises
                 .iter()
                 .filter_map(|premise| self.operand_endpoint(index, premise))
@@ -3884,7 +3940,7 @@ impl<'a> FloatPairBound<'a> {
             };
             *endpoint = bound;
         }
-        self.established_by(&endpoints[..premises.len()])
+        self.established_by(&endpoints[..count])
     }
 
     pub(crate) fn established_by(&self, endpoints: &[u64]) -> bool {
@@ -3902,6 +3958,14 @@ impl<'a> FloatPairBound<'a> {
                 positive_finite_float(format, *left)
                     && positive_finite_float(format, *right)
                     && check(*left, *right)
+            }
+            [low, _, high, _] if self.square => {
+                // Both slots denote the same value. The square takes its
+                // extrema at the ends of the interval or at zero.
+                let le = |a, b| float_endpoint_compare(format, a, b, ComparisonOperator::LessEqual);
+                check(*low, *low)
+                    && check(*high, *high)
+                    && (!self.goal.lower || !le(*low, 0) || !le(0, *high) || check(0, 0))
             }
             [left_low, right_low, left_high, right_high]
                 if matches!(self.operator, Multiply | Divide) =>

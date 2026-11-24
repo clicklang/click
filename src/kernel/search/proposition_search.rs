@@ -471,13 +471,15 @@ impl super::ProofSearch<PureFactContext> {
                     continue;
                 }
                 if pair.established_by(&endpoints[..length]) {
-                    return Some(
-                        best[..length]
-                            .iter()
-                            .flatten()
-                            .map(|(_, premise)| premise.clone())
-                            .collect(),
-                    );
+                    let mut premises: Vec<_> = best[..length]
+                        .iter()
+                        .flatten()
+                        .map(|(_, premise)| premise.clone())
+                        .collect();
+                    if length == 4 && pair.is_square() {
+                        premises.dedup();
+                    }
+                    return Some(premises);
                 }
             }
             None
