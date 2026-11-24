@@ -66,19 +66,29 @@ impl SharedAddressOffset {
         roots: &[Self; 2],
         map: impl FnMut(&Self, KernelAddressOffset) -> Result<Self, E>,
     ) -> Result<[Self; 2], E> {
-        Self::try_map_roots(roots, map)
+        Self::try_map_roots(roots, |_| None, map)
     }
 
     pub(crate) fn try_map_root<E>(
         &self,
         map: impl FnMut(&Self, KernelAddressOffset) -> Result<Self, E>,
     ) -> Result<Self, E> {
-        let [root] = Self::try_map_roots(std::array::from_ref(self), map)?;
+        self.try_map_root_replacing(|_| None, map)
+    }
+
+    /// Replace selected subtrees before visiting their children.
+    pub(crate) fn try_map_root_replacing<E>(
+        &self,
+        replace: impl FnMut(&Self) -> Option<Self>,
+        map: impl FnMut(&Self, KernelAddressOffset) -> Result<Self, E>,
+    ) -> Result<Self, E> {
+        let [root] = Self::try_map_roots(std::array::from_ref(self), replace, map)?;
         Ok(root)
     }
 
     fn try_map_roots<E, const N: usize>(
         roots: &[Self; N],
+        mut replace: impl FnMut(&Self) -> Option<Self>,
         mut map: impl FnMut(&Self, KernelAddressOffset) -> Result<Self, E>,
     ) -> Result<[Self; N], E> {
         let mut results: HashMap<SharedAddressOffset, SharedAddressOffset> = HashMap::new();
@@ -88,6 +98,10 @@ impl SharedAddressOffset {
                 continue;
             }
             crate::instrumentation::record_deterministic_work(1);
+            if !finish && let Some(replacement) = replace(root) {
+                results.insert(root.clone(), replacement);
+                continue;
+            }
             let node = match root.node() {
                 KernelAddressOffset::Add([a, b]) => {
                     if !finish {

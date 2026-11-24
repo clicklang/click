@@ -312,3 +312,30 @@ fn integer_address_rewrite_ignores_unrelated_interned_applications() {
     assert_eq!(costs, vec![costs[0]; 3]);
     assert_eq!(repeated_costs, vec![repeated_costs[0]; 3]);
 }
+
+#[test]
+fn exact_displacement_rewrite_visits_shared_subexpressions_once() {
+    let _session = VerificationSession::enter();
+    for depth in [4, 8, 12, 16] {
+        let from = AddressOffset::Variable(Variable(1008500 + depth as u64));
+        let to = AddressOffset::Constant(1);
+        let doubling_chain = |leaf: &AddressOffset| {
+            let mut root = KernelAddressOffset::import(leaf);
+            for _ in 0..depth {
+                root = KernelAddressOffset::Add([root.clone(), root])
+                    .into_shared()
+                    .unwrap();
+            }
+            root
+        };
+        let source = StoredPointerOffset::from_rewritten_root(doubling_chain(&from));
+        let expected = doubling_chain(&to);
+        let (output, work) = crate::instrumentation::measure_deterministic_work(|| {
+            TermRewrite::for_pointer_offset_exact(&from, &to).contract_offset(&source)
+        });
+        assert_eq!(output.root(), Some(&expected));
+        assert!(!source.has_cached_native_offset());
+        assert!(!output.has_cached_native_offset());
+        assert!(work <= 20 * depth, "depth={depth}, work={work}");
+    }
+}

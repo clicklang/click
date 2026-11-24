@@ -106,7 +106,7 @@ impl Ord for PointerStorageKey {
 }
 
 #[derive(Clone, Debug)]
-struct OffsetKey(Arc<OffsetData>);
+pub(in crate::kernel) struct OffsetKey(Arc<OffsetData>);
 #[derive(Debug)]
 struct OffsetData {
     shape: OffsetShape,
@@ -141,7 +141,7 @@ impl OffsetKey {
             fingerprint: hash.finish(),
         }))
     }
-    fn native(source: &AddressOffset) -> Self {
+    pub(in crate::kernel) fn native(source: &AddressOffset) -> Self {
         enum Task<'a> {
             Enter(&'a AddressOffset),
             Add,
@@ -174,6 +174,22 @@ impl OffsetKey {
         }
         values.pop().expect("offset key")
     }
+    pub(in crate::kernel) fn matches_root(&self, source: &SharedAddressOffset) -> bool {
+        if self.0.shape.rank()
+            != match source.node() {
+                KernelAddressOffset::Constant(_) => 0,
+                KernelAddressOffset::Variable(_) => 1,
+                KernelAddressOffset::Add(_) => 2,
+                KernelAddressOffset::Int32Scaled { .. } => 3,
+                KernelAddressOffset::Int64Scaled { .. } => 4,
+            }
+        {
+            return false;
+        }
+        let candidate = offset_for_root(source);
+        self.0.fingerprint == candidate.0.fingerprint && *self == candidate
+    }
+
     fn shared(source: &SharedAddressOffset) -> Self {
         let index = |root: &KernelTerm| {
             KernelAddressOffset::index_key(root).expect("selected offset index key")

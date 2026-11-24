@@ -337,50 +337,57 @@ impl Hash for KernelCallArgument {
 /// C pointer equality intentionally omits auxiliary qualifiers/evidence, so
 /// it cannot be used to select which legacy payload a bridge returns.
 #[derive(Clone, Debug)]
-pub struct KernelLegacyTerm {
-    identity: LegacyIdentity,
-    value: Option<PureFunctionArgument>,
+pub struct KernelLegacyTerm(LegacyPayload);
+
+#[derive(Clone, Debug)]
+enum LegacyPayload {
+    Written {
+        id: u64,
+        value: Arc<PureFunctionArgument>,
+    },
+    Observation(KernelTerm),
 }
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
-enum LegacyIdentity {
-    NativeObservation(Box<PureFunctionArgument>),
-    Fresh(u64),
-}
+
 impl PartialEq for KernelLegacyTerm {
     fn eq(&self, other: &Self) -> bool {
-        self.identity == other.identity
+        match (&self.0, &other.0) {
+            (LegacyPayload::Written { id: a, .. }, LegacyPayload::Written { id: b, .. }) => a == b,
+            (LegacyPayload::Observation(_), LegacyPayload::Observation(_)) => {
+                self.value() == other.value()
+            }
+            _ => false,
+        }
     }
 }
 impl Eq for KernelLegacyTerm {}
 impl Hash for KernelLegacyTerm {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        if matches!(self.identity, LegacyIdentity::NativeObservation(_)) {
-            // Charge the existing native descriptor boundary, rather than
-            // hiding its structural work behind a constant-cost common ID.
-            struct Charged<'a, H>(&'a mut H);
-            impl<H: Hasher> Hasher for Charged<'_, H> {
-                fn finish(&self) -> u64 {
-                    self.0.finish()
+        match &self.0 {
+            LegacyPayload::Observation(_) => {
+                // Charge the written descriptor read for observation identity.
+                struct Charged<'a, H>(&'a mut H);
+                impl<H: Hasher> Hasher for Charged<'_, H> {
+                    fn finish(&self) -> u64 {
+                        self.0.finish()
+                    }
+                    fn write(&mut self, bytes: &[u8]) {
+                        crate::instrumentation::record_deterministic_work(bytes.len().div_ceil(8));
+                        self.0.write(bytes);
+                    }
                 }
-                fn write(&mut self, bytes: &[u8]) {
-                    crate::instrumentation::record_deterministic_work(bytes.len().div_ceil(8));
-                    self.0.write(bytes);
-                }
+                (0u8, self.value()).hash(&mut Charged(state));
             }
-            self.identity.hash(&mut Charged(state));
-        } else {
-            self.identity.hash(state);
+            LegacyPayload::Written { id, .. } => (1u8, id).hash(state),
         }
     }
 }
 impl KernelLegacyTerm {
     pub fn value(&self) -> &PureFunctionArgument {
-        if let Some(value) = &self.value {
-            return value;
-        }
-        match &self.identity {
-            LegacyIdentity::NativeObservation(argument) => argument,
-            _ => unreachable!("native expression identity without a payload"),
+        match &self.0 {
+            LegacyPayload::Written { value, .. } => value,
+            LegacyPayload::Observation(source) => source
+                .written_argument()
+                .expect("numeric observation of a written argument"),
         }
     }
 }
@@ -536,7 +543,7 @@ impl NodeKey {
             | KernelTermNode::FloatRead(_) => true,
             KernelTermNode::MachineObservationInput { exact, .. } => *exact,
             KernelTermNode::WrittenMachine(_) | KernelTermNode::CallArgument(_) => true,
-            KernelTermNode::Legacy(value) => matches!(value.identity, LegacyIdentity::Fresh(_)),
+            KernelTermNode::Legacy(value) => matches!(value.0, LegacyPayload::Written { .. }),
             KernelTermNode::Call { .. } if matches!(ty, KernelType::Program(ty) if MachineIntegerType::from_program_type(ty).is_some()) => {
                 true
             }
@@ -1390,15 +1397,20 @@ impl KernelTerm {
     fn legacy(argument: PureFunctionArgument) -> Self {
         use std::sync::atomic::{AtomicU64, Ordering};
         static NEXT: AtomicU64 = AtomicU64::new(0);
-        let identity = LegacyIdentity::Fresh(
-            NEXT.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
-                .expect("legacy term identity exhausted"),
-        );
-        Self::legacy_at(argument, identity)
+        let id = NEXT
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
+            .expect("legacy term identity exhausted");
+        Self::intern(
+            Self::native_argument_type(&argument),
+            KernelTermNode::Legacy(KernelLegacyTerm(LegacyPayload::Written {
+                id,
+                value: Arc::new(argument),
+            })),
+        )
     }
     /// Retain an already-native opaque machine operand at a shared parent.
     /// The identity belongs to its explicit typed input, never to an export of
-    /// a shared tree. This temporary payload uses the existing legacy boundary.
+    /// a shared tree.
     pub(crate) fn retained_machine_operand(
         format: MachineIntegerType,
         operand: MachineOperandView<'_>,
@@ -1570,17 +1582,19 @@ impl KernelTerm {
         )
     }
 
-    /// Numeric observation of a selected opaque descriptor. Producer payloads
-    /// remain exact; only this observation uses the native equality contract.
-    pub(crate) fn native_observation_leaf(argument: PureFunctionArgument) -> Self {
-        let ty = Self::native_argument_type(&argument);
+    /// Observe the selected written descriptor through its producer. Identity
+    /// follows its native equality contract, and output borrows that same slot.
+    pub(super) fn observe_written_argument(source: &Self) -> Self {
+        debug_assert!(source.written_argument().is_some());
         Self::intern(
-            ty,
-            KernelTermNode::Legacy(KernelLegacyTerm {
-                identity: LegacyIdentity::NativeObservation(Box::new(argument)),
-                value: None,
-            }),
+            source.ty().clone(),
+            KernelTermNode::Legacy(KernelLegacyTerm(LegacyPayload::Observation(source.clone()))),
         )
+    }
+
+    #[cfg(test)]
+    pub(crate) fn native_observation_leaf(argument: PureFunctionArgument) -> Self {
+        Self::observe_written_argument(&Self::legacy(argument))
     }
 
     fn written_call_argument(application: &SharedPureApplication, index: usize) -> Self {
@@ -1600,16 +1614,6 @@ impl KernelTerm {
             KernelTermNode::Legacy(argument) => Some(argument.value()),
             _ => None,
         }
-    }
-
-    fn legacy_at(argument: PureFunctionArgument, identity: LegacyIdentity) -> Self {
-        Self::intern(
-            Self::native_argument_type(&argument),
-            KernelTermNode::Legacy(KernelLegacyTerm {
-                identity,
-                value: Some(argument),
-            }),
-        )
     }
 
     fn native_argument_type(argument: &PureFunctionArgument) -> KernelType {

@@ -366,9 +366,9 @@ impl Drop for ConditionStorageKey {
 }
 
 mod pointer;
-pub(in crate::kernel) use pointer::PointerStorageKey;
 pub(in crate::kernel) use pointer::compare_offsets;
 pub(in crate::kernel) use pointer::for_root as pointer_for_root;
+pub(in crate::kernel) use pointer::{OffsetKey, PointerStorageKey};
 
 mod algebraic;
 pub(in crate::kernel) use algebraic::AlgebraicStorageKey;

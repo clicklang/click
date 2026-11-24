@@ -290,3 +290,28 @@ fn a_null_array_argument_is_formed_at_no_state() {
     let symbolic = pointer(Address::symbolic(Variable(1008601)));
     assert_ne!(array(&empty, &symbolic), array(&other, &symbolic));
 }
+
+#[test]
+fn opaque_call_observation_borrows_the_written_argument_slot() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let native = PureFunctionArgument::Value(ProgramValue::Bool(MachineTerm::Constant {
+        format: MachineIntegerType::UInt8,
+        bits: 2,
+    }));
+    let build = || {
+        let producer =
+            SharedPureApplication::intern("opaque_bool_input".into(), vec![native.clone()]);
+        let call = KernelTermImport::default().machine_call(MachineIntegerType::Int32, &producer);
+        call.children()[0].clone()
+    };
+    let first = build();
+    let second = build();
+    assert!(matches!(first.node(), KernelTermNode::CallArgument(_)));
+    assert_ne!(first, second);
+    let key = KernelTerm::observe_written_argument(&first);
+    assert!(std::ptr::eq(
+        key.written_argument().unwrap(),
+        first.written_argument().unwrap(),
+    ));
+    assert_eq!(key, KernelTerm::observe_written_argument(&second));
+}

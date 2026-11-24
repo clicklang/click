@@ -710,3 +710,32 @@ fn rewriting_integer_address_zero_keeps_canonical_null_and_displacement() {
         }
     }
 }
+
+#[test]
+fn exact_displacement_replacement_keeps_the_retained_offset() {
+    let _session = VerificationSession::enter();
+    let index = SharedMachineIntegerTerm::index(
+        MachineIntegerType::UInt64,
+        MachineTerm::Variable(Variable(1008337)),
+    );
+    let from = AddressOffset::Int64Scaled {
+        value: index,
+        byte_width: 8,
+        unsigned: true,
+    };
+    let to = AddressOffset::Add(
+        Box::new(from.clone()),
+        Box::new(AddressOffset::Constant(16)),
+    );
+    let displacement =
+        |left| AddressOffset::Add(Box::new(left), Box::new(AddressOffset::Constant(40)));
+    let input = StoredPointerOffset::from_written(&displacement(from.clone()));
+    let expected = StoredPointerOffset::from_written(&displacement(to.clone()));
+    let mut rewrite = TermRewrite::for_pointer_offset_exact(&from, &to);
+    let output = rewrite.contract_offset(&input);
+    assert!(rewrite.changed);
+    assert!(!input.has_cached_native_offset());
+    assert!(!output.has_cached_native_offset());
+    assert_eq!(output, expected);
+    assert!(!output.has_cached_native_offset());
+}

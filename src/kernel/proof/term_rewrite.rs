@@ -4,6 +4,7 @@
 use crate::kernel::CompareRelation;
 #[cfg(test)]
 use crate::kernel::binary_node;
+use crate::kernel::execution_value::storage_keys::OffsetKey;
 use crate::kernel::int32_constant;
 use crate::kernel::*;
 use crate::kernel::{
@@ -1953,6 +1954,31 @@ impl ReadAddressDependencies {
     }
 }
 
+struct OffsetReplacement<'a> {
+    from: &'a AddressOffset,
+    to: &'a AddressOffset,
+    retained: std::cell::OnceCell<Option<(OffsetKey, SharedAddressOffset)>>,
+}
+
+impl<'a> OffsetReplacement<'a> {
+    fn new(from: &'a AddressOffset, to: &'a AddressOffset) -> Self {
+        Self {
+            from,
+            to,
+            retained: Default::default(),
+        }
+    }
+
+    fn retained(&self) -> Option<&(OffsetKey, SharedAddressOffset)> {
+        self.retained
+            .get_or_init(|| {
+                let to = KernelAddressOffset::try_import(self.to).ok()?;
+                Some((OffsetKey::native(self.from), to))
+            })
+            .as_ref()
+    }
+}
+
 pub(crate) struct TermRewrite<'a> {
     // Comparison only: rebuild arithmetic through its assumption-free
     // identities. Ordinary equality rewrites retain the written nodes.
@@ -1964,7 +1990,7 @@ pub(crate) struct TermRewrite<'a> {
     pointer_addresses_only: bool,
     pointer_exact: Option<(&'a Address, &'a Address)>,
     pointer_value_exact: Option<(&'a Pointer, &'a Pointer)>,
-    pointer_offset_exact: Option<(&'a AddressOffset, &'a AddressOffset)>,
+    pointer_offset_exact: Option<OffsetReplacement<'a>>,
     /// A `Bool` equality's rewrite (Stage 5, rule L-Eq): every occurrence of
     /// the first condition is replaced by the second.
     condition_exact: Option<(&'a ConditionTerm, &'a ConditionTerm)>,
@@ -2654,7 +2680,7 @@ impl<'a> TermRewrite<'a> {
 
     pub(crate) fn for_pointer_offset_exact(from: &'a AddressOffset, to: &'a AddressOffset) -> Self {
         let mut rewrite = Self::empty();
-        rewrite.pointer_offset_exact = Some((from, to));
+        rewrite.pointer_offset_exact = Some(OffsetReplacement::new(from, to));
         rewrite.enforce_integer_work_limit = true;
         rewrite
     }
@@ -2681,7 +2707,10 @@ impl<'a> TermRewrite<'a> {
         if from.address().base == AddressBase::ExternalArgument
             && to.address().base == AddressBase::ExternalArgument
         {
-            rewrite.pointer_offset_exact = Some((&from.address().offset, &to.address().offset));
+            rewrite.pointer_offset_exact = Some(OffsetReplacement::new(
+                &from.address().offset,
+                &to.address().offset,
+            ));
         }
         rewrite.enforce_integer_work_limit = true;
         rewrite
@@ -5834,14 +5863,19 @@ impl<'a> TermRewrite<'a> {
     }
 
     fn contract_offset(&mut self, offset: &StoredPointerOffset) -> StoredPointerOffset {
-        // Exact replacement uses the original native subtree identities.
-        let Some(source) = offset
-            .root()
-            .filter(|_| self.pointer_offset_exact.is_none())
-        else {
+        let Some(source) = offset.root() else {
             return self.offset(offset.native_compat()).into();
         };
-        match self.rewrite_retained_offset(source) {
+        let replacement = match &self.pointer_offset_exact {
+            Some(exact) if self.pointer_value_exact.is_none() || !self.source_disabled => {
+                let Some(retained) = exact.retained() else {
+                    return self.offset(offset.native_compat()).into();
+                };
+                Some(retained.clone())
+            }
+            _ => None,
+        };
+        match self.rewrite_retained_offset_replacing(source, replacement.as_ref()) {
             Ok(root) if root == *source => offset.clone(),
             Ok(root) => StoredPointerOffset::from_rewritten_root(root),
             Err(()) => exhausted_offset().into(),
@@ -5852,7 +5886,23 @@ impl<'a> TermRewrite<'a> {
         &mut self,
         source: &SharedAddressOffset,
     ) -> Result<SharedAddressOffset, ()> {
-        let root = source.try_map_root(|original, node| {
+        self.rewrite_retained_offset_replacing(source, None)
+    }
+
+    fn rewrite_retained_offset_replacing(
+        &mut self,
+        source: &SharedAddressOffset,
+        replacement: Option<&(OffsetKey, SharedAddressOffset)>,
+    ) -> Result<SharedAddressOffset, ()> {
+        let replaced = std::cell::Cell::new(false);
+        let replace = |candidate: &SharedAddressOffset| {
+            let (from, to) = replacement?;
+            from.matches_root(candidate).then(|| {
+                replaced.set(true);
+                to.clone()
+            })
+        };
+        let root = source.try_map_root_replacing(replace, |original, node| {
             if self.checked_work_exhausted() {
                 return Err(());
             }
@@ -5897,16 +5947,17 @@ impl<'a> TermRewrite<'a> {
                 _ => original.clone(),
             })
         })?;
+        self.changed |= replaced.get();
         (!self.checked_work_exhausted()).then_some(root).ok_or(())
     }
 
     fn offset(&mut self, v: &AddressOffset) -> AddressOffset {
-        if let Some((from, to)) = self.pointer_offset_exact
-            && v == from
+        if let Some(exact) = &self.pointer_offset_exact
+            && v == exact.from
             && (self.pointer_value_exact.is_none() || !self.source_disabled)
         {
             self.changed = true;
-            return to.clone();
+            return exact.to.clone();
         }
         if self.checked_work_exhausted() {
             return exhausted_offset();
