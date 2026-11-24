@@ -75,6 +75,25 @@ theorem add_bound(x: float) {
         normalize() using { x >= float32_from_bits(0xc1200000); };
     }
 }
+theorem scaled_lower(x: float) {
+    requires x >= float32_from_bits(0xc1200000);
+    ensures float32_from_bits(0x40000000) * x >= float32_from_bits(0xc1a00000) by {
+        apply(click::float_order::float32_scale_lower(
+            float32_from_bits(0x40000000), x, float32_from_bits(0xc1200000)
+        ));
+        known();
+    }
+}
+theorem scaled_upper(x: float) {
+    requires x <= float32_from_bits(0x41200000);
+    ensures float32_from_bits(0x40000000) * x <= float32_from_bits(0x41a00000) by {
+        apply(click::float_order::float32_scale_upper(
+            float32_from_bits(0x40000000), x, float32_from_bits(0x41200000)
+        ));
+        known();
+    }
+}
+
 ```
 
 ```expect

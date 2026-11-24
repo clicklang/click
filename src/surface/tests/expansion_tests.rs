@@ -26898,7 +26898,7 @@ fn arithmetic_safety_bounds_expand_to_checked_proofs() {
 }
 
 #[test]
-fn float_bounds_using_legacy_normalization_refuse_expansion() {
+fn float_cast_bounds_expand_and_cold_replay() {
     for (fixture, functions) in [
         ("arithmetic_safety_float_widening", &["convert"][..]),
         (
@@ -26910,9 +26910,14 @@ fn float_bounds_using_legacy_normalization_refuse_expansion() {
         let sources = crate::cli::source_refs(&sources);
         verify_c_sources(&source, &sources).unwrap();
         for function in functions {
-            assert_compatibility_normalization_refusal(
-                expand_function_proof_source(&source, &sources, function).unwrap_err(),
-            );
+            let claim = format!("{function}.ensures_0");
+            let expanded = expand_c_claim_source_by_label(&source, &sources, &claim)
+                .unwrap_or_else(|error| panic!("{}", error.report()));
+            assert!(!expanded.contains("normalize()"), "{expanded}");
+            crate::surface::check_audit_claim(&claim, true, || {
+                verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+            })
+            .unwrap_or_else(|error| panic!("{claim}: {error}"));
         }
     }
 }
@@ -28134,40 +28139,35 @@ fn signed_shift_definedness_expands_and_replays() {
 }
 
 #[test]
-fn arithmetic_certificates_cold_replay_or_report_legacy_normalization() {
-    for (fixture, claims) in [
-        (
-            "guarded_signed_ring",
-            &[("sum", true), ("product", false)][..],
-        ),
+fn arithmetic_certificates_cold_replay_without_generated_normalization() {
+    for (fixture, functions) in [
+        ("guarded_signed_ring", &["sum", "product"][..]),
         (
             "float_bound_composition",
-            &[("negate_scaled", false), ("widen_scaled", false)][..],
+            &["negate_scaled", "widen_scaled"][..],
         ),
-        ("signed_odd_divisor", &[("divide", true)][..]),
-        ("negative_signed_product", &[("product", false)][..]),
-        ("float_add_pair", &[("sum", false)][..]),
-        (
-            "unsigned_masked_divisor",
-            &[("divide", true), ("remainder", true)][..],
-        ),
+        ("signed_odd_divisor", &["divide"][..]),
+        ("negative_signed_product", &["product"][..]),
+        ("float_add_pair", &["sum"][..]),
+        ("unsigned_masked_divisor", &["divide", "remainder"][..]),
     ] {
         let (source, sources) =
             mdtest_sources(&format!("mdtests/arithmetic_expression_{fixture}.md"));
         let sources = crate::cli::source_refs(&sources);
         verify_c_sources(&source, &sources).unwrap();
-        for (function, replayable) in claims {
+        for function in functions {
             let claim = format!("{function}.ensures_0");
-            let result = expand_c_claim_source_by_label(&source, &sources, &claim);
-            if *replayable {
-                let expanded = result.unwrap_or_else(|error| panic!("{claim}: {error}"));
-                crate::surface::check_audit_claim(&claim, true, || {
-                    verify_c_sources(&expanded, &sources).map_err(|error| error.report())
-                })
-                .unwrap_or_else(|error| panic!("{claim}: {error}\n{expanded}"));
-            } else {
-                assert_compatibility_normalization_refusal(result.unwrap_err());
-            }
+            let expanded = expand_c_claim_source_by_label(&source, &sources, &claim)
+                .unwrap_or_else(|error| panic!("{claim}: {error}"));
+            assert_eq!(
+                expanded.matches("normalize()").count(),
+                source.matches("normalize()").count(),
+                "{claim}"
+            );
+            crate::surface::check_audit_claim(&claim, true, || {
+                verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+            })
+            .unwrap_or_else(|error| panic!("{claim}: {error}\n{expanded}"));
         }
     }
 }

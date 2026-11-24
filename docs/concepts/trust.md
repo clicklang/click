@@ -158,7 +158,7 @@ theorem certification consumes checks that theorem once. A proved library
 theorem is trusted to the extent that the check of its proof is; a kernel
 standard theorem is trusted to the extent that its builder is.
 
-The library also declares 81 `axiom`s, which are trusted, not proved.
+The library also declares 93 `axiom`s, which are trusted, not proved.
 Seven are the laws of the primitive type `Vec<T>` in
 `library/rust/vec.click`, which relate its bodyless operations `vec::len`,
 `vec::get`, `vec::push` and `vec::set`
@@ -212,6 +212,23 @@ The `lt_step_le` axiom states Integer discreteness: `a < b` implies
 are proved theorems. Addition, rounding, antisymmetry, and discreteness are
 new declarations. Their stated guards and conclusions have an independent
 BigInt oracle regression, including negative and arbitrary-width values.
+
+The six floating-point order axioms in `library/float_order.click` give
+transitivity for two non-strict comparisons and for either order of a strict
+and a non-strict comparison. Each premise is a true IEEE comparison, so the
+operands are ordered values. No separate finiteness hypothesis is needed.
+The same laws apply to infinities and to both zeros.
+
+The rounded addition axioms in the same module compare a sum with the sum
+of its two finite lower or upper endpoints. The ordered premises exclude
+NaNs. For an upper bound the finite endpoints rule out positive infinity
+in the inputs, and for a lower bound they rule out negative infinity.
+Neither case admits a sum of infinities of opposite sign. Each sum rounds
+at the law's stated precision.
+The float32 scaling axioms multiply both sides of an ordered comparison
+by one finite positive factor and round both products at float32 precision.
+A positive finite factor excludes both zero-times-infinity and
+infinity-times-zero.
 
 Only the built-in library modules may declare a primitive `type`, a bodyless
 `function` or an `axiom`; the parser refuses each in any other file. The

@@ -1136,8 +1136,8 @@ step is still checked.
 | `check_termination_callbacks()` | simple | Expansion output | Classify callback safety using established strict return premises. | [Reference](#termination-checks) |
 | `close()` | smart | Core | Try the direct goal check, then search if it fails. | [Reference](#closing-a-goal) |
 | `known()` | simple | Specialized | Require a direct goal check. | [Reference](#available-facts) |
-| `normalize()` | simple | Expansion output | Close a goal by evaluation without context. | [Reference](#context-free-normalization) |
-| `normalize() using { P; ... }` | simple | Expansion output | Check normalization against written premises. | [Reference](#normalization-with-selected-premises) |
+| `normalize()` | simple | Compatibility | Close a goal by evaluation without context. | [Reference](#context-free-normalization) |
+| `normalize() using { P; ... }` | simple | Compatibility | Check normalization against written premises. | [Reference](#normalization-with-selected-premises) |
 | `preserve(resource, region)` | simple | Specialized | Preserve a selected read across a separated effect. | [Reference](#preservation) |
 | `rewrite(from, to)` | simple | Core | Rewrite the goal using an equality. | [Reference](#rewriting) |
 | `intro()` | simple | Core | Introduce a universal binder or implication premise. | [Reference](#introducing-a-binder-or-premise) |
@@ -1758,7 +1758,10 @@ An unsigned `x % d` is at most `x` when the exact divisor is known nonzero.
 Signed quotient and remainder bounds against zero use the named operand
 signs and the divisor's nonzero guard. Machine operations also require
 evidence that excludes the signed minimum divided by `-1` when the signs
-alone leave that pair possible.
+alone leave that pair possible. A signed product's exact Integer bound at its
+machine minimum or maximum uses the two operand signs and the corresponding
+quotient guard when needed. The written product and endpoint name the guards
+for exact lookup.
 A full-width unsigned index agrees with its signed low word when both use
 the same base and stride and the full-width index is at most `INT32_MAX`.
 `known()` checks this bound on the full-width index itself. See
@@ -1936,10 +1939,9 @@ No operand history or ambient facts are read.
 
 **Form:** `normalize() using { P; ... }`
 
-**Expansion output.** `click expand` writes it; by hand, write it only in an
-explicit proof that must evaluate a goal under named conditions without search.
-It decides conditions in the goal from the cited premises and the equality
-graph, then applies `normalize()`'s check (see
+This compatibility form checks a goal under its named premises. Expansion
+retains written calls. The tactic decides conditions in the goal from the cited
+premises and the equality graph, then applies `normalize()`'s check (see
 [Context-free normalization](#context-free-normalization)) to the result.
 
 For a signed `int32` order goal, the cited comparisons can form a chain in
@@ -2005,7 +2007,13 @@ none selects premises or expands a polynomial.
 For a reflexive `float` or `double` comparison, `solve` expands to
 `known()` when the exact `isfinite(x)` fact is available for the common
 operand. Restricted `solve() using` must select that fact. For example,
-`isfinite(x)` establishes `x == x`, `x <= x` and `not(x < x)`.
+`isfinite(x)` establishes `x == x`, `x <= x` and `not(x < x)`. An ordered
+bound on an exact float widening or sign negation also closes with
+`known()` from the corresponding input comparison at the same endpoint.
+Negation reverses the order and flips the endpoint's sign. The widening
+check requires the endpoint to be exactly representable in the input width.
+For a weaker result bound, `solve()` records the transported comparison in
+a `have` and applies the corresponding `click::float_order` transitivity law.
 
 For supported native unsigned address words, `solve` emits ordinary `have`
 goals, `apply(click::integer::...)`, rewrites, and `known()`: alignment

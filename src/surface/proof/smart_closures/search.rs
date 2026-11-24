@@ -3692,8 +3692,261 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         Ok(None)
     }
 
-    /// Materialize the selected chain as one checked normalization per
-    /// operation. Each have cites the previous bound, with its own endpoint.
+    fn try_exact_float_bound_transfer(
+        input: &Proof<'a>,
+        source: &Proposition,
+        goal: &Proposition,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_exact_float_bound_transfer");
+        use crate::kernel::proof::arithmetic_special::exact_float_bound_transfer;
+        let Some(plan) = exact_float_bound_transfer(source, goal) else {
+            return Ok(None);
+        };
+        let Some(intermediate) = input.structural_proposition_candidate(&plan.intermediate) else {
+            return Ok(None);
+        };
+        let Some(proof) = attempt::candidate_outcome(input.driver().apply_step(
+            super::super::wide_arithmetic::have(intermediate.clone(), vec![ProofStep::Known]),
+        ))?
+        else {
+            return Ok(None);
+        };
+        Self::try_float_bound_weakening(&proof, &plan, intermediate)
+    }
+
+    pub(in crate::surface::proof) fn try_float_bound_weakening(
+        proof: &Proof<'a>,
+        plan: &crate::kernel::proof::arithmetic_special::FloatBoundWeakening,
+        intermediate: ClickProposition,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_float_bound_weakening");
+        use crate::kernel::KernelFloatType;
+        if let Some(closed) =
+            attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Known))?
+        {
+            return Ok(Some(closed));
+        }
+        let ClickProposition::Comparison { left: operand, .. } =
+            surface_comparison_with_anchored_operands(&intermediate)
+        else {
+            return Ok(None);
+        };
+        let literal = |bits| {
+            ContractExpression::ProgramExpression(match plan.format {
+                KernelFloatType::Float32 => {
+                    crate::kernel::program_expression::float32_literal(bits as u32)
+                }
+                KernelFloatType::Float64 => {
+                    crate::kernel::program_expression::float64_literal(bits)
+                }
+            })
+        };
+        let actual = literal(plan.actual_endpoint);
+        let requested = literal(plan.requested_endpoint);
+        let (left, right, arguments) = if plan.lower {
+            (
+                requested.clone(),
+                actual.clone(),
+                vec![requested, actual, operand],
+            )
+        } else {
+            (
+                actual.clone(),
+                requested.clone(),
+                vec![operand, actual, requested],
+            )
+        };
+        let endpoint_order = ClickProposition::Comparison {
+            left,
+            operator: if plan.endpoint_strict {
+                ComparisonOperator::LessThan
+            } else {
+                ComparisonOperator::LessEqual
+            },
+            right,
+        };
+        let strict_left = if plan.lower {
+            plan.endpoint_strict
+        } else {
+            plan.intermediate_strict
+        };
+        let strict_right = if plan.lower {
+            plan.intermediate_strict
+        } else {
+            plan.endpoint_strict
+        };
+        let name = match (plan.format, strict_left, strict_right) {
+            (KernelFloatType::Float32, false, false) => "float32_le_le",
+            (KernelFloatType::Float32, false, true) => "float32_le_lt",
+            (KernelFloatType::Float32, true, false) => "float32_lt_le",
+            (KernelFloatType::Float64, false, false) => "float64_le_le",
+            (KernelFloatType::Float64, false, true) => "float64_le_lt",
+            (KernelFloatType::Float64, true, false) => "float64_lt_le",
+            (_, true, true) => unreachable!("only one comparison needs to be strict"),
+        };
+        let Some(proof) = attempt::candidate_outcome(proof.driver().apply_step(
+            ProofStep::ApplyPlannedTheorem {
+                application: TheoremApplication {
+                    name: format!("click::float_order::{name}"),
+                    arguments,
+                },
+                premises: vec![intermediate, endpoint_order],
+            },
+        ))?
+        else {
+            return Ok(None);
+        };
+        if proof.focused_discharged() {
+            return Ok(Some(proof));
+        }
+        attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Known))
+    }
+
+    fn try_float_sum_bound(
+        input: &Proof<'a>,
+        goal: &Proposition,
+        bounds: &[Proposition; 2],
+        introduced_surfaces: &[ClickProposition],
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_float_sum_bound");
+        use crate::kernel::KernelFloatType;
+        use crate::kernel::proof::arithmetic_special::float_sum_bound_weakening;
+        let Some(plan) = float_sum_bound_weakening(goal, bounds) else {
+            return Ok(None);
+        };
+        let resolve = |bound| {
+            Self::resolve_solve_premises_unmeasured(
+                input,
+                std::slice::from_ref(bound),
+                introduced_surfaces,
+            )
+            .and_then(|mut pairs| pairs.pop().map(|(_, surface)| surface))
+            .or_else(|| input.structural_proposition_candidate(bound))
+        };
+        let [Some(first), Some(second)] = bounds.each_ref().map(resolve) else {
+            return Ok(None);
+        };
+        let parts = |bound| {
+            let comparison = surface_comparison_with_anchored_operands(bound);
+            surface_nonstrict_parts(&comparison).map(|(left, right)| {
+                if plan.lower {
+                    (right, left)
+                } else {
+                    (left, right)
+                }
+            })
+        };
+        let (Some((x, a)), Some((y, b))) = (parts(&first), parts(&second)) else {
+            return Ok(None);
+        };
+        let Some(intermediate) = input.structural_proposition_candidate(&plan.intermediate) else {
+            return Ok(None);
+        };
+        let name = match (plan.format, plan.lower) {
+            (KernelFloatType::Float32, true) => "float32_add_lower",
+            (KernelFloatType::Float32, false) => "float32_add_upper",
+            (KernelFloatType::Float64, true) => "float64_add_lower",
+            (KernelFloatType::Float64, false) => "float64_add_upper",
+        };
+        let finite = |expression| ClickProposition::FloatClassification {
+            expression,
+            classification: syntax::CFloatClassification::Finite,
+        };
+        let application = ProofStep::ApplyPlannedTheorem {
+            application: TheoremApplication {
+                name: format!("click::float_order::{name}"),
+                arguments: vec![x, y, a.clone(), b.clone()],
+            },
+            premises: vec![first, second, finite(a), finite(b)],
+        };
+        let Some(proof) = attempt::candidate_outcome(input.driver().apply_step(
+            super::super::wide_arithmetic::have(intermediate.clone(), vec![application]),
+        ))?
+        else {
+            return Ok(None);
+        };
+        Self::try_float_bound_weakening(&proof, &plan, intermediate)
+    }
+
+    fn try_float_scale_bound(
+        input: &Proof<'a>,
+        source: &Proposition,
+        goal: &Proposition,
+        source_surface: &ClickProposition,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_float_scale_bound");
+        use crate::kernel::proof::arithmetic_special::float_scale_bound_weakening;
+        let Some((plan, factor)) = float_scale_bound_weakening(source, goal) else {
+            return Ok(None);
+        };
+        let source_order = surface_comparison_with_anchored_operands(source_surface);
+        let Some((left, right)) = surface_nonstrict_parts(&source_order) else {
+            return Ok(None);
+        };
+        let (x, endpoint) = if plan.lower {
+            (right, left)
+        } else {
+            (left, right)
+        };
+        let Some(intermediate) = input.structural_proposition_candidate(&plan.intermediate) else {
+            return Ok(None);
+        };
+        let literal = |bits| {
+            ContractExpression::ProgramExpression(
+                crate::kernel::program_expression::float32_literal(bits),
+            )
+        };
+        let factor = literal(factor);
+        let finite = ClickProposition::FloatClassification {
+            expression: factor.clone(),
+            classification: syntax::CFloatClassification::Finite,
+        };
+        let positive = ClickProposition::Comparison {
+            left: literal(0),
+            operator: ComparisonOperator::LessThan,
+            right: factor.clone(),
+        };
+        let name = if plan.lower {
+            "float32_scale_lower"
+        } else {
+            "float32_scale_upper"
+        };
+        let application = ProofStep::ApplyPlannedTheorem {
+            application: TheoremApplication {
+                name: format!("click::float_order::{name}"),
+                arguments: vec![factor, x, endpoint],
+            },
+            premises: vec![source_surface.clone(), finite, positive],
+        };
+        let Some(proof) = attempt::candidate_outcome(input.driver().apply_step(
+            super::super::wide_arithmetic::have(intermediate.clone(), vec![application]),
+        ))?
+        else {
+            return Ok(None);
+        };
+        Self::try_float_bound_weakening(&proof, &plan, intermediate)
+    }
+
+    pub(in crate::surface::proof) fn try_float_bound_link(
+        input: &Proof<'a>,
+        source: &Proposition,
+        goal: &Proposition,
+        source_surface: &ClickProposition,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_float_bound_link");
+        if let Some(closed) = Self::try_exact_float_bound_transfer(input, source, goal)? {
+            return Ok(Some(closed));
+        }
+        Self::try_float_scale_bound(input, source, goal, source_surface)
+    }
+
+    /// Materialize each link of a selected bound chain. Each have cites the
+    /// previous bound, with its own endpoint.
     fn try_float_bound_chain(
         input: &Proof<'a>,
         bounds: &[Proposition],
@@ -3713,6 +3966,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         };
         let mut proof = input.clone();
+        let mut previous_bound = source;
         for bound in intermediate {
             check_verification_deadline()?;
             let Some(surface) = proof.structural_proposition_candidate(bound) else {
@@ -3723,6 +3977,16 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             else {
                 return Ok(None);
             };
+            if let Some(closed) =
+                scope
+                    .driver()
+                    .try_float_bound_link(previous_bound, bound, &previous)?
+            {
+                proof = closed.join()?;
+                previous = surface;
+                previous_bound = bound;
+                continue;
+            }
             let Some(closed) = attempt::candidate_outcome(
                 scope
                     .driver()
@@ -3733,6 +3997,13 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             };
             proof = closed.join()?;
             previous = surface;
+            previous_bound = bound;
+        }
+        if let Some(goal) = proof.goal()
+            && let Some(closed) =
+                Self::try_float_bound_link(&proof, previous_bound, goal, &previous)?
+        {
+            return Ok(Some(closed));
         }
         attempt::candidate_outcome(
             proof
@@ -3857,6 +4128,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 )? {
                     return Ok(Some(closed));
                 }
+            } else if let Some(closed) =
+                Self::try_exact_float_bound_transfer(search_input, &bound, goal)?
+            {
+                return Ok(Some(closed));
             } else {
                 candidates.push(vec![bound]);
             }
@@ -3865,6 +4140,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             search_input.facts().assumptions(),
             goal,
         ) {
+            if let Ok(pair_bounds) = bounds.as_slice().try_into()
+                && let Some(closed) =
+                    Self::try_float_sum_bound(search_input, goal, pair_bounds, introduced_surfaces)?
+            {
+                return Ok(Some(closed));
+            }
             candidates.push(bounds);
         }
         if let Some(bounds) = crate::kernel::search::ProofSearch::select_float_bound_chain(

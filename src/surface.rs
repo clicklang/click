@@ -711,6 +711,10 @@ const CLICK_LIBRARY_MODULES: &[(&str, &str)] = &[
         include_str!("../library/integer.click"),
     ),
     (
+        "library/float_order.click",
+        include_str!("../library/float_order.click"),
+    ),
+    (
         "library/c/string.interface.click",
         include_str!("../library/c/string.interface.click"),
     ),

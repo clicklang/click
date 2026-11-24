@@ -10106,3 +10106,145 @@ theorem float64_pointer_add_associate_uint64(p: double*, i: uint64, j: uint64) {
 **Proved:** from pointer translation and the corresponding addition observation theorem.
 
 **Verified use:** the scalar-width strict replay matrix in [`pointer_offsets.rs`](https://github.com/clicklang/click/blob/master/src/surface/proof/smart_closures/pointer_offsets.rs); representative named applications in [`pointer_offset_explicit_bridge.md`](https://github.com/clicklang/click/blob/master/mdtests/pointer_offset_explicit_bridge.md).
+
+## Floating-point order
+
+[`library/float_order.click`](https://github.com/clicklang/click/blob/master/library/float_order.click) provides
+local transitivity laws for IEEE comparisons. The two true premises exclude
+NaN from every operand. Infinities and signed zeros obey the same laws.
+Use these with an explicitly stated intermediate endpoint.
+
+### `float_order::float32_le_le`
+
+```click
+axiom float32_le_le(a: float, b: float, c: float) {
+    requires a <= b;
+    requires b <= c;
+    ensures a <= c;
+}
+```
+
+### `float_order::float32_le_lt`
+
+```click
+axiom float32_le_lt(a: float, b: float, c: float) {
+    requires a <= b;
+    requires b < c;
+    ensures a < c;
+}
+```
+
+### `float_order::float32_lt_le`
+
+```click
+axiom float32_lt_le(a: float, b: float, c: float) {
+    requires a < b;
+    requires b <= c;
+    ensures a < c;
+}
+```
+
+### `float_order::float64_le_le`
+
+```click
+axiom float64_le_le(a: double, b: double, c: double) {
+    requires a <= b;
+    requires b <= c;
+    ensures a <= c;
+}
+```
+
+### `float_order::float64_le_lt`
+
+```click
+axiom float64_le_lt(a: double, b: double, c: double) {
+    requires a <= b;
+    requires b < c;
+    ensures a < c;
+}
+```
+
+### `float_order::float64_lt_le`
+
+```click
+axiom float64_lt_le(a: double, b: double, c: double) {
+    requires a < b;
+    requires b <= c;
+    ensures a < c;
+}
+```
+
+Rounded addition bounds take two ordered inputs and two finite endpoints. The
+endpoint sum and the operand sum round at the precision of the law.
+
+### `float_order::float32_add_lower`
+
+```click
+axiom float32_add_lower(x: float, y: float, a: float, b: float) {
+    requires x >= a;
+    requires y >= b;
+    requires isfinite(a);
+    requires isfinite(b);
+    ensures x + y >= a + b;
+}
+```
+
+### `float_order::float32_add_upper`
+
+```click
+axiom float32_add_upper(x: float, y: float, a: float, b: float) {
+    requires x <= a;
+    requires y <= b;
+    requires isfinite(a);
+    requires isfinite(b);
+    ensures x + y <= a + b;
+}
+```
+
+### `float_order::float64_add_lower`
+
+```click
+axiom float64_add_lower(x: double, y: double, a: double, b: double) {
+    requires x >= a;
+    requires y >= b;
+    requires isfinite(a);
+    requires isfinite(b);
+    ensures x + y >= a + b;
+}
+```
+
+### `float_order::float64_add_upper`
+
+```click
+axiom float64_add_upper(x: double, y: double, a: double, b: double) {
+    requires x <= a;
+    requires y <= b;
+    requires isfinite(a);
+    requires isfinite(b);
+    ensures x + y <= a + b;
+}
+```
+
+A finite positive factor preserves non-strict float32 bounds through rounded multiplication.
+
+### `float_order::float32_scale_lower`
+
+```click
+axiom float32_scale_lower(factor: float, x: float, bound: float) {
+    requires x >= bound;
+    requires isfinite(factor);
+    requires float32_from_bits(0) < factor;
+    ensures factor * x >= factor * bound;
+}
+```
+
+### `float_order::float32_scale_upper`
+
+```click
+axiom float32_scale_upper(factor: float, x: float, bound: float) {
+    requires x <= bound;
+    requires isfinite(factor);
+    requires float32_from_bits(0) < factor;
+    ensures factor * x <= factor * bound;
+}
+```
