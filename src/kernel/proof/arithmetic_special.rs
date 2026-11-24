@@ -3815,6 +3815,35 @@ pub(crate) fn rounded_integer_float_bound(
     goal: &Proposition,
     premise: Option<&Proposition>,
 ) -> bool {
+    float_bound(goal).is_some_and(|bound| {
+        rounded_integer_float_endpoint(&bound, premise)
+            .is_some_and(|(_, _, _, bits)| float_endpoint_establishes(&bound, bits, false))
+    })
+}
+
+pub(crate) fn rounded_int32_to_float32_bound(
+    source: &Proposition,
+    goal: &Proposition,
+) -> Option<(FloatBoundWeakening, i32, bool)> {
+    let bound = float_bound(goal)?;
+    if bound.format != KernelFloatType::Float32 {
+        return None;
+    }
+    let (format, endpoint, strict, bits) = rounded_integer_float_endpoint(&bound, Some(source))?;
+    if format != MachineIntegerType::Int32 {
+        return None;
+    }
+    Some((
+        FloatBoundWeakening::new(&bound, bits, false)?,
+        endpoint.try_into().ok()?,
+        strict,
+    ))
+}
+
+fn rounded_integer_float_endpoint(
+    bound: &FloatBound<'_>,
+    premise: Option<&Proposition>,
+) -> Option<(MachineIntegerType, i128, bool, u64)> {
     use crate::kernel::machine_integer::{Relation, comparison::comparison_view};
     use crate::kernel::primitives::float_conversion::{
         integer_to_float32_bits, integer_to_float64_bits,
@@ -3822,35 +3851,22 @@ pub(crate) fn rounded_integer_float_bound(
     use crate::kernel::{MachineOperandView, equality_graph::MachineAtom};
     use num_traits::ToPrimitive;
 
-    let Some(bound) = float_bound(goal) else {
-        return false;
-    };
-    let Some(conversion) = bound.operand.conversion() else {
-        return false;
-    };
-    let Some(format) = MachineIntegerType::from_program_type(conversion.source_type()) else {
-        return false;
-    };
+    let conversion = bound.operand.conversion()?;
+    let format = MachineIntegerType::from_program_type(conversion.source_type())?;
     if format.format().bits() > 64 {
-        return false;
+        return None;
     }
-    let operand = if let Some(root) = conversion.shared() {
-        MachineOperandView::Shared(root)
-    } else if let Some(native) = conversion.native() {
-        MachineOperandView::Legacy(native)
-    } else {
-        return false;
-    };
     let (minimum, maximum) = format.format().bounds();
-    let endpoint = if let Some(premise) = premise {
-        let Some(view) = premise
-            .condition_native()
-            .and_then(|(condition, truth)| comparison_view(condition, *truth))
-        else {
-            return false;
+    let (endpoint, strict) = if let Some(premise) = premise {
+        let operand = if let Some(root) = conversion.shared() {
+            MachineOperandView::Shared(root)
+        } else {
+            MachineOperandView::Legacy(conversion.native()?)
         };
+        let (condition, truth) = premise.condition_native()?;
+        let view = comparison_view(condition, *truth)?;
         if view.format != format || !matches!(view.relation, Relation::Less | Relation::LessEqual) {
-            return false;
+            return None;
         }
         let [left, right] = &view.operands;
         let (literal, named) = if bound.lower {
@@ -3858,31 +3874,22 @@ pub(crate) fn rounded_integer_float_bound(
         } else {
             (right, left)
         };
-        let Some(literal) = literal
-            .operand_view()
-            .literal()
-            .and_then(|term| format.constant_from_term(&term))
-        else {
-            return false;
-        };
+        let literal = format.constant_from_term(&literal.operand_view().literal()?)?;
         if MachineAtom::from_numeric_operand(format, named.operand_view())
             != MachineAtom::from_numeric_operand(format, operand)
         {
-            return false;
+            return None;
         }
         let mut endpoint = literal.to_integer();
-        if view.relation == Relation::Less {
+        let strict = view.relation == Relation::Less;
+        if strict {
             endpoint += if bound.lower { 1 } else { -1 };
         }
-        endpoint
-    } else if bound.lower {
-        minimum
+        (endpoint, strict)
     } else {
-        maximum
+        (if bound.lower { minimum } else { maximum }, false)
     };
-    let Some(value) = endpoint.to_i128() else {
-        return false;
-    };
+    let value = endpoint.to_i128()?;
     let bits = match bound.format {
         KernelFloatType::Float32 => {
             u64::from(integer_to_float32_bits(value < 0, value.unsigned_abs()))
@@ -3890,7 +3897,7 @@ pub(crate) fn rounded_integer_float_bound(
         KernelFloatType::Float64 => integer_to_float64_bits(value < 0, value.unsigned_abs()),
     };
     crate::instrumentation::record_deterministic_work(1);
-    float_endpoint_establishes(&bound, bits, false)
+    Some((format, value, strict, bits))
 }
 
 pub(crate) fn is_rounded_integer_float_bound(goal: &Proposition) -> bool {

@@ -478,6 +478,8 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_arit
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_constant_bound_weakening	driver	5
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_constant_bound_weakening	try_direct_logical_closure	3
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_disjunction_cases	driver	5
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_disjunction_cases	try_word_order_exclusion_case	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_word_order_exclusion_case	driver	3
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_disjunction_cases	try_direct_logical_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_disjunction_cases	try_solve_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_entry_existential_closure	driver	2
@@ -961,3 +963,6 @@ src/surface/proof/smart_closures/float_intervals.rs	search	ProofSearch::try_floa
 src/surface/proof/smart_closures/float_intervals.rs	search	ProofSearch::try_float_zero_product_bound	driver	1
 src/surface/proof/smart_closures/float_intervals.rs	search	ProofSearch::try_float_square_bound	resolve_float_interval_bound	1
 src/surface/proof/smart_closures/float_intervals.rs	search	ProofSearch::try_float_square_bound	try_apply_float_interval_bound	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_float_bound_link	try_rounded_int32_to_float32_bound	1
+src/surface/proof/smart_closures/float_intervals.rs	search	ProofSearch::try_rounded_int32_to_float32_bound	driver	1
+src/surface/proof/smart_closures/float_intervals.rs	search	ProofSearch::try_rounded_int32_to_float32_bound	try_apply_float_interval_bound	1

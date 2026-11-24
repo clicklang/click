@@ -159,6 +159,7 @@ try_restricted_solve_closure_before_arithmetic
 try_selected_arithmetic
 try_selected_constant_bound_weakening
 try_selected_disjunction_cases
+try_word_order_exclusion_case
 try_selected_forall_goal
 try_selected_forall_instantiation
 try_selected_pointer_inequality_rewrite
@@ -308,3 +309,4 @@ resolve_float_interval_bound
 try_retain_float_interval_fact
 try_float_zero_product_bound
 try_float_square_bound
+try_rounded_int32_to_float32_bound

@@ -18,7 +18,8 @@ int32 via_float(int32 x) { requires x < 2147483584; ensures true; }
 theorem rounded_upper(x: int32) {
     requires x <= 2147483583;
     ensures x as float <= float32_from_bits(0x4effffff) by {
-        normalize() using { x <= 2147483583; };
+        apply(click::float_order::int32_to_float32_le(x, 2147483583));
+        close();
     }
 }
 ```
