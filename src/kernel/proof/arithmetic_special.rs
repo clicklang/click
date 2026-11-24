@@ -3978,7 +3978,7 @@ pub(crate) fn float_literal_subtraction_bound(
 ) -> Option<(FloatBoundWeakening, u64, bool)> {
     let input = float_bound(source)?;
     let result = float_bound(goal)?;
-    let (_, operation) = float_literal_operation(result.operand)?;
+    let (operand, operation) = float_literal_operation(result.operand)?;
     let FloatBoundOperation::Binary {
         operator: crate::kernel::FloatBinaryOperator::Subtract,
         literal,
@@ -3988,7 +3988,10 @@ pub(crate) fn float_literal_subtraction_bound(
     else {
         return None;
     };
-    if input.strict || !float_bound_weakens(source, goal) {
+    if input.strict
+        || !same_float_operand(input.operand, operand)
+        || !float_bound_weakens(source, goal)
+    {
         return None;
     }
     let (endpoint, strict) = operation.apply(result.format, input.endpoint, false);
