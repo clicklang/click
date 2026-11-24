@@ -12588,6 +12588,120 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         None
     }
 
+    /// Use only selected viewability and condition premises. A fixed
+    /// descriptor can normalize its containment directly. A computed range
+    /// first proves its endpoint comparisons with selected arithmetic.
+    fn try_selected_viewability_containment(
+        search_input: &Proof<'a>,
+        surfaces: &[ClickProposition],
+    ) -> Option<Proof<'a>> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_selected_viewability_containment");
+        let ClickProposition::Loadable {
+            segment: target_segment,
+        } = search_input.surface_goal()?
+        else {
+            return None;
+        };
+        let conditions = surfaces
+            .iter()
+            .filter(|surface| {
+                matches!(
+                    search_input.lower_cited_surface_proposition(surface, "view premise"),
+                    Ok(Proposition::ConditionIs(..))
+                )
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        let child = ResourceSubject::Memory(target_segment.clone());
+        for source in surfaces {
+            let ClickProposition::Loadable {
+                segment: source_segment,
+            } = source
+            else {
+                continue;
+            };
+            if crate::instrumentation::deadline_exceeded_with_work(1) {
+                return None;
+            }
+            let parent = ResourceSubject::Memory(source_segment.clone());
+            let containment = ClickProposition::Contains {
+                parent: parent.clone(),
+                child: child.clone(),
+            };
+            let prepared = (|| {
+                let scope = search_input.driver().open_have(containment.clone()).ok()?;
+                if let Ok(closed) = scope
+                    .driver()
+                    .apply_step(ProofStep::NormalizeUsing(conditions.clone()))
+                {
+                    return closed.join().ok();
+                }
+                let (base, lo, hi) = source_segment.surface_range()?;
+                let (target_base, inner_lo, inner_hi) = target_segment.surface_range()?;
+                if base != target_base || source_segment.state != target_segment.state {
+                    return None;
+                }
+                let observe = |value: &ContractExpression| ContractExpression::Call {
+                    name: "to_integer".into(),
+                    arguments: vec![value.clone()],
+                };
+                let mut current = search_input.clone();
+                let mut bounds = Vec::new();
+                for (left, right) in [(lo, inner_lo), (inner_lo, inner_hi), (inner_hi, hi)] {
+                    let bound = ClickProposition::Comparison {
+                        left: observe(left),
+                        operator: ComparisonOperator::LessEqual,
+                        right: observe(right),
+                    };
+                    let scope = current.driver().open_have(bound.clone()).ok()?;
+                    current = scope
+                        .driver()
+                        .try_restricted_solve_closure(surfaces)?
+                        .join()
+                        .ok()?;
+                    bounds.push(bound);
+                }
+                let scope = current.driver().open_have(containment.clone()).ok()?;
+                scope
+                    .driver()
+                    .apply_step(ProofStep::ApplyPlannedTheorem {
+                        application: TheoremApplication {
+                            name: "click::separation::contains_subrange".into(),
+                            arguments: [base, lo, hi, inner_lo, inner_hi]
+                                .into_iter()
+                                .cloned()
+                                .collect(),
+                        },
+                        premises: bounds,
+                    })
+                    .ok()?
+                    .join()
+                    .ok()
+            })();
+            let Some(prepared) = prepared else {
+                continue;
+            };
+            let proof = prepared
+                .driver()
+                .apply_step(ProofStep::ApplyPlannedTheorem {
+                    application: TheoremApplication {
+                        name: "click::separation::viewable_restrict".into(),
+                        arguments: [parent, child.clone()]
+                            .into_iter()
+                            .map(|resource| ContractExpression::Resource(Box::new(resource)))
+                            .collect(),
+                    },
+                    premises: vec![source.clone(), containment],
+                })
+                .ok();
+            if let Some(closed) = proof.filter(|proof| proof.focused_discharged()) {
+                return Some(closed);
+            }
+        }
+        None
+    }
+
     pub(in crate::surface::proof) fn try_restricted_solve_closure_before_arithmetic(
         search_input: &Proof<'a>,
         surfaces: &[ClickProposition],
@@ -12617,63 +12731,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         {
             return Some(proof);
         }
-        if matches!(
-            search_input.goal(),
-            Some(Proposition::MemoryLoadable { .. } | Proposition::MemoryReadDefined { .. })
-        ) && let Some(surface_goal) = search_input.surface_goal()
-        {
-            for source in surfaces
-                .iter()
-                .filter(|surface| matches!(surface, ClickProposition::Loadable { .. }))
-            {
-                let candidate = (|| {
-                    let mut prepared = search_input.clone();
-                    let mut premises = surfaces.to_vec();
-                    if !matches!(
-                        search_input.goal(),
-                        Some(Proposition::MemoryLoadable { wide: true, .. })
-                    ) && let Some(requirements) =
-                        viewability_restriction_requirements(source, surface_goal)
-                    {
-                        for requirement in requirements {
-                            if premises.contains(&requirement) {
-                                continue;
-                            }
-                            let step = if matches!(
-                                &requirement,
-                                ClickProposition::Comparison {
-                                    operator: ComparisonOperator::Equal,
-                                    ..
-                                }
-                            ) {
-                                ProofStep::Known
-                            } else {
-                                ProofStep::ArithmeticUsing(premises.clone())
-                            };
-                            prepared = prepared
-                                .driver()
-                                .apply_have_step(
-                                    &requirement,
-                                    &ProofCertificate::from_steps(vec![step]).ok()?,
-                                )
-                                .ok()?;
-                            premises.push(requirement);
-                        }
-                    }
-                    prepared
-                        .driver()
-                        .apply_step(ProofStep::TransportUsing {
-                            source: source.clone(),
-                            target: surface_goal.clone(),
-                            premises,
-                        })
-                        .ok()
-                        .filter(|closed| closed.is_complete())
-                })();
-                if candidate.is_some() {
-                    return candidate;
-                }
-            }
+        if let Some(proof) = Self::try_selected_viewability_containment(search_input, surfaces) {
+            return Some(proof);
         }
         if search_input.has_conjunctive_goal()
             && !matches!(search_input.surface_goal(), Some(ClickProposition::And(..)))

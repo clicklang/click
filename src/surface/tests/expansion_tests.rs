@@ -25826,6 +25826,40 @@ fn explicit_entry_witnesses_for_cstr_calls_expand_without_search() {
 }
 
 #[test]
+fn selected_field_viewability_expands_with_containment() {
+    let sources = [(
+        "view.c",
+        "struct box { int first; int second; }; void f(struct box *p) {}",
+    )];
+    let source = r#"
+        verifying "view.c";
+        void f(struct box *p) {
+            requires viewable(p[0..1]);
+            ensures true;
+        } by {
+            have viewable(p->second) by {
+                close() using { viewable(p[0..1]); };
+            }
+            step();
+        }
+    "#;
+    let expanded = expand_c_claim_source_by_label(source, &sources, "f.contract").unwrap();
+    assert!(
+        expanded.contains("contains(memory(p[0..1]), memory(p->second))"),
+        "{expanded}"
+    );
+    assert!(
+        expanded.contains("separation::viewable_restrict"),
+        "{expanded}"
+    );
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim("f.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
+#[test]
 fn entry_existential_view_expands_with_preservation() {
     let sources = [(
         "entry.c",
