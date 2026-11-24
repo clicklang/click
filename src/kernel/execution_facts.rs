@@ -1,5 +1,7 @@
 //! Ordered execution evidence with persistent storage across path forks.
+use super::equality_graph::MachineAtom;
 use super::{ConditionTerm, ExecutionPureFact, Proposition};
+use super::{MachineIntegerType, MachineOperandView};
 use std::sync::Arc;
 
 #[cfg(test)]
@@ -100,13 +102,46 @@ struct ExecutionFactsData {
 struct FactIndexes {
     exact: imbl::HashSet<Arc<ExecutionPureFact>>,
     propositions: imbl::OrdSet<Arc<Proposition>>,
+    guard_upper_bounds: imbl::OrdSet<(MachineIntegerType, MachineAtom, u64)>,
 }
 
 impl FactIndexes {
     fn insert(&mut self, fact: &Arc<ExecutionPureFact>) {
         self.propositions.insert(fact.shared_proposition());
         self.exact.insert(fact.clone());
+        if !fact.is_certified()
+            && let Some(bound) = guard_upper_bound(fact.proposition())
+        {
+            crate::instrumentation::record_deterministic_work(1);
+            self.guard_upper_bounds.insert(bound);
+        }
     }
+}
+
+fn guard_upper_bound(proposition: &Proposition) -> Option<(MachineIntegerType, MachineAtom, u64)> {
+    use super::machine_integer::{Relation, comparison::comparison_view};
+    let (condition, truth) = proposition.condition_native()?;
+    let view = comparison_view(condition, *truth)?;
+    if !matches!(view.format.format().bits(), 32 | 64) {
+        return None;
+    }
+    let strict = match view.relation {
+        Relation::Less => 1,
+        Relation::LessEqual => 0,
+        _ => return None,
+    };
+    let [value, endpoint] = &view.operands;
+    let endpoint = view
+        .format
+        .constant_from_term(&endpoint.operand_view().literal()?)?;
+    let upper = u64::try_from(endpoint.to_i128()?)
+        .ok()?
+        .checked_sub(strict)?;
+    Some((
+        view.format,
+        MachineAtom::from_numeric_operand(view.format, value.operand_view()),
+        upper,
+    ))
 }
 
 impl ExecutionFacts {
@@ -209,6 +244,25 @@ impl ExecutionFacts {
             .is_some_and(|indexes| indexes.propositions.contains(proposition))
     }
 
+    /// Read the tightest constant upper bound from an already indexed guard.
+    /// A query never prepares the fact stream or enumerates the bounds.
+    pub(in crate::kernel) fn indexed_guard_upper_bound(
+        &self,
+        format: MachineIntegerType,
+        operand: MachineOperandView<'_>,
+    ) -> Option<u64> {
+        let bounds = &self.data.indexes.get()?.guard_upper_bounds;
+        if bounds.is_empty() {
+            return None;
+        }
+        crate::instrumentation::record_deterministic_work(1);
+        let key = MachineAtom::from_numeric_operand(format, operand);
+        bounds
+            .range((format, key.clone(), 0)..=(format, key, u64::MAX))
+            .next()
+            .map(|(_, _, upper)| *upper)
+    }
+
     /// The path merge has already indexed these same logical occurrences in
     /// its validation stream. Keep that index when publishing shared blocks.
     pub(in crate::kernel) fn retain_validated_membership(&mut self, validated: &Self) {
@@ -239,19 +293,25 @@ impl ExecutionFacts {
             return;
         }
         // Keep a built index current; an unbuilt one stays unbuilt.
-        let appended = self.data.indexes.get().is_some().then(|| {
-            let other = other.indexes().clone();
-            (other.exact, other.propositions)
-        });
+        let appended = self
+            .data
+            .indexes
+            .get()
+            .is_some()
+            .then(|| other.indexes().clone());
         let data = Arc::make_mut(&mut self.data);
         let other = Arc::make_mut(&mut other.data);
         data.len += other.len;
         if other.covered_context.is_some() {
             data.covered_context = other.covered_context.take();
         }
-        if let (Some(indexes), Some((exact, propositions))) = (data.indexes.get_mut(), appended) {
-            indexes.exact = indexes.exact.clone().union(exact);
-            indexes.propositions = indexes.propositions.clone().union(propositions);
+        if let (Some(indexes), Some(appended)) = (data.indexes.get_mut(), appended) {
+            indexes.exact = indexes.exact.clone().union(appended.exact);
+            indexes.propositions = indexes.propositions.clone().union(appended.propositions);
+            indexes.guard_upper_bounds = indexes
+                .guard_upper_bounds
+                .clone()
+                .union(appended.guard_upper_bounds);
         }
         other.indexes = std::sync::OnceLock::new();
         data.blocks.append(std::mem::take(&mut other.blocks));

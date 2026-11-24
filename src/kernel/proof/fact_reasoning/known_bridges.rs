@@ -269,6 +269,27 @@ fn identity(
         && in_range(other, ty.format(), available)
 }
 
+/// A word AND with a nonnegative literal mask has this exact Integer range.
+pub(crate) fn literal_mask_bounds(observed: &SharedMachineIntegerTerm) -> Option<[Proposition; 2]> {
+    let (format, MachineBinaryOp::BitwiseAnd, [left, right]) = observed.operand_view().binary()?
+    else {
+        return None;
+    };
+    let ty = observed.ty();
+    if format.format().bits() != ty.format().bits() {
+        return None;
+    }
+    let mask = [left, right].into_iter().find_map(|operand| {
+        let mask = ty.constant_from_term(&operand.literal()?)?.to_integer();
+        (mask >= BigInt::zero()).then_some(mask)
+    })?;
+    let value = IntegerTerm::Machine(observed.clone());
+    Some([
+        le(IntegerTerm::constant_i64(0), value.clone()),
+        le(value, IntegerTerm::constant(mask)),
+    ])
+}
+
 fn mask_bound(a: &IntegerTerm, b: &IntegerTerm, available: &impl Fn(&Proposition) -> bool) -> bool {
     let (observed, lower) = match (a, b) {
         (IntegerTerm::Constant(zero), IntegerTerm::Machine(value)) if zero.is_zero() => {
@@ -615,16 +636,15 @@ pub(crate) fn known_bridge_leaf(
     }
     if super::super::arithmetic_special::float_zero_product_premise(goal)
         .is_some_and(|premise| holds(&premise, available))
-        || super::super::arithmetic_special::signed_or_excludes_minus_one(goal).is_some_and(
-            |premises| {
-                premises.iter().any(|premise| {
-                    premise
-                        .condition_native()
-                        .is_some_and(|(condition, truth)| {
-                            comparison_holds(condition.clone(), *truth, available)
-                        })
-                })
+        || super::super::arithmetic_special::float_self_operation_bounds(goal).is_some_and(
+            |(finite, nonzero)| {
+                holds(&finite, available)
+                    && nonzero.as_ref().is_none_or(|fact| holds(fact, available))
             },
+        )
+        || super::super::arithmetic_special::bitwise_division_disequality(
+            goal,
+            |condition, truth| comparison_holds(condition, truth, available),
         )
     {
         return true;
