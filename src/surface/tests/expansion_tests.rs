@@ -27115,6 +27115,50 @@ fn indexed_read_comparisons_expand_with_preservation() {
 }
 
 #[test]
+fn two_indexed_reads_expand_with_preservation() {
+    let c_source = "void keep(int *p, int i, int j, int k) { p[j] = 10; }";
+    let source = r#"
+        verifying "read_order.c";
+        void keep(int32 *p, int32 i, int32 j, int32 k) {
+            owns p[0..8];
+            requires 0 <= i and i < 8 and 0 <= j and j < 8;
+            requires 0 <= k and k < 8;
+            requires i != j;
+            requires k != j;
+            requires p[i] < p[k];
+            ensures p[i] < p[k];
+        } by {
+            step();
+            have p[i] < p[k] by { solve(); }
+        }
+    "#;
+    let sources = [("read_order.c", c_source)];
+    let expanded = expand_c_claim_source_by_label(source, &sources, "keep.contract").unwrap();
+    for read in ["p[i]", "p[k]"] {
+        assert!(
+            expanded.contains(&format!("preserve(memory({read}), region(0))")),
+            "{expanded}"
+        );
+        assert!(expanded.contains(&format!("rewrite({read},")), "{expanded}");
+    }
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim("keep.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+    for requirement in ["requires i != j;", "requires k != j;"] {
+        let overlapping = expanded.replace(requirement, "");
+        assert_ne!(overlapping, expanded);
+        assert!(
+            without_implicit_solve_for_claim("keep.contract", || {
+                verify_c_sources(&overlapping, &sources).map_err(|error| error.report())
+            })
+            .is_err()
+        );
+    }
+}
+
+#[test]
 fn branch_join_expands_returned_read_with_preservation() {
     let (source, sources) = mdtest_sources("mdtests/branch_join_borrow_separation.md");
     let sources = sources
