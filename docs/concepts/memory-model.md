@@ -52,7 +52,9 @@ Replacing a modified local there retires its prior indexed version. A new
 indexed write comes from an execution store. The point after the loop keeps
 the indexed versions common to every checked exit.
 Signed and unsigned 64-bit reads share a version of the same 64 bits.
-Signed and unsigned 128-bit reads retain their distinct load kinds.
+Signed and unsigned 128-bit reads retain their distinct load kinds. At 8,
+16, 32 and 128 bits the equality graph relates the two reads of one cell at
+one read key by the sign cast.
 The same index serves ordinary Boolean and complete typed pointer reads of
 automatic objects. A Boolean read denotes the logical value of its cell. A symbolic Boolean
 read can use its certified observation point when there is no indexed write.
