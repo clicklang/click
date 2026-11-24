@@ -977,15 +977,16 @@ fn append_on_every_path(script: &mut Vec<ProofTactic>, suffix: &[ProofTactic]) {
     }
 }
 
-/// The first tactic in `tactics`, at any depth of proof control, that runs
-/// C or addresses a C control-flow point, by its source name.
 /// How many tactics the checker appends where each path of a tactic's proof
 /// ends: one `step` over the procedure's `return`, then a `known` per
-/// `ensures` and per contract-closing goal.
+/// claim and per contract-closing goal. With no written `ensures`, verification
+/// checks one implicit body-safety claim.
 pub(in crate::surface) fn tactic_procedure_ending_len(block: &FunctionBlock) -> usize {
-    1 + block.ensures().len() + crate::kernel::proof::ContractClosingGoal::COUNT
+    1 + block.ensures().len().max(1) + crate::kernel::proof::ContractClosingGoal::COUNT
 }
 
+/// The first tactic in `tactics`, at any depth of proof control, that runs
+/// C or addresses a C control-flow point, by its source name.
 fn first_executing_tactic(tactics: &[ProofTactic]) -> Option<&'static str> {
     tactics.iter().find_map(|tactic| match tactic {
         ProofTactic::Step
