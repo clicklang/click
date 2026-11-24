@@ -816,7 +816,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         };
         let Some(region) = input.premise_fixed_state_view().and_then(|view| {
-            let storage = input.facts().assumptions().alignment_storage_address(pointer)?;
+            let storage = input
+                .facts()
+                .assumptions()
+                .alignment_storage_address(pointer)?;
             view.fixed_state.recorded_states.allocation_result(&storage)
         }) else {
             return Ok(None);
@@ -835,9 +838,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             operator: ComparisonOperator::Equal,
             right: E::RegionAllocation(region),
         };
-        let Some(rewritten) = attempt::candidate_outcome(
-            input.driver().apply_step(ProofStep::Rewrite(equality)),
-        )? else {
+        let Some(rewritten) =
+            attempt::candidate_outcome(input.driver().apply_step(ProofStep::Rewrite(equality)))?
+        else {
             return Ok(None);
         };
         attempt::candidate_outcome(rewritten.driver().apply_step(ProofStep::Known))
