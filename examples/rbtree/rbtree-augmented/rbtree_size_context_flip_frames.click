@@ -25,6 +25,23 @@ resource sized_context_flip_links(root: struct rb_root*, x: struct rb_node*, y: 
     fact yl != y; fact yr != y;
     fact zl != z; fact zr != z;
 }
+spec enum SizedContextFlipParent {
+    At(struct rb_node*),
+}
+
+resource sized_context_flip_typed_parent_word(p: struct rb_node*) {
+    field link: SizedContextFlipParent;
+    field word: uint64;
+    match link {
+        SizedContextFlipParent::At(up) => {
+            owns p->__rb_parent_color;
+            fact p->__rb_parent_color == word;
+            fact ((p->__rb_parent_color & ~3) as (struct rb_node*)) == up;
+            fact (p->__rb_parent_color & 1) == color_bit(Color::Black);
+        },
+    }
+}
+
 resource sized_context_flip_parent_word(p: struct rb_node*) {
     field up: int32*;
     field word: uint64;

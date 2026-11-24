@@ -60,15 +60,6 @@ impl KernelTerm {
         if let Some(value) = self.0.argument_leaf.get() {
             return Some(value);
         }
-        if let KernelTermNode::LegacyBool(legacy) = self.node()
-            && let PureFunctionArgument::Value(ProgramValue::Bool(MachineTerm::BoolCast {
-                to: MachineIntegerType::UInt8,
-                value,
-            })) = legacy.value()
-            && !matches!(value.as_ref(), ConditionTerm::Constant(_))
-        {
-            return Some(legacy.value());
-        }
         Some(
             self.0
                 .argument_leaf

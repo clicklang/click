@@ -403,7 +403,7 @@ fn retained_load_terms_grow_without_rewalking_states_or_prior_arithmetic() {
             let exports = KernelTermExport::machine_export_count();
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 for index in 0..size {
-                    let read = MachineTerm::MemoryLoad(
+                    let read = MachineTerm::read_named(
                         ProgramPoint::at(&memory),
                         Box::new(Address::symbolic(Variable(993201 + index))),
                         LoadKind::Int32,
@@ -443,7 +443,7 @@ fn retained_named_reads_do_not_rewalk_their_address_on_each_import() {
                 Box::new(AddressOffset::Variable(Variable(993501 + index))),
             );
         }
-        let raw = MachineTerm::MemoryLoad(
+        let raw = MachineTerm::read_named(
             ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
             Box::new(Address {
                 base: AddressBase::Symbolic(Variable(993499)),
@@ -475,7 +475,7 @@ fn retained_named_reads_do_not_rewalk_their_address_on_each_import() {
 fn shared_read_selection_reuses_growing_arithmetic_prefixes() {
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
-        let raw = MachineTerm::MemoryLoad(
+        let raw = MachineTerm::read_named(
             ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
             Box::new(Address::symbolic(Variable(994110))),
             LoadKind::Int32,
@@ -527,7 +527,7 @@ fn nested_read_address_import_is_linear_beside_unrelated_memory() {
         for depth in [16, 64, 256] {
             let mut raw = MachineTerm::constant(0);
             for _ in 0..depth {
-                raw = MachineTerm::MemoryLoad(
+                raw = MachineTerm::read_named(
                     ProgramPoint::at(&memory),
                     Box::new(Address {
                         base: AddressBase::Symbolic(Variable(996999)),
@@ -1078,7 +1078,7 @@ fn growing_common_boolean_comparisons_keep_operands_shared() {
             };
             KernelTermImport::default().machine(
                 format,
-                &MachineTerm::MemoryLoad(
+                &MachineTerm::read_named(
                     ProgramPoint::at(&memory),
                     Box::new(pointer),
                     crate::kernel::LoadKind::Int32,

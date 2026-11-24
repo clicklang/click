@@ -255,7 +255,7 @@ mod tests {
             Pointer::new(pointer.clone(), ProgramType::Int32Pointer).with_bounds(Some(
                 SubobjectBounds {
                     start: pointer.clone(),
-                    width: MachineTerm::MemoryLoad(
+                    width: MachineTerm::read_named(
                         crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                         Box::new(address.clone()),
                         crate::kernel::LoadKind::Int32,

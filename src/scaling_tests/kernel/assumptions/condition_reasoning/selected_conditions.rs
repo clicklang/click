@@ -301,7 +301,7 @@ fn compound_load_condition_hits_and_misses_ignore_other_facts() {
             for size in [8u64, 32, 128] {
                 let _session = crate::kernel::VerificationSession::enter();
                 let var = |id| MachineTerm::Variable(Variable(id));
-                let raw = MachineTerm::MemoryLoad(
+                let raw = MachineTerm::read_named(
                     ProgramPoint::at(&(crate::kernel::intern_memory(SymbolicMemory::new()))),
                     Box::new(Address::symbolic(Variable(997_000))),
                     crate::kernel::LoadKind::Int32,

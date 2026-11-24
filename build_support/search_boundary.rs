@@ -1080,9 +1080,8 @@ pub fn check_tree(root: &Path, relative: &str) -> Result<(), Vec<String>> {
                 if let Err(found) = proof_search_boundary::check(&relative, &file) {
                     errors.extend(found);
                 }
-                let constructions = read_construction::count(&file);
-                if constructions > 0 {
-                    read_constructions.insert(relative.clone(), constructions);
+                for (form, constructions) in read_construction::count(&file) {
+                    read_constructions.insert((relative.clone(), form), constructions);
                 }
                 external_modules(&file.items, &dir, path.parent().unwrap(), &mut pending);
             }
@@ -1101,9 +1100,11 @@ pub fn check_tree(root: &Path, relative: &str) -> Result<(), Vec<String>> {
 }
 
 /// The read-construction counts of every tree checked so far.
-fn read_constructions_by_tree() -> &'static std::sync::Mutex<BTreeMap<String, usize>> {
-    static COUNTS: std::sync::OnceLock<std::sync::Mutex<BTreeMap<String, usize>>> =
-        std::sync::OnceLock::new();
+fn read_constructions_by_tree()
+-> &'static std::sync::Mutex<BTreeMap<(String, read_construction::Form), usize>> {
+    static COUNTS: std::sync::OnceLock<
+        std::sync::Mutex<BTreeMap<(String, read_construction::Form), usize>>,
+    > = std::sync::OnceLock::new();
     COUNTS.get_or_init(Default::default)
 }
 

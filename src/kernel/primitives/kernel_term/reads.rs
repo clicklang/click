@@ -86,7 +86,7 @@ impl KernelTerm {
         if !matches!(value.address().offset, AddressOffset::Constant(0))
             || !matches!(
                 value.address().base,
-                AddressBase::LoadedPointer(_) | AddressBase::FunctionSymbolic(_)
+                AddressBase::Load(_) | AddressBase::FunctionSymbolic(_)
             )
         {
             return None;
@@ -98,8 +98,8 @@ impl KernelTerm {
         };
         Some(Self::shared_pointer_read(
             SharedPointer::import(value),
-            point,
-            SharedAddress::import(&address),
+            point.into(),
+            SharedAddress::import(address.address()),
         ))
     }
 
@@ -498,7 +498,7 @@ mod tests {
                 Address {
                     base: AddressBase::Symbolic(Variable(993141)),
                     offset: AddressOffset::scaled_int32_node(
-                        MachineTerm::MemoryLoad(
+                        MachineTerm::read_named(
                             ProgramPoint::at(&inner),
                             Box::new(p.clone()),
                             kind,
@@ -565,7 +565,7 @@ mod tests {
                     Address {
                         base: AddressBase::Symbolic(Variable(993151)),
                         offset: AddressOffset::scaled_int32_node(
-                            MachineTerm::MemoryLoad(
+                            MachineTerm::read_named(
                                 inner,
                                 Box::new(Address::symbolic(Variable(993150))),
                                 LoadKind::Int32,

@@ -6319,7 +6319,7 @@ fn prepare_verified_function_call<'a>(
                 )));
             };
             let entered = entry_events
-                .import_acquired_control_population(description, owned)
+                .import_acquired_control_population(description, owned, None)
                 .and_then(|events| {
                     events.transfer_call_fact(callee_events, caller_events, description, true)
                 })
@@ -7959,7 +7959,7 @@ fn function_contract_requirement_is_proven(
                     offset: AddressOffset::Constant(0),
                 } => Some(target),
                 Address {
-                    base: AddressBase::FunctionSymbolic(_) | AddressBase::LoadedPointer(_),
+                    base: AddressBase::FunctionSymbolic(_) | AddressBase::Load(_),
                     offset: AddressOffset::Constant(0),
                 } if matches!(pointer.program_type(), ProgramType::FunctionPointer(_)) => None,
                 _ => return Ok(false),

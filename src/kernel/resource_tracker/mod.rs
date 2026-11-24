@@ -674,13 +674,13 @@ pub(crate) fn last_same_version_point(
     match resource {
         TrackedResource::Cell { pointer, bytes } => legacy_walk_audit::counted(&resource, || {
             cell_last_same_version_point(at.shared_memory(), pointer, bytes)
-                .map(|memory| ProgramPoint::at(&memory))
+                .map(|memory| ProgramPoint::at_read_site(&memory, at))
         }),
         TrackedResource::Block(block) => legacy_walk_audit::counted(&resource, || {
-            Some(ProgramPoint::at(&block_last_same_version_point(
-                at.shared_memory(),
-                block,
-            )))
+            Some(ProgramPoint::at_read_site(
+                &block_last_same_version_point(at.shared_memory(), block),
+                at,
+            ))
         }),
         // No term names a memory footprint, so a footprint has no naming path
         // to be the oldest point of. Its one caller knows both ends of the
@@ -1651,16 +1651,14 @@ fn collect_pointer_reads(pointer: &Address, reads: &mut Vec<ResourceRead>) {
 }
 
 fn collect_address_base_reads(block: &AddressBase, reads: &mut Vec<ResourceRead>) {
-    if let AddressBase::LoadedPointer(identity) = *block
-        && let Some((memory, address)) = crate::kernel::eval::registered_pointer_load(identity)
-    {
+    if let AddressBase::Load(load) = block {
         push_read(
             reads,
             OwnedResource::Cell {
-                pointer: address,
+                pointer: load.cell().clone(),
                 bytes: crate::kernel::AccessExtent::from(crate::kernel::C_POINTER_BYTE_WIDTH),
             },
-            ProgramPoint::at(&memory),
+            ProgramPoint::at(load.point().shared_memory()),
         );
     }
 }

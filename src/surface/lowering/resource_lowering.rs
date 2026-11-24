@@ -834,7 +834,7 @@ pub(in crate::surface) fn memory_with_symbolic_loadable_cells(
     entry: &crate::kernel::ProgramPoint,
     loadable_ranges: &BTreeMap<String, ConcreteMemoryRangeSeed>,
 ) -> SymbolicMemory {
-    let legacy = crate::kernel::ProgramPoint::at(entry.shared_memory());
+    let legacy = crate::kernel::ProgramPoint::at_read_site(entry.shared_memory(), entry);
     for range in loadable_ranges.values() {
         if let Some(layout) = &range.struct_layout {
             let mut offset: u32 = 0;
@@ -4503,7 +4503,7 @@ mod entry_cell_tests {
                 installed
                     .program_point()
                     .ordinary_typed_version(&symbolic_element, ProgramType::Int32),
-                Some(integer),
+                Some(crate::kernel::ProgramPoint::from(integer)),
             );
             work.push(cost);
         }

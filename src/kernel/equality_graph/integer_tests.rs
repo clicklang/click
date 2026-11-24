@@ -138,7 +138,7 @@ fn integer_observations_keep_machine_types_and_read_states() {
     let read = |memory| {
         I::from_machine(
             M::Int32,
-            MachineTerm::MemoryLoad(memory, Box::new(p.clone()), LoadKind::Int32),
+            MachineTerm::read_named(memory, Box::new(p.clone()), LoadKind::Int32),
         )
         .unwrap()
     };

@@ -81,7 +81,7 @@ fn arithmetic_read_atoms_keep_state_identity_without_scanning_storage() {
             );
         }
         let memory = intern_memory(memory);
-        let read = MachineTerm::MemoryLoad(
+        let read = MachineTerm::read_named(
             crate::kernel::ProgramPoint::at(&memory),
             Box::new(address.clone()),
             LoadKind::Bits64,
@@ -97,7 +97,7 @@ fn arithmetic_read_atoms_keep_state_identity_without_scanning_storage() {
             address.clone(),
             ProgramValue::UInt64(MachineTerm::uint64_constant(9)),
         ));
-        let different = MachineTerm::MemoryLoad(
+        let different = MachineTerm::read_named(
             crate::kernel::ProgramPoint::at(&changed),
             Box::new(address.clone()),
             LoadKind::Bits64,
@@ -105,7 +105,7 @@ fn arithmetic_read_atoms_keep_state_identity_without_scanning_storage() {
         assert!(!bitvector_equal(&read, &different));
         assert!(!bitvector_equal(
             &read,
-            &MachineTerm::MemoryLoad(
+            &MachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(&memory),
                 Box::new(address),
                 LoadKind::Int32

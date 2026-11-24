@@ -2881,7 +2881,7 @@ fn interface_load_definition_rejects_wrong_variable_address_and_state() {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(MachineTerm::Variable(variable)),
-                right: Box::new(MachineTerm::MemoryLoad(
+                right: Box::new(MachineTerm::read_named(
                     memory,
                     Box::new(pointer),
                     crate::kernel::LoadKind::Int32,
@@ -3516,7 +3516,7 @@ fn resource_cell_naming_checks_the_recorded_integer_version_after_forgetting_a_n
             .materialize_cell_at(slot.clone(), ProgramType::Int32, &point);
     assert_eq!(
         named.known_value(&slot),
-        Some(ProgramValue::Int32(MachineTerm::MemoryLoad(
+        Some(ProgramValue::Int32(MachineTerm::read_named(
             version,
             Box::new(slot.clone()),
             LoadKind::Int32,
@@ -3610,7 +3610,7 @@ fn resource_float_cell_naming_distinguishes_equal_memory_source_points() {
         );
         assert_eq!(
             named.known_value(&slot),
-            Some(format.value(MachineTerm::MemoryLoad(
+            Some(format.value(MachineTerm::read_named(
                 point.for_exact_read(),
                 Box::new(slot.clone()),
                 format.load_kind(),
@@ -3644,7 +3644,7 @@ fn resource_cell_naming_checks_the_entry_point_without_a_store() {
         .materialize_entry_integer_cell_at(slot.clone(), &source);
     assert_eq!(
         named.known_value(&slot),
-        Some(ProgramValue::Int32(MachineTerm::MemoryLoad(
+        Some(ProgramValue::Int32(MachineTerm::read_named(
             version,
             Box::new(slot),
             LoadKind::Int32,

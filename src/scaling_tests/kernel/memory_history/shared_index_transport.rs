@@ -130,9 +130,9 @@ fn exact_index_normalization_rewrites_shared_read_dags_without_exports() {
         let memory = SymbolicMemory::new()
             .with_block("exact-scaling", 4)
             .store(pointer.clone(), ProgramValue::Int32(stored.clone()));
-        let load = MachineTerm::MemoryLoad(
+        let load = MachineTerm::read_named(
             ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
-            pointer.into(),
+            pointer,
             LoadKind::Int32,
         );
         let mut root = retained(MachineIntegerType::Int32, &load)

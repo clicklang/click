@@ -244,9 +244,7 @@ pub(super) fn common_variables(
             && term.ty() == &KernelType::Bool
             && !matches!(
                 term.node(),
-                KernelTermNode::IntegerCompare { .. }
-                    | KernelTermNode::AlgebraicEqual { .. }
-                    | KernelTermNode::LegacyBool(_)
+                KernelTermNode::IntegerCompare { .. } | KernelTermNode::AlgebraicEqual { .. }
             )
         {
             summaries.insert(term.id(), Variables::default());
@@ -312,7 +310,7 @@ pub(super) fn common_variables(
                     &mut leaf_variables,
                 );
             }
-            KernelTermNode::Legacy(value) | KernelTermNode::LegacyBool(value) => {
+            KernelTermNode::Legacy(value) => {
                 // Each opaque leaf gets its complete intrinsic answer. A seen
                 // set belonging to another leaf would discard shared payload
                 // variables before the enclosing body can filter its binders.
@@ -784,7 +782,7 @@ mod tests {
         );
         let native = [
             MachineTerm::Variable(load),
-            MachineTerm::MemoryLoad(
+            MachineTerm::read_named(
                 ProgramPoint::at(&memory),
                 Box::new(pointer.clone()),
                 LoadKind::Int32,
@@ -905,7 +903,7 @@ mod tests {
             crate::kernel::KernelFloatType::Float32,
             crate::kernel::KernelFloatType::Float64,
         ] {
-            let argument = PureFunctionArgument::Value(format.value(MachineTerm::MemoryLoad(
+            let argument = PureFunctionArgument::Value(format.value(MachineTerm::read_named(
                 ProgramPoint::at(&memory),
                 Box::new(pointer.clone()),
                 format.load_kind(),
@@ -939,7 +937,7 @@ mod tests {
             crate::kernel::KernelFloatType::Float64,
         ] {
             let left = Box::new(MachineTerm::Variable(Variable(999933)));
-            let right = Box::new(MachineTerm::MemoryLoad(
+            let right = Box::new(MachineTerm::read_named(
                 ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
                 Box::new(Address::symbolic(Variable(999934))),
                 format.load_kind(),
@@ -988,7 +986,7 @@ mod tests {
             crate::kernel::KernelFloatType::Float64,
         ] {
             let left = Box::new(MachineTerm::Variable(Variable(999933)));
-            let right = Box::new(MachineTerm::MemoryLoad(
+            let right = Box::new(MachineTerm::read_named(
                 ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
                 Box::new(Address::symbolic(Variable(999934))),
                 format.load_kind(),

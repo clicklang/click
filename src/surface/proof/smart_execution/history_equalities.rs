@@ -318,7 +318,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             ProofCertificate::from_steps(vec![ProofStep::Known]).expect("ordinary order lookup");
         let refute_order = ProofCertificate::from_steps(vec![
             ProofStep::Rewrite(equality.clone()),
-            ProofStep::Normalize,
+            ProofStep::CompatibilityNormalize(None),
         ])
         .expect("ordinary refutation of an irreflexive order");
         for order in orders {

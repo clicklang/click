@@ -1256,6 +1256,17 @@ fn instantiate_proof_tactic(
                 .map(proposition)
                 .collect::<Result<Vec<_>, _>>()?,
         ),
+        ProofTactic::CompatibilityNormalize(premises) => ProofTactic::CompatibilityNormalize(
+            premises
+                .as_ref()
+                .map(|premises| {
+                    premises
+                        .iter()
+                        .map(proposition)
+                        .collect::<Result<Vec<_>, _>>()
+                })
+                .transpose()?,
+        ),
         ProofTactic::NormalizeUsing(premises) => ProofTactic::NormalizeUsing(
             premises
                 .iter()

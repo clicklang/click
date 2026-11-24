@@ -309,7 +309,7 @@ fn raw_wide_read_requires_its_explicit_store_equation() {
             .with_block("wide", 8)
             .store(pointer.clone(), stored.clone()),
     );
-    let read = MachineTerm::MemoryLoad(
+    let read = MachineTerm::read_named(
         ProgramPoint::at(&after),
         Box::new(pointer.clone()),
         LoadKind::Bits64,

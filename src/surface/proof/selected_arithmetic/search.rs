@@ -1512,7 +1512,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 // whole reduction.
                 let mut steps = vec![ProofStep::UnfoldFunction(refutation.application.clone())];
                 steps.extend(unfolds.iter().cloned().map(ProofStep::UnfoldFunction));
-                steps.push(ProofStep::NormalizeUsing(taken.to_vec()));
+                steps.push(ProofStep::CompatibilityNormalize(Some(taken.to_vec())));
                 let checked = search_input
                     .driver()
                     .apply_step(have(refutation.differs.clone(), steps))
@@ -1662,6 +1662,19 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // Inside a `have`, the stated fact is the focused goal; the proof
         // around it is not complete yet.
         let closes = |proof: &Proof<'a>| proof.focused_discharged() || proof.is_complete();
+        if let RewriteClosers::ExactListed(premise_pairs) = closers {
+            let Some(goal) = search_input.goal() else {
+                return Ok(None);
+            };
+            let mirrored = crate::kernel::mirrored_equality(goal);
+            return Ok((crate::surface::planning::solve::computes_with_known(goal)
+                || premise_pairs
+                    .iter()
+                    .any(|(premise, _)| premise == goal || Some(premise) == mirrored.as_ref()))
+            .then(|| search_input.driver().apply_step(ProofStep::Known).ok())
+            .flatten()
+            .filter(closes));
+        }
         if let RewriteClosers::Listed(premise_pairs) = closers {
             if let Ok(closed) =
                 crate::kernel::search::ProofSearch::apply_normalization_closure(search_input, None)
@@ -1813,10 +1826,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     base.lower_cited_surface_proposition(&defined, "signed read domain")?;
                 if matches!(kernel, Proposition::MemoryReadDefined { .. }) {
                     let scope = base.driver().open_have(defined)?;
-                    let closed = scope
-                        .driver()
-                        .apply_step(ProofStep::Known)
-                        .or_else(|_| scope.driver().apply_step(ProofStep::Normalize))?;
+                    let closed = scope.driver().apply_step(ProofStep::Known).or_else(|_| {
+                        scope
+                            .driver()
+                            .apply_step(ProofStep::CompatibilityNormalize(None))
+                    })?;
                     base = closed.join()?;
                 }
             }

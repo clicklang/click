@@ -899,14 +899,11 @@ pub(in crate::surface) fn pair_instance_body_clause_presentations(
     let instance_name =
         crate::kernel::model_fields::registered_instance_spelling(instance.identity())
             .ok_or_else(|| ClickError::new("resource body clause instance has no source name"))?;
-    let instance_renames = BTreeMap::from([(
-        "__body".to_owned(),
-        crate::surface::lowering::InstanceRename {
-            name: instance_name.to_string(),
-            identity: crate::kernel::InstanceRef::Body,
-            target_identity: Some(instance.identity()),
-        },
-    )]);
+    let substitutions = crate::surface::lowering::ContractSubstitutions::with_body_instance(
+        &substitutions,
+        instance_name.to_string(),
+        instance.identity(),
+    );
     let mut paired = Vec::with_capacity(records.len());
     for record in records {
         if record.arm.as_deref() != Some(variant) {
@@ -933,14 +930,9 @@ pub(in crate::surface) fn pair_instance_body_clause_presentations(
                 "resource body clause lost its quantifier binder",
             ));
         }
-        let source = crate::surface::lowering::substitute_click_proposition_in(
-            source,
-            &crate::surface::lowering::ContractSubstitutions::with_instance_renames(
-                &substitutions,
-                &instance_renames,
-            ),
-        )
-        .map_err(ClickError::new)?;
+        let source =
+            crate::surface::lowering::substitute_click_proposition_in(source, &substitutions)
+                .map_err(ClickError::new)?;
         paired.push(ResourceClausePresentation {
             source,
             checked: record.clone(),
@@ -5672,7 +5664,9 @@ fn materialize_composite_resource_cells_from_state(
         {
             naming_point.clone()
         } else {
-            crate::kernel::ProgramPoint::at(naming_point.shared_memory())
+            // Named by the memory, as a legacy read is, and recording the
+            // point the cells are read at.
+            crate::kernel::ProgramPoint::at_read_site(naming_point.shared_memory(), naming_point)
         };
         match memory.with_named_cell_run(
             range.base().clone(),
@@ -6042,7 +6036,7 @@ void child_release(struct child* obj) {
         let condition = ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::MemoryLoad(
+            left: Box::new(MachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(&retained_state),
                 Box::new(pointer.clone()),
                 crate::kernel::LoadKind::Int32,
@@ -6997,7 +6991,7 @@ mod declared_scalar_field_observation_tests {
             matches!(value, ProgramValue::Pointer(_)),
             "a pointer field must not be cached as an integer prefix"
         );
-        let expected = Address::loaded(&MachineTerm::MemoryLoad(
+        let expected = Address::loaded(&MachineTerm::read_named(
             crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
             Box::new(base.clone()),
             crate::kernel::LoadKind::Int32,
@@ -7045,10 +7039,7 @@ mod declared_scalar_field_observation_tests {
         let read = named.address().as_loaded_value().expect("pointer read");
         assert_eq!(read.point.read_version_id(), stored.observation_point_id());
         assert_eq!(read.defining_address, base);
-        assert_eq!(
-            read.category,
-            Some(crate::kernel::PointerLoadCategory::Object)
-        );
+        assert!(read.identity.is_point_named());
     }
 
     #[test]

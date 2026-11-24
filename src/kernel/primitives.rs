@@ -70,8 +70,16 @@ pub use symbolic_layout::{
     AccessExtent, LayoutOffset, LayoutSize, SymbolicField, SymbolicLayoutName, layout_term_spelling,
 };
 pub(in crate::kernel) mod float_conversion;
+mod load;
 #[cfg(test)]
 mod memory_construction_tests;
+#[cfg(test)]
+pub(crate) use load::interned_load_count;
+pub(crate) use load::read_operands;
+pub use load::{Load, LoadCell, ReadPoint};
+pub(crate) use load::{
+    LoadInternerState, capture_load_interner, clear_load_interner, restore_load_interner,
+};
 pub(crate) mod program_point;
 pub use program_point::ProgramPoint;
 mod statement_clone;
@@ -1060,10 +1068,15 @@ pub enum MachineTerm {
         arms: Vec<AlgebraicBitvectorMatchArm>,
     },
     /// The value a read of `LoadKind` at the pointer returns in the state.
-    /// The kind is part of the load's identity: two reads of one address
-    /// that differ in width or, below four bytes, in signedness return
-    /// different values, so they are different terms. See [`LoadKind`].
-    MemoryLoad(ProgramPoint, Box<Address>, LoadKind),
+    /// Its identity is the interned [`Load`] its [`LoadCell`] holds, the
+    /// point's read key and the cell, and its kind (`design/loads.md`, step
+    /// 3a): the [`ReadPoint`] is the producer's selection, which consumers
+    /// branch on, and compares equal to every other. The kind is part of the
+    /// identity: two reads of one address that differ in width or, below
+    /// four bytes, in signedness return different values, so they are
+    /// different terms. See [`LoadKind`]. Built only by
+    /// [`MachineTerm::read_named`].
+    MemoryLoad(ReadPoint, LoadCell, LoadKind),
     /// The physical LP64 address bits of an object pointer. This numeric
     /// observation carries no provenance or selected bounds. Complete C
     /// integer copies retain that information separately in PointerInteger.
@@ -2550,12 +2563,6 @@ pub struct Address {
     pub offset: AddressOffset,
 }
 
-/// An assumption-free name for one pointer-valued, eight-byte load.
-/// It is a different sort from scalar load variables even when both reads
-/// use the same state and address.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct PointerLoadId(pub(crate) u64);
-
 /// Which decodings of one pointer cell's bytes are one pointer value
 /// (`design/loads.md`, "Pointers"). Every object-pointer type decodes the
 /// same bytes to the same pointer, so the pointee type is no part of a
@@ -2591,13 +2598,11 @@ impl PointerLoadCategory {
     reason = "the graph query names loads without decoding them in live consumers yet"
 )]
 pub(crate) struct LoadedPointerView {
-    pub(crate) identity: PointerLoadId,
+    /// The load itself. It has no category or pointee type: both belong
+    /// to the `Pointer` term that decodes it (`design/loads.md`).
+    pub(crate) identity: Load,
     pub(crate) defining_memory: SharedMemory,
     pub(crate) point: ProgramPoint,
-    /// The decoding category of a point-named load; `None` for a load
-    /// named by a memory state's unchanged-bytes source. No pointee type:
-    /// the type belongs to the `Pointer` term that decodes the load.
-    pub(crate) category: Option<PointerLoadCategory>,
     pub(crate) defining_address: Address,
     pub(crate) displacement: AddressOffset,
 }
@@ -2988,18 +2993,12 @@ impl Pointer {
         cell: &Address,
     ) -> Self {
         if point.read_version_id().is_none() {
-            let memory = point.shared_memory();
-            let address = Address::loaded_value(&memory.unchanged_bytes_source(), cell);
-            return Self::from_read(address, program_type, memory, cell);
+            let address = Address::loaded_source_value_at(&point, cell);
+            return Self::from_read(address, program_type, point.shared_memory(), cell);
         }
-        let address = Address {
-            base: AddressBase::LoadedPointer(crate::kernel::eval::pointer_load_at_point(
-                point,
-                cell,
-                PointerLoadCategory::of_type(program_type),
-            )),
-            offset: AddressOffset::Constant(0),
-        };
+        // One load per cell at one version point, whatever type decodes
+        // it: the category and pointee type are the term's.
+        let address = Load::at(point, cell).address();
         let value = Self::new(address.clone(), program_type);
         if matches!(program_type, ProgramType::FunctionPointer(_)) {
             return value;
@@ -3414,9 +3413,10 @@ pub enum AddressBase {
     /// have been derived from the same caller object.
     ExternalObject(Variable),
     Symbolic(Variable),
-    /// The value read by a pointer-typed load, independent of the storage
-    /// block that held it and of the pointee type used after the read.
-    LoadedPointer(PointerLoadId),
+    /// The value a pointer-typed load decodes to, independent of the
+    /// storage block that held it and of the type that decodes it
+    /// (`design/loads.md`). Built only by [`Load::base`].
+    Load(Load),
     /// An opaque pointer-valued pure call. This is not an allocation identity
     /// and grants neither distinctness nor memory access.
     PureFunctionApplication(SharedPureApplication),
@@ -3522,9 +3522,9 @@ impl std::hash::Hash for AddressBase {
                 4u64.hash(state);
                 variable.hash(state);
             }
-            Self::LoadedPointer(identity) => {
+            Self::Load(load) => {
                 9u64.hash(state);
-                identity.hash(state);
+                load.hash(state);
             }
             Self::Heap(identity) => {
                 5u64.hash(state);
@@ -3655,7 +3655,7 @@ impl AddressBase {
             | Self::ExternalArgument
             | Self::ExternalObject(_)
             | Self::Symbolic(_)
-            | Self::LoadedPointer(_)
+            | Self::Load(_)
             | Self::PureFunctionApplication(_)
             | Self::Heap(_)
             | Self::Temporary(_) => None,
@@ -3687,7 +3687,7 @@ impl AddressBase {
             matches!(
                 value,
                 Self::Symbolic(_)
-                    | Self::LoadedPointer(_)
+                    | Self::Load(_)
                     | Self::FunctionSymbolic(_)
                     | Self::ExternalArgument
                     | Self::ExternalObject(_)
@@ -3705,8 +3705,8 @@ impl AddressBase {
                 crate::kernel::is_load_variable(variable)
                     && crate::kernel::eval::loaded_pointer_predates_block(variable, object)
             }
-            Self::LoadedPointer(identity) => {
-                crate::kernel::eval::loaded_pointer_read_predates_block(*identity, object)
+            Self::Load(load) => {
+                crate::kernel::eval::loaded_pointer_read_predates_block(load, object)
             }
             _ => false,
         };
@@ -3717,9 +3717,7 @@ impl AddressBase {
         // address (the read-over-write authority), so it lies in that
         // pointer's block. This reads memory, never facts.
         let stored_block = |block: &Self| match block {
-            Self::LoadedPointer(identity) => {
-                crate::kernel::eval::loaded_pointer_stored_block(*identity)
-            }
+            Self::Load(load) => crate::kernel::eval::loaded_pointer_stored_block(load),
             _ => None,
         };
         if stored_block(self).is_some_and(|stored| stored.proven_distinct(other))
@@ -3734,10 +3732,10 @@ impl AddressBase {
         // explicit disequality in the assumptions can separate it.
         if matches!(
             self,
-            Self::Symbolic(_) | Self::LoadedPointer(_) | Self::PureFunctionApplication(_)
+            Self::Symbolic(_) | Self::Load(_) | Self::PureFunctionApplication(_)
         ) || matches!(
             other,
-            Self::Symbolic(_) | Self::LoadedPointer(_) | Self::PureFunctionApplication(_)
+            Self::Symbolic(_) | Self::Load(_) | Self::PureFunctionApplication(_)
         ) {
             return false;
         }
@@ -3899,7 +3897,7 @@ impl std::fmt::Display for AddressBase {
             Self::ExternalArgument => formatter.write_str("arg-memory"),
             Self::ExternalObject(variable) => write!(formatter, "arg-object:{}", variable.0),
             Self::Symbolic(variable) => write!(formatter, "symbolic-pointer:{}", variable.0),
-            Self::LoadedPointer(identity) => write!(formatter, "loaded-pointer:{}", identity.0),
+            Self::Load(load) => write!(formatter, "loaded-pointer:{}", load.id()),
             Self::Heap(identity) => write!(formatter, "heap-allocation:{identity}"),
             Self::Temporary(identity) => write!(formatter, "temporary:{identity}"),
         }
@@ -5314,8 +5312,8 @@ impl AlgebraicTermNode {
                 pointer,
                 LoadKind::Bits64 | LoadKind::Abstract(_),
             )) => Some(Self::MemoryLoad {
-                point: point.clone(),
-                pointer: pointer.clone(),
+                point: point.point().clone(),
+                pointer: pointer.boxed(),
             }),
             _ => None,
         }
@@ -11043,7 +11041,7 @@ impl StaticBlockVersions {
             | AddressBase::AggregateReturn { .. }
             | AddressBase::ContractResult
             | AddressBase::ContractException => {}
-            AddressBase::LoadedPointer(_) => self.end_at(produced, false),
+            AddressBase::Load(_) => self.end_at(produced, false),
             _ => self.end_at(produced, true),
         }
     }
@@ -16462,8 +16460,8 @@ pub struct ProofObligation {
     pub(super) unsigned_divisor: bool,
     /// An ordered range bound for an executed float-to-integer conversion.
     pub(super) float_to_integer_bound: bool,
-    /// A representability bound for an executed signed left shift.
-    pub(super) signed_shift_bound: bool,
+    /// A representability bound for an executed signed operation.
+    pub(super) signed_arithmetic_bound: bool,
     /// This condition must be established before applying the statement.
     pub(super) statement_entry_required: bool,
     /// Diagnostic metadata only. The proposition itself carries both ranges.

@@ -82,9 +82,17 @@ fn observation_leaves_keep_growing_arithmetic_and_comparison_dags_shared() {
         let narrow = MachineIntegerType::UInt8;
         let narrow_arm =
             KernelTerm::machine_cast_shared(MachineCastSpelling::Generic, ty, narrow, root.clone());
+        let other_arm =
+            KernelTerm::variable(KernelType::Program(ProgramType::Int64), Variable(995722));
+        let narrow_other = KernelTerm::machine_cast_shared(
+            MachineCastSpelling::Generic,
+            ty,
+            narrow,
+            other_arm.clone(),
+        );
         let narrow_conditional = KernelTerm::machine_if_shared(
             narrow,
-            [guard.clone(), narrow_arm.clone(), narrow_arm.clone()],
+            [guard.clone(), narrow_other, narrow_arm.clone()],
         );
         let narrow_comparison = StoredConditionTerm::from_root(KernelTerm::boolean_comparison_raw(
             narrow,
@@ -93,22 +101,25 @@ fn observation_leaves_keep_growing_arithmetic_and_comparison_dags_shared() {
         ))
         .unwrap();
         let narrow_goal = Proposition::condition_is(narrow_comparison.clone(), true);
-        let conditional = KernelTerm::machine_if_shared(ty, [guard, root.clone(), root]);
+        let conditional = KernelTerm::machine_if_shared(ty, [guard, root, other_arm.clone()]);
         let conditional =
             IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(ty, conditional).unwrap());
+        let other_arm =
+            IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(ty, other_arm).unwrap());
         let mut premises = bounds(&exact, ty).to_vec();
         premises.push(Proposition::condition_is(condition, true));
         let facts = PureFactStore::from_ordered(&premises);
         let missing = PureFactStore::from_ordered(&[]);
         let operation_goal = equality(observed, exact);
-        let conditional_goal = equality(conditional, operand);
+        let conditional_goal = equality(conditional.clone(), operand);
+        let complementary_goal = equality(conditional, other_arm);
         let exports = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..2 {
                 assert!(known_bridge_leaf(&operation_goal, &|p| facts.pure_known_available(p)));
                 assert!(!known_bridge_leaf(&operation_goal, &|p| missing.pure_known_available(p)));
                 assert!(known_bridge_leaf(&conditional_goal, &|p| facts.pure_known_available(p)));
-                assert!(known_bridge_leaf(&conditional_goal, &|p| complementary
+                assert!(known_bridge_leaf(&complementary_goal, &|p| complementary
                     .pure_known_available(p)));
                 assert!(!known_bridge_leaf(&conditional_goal, &|p| missing.pure_known_available(p)));
                 assert!(known_bridge_leaf(&narrow_goal, &|p| complementary.pure_known_available(p)));

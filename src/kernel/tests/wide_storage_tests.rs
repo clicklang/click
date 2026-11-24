@@ -150,7 +150,7 @@ fn wide_storage_refuses_wrong_load_kind_and_typed_reinterpretation() {
         (MachineIntegerType::UInt128, LoadKind::Int128),
         (MachineIntegerType::Int128, LoadKind::Bits64),
     ] {
-        let raw = MachineTerm::MemoryLoad(
+        let raw = MachineTerm::read_named(
             ProgramPoint::at(&(intern_memory(memory.clone()))),
             Box::new(address(0)),
             wrong,
@@ -211,7 +211,7 @@ fn wide_storage_frame_transport_uses_all_sixteen_bytes() {
     let before = SymbolicMemory::new().with_block("local:wide-storage", 48);
     let condition = |memory: &SymbolicMemory| {
         ConditionTerm::equal(
-            MachineTerm::MemoryLoad(
+            MachineTerm::read_named(
                 ProgramPoint::at(&(intern_memory(memory.clone()))),
                 Box::new(address(0)),
                 LoadKind::Int128,
@@ -255,7 +255,7 @@ fn wide_order_frame_transport_matches_across_a_disjoint_store() {
     );
     let condition = |memory: &SymbolicMemory| {
         ConditionTerm::uint64_less_than(
-            MachineTerm::MemoryLoad(
+            MachineTerm::read_named(
                 ProgramPoint::at(&(intern_memory(memory.clone()))),
                 Box::new(address(0)),
                 LoadKind::Bits64,

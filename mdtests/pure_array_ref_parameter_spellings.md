@@ -31,7 +31,16 @@ int32 sorted_pair_count(int32 p[2], int32 x) {
         unfold(sorted(p, 2));
         solve();
     }
-    ensures counted: count_matches(p, 0, 1, x) == 1;
+    ensures counted: count_matches(p, 0, 1, x) == 1 by {
+        step_until(function.exit);
+        unfold(count_matches(p, 0, 1, x));
+        have (if old(p[0]) == x { 1 } else { 0 }) == 1 by known();
+        have to_integer(0 + (if old(p[0]) == x { 1 } else { 0 })) == 1 by {
+            rewrite((if old(p[0]) == x { 1 } else { 0 }), 1);
+            known();
+        }
+        known();
+    }
 }
 ```
 

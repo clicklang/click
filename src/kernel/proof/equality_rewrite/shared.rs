@@ -1100,9 +1100,9 @@ mod tests {
             op: O::Add,
             left: MachineTerm::If {
                 condition: ConditionTerm::Variable(Variable(1006430)).into(),
-                then_term: MachineTerm::MemoryLoad(
+                then_term: MachineTerm::read_named(
                     ProgramPoint::at(&memory),
-                    pointer.clone().into(),
+                    pointer.clone(),
                     LoadKind::Int32,
                 )
                 .into(),
@@ -1328,7 +1328,7 @@ mod tests {
         let _session = VerificationSession::enter();
         let pointer = SymbolicMemory::global_pointer("shared-exact-load");
         let memory = intern_memory(SymbolicMemory::new().with_block("shared-exact-load", 16));
-        let raw = MachineTerm::MemoryLoad(
+        let raw = MachineTerm::read_named(
             ProgramPoint::at(&memory),
             Box::new(pointer.clone()),
             LoadKind::Int32,

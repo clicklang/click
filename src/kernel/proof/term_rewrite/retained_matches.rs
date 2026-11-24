@@ -581,7 +581,7 @@ mod tests {
         let source = Variable(3);
         let bound = Variable(2);
         let read = |variable| {
-            MachineTerm::MemoryLoad(
+            MachineTerm::read_named(
                 ProgramPoint::at(&memory),
                 Box::new(Address::symbolic(variable)),
                 LoadKind::Int32,

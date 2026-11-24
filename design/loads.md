@@ -1,6 +1,7 @@
 # Pointers, loads and stores
 
-Status: approved (2026-11-23). Nothing here is implemented.
+Status: approved (2026-11-23). Steps 0, 1, 2 and 3a-i of the migration are
+implemented; the rest is not.
 
 ## Scope
 
@@ -170,8 +171,9 @@ at an abstract type, whose value the kernel treats as opaque.
 - **Integer and float values** are `decode<format>(load)`. Today that is
   `MachineTerm::MemoryLoad(point, address, kind)`, built only by
   `MachineTerm::read_named` and `MachineTerm::memory_read` (enforced by
-  `build_support/read_construction.rs`). It becomes the load plus its format,
-  and the ratchet extends to the new variant and to `Load { .. }` literals.
+  `build_support/read_construction.rs`). Since step 3a-i its identity is the
+  interned load plus its kind, `MemoryLoad(ReadPoint, LoadCell, LoadKind)`;
+  step 3b makes the kind a format.
 - **Pointer values** have address base `AddressBase::Load(load)`, replacing
   `LoadedPointer(PointerLoadId)` and the side table. A pointer-side
   constructor gets the same ratchet.
@@ -292,13 +294,78 @@ is one PR, measured with the gate harnesses, the raise-lower audit and
 2. **`Load` and `AddressBase::Load`.** Introduce the interned `Load` and use it
    as the pointer base, replacing `LoadedPointer(PointerLoadId)` and the
    registry. Function-pointer loads move from load variables to it.
+   *Done.* `Load` (`src/kernel/primitives/load.rs`) carries its point and
+   cell and is interned by `(point.read_key(), cell)`; `Load::at` and
+   `Load::base` are the only constructors, held by
+   `build_support/read_construction.rs`. The category, object or function, is
+   no part of the load: it is the decoding's, the type of the `Pointer` term,
+   and a store lookup for a typed value passes it
+   (`pointer_read_over_write_decoded_value`); a lookup about the base as an
+   address asks about the cell's bytes and accepts a store of either
+   category. Function-pointer reads already took the load base in step 1: an
+   instrumented run of both gate harnesses minted no `FunctionSymbolic` load
+   variable and resolved none, so the three adapters that read one as a load
+   (`logical_pointer_read_term`, the graph's read definitions, and its input
+   read test) are removed; `FunctionSymbolic` remains for function-pointer
+   binders.
+   `Address::loaded_value_at` names a memory-named load at the caller's
+   point, keeping its legacy selection and so its identity.
 3. **Integer and float loads on `Load`**, in two PRs, with the program-point
    session, whose constructors and ratchet gate these terms. Neither overlaps
    that session's own read-identity changes (its P1 producer moves); the two
    are scheduled apart so that failures stay attributable.
    - **3a.** `MemoryLoad` becomes `Load` plus a kind, keeping the kind's
      signedness in the key. Neutral: both harnesses pass, and the
-     mixed-name census and legacy-walk counts stay flat.
+     mixed-name census and legacy-walk counts stay flat. In two parts:
+     - **3a-i, the representation.** *Implemented; one difference open.*
+       `MemoryLoad(point, cell, kind)`
+       holds a `ReadPoint`, the producer's selected point, and a `LoadCell`,
+       the producer's address with its `Load::at(point, address)`, both built
+       only by `read_operands` inside `MachineTerm::read_named`
+       (`src/kernel/primitives/load.rs`; the ratchet counts `MemoryLoad(..)`,
+       `read_operands(..)` calls, `ReadPoint(..)` and `LoadCell { .. }`).
+       Equality, hashing and ordering go by `(Load, kind)`: the `ReadPoint`
+       compares equal to every other and the address is not compared. That
+       is the equivalence the term had, `(point, address, kind)`, within one
+       memory arena: `ProgramPoint` equality is read-key equality there
+       (legacy points compare their interned memory, whose id is the
+       `ReadKey::Memory` key). Across arenas it is not: a legacy point
+       compares two arenas' memories by content, while a `Load` keys them by
+       arena id, so two memory-named reads of structurally equal memories in
+       two arenas were one term and are now two, as pointer loads have been
+       since step 2. That is intended: a new arena starts only with a new
+       verification session, which also clears the load interner and every
+       registry, so terms of two arenas never meet in one proof, and
+       interning by memory content would hash structure on the hot path.
+       The unit test
+       `transported_equal_equation_from_a_new_epoch_drops_producer_source_events`
+       (`src/kernel/eval/memory_loads.rs`) expects the two terms. An
+       instrumented run of both gate harnesses
+       compared the old and new equality on every comparison of two reads
+       (over two million) and found no difference; both harnesses pass
+       unchanged, and no session interned more than 10,000 loads. Ordering
+       changes from address order to load-id order, with no proof or output
+       change on the harnesses. Consumers still read the selection from the
+       term's `ReadPoint`, never from `Load::point`, which is the first
+       selection of its key; a substitution or rewrite that changes the
+       address rebuilds the read and so interns the new cell's load. Reads of
+       one cell at two kinds share the load and stay two terms. Code that
+       compared one field of two reads now says which:
+       `point.point() == other.point()` or `cell.address() == other.address()`
+       (26 sites, found by type-checking with the fields' comparisons removed;
+       a direct `ReadPoint` comparison is always true).
+       Term equality and hashing no longer walk the address
+       (`src/scaling_tests/kernel/primitives/machine_integer/tests.rs`: a
+       read's hash reads the same bytes at address sizes 4, 64 and 512 while
+       the address's own hash grows; building a read costs the same with 16,
+       256 or 4,096 others interned; 4, 64 or 512 reads of one cell at
+       alternating selections and four kinds intern one load). Building a read
+       now hashes its address once to intern the load, linear in the term
+       built.
+     - **3a-ii, the consumers** (program-point session). Consumers that
+       branch on the selection (`is_entry_read`, `is_exact_read` with
+       `has_certified_read_view`, `indexed_write`, the raiser) move to the
+       load's key.
    - **3b.** One load per cell, decoded at each format; `Bits64` stops being
      special. The held-value and indexed lookups answer a load at another
      format of the same width, `decode<U>(encode<T>(v))`, where today they
@@ -363,7 +430,15 @@ Design check
    its own format; check that effective-type checking accepts it for every
    such cell. A refusal leaves that load with no spelling, and is the defect
    to fix.
-2. **Exactness.** Integer load equality compares only `read_key()`, so an
+2. **Exactness.** *Resolved in step 2:* a load's identity is its read key
+   and cell, so an `Exact` and an indexed selection of one point are one
+   `Load`, as integer reads compare only `read_key()`. The load keeps the
+   selection it was first built from, but nothing depends on which: a store
+   lookup asks the index at the load's version point whatever the selection
+   kind, and raising spells a read plainly where the place's ordinary read is
+   that read key, `exact(..)` only where it is not
+   (`mdtests/an_exact_and_an_ordinary_read_of_one_pointer_cell_are_one_load.md`).
+   Integer load equality compares only `read_key()`, so an
    `Exact` and an `IndexedCell` selection of one point are one term; pointer
    loads match. Substitution and rewriting keep an exact load's point when
    they rewrite its address, and `exact-reads.md` E3 makes a pointer load's
@@ -373,4 +448,11 @@ Design check
    pointer form of the 53 integer cases. The mixed-name census
    (`kernel::mixed_read_names`) extends to pointer loads once step 2 gives
    them one constructor.
-3. **Interning cost** of `Load`, confirmed by the scaling tests before step 2.
+3. **Interning cost** of `Load`. *Resolved in step 2:* interning is one hash
+   probe on `(read_key, cell)`, charged one work unit only on a slot
+   collision, and equality, hashing and ordering compare one id
+   (`src/scaling_tests/kernel/primitives/load.rs`): the work to intern a new
+   load or find an interned one is the same with 16, 256 or 4,096 other loads
+   interned; comparing two loads of a cell nested 4, 64 or 512 loads deep is
+   the same; and 4, 64 or 512 reads of one cell, alternating exact and indexed
+   selections and object- and function-pointer types, intern one load.

@@ -1,7 +1,7 @@
 # Post-call resource fields retain their checked state
 
-An exact resource-field equality produced by a transported call remains
-source-expressible when it is cited by an arithmetic proof at the call exit.
+An exact resource-field equality produced by a transported call can rewrite
+an arithmetic goal about that field at the call exit.
 
 ```c filename=c_call_binder_transport_arithmetic_resource_field.c
 void increment(int32* state) { }
@@ -29,7 +29,8 @@ void caller(int32* state) {
 } by {
     step(increment, { first: c });
     have at(region(0).exit, c.revision) < 1000 by {
-        solve() using { c.revision == 1; };
+        rewrite(c.revision, 1);
+        known();
     }
 }
 ```

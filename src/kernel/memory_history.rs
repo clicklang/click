@@ -1202,7 +1202,7 @@ fn checked_call_load_equality_evidence(
     else {
         return None;
     };
-    if left_pointer != right_pointer || left_kind != right_kind {
+    if left_pointer.address() != right_pointer.address() || left_kind != right_kind {
         return None;
     }
     let left = memory_dag_cell_source(
@@ -1485,7 +1485,7 @@ impl CheckedLoadEquality {
                                 && (pointer.as_ref() == &left.pointer
                                     || pointer.as_ref() == &right.pointer)
                                 && equality.right
-                                    == MachineTerm::MemoryLoad(
+                                    == MachineTerm::read_named(
                                         ProgramPoint::at(&right.memory),
                                         pointer.clone(),
                                         right.kind,
@@ -1575,9 +1575,9 @@ impl CheckedLoadEquality {
                 else {
                     return false;
                 };
-                left_pointer == right_pointer
+                left_pointer.address() == right_pointer.address()
                     && left_kind == right_kind
-                    && left_pointer.as_ref() == &evidence.pointer
+                    && left_pointer.address() == &evidence.pointer
                     && call_events.contains(&evidence.event)
                     && call_events.contains_view(&evidence.event, evidence.left.node())
                     && call_events.contains_view(&evidence.event, evidence.right.node())
@@ -2246,7 +2246,7 @@ impl AtomicMemoryLoadEqualityEvidence {
             Some(_) => return false,
             None => right_memory.shared_memory(),
         };
-        left_pointer == right_pointer
+        left_pointer.address() == right_pointer.address()
             && left_kind == right_kind
             && match reason {
                 MemoryDagLoadEqualityReason::CommonSource => {
@@ -2292,7 +2292,7 @@ fn typed_canonical_projection_load_equality_evidence(
     else {
         return None;
     };
-    if left_pointer != right_pointer || left_kind != right_kind {
+    if left_pointer.address() != right_pointer.address() || left_kind != right_kind {
         return None;
     }
     let left_projection =
@@ -2984,7 +2984,7 @@ fn store_member_probe_bases(pointer: &Address, assumptions: &PureFactContext) ->
             // A loaded pointer's displacement is all of its offset: the
             // read itself, at displacement zero, is the object's base.
             AddressOffset::Int32Scaled { .. } | AddressOffset::Int64Scaled { .. }
-                if matches!(base.base, AddressBase::LoadedPointer(_)) =>
+                if matches!(base.base, AddressBase::Load(_)) =>
             {
                 AddressOffset::Constant(0)
             }
@@ -3147,7 +3147,7 @@ pub(in crate::kernel) fn complete_pointer_reads_equal_across_frame(
         let stores_read = |cell: &MemoryDagCell, read: &LoadedPointerView| {
             matches!(cell, MemoryDagCell::Stored { value, .. }
                 if matches!(value.native(), ProgramValue::Pointer(value)
-                    if value.address() == &Address::loaded_value(&read.defining_memory, &read.defining_address)))
+                    if value.address() == &Address::loaded_value_at(&read.point, &read.defining_address)))
         };
         left.node() == right.node() || stores_read(&left, &b) || stores_read(&right, &a)
     })
@@ -3336,7 +3336,10 @@ fn pointer_reads_share_recorded_cell(
         };
         (crate::kernel::load_term_access_width(memory.shared_memory(), &address, kind)
             == crate::kernel::C_POINTER_BYTE_WIDTH)
-            .then_some((memory.into_shared_memory(), address))
+            .then_some((
+                ProgramPoint::from(memory).into_shared_memory(),
+                address.into(),
+            ))
     };
     let (Some((left_memory, left_address)), Some((right_memory, right_address))) =
         (read(left), read(right))
@@ -4037,7 +4040,7 @@ pub(super) fn atomic_memory_load_equality_evidence(
     else {
         return None;
     };
-    if left_pointer != right_pointer || left_kind != right_kind {
+    if left_pointer.address() != right_pointer.address() || left_kind != right_kind {
         return None;
     }
     match recorded_load_history(
@@ -5372,7 +5375,7 @@ fn wide_read_observations_have_value(
             assumptions,
         )
     {
-        if left_memory == right_memory {
+        if left_memory.point() == right_memory.point() {
             return true;
         }
         if let (Some(left_cell), Some(right_cell)) = (
@@ -5658,8 +5661,9 @@ pub(super) fn canonicalize_atomic_loads_deep(term: &MachineTerm) -> MachineTerm 
                             );
                             let version = version.as_ref().unwrap_or(memory.shared_memory());
                             results.push(crate::kernel::MachineTerm::read_named(
-                                ProgramPoint::at(
+                                ProgramPoint::at_read_site(
                                     &(canonical_projected_load_memory(version, &canonical_pointer)),
+                                    memory,
                                 ),
                                 canonical_pointer,
                                 kind,
@@ -5718,8 +5722,9 @@ pub(super) fn canonicalize_atomic_loads_deep(term: &MachineTerm) -> MachineTerm 
                             );
                             let version = version.as_ref().unwrap_or(next_memory.shared_memory());
                             results.push(crate::kernel::MachineTerm::read_named(
-                                ProgramPoint::at(
+                                ProgramPoint::at_read_site(
                                     &(canonical_projected_load_memory(version, &canonical_pointer)),
+                                    next_memory,
                                 ),
                                 canonical_pointer,
                                 next_kind,
@@ -6336,7 +6341,7 @@ pub(super) fn store_value_equation_at(
         // The producer knows this exact store's value. Retain its read equation;
         // registration relates aliases by congruence, without looking in cells.
         let read = Pointer::new(
-            Address::loaded_value(after.shared_memory(), pointer),
+            Address::loaded_value_at(after, pointer),
             value.program_type(),
         );
         return Some(Proposition::condition_is(
@@ -6390,7 +6395,7 @@ pub(super) fn store_value_equation_at(
             value.byte_width(),
         )
     } else {
-        crate::kernel::canonical_form_of_load(after.shared_memory().clone(), pointer.clone(), kind)
+        crate::kernel::eval::canonical_form_of_load_at(after, pointer.clone(), kind)
     };
     let format = match value.numeric_value() {
         ProgramValue::Bool(_) => MachineIntegerType::UInt8,

@@ -7712,6 +7712,7 @@ pub(in crate::surface) fn validate_loop_initialization_tactics(
             | ProofTactic::Known
             | ProofTactic::Normalize
             | ProofTactic::NormalizeUsing(_)
+            | ProofTactic::CompatibilityNormalize(_)
             | ProofTactic::Rewrite(_)
             | ProofTactic::Solve => {}
             ProofTactic::If(proof_if) => {

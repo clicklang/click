@@ -105,7 +105,7 @@ fn raw_read_address_registration_does_not_walk_memory_history() {
             ProgramValue::Int32(0u32.into()),
         );
         let load = |memory: &SymbolicMemory| {
-            MachineTerm::MemoryLoad(
+            MachineTerm::read_named(
                 ProgramPoint::at(&(intern_memory_ref(memory))),
                 Box::new(field.clone()),
                 crate::kernel::LoadKind::Int32,

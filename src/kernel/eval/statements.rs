@@ -965,7 +965,7 @@ fn write_program_lvalue_paths_for_initialization(
                 .as_ref()
                 .filter(|_| {
                     !matches!(pointer.offset, AddressOffset::Add(_, _))
-                        && !matches!(pointer.base, AddressBase::LoadedPointer(_))
+                        && !matches!(pointer.base, AddressBase::Load(_))
                 })
                 .and_then(|range| {
                     effective_assumptions
@@ -6718,7 +6718,12 @@ fn refresh_scalar_local_binding(
         let read = scalar_read_for_exact_cell_at(&version, &slot, kind, kind.byte_width());
         Some(format.value_from_term(read))
     } else {
-        crate::kernel::eval::symbolic_load_value(&state.memory, &slot, program_type)
+        crate::kernel::eval::symbolic_load_value(
+            &state.memory,
+            Some(&state.program_point()),
+            &slot,
+            program_type,
+        )
     };
     match refreshed {
         Some(refreshed) => state.locals.set_typed_with_all_qualifiers(

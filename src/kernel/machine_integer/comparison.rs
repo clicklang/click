@@ -1486,6 +1486,12 @@ pub(crate) fn integer_observations_of_native_comparison(
     let Proposition::ConditionIs(condition, value) = proposition else {
         return Vec::new();
     };
+    if matches!(
+        condition.root().map(KernelTerm::node),
+        Some(KernelTermNode::IntegerCompare { .. })
+    ) {
+        return Vec::new();
+    }
     let Some((left, right, types)) = representation::comparison_readings(condition.native_compat())
     else {
         return Vec::new();

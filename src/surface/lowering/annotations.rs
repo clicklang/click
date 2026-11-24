@@ -1,7 +1,24 @@
 use super::*;
 use crate::kernel::{AlgebraicTerm, AlgebraicTermNode, LoopEffectOrigin, SpecIntegerExpression};
 use crate::kernel::{bits32_constant, constant_u32};
+use crate::surface::validation::{pointee_less_access_message, pointee_less_pointer_spelling};
 use std::sync::Arc;
+
+/// The refusal of `left + right` or `left - right` whose operands are
+/// spelled as [`pointee_less_pointer_spelling`] gives: a `void *` stepped by
+/// an offset is kept (one-byte steps, as in C), anything else through a
+/// pointer without a pointee type is refused.
+fn pointee_less_step_refusal(
+    left: Option<&'static str>,
+    right: Option<&'static str>,
+    subtract: bool,
+) -> Option<&'static str> {
+    match (left, right) {
+        (Some("void *"), None) => None,
+        (None, Some("void *")) if !subtract => None,
+        (left, right) => left.or(right),
+    }
+}
 
 fn typed_let_program_value(
     value: SpecExpression,
@@ -487,7 +504,7 @@ pub(in crate::surface) fn register_entry_model_fields(function: &FunctionBlock) 
         let (Some(schema), Some(fields)) = (&binding.schema, &binding.fields) else {
             continue;
         };
-        let spelling = if binding.name.starts_with('#') {
+        let spelling = if binding.unnamed {
             let ResourceClause::Declared {
                 name, arguments, ..
             } = resource.as_ref()
@@ -3992,10 +4009,15 @@ impl AnnotationLowerer<'_> {
                 .pointee_type()
                 .or_else(|| self.result_type.array_element_type());
         }
-        if name.unresolved_name().is_none() {
-            return name
+        // A resolved local carries its declared type when lowering recorded
+        // one; a local named by selector (`f.statement(3).local(word)`) may
+        // not, and then reads its type from the state that declares it.
+        if name.unresolved_name().is_none()
+            && let Some(element) = name
                 .program_type()
-                .and_then(|ty| ty.pointee_type().or_else(|| ty.array_element_type()));
+                .and_then(|ty| ty.pointee_type().or_else(|| ty.array_element_type()))
+        {
+            return Some(element);
         }
         self.local_type_state
             .and_then(|state| {
@@ -6863,9 +6885,7 @@ impl AnnotationLowerer<'_> {
             ProgramExpression::Load(pointer_expression) => Ok(SpecExpression::MemoryLoad {
                 point: environment.current_point.clone(),
                 pointer: Box::new(pointer),
-                value_type: self
-                    .program_expression_array_element_type(pointer_expression, environment)
-                    .unwrap_or(ProgramType::Int32),
+                value_type: self.known_pointee_type(pointer_expression, environment)?,
                 exact: false,
             }),
             _ => Ok(pointer),
@@ -7036,11 +7056,10 @@ impl AnnotationLowerer<'_> {
                                 ))
                             )
                             // A `Pointer` states no pointee; the cast keeps
-                            // its value.
-                            && !self.is_untyped_pointer_operand(operand, environment)
-                            // A `void *` operand converts to the byte view as
-                            // the C conversion does (C11 6.3.2.3p7).
-                            && !self.contract_operand_is_void_pointer(operand, environment)
+                            // its value. A `void *` operand converts to the
+                            // byte view as the C conversion does (C11
+                            // 6.3.2.3p7).
+                            && self.pointee_less_operand(operand, environment).is_none()
                             && !self
                                 .contract_pointer_element_type(operand, environment)
                                 .is_some_and(|element| {
@@ -7326,9 +7345,7 @@ impl AnnotationLowerer<'_> {
                 let offset = offset.ok_or_else(|| "array access requires an index".to_string())?;
                 match lowered {
                     ProgramExpression::Index(lowered_base, _) => {
-                        let value_type = self
-                            .program_expression_array_element_type(lowered_base, environment)
-                            .unwrap_or(ProgramType::Int32);
+                        let value_type = self.known_pointee_type(lowered_base, environment)?;
                         Ok(SpecExpression::MemoryLoad {
                             point: environment.current_point.clone(),
                             pointer: Box::new(SpecExpression::PointerOffset {
@@ -7422,9 +7439,6 @@ impl AnnotationLowerer<'_> {
                 else {
                     return Err("`count(...)` expects a declared resource".to_string());
                 };
-                if environment.reference_state.is_some() {
-                    return Err("`count(R(p))` at a recorded state is unavailable".to_string());
-                }
                 if arguments.is_empty()
                     || matches!(arguments[0], ContractExpression::ResourceWildcard)
                     || (arguments
@@ -7453,6 +7467,24 @@ impl AnnotationLowerer<'_> {
                     name: name.clone(),
                     arguments,
                 };
+                // `at(point, count(R))` is the population's count in that
+                // recorded state, which holds its own ledger and authority.
+                // It is read there, as a field or instance under `at` is.
+                if let Some(state) = environment.reference_state.as_ref() {
+                    let (value, obligations) =
+                        crate::kernel::program_evaluate_speprogram_expression_at_state(
+                            state,
+                            &count,
+                            None,
+                            &crate::kernel::PureFactContext::new(),
+                        )?;
+                    if !obligations.is_empty() {
+                        return Err(
+                            "`count(...)` at a recorded state must not owe obligations".to_string()
+                        );
+                    }
+                    return Ok(SpecExpression::Value(value));
+                }
                 // A count named at the function entry is the entry's
                 // population, which the kernel evaluates at the entry state.
                 Ok(if environment.at_function_entry {
@@ -10022,8 +10054,27 @@ impl AnnotationLowerer<'_> {
                     byte_width: 1,
                 })
             }
-            // Arithmetic on a pointer offsets it by whole elements, as C does.
+            // Arithmetic on a pointer offsets it by whole elements, as C does;
+            // a `void *` steps by one byte, as Click's C side does.
             ProgramExpression::Add(left, right) => {
+                let void_step = |operand: &ProgramExpression| {
+                    self.pointee_less_program_operand(operand, environment) == Some("void *")
+                };
+                if let Some((pointer, offset)) = match (void_step(left), void_step(right)) {
+                    (true, false) => Some((left, right)),
+                    (false, true) => Some((right, left)),
+                    _ => None,
+                } {
+                    return Ok(SpecExpression::PointerOffset {
+                        pointer: Box::new(
+                            self.lower_program_expression_to_spec(pointer, environment)?,
+                        ),
+                        elements: Box::new(
+                            self.lower_program_expression_to_spec(offset, environment)?,
+                        ),
+                        byte_width: 1,
+                    });
+                }
                 if let Some(element_width) =
                     self.program_expression_array_element_width(left, environment)
                 {
@@ -10056,8 +10107,14 @@ impl AnnotationLowerer<'_> {
                 ))
             }
             ProgramExpression::Subtract(left, right) => {
-                if let Some(element_width) =
-                    self.program_expression_array_element_width(left, environment)
+                let void_step = self.pointee_less_program_operand(left, environment)
+                    == Some("void *")
+                    && self
+                        .pointee_less_program_operand(right, environment)
+                        .is_none();
+                if let Some(element_width) = void_step
+                    .then_some(1)
+                    .or_else(|| self.program_expression_array_element_width(left, environment))
                     && self
                         .program_expression_array_element_type(right, environment)
                         .is_none()
@@ -10159,9 +10216,7 @@ impl AnnotationLowerer<'_> {
                 )
             }
             ProgramExpression::Index(base, index) => {
-                let element_type = self
-                    .program_expression_array_element_type(base, environment)
-                    .unwrap_or(ProgramType::Int32);
+                let element_type = self.known_pointee_type(base, environment)?;
                 let pointer = SpecExpression::PointerOffset {
                     pointer: Box::new(self.lower_program_expression_to_spec(base, environment)?),
                     elements: Box::new(self.lower_program_expression_to_spec(index, environment)?),
@@ -10233,9 +10288,7 @@ impl AnnotationLowerer<'_> {
             ProgramExpression::Load(pointer) => Ok(SpecExpression::MemoryLoad {
                 point: environment.current_point.clone(),
                 pointer: Box::new(self.lower_program_expression_to_spec(pointer, environment)?),
-                value_type: self
-                    .program_expression_array_element_type(pointer, environment)
-                    .unwrap_or(ProgramType::Int32),
+                value_type: self.known_pointee_type(pointer, environment)?,
                 exact: false,
             }),
             expression => {
@@ -10714,64 +10767,87 @@ impl AnnotationLowerer<'_> {
         }
     }
 
-    /// Whether `operand` is Click's untyped `Pointer`: a cast to it, a
-    /// `load<Pointer>`, a byte offset of one, or a binding, parameter or
-    /// call of that type.
-    fn is_untyped_pointer_operand(
+    /// The spelling of `operand`'s type when it is a pointer that states no
+    /// pointee type ([`pointee_less_pointer_spelling`]): a cast to one, a
+    /// `load` of one, a byte offset of one, or a binding, parameter or call
+    /// of that type.
+    fn pointee_less_operand(
         &self,
         operand: &ContractExpression,
         environment: &SpecElaborationContext,
-    ) -> bool {
-        match operand {
-            ContractExpression::CUnary { operand, lowered } => {
-                self.is_untyped_pointer_program_operand(lowered, environment)
-                    || (matches!(lowered, ProgramExpression::PointerOffsetBytes { .. })
-                        && self.is_untyped_pointer_operand(operand, environment))
-            }
+    ) -> Option<&'static str> {
+        let spelling = match operand {
+            ContractExpression::CUnary { operand, lowered } => self
+                .pointee_less_program_operand(lowered, environment)
+                .or_else(|| {
+                    matches!(lowered, ProgramExpression::PointerOffsetBytes { .. })
+                        .then(|| self.pointee_less_operand(operand, environment))
+                        .flatten()
+                }),
             ContractExpression::ProgramExpression(lowered) => {
-                self.is_untyped_pointer_program_operand(lowered, environment)
+                self.pointee_less_program_operand(lowered, environment)
             }
             ContractExpression::Old(inner)
             | ContractExpression::Exact(inner)
             | ContractExpression::At {
                 expression: inner, ..
-            } => self.is_untyped_pointer_operand(inner, environment),
-            _ => matches!(
-                self.contract_expression_click_type(operand, environment),
-                Some(ClickType::Program(InterfaceType::Pointer))
-            ),
-        }
+            } => self.pointee_less_operand(inner, environment),
+            _ => match self.contract_expression_click_type(operand, environment) {
+                Some(ClickType::Program(operand_type)) => {
+                    pointee_less_pointer_spelling(operand_type.to_kernel_type())
+                }
+                _ => None,
+            },
+        };
+        spelling.or_else(|| {
+            self.contract_operand_is_void_pointer(operand, environment)
+                .then_some("void *")
+        })
     }
 
-    /// [`Self::is_untyped_pointer_operand`] for a lowered C fragment.
-    fn is_untyped_pointer_program_operand(
+    /// [`Self::pointee_less_operand`] for a lowered C fragment.
+    fn pointee_less_program_operand(
         &self,
         operand: &ProgramExpression,
         environment: &SpecElaborationContext,
-    ) -> bool {
+    ) -> Option<&'static str> {
         match operand {
-            ProgramExpression::Cast { target_type, .. } => *target_type == ProgramType::Pointer,
-            ProgramExpression::TypedLoad { value_type, .. } => *value_type == ProgramType::Pointer,
+            ProgramExpression::Cast { target_type, .. } => {
+                pointee_less_pointer_spelling(*target_type)
+            }
+            ProgramExpression::TypedLoad { value_type, .. } => {
+                pointee_less_pointer_spelling(*value_type)
+            }
+            ProgramExpression::Value(ProgramValue::Pointer(pointer)) => {
+                pointee_less_pointer_spelling(pointer.program_type())
+            }
             ProgramExpression::PointerOffsetBytes { pointer, .. } => {
-                self.is_untyped_pointer_program_operand(pointer, environment)
+                self.pointee_less_program_operand(pointer, environment)
             }
-            ProgramExpression::Add(left, right) | ProgramExpression::Subtract(left, right) => {
-                self.is_untyped_pointer_program_operand(left, environment)
-                    || self.is_untyped_pointer_program_operand(right, environment)
-            }
-            ProgramExpression::Variable(crate::kernel::BindingName::Named(_)) => matches!(
-                self.contract_expression_click_type(
+            ProgramExpression::Add(left, right) | ProgramExpression::Subtract(left, right) => self
+                .pointee_less_program_operand(left, environment)
+                .or_else(|| self.pointee_less_program_operand(right, environment)),
+            ProgramExpression::Variable(name @ crate::kernel::BindingName::Named(_)) => match self
+                .contract_expression_click_type(
                     &ContractExpression::ProgramExpression(operand.clone()),
                     environment,
-                ),
-                Some(ClickType::Program(InterfaceType::Pointer))
-            ),
-            _ => false,
+                ) {
+                Some(ClickType::Program(operand_type)) => {
+                    pointee_less_pointer_spelling(operand_type.to_kernel_type())
+                }
+                _ => None,
+            }
+            .or_else(|| {
+                self.c_variable_type(name.clone())
+                    .and_then(pointee_less_pointer_spelling)
+            }),
+            _ => None,
         }
     }
 
-    /// Refuses `*q`, `q[i]`, `q + k` and `q - k` when `q` is a `Pointer`:
-    /// it has no pointee type to read at or step by.
+    /// Refuses `*q` and `q[i]` when `q` is a `Pointer` or a `void *`, and
+    /// `q + k` and `q - k` when `q` is a `Pointer`: it has no pointee type to
+    /// read at or step by. A `void *` steps by one byte, as in C.
     fn refuse_untyped_pointer_access(
         &self,
         expression: &ContractExpression,
@@ -10779,41 +10855,44 @@ impl AnnotationLowerer<'_> {
     ) -> Result<(), String> {
         let refused_program = |lowered: &ProgramExpression| match lowered {
             ProgramExpression::Load(pointer) | ProgramExpression::Index(pointer, _) => {
-                self.is_untyped_pointer_program_operand(pointer, environment)
+                self.pointee_less_program_operand(pointer, environment)
             }
-            ProgramExpression::Add(..) | ProgramExpression::Subtract(..) => {
-                self.is_untyped_pointer_program_operand(lowered, environment)
+            ProgramExpression::Add(left, right) | ProgramExpression::Subtract(left, right) => {
+                pointee_less_step_refusal(
+                    self.pointee_less_program_operand(left, environment),
+                    self.pointee_less_program_operand(right, environment),
+                    matches!(lowered, ProgramExpression::Subtract(..)),
+                )
             }
-            _ => false,
+            _ => None,
         };
-        let refused = match expression {
-            ContractExpression::CUnary { operand, lowered } => {
-                refused_program(lowered)
-                    || (matches!(
-                        lowered,
-                        ProgramExpression::Load(_) | ProgramExpression::Index(..)
-                    ) && self.is_untyped_pointer_operand(operand, environment))
-            }
-            ContractExpression::ProgramExpression(lowered) => refused_program(lowered),
-            ContractExpression::ArrayIndex { base, lowered, .. } => {
-                refused_program(lowered) || self.is_untyped_pointer_operand(base, environment)
-            }
-            ContractExpression::Index(base, _) => {
-                self.is_untyped_pointer_operand(base, environment)
-            }
-            ContractExpression::Add(left, right) | ContractExpression::Subtract(left, right) => {
-                self.is_untyped_pointer_operand(left, environment)
-                    || self.is_untyped_pointer_operand(right, environment)
-            }
-            _ => false,
-        };
-        if refused {
-            return Err(
-                "a `Pointer` has no pointee type; cast it to a typed pointer or use `load<T>`"
-                    .to_string(),
-            );
+        let refused =
+            match expression {
+                ContractExpression::CUnary { operand, lowered } => refused_program(lowered)
+                    .or_else(|| {
+                        matches!(
+                            lowered,
+                            ProgramExpression::Load(_) | ProgramExpression::Index(..)
+                        )
+                        .then(|| self.pointee_less_operand(operand, environment))
+                        .flatten()
+                    }),
+                ContractExpression::ProgramExpression(lowered) => refused_program(lowered),
+                ContractExpression::ArrayIndex { base, lowered, .. } => refused_program(lowered)
+                    .or_else(|| self.pointee_less_operand(base, environment)),
+                ContractExpression::Index(base, _) => self.pointee_less_operand(base, environment),
+                ContractExpression::Add(left, right)
+                | ContractExpression::Subtract(left, right) => pointee_less_step_refusal(
+                    self.pointee_less_operand(left, environment),
+                    self.pointee_less_operand(right, environment),
+                    matches!(expression, ContractExpression::Subtract(..)),
+                ),
+                _ => None,
+            };
+        match refused {
+            Some(spelling) => Err(pointee_less_access_message(spelling)),
+            None => Ok(()),
         }
-        Ok(())
     }
 
     fn contract_pointer_element_type(
@@ -10872,6 +10951,23 @@ impl AnnotationLowerer<'_> {
         }
     }
 
+    /// The type `*pointer` and `pointer[i]` read at. A pointer without one
+    /// (a `void *`, a `Pointer`, or one whose pointee is not known) is
+    /// refused rather than read at an invented type.
+    fn known_pointee_type(
+        &self,
+        pointer: &ProgramExpression,
+        environment: &SpecElaborationContext,
+    ) -> Result<ProgramType, String> {
+        self.program_expression_array_element_type(pointer, environment)
+            .ok_or_else(
+                || match self.pointee_less_program_operand(pointer, environment) {
+                    Some(spelling) => pointee_less_access_message(spelling),
+                    None => "pointer operation has no known pointee type".to_string(),
+                },
+            )
+    }
+
     fn program_expression_array_element_type(
         &self,
         expression: &ProgramExpression,
@@ -10911,6 +11007,19 @@ impl AnnotationLowerer<'_> {
                         .flatten()
                 })
                 .or_else(|| self.entry_state.global_array_element_type(name))
+                // A C++ reference's carrier is declared as a pointer to its
+                // referent.
+                .or_else(|| {
+                    name.reference_referent()
+                        .and_then(|_| self.c_variable_type(name.clone()))
+                        .and_then(ProgramType::pointee_type)
+                })
+                // A pointer global reads at its declared pointee.
+                .or_else(|| {
+                    self.entry_state
+                        .global_object_type(name)
+                        .and_then(ProgramType::pointee_type)
+                })
                 .or_else(|| {
                     name.named_in(&environment.values)
                         .and_then(|value| match value {
@@ -10940,6 +11049,11 @@ impl AnnotationLowerer<'_> {
             ProgramExpression::Subtract(left, _) => {
                 self.program_expression_array_element_type(left, environment)
             }
+            // `*pp` and `pp[i]` hold `pp`'s pointer element, which points at
+            // that pointer's pointee.
+            ProgramExpression::Load(pointer) | ProgramExpression::Index(pointer, _) => self
+                .program_expression_array_element_type(pointer, environment)
+                .and_then(ProgramType::pointee_type),
             _ => None,
         }
     }

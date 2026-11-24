@@ -284,9 +284,6 @@ impl EqualityGraph {
             pointer.as_loaded_value().is_some()
                 || reads.definitions.contains_key(pointer)
                 || is_read_offset(&pointer.offset)
-                || matches!(&pointer.base, AddressBase::FunctionSymbolic(variable)
-                    if pointer.offset == AddressOffset::Constant(0)
-                    && crate::kernel::registered_load_term_for_variable(variable).is_some())
         };
         let depth = |node: &Option<Arc<History>>| node.as_ref().map_or(0, |node| node.depth);
         while !match (&current, &previous) {
@@ -453,7 +450,7 @@ mod read_trace_tests {
         let mut graph = EqualityGraph::default();
         let mut replay = graph.input_root();
         let memory = crate::kernel::intern_memory(SymbolicMemory::new());
-        let read = V::Legacy(&MachineTerm::MemoryLoad(
+        let read = V::Legacy(&MachineTerm::read_named(
             ProgramPoint::at(&memory),
             Box::new(pointer(305_000)),
             LoadKind::Int32,
@@ -483,7 +480,7 @@ mod read_trace_tests {
     fn admitted_read_trace_includes_read_values_carried_as_offsets() {
         let mut graph = EqualityGraph::default();
         let memory = crate::kernel::intern_memory(SymbolicMemory::new());
-        let load = MachineTerm::MemoryLoad(
+        let load = MachineTerm::read_named(
             ProgramPoint::at(&memory),
             Box::new(pointer(304_000)),
             LoadKind::Int32,

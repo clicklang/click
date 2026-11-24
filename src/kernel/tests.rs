@@ -11,12 +11,12 @@ fn checked_memory_load_equality(
     assumptions: &PureFactContext,
 ) -> bool {
     checked_atomic_load_equality(
-        &MachineTerm::MemoryLoad(
+        &MachineTerm::read_named(
             ProgramPoint::at(&(intern_memory_ref(left))),
             Box::new(pointer.clone()),
             crate::kernel::LoadKind::Int32,
         ),
-        &MachineTerm::MemoryLoad(
+        &MachineTerm::read_named(
             ProgramPoint::at(&(intern_memory_ref(right))),
             Box::new(pointer.clone()),
             crate::kernel::LoadKind::Int32,

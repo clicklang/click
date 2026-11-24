@@ -3906,7 +3906,7 @@ impl ConditionTerm {
             if left.base == right.base
                 && let Self::Constant(value) =
                     Self::address_offset_equal(left.offset.clone(), right.offset.clone())
-                && !(value && matches!(left.base, AddressBase::LoadedPointer(_)))
+                && !(value && matches!(left.base, AddressBase::Load(_)))
             {
                 return Self::Constant(value);
             }
@@ -4990,13 +4990,35 @@ impl Address {
     /// Name an eight-byte pointer read as a typed graph application. The
     /// caller supplies the assumption-free defining state and address.
     /// Access observations are retained separately from this identity.
+    /// A memory-named load (`ReadKey::Memory`): for a caller that holds only
+    /// a memory state. A caller with a program point uses
+    /// [`Self::loaded_value_at`].
     pub(crate) fn loaded_value(memory: &SharedMemory, address: &Address) -> Self {
-        Self {
-            base: AddressBase::LoadedPointer(crate::kernel::eval::pointer_load_identity(
-                memory, address,
-            )),
-            offset: AddressOffset::Constant(0),
-        }
+        crate::kernel::Load::at(ProgramPoint::at(memory), address).address()
+    }
+
+    /// [`Self::loaded_value`] of `point`'s memory, recording `point` as the
+    /// read site (`ProgramPoint::at_read_site`). The selection is legacy and
+    /// the point has no path of its own, so the load's identity, the
+    /// memory's read key, is the one `loaded_value` gives
+    /// (`design/point-named-reads.md`, stage 1: a point everywhere).
+    pub(crate) fn loaded_value_at(point: &ProgramPoint, address: &Address) -> Self {
+        Self::loaded_memory_value_at(point.shared_memory(), point, address)
+    }
+
+    /// [`Self::loaded_value_at`] of the unchanged-bytes source of `point`'s
+    /// memory, the state a memory-named read is keyed by, read at `point`.
+    pub(crate) fn loaded_source_value_at(point: &ProgramPoint, address: &Address) -> Self {
+        let source = point.shared_memory().unchanged_bytes_source();
+        Self::loaded_memory_value_at(&source, point, address)
+    }
+
+    fn loaded_memory_value_at(
+        memory: &SharedMemory,
+        site: &ProgramPoint,
+        address: &Address,
+    ) -> Self {
+        crate::kernel::Load::at(ProgramPoint::at_read_site(memory, site), address).address()
     }
 
     /// The read of the pointer cell at `address` in `memory`, identified by
@@ -5050,17 +5072,14 @@ impl Address {
     /// The defining address is never reconstructed from this value's block or
     /// from its pointee width.
     pub(crate) fn as_loaded_value(&self) -> Option<LoadedPointerView> {
-        let AddressBase::LoadedPointer(identity) = self.base else {
+        let AddressBase::Load(load) = &self.base else {
             return None;
         };
-        let (point, defining_address, category) =
-            crate::kernel::eval::registered_pointer_load_point(identity)?;
         Some(LoadedPointerView {
-            identity,
-            defining_memory: point.shared_memory().clone(),
-            point,
-            category,
-            defining_address,
+            identity: load.clone(),
+            defining_memory: load.point().shared_memory().clone(),
+            point: load.point().clone(),
+            defining_address: load.cell().clone(),
             displacement: self.offset.clone(),
         })
     }
@@ -5074,13 +5093,10 @@ impl Address {
         if let Some(named) = canonical_pointer_read(bits) {
             return Some(named_pointer_read(named));
         }
-        let MachineTerm::MemoryLoad(memory, address, _) = bits else {
+        let MachineTerm::MemoryLoad(point, address, _) = bits else {
             return None;
         };
-        Some(Self::loaded_value(
-            &memory.shared_memory().unchanged_bytes_source(),
-            address,
-        ))
+        Some(Self::loaded_source_value_at(point, address))
     }
 
     /// The pointer a logical read of `address` in `memory` reads, named by
@@ -5167,7 +5183,7 @@ impl Address {
             self.base,
             AddressBase::ExternalArgument
                 | AddressBase::Symbolic(_)
-                | AddressBase::LoadedPointer(_)
+                | AddressBase::Load(_)
                 | AddressBase::PureFunctionApplication(_)
         )
     }
@@ -6462,12 +6478,12 @@ fn canonical_pointer_read(bits: &MachineTerm) -> Option<MachineTerm> {
 }
 
 fn named_pointer_read(read: MachineTerm) -> Address {
-    let MachineTerm::MemoryLoad(memory, address, _) = &read else {
+    let MachineTerm::MemoryLoad(point, address, _) = &read else {
         unreachable!("selected pointer read");
     };
-    let value = Address::loaded_value(&memory.shared_memory().unchanged_bytes_source(), address);
-    if let AddressBase::LoadedPointer(identity) = value.base {
-        crate::kernel::eval::record_pointer_load_source(identity, &read);
+    let value = Address::loaded_source_value_at(point, address);
+    if let AddressBase::Load(load) = &value.base {
+        crate::kernel::eval::record_pointer_load_source(load, &read);
     }
     value
 }

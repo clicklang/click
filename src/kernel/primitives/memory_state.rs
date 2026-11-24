@@ -102,8 +102,8 @@ fn write_havoc_block(identity: &mut String, block: AddressBase) {
         AddressBase::Symbolic(variable) => {
             let _ = write!(identity, "bs{};", variable.0);
         }
-        AddressBase::LoadedPointer(identity_id) => {
-            let _ = write!(identity, "blp{};", identity_id.0);
+        AddressBase::Load(load) => {
+            let _ = write!(identity, "blp{};", load.id());
         }
         AddressBase::Heap(value) => {
             let _ = write!(identity, "bh{value};");
@@ -574,7 +574,7 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                     MachineTerm::MemoryLoad(_, pointer, kind) => {
                         let _ = write!(identity, "load:{kind:?}(");
                         tasks.push(HavocIdentityTask::Text(")"));
-                        tasks.push(HavocIdentityTask::Pointer(*pointer));
+                        tasks.push(HavocIdentityTask::Pointer(pointer.into()));
                     }
                     MachineTerm::IntegerAddress(pointer, _) => {
                         identity.push_str("address(");
@@ -8869,10 +8869,24 @@ impl SymbolicMemory {
             .is_some_and(|end| end <= block_size)
     }
 
+    /// The point a legacy symbolic read of this memory is named at: this
+    /// memory, recording `site` as the read site when the caller has one.
+    fn legacy_read_point(&self, site: Option<&ProgramPoint>) -> ProgramPoint {
+        let memory = crate::kernel::intern_memory(self.clone());
+        match site {
+            Some(site) => ProgramPoint::at_read_site(&memory, site),
+            None => ProgramPoint::at(&memory),
+        }
+    }
+
     #[cfg_attr(test, track_caller)]
-    pub(in crate::kernel) fn symbolic_int32_load(&self, pointer: &Address) -> ProgramValue {
+    pub(in crate::kernel) fn symbolic_int32_load(
+        &self,
+        site: Option<&ProgramPoint>,
+        pointer: &Address,
+    ) -> ProgramValue {
         int32(crate::kernel::MachineTerm::read_named(
-            ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
+            self.legacy_read_point(site),
             pointer.clone(),
             LoadKind::Int32,
         ))
@@ -8881,63 +8895,91 @@ impl SymbolicMemory {
     /// A signed byte read: the two's-complement conversion of the byte's
     /// one unsigned read ([`MachineTerm::memory_read`]).
     #[cfg_attr(test, track_caller)]
-    pub(in crate::kernel) fn symbolic_int8_load(&self, pointer: &Address) -> ProgramValue {
-        int8(MachineTerm::memory_read(
-            crate::kernel::intern_memory(self.clone()),
+    pub(in crate::kernel) fn symbolic_int8_load(
+        &self,
+        site: Option<&ProgramPoint>,
+        pointer: &Address,
+    ) -> ProgramValue {
+        int8(MachineTerm::read_named(
+            self.legacy_read_point(site),
             pointer.clone(),
             LoadKind::Int8,
         ))
     }
 
     #[cfg_attr(test, track_caller)]
-    pub(in crate::kernel) fn symbolic_int16_load(&self, pointer: &Address) -> ProgramValue {
+    pub(in crate::kernel) fn symbolic_int16_load(
+        &self,
+        site: Option<&ProgramPoint>,
+        pointer: &Address,
+    ) -> ProgramValue {
         int16(crate::kernel::MachineTerm::read_named(
-            ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
+            self.legacy_read_point(site),
             pointer.clone(),
             LoadKind::Int16,
         ))
     }
 
     #[cfg_attr(test, track_caller)]
-    pub(in crate::kernel) fn symbolic_uint8_load(&self, pointer: &Address) -> ProgramValue {
+    pub(in crate::kernel) fn symbolic_uint8_load(
+        &self,
+        site: Option<&ProgramPoint>,
+        pointer: &Address,
+    ) -> ProgramValue {
         uint8(crate::kernel::MachineTerm::read_named(
-            ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
+            self.legacy_read_point(site),
             pointer.clone(),
             LoadKind::UInt8,
         ))
     }
 
     #[cfg_attr(test, track_caller)]
-    pub(in crate::kernel) fn symbolic_uint16_load(&self, pointer: &Address) -> ProgramValue {
+    pub(in crate::kernel) fn symbolic_uint16_load(
+        &self,
+        site: Option<&ProgramPoint>,
+        pointer: &Address,
+    ) -> ProgramValue {
         uint16(crate::kernel::MachineTerm::read_named(
-            ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
+            self.legacy_read_point(site),
             pointer.clone(),
             LoadKind::UInt16,
         ))
     }
 
     #[cfg_attr(test, track_caller)]
-    pub(in crate::kernel) fn symbolic_uint32_load(&self, pointer: &Address) -> ProgramValue {
+    pub(in crate::kernel) fn symbolic_uint32_load(
+        &self,
+        site: Option<&ProgramPoint>,
+        pointer: &Address,
+    ) -> ProgramValue {
         uint32(crate::kernel::MachineTerm::read_named(
-            ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
+            self.legacy_read_point(site),
             pointer.clone(),
             LoadKind::UInt32,
         ))
     }
 
     #[cfg_attr(test, track_caller)]
-    pub(in crate::kernel) fn symbolic_int64_load(&self, pointer: &Address) -> ProgramValue {
+    pub(in crate::kernel) fn symbolic_int64_load(
+        &self,
+        site: Option<&ProgramPoint>,
+        pointer: &Address,
+    ) -> ProgramValue {
         ProgramValue::Int64(crate::kernel::MachineTerm::read_named(
-            ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
+            self.legacy_read_point(site),
             pointer.clone(),
             LoadKind::Bits64,
         ))
     }
 
     #[cfg_attr(test, track_caller)]
-    pub(in crate::kernel) fn symbolic_uint64_load(&self, pointer: &Address) -> ProgramValue {
+    pub(in crate::kernel) fn symbolic_uint64_load(
+        &self,
+        site: Option<&ProgramPoint>,
+        pointer: &Address,
+    ) -> ProgramValue {
         ProgramValue::UInt64(crate::kernel::MachineTerm::read_named(
-            ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
+            self.legacy_read_point(site),
             pointer.clone(),
             LoadKind::Bits64,
         ))
@@ -9980,6 +10022,7 @@ impl ExecutionState {
         instance: &super::super::ResourceInstance,
         definition: &super::super::CompositeResourceDefinition,
         assumptions: &PureFactContext,
+        acquired_from: Option<crate::kernel::program_point::ProgramPointId>,
     ) -> Result<Self, String> {
         if !definition.contains().iter().any(|spec| {
             matches!(
@@ -10039,7 +10082,7 @@ impl ExecutionState {
                 .filter_map(|fact| fact.owned_quantity_term().and_then(MachineTerm::as_const))
                 .sum::<u32>();
             let events = events
-                .import_acquired_control_population(description, owned)
+                .import_acquired_control_population(description, owned, acquired_from)
                 .map_err(|refusal| format!("acquired control authority refused: {refusal}"))?;
             Arc::make_mut(&mut next.population_effects).creation = Some(events);
         }
@@ -10195,17 +10238,31 @@ impl ExecutionState {
         assumptions: &PureFactContext,
         require_folded: bool,
     ) -> Result<(Vec<ResourceFact>, Vec<ResourceDescription>), String> {
-        let ResourceFact::Own(Resource::Composite { name, arguments }, quantity) = selected else {
-            return Err("Requires owns control resource".into());
+        // A control with model fields is held as an instance. Its fields never
+        // decide which resources its body owns: only the owned clauses below
+        // are evaluated, over its parameters, and a clause that needed a
+        // field value would fail to evaluate rather than be admitted.
+        let (name, arguments, quantity, has_fields) = match selected {
+            ResourceFact::Own(Resource::Composite { name, arguments }, quantity) => {
+                (name.as_str(), arguments, quantity, false)
+            }
+            ResourceFact::Own(Resource::Instance(instance), quantity) => (
+                instance.name(),
+                instance.arguments(),
+                quantity,
+                !instance.schema().fields().is_empty(),
+            ),
+            _ => return Err("Requires owns control resource".into()),
         };
         if name != definition.name()
             || quantity.as_const() != Some(1)
             || (require_folded && !self.resources.satisfies_fact(selected, assumptions))
             || definition.parameters().len() != arguments.len()
-            || definition
-                .instance_schema
-                .as_ref()
-                .is_some_and(|schema| !schema.fields().is_empty())
+            || (!has_fields
+                && definition
+                    .instance_schema
+                    .as_ref()
+                    .is_some_and(|schema| !schema.fields().is_empty()))
             || definition.matched.is_some()
             || !definition.witnesses.is_empty()
             || definition.condition.is_some()

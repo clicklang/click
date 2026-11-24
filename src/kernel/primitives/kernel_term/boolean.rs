@@ -225,19 +225,7 @@ impl<'a> BooleanOperandView<'a> {
     pub(crate) fn native_leaf(self) -> Option<&'a ConditionTerm> {
         match self {
             Self::Native(value) => Some(value),
-            Self::Shared(root) => {
-                let KernelTermNode::LegacyBool(payload) = root.node() else {
-                    return None;
-                };
-                let PureFunctionArgument::Value(ProgramValue::Bool(MachineTerm::BoolCast {
-                    value,
-                    ..
-                })) = payload.value()
-                else {
-                    return None;
-                };
-                Some(value)
-            }
+            Self::Shared(_) => None,
         }
     }
 
@@ -318,7 +306,7 @@ impl<'a> BooleanOperandView<'a> {
                 KernelTermNode::BoolIf { arguments } => {
                     Some(arguments.each_ref().map(Self::Shared))
                 }
-                _ => Self::Native(self.native_leaf()?).conditional(),
+                _ => None,
             },
             Self::Native(ConditionTerm::BoolIf {
                 condition,
@@ -339,7 +327,7 @@ impl<'a> BooleanOperandView<'a> {
                 KernelTermNode::BoolEqual { arguments } => {
                     Some(arguments.each_ref().map(Self::Shared))
                 }
-                _ => Self::Native(self.native_leaf()?).equality(),
+                _ => None,
             },
             Self::Native(ConditionTerm::BoolEqual(left, right)) => {
                 Some([Self::Native(left), Self::Native(right)])
@@ -405,7 +393,7 @@ impl<'a> BooleanOperandView<'a> {
                     *operation,
                     arguments.each_ref().map(MachineOperandView::Shared),
                 )),
-                _ => Self::Native(self.native_leaf()?).overflow(),
+                _ => None,
             },
             Self::Native(ConditionTerm::Overflows {
                 format,
@@ -442,7 +430,7 @@ impl<'a> BooleanOperandView<'a> {
                     *relation,
                     arguments.each_ref().map(MachineOperandView::Shared),
                 )),
-                _ => Self::Native(self.native_leaf()?).comparison(),
+                _ => None,
             },
             Self::Native(ConditionTerm::Compare {
                 format,
@@ -737,16 +725,6 @@ impl KernelTermExport {
                     .map(|arg| Self::default().argument(arg))
                     .collect::<Result<Vec<_>, _>>()?,
             )),
-            Node::LegacyBool(payload) => {
-                let PureFunctionArgument::Value(ProgramValue::Bool(MachineTerm::BoolCast {
-                    value,
-                    ..
-                })) = payload.value()
-                else {
-                    return Err("expected exact legacy Bool payload");
-                };
-                *value.clone()
-            }
             _ => return Err("expected Bool kernel node"),
         })
     }
@@ -981,42 +959,6 @@ mod tests {
             guard.comparison().unwrap().2[0],
             MachineOperandView::Shared(_)
         ));
-    }
-
-    #[test]
-    fn boolean_view_borrows_exact_legacy_payload() {
-        let source = ConditionTerm::AddressEqual(
-            Box::new(Address::symbolic(Variable(964_091))),
-            Box::new(Address::symbolic(Variable(964_092))),
-        );
-        // Test the explicit adapter independently of which condition families
-        // have migrated to common producer nodes.
-        let native = KernelTerm::legacy(PureFunctionArgument::Value(ProgramValue::Bool(
-            MachineTerm::BoolCast {
-                to: MachineIntegerType::UInt8,
-                value: Box::new(source.clone()),
-            },
-        )));
-        let KernelTermNode::Legacy(payload) = native.node() else {
-            panic!("legacy payload")
-        };
-        let root = KernelTerm::intern(
-            KernelType::Bool,
-            KernelTermNode::LegacyBool(payload.clone()),
-        );
-        let view = BooleanOperandView::Shared(&root);
-        assert!(matches!(view.native(), std::borrow::Cow::Borrowed(_)));
-        assert_eq!(view.native_leaf(), Some(&source));
-        let KernelTermNode::LegacyBool(payload) = root.node() else {
-            unreachable!();
-        };
-        assert!(std::ptr::eq(
-            root.boolean_argument_native().unwrap(),
-            payload.value()
-        ));
-        assert!(!root.has_cached_native_argument());
-        assert!(view.conditional().is_none());
-        assert!(view.comparison().is_none());
     }
 
     #[test]

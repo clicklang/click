@@ -269,9 +269,9 @@ impl SharedPureApplication {
                 .arguments()
                 .iter()
                 .map(|argument| {
-                    let root = import.argument(argument);
-                    (!matches!(root.node(), crate::kernel::KernelTermNode::Legacy(_)))
-                        .then_some(root)
+                    import.structural_argument(argument).filter(|root| {
+                        !matches!(root.node(), crate::kernel::KernelTermNode::Legacy(_))
+                    })
                 })
                 .collect();
             *cached = Some(PreparedApplicationArguments {
@@ -774,7 +774,7 @@ impl SharedMachineIntegerTerm {
                 root.machine_read_leaf()
             {
                 matches!(&mapped, MachineTerm::MemoryLoad(other, pointer, other_kind)
-                    if memory.shared_memory().arena_id() == other.shared_memory().arena_id() && address == pointer && kind == other_kind)
+                    if memory.shared_memory().arena_id() == other.shared_memory().arena_id() && address.address() == pointer.address() && kind == other_kind)
             } else {
                 !root.has_machine_reads()
                     && !root.has_machine_conversions()
@@ -1022,7 +1022,15 @@ impl SharedMachineIntegerTerm {
     }
 
     pub(crate) fn literal_conversion_value(&self) -> Option<MachineIntegerConstant> {
-        let (destination, value) = self.operand_view().checked_literal_integer_conversion()?;
+        // The Integer interner asks for this summary while holding its lock.
+        // Building a native conversion leaf can export and intern its Integer
+        // operand, reentering that lock. This check only needs the written
+        // destination and the operand's literal node.
+        let operand = self
+            .shared_operand()
+            .map(MachineOperandView::Shared)
+            .unwrap_or_else(|| self.operand_view());
+        let (destination, value) = operand.checked_literal_integer_conversion()?;
         (destination == self.ty()).then_some(value)
     }
 
@@ -2596,7 +2604,7 @@ mod tests {
         let memory = crate::kernel::intern_memory(
             crate::kernel::SymbolicMemory::new().with_block("cells", 16),
         );
-        let read = MachineTerm::MemoryLoad(
+        let read = MachineTerm::read_named(
             crate::kernel::ProgramPoint::at(&memory),
             Box::new(crate::kernel::Address {
                 base: crate::kernel::AddressBase::Concrete("cells".into()),

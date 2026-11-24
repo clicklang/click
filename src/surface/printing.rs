@@ -55,6 +55,7 @@ fn source_contract_application(name: &str, arguments: &[ContractExpression]) -> 
 /// Click source that parses back. Every spelling is chosen by its caller;
 /// no output depends on who else is printing.
 /// Diagnostic spelling for a kernel conjunction without complete Surface labels.
+pub(super) const COMPATIBILITY_NORMALIZATION: &str = "<verification-only normalization>";
 pub(super) const UNRAISED_CONJUNCT: &str = "<unraised conjunct>";
 
 pub(in crate::surface) fn source_click_proposition(proposition: &ClickProposition) -> String {
@@ -856,7 +857,7 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
                 )
                 .collect::<Vec<_>>()
                 .join(", ");
-            let result = if binding.name.starts_with('#') {
+            let result = if binding.unnamed {
                 String::new()
             } else {
                 format!("let {} = ", binding.name)
@@ -1205,6 +1206,9 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             &format!("apply({});", source_click_proposition(fact)),
         ),
         ProofTactic::Known => line(output, &prefix, "known();"),
+        ProofTactic::CompatibilityNormalize(_) => {
+            line(output, &prefix, COMPATIBILITY_NORMALIZATION)
+        }
         ProofTactic::Normalize => line(output, &prefix, "normalize();"),
         ProofTactic::NormalizeUsing(premises) => {
             write_using_premises(output, "normalize()", premises, indent)
@@ -1387,7 +1391,7 @@ fn write_premise_list(output: &mut String, facts: &[ClickProposition], indent: u
 
 pub(in crate::surface) fn format_resource_call(resource: &ResourceClause) -> String {
     if let ResourceClause::Named { binding, resource } = resource {
-        return if binding.name.starts_with('#') {
+        return if binding.unnamed {
             format_resource_call(resource)
         } else {
             binding.name.clone()
@@ -1456,7 +1460,7 @@ pub(in crate::surface) fn format_resource_target(resource: &ResourceClause) -> S
             format_resource_target(resource)
         ),
         ResourceClause::Named { binding, resource } => {
-            if binding.name.starts_with('#') {
+            if binding.unnamed {
                 format_resource_target(resource)
             } else {
                 format!("{}: {}", binding.name, format_resource_target(resource))

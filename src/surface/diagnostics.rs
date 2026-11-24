@@ -7620,10 +7620,9 @@ fn describe_contract_expression_grouping_casts(
 
         ContractExpression::IntegerLiteral(value) => value.clone(),
         ContractExpression::ResourceField(access) => {
-            // A body names its own fields bare; `__body` is the parser's
-            // internal owner for them.
+            // A body names its own fields bare.
             let mut parts = Vec::new();
-            if access.owner != "__body" {
+            if access.identity != crate::kernel::InstanceRef::Body {
                 parts.push(access.owner.as_str());
             }
             parts.extend(access.children.iter().map(String::as_str));

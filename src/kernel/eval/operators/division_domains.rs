@@ -2,6 +2,31 @@
 //! atom. The zero-divisor split has already happened on entry here.
 use super::*;
 
+/// A nonzero literal in a word OR fixes at least one bit of the divisor.
+/// Inspect only the OR root and its literal children. The signed overflow
+/// exception is checked separately after ruling out zero.
+pub(super) fn decide_zero(
+    divisor: &MachineTerm,
+    zero: &ConditionTerm,
+    assumptions: &PureFactContext,
+    facts: &ExecutionFacts,
+) -> Option<bool> {
+    if let Some((format, MachineBinaryOp::BitwiseOr, operands)) =
+        MachineOperandView::Legacy(divisor).binary()
+    {
+        crate::instrumentation::record_deterministic_work(1);
+        if operands.iter().any(|operand| {
+            operand
+                .literal()
+                .and_then(|literal| format.constant_from_term(&literal))
+                .is_some_and(|literal| literal.bits() != 0)
+        }) {
+            return Some(false);
+        }
+    }
+    decide_with_facts(assumptions, facts, zero)
+}
+
 pub(super) fn apply_nonzero(
     format: MachineIntegerType,
     left: MachineTerm,

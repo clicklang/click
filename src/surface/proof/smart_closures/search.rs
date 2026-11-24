@@ -159,8 +159,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
         }
         let step = match premises {
-            Some(premises) => ProofStep::NormalizeUsing(premises),
-            None => ProofStep::Normalize,
+            Some(premises) => ProofStep::CompatibilityNormalize(Some(premises)),
+            None => ProofStep::CompatibilityNormalize(None),
         };
         search_input.driver().apply_step(step)
     }
@@ -490,7 +490,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             )
             .is_ok()
             {
-                Some(ProofStep::NormalizeUsing(premises.to_vec()))
+                Some(ProofStep::CompatibilityNormalize(Some(premises.to_vec())))
             } else {
                 None
             };
@@ -2122,6 +2122,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let before_product = proof.clone();
             let conversion =
                 crate::kernel::machine_integer::conversion::integer_conversion(observed).is_some();
+            let mut unsigned_sum = None;
             let (spelled_observed, spelled_value, signed_operation) = match value {
                 // The conversion's operand as the observation itself writes
                 // it, `E` of `to_integer(to_T(E))`: lowering is fact-stable,
@@ -2180,6 +2181,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                             explicit_qualification: false,
                         },
                     };
+                    if machine.ty() == MachineIntegerType::UInt64
+                        && matches!(value, IntegerTerm::Add(..))
+                    {
+                        unsigned_sum = Some(vec![native(&spelled_left), native(&spelled_right)]);
+                    }
                     let operation = match value {
                         IntegerTerm::Subtract(..) => ContractExpression::Subtract(
                             Box::new(native(&spelled_left)),
@@ -2377,33 +2383,45 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 attempt::candidate_outcome(scope.driver().apply_step(ProofStep::Known))?
             {
                 closed
-            } else if let Some(operation) = signed_operation
-                && scope
-                    .body()
-                    .goal()
-                    .and_then(crate::kernel::comparison_form)
-                    .is_some()
-                && let Some(closed) = attempt::candidate_outcome((|| {
-                    let operation_identity = ClickProposition::Comparison {
+            } else if let Some(closed) = attempt::candidate_outcome((|| {
+                let step = if let Some(arguments) = unsigned_sum {
+                    ProofStep::ApplyPlannedTheorem {
+                        application: TheoremApplication {
+                            name: "click::integer::uint64_add_to_integer".into(),
+                            arguments,
+                        },
+                        premises: vec![upper.clone()],
+                    }
+                } else if let Some(operation) = signed_operation
+                    && scope
+                        .body()
+                        .goal()
+                        .and_then(crate::kernel::comparison_form)
+                        .is_some()
+                {
+                    let operation = ClickProposition::Comparison {
                         left: operation,
                         operator: ComparisonOperator::Equal,
                         right: spelled_value,
                     };
-                    let scope = scope
-                        .driver()
-                        .apply_step(super::super::wide_arithmetic::have(
-                            operation_identity,
-                            vec![ProofStep::Known],
-                        ))?;
-                    scope.driver().apply_step(ProofStep::Known)
-                })())?
+                    super::super::wide_arithmetic::have(operation, vec![ProofStep::Known])
+                } else {
+                    return Ok(None);
+                };
+                let applied = scope.driver().apply_step(step)?;
+                if applied.is_complete() {
+                    return Ok(Some(applied));
+                }
+                applied.driver().apply_step(ProofStep::Known).map(Some)
+            })())?
+            .flatten()
                 && closed.is_complete()
             {
                 closed
             } else if let Some(closed) = attempt::candidate_outcome(
                 scope
                     .driver()
-                    .apply_step(ProofStep::NormalizeUsing(vec![lower, upper])),
+                    .apply_step(ProofStep::CompatibilityNormalize(Some(vec![lower, upper]))),
             )? {
                 closed
             } else {
@@ -3505,11 +3523,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         else {
             return Ok(None);
         };
-        let Some(proved) = attempt::candidate_outcome(
-            scope
-                .driver()
-                .apply_step(ProofStep::NormalizeUsing(vec![condition.clone()])),
-        )?
+        let Some(proved) = attempt::candidate_outcome(scope.driver().apply_step(
+            ProofStep::CompatibilityNormalize(Some(vec![condition.clone()])),
+        ))?
         else {
             return Ok(None);
         };
@@ -3597,19 +3613,19 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         attempt::candidate_outcome(
             proof
                 .driver()
-                .apply_step(ProofStep::NormalizeUsing(surfaces)),
+                .apply_step(ProofStep::CompatibilityNormalize(Some(surfaces))),
         )
     }
 
     /// Materialize the selected chain as one checked normalization per
     /// operation. Each have cites the previous bound, with its own endpoint.
-    fn try_float_literal_bound_chain(
+    fn try_float_bound_chain(
         input: &Proof<'a>,
         bounds: &[Proposition],
         introduced_surfaces: &[ClickProposition],
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
-        crate::kernel::search::record_discovery("try_float_literal_bound_chain");
+        crate::kernel::search::record_discovery("try_float_bound_chain");
         let [source, intermediate @ ..] = bounds else {
             return Ok(None);
         };
@@ -3635,7 +3651,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let Some(closed) = attempt::candidate_outcome(
                 scope
                     .driver()
-                    .apply_step(ProofStep::NormalizeUsing(vec![previous])),
+                    .apply_step(ProofStep::CompatibilityNormalize(Some(vec![previous]))),
             )?
             else {
                 return Ok(None);
@@ -3646,7 +3662,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         attempt::candidate_outcome(
             proof
                 .driver()
-                .apply_step(ProofStep::NormalizeUsing(vec![previous])),
+                .apply_step(ProofStep::CompatibilityNormalize(Some(vec![previous]))),
         )
     }
 
@@ -3772,11 +3788,17 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 candidates.push(vec![bound]);
             }
         }
-        if let Some(bounds) = crate::kernel::search::ProofSearch::select_float_literal_bound_chain(
+        if let Some(bounds) = crate::kernel::search::ProofSearch::select_float_sum_bounds(
+            search_input.facts().assumptions(),
+            goal,
+        ) {
+            candidates.push(bounds.into());
+        }
+        if let Some(bounds) = crate::kernel::search::ProofSearch::select_float_bound_chain(
             search_input.facts().assumptions(),
             goal,
         ) && let Some(closed) =
-            Self::try_float_literal_bound_chain(search_input, &bounds, introduced_surfaces)?
+            Self::try_float_bound_chain(search_input, &bounds, introduced_surfaces)?
         {
             return Ok(Some(closed));
         }
@@ -3809,7 +3831,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             if let Some(closed) = attempt::candidate_outcome(
                 search_input
                     .driver()
-                    .apply_step(ProofStep::NormalizeUsing(surfaces)),
+                    .apply_step(ProofStep::CompatibilityNormalize(Some(surfaces))),
             )? {
                 return Ok(Some(closed));
             }
@@ -3956,11 +3978,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                             operator,
                             right: right.clone(),
                         };
-                        if let Some(proof) = attempt::candidate_outcome(
-                            search_input
-                                .driver()
-                                .apply_step(ProofStep::NormalizeUsing(vec![premise])),
-                        )? {
+                        if let Some(proof) =
+                            attempt::candidate_outcome(search_input.driver().apply_step(
+                                ProofStep::CompatibilityNormalize(Some(vec![premise])),
+                            ))?
+                        {
                             return Ok(Some(proof));
                         }
                     }
@@ -5500,7 +5522,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                             .driver()
                             .apply_step(super::super::wide_arithmetic::have(
                                 equality.clone(),
-                                vec![ProofStep::NormalizeUsing(vec![guard])],
+                                vec![ProofStep::CompatibilityNormalize(Some(vec![guard]))],
                             ))
                     })
                     .ok()?;
@@ -6700,7 +6722,39 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 None
             }
         }
-        let Some(expression) = operand_against_literal(left, right) else {
+        let indexed_operand_against_binding = || {
+            [(left, right), (right, left)]
+                .into_iter()
+                .find_map(|(expression, bound)| {
+                    if !matches!(
+                        bound,
+                        ContractExpression::Binding(_)
+                            | ContractExpression::ProgramBinding(_)
+                            | ContractExpression::ProgramExpression(ProgramExpression::Variable(_))
+                            | ContractExpression::QualifiedC {
+                                lowered: ProgramExpression::Variable(_),
+                                ..
+                            }
+                    ) {
+                        return None;
+                    }
+                    match expression {
+                        ContractExpression::Index(..) => Some(expression),
+                        ContractExpression::BitwiseAnd(left, right)
+                            if matches!(
+                                operand_against_literal(left, right),
+                                Some(ContractExpression::Index(..))
+                            ) =>
+                        {
+                            Some(expression)
+                        }
+                        _ => None,
+                    }
+                })
+        };
+        let Some(expression) =
+            operand_against_literal(left, right).or_else(indexed_operand_against_binding)
+        else {
             return Ok(None);
         };
         fn expression_memory_read(
@@ -6911,7 +6965,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             };
             let Some(kept) = spell(&Resource::Memory(
                 crate::kernel::MemoryRange::new_with_element_width(
-                    *address,
+                    address.into(),
                     0u32.into(),
                     count.into(),
                     width,
@@ -7168,7 +7222,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 crate::kernel::proposition_mentions_load_variable(goal)
                     || crate::kernel::proof::term_rewrite::proposition_pointer_terms(goal)
                         .iter()
-                        .any(|pointer| matches!(pointer.base, AddressBase::LoadedPointer(_)))
+                        .any(|pointer| matches!(pointer.base, AddressBase::Load(_)))
             });
             if calls.is_empty() && !reads_memory {
                 return Ok(None);
@@ -7398,7 +7452,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         else {
             return Ok(None);
         };
-        if left_pointer != right_pointer || left_kind != right_kind || left_memory == right_memory {
+        if left_pointer.address() != right_pointer.address()
+            || left_kind != right_kind
+            || left_memory.point() == right_memory.point()
+        {
             return Ok(None);
         }
         if matches!(
@@ -7415,9 +7472,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         };
         // The cell as the current state reads it.
         let current = crate::kernel::intern_memory_ref(view.fixed_state.state.memory());
-        let current_side = if right_memory == crate::kernel::ProgramPoint::at(&current) {
+        let current_side = if *right_memory.point() == crate::kernel::ProgramPoint::at(&current) {
             right
-        } else if left_memory == crate::kernel::ProgramPoint::at(&current) {
+        } else if *left_memory.point() == crate::kernel::ProgramPoint::at(&current) {
             left
         } else {
             return Ok(None);
@@ -12369,6 +12426,24 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         {
             return Some(closed);
         }
+        // A selected alias or index equality can expose the actual
+        // cited read. Try to retain those substitutions and the
+        // exact closing fact before using compatibility normalization.
+        if let Some(
+            surface @ ClickProposition::Comparison {
+                operator: ComparisonOperator::Equal,
+                ..
+            },
+        ) = proof.surface_goal()
+            && signed_intervals::has_retained_read_source(surface)
+            && let Ok(Some(closed)) = Self::try_premise_equality_chain_closure(
+                &proof,
+                &premise_pairs,
+                RewriteClosers::ExactListed(&premise_pairs),
+            )
+        {
+            return Some(closed);
+        }
         if interval_first
             && let Ok(Some(closed)) = Self::try_signed_interval_using(&proof, surfaces)
         {
@@ -12627,8 +12702,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             // explicitly separated transition at a time towards the goal.
             let mut current = search_input.clone();
             let separation_proof =
-                ProofCertificate::from_steps(vec![ProofStep::NormalizeUsing(Vec::new())])
-                    .expect("footprint separation uses an ordinary proof step");
+                ProofCertificate::from_steps(vec![ProofStep::CompatibilityNormalize(Some(
+                    Vec::new(),
+                ))])
+                .expect("footprint separation uses an ordinary proof step");
             for (index, region) in regions.iter().enumerate().rev() {
                 let separation = ClickProposition::Separate {
                     left: ResourceSubject::Footprint(region.clone()),

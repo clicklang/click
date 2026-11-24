@@ -1808,6 +1808,14 @@ impl Printer<'_> {
                 )))
             }
             B::PureFunctionApplication { name, arguments }
+                if name == "c_float32_to_float64" && arguments.len() == 1 =>
+            {
+                Some(cast(
+                    "double",
+                    self.float_operand(&arguments[0], true, depth)?,
+                ))
+            }
+            B::PureFunctionApplication { name, arguments }
                 if let Some(spelled) =
                     crate::kernel::layout_term_spelling(name, arguments.len()) =>
             {
@@ -3250,6 +3258,25 @@ mod tests {
             source(&fact, &mut labels),
             "f + float32_from_bits(0x3fc00000) < float32_from_bits(0x40000000)"
         );
+        let widened = Proposition::condition_is(
+            ConditionTerm::float64_compare(
+                MachineTerm::PureFunctionApplication {
+                    name: "c_float32_to_float64".into(),
+                    arguments: vec![MachineTerm::Float32Binary {
+                        operator: crate::kernel::FloatBinaryOperator::Multiply,
+                        left: Box::new(MachineTerm::Variable(Variable(8))),
+                        right: Box::new(MachineTerm::constant(2.0_f32.to_bits())),
+                    }],
+                },
+                MachineTerm::uint64_constant(16.0_f64.to_bits()),
+                crate::kernel::ComparisonOperator::LessThan,
+            ),
+            true,
+        );
+        assert_eq!(
+            source(&widened, &mut labels),
+            "(f * float32_from_bits(0x40000000)) as double < float64_from_bits(0x4030000000000000u64)"
+        );
         let integer = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
@@ -3670,7 +3697,7 @@ mod tests {
         let mut labels = MemoryStateLabels::with_state(ParameterBinding::default(), &after);
         labels.source_state(&before, "pre".into());
         let load = |memory: &SymbolicMemory, kind| {
-            equality(MachineTerm::MemoryLoad(
+            equality(MachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(&(SharedMemory::from(memory.clone()))),
                 Box::new(pointer.clone()),
                 kind,
@@ -3723,7 +3750,7 @@ mod tests {
             ProgramType::Int32Pointer,
         )));
         let load = |memory: &SymbolicMemory| {
-            equality(MachineTerm::MemoryLoad(
+            equality(MachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(&(SharedMemory::from(memory.clone()))),
                 Box::new(heap.clone()),
                 LoadKind::Int32,
@@ -3789,7 +3816,7 @@ mod resource_tests {
         let resource = |memory: &SymbolicMemory| {
             ResourceFact::view_composite(
                 "sampled".into(),
-                vec![ProgramValue::Int32(MachineTerm::MemoryLoad(
+                vec![ProgramValue::Int32(MachineTerm::read_named(
                     crate::kernel::ProgramPoint::at(&(SharedMemory::from(memory.clone()))),
                     Box::new(pointer.clone()),
                     LoadKind::Int32,

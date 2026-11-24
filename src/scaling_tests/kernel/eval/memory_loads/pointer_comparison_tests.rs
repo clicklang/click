@@ -111,7 +111,7 @@ fn structural_read_comparison_forms_scale_with_selected_observations() {
         let memory = intern_memory(memory);
         let goals: Vec<_> = (0..selected)
             .map(|index| {
-                let read = MachineTerm::MemoryLoad(
+                let read = MachineTerm::read_named(
                     ProgramPoint::at(&memory),
                     Box::new(address(index)),
                     LoadKind::Int32,

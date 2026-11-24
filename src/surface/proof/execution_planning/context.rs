@@ -1310,7 +1310,7 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::MemoryLoad(
+                left: Box::new(MachineTerm::read_named(
                     crate::kernel::ProgramPoint::at(&memory),
                     Box::new(pointer.clone()),
                     crate::kernel::LoadKind::Int32,

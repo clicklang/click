@@ -539,18 +539,7 @@ pub(crate) fn logical_pointer_read_term(value: &Address) -> Option<MachineTerm> 
             .get(value)
             .map(|(application, _)| application.clone())
     });
-    let Some(application) = application else {
-        // A function read's value is exactly its load variable. Recover its
-        // original definition when a restored table predates the read, while
-        // preserving any producer definition already retained for the value.
-        return match (&value.base, &value.offset) {
-            (AddressBase::FunctionSymbolic(variable), AddressOffset::Constant(0)) => {
-                crate::kernel::registered_load_term_for_variable(variable)
-            }
-            _ => None,
-        };
-    };
-    let load = application.as_loaded_value()?;
+    let load = application?.as_loaded_value()?;
     Some(crate::kernel::MachineTerm::read_named(
         ProgramPoint::at(&load.defining_memory),
         load.defining_address,
@@ -877,7 +866,7 @@ impl EqualityGraph {
             // read's address (the read-over-write authority): memory records
             // it, so it is term metadata like a definition, never a fact.
             if self.resolve_stored_values
-                && let AddressBase::LoadedPointer(_) = &value.base
+                && let AddressBase::Load(_) = &value.base
             {
                 let read = Address {
                     base: value.base.clone(),
@@ -1517,7 +1506,7 @@ impl EqualityGraph {
         // Avoid registering pointer/address nodes for unrelated field checks.
         // Load blocks still need application registration and congruence.
         let is_load_block = match &left.base {
-            AddressBase::LoadedPointer(_) => true,
+            AddressBase::Load(_) => true,
             AddressBase::Symbolic(variable) => crate::kernel::is_load_variable(variable),
             _ => false,
         };
@@ -1965,6 +1954,12 @@ impl EqualityGraph {
                         | N::Fold(_)
                         | N::Match(_)
                         | N::FloatConvert { .. } => {}
+                        N::IntegerToMachine { operand, .. }
+                            if let N::MachineObservation { operand: word, .. } = operand.node()
+                                && word.is_shared_machine_operand() =>
+                        {
+                            pending.push(Work::SharedMachine(word));
+                        }
                         N::IntegerToMachine { .. }
                         | N::Legacy(_)
                         | N::Call { .. }
@@ -2811,7 +2806,7 @@ impl EqualityGraphState {
     /// with an iterative traversal rather than a semantic nesting limit.
     fn register_blocks(&mut self, roots: impl IntoIterator<Item = AddressBase>) {
         let is_application = |block: &AddressBase| match block {
-            AddressBase::LoadedPointer(_) | AddressBase::PureFunctionApplication(_) => true,
+            AddressBase::Load(_) | AddressBase::PureFunctionApplication(_) => true,
             AddressBase::Symbolic(variable) | AddressBase::FunctionSymbolic(variable) => {
                 crate::kernel::is_load_variable(variable)
             }
@@ -2848,22 +2843,11 @@ impl EqualityGraphState {
                 continue;
             }
             let definition = match &block {
-                AddressBase::LoadedPointer(identity) => {
-                    crate::kernel::eval::registered_pointer_load_point(*identity)
-                        .map(|(point, address, _)| (point, address, crate::kernel::LoadKind::Int32))
-                }
-                // A function pointer read is a typed read of its address,
-                // like a loaded data pointer.
-                AddressBase::FunctionSymbolic(variable)
-                    if crate::kernel::is_load_variable(variable) =>
-                {
-                    crate::kernel::registered_load_for_variable(variable).and_then(
-                        |(memory, address)| {
-                            crate::kernel::registered_load_kind_for_variable(variable)
-                                .map(|kind| (ProgramPoint::at(&memory), address, kind))
-                        },
-                    )
-                }
+                AddressBase::Load(load) => Some((
+                    load.point().clone(),
+                    load.cell().clone(),
+                    crate::kernel::LoadKind::Int32,
+                )),
                 AddressBase::Symbolic(variable)
                     if crate::kernel::is_load_variable(variable)
                         && crate::kernel::registered_load_bytes_for_variable(variable)
@@ -2883,7 +2867,7 @@ impl EqualityGraphState {
             };
             if matches!(
                 block,
-                AddressBase::LoadedPointer(_) | AddressBase::FunctionSymbolic(_)
+                AddressBase::Load(_) | AddressBase::FunctionSymbolic(_)
             ) {
                 self.typed_reads = self.typed_reads.with_value(block.clone());
                 let address_term = self.register_pointer_address(&address);

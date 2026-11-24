@@ -16,7 +16,7 @@ impl KernelTermImport {
             .arguments()
             .iter()
             .enumerate()
-            .map(|(index, argument)| {
+            .map(|(index, _)| {
                 retained
                     .get(index)
                     .and_then(Clone::clone)
@@ -24,14 +24,7 @@ impl KernelTermImport {
                         if let Some(root) = application.common_argument(index) {
                             root
                         } else {
-                            KernelTerm::legacy_at(
-                                argument.clone(),
-                                LegacyIdentity::ExactApplicationArgument {
-                                    application: application.clone(),
-                                    payload: application.payload_id(),
-                                    index,
-                                },
-                            )
+                            KernelTerm::native_call_argument(application, index, true)
                         }
                     })
             })

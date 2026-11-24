@@ -328,7 +328,10 @@ fn machine_observation_round_trips_retain_growing_shared_operands() {
             let mut root =
                 KernelTerm::variable(KernelType::Program(ProgramType::UInt64), Variable(989821));
             let context = PureFactContext::new();
-            let exports = KernelTermExport::machine_export_count();
+            let exports = (
+                KernelTermExport::machine_export_count(),
+                KernelTermExport::integer_export_count(),
+            );
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 for index in 0..size {
                     let fresh = KernelTerm::variable(
@@ -364,7 +367,13 @@ fn machine_observation_round_trips_retain_growing_shared_operands() {
                     }
                 }
             });
-            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            assert_eq!(
+                (
+                    KernelTermExport::machine_export_count(),
+                    KernelTermExport::integer_export_count()
+                ),
+                exports,
+            );
             samples.push((size, work));
         }
         for pair in samples.windows(2) {

@@ -217,10 +217,10 @@ pub(super) fn produced(read: &MachineTerm, source: &MachineTerm) {
     };
     let epoch = LOAD_ORIGIN_EPOCH.with(std::cell::Cell::get);
     STATE.with(|state| {
-        state
-            .borrow_mut()
-            .latest
-            .insert((epoch, id), (origin.clone(), address.as_ref().clone()));
+        state.borrow_mut().latest.insert(
+            (epoch, id),
+            (origin.point().clone(), address.address().clone()),
+        );
     });
 }
 
@@ -624,6 +624,7 @@ mod tests {
             let mut facts = ExecutionFacts::new();
             let value = canonicalized_symbolic_load_value_with_identity(
                 &memory,
+                None,
                 &pointer,
                 ty,
                 &mut facts,

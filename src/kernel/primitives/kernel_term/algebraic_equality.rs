@@ -258,25 +258,10 @@ mod tests {
         assert!(
             !BooleanOperandView::Shared(&root).syntax_equal(BooleanOperandView::Shared(&reverse))
         );
-        let payload = KernelTerm::legacy(PureFunctionArgument::Value(ProgramValue::Bool(
-            MachineTerm::BoolCast {
-                to: MachineIntegerType::UInt8,
-                value: Box::new(condition.clone()),
-            },
-        )));
-        let KernelTermNode::Legacy(payload) = payload.node() else {
-            unreachable!()
-        };
-        let legacy = KernelTerm::intern(
-            KernelType::Bool,
-            KernelTermNode::LegacyBool(payload.clone()),
-        );
-        assert!(
-            BooleanOperandView::Shared(&root).syntax_equal(BooleanOperandView::Shared(&legacy))
-        );
-        assert!(
-            BooleanOperandView::Shared(&legacy).syntax_equal(BooleanOperandView::Shared(&root))
-        );
+        let native = BooleanOperandView::Native(&condition);
+        let retained = BooleanOperandView::Shared(&root);
+        assert!(retained.syntax_equal(native));
+        assert!(native.syntax_equal(retained));
     }
 
     #[test]

@@ -220,7 +220,7 @@ mod certificate_tests {
             base: "data".into(),
             offset: AddressOffset::Constant(0),
         };
-        let load = MachineTerm::MemoryLoad(
+        let load = MachineTerm::read_named(
             crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(SymbolicMemory::new()))),
             Box::new(pointer),
             crate::kernel::LoadKind::Int32,

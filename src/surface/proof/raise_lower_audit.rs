@@ -490,6 +490,73 @@ int32 short_sum(int32 seed) {
         );
     }
 
+    #[test]
+    fn a_null_pointer_passed_to_a_spec_function_round_trips() {
+        // `struct node*` is a one-`int` object, so the kernel holds the
+        // argument as an array reference rather than a bare pointer.
+        let c = "struct node { int value; };\nint touch(struct node *n) { return 0; }\n";
+        let click = r#"
+            verifying "nullarg.c";
+            function is_null(p: struct node*) -> int32 {
+                if p == 0 { 1 } else { 0 }
+            }
+            int32 touch(struct node* n) {
+                ensures result == 0;
+            } by {
+                have is_null(0) == 1 by { unfold(is_null(0)); known(); }
+                step_until(function.exit);
+            }
+        "#;
+        let lines = capture(|| {
+            crate::surface::verify_c_sources(click, &[("nullarg.c", c)]).unwrap();
+        });
+        assert!(
+            lines.iter().any(|line| {
+                let fields = line.split('\t').collect::<Vec<_>>();
+                fields[0] == "same" && fields[7] == "is_null(0) == 1"
+            }),
+            "{lines:#?}"
+        );
+    }
+
+    #[test]
+    fn a_total_a_lock_acquired_round_trips_at_the_lock_exit() {
+        let fixture = crate::cli::parse_mdtest(
+            std::path::Path::new("authority_mutex_locked_release.md"),
+            include_str!("../../../mdtests/authority_mutex_locked_release.md"),
+        )
+        .unwrap();
+        let sources = fixture
+            .c_sources
+            .iter()
+            .map(|(name, source)| (name.as_str(), source.as_str()))
+            .collect::<Vec<_>>();
+        let lines = capture(|| {
+            crate::surface::verify_c_sources(fixture.click_source.as_deref().unwrap(), &sources)
+                .unwrap();
+        });
+        let counts = lines
+            .iter()
+            .filter(|line| {
+                line.split('\t')
+                    .nth(7)
+                    .is_some_and(|raised| raised.contains("count("))
+            })
+            .collect::<Vec<_>>();
+        assert!(
+            counts.iter().any(|line| {
+                line.starts_with("same\t")
+                    && line.split('\t').nth(7)
+                        == Some("at(statement(0).exit, (count(reference(obj)) as int32)) >= 1")
+            }),
+            "{counts:#?}"
+        );
+        assert!(
+            counts.iter().all(|line| !line.starts_with("unlowered\t")),
+            "{counts:#?}"
+        );
+    }
+
     /// The round trips `fixture` records, as `(outcome, original)` pairs.
     fn round_trips(name: &str, text: &str) -> Vec<(String, String)> {
         let fixture = crate::cli::parse_mdtest(std::path::Path::new(name), text).unwrap();

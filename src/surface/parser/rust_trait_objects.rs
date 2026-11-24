@@ -8,7 +8,7 @@
 //!
 //! - A trait method whose receiver is a reference, and a parameter `x: &T`
 //!   for `T: Trait` or `x: &dyn Trait`, holds the object: its contract owns
-//!   `__object_x: Trait::object(x)`, a shared reference keeps its fields, and
+//!   `object_resource(x): Trait::object(x)`, a shared reference keeps its fields, and
 //!   `size(x)` reads its field `size`.
 //! - An implementation's method is verified on the object's memory: it owns
 //!   `*self`, `size(self)` is the implementation's definition, and it inherits
@@ -88,9 +88,18 @@ fn generic_object_family(base: &str) -> String {
     family
 }
 
-/// The handle a function's contract gives the object a parameter holds.
-pub(super) fn handle(parameter: &str) -> String {
-    format!("__object_{parameter}")
+/// The source selector for the modeled resource belonging to a receiver.
+pub(super) const OBJECT_RESOURCE: &str = "object_resource";
+
+pub(super) fn object_resource(parameter: Option<&str>, position: &SourcePosition) -> Vec<Spanned> {
+    let mut tokens = vec![ident(OBJECT_RESOURCE), Token::LParen];
+    tokens.extend(parameter.map(ident));
+    tokens.push(Token::RParen);
+    at(position, tokens)
+}
+
+pub(super) fn object_resource_spelling(parameter: Option<&str>) -> String {
+    format!("{OBJECT_RESOURCE}({})", parameter.unwrap_or_default())
 }
 
 /// The `contract fn` that states an implementation's interface on its own
@@ -380,6 +389,23 @@ pub(super) fn rewrite_calls(
     let mut index = 0;
     while index < clause.len() {
         old_until.retain(|&close| index <= close);
+        // A replayed projection is already in resource form. In particular,
+        // it cannot mean a model function that happens to have this name.
+        if is_ident(clause.get(index), OBJECT_RESOURCE)
+            && matches!(
+                clause.get(index + 1..index + 5),
+                Some([
+                    (Token::LParen, _),
+                    (Token::Ident(_), _),
+                    (Token::RParen, _),
+                    (Token::Dot, _)
+                ])
+            )
+        {
+            output.extend_from_slice(&clause[index..index + 4]);
+            index += 4;
+            continue;
+        }
         if is_ident(clause.get(index), "old")
             && clause.get(index + 1).map(|(token, _)| token) == Some(&Token::LParen)
             && let Some(close) = matching(clause, index + 1)
@@ -478,16 +504,15 @@ pub(super) fn ident(word: &str) -> Token {
     Token::Ident(word.to_string())
 }
 
-/// The handle read `__object_x.f`.
+/// The handle read `object_resource(x).f`.
 pub(super) fn field_read(
-    parameter: &str,
+    parameter: Option<&str>,
     function: &str,
     position: &SourcePosition,
 ) -> Vec<Spanned> {
-    at(
-        position,
-        vec![ident(&handle(parameter)), Token::Dot, ident(function)],
-    )
+    let mut tokens = object_resource(parameter, position);
+    tokens.extend(at(position, vec![Token::Dot, ident(function)]));
+    tokens
 }
 
 /// The clauses that make a function hold the object of `parameter`: it owns
@@ -498,10 +523,9 @@ fn object_clauses(
     shared: bool,
     position: &SourcePosition,
 ) -> (Vec<Spanned>, Vec<Spanned>) {
-    let mut owns = at(
-        position,
-        vec![ident("owns"), ident(&handle(parameter)), Token::Colon],
-    );
+    let mut owns = at(position, vec![ident("owns")]);
+    owns.extend(object_resource(Some(parameter), position));
+    owns.push((Token::Colon, position.clone()));
     owns.extend(family_use(object, position));
     owns.extend(at(
         position,
@@ -516,12 +540,12 @@ fn object_clauses(
     if shared {
         for (function, _) in &object.functions {
             keeps.extend(at(position, vec![ident("ensures")]));
-            keeps.extend(field_read(parameter, function, position));
+            keeps.extend(field_read(Some(parameter), function, position));
             keeps.extend(at(
                 position,
                 vec![Token::EqualEqual, ident("old"), Token::LParen],
             ));
-            keeps.extend(field_read(parameter, function, position));
+            keeps.extend(field_read(Some(parameter), function, position));
             keeps.extend(at(position, vec![Token::RParen, Token::Semicolon]));
         }
     }
@@ -999,7 +1023,7 @@ fn rewrite_function(
                 parameter,
                 &object.functions,
                 *shared,
-                &|function, position| field_read(parameter, function, position),
+                &|function, position| field_read(Some(parameter), function, position),
             );
         }
         let end = clause
@@ -1023,7 +1047,7 @@ fn rewrite_function(
                 parameter,
                 &object.functions,
                 false,
-                &|function, position| field_read(parameter, function, position),
+                &|function, position| field_read(Some(parameter), function, position),
             );
         }
         output.extend(proof);
@@ -1425,7 +1449,6 @@ fn coercion_contracts(
     position: &SourcePosition,
 ) -> Vec<Spanned> {
     let receiver = BTreeMap::from([("self".to_string(), "object".to_string())]);
-    let handle = handle("object");
     // The resources holding the rest of the object's state go into the
     // object with the memory, and come back out with it.
     let resources = |verb: &str| {
@@ -1455,7 +1478,9 @@ fn coercion_contracts(
         tokens
     };
     let instance = |verb: &str| {
-        let mut tokens = at(position, vec![ident(verb), ident(&handle), Token::Colon]);
+        let mut tokens = at(position, vec![ident(verb)]);
+        tokens.extend(object_resource(None, position));
+        tokens.push((Token::Colon, position.clone()));
         tokens.extend(family_use(object, position));
         tokens.extend(at(
             position,
@@ -1483,7 +1508,7 @@ fn coercion_contracts(
     tokens.extend(instance("produces"));
     for (function, definition) in definitions {
         tokens.push((ident("ensures"), position.clone()));
-        tokens.extend(field_read("object", function, position));
+        tokens.extend(field_read(None, function, position));
         tokens.extend(at(
             position,
             vec![
@@ -1516,7 +1541,7 @@ fn coercion_contracts(
                 Token::LParen,
             ],
         ));
-        tokens.extend(field_read("object", function, position));
+        tokens.extend(field_read(None, function, position));
         tokens.extend(at(position, vec![Token::RParen, Token::Semicolon]));
     }
     tokens.push((Token::RBrace, position.clone()));
@@ -1525,8 +1550,7 @@ fn coercion_contracts(
     // the object nothing changes the memory or hands it over again, so the
     // caller keeps every field. The unpack gives both up.
     let lend = crate::languages::rust::names::object_lend_name(type_name, trait_name);
-    let source = "object_memory";
-    let lent = |verb: &str, source: Option<&str>| {
+    let lent = |verb: &str, from_view: bool| {
         let mut clause = vec![
             ident(verb),
             ident(&lend),
@@ -1534,8 +1558,8 @@ fn coercion_contracts(
             ident("object"),
             Token::RParen,
         ];
-        if let Some(source) = source {
-            clause.extend([ident("from"), ident(source)]);
+        if from_view {
+            clause.extend([ident("from"), Token::SharedObjectView]);
         }
         clause.push(Token::Semicolon);
         at(position, clause)
@@ -1577,12 +1601,12 @@ fn coercion_contracts(
             Token::Star,
             ident("object"),
             ident("as"),
-            ident(source),
+            Token::SharedObjectView,
             Token::Semicolon,
         ],
     ));
     tokens.extend(resources("consumes"));
-    tokens.extend(lent("produces", Some(source)));
+    tokens.extend(lent("produces", true));
     tokens.extend(instance("produces"));
     // A definition reading a consumed resource reads it at entry.
     let entry = if held.is_empty() {
@@ -1592,7 +1616,7 @@ fn coercion_contracts(
     };
     for (function, definition) in definitions {
         tokens.push((ident("ensures"), position.clone()));
-        tokens.extend(field_read("object", function, position));
+        tokens.extend(field_read(None, function, position));
         tokens.push((Token::EqualEqual, position.clone()));
         tokens.extend(at(position, entry.clone()));
         tokens.push((Token::LParen, position.clone()));
@@ -1605,7 +1629,7 @@ fn coercion_contracts(
         trait_name,
         crate::languages::rust::names::SHARED_UNPACK,
     )));
-    tokens.extend(lent("consumes", None));
+    tokens.extend(lent("consumes", false));
     tokens.extend(instance("consumes"));
     // The resources come back holding the object's state, which a shared
     // reference kept.
@@ -1623,7 +1647,7 @@ fn coercion_contracts(
                     Token::LParen,
                 ],
             ));
-            tokens.extend(field_read("object", function, position));
+            tokens.extend(field_read(None, function, position));
             tokens.extend(at(position, vec![Token::RParen, Token::Semicolon]));
         }
     }

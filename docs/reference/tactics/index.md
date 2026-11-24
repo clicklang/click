@@ -946,6 +946,12 @@ contract inputs, and the `let` pattern names outputs such as
 - The `let` pattern names every `produces` binder. A produced instance's
   resource arguments are the call's arguments
   ([`c_call_binder_transport_multiple_produces.md`](https://github.com/clicklang/click/blob/master/mdtests/c_call_binder_transport_multiple_produces.md)).
+  In a Rust or C++ object pack contract, `object_resource()` selects the
+  packed object's resource. For example,
+  `let { object_resource(): packed } = step(Square__click_pack_const__Shape);`
+  names that instance `packed`. Other resources still use their declared
+  output binders. Use the same selector in the input map of an unpack step
+  to supply the packed instance.
 - Omit the input map when there are no entries. An empty map is equivalent,
   and expansion uses the shorter spelling. Either form can bind a call result
   ([`call_result_in_condition.md`](https://github.com/clicklang/click/blob/master/mdtests/call_result_in_condition.md)).
@@ -1750,6 +1756,8 @@ by its power of two when the exact result is in range; signed shifts also
 require a nonnegative source. A bitwise-and with a nonnegative literal mask
 is between zero and the mask, and is at most a nonnegative source. A root
 conditional equals its selected arm when its written guard is available.
+A root Integer or machine conditional with identical arms equals that shared
+arm without a guard premise.
 Shared native comparison guards retain their operand DAGs; other shared
 compound guards require explicit logical steps rather than exporting a guard
 tree. Missing guards and unsupported forms are refused.
@@ -1912,12 +1920,16 @@ goal needs at least one strict link. Replay checks the listed links directly.
 A true `float` or `double` comparison against a literal can cite one stronger
 bound. Exact widening from `float` to `double` widens the endpoint and preserves
 the direction. Unary float negation negates the endpoint and reverses the
-direction. Adding a finite literal or multiplying by a finite nonzero literal
-transforms and rounds the endpoint at the same width. A negative multiplier
-reverses the bound. The rounded endpoint gives a non-strict bound because
+direction. Adding or subtracting a finite literal, subtracting from a finite
+literal, and multiplying or dividing by a finite nonzero literal transform
+and round the endpoint at the same width. Subtraction from a literal and
+multiplication or division by a negative literal reverse the direction.
+The rounded endpoint gives a non-strict bound because
 distinct inputs can round to the same result. An unchanged or exact endpoint
 requires a strict premise for a strict goal with that endpoint. A negated comparison can hold for NaN and cannot
-supply an ordered bound.
+supply an ordered bound. A sum of two float operands can cite one ordered
+bound per operand with finite literal endpoints. Both bounds must point in
+the goal's direction. The rule adds and rounds the endpoints at that width.
 
 For an unsigned left shift of one, citing the count bound proves the result
 is nonzero. For example, `normalize() using { d < 32u32; }` proves

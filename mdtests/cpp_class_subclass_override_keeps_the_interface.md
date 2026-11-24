@@ -59,7 +59,7 @@ int caller(BigSquare& big, int scale) {
     requires 0 <= to_integer(big.base.side + big.extra) and to_integer(big.base.side + big.extra) <= 100;
     ensures to_integer(result) == to_integer(big.base.side + big.extra + scale);
 } by {
-    let { __object_object: packed } = step(BigSquare__click_pack_const__Square);
+    let { object_resource(): packed } = step(BigSquare__click_pack_const__Square);
 }
 ```
 

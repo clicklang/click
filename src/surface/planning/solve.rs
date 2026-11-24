@@ -21,7 +21,7 @@ pub(in crate::surface) fn plan_context_free_closer(goal: &Proposition) -> Option
     if computes_with_known(goal) {
         Some(ProofTactic::Known)
     } else if normalizes_context_free(goal) {
-        Some(ProofTactic::Normalize)
+        Some(ProofTactic::CompatibilityNormalize(None))
     } else {
         None
     }

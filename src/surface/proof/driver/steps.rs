@@ -464,8 +464,11 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 Some(driver_proof.apply_fact_using(fact, premises))
             }
             ProofStep::Known => Some(driver_proof.apply_known()),
-            ProofStep::Normalize => Some(driver_proof.apply_normalize()),
-            ProofStep::NormalizeUsing(premises) => {
+            ProofStep::Normalize | ProofStep::CompatibilityNormalize(None) => {
+                Some(driver_proof.apply_normalize())
+            }
+            ProofStep::NormalizeUsing(premises)
+            | ProofStep::CompatibilityNormalize(Some(premises)) => {
                 Some(driver_proof.apply_normalize_using(premises))
             }
             ProofStep::ArithmeticUsing(_) => {

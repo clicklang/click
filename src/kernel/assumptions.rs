@@ -115,26 +115,18 @@ fn address_bases_equal_with_load_atoms(
 ) -> bool {
     left == right
         || match (left, right) {
-            (AddressBase::LoadedPointer(a), AddressBase::LoadedPointer(b)) => {
-                let (Some((am, ap)), Some((bm, bp))) = (
-                    crate::kernel::eval::registered_pointer_load(*a),
-                    crate::kernel::eval::registered_pointer_load(*b),
-                ) else {
-                    return false;
-                };
-                loads_match(
-                    &crate::kernel::MachineTerm::read_named(
-                        ProgramPoint::at(&am),
-                        ap,
-                        LoadKind::Bits64,
-                    ),
-                    &crate::kernel::MachineTerm::read_named(
-                        ProgramPoint::at(&bm),
-                        bp,
-                        LoadKind::Bits64,
-                    ),
-                )
-            }
+            (AddressBase::Load(a), AddressBase::Load(b)) => loads_match(
+                &crate::kernel::MachineTerm::read_named(
+                    ProgramPoint::at(a.point().shared_memory()),
+                    a.cell().clone(),
+                    LoadKind::Bits64,
+                ),
+                &crate::kernel::MachineTerm::read_named(
+                    ProgramPoint::at(b.point().shared_memory()),
+                    b.cell().clone(),
+                    LoadKind::Bits64,
+                ),
+            ),
             (AddressBase::Symbolic(_), AddressBase::Symbolic(_)) => {
                 let base = |block: &AddressBase| Address {
                     base: block.clone(),
@@ -1759,7 +1751,7 @@ fn loads_equal_by_bounded_state_match(
     else {
         return false;
     };
-    left_pointer == right_pointer
+    left_pointer.address() == right_pointer.address()
         && left_kind == right_kind
         && !crate::kernel::reasoning::loads_lack_recorded_equality(
             left_memory.shared_memory(),
@@ -10570,7 +10562,7 @@ impl ProofObligation {
             invalid_mutex_held_observation: false,
             unsigned_divisor: false,
             float_to_integer_bound: false,
-            signed_shift_bound: false,
+            signed_arithmetic_bound: false,
             statement_entry_required: false,
             live_view_write: false,
             call_requirement_site: None,
@@ -10591,7 +10583,7 @@ impl ProofObligation {
             invalid_mutex_held_observation: false,
             unsigned_divisor: false,
             float_to_integer_bound: false,
-            signed_shift_bound: false,
+            signed_arithmetic_bound: false,
             statement_entry_required: false,
             live_view_write: false,
             call_requirement_site: None,
@@ -10626,8 +10618,8 @@ impl ProofObligation {
         obligation
     }
 
-    pub(crate) fn is_signed_shift_bound(&self) -> bool {
-        self.signed_shift_bound
+    pub(crate) fn is_signed_arithmetic_bound(&self) -> bool {
+        self.signed_arithmetic_bound
     }
 
     fn bound_under_exact_guards<'a>(&'a self, facts: &PureFactContext) -> Option<&'a Proposition> {
@@ -10883,7 +10875,7 @@ impl ProofObligation {
             invalid_mutex_held_observation: self.invalid_mutex_held_observation,
             unsigned_divisor: self.unsigned_divisor,
             float_to_integer_bound: self.float_to_integer_bound,
-            signed_shift_bound: self.signed_shift_bound,
+            signed_arithmetic_bound: self.signed_arithmetic_bound,
             statement_entry_required: self.statement_entry_required,
             live_view_write: self.live_view_write,
             call_requirement_site: None,
@@ -11315,7 +11307,7 @@ fn generated_load_binding_matches_proposition(
                 && matches!(load, MachineTerm::MemoryLoad(expected_point, _, expected)
                     if *expected == kind
                         && ((expected_point.read_version_id().is_none() && memory.read_version_id().is_none())
-                            || expected_point == &memory))
+                            || expected_point.point() == memory.point()))
         }
         _ => false,
     }
@@ -11848,6 +11840,19 @@ fn observation_comparison_form(proposition: &Proposition) -> Proposition {
     crate::instrumentation::record_deterministic_work(1);
     match proposition {
         Proposition::ConditionIs(condition, value) => {
+            if let Some(KernelTermNode::IntegerCompare { arguments, .. }) =
+                condition.root().map(KernelTerm::node)
+                && arguments.iter().any(|argument| {
+                    matches!(
+                        argument.node(),
+                        KernelTermNode::IntegerOperation { .. } | KernelTermNode::Variable(_)
+                    )
+                })
+            {
+                // A structural machine comparison needs observations or
+                // literals. Arithmetic and variables keep their Integer form.
+                return proposition.clone();
+            }
             match super::machine_integer::comparison::structural_native_comparison_view(
                 condition.native_compat(),
                 *value,
@@ -14438,9 +14443,9 @@ mod pointer_index_walk_tests {
                     format: ty,
                     op: MachineBinaryOp::Add,
                     left: MachineTerm::Variable(Variable(1007210)).into(),
-                    right: MachineTerm::MemoryLoad(
+                    right: MachineTerm::read_named(
                         ProgramPoint::at(&retained_state),
-                        address.clone().into(),
+                        address.clone(),
                         LoadKind::Int32,
                     )
                     .into(),

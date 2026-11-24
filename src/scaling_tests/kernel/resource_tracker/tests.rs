@@ -431,7 +431,7 @@ fn shared_pointer_resource_read_collection_visits_each_node_once() {
         let _session = crate::kernel::VerificationSession::enter();
         let address = Address::symbolic(crate::kernel::Variable(1081601));
         let memory = intern_memory(SymbolicMemory::new().store(address.clone(), one()));
-        let read = MachineTerm::MemoryLoad(
+        let read = MachineTerm::read_named(
             ProgramPoint::at(&memory),
             Box::new(address),
             crate::kernel::LoadKind::Int32,
@@ -478,7 +478,7 @@ fn shared_conditional_guard_reads_keep_state_identity_in_linear_work() {
         let pointer = at(block("global:g"), 0);
         crate::kernel::eval::record_load_access_width(memory.memory(), &pointer, 4);
         let guard = ConditionTerm::equal(
-            MachineTerm::MemoryLoad(
+            MachineTerm::read_named(
                 ProgramPoint::at(&memory),
                 Box::new(pointer.clone()),
                 LoadKind::Int32,

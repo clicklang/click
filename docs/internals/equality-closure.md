@@ -23,7 +23,7 @@ from branch backtracking and subject to the checking cost contract.
 
 Symbolic pointer equality and disequality retain both complete addresses,
 including a syntactically common block and symbolic reflexive comparisons.
-A pointer read from memory (`LoadedPointer`) names an unknown address, so equal
+A pointer read from memory (`AddressBase::Load`) names an unknown address, so equal
 displacements in its block are symbolic reflexive comparisons as well; unequal
 constant displacements still fold to false. Other constant comparisons fold. Keeping symbolic comparisons preserves the
 fact lookup used by explicit `known()` after resolving a stored pointer;
@@ -861,7 +861,7 @@ value independently of the storage address form and pointee width. The
 graph can answer equality of two such applications without replacing the
 `Address` values produced by C execution. A live caller must supply the actual
 defining state and address from a typed load site or checked evidence. A
-loaded value is represented only by its `LoadedPointer` name; an address indexed
+loaded value is represented only by its `AddressBase::Load` base; an address indexed
 by a loaded scalar (`a[*p]`) is pointer arithmetic, never a read.
 
 The bridge from a completed nonvolatile C pointer read to the graph
@@ -919,13 +919,21 @@ without intermediate field-load claims or C writes. This does not transport
 loads across different states.
 
 
-The kernel has a distinct `PointerLoadId`, `AddressBase::LoadedPointer`,
-and a constructor/decoder pair for `(defining retained_state, address, displacement)`.
-A point-named load's key also records whether it decodes an object or a
-function pointer (`PointerLoadCategory`), never the pointee type: one cell at
-one version point is one pointer at every object-pointer type, and a store at
-one object-pointer type answers a load at another (`design/loads.md`,
-"Pointers"; `mdtests/a_pointer_store_answers_a_load_at_another_pointer_type.md`).
+A pointer read's address base is `AddressBase::Load(load)`, where `Load`
+(`src/kernel/primitives/load.rs`) is the interned identity of one cell's bytes
+at one version point: interned by the point's read key and the cell, and
+carrying that point and cell so decoding it needs no registry lookup.
+`Load::at` is its only constructor and `Load::base` the only builder of the
+base (`build_support/read_construction.rs`). The key holds no pointee type,
+no object-or-function category and no selection kind: one cell at one version
+point is one load at every pointer type, an exact and an indexed selection of
+one point are one load, and a store at one object-pointer type answers a load
+at another (`design/loads.md`, "Pointers";
+`mdtests/a_pointer_store_answers_a_load_at_another_pointer_type.md`). The
+category belongs to the decoding: a store lookup for a typed value passes the
+category of the value's type, so a function-pointer store answers no
+object-pointer decoding, nor the reverse; a lookup about the base as an
+address asks about the cell's bytes and accepts a store of either category.
 The equality graph indexes this explicit pointer application without consulting
 the scalar load registry's mutable access width. Ordinary C pointer-load
 producers still create the storage-relative form; their checked path-context
@@ -933,6 +941,11 @@ bridges relate that form to the explicit graph term. Making the explicit name
 the execution value is a separate proposal that would require a coherent
 review of materialization, substitution, provenance, and rendering. Merely
 swapping the constructor breaks existing verification and expansion fixtures.
+
+An integer or float read, `MachineTerm::MemoryLoad`, has the same `Load` as
+its identity, beside its kind and the producer's selected point
+(`design/loads.md`, step 3a; [resource tracker](resource-tracker.md#a-load-term-carries-its-reads-kind)):
+comparing two reads compares one id and a kind, not their addresses.
 
 Pointer classes are weighted:
 `base(member) = base(representative) + delta`. Exact affine normalization can

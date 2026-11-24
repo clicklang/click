@@ -182,7 +182,8 @@ fn ordinary_arithmetic_work_size(steps: &[ProofStep]) -> Option<usize> {
                 pending.extend(then_proof.steps());
                 pending.extend(else_proof.steps());
             }
-            ProofStep::NormalizeUsing(premises) => {
+            ProofStep::NormalizeUsing(premises)
+            | ProofStep::CompatibilityNormalize(Some(premises)) => {
                 count += premises.len();
             }
             ProofStep::ApplyTheorem(application) => count += application.arguments.len(),
@@ -196,6 +197,7 @@ fn ordinary_arithmetic_work_size(steps: &[ProofStep]) -> Option<usize> {
             } => count += application.arguments.len() + premises.len(),
             ProofStep::Known
             | ProofStep::Normalize
+            | ProofStep::CompatibilityNormalize(None)
             | ProofStep::Rewrite(_)
             | ProofStep::Intro
             | ProofStep::Contradiction(_) => {}
@@ -1068,7 +1070,7 @@ fn both_and_preserves_exact_binders_and_saved_states() {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
-                    left: Box::new(MachineTerm::MemoryLoad(
+                    left: Box::new(MachineTerm::read_named(
                         crate::kernel::ProgramPoint::of_memory(&memory),
                         Box::new(pointer.clone()),
                         crate::kernel::LoadKind::Int32,
@@ -11993,7 +11995,7 @@ fn generated_load_source_event_fixture(
             variable: Variable(variable.into()),
             retained_state: crate::kernel::MemoryStateIdentity::of(&SymbolicMemory::new()),
             pointer: pointer.clone(),
-            load: MachineTerm::MemoryLoad(
+            load: MachineTerm::read_named(
                 crate::kernel::ProgramPoint::of_memory(&SymbolicMemory::new()),
                 Box::new(pointer),
                 crate::kernel::LoadKind::Int32,

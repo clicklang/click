@@ -776,6 +776,8 @@ fn removed_tactic_refusal(name: &str) -> Option<&'static str> {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) enum Token {
+    /// The input view carried into the loan of a generated shared pack.
+    SharedObjectView,
     Ident(String),
     Number(u32),
     // Keep literal metadata shared so adding Rust forms does not enlarge
@@ -882,6 +884,7 @@ impl Token {
             | Self::Lifetime(_)
             | Self::String(_)
             | Self::ByteString(_) => "",
+            Self::SharedObjectView => "shared object view",
             Self::LBrace => "{",
             Self::RBrace => "}",
             Self::LParen => "(",
@@ -4141,9 +4144,8 @@ impl Parser {
         else {
             return;
         };
-        let is_parent = |access: &ResourceFieldAccess| {
-            access.owner == "__body" && access.identity == crate::kernel::InstanceRef::Body
-        };
+        let is_parent =
+            |access: &ResourceFieldAccess| access.identity == crate::kernel::InstanceRef::Body;
         let (child, parent) = match (is_parent(one), is_parent(other)) {
             (false, true) => (one, other),
             (true, false) => (other, one),
@@ -4186,7 +4188,7 @@ impl Parser {
         for child_field in child_fields {
             let hidden_name = format!("{}.{}", binding.name, child_field.name);
             let hidden = ResourceFieldAccess {
-                owner: "__body".into(),
+                owner: String::new(),
                 resource_name: resource_name.into(),
                 identity: crate::kernel::InstanceRef::Body,
                 children: vec![],
@@ -4248,7 +4250,7 @@ impl Parser {
                     (
                         field.name.clone(),
                         ResourceFieldAccess {
-                            owner: "__body".into(),
+                            owner: String::new(),
                             resource_name: resource_name.into(),
                             identity: crate::kernel::InstanceRef::Body,
                             children: vec![],
@@ -5381,6 +5383,7 @@ impl Parser {
         let mut contract_let_names = BTreeSet::new();
         let mut requires = Vec::new();
         let mut view_inputs = BTreeMap::new();
+        let mut shared_object_view = None;
         let mut decreases = None;
         let mut constructs = Vec::new();
         let mut ensures = Vec::new();
@@ -5771,9 +5774,18 @@ impl Parser {
                                 "a named input view must name one memory range or composite",
                             ));
                         }
-                        let name = self.expect_ident("input view name")?;
-                        if view_inputs.insert(name.clone(), requires.len()).is_some() {
-                            return Err(self.error(format!("duplicate input view name `{name}`")));
+                        if self.peek() == Some(&Token::SharedObjectView) {
+                            self.position += 1;
+                            if shared_object_view.replace(requires.len()).is_some() {
+                                return Err(self.error("duplicate shared object view"));
+                            }
+                        } else {
+                            let name = self.expect_ident("input view name")?;
+                            if view_inputs.insert(name.clone(), requires.len()).is_some() {
+                                return Err(
+                                    self.error(format!("duplicate input view name `{name}`"))
+                                );
+                            }
                         }
                     }
                     self.expect(Token::Semicolon)?;
@@ -5890,10 +5902,7 @@ impl Parser {
                             self.expect(Token::RParen)?;
                             let source = if explicit_source {
                                 self.expect_ident_spelling("from")?;
-                                let name = self.expect_ident("input view name")?;
-                                Some(view_inputs.get(&name).copied().ok_or_else(|| {
-                                    self.error(format!("unknown input view `{name}`"))
-                                })?)
+                                Some(self.parse_view_source(&view_inputs, shared_object_view)?)
                             } else {
                                 None
                             };
@@ -5919,21 +5928,17 @@ impl Parser {
                         }
                     }
                     let resource = self.parse_function_contract_memory_binding()?;
-                    let view_source =
-                        if self.peek_ident() == Some("from") {
-                            if !matches!(resource, ResourceClause::Declared { .. }) {
-                                return Err(self.error(
+                    let view_source = if self.peek_ident() == Some("from") {
+                        if !matches!(resource, ResourceClause::Declared { .. }) {
+                            return Err(self.error(
                                 "`from` requires a produced view or an unnamed composite resource",
                             ));
-                            }
-                            self.position += 1;
-                            let name = self.expect_ident("input view name")?;
-                            Some(view_inputs.get(&name).copied().ok_or_else(|| {
-                                self.error(format!("unknown input view `{name}`"))
-                            })?)
-                        } else {
-                            None
-                        };
+                        }
+                        self.position += 1;
+                        Some(self.parse_view_source(&view_inputs, shared_object_view)?)
+                    } else {
+                        None
+                    };
                     let proof = self.parse_proof_clause_or_default()?;
                     let binder_resource =
                         apply_contract_lets_to_resource_clause(resource.clone(), &contract_lets)
@@ -8041,6 +8046,22 @@ impl Parser {
             self.position += length;
             return Ok(ResourceSubject::Emp);
         }
+        if let Some((receiver, width)) = self.object_resource_selector() {
+            let name = rust_trait_objects::object_resource_spelling(receiver);
+            if let Some(identity) = self
+                .names
+                .resource_bindings
+                .get(&name)
+                .and_then(|(identity, _)| identity.instance())
+            {
+                self.position += width;
+                return Ok(ResourceSubject::Instance {
+                    name,
+                    identity,
+                    at: None,
+                });
+            }
+        }
         if let Some(name) = self.peek_ident()
             && self.peek_next() != Some(&Token::LParen)
             && let Some(identity) = self
@@ -8303,7 +8324,7 @@ impl Parser {
         let mut type_arguments = Vec::new();
         let mut value_arguments = Vec::new();
         while has_map && self.peek() != Some(&Token::RBrace) {
-            let binder = self.expect_ident("callee resource binder")?;
+            let binder = self.expect_resource_binder("callee resource binder")?;
             self.expect(Token::Colon)?;
             if let Some(declaration) = declared.get(&binder)
                 && declaration.kind == CalleeResourceBinderKind::Value
@@ -8465,6 +8486,7 @@ impl Parser {
                 output.parameter_names.clear();
                 output.resource = Some(ResourceClause::Named {
                     binding: ResourceInstanceBinding {
+                        unnamed: false,
                         name: "state".into(),
                         identity: output.identity,
                         children: vec![],
@@ -8654,6 +8676,7 @@ impl Parser {
             name.to_string(),
             ResourceClause::Named {
                 binding: ResourceInstanceBinding {
+                    unnamed: false,
                     name: name.to_string(),
                     identity,
                     children: binding.children,
@@ -8703,6 +8726,7 @@ impl Parser {
                 };
                 let resource = family.map(|family| ResourceClause::Named {
                     binding: ResourceInstanceBinding {
+                        unnamed: false,
                         name: binder.name().to_string(),
                         identity: binder.resource_binder(),
                         children: vec![],
@@ -8873,6 +8897,22 @@ impl Parser {
 
     /// A function contract's `owns`, `consumes`, or `produces` target, which
     /// may be `uninitialized(p[a..b])`.
+    fn parse_view_source(
+        &mut self,
+        inputs: &BTreeMap<String, usize>,
+        shared_object_view: Option<usize>,
+    ) -> Result<usize, ClickError> {
+        if self.peek() == Some(&Token::SharedObjectView) {
+            self.position += 1;
+            return shared_object_view.ok_or_else(|| self.error("missing shared object view"));
+        }
+        let name = self.expect_ident("input view name")?;
+        inputs
+            .get(&name)
+            .copied()
+            .ok_or_else(|| self.error(format!("unknown input view `{name}`")))
+    }
+
     fn parse_function_contract_memory_binding(&mut self) -> Result<ResourceClause, ClickError> {
         self.uninitialized_memory_allowed = true;
         let resource = self.parse_owned_resource_binding();
@@ -8896,12 +8936,16 @@ impl Parser {
         &mut self,
         rebinding: bool,
     ) -> Result<ResourceClause, ClickError> {
-        if !matches!(self.peek(), Some(Token::Ident(_))) || self.peek_next() != Some(&Token::Colon)
-        {
+        let named =
+            matches!(self.peek(), Some(Token::Ident(_))) && self.peek_next() == Some(&Token::Colon);
+        let object = self.object_resource_selector().is_some_and(|(_, width)| {
+            self.tokens.get(self.position + width) == Some(&Token::Colon)
+        });
+        if !named && !object {
             let target = self.parse_owned_resource_target()?;
             return Ok(self.hold_a_hidden_record_unnamed(target));
         }
-        let name = self.expect_ident("resource instance name")?;
+        let name = self.expect_resource_binder("resource instance name")?;
         self.expect(Token::Colon)?;
         let rebound = rebinding
             .then(|| self.names.resource_bindings.get(&name).cloned())
@@ -8951,6 +8995,7 @@ impl Parser {
             .bind_instance(name.clone(), (identity, resource_name.clone()));
         let target = ResourceClause::Named {
             binding: ResourceInstanceBinding {
+                unnamed: false,
                 name: name.clone(),
                 identity,
                 children: vec![],
@@ -8998,14 +9043,13 @@ impl Parser {
         if let Some(held) = self.hidden_binder(&target) {
             return held;
         }
-        let identity = crate::kernel::ResourceBinder::Instance(self.fresh_instance_identity());
-        let binder = format!("#{name}{}", identity.variable().0);
-        self.names
-            .bind_instance(binder.clone(), (identity, name.clone()));
+        let identity = self.fresh_instance_identity();
+        let name = crate::surface::printing::format_resource_call(&target);
         let named = ResourceClause::Named {
             binding: ResourceInstanceBinding {
-                name: binder.clone(),
-                identity,
+                unnamed: true,
+                name,
+                identity: crate::kernel::ResourceBinder::Instance(identity),
                 children: vec![],
                 schema: None,
                 fields: None,
@@ -9014,7 +9058,8 @@ impl Parser {
             },
             resource: Box::new(target),
         };
-        self.names.set_instance_target(binder, named.clone());
+        self.names
+            .set_unnamed_instance_target(identity, named.clone());
         named
     }
 
@@ -9097,7 +9142,7 @@ impl Parser {
     }
 
     fn expect_resource_path(&mut self) -> Result<String, ClickError> {
-        let mut name = self.expect_ident("resource instance")?;
+        let mut name = self.expect_resource_binder("resource instance")?;
         while self.peek() == Some(&Token::Dot) {
             self.position += 1;
             name.push('.');
@@ -9636,6 +9681,7 @@ impl Parser {
             )
             && self.peek_next() == Some(&Token::LParen)
             && !self.looks_like_region_result()
+            && self.object_resource_field_selector().is_none()
         {
             if let Some(name) = self.peek_ident()
                 && let Some(value_parameters) = self.contract_value_parameter_names.get(name)
@@ -10781,6 +10827,7 @@ impl Parser {
                     name.clone(),
                     ResourceClause::Named {
                         binding: ResourceInstanceBinding {
+                            unnamed: false,
                             name: name.clone(),
                             identity,
                             children: Vec::new(),
@@ -10810,7 +10857,7 @@ impl Parser {
         self.position += 1;
         let mut bindings = Vec::new();
         while self.peek() != Some(&Token::RBrace) {
-            let binder = self.expect_ident("output binder")?;
+            let binder = self.expect_resource_binder("output binder")?;
             self.expect(Token::Colon)?;
             let name = self.expect_ident("output binding name")?;
             bindings.push((binder, name));
@@ -11005,13 +11052,21 @@ impl Parser {
             ResourceClause::Named { binding, resource } => {
                 // A child keeps its parent's clause as a placeholder until
                 // its actual resource arguments are known.
-                let (root, _) = binding.name.split_once('.').unwrap_or((&binding.name, ""));
-                let family = self
-                    .names
-                    .resource_bindings
-                    .get(root)
-                    .and_then(|(_, family)| self.resource_path_family(family, &binding.children))
-                    .map(str::to_owned);
+                let family = if binding.unnamed {
+                    match resource.as_ref() {
+                        ResourceClause::Declared { name, .. } => Some(name.clone()),
+                        _ => None,
+                    }
+                } else {
+                    let (root, _) = binding.name.split_once('.').unwrap_or((&binding.name, ""));
+                    self.names
+                        .resource_bindings
+                        .get(root)
+                        .and_then(|(_, family)| {
+                            self.resource_path_family(family, &binding.children)
+                        })
+                        .map(str::to_owned)
+                };
                 let declared_witnesses = family
                     .as_ref()
                     .and_then(|family| self.declared_resource_witnesses.get(family));
@@ -11055,26 +11110,31 @@ impl Parser {
         else {
             return Err(self.error("fold construction requires a declared resource"));
         };
-        let name = match name {
-            Some(name) => name,
-            None => match self.hidden_binder(&resource) {
-                Some(ResourceClause::Named { binding, .. }) => binding.name,
-                _ => format!("#{resource_name}{}", self.next_resource_identity),
-            },
-        };
-        if self.names.contains_any(NameKind::VALUES, &name)
-            || self.specification_binding_kind(&name).is_some()
-        {
-            return Err(self.error("fold result conflicts with a C or pure binding"));
-        }
-        self.bind_proof_name(&name, true)?;
-        let identity = if let Some((identity, previous)) = self.names.resource_bindings.get(&name) {
-            if previous != resource_name && !self.child_slot_identities.contains(identity) {
-                return Err(self.error("fold result changes the named resource family"));
+        let unnamed = name.is_none();
+        let (name, identity) = if let Some(name) = name {
+            if self.names.contains_any(NameKind::VALUES, &name)
+                || self.specification_binding_kind(&name).is_some()
+            {
+                return Err(self.error("fold result conflicts with a C or pure binding"));
             }
-            *identity
+            self.bind_proof_name(&name, true)?;
+            let identity =
+                if let Some((identity, previous)) = self.names.resource_bindings.get(&name) {
+                    if previous != resource_name && !self.child_slot_identities.contains(identity) {
+                        return Err(self.error("fold result changes the named resource family"));
+                    }
+                    *identity
+                } else {
+                    crate::kernel::ResourceBinder::Instance(self.fresh_instance_identity())
+                };
+            (name, identity)
+        } else if let Some(ResourceClause::Named { binding, .. }) = self.hidden_binder(&resource) {
+            (binding.name, binding.identity)
         } else {
-            crate::kernel::ResourceBinder::Instance(self.fresh_instance_identity())
+            (
+                crate::surface::printing::format_resource_call(&resource),
+                crate::kernel::ResourceBinder::Instance(self.fresh_instance_identity()),
+            )
         };
         let declared = self
             .declared_resource_fields
@@ -11133,6 +11193,7 @@ impl Parser {
         }
         self.expect(Token::RParen)?;
         let binding = ResourceInstanceBinding {
+            unnamed,
             name: name.clone(),
             identity,
             children: vec![],
@@ -11141,15 +11202,18 @@ impl Parser {
             fold_fields: None,
             child_bindings: Some(Vec::new().into()),
         };
-        self.names
-            .bind_instance(name.clone(), (identity, resource_name.clone()));
-        self.names.set_instance_target(
-            name,
-            ResourceClause::Named {
-                binding: binding.clone(),
-                resource: Box::new(resource.clone()),
-            },
-        );
+        let target = ResourceClause::Named {
+            binding: binding.clone(),
+            resource: Box::new(resource.clone()),
+        };
+        if unnamed {
+            self.names
+                .set_unnamed_instance_target(binding.instance()?, target);
+        } else {
+            self.names
+                .bind_instance(name.clone(), (identity, resource_name.clone()));
+            self.names.set_instance_target(name, target);
+        }
         // Like any fold, a construction may prove the body facts it leaves
         // open with `by` or `requires` entries.
         self.parse_step_proof(ProofTactic::FoldResource(ResourceClause::Named {
@@ -12361,6 +12425,7 @@ impl Parser {
             .bind_instance(name.clone(), (identity, resource_name.clone()));
         let target = ResourceClause::Named {
             binding: ResourceInstanceBinding {
+                unnamed: false,
                 name: name.clone(),
                 identity,
                 children: vec![],
@@ -17420,6 +17485,28 @@ impl Parser {
             return Ok(ContractExpression::ResourceCount(Box::new(resource)));
         }
 
+        if let Some((receiver, width)) = self.object_resource_field_selector() {
+            let owner = rust_trait_objects::object_resource_spelling(receiver);
+            if let Some((identity, resource_name)) =
+                self.names.resource_bindings.get(&owner).cloned()
+            {
+                self.position += width + 1;
+                let field = self.expect_ident("object resource field")?;
+                return Ok(ContractExpression::ResourceField(ResourceFieldAccess {
+                    owner,
+                    resource_name,
+                    identity: identity
+                        .instance()
+                        .ok_or_else(|| self.error("an object resource must be an instance"))?
+                        .into(),
+                    children: vec![],
+                    field,
+                    field_index: 0,
+                    click_type: None,
+                }));
+            }
+        }
+
         if matches!(self.peek(), Some(Token::Ident(_))) && self.peek_next() == Some(&Token::LParen)
         {
             let (name, arguments) = self.parse_call_arguments("function name")?;
@@ -18541,6 +18628,39 @@ impl Parser {
                 format!("expected `{expected}`, got {}", token.describe()),
             )),
             None => Err(self.error_at(at, format!("expected `{expected}`, got end of input"))),
+        }
+    }
+
+    /// A receiver's modeled resource, or the distinguished resource slot in
+    /// the contract of a pack or unpack call.
+    fn object_resource_selector(&self) -> Option<(Option<&str>, usize)> {
+        if self.peek_ident() != Some(rust_trait_objects::OBJECT_RESOURCE)
+            || self.peek_next() != Some(&Token::LParen)
+        {
+            return None;
+        }
+        match (
+            self.tokens.get(self.position + 2),
+            self.tokens.get(self.position + 3),
+        ) {
+            (Some(Token::RParen), _) => Some((None, 3)),
+            (Some(Token::Ident(receiver)), Some(Token::RParen)) => Some((Some(receiver), 4)),
+            _ => None,
+        }
+    }
+
+    fn object_resource_field_selector(&self) -> Option<(Option<&str>, usize)> {
+        self.object_resource_selector()
+            .filter(|(_, width)| self.tokens.get(self.position + width) == Some(&Token::Dot))
+    }
+
+    fn expect_resource_binder(&mut self, expected: &str) -> Result<String, ClickError> {
+        if let Some((receiver, width)) = self.object_resource_selector() {
+            let spelling = rust_trait_objects::object_resource_spelling(receiver);
+            self.position += width;
+            Ok(spelling)
+        } else {
+            self.expect_ident(expected)
         }
     }
 

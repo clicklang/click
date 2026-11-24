@@ -562,6 +562,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                         | ProofTactic::Solve
                         | ProofTactic::Normalize
                         | ProofTactic::NormalizeUsing(_)
+                        | ProofTactic::CompatibilityNormalize(_)
                 ) {
                     // The harmless closer checks nothing: its expansion is
                     // empty.

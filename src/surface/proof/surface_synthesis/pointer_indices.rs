@@ -168,7 +168,7 @@ mod tests {
     fn load_free_reader_keeps_existing_opaque_and_guard_policy() {
         let _session = VerificationSession::enter();
         let _scope = SurfaceSynthesisScope::enter();
-        let load = MachineTerm::MemoryLoad(
+        let load = MachineTerm::read_named(
             crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(SymbolicMemory::new()))),
             Box::new(Address::symbolic(Variable(1014000))),
             crate::kernel::LoadKind::Int32,

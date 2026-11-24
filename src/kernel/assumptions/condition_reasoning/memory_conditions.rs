@@ -98,7 +98,7 @@ impl PureFactContext {
                     MachineTerm::MemoryLoad(_, left_pointer, left_kind),
                     MachineTerm::MemoryLoad(_, right_pointer, right_kind),
                 ) => {
-                    left_pointer == right_pointer
+                    left_pointer.address() == right_pointer.address()
                         && left_kind == right_kind
                         && crate::kernel::explicit_atomic_equality_from_memory_derivations(
                             left, right, self,
@@ -515,14 +515,16 @@ impl PureFactContext {
             return None;
         }
         match kind {
-            LoadKind::Int8 => Some(memory.symbolic_int8_load(pointer)),
-            LoadKind::UInt8 => Some(memory.symbolic_uint8_load(pointer)),
-            LoadKind::Int16 => Some(memory.symbolic_int16_load(pointer)),
-            LoadKind::UInt16 => Some(memory.symbolic_uint16_load(pointer)),
-            LoadKind::Int32 => Some(memory.symbolic_int32_load(pointer)),
-            LoadKind::UInt32 => Some(memory.symbolic_uint32_load(pointer)),
+            LoadKind::Int8 => Some(memory.symbolic_int8_load(None, pointer)),
+            LoadKind::UInt8 => Some(memory.symbolic_uint8_load(None, pointer)),
+            LoadKind::Int16 => Some(memory.symbolic_int16_load(None, pointer)),
+            LoadKind::UInt16 => Some(memory.symbolic_uint16_load(None, pointer)),
+            LoadKind::Int32 => Some(memory.symbolic_int32_load(None, pointer)),
+            LoadKind::UInt32 => Some(memory.symbolic_uint32_load(None, pointer)),
             // A value of abstract type's stand-in is the 64-bit carrier.
-            LoadKind::Bits64 | LoadKind::Abstract(_) => Some(memory.symbolic_int64_load(pointer)),
+            LoadKind::Bits64 | LoadKind::Abstract(_) => {
+                Some(memory.symbolic_int64_load(None, pointer))
+            }
             LoadKind::Int128 => {
                 memory.symbolic_wide_integer_load(pointer, MachineIntegerType::Int128)
             }
@@ -559,7 +561,7 @@ mod tests {
             );
             (
                 MachineTerm::Variable(variable),
-                MachineTerm::MemoryLoad(
+                MachineTerm::read_named(
                     ProgramPoint::at(&memory),
                     Box::new(pointer),
                     LoadKind::Int32,

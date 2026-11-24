@@ -230,7 +230,7 @@ struct CarrierVariables {
     budgeted: bool,
     work_exhausted: bool,
     registered_loads: BTreeSet<Variable>,
-    pointer_loads: BTreeSet<crate::kernel::PointerLoadId>,
+    pointer_loads: BTreeSet<crate::kernel::Load>,
     pointer_applications: BTreeSet<u64>,
     shared_machine_operands: BTreeSet<u64>,
     mathematical_integers: BTreeSet<u64>,
@@ -954,11 +954,8 @@ fn collect_address_base_carriers(block: &AddressBase, variables: &mut CarrierVar
         }
         // A loaded pointer carries whatever its defining read's address
         // carries, as a registered load variable's offset does.
-        AddressBase::LoadedPointer(identity) if variables.pointer_loads.insert(*identity) => {
-            if let Some((_, address)) = crate::kernel::eval::registered_pointer_load(*identity) {
-                collect_pointer_carriers(&address, variables);
-                if variables.exhausted() {}
-            }
+        AddressBase::Load(load) if variables.pointer_loads.insert(load.clone()) => {
+            collect_pointer_carriers(load.cell(), variables);
         }
         _ => {}
     }
@@ -1983,7 +1980,7 @@ pub(crate) struct TermRewrite<'a> {
     integer_cache: HashMap<(u64, u64, bool, bool), IntegerTerm>,
     fold_integer_bridge: KernelTermExport,
     pointer_application_cache: HashMap<(u64, u64, bool, bool), AddressBase>,
-    pointer_origin_cache: HashMap<(PointerLoadId, u64, bool, bool), AddressBase>,
+    pointer_origin_cache: HashMap<(crate::kernel::Load, u64, bool, bool), AddressBase>,
     scope_renaming_max: u64,
     integer_body_summaries: crate::kernel::prelude::RetainedIntegerScopeSummaries,
     integer_variables: Option<IntegerVariableRewrite<'a>>,
@@ -2233,7 +2230,11 @@ impl<'a> TermRewrite<'a> {
                     unreachable!()
                 };
                 reads.insert(
-                    (memory.shared_memory().arena_id(), *pointer, kind),
+                    (
+                        memory.shared_memory().arena_id(),
+                        Address::from(pointer),
+                        kind,
+                    ),
                     (value, dependencies),
                 );
             } else if let MachineTerm::Variable(variable) = source {
@@ -3296,12 +3297,23 @@ impl<'a> TermRewrite<'a> {
         let mut seen = BTreeSet::new();
         for term in terms {
             match term {
+                Term::Condition(condition)
+                    if matches!(
+                        condition.root().map(KernelTerm::node),
+                        Some(KernelTermNode::IntegerCompare { arguments, .. })
+                            if arguments.iter().all(|root| self.can_rewrite_exact_observation(root))
+                    ) => {}
                 Term::Condition(condition) => {
                     collect_stored_condition_carriers(condition, &mut variables)
                 }
                 Term::Bitvector32(value) => {
                     collect_bitvector_carriers(value.native_compat(), &mut variables)
                 }
+                // This exact rewrite does not enter binders or freshen names.
+                Term::Integer(value)
+                    if value
+                        .root()
+                        .is_some_and(|root| self.can_rewrite_exact_observation(root)) => {}
                 Term::Integer(value) => {
                     if let Some(root) = value.root().filter(|root| root.is_mathematical_integer()) {
                         collect_mathematical_integer_carriers(root, &mut variables);
@@ -3656,7 +3668,7 @@ impl<'a> TermRewrite<'a> {
                 }
             }
             Proposition::ConditionIs(condition, value) => {
-                if let Some(condition) = self.rewrite_mathematical_comparison(condition) {
+                if let Some(condition) = self.rewrite_stored_integer_comparison(condition) {
                     return Proposition::condition_is(condition, *value);
                 }
                 // A closed float predicate has no occurrence of the Integer
@@ -3862,7 +3874,7 @@ impl<'a> TermRewrite<'a> {
             Term::Integer(v) => Term::Integer(self.stored_integer(v)),
             Term::ProgramValue(v) => Term::ProgramValue(self.value(v.native_compat()).into()),
             Term::Condition(v) => Term::Condition(
-                self.rewrite_mathematical_comparison(v)
+                self.rewrite_stored_integer_comparison(v)
                     .unwrap_or_else(|| self.condition(v.native_compat()).into()),
             ),
             Term::PointerOffset(v) => Term::PointerOffset(self.contract_offset(v)),
@@ -3882,24 +3894,36 @@ impl<'a> TermRewrite<'a> {
             result
         }
     }
-    fn rewrite_mathematical_comparison(
+    fn rewrite_stored_integer_comparison(
         &mut self,
         condition: &StoredConditionTerm,
     ) -> Option<StoredConditionTerm> {
-        let (operator, arguments) = mathematical_comparison(condition)?;
-        if !self.retained_mathematical_rewrite() {
+        let KernelTermNode::IntegerCompare {
+            operator,
+            arguments,
+        } = condition.root()?.node()
+        else {
+            return None;
+        };
+        let mathematical = self.retained_mathematical_rewrite()
+            && arguments.iter().all(KernelTerm::is_mathematical_integer);
+        if !mathematical
+            && !arguments
+                .iter()
+                .all(|root| self.can_rewrite_exact_observation(root))
+        {
             return None;
         }
-        if !self.source_variables_reserved {
+        if mathematical && !self.source_variables_reserved {
             let mut variables = self.new_carrier_variables();
             collect_stored_condition_carriers(condition, &mut variables);
             self.reserve_source_variables(variables);
         }
         self.visit();
         let rewritten = (|| {
-            let left = self.rewrite_stored_mathematical_integer(&arguments[0])?;
-            let right = self.rewrite_stored_mathematical_integer(&arguments[1])?;
-            KernelTerm::integer_comparison(operator, [left, right]).ok()
+            let left = self.rewrite_stored_integer_root(&arguments[0])?;
+            let right = self.rewrite_stored_integer_root(&arguments[1])?;
+            KernelTerm::integer_comparison(*operator, [left, right]).ok()
         })();
         match rewritten {
             Some(root) => StoredConditionTerm::from_root(root),
@@ -3919,26 +3943,27 @@ impl<'a> TermRewrite<'a> {
     }
 
     fn stored_integer(&mut self, value: &StoredIntegerTerm) -> StoredIntegerTerm {
-        if let Some(root) = value
-            .root()
-            .filter(|root| root.is_mathematical_integer() && self.retained_mathematical_rewrite())
-        {
-            if !self.source_variables_reserved {
+        if let Some(root) = value.root() {
+            let mathematical =
+                root.is_mathematical_integer() && self.retained_mathematical_rewrite();
+            if mathematical && !self.source_variables_reserved {
                 let mut variables = self.new_carrier_variables();
                 collect_mathematical_integer_carriers(root, &mut variables);
                 self.reserve_source_variables(variables);
             }
-            if let Some(result) = self.rewrite_stored_mathematical_integer(root) {
-                return StoredIntegerTerm::from_root(result).expect("Integer rewrite result");
-            }
-            if self.refusal_status().is_some() {
-                return IntegerTerm::constant_i64(0).into();
+            if mathematical || self.can_rewrite_exact_observation(root) {
+                if let Some(result) = self.rewrite_stored_integer_root(root) {
+                    return StoredIntegerTerm::from_root(result).expect("Integer rewrite result");
+                }
+                if self.refusal_status().is_some() {
+                    return IntegerTerm::constant_i64(0).into();
+                }
             }
         }
         self.integer(value.native_compat()).into()
     }
 
-    fn rewrite_stored_mathematical_integer(&mut self, root: &KernelTerm) -> Option<KernelTerm> {
+    fn rewrite_stored_integer_root(&mut self, root: &KernelTerm) -> Option<KernelTerm> {
         self.visit();
         self.shared_fold_integer_child(root)
     }
@@ -5471,7 +5496,7 @@ impl<'a> TermRewrite<'a> {
             && !self.source_disabled
             && p.base == from.base
             && from.offset == AddressOffset::Constant(0)
-            && matches!(from.base, AddressBase::LoadedPointer(_))
+            && matches!(from.base, AddressBase::Load(_))
         {
             self.changed = true;
             let displacement = self.offset(&p.offset);
@@ -6725,8 +6750,11 @@ impl<'a> TermRewrite<'a> {
         if let Some(reads) = self.comparison_reads
             && let Some(MachineTerm::MemoryLoad(memory, pointer, kind)) =
                 crate::kernel::eval::viewed_as_memory_load(v)
-            && let Some((replacement, variables)) =
-                reads.get(&(memory.shared_memory().arena_id(), *pointer, kind))
+            && let Some((replacement, variables)) = reads.get(&(
+                memory.shared_memory().arena_id(),
+                Address::from(pointer),
+                kind,
+            ))
             && !variables.is_bound_in(&self.scope)
         {
             self.changed = true;
@@ -7012,7 +7040,7 @@ impl<'a> TermRewrite<'a> {
                     && memory.has_certified_read_view()
                 {
                     return crate::kernel::eval::scalar_read_for_exact_cell_at(
-                        &memory.clone().for_exact_read(),
+                        &memory.point().clone().for_exact_read(),
                         &rewritten,
                         *kind,
                         bytes,

@@ -38,7 +38,7 @@ one creating event produced, such as a variable instance, a `malloc` or
 
 A provenance whose creation the kernel did not see, such as a parameter or a
 pointer loaded from memory, is opaque. It is named by where the pointer came
-from, as `ExternalObject` and `LoadedPointer` names are today. Two opaque
+from, as `ExternalObject` and `AddressBase::Load` names are today. Two opaque
 provenances may or may not be the same allocation.
 
 ### Types belong to terms, not values

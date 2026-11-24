@@ -145,7 +145,7 @@ mod tests {
     fn inventory_fact_kinds_show_operands_instead_of_opaque_counts() {
         let p = Address::symbolic(Variable(986_700));
         let memory = SymbolicMemory::new();
-        let word = MachineTerm::MemoryLoad(
+        let word = MachineTerm::read_named(
             crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
             Box::new(p.clone()),
             LoadKind::Bits64,
@@ -276,7 +276,7 @@ mod tests {
             crate::kernel::intern_memory(SymbolicMemory::new().with_block("trace_changed", 4));
         let load = |memory, kind| {
             Term::Bitvector32(
-                MachineTerm::MemoryLoad(memory, Box::new(address.clone()), kind).into(),
+                MachineTerm::read_named(memory, Box::new(address.clone()), kind).into(),
             )
         };
         let fact = Proposition::Equal(

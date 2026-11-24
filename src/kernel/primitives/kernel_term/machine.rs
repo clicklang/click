@@ -648,28 +648,14 @@ impl KernelTermImport {
                         // This is a typed input descriptor, not a boxed value
                         // argument. Keep its existing shared operand and exact
                         // envelope through native field storage/output.
-                        KernelTerm::legacy_at(
-                            argument.clone(),
-                            LegacyIdentity::ExactApplicationArgument {
-                                application: application.clone(),
-                                payload: application.payload_id(),
-                                index,
-                            },
-                        )
+                        KernelTerm::native_call_argument(application, index, true)
                     } else {
                         self.argument(argument)
                     }
                 } else if let Some(root) = application.common_argument(index) {
                     root
                 } else {
-                    KernelTerm::legacy_at(
-                        argument.clone(),
-                        LegacyIdentity::ExactApplicationArgument {
-                            application: application.clone(),
-                            payload: application.payload_id(),
-                            index,
-                        },
-                    )
+                    KernelTerm::native_call_argument(application, index, true)
                 }
             })
             .collect();

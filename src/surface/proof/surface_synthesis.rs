@@ -4615,15 +4615,6 @@ fn raise_kernel_term_dispatch(
             state,
             bound_variables,
         )?,
-        Node::LegacyBool(payload) => {
-            let crate::kernel::PureFunctionArgument::Value(ProgramValue::Bool(
-                MachineTerm::BoolCast { value, .. },
-            )) = payload.value()
-            else {
-                return None;
-            };
-            synthesize_surface_bool(value, parameter_binding, state, bound_variables)?
-        }
         Node::PointerEqual(_) | Node::AddressEqual { .. } | Node::AddressOffsetEqual { .. } => {
             raise_pointer_comparison(term, parameter_binding, state, bound_variables)?
         }
@@ -4662,9 +4653,11 @@ fn raise_kernel_term_dispatch(
         }
         Node::ProgramParameter { .. } => unreachable!("parameter envelope was peeled"),
         Node::PointerCall { call, .. } => recurse(call)?,
+        // An array argument is its pointer, spelled as any pointer argument
+        // is (a proof name, or `0` for null), read at the view's state.
         Node::ArrayReference { point, pointer, .. } => {
             let raise = |selected: &ExecutionState| {
-                raise_kernel_term(pointer, parameter_binding, selected, bound_variables)
+                raise_call_argument(pointer, parameter_binding, selected, bound_variables)
             };
             synthesize_at_read_origin(point, state, raise)?
         }
@@ -5536,11 +5529,11 @@ fn synthesize_point_read(
 /// Whether a place declared at `declared` names a read decoded at
 /// `value_type`. A pointer load nested in an address carries no type of its
 /// own (`design/loads.md`, "Raising"): asked at Click's untyped `Pointer`,
-/// any object-pointer declaration names it, since every object-pointer type
-/// decodes the cell to the same load.
+/// any pointer declaration names it, object or function, since one cell at
+/// one version point is one load whatever type decodes it.
 fn place_names_read_at(value_type: ProgramType, declared: ProgramType) -> bool {
     if value_type == ProgramType::Pointer {
-        declared.is_object_pointer()
+        crate::kernel::PointerLoadCategory::of_type(declared).is_some()
     } else {
         declared == value_type
     }
@@ -5563,6 +5556,8 @@ fn spelled_load_type(expression: &ContractExpression) -> Option<ProgramType> {
 
 /// The pointee type of a pointer place's declaration, when `address` is a
 /// bare parameter or local: `*pp` with `int32 **pp` reads an `int32 *`.
+/// A local shadows a parameter of the same name, as in C, so the state's
+/// locals are asked first.
 fn declared_pointee_of_named_pointer(
     address: &ContractExpression,
     parameter_binding: ParameterBinding<'_>,
@@ -5571,17 +5566,22 @@ fn declared_pointee_of_named_pointer(
     let ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) = address else {
         return None;
     };
-    let declared = parameter_binding
-        .parameters
-        .iter()
-        .find(|parameter| {
-            crate::surface::surface_parameter_binding(parameter.binding_name()) == *name
-        })
-        .map(|parameter| parameter.interface_type().to_kernel_type())
-        .or_else(|| Some(state.locals().get(name)?.program_type()))?;
+    let declared = state
+        .locals()
+        .get(name)
+        .map(|local| local.program_type())
+        .or_else(|| {
+            parameter_binding
+                .parameters
+                .iter()
+                .find(|parameter| {
+                    crate::surface::surface_parameter_binding(parameter.binding_name()) == *name
+                })
+                .map(|parameter| parameter.interface_type().to_kernel_type())
+        })?;
     declared
         .pointee_type()
-        .filter(|pointee| pointee.is_object_pointer())
+        .filter(|pointee| crate::kernel::PointerLoadCategory::of_type(*pointee).is_some())
 }
 
 /// [`synthesize_point_read`], with the type its place spells the read at:
@@ -5646,10 +5646,27 @@ fn synthesize_spelled_point_read(
         };
         Some((synthesize_memory_load(address, load_type), load_type))
     };
+    // The version the place's own read selects at `state`, read at the type
+    // it is spelled at: an untyped nested load is spelled at its place's
+    // declared type, object or function pointer, and that read must lower to
+    // this load.
+    let selects_at = |state: &ExecutionState, ty: ProgramType| {
+        state
+            .program_point()
+            .ordinary_typed_version(pointer, ty)
+            .as_ref()
+            == Some(version)
+    };
     let expression = |state: &ExecutionState| {
         let (expression, ty) = place(state)?;
+        if untyped && !version.is_exact_read() && !selects_at(state, ty) {
+            return None;
+        }
+        // The spelling depends on the load's read key, not on which selection
+        // built it first: where the place's ordinary read at `state` is this
+        // load, it is spelled plainly, and `exact` only where it is not.
         Some((
-            if version.is_exact_read() {
+            if version.is_exact_read() && !selects_at(state, ty) {
                 ContractExpression::Exact(Box::new(expression))
             } else {
                 expression
@@ -5661,8 +5678,16 @@ fn synthesize_spelled_point_read(
         let point = state.program_point();
         if version.is_exact_read() {
             point.names_exact_read(version)
+        } else if untyped {
+            // A nested load has no decoding of its own; a version selected
+            // for either pointer category may be the one its place names.
+            selects_at(state, value_type)
+                || selects_at(
+                    state,
+                    ProgramType::FunctionPointer(crate::kernel::CallbackSignature::UNSPECIFIED),
+                )
         } else {
-            point.ordinary_typed_version(pointer, value_type).as_ref() == Some(version)
+            selects_at(state, value_type)
         }
     };
     if selects_version(state) {
@@ -5710,11 +5735,15 @@ fn scalar_read_in_state(read: &MachineTerm, state: &ExecutionState) -> Option<Ma
     let MachineTerm::MemoryLoad(_, pointer, kind) = read else {
         return None;
     };
-    let memory = crate::kernel::intern_memory_ref(state.memory());
-    let selected =
-        crate::kernel::canonical_form_of_load(memory.clone(), pointer.as_ref().clone(), *kind);
-    (selected == *read)
-        .then(|| MachineTerm::memory_read(memory.clone(), pointer.as_ref().clone(), *kind))
+    let site = state.program_point();
+    let selected = crate::kernel::canonical_form_of_load_at(&site, pointer.as_ref().clone(), *kind);
+    (selected == *read).then(|| {
+        MachineTerm::read_named(
+            crate::kernel::ProgramPoint::at_read_site(site.shared_memory(), &site),
+            pointer.as_ref().clone(),
+            *kind,
+        )
+    })
 }
 
 // Unsigned division and remainder use the usual C conversion of both
@@ -5802,7 +5831,8 @@ fn bitvector_spells_uint32(
 }
 
 /// A population's count at function entry, which the kernel holds as an
-/// opaque symbol, is spelled `old(count(R(anchor, _, ...)))`. A fact the
+/// opaque symbol, is spelled `old(count(R(anchor, _, ...)))`; one a lock
+/// acquired is spelled `at(<the lock's region>.exit, count(...))`. A fact the
 /// kernel records about it, such as the bound a consumed member places on
 /// it, then has a source spelling and can be cited.
 fn synthesize_population_entry_count(
@@ -5832,18 +5862,31 @@ fn synthesize_population_entry_count(
             wildcards,
         ))
         .collect();
-    Some(ContractExpression::Old(Box::new(
-        ContractExpression::ResourceCount(Box::new(ResourceClause::Declared {
-            type_schema: None,
-            resource_type_arguments: Vec::new(),
-            resource_arguments: Vec::new(),
-            access: ResourceAccessMode::Own,
-            kind: ResourceKind::Token,
-            name: population.family().to_string(),
-            arguments,
-            parameter_types: Vec::new(),
-        })),
-    )))
+    let count = ContractExpression::ResourceCount(Box::new(ResourceClause::Declared {
+        type_schema: None,
+        resource_type_arguments: Vec::new(),
+        resource_arguments: Vec::new(),
+        access: ResourceAccessMode::Own,
+        kind: ResourceKind::Token,
+        name: population.family().to_string(),
+        arguments,
+        parameter_types: Vec::new(),
+    }));
+    // A total a lock acquired is the count once the lock returns, where its
+    // control holds the population's authority: the exit of the region the
+    // lock started at.
+    if let Some(point) = state.population_count_acquired_point(*variable) {
+        return SYNTHESIS_RECORDED_POINTS.with(|slot| {
+            Some(ContractExpression::At {
+                selector: slot
+                    .borrow()
+                    .as_ref()?
+                    .acquired_total_point(*variable, point)?,
+                expression: Box::new(count),
+            })
+        });
+    }
+    Some(ContractExpression::Old(Box::new(count)))
 }
 
 fn synthesize_call_capture(
@@ -6287,8 +6330,8 @@ fn synthesize_surface_bitvector(
                     bound_variables,
                 );
             }
-            let read = crate::kernel::canonical_form_of_load(
-                memory.shared_memory().clone(),
+            let read = crate::kernel::canonical_form_of_load_at(
+                memory,
                 kernel_pointer.as_ref().clone(),
                 *kind,
             );
@@ -7731,7 +7774,7 @@ fn pointer_read_address_in_state(pointer: &Address, state: &ExecutionState) -> O
             let (_, address) = crate::kernel::registered_load_for_variable(variable)?;
             registered_load_in_state(variable, state).map(|_| address)
         }
-        AddressBase::LoadedPointer(_) => {
+        AddressBase::Load(_) => {
             let read = pointer.as_loaded_value()?;
             // A retained read always names its exact defining state,
             // including a post-store read whose canonical value is now known.
@@ -8191,7 +8234,7 @@ fn synthesize_pointer_equality_operand(
     // and provenance agree needs an explicit state only for a historical read.
     let read_source = value.complete_read_source().or_else(|| {
         let read = address_read.as_ref()?;
-        (read.category.is_none()
+        (!read.identity.is_point_named()
             && value.provenance() == value.address()
             && read.defining_memory
                 != crate::kernel::intern_memory_ref(state.memory()).unchanged_bytes_source())
@@ -8245,11 +8288,10 @@ fn synthesize_pointer_equality_operand(
             })
         });
     }
-    // A point-named load is one value at every object-pointer type; the
-    // value being raised is this occurrence, and its own type is the type
-    // it was decoded at.
+    // A point-named load is one load at every pointer type; the value
+    // being raised is this decoding of it, at the type it was decoded at.
     if let Some(read) = address_read
-        && read.category.is_some()
+        && read.identity.is_point_named()
     {
         return synthesize_point_read(
             &read.point,
@@ -8366,10 +8408,10 @@ fn synthesize_surface_pointer_expression(
     }
     // A pointer load nested in an address has no type of its own: it raises
     // through the place that names it (field, static slot, parameter), at
-    // that declaration's type, or as `load<Pointer>(cell)` where none does
-    // (`design/loads.md`, "Raising").
+    // that declaration's type, object or function pointer, or as
+    // `load<Pointer>(cell)` where none does (`design/loads.md`, "Raising").
     if let Some(read) = pointer.as_loaded_value()
-        && read.category == Some(crate::kernel::PointerLoadCategory::Object)
+        && read.identity.is_point_named()
     {
         let (base, spelled_type) = synthesize_spelled_point_read(
             &read.point,
@@ -8407,6 +8449,9 @@ fn synthesize_surface_pointer_expression(
             | AddressOffset::Int64Scaled { byte_width, .. } => *byte_width,
             _ => return None,
         };
+        // `read.displacement` is the pointer's offset from its load base,
+        // the same offset `element_index_from_base_with_width` divides by
+        // the stride below: the load base is the undisplaced `origin`.
         let stride_type = match stride {
             1 => ProgramType::UInt8Pointer,
             2 => ProgramType::UInt16Pointer,
@@ -8426,7 +8471,7 @@ fn synthesize_surface_pointer_expression(
         AddressOffset::Int32Scaled { byte_width: 1, .. }
             | AddressOffset::Int64Scaled { byte_width: 1, .. }
     ) && let Some(read) = pointer.as_loaded_value()
-        && read.category.is_none()
+        && !read.identity.is_point_named()
     {
         // The raw read's address carrier has no pointee type. Its stored
         // displacement is in bytes, so reproduce it with a byte pointer.
@@ -8557,9 +8602,6 @@ fn synthesize_copied_parameter_pointer(
         let field = layout.fields().iter().find(|field| {
             let field_type = field.program_type();
             field_type.is_pointer()
-                && read.category.is_none_or(|category| {
-                    crate::kernel::PointerLoadCategory::of_type(field_type) == Some(category)
-                })
                 && object.offset_by_layout(field.offset()) == read.defining_address
         })?;
         let value_type = field.program_type();
@@ -8682,7 +8724,7 @@ fn recorded_point_of_pointer_read(
     }
     let memory = match &pointer.base {
         AddressBase::Symbolic(variable) => crate::kernel::registered_load_for_variable(variable)?.0,
-        AddressBase::LoadedPointer(_) => pointer.as_loaded_value()?.defining_memory,
+        AddressBase::Load(_) => pointer.as_loaded_value()?.defining_memory,
         _ => return None,
     };
     if pointer_read_address_in_state(pointer, state).is_some() {

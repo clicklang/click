@@ -811,7 +811,7 @@ fn aggregate_copy_result_preserves_unrelated_entry_byte_history() {
     let input = SymbolicMemory::local_pointer("input-byte");
     let before = SymbolicMemory::new().with_block(input.base.clone(), 1);
     let read = |memory: &SymbolicMemory| {
-        MachineTerm::MemoryLoad(
+        MachineTerm::read_named(
             ProgramPoint::at(&(crate::kernel::intern_memory(memory.clone()))),
             Box::new(input.clone()),
             LoadKind::UInt8,

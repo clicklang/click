@@ -43,7 +43,7 @@ mod tests {
                 let _session = crate::kernel::VerificationSession::enter();
                 let current = SymbolicMemory::new();
                 let memory = intern_memory_ref(&current);
-                let read = MachineTerm::MemoryLoad(
+                let read = MachineTerm::read_named(
                     ProgramPoint::at(&memory),
                     Box::new(Address::symbolic(Variable(991901))),
                     LoadKind::Bits64,

@@ -777,6 +777,13 @@ predicate docs_use_count(p: int32[], lo: int32, hi: int32, x: int32) {
     permutation::count(p, lo, hi, x) == permutation::count(p, lo, hi, x)
 }
 
+theorem docs_use_two_indicator_counts_commute(a: Bool, b: Bool) {
+    ensures (0 + (if a { 1 } else { 0 }) + (if b { 1 } else { 0 })) ==
+            (0 + (if b { 1 } else { 0 }) + (if a { 1 } else { 0 })) by {
+        apply(permutation::two_indicator_counts_commute(a, b));
+    }
+}
+
 predicate docs_use_permutation(a: int32[], b: int32[], lo: int32, hi: int32) {
     permutation::permutation(a, b, lo, hi)
 }

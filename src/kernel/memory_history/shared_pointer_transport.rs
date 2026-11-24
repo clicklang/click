@@ -94,11 +94,10 @@ impl<'a> Transport<'a> {
     fn address(&mut self, source: &SharedAddress) -> Option<SharedAddress> {
         let node = source.node();
         if self.reconstructed_word
-            && let AddressBase::LoadedPointer(identity) = node.base.native_atom()
+            && let AddressBase::Load(load) = node.base.native_atom()
         {
-            let (_, defining_address) = crate::kernel::eval::registered_pointer_load(*identity)?;
             let after = crate::kernel::intern_memory_ref(self.after);
-            let target = Address::loaded_value(&after, &defining_address);
+            let target = Address::loaded_value(&after, load.cell());
             let before = Address {
                 base: node.base.native_atom().clone(),
                 offset: AddressOffset::Constant(0),
@@ -229,7 +228,7 @@ mod tests {
             .store(field.clone(), ProgramValue::Int32(MachineTerm::constant(3)));
         let context = PureFactContext::new();
         for wide in [None, Some(false), Some(true)] {
-            let load = MachineTerm::MemoryLoad(
+            let load = MachineTerm::read_named(
                 ProgramPoint::at(&before),
                 Box::new(field.clone()),
                 if wide.is_some() {
@@ -324,7 +323,7 @@ mod tests {
         )
         .with_bounds(Some(SubobjectBounds {
             start: field.clone(),
-            width: MachineTerm::MemoryLoad(
+            width: MachineTerm::read_named(
                 ProgramPoint::at(&before),
                 Box::new(field),
                 LoadKind::Int32,
@@ -348,7 +347,7 @@ mod tests {
             .clone()
             .store(other, ProgramValue::Int32(MachineTerm::constant(3)));
         let loaded = Arc::new(Address::loaded_value(&before, &field));
-        let base = Address::from_integer_address(MachineTerm::MemoryLoad(
+        let base = Address::from_integer_address(MachineTerm::read_named(
             ProgramPoint::at(&before),
             Box::new(field),
             LoadKind::Bits64,
@@ -389,7 +388,7 @@ mod tests {
             .store(other, ProgramValue::Int32(MachineTerm::constant(3)));
         let loaded = Arc::new(Address::loaded_value(&before, &field));
         let source = Pointer::new(
-            Address::from_integer_address(MachineTerm::MemoryLoad(
+            Address::from_integer_address(MachineTerm::read_named(
                 ProgramPoint::at(&before),
                 Box::new(field.clone()),
                 LoadKind::Bits64,

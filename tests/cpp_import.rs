@@ -8184,7 +8184,26 @@ fn unsigned_positive_divisor_contract_expands_and_reverifies() {
     check_first_claim_certificate(
         &project,
         &import,
-        "verifying \"unsigned.cpp\"; uint64 div64(uint64 a, uint64 b) { requires b > 0u64; ensures result == a / b; }",
+        r#"verifying "unsigned.cpp";
+            uint64 div64(uint64 a, uint64 b) {
+                requires b > 0u64;
+                ensures result == a / b;
+            } by {
+                have b != 0u64 by {
+                    if b == 0u64 {
+                        have not (b > 0u64) by {
+                            rewrite(b, 0u64);
+                            known();
+                        }
+                        contradiction(b > 0u64);
+                    } else {
+                        known();
+                    }
+                }
+                step();
+                solve();
+            }
+        "#,
     );
 }
 
@@ -20211,7 +20230,7 @@ fn bound_class_object_call_obligations_expand_and_cold_replay() {
         fs::remove_file(&project.exporter).unwrap();
         // Naming the pack's output is sufficient: the ordinary call-obligation
         // solver proves its model-field bounds, without an extra written have.
-        assert!(source.contains("__object_object: packed"));
+        assert!(source.contains("object_resource(): packed"));
         assert!(!source.contains("have "));
         let sidecar = project.directory.join("object.click");
         fs::write(&sidecar, &source).unwrap();
@@ -20225,7 +20244,7 @@ fn bound_class_object_call_obligations_expand_and_cold_replay() {
         )
         .unwrap()
         .expect("the caller's written proof has a certificate");
-        assert!(expanded.contains("__object_object: packed"), "{expanded}");
+        assert!(expanded.contains("object_resource(): packed"), "{expanded}");
         let rewritten = parsed.with_entry_source(expanded.clone());
         let position = project_tactic_source_position(
             &rewritten,

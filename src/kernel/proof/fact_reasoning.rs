@@ -3286,7 +3286,7 @@ impl<'a> OriginsUnchanged<'a> {
                     right,
                     self.assumptions,
                 ))
-                || left_pointer == right_pointer
+                || left_pointer.address() == right_pointer.address()
                     && crate::kernel::explicit_atomic_equality_from_memory_derivations(
                         &left_load,
                         &right_load,

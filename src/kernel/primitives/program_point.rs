@@ -1427,7 +1427,12 @@ pub struct ProgramPoint {
 
 #[derive(Clone)]
 enum ReadSelection {
-    Legacy,
+    /// Named by its memory (`ReadKey::Memory`). When the point has no path
+    /// of its own, the read site: the point the read was made at, kept so a
+    /// later stage can select the read's version along that path
+    /// (`design/point-named-reads.md`, stage 1). It is no part of the
+    /// point's identity.
+    Legacy(Option<PathLink>),
     Exact,
     Entry,
     CallOutput,
@@ -1543,8 +1548,43 @@ impl ProgramPoint {
         Self {
             memory: memory.clone(),
             path: PathLink::default(),
-            read: ReadSelection::Legacy,
+            read: ReadSelection::Legacy(None),
         }
+    }
+
+    /// A legacy read of `memory` made at `site`: named by `memory`, as
+    /// [`ProgramPoint::at`] is, and recording `site`'s place on its path as
+    /// the read site ([`ProgramPoint::read_site`]). The site changes no
+    /// identity: legacy points compare by memory.
+    pub(crate) fn at_read_site(memory: &SharedMemory, site: &ProgramPoint) -> Self {
+        Self {
+            memory: memory.clone(),
+            path: PathLink::default(),
+            read: ReadSelection::Legacy(site.read_site().cloned()),
+        }
+    }
+
+    /// The point on a path a read through this point was made at: the
+    /// point's own path when it has one, else the read site a legacy read
+    /// recorded. `None` for a read built from a bare memory.
+    pub(crate) fn read_site(&self) -> Option<&PathLink> {
+        if self.path.id().is_some() {
+            return Some(&self.path);
+        }
+        match &self.read {
+            ReadSelection::Legacy(site) => site.as_ref(),
+            _ => None,
+        }
+    }
+
+    /// This point, recording `site`'s read site when it has none of its own.
+    pub(crate) fn with_read_site_of(mut self, site: &ProgramPoint) -> Self {
+        if self.read_site().is_none()
+            && let ReadSelection::Legacy(own) = &mut self.read
+        {
+            *own = site.read_site().cloned();
+        }
+        self
     }
 
     /// The point a `SymbolicMemory` value stands at, interning it first. Callers
@@ -1563,7 +1603,7 @@ impl ProgramPoint {
         Self {
             memory: shared,
             path,
-            read: ReadSelection::Legacy,
+            read: ReadSelection::Legacy(None),
         }
     }
 
@@ -1583,7 +1623,7 @@ impl ProgramPoint {
         Self {
             memory: shared,
             path,
-            read: ReadSelection::Legacy,
+            read: ReadSelection::Legacy(None),
         }
     }
 
@@ -1624,7 +1664,7 @@ impl ProgramPoint {
 
     /// The point in a read's key, whether selected exactly or as a version.
     pub(crate) fn read_version_id(&self) -> Option<ProgramPointId> {
-        if !matches!(self.read, ReadSelection::Legacy) {
+        if !matches!(self.read, ReadSelection::Legacy(_)) {
             self.id()
         } else {
             None
@@ -1689,6 +1729,11 @@ impl ProgramPoint {
     /// An exact read keeps the selected point even if another point has equal
     /// memory or supplies the cell's ordinary version.
     pub(in crate::kernel) fn for_exact_read(mut self) -> Self {
+        // A point with no path has no point to keep: an exact selection of it
+        // reads as a legacy one. Keep the legacy read site it recorded.
+        if self.id().is_none() {
+            return self;
+        }
         self.read = ReadSelection::Exact;
         self
     }
@@ -1696,7 +1741,16 @@ impl ProgramPoint {
     /// The same view identified by its memory, as an unselected point is.
     /// Reads through it still use the recorded path's cell versions.
     pub(in crate::kernel) fn for_legacy_read(mut self) -> Self {
-        self.read = ReadSelection::Legacy;
+        self.read = ReadSelection::Legacy(None);
+        self
+    }
+
+    /// This point selected as an indexed cell read, as an unwritten static
+    /// cell's entry version is: for tests that build one cell's load from
+    /// two selection kinds of one point.
+    #[cfg(test)]
+    pub(in crate::kernel) fn for_indexed_cell_read(mut self) -> Self {
+        self.read = ReadSelection::IndexedCell;
         self
     }
 
@@ -1722,7 +1776,7 @@ impl ProgramPoint {
             return Self {
                 memory: anchor.memory.clone(),
                 path: PathLink(Some(point), anchor.view.clone()),
-                read: ReadSelection::Legacy,
+                read: ReadSelection::Legacy(None),
             };
         }
         self.clone()
@@ -2021,7 +2075,7 @@ impl ProgramPoint {
         Self {
             memory: steps.first_base.clone(),
             path: before.clone(),
-            read: ReadSelection::Legacy,
+            read: ReadSelection::Legacy(None),
         }
         .unwritten_static_scalar_version(pointer, value_type)
     }
@@ -2137,7 +2191,7 @@ impl ProgramPoint {
                 && matches!(pointer.offset, AddressOffset::Constant(_))
                 && !ty.has_abstract_size());
         if let Some(category) = super::PointerLoadCategory::of_type(value_type) {
-            return self.indexed_pointer_version(pointer, category);
+            return self.indexed_pointer_version(pointer, Some(category));
         }
         if value_type == ProgramType::Bool || value_type.is_pointer() || indexed_algebraic {
             return self.indexed_version(pointer, value_type.byte_width(), |store| {
@@ -2154,14 +2208,18 @@ impl ProgramPoint {
     /// category answers it at any pointee type, while a store of the other
     /// category does not. A partial or overlapping store still ends the
     /// version by `indexed_version`'s extent check.
+    ///
+    /// With no category the question is about the cell's bytes, not a
+    /// decoding of them: a store of a pointer of either category answers.
     pub(crate) fn indexed_pointer_version(
         &self,
         pointer: &Address,
-        category: super::PointerLoadCategory,
+        category: Option<super::PointerLoadCategory>,
     ) -> Option<Self> {
         self.indexed_version(pointer, super::C_POINTER_BYTE_WIDTH, |store| {
             matches!(store, MemoryDerivation::Store { value, .. }
-                if super::PointerLoadCategory::of_type(value.program_type()) == Some(category))
+                if super::PointerLoadCategory::of_type(value.program_type())
+                    .is_some_and(|stored| category.is_none_or(|category| stored == category)))
         })
     }
 
@@ -2368,6 +2426,45 @@ mod tests {
         assert!(left.memory().pending_steps.is_none());
     }
 
+    /// A legacy read records where it was made, and the record is no part
+    /// of its identity: the read at a site is the same term as the read of
+    /// the same memory built from that memory alone, and a point rebuilt
+    /// from the read's point keeps the site.
+    #[test]
+    fn a_legacy_read_records_its_site_without_changing_its_term() {
+        let state = stored(&ExecutionState::default().with_memory(memory_holding(0)), 1);
+        let site = state.program_point();
+        let memory = site.shared_memory().clone();
+        let bare = ProgramPoint::at(&memory);
+        let sited = ProgramPoint::at_read_site(&memory, &site);
+        assert!(bare.read_site().is_none());
+        assert!(sited.read_site().is_some_and(|path| path.id() == site.id()));
+        assert_eq!(sited.read_key(), bare.read_key());
+        assert_eq!(sited, bare);
+        assert_eq!(
+            MachineTerm::read_named(sited.clone(), slot(), LoadKind::Int32),
+            MachineTerm::read_named(bare.clone(), slot(), LoadKind::Int32)
+        );
+        let rebuilt = ProgramPoint::at_read_site(&memory, &sited);
+        assert!(
+            rebuilt
+                .read_site()
+                .is_some_and(|path| path.id() == site.id())
+        );
+        assert!(
+            bare.clone()
+                .with_read_site_of(&site)
+                .read_site()
+                .is_some_and(|path| path.id() == site.id())
+        );
+        // A point with no path has no point for an exact selection to keep,
+        // so it keeps its read site, and its term is unchanged.
+        let exact = sited.clone().for_exact_read();
+        assert!(exact.read_site().is_some_and(|path| path.id() == site.id()));
+        assert_eq!(exact.read_key(), bare.read_key());
+        assert!(!exact.is_exact_read());
+    }
+
     /// A state set up by steps before its first point begins at the memory
     /// those steps started from, so a walk back can cross them.
     #[test]
@@ -2503,10 +2600,7 @@ mod tests {
             ProgramType::Int32Pointer,
             &pointer_slot,
         );
-        assert!(matches!(
-            pointer.address().base,
-            AddressBase::LoadedPointer(_)
-        ));
+        assert!(matches!(pointer.address().base, AddressBase::Load(_)));
         let declared = entry
             .clone()
             .with_memory(entry.memory().clone().with_block(slot().base, 4));
@@ -2542,10 +2636,7 @@ mod tests {
             ProgramType::Int32Pointer,
             &slot,
         );
-        assert!(matches!(
-            pointer.address().base,
-            AddressBase::LoadedPointer(_)
-        ));
+        assert!(matches!(pointer.address().base, AddressBase::Load(_)));
         assert!(
             point
                 .ordinary_typed_version(pointer.address(), ProgramType::Int32)
