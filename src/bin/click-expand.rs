@@ -1008,7 +1008,19 @@ int32 identity(int32 x) {
             .join("mdtests/normalize_using_reads_every_spelling_of_a_cited_premise.md");
         check(&guard_spellings, "integer_mirror.ensures_0").unwrap();
 
-        let hidden = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("mdtests/normalize_using.md");
+        let hidden = directory.path().join("nested.click");
+        fs::write(
+            &hidden,
+            r#"theorem nested(x: int32, y: int32) {
+    requires x < y;
+    requires y == 5;
+    ensures (if x < y { if y == 5 { 8 } else { 3 } } else { 0 }) == 8 by {
+        close() using { x < y; y == 5; };
+    }
+}
+"#,
+        )
+        .unwrap();
         let compatibility = check(&hidden, "nested.ensures_0").unwrap_err();
         assert!(
             compatibility.contains("used legacy normalization"),
