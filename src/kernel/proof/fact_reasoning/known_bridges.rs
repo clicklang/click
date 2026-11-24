@@ -610,6 +610,25 @@ fn exact_float_bound(goal: &Proposition, available: &impl Fn(&Proposition) -> bo
     })
 }
 
+/// The count comparisons name their exact inputs. In particular an unsigned
+/// bound miss must not query the equality graph for every spelling of the
+/// optional signed lower bound.
+pub(crate) fn known_shifted_one(goal: &Proposition, exact: &impl Fn(&Proposition) -> bool) -> bool {
+    use super::super::arithmetic_special::shifted_one_bounds;
+
+    [false, true].into_iter().any(|signed| {
+        shifted_one_bounds(goal, signed).is_some_and(|bounds| {
+            bounds.iter().all(|bound| {
+                exact(bound)
+                    || super::computes_leaf(bound)
+                    || super::order_claim_forms(bound)
+                        .iter()
+                        .any(|form| form != bound && exact(form))
+            })
+        })
+    })
+}
+
 pub(crate) fn known_bridge_leaf(
     goal: &Proposition,
     available: &impl Fn(&Proposition) -> bool,

@@ -31,7 +31,8 @@ int32 divide(float x, float y) {
 theorem reciprocal_upper(y: float) {
     requires y >= float32_from_bits(0x3f800000);
     ensures float32_from_bits(0x3f800000) / y <= float32_from_bits(0x3f800000) by {
-        normalize() using { y >= float32_from_bits(0x3f800000); };
+        apply(click::float_order::float32_reciprocal_upper(
+            float32_from_bits(0x3f800000), y, float32_from_bits(0x3f800000)));
     }
 }
 
@@ -39,9 +40,23 @@ theorem multiply_lower(x: float, y: float) {
     requires x >= float32_from_bits(0x3f800000);
     requires y >= float32_from_bits(0x3f800000);
     ensures x * y >= float32_from_bits(0x3f800000) by {
-        normalize() using { x >= float32_from_bits(0x3f800000); y >= float32_from_bits(0x3f800000); };
+        apply(click::float_order::float32_positive_product_lower(
+            x, y, float32_from_bits(0x3f800000), float32_from_bits(0x3f800000)
+        ));
+        close();
     }
 }
+theorem multiply_lower64(x: double, y: double) {
+    requires x >= float64_from_bits(0x3ff0000000000000u64);
+    requires y >= float64_from_bits(0x3ff0000000000000u64);
+    ensures x * y >= float64_from_bits(0x3ff0000000000000u64) by {
+        apply(click::float_order::float64_positive_product_lower(
+            x, y, float64_from_bits(0x3ff0000000000000u64), float64_from_bits(0x3ff0000000000000u64)
+        ));
+        close();
+    }
+}
+
 ```
 
 ```expect
