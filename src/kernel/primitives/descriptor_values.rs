@@ -494,7 +494,44 @@ impl std::hash::Hash for StoredIntegerTerm {
     }
 }
 native_descriptor_identity!(StoredAlgebraicTerm);
-native_descriptor_identity!(StoredConditionTerm);
+impl std::fmt::Debug for StoredConditionTerm {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.native_compat().fmt(f)
+    }
+}
+impl PartialEq for StoredConditionTerm {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other).is_eq()
+    }
+}
+impl Eq for StoredConditionTerm {}
+impl PartialOrd for StoredConditionTerm {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for StoredConditionTerm {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        use crate::kernel::execution_value::storage_keys::ConditionStorageKey;
+        match (self.root(), other.root()) {
+            (Some(left), Some(right)) if left == right => std::cmp::Ordering::Equal,
+            (Some(left), Some(right)) => left
+                .condition_storage_key()
+                .cmp(&right.condition_storage_key()),
+            (Some(left), None) => left
+                .condition_storage_key()
+                .cmp(&ConditionStorageKey::native(other.native_compat())),
+            (None, Some(right)) => ConditionStorageKey::native(self.native_compat())
+                .cmp(&right.condition_storage_key()),
+            (None, None) => self.native_compat().cmp(other.native_compat()),
+        }
+    }
+}
+impl std::hash::Hash for StoredConditionTerm {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.native_compat().hash(state);
+    }
+}
 impl std::fmt::Debug for StoredPointerOffset {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.native_compat().fmt(f)
@@ -682,6 +719,27 @@ mod protocol_value_tests {
             }
         }
     }
+    #[test]
+    fn retained_condition_ordering_keeps_connectives_unboxed() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let input = |variable| ConditionTerm::BoolIf {
+            condition: Box::new(ConditionTerm::Variable(variable)),
+            then_condition: Box::new(ConditionTerm::Constant(true)),
+            else_condition: Box::new(ConditionTerm::Constant(false)),
+        };
+        let values = [input(Variable(10993742)), input(Variable(10993743))];
+        let roots = values
+            .each_ref()
+            .map(|condition| KernelTermImport::default().condition(condition));
+        let [left, right] = roots
+            .each_ref()
+            .map(|root| StoredConditionTerm::from_root(root.clone()).unwrap());
+        assert_ne!(left, right);
+        assert_eq!(left.cmp(&right), values[0].cmp(&values[1]));
+        assert_eq!(left, StoredConditionTerm::from(values[0].clone()));
+        assert!(roots.iter().all(|root| !root.has_cached_native_argument()));
+    }
+
     #[test]
     fn minted_condition_native_views_reuse_the_produced_output_without_exports() {
         let _session = crate::kernel::VerificationSession::enter();
