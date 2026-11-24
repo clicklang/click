@@ -6,6 +6,9 @@ Soundness: incomplete. Native expression bridges can preserve proof rules that
 the common representation does not yet handle directly. Removing a bridge
 before its callers move can lose proofs or prevent checked expansion.
 
+P1 by maintainer direction (2026-11-24): recurring verifier bugs keep tracing
+back to the unfinished split.
+
 ## Goal
 
 `SurfaceTerm` represents source expressions. `KernelTerm` is the typed,
@@ -37,10 +40,23 @@ validation are in the [migration history][history].
 
 1. Completed. Move Integer checking and rewriting to retained operands and
    delete the paired storage and reverse link.
-2. Retire generic native expression payloads, including mixed call arguments.
-3. Move the remaining pointer, address, and stored-value expression readers.
+2. In progress. Retire generic native expression payloads, including mixed
+   call arguments.
+3. In progress. Move the remaining pointer, address, and stored-value
+   expression readers.
 4. Close the raising and certificate boundaries, validate, and remove this
    item.
+
+Recent slices: 81794d9a deletes the unused native Boolean payload adapter,
+ab99c280 keeps explicitly written machine inputs in typed nodes, and
+edaf815f exercises retained Integer readers with equivalent cache state;
+later merges retain fold, stored-value and machine-quantity readers.
+At 5da40d71, `KernelTermNode::Legacy` has 68 matches under `src/`, 43 of them
+outside `src/kernel/primitives/kernel_term*` (41 production, 2 test) across
+29 files, for example the retained fold dependency check in
+`src/kernel/assumptions/retained_folds.rs`. Recount with
+`grep -rn 'KernelTermNode::Legacy' src`; step 2 closes when only explicit
+adapters recorded here remain.
 
 ## Validation for closure
 

@@ -87,9 +87,11 @@ from, unless Click adopts Tree Borrows' rule for it.
 - The shared [object and memory laws](../design/cpp-object-model.md#decisions-and-scope)
   and [current native-interface evidence](../design/object-model-current-audit.md#native-interface-evidence-matrix)
   constrain this work.
-- The loaded-pointer representation (pointers read from memory named by the
-  read, not by arithmetic on the argument block) is in progress; raw pointers
-  stored in struct fields depend on it.
+- Raw pointers stored in struct fields build on the loaded-pointer
+  representation, which has landed for C: a pointer read from memory is named
+  by that read ([propositions](../docs/concepts/propositions.md),
+  [equality closure](../docs/internals/equality-closure.md); for example
+  `mdtests/a_read_through_an_equal_loaded_pointer_reaches_its_uint64_field.md`).
 
 ## Acceptance criteria
 

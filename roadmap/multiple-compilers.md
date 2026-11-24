@@ -3,15 +3,20 @@
 Priority: P2.
 
 Soundness: soundness-adjacent. A verified claim holds for Click's built-in
-target model. That model is not checked against the compiler that builds the
-program: there is no layout manifest, flag fingerprint or compiler query. A
-mismatch between the model and the real target turns directly into false
-acceptance. The one reproduced instance, plain `char` under the userspace
-target, is filed separately as an `unsound` P1 bug
-(`bugs/userspace-plain-char-is-unsigned.md`). No other model divergence for
-LP64 x86-64 is known. The remaining risk is a program built under a different
-ABI or different flags, which `docs/concepts/trust.md` places outside the
-claim.
+target model, which is checked against the building compiler only in part.
+On the source-bundle route nothing is checked: there is no compiler query,
+layout manifest or flag fingerprint. On the compiler-import route the ABI
+probe (`abi_probe` in `src/languages/c/compiler_import.rs`) checks plain
+`char` signedness, `__LP64__`, `__CHAR_BIT__`, the `__SIZEOF_*__` scalar
+sizes and byte order, and an option profile classifies every recorded flag
+([`click capture`](../docs/reference/cli/capture.md#validation-and-supported-profile));
+struct, union and array layout are still Click's own. A mismatch between the
+model and the real target turns directly into false acceptance. No
+divergence for LP64 x86-64 is known; the one reproduced instance, unsigned
+plain `char` under the user-space target, is fixed
+(`mdtests/userspace_plain_char_is_signed.md`). A program built under another
+ABI or other flags is outside the claim
+([trust](../docs/concepts/trust.md)).
 
 Click currently imports C under one built-in LP64 layout model. The C
 standard fixes important semantic rules, such as array contiguity, member
@@ -34,10 +39,13 @@ its target-dependent layout work belongs here.
 
 ## Violated invariant
 
-The initial concrete `CTarget` is now spelled target `x86_64-unknown-linux-gnu` with mode `kernel` (LP64 and
-eight-bit unsigned plain char), and is exposed in CLI/theorem results and
-incremental markers. This centralizes the single supported profile; it does
-not yet implement target selection, compiler validation, or symbolic targets.
+`CTarget` (`src/languages/c/target.rs`) has one triple,
+`x86_64-unknown-linux-gnu`, and two modes that differ in plain `char`
+signedness and predefined macros: `userspace` (the default, `CTarget::SUPPORTED`) and `kernel`.
+Both use the one LP64 `CAbi`. The target name is in CLI results, import
+locks and incremental markers. Layout itself still comes from the
+process-global `CAbi::SUPPORTED` on the parsing entry points in
+`src/languages/c/syntax.rs` and in `src/languages/interface.rs`.
 
 Every byte offset, object size, alignment, pointer step, scalar conversion,
 and calling-interface fact used in a proof must come from the exact C
