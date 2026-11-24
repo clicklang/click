@@ -1,7 +1,7 @@
 use super::*;
 use crate::kernel::{
-    KernelIntegerOperator, KernelTermExport, KernelType, SharedMachineIntegerTerm,
-    VerificationSession,
+    KernelFold, KernelFoldIndex, KernelIntegerOperator, KernelTermExport, KernelType,
+    SharedMachineIntegerTerm, VerificationSession,
 };
 
 #[test]
@@ -30,7 +30,20 @@ fn mixed_resource_fields_substitute_without_exporting_the_integer_dag() {
             }
             term
         };
-        let original = make_sum(observe(variable));
+        let scoped = |body| {
+            let call =
+                KernelTerm::checked_call(KernelType::Integer, "integer_cell".into(), vec![body]);
+            let zero = KernelTerm::integer_literal(0.into());
+            KernelFold::new(
+                KernelFoldIndex::Integer,
+                Variable(987315),
+                Variable(987316),
+                [zero.clone(), zero.clone(), zero, call],
+            )
+            .unwrap()
+            .into_term()
+        };
+        let original = scoped(make_sum(observe(variable)));
         let schema =
             ResourceFieldSchema::new(vec![("value".into(), ResourceFieldType::Integer)]).unwrap();
         let resource = Resource::Instance(
@@ -68,7 +81,7 @@ fn mixed_resource_fields_substitute_without_exporting_the_integer_dag() {
         });
         assert_eq!(
             field(substituted_word),
-            make_sum(KernelTerm::integer_literal(7.into()))
+            scoped(make_sum(KernelTerm::integer_literal(7.into())))
         );
         assert!(!original.has_cached_native_argument());
         assert_eq!(KernelTermExport::integer_export_count(), exports);

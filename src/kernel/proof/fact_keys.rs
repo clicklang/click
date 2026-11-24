@@ -861,6 +861,15 @@ pub(crate) fn integer_condition_alpha_key(
             if crate::instrumentation::deadline_exceeded_with_work(0) {
                 return None;
             }
+            if let Some(normalized) =
+                super::term_rewrite::TermRewrite::retained_arithmetic_comparison(arguments)
+                && let Some(key) = fold_keys::integer_comparison_key(*operator, &normalized, false)
+            {
+                return Some(key);
+            }
+            if crate::instrumentation::deadline_exceeded_with_work(0) {
+                return None;
+            }
         } else {
             return None;
         }

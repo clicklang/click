@@ -895,22 +895,30 @@ impl KernelTerm {
             },
             KernelTermNode::Fold(fold) => fold.integer_compatibility(&mut export)?,
             KernelTermNode::Match(matched) => matched.export_integer(&mut export)?,
-            KernelTermNode::Call { name, arguments } => {
-                if let Some(MachineLeaf::Application(application)) = self.0.machine_leaf.0.get() {
-                    IntegerTerm::PureFunctionApplication(application.clone())
-                } else {
-                    let arguments = arguments
-                        .iter()
-                        .map(|arg| export.argument(arg))
-                        .collect::<Result<Vec<_>, _>>()?;
-                    IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
-                        name.clone(),
-                        arguments,
-                    ))
-                }
-            }
+            KernelTermNode::Call { .. } => IntegerTerm::PureFunctionApplication(
+                self.integer_application()
+                    .ok_or("Integer application arguments")?,
+            ),
             _ => return Err("expected an Integer term"),
         })
+    }
+
+    pub(in crate::kernel) fn integer_application(&self) -> Option<SharedPureApplication> {
+        let KernelTermNode::Call { name, arguments } = self.node() else {
+            return None;
+        };
+        if let Some(MachineLeaf::Application(application)) = self.0.machine_leaf.0.get() {
+            return Some(application.clone());
+        }
+        let mut export = KernelTermExport::default();
+        let arguments = arguments
+            .iter()
+            .map(|arg| export.argument(arg))
+            .collect::<Result<Vec<_>, _>>()
+            .ok()?;
+        let application = SharedPureApplication::intern(name.clone(), arguments);
+        self.0.machine_leaf.retain_application(&application);
+        Some(application)
     }
 
     pub(super) fn integer_reading(&self) -> &OnceLock<Option<SharedIntegerTerm>> {
@@ -987,6 +995,11 @@ impl KernelTerm {
         if self.ty() != &KernelType::Integer {
             return None;
         }
+        if let KernelTermNode::Legacy(leaf) = self.node()
+            && let PureFunctionArgument::Integer(value) = leaf.value()
+        {
+            return value.root().integer_exact_key();
+        }
         Some(self.mixed_integer_identity().key.clone())
     }
 
@@ -1003,6 +1016,19 @@ impl KernelTerm {
             return Some(value.id());
         }
         Some(self.mixed_integer_identity().id)
+    }
+
+    pub(super) fn remember_integer_identity(&self, term: &IntegerTerm) {
+        if self.is_mathematical_integer() {
+            return;
+        }
+        self.0.integer_identity.get_or_init(|| {
+            let observation = match term {
+                IntegerTerm::Machine(observation) => Some(observation.clone()),
+                _ => None,
+            };
+            IntegerIdentity::retained(term.shallow_key(), observation)
+        });
     }
 
     fn mixed_integer_identity(&self) -> &IntegerIdentity {
@@ -1125,7 +1151,7 @@ impl KernelTerm {
         }
     }
 
-    pub(super) fn is_literal_integer_arithmetic(&self) -> bool {
+    pub(in crate::kernel) fn is_literal_integer_arithmetic(&self) -> bool {
         self.0.key.0.literal_integer_arithmetic
     }
 
@@ -1558,12 +1584,11 @@ impl KernelTermImport {
 
     pub(super) fn integer_input(&mut self, term: &IntegerTerm) -> KernelTerm {
         use KernelIntegerOperator as Op;
-        let value = match term {
+        match term {
             IntegerTerm::Constant(value) => KernelTerm::integer_literal(value.clone()),
             IntegerTerm::Variable(variable) => KernelTerm::variable(KernelType::Integer, *variable),
-            IntegerTerm::Machine(machine) => KernelTerm::intern(
-                KernelType::Integer,
-                KernelTermNode::MachineObservation {
+            IntegerTerm::Machine(machine) => {
+                KernelTerm::intern_native_integer(KernelTermNode::MachineObservation {
                     format: machine.ty(),
                     operand: machine.shared_operand().cloned().unwrap_or_else(|| {
                         KernelTerm::legacy_at(
@@ -1574,8 +1599,8 @@ impl KernelTermImport {
                             LegacyIdentity::ExactIntegerObservation(machine.clone()),
                         )
                     }),
-                },
-            ),
+                })
+            }
             IntegerTerm::Negate(inner) => {
                 KernelTerm::intern_native_integer(KernelTermNode::IntegerOperation {
                     operator: Op::Negate,
@@ -1606,40 +1631,38 @@ impl KernelTermImport {
                     .enumerate()
                     .map(|(index, _)| {
                         application.common_argument(index).unwrap_or_else(|| {
-                            KernelTerm::native_call_argument(application, index, false)
+                            KernelTerm::native_call_argument(application, index, true)
                         })
                     })
                     .collect();
-                let root = KernelTerm::checked_call(
-                    KernelType::Integer,
-                    application.name().into(),
+                let root = KernelTerm::intern_native_integer(KernelTermNode::Call {
+                    name: application.name().into(),
                     arguments,
-                );
-                root.0.machine_leaf.retain_application(application);
+                });
+                root.0
+                    .machine_leaf
+                    .0
+                    .get_or_init(|| MachineLeaf::Application(application.clone()));
                 root
             }
             IntegerTerm::If {
                 condition,
                 then_term,
                 else_term,
-            } => KernelTerm::intern(
-                KernelType::Integer,
-                KernelTermNode::IntegerIf {
-                    arguments: [
-                        self.condition(condition),
-                        self.integer(then_term),
-                        self.integer(else_term),
-                    ],
-                },
-            ),
+            } => KernelTerm::intern_native_integer(KernelTermNode::IntegerIf {
+                arguments: [
+                    self.condition(condition),
+                    self.integer(then_term),
+                    self.integer(else_term),
+                ],
+            }),
             IntegerTerm::RangeFold { .. } => KernelFold::import_integer(self, term)
                 .expect("Integer fold payload")
                 .into_term(),
             IntegerTerm::AlgebraicMatch { .. } => KernelMatch::import_integer(self, term)
                 .expect("Integer match payload")
                 .into_term(),
-        };
-        value
+        }
     }
 }
 

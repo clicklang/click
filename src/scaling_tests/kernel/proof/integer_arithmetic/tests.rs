@@ -559,3 +559,71 @@ fn mixed_affine_claims_read_observations_without_exporting_integer_arithmetic() 
         "{work_by_size:?}"
     );
 }
+
+#[test]
+fn opaque_mixed_atoms_share_their_retained_value_reading() {
+    use crate::kernel::{
+        KernelTermExport, KernelTermImport, KernelType, MachineCastSpelling, MachineIntegerType,
+        SharedMachineIntegerTerm, Variable,
+    };
+    let mut samples = Vec::new();
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let source = MachineIntegerType::Int32;
+        let destination = MachineIntegerType::Int64;
+        let observe = |format, word| {
+            let observation = SharedMachineIntegerTerm::from_shared(format, word).unwrap();
+            KernelTermImport::default().integer(&IntegerTerm::Machine(observation).into())
+        };
+        let word =
+            KernelTerm::variable(KernelType::Program(source.program_type()), Variable(980280));
+        let widened = KernelTerm::machine_cast_shared(
+            MachineCastSpelling::Int64From32,
+            source,
+            destination,
+            word.clone(),
+        );
+        let product = |mut operand| {
+            for index in 0..size {
+                operand = KernelTerm::integer_operation(
+                    KernelIntegerOperator::Add,
+                    vec![
+                        operand,
+                        KernelTerm::variable(KernelType::Integer, Variable(980300 + index)),
+                    ],
+                )
+                .unwrap();
+            }
+            KernelTerm::integer_operation(
+                KernelIntegerOperator::Multiply,
+                vec![
+                    operand,
+                    KernelTerm::variable(KernelType::Integer, Variable(980281)),
+                ],
+            )
+            .unwrap()
+        };
+        let left = product(observe(source, word));
+        let right = product(observe(destination, widened));
+        let comparison = KernelTerm::integer_comparison(
+            IntegerComparisonOperator::Equal,
+            [left.clone(), right.clone()],
+        )
+        .unwrap();
+        let proposition =
+            Proposition::condition_is(StoredConditionTerm::from_root(comparison).unwrap(), true);
+        let exports = KernelTermExport::integer_export_count();
+        let (result, work) =
+            crate::instrumentation::measure_deterministic_work(|| claim(&proposition));
+        assert!(result.terms.is_empty());
+        assert!(result.constant.is_zero());
+        assert_eq!(KernelTermExport::integer_export_count(), exports);
+        assert!(!left.has_cached_native_argument());
+        assert!(!right.has_cached_native_argument());
+        samples.push(work);
+    }
+    assert!(
+        samples.windows(2).all(|work| work[1] <= 5 * work[0]),
+        "{samples:?}"
+    );
+}

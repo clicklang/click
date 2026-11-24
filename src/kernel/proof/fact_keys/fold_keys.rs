@@ -91,7 +91,15 @@ pub(crate) fn integer_key(fold: &KernelFold) -> Option<IntegerFoldAlphaKey> {
 /// before they can supply a fact key.
 pub(super) fn unchanged_integer_comparison_key(
     operator: IntegerComparisonOperator,
+    arguments: &[KernelTerm; 2],
+) -> Option<IntegerConditionAlphaKey> {
+    integer_comparison_key(operator, arguments, true)
+}
+
+pub(super) fn integer_comparison_key(
+    operator: IntegerComparisonOperator,
     [left, right]: &[KernelTerm; 2],
+    unchanged_in_comparisons: bool,
 ) -> Option<IntegerConditionAlphaKey> {
     let mut bindings = bindings();
     alpha_work_checkpoint(&mut bindings, 1)?;
@@ -99,7 +107,7 @@ pub(super) fn unchanged_integer_comparison_key(
     let mut next_binder = 0;
     let mut operand_key = |operand| {
         RetainedIntegerKey {
-            unchanged_in_comparisons: true,
+            unchanged_in_comparisons,
             ..Default::default()
         }
         .into_key(operand, &mut bindings, &mut next_binder)

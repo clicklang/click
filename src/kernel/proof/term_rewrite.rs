@@ -2110,6 +2110,22 @@ impl<'a> TermRewrite<'a> {
         rewrite
     }
 
+    pub(super) fn retained_arithmetic_comparison(
+        [left, right]: &[KernelTerm; 2],
+    ) -> Option<[KernelTerm; 2]> {
+        let mut rewrite = Self::for_arithmetic_comparison();
+        let result = (|| {
+            Some([
+                rewrite.rewrite_stored_integer_root(left)?,
+                rewrite.rewrite_stored_integer_root(right)?,
+            ])
+        })();
+        if rewrite.refusal().is_some() || crate::instrumentation::deadline_exceeded_with_work(0) {
+            return None;
+        }
+        result
+    }
+
     pub(crate) fn arithmetic_comparison(proposition: &Proposition) -> Option<Proposition> {
         if crate::instrumentation::deadline_exceeded_with_work(0) {
             return None;
