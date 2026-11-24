@@ -42,7 +42,7 @@ fn ordered_float_bound_parts(
 /// can compute the equality without treating the outer native casts as atoms.
 fn observed_reordered_indicator_sum(surface: &ClickProposition) -> Option<ClickProposition> {
     fn indicator_count(mut value: &ContractExpression) -> Option<usize> {
-        fn literal(expression: &ContractExpression, value: i32) -> bool {
+        fn literal(expression: &ContractExpression, value: u32) -> bool {
             match expression {
                 ContractExpression::ProgramExpression(ProgramExpression::Value(actual)) => {
                     actual == &int32(value)
