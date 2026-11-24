@@ -294,12 +294,12 @@ theorem adler_lane_native_b_step(n: Integer, a: uint32, b: uint32, byte: uint32)
     }
     ensures to_integer(b + (a + byte)) == to_integer(b) + to_integer(a + byte) by {
         have to_integer(b) + to_integer(a + byte) <= 4294967295 by apply(adler_lane_native_b_sum_fits(n, a, b, byte));
-        have to_integer(b + (a + byte)) == to_integer(b) + to_integer(a + byte);
+        apply(click::integer::uint32_add_to_integer(b, a + byte));
         known();
     }
     ensures to_integer(b + (a + byte)) <= adler_lane_b_ceiling(n + 1) by {
         have to_integer(b) + to_integer(a + byte) <= 4294967295 by apply(adler_lane_native_b_sum_fits(n, a, b, byte));
-        have to_integer(b + (a + byte)) == to_integer(b) + to_integer(a + byte);
+        apply(click::integer::uint32_add_to_integer(b, a + byte));
         have to_integer(a + byte) == to_integer(a) + to_integer(byte) by apply(adler_lane_native_a_step(n, a, byte));
         rewrite(to_integer(b + (a + byte)), to_integer(b) + to_integer(a + byte));
         rewrite(to_integer(a + byte), to_integer(a) + to_integer(byte));

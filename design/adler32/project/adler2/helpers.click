@@ -1,5 +1,4 @@
 import click::integer;
-import click::separation;
 import click::rust::slice;
 
 verifying "../../vendor/adler2-2.0.1/src/lib.rs";
@@ -41,34 +40,7 @@ impl adler2::algo::U32X4 {
         apply(adler_helper_byte_observation(bytes[1]));
         apply(adler_helper_byte_observation(bytes[2]));
         apply(adler_helper_byte_observation(bytes[3]));
-        step_until(read(3).entry);
-        step();
-        // The lanes are stored into the result. Restrict its separation
-        // from the input to each checked lane store.
-        have separate(memory((((&result as (void *)) as (uint32 *)) + 0u64)[0..1]), memory(bytes[0..4])) by {
-            apply(separation::separate_restrict(
-                memory(result[0..1]), memory(bytes[0..4]),
-                memory((((&result as (void *)) as (uint32 *)) + 0u64)[0..1]), memory(bytes[0..4])
-            ));
-        }
-        have separate(memory((((&result as (void *)) as (uint32 *)) + 1u64)[0..1]), memory(bytes[0..4])) by {
-            apply(separation::separate_restrict(
-                memory(result[0..1]), memory(bytes[0..4]),
-                memory((((&result as (void *)) as (uint32 *)) + 1u64)[0..1]), memory(bytes[0..4])
-            ));
-        }
-        have separate(memory((((&result as (void *)) as (uint32 *)) + 2u64)[0..1]), memory(bytes[0..4])) by {
-            apply(separation::separate_restrict(
-                memory(result[0..1]), memory(bytes[0..4]),
-                memory((((&result as (void *)) as (uint32 *)) + 2u64)[0..1]), memory(bytes[0..4])
-            ));
-        }
-        have separate(memory((((&result as (void *)) as (uint32 *)) + 3u64)[0..1]), memory(bytes[0..4])) by {
-            apply(separation::separate_restrict(
-                memory(result[0..1]), memory(bytes[0..4]),
-                memory((((&result as (void *)) as (uint32 *)) + 3u64)[0..1]), memory(bytes[0..4])
-            ));
-        }
+        // The aggregate stores use fresh storage. Read the bound result at return.
         step_until(function.exit);
         have result.0[0] == old((bytes[0] as u32));
         have to_integer(result.0[0]) == old(to_integer((bytes[0] as i32))) by { rewrite(result.0[0], old((bytes[0] as u32))); known(); }
