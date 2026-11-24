@@ -2,7 +2,7 @@
 
 This checks the unexpanded `bump_n` proof: the body states `c.count == i`
 before the increment, refolds `counter(p)` with the new model, and lets
-the back edge close the bundle with `solve()`.
+the back edge close the bundle with `close()`.
 
 ```c filename=loop_binder_counter_model_concise_proof.c
 struct cell { int32 value; };
@@ -42,7 +42,7 @@ void bump_n(struct cell* p, int32 n) {
         invariant i <= n;
         invariant c.count == old(c.count) + i;
 
-        initialize by solve();
+        initialize by close();
         maintain by {
             have c.count == i by { close() using { c.count == old(c.count) + i; old(c.count) == 0; }; }
             unfold(c);
@@ -51,7 +51,7 @@ void bump_n(struct cell* p, int32 n) {
             let c = fold(counter(p), { count: old(c.count) + i });
         }
     }
-    have i == n by solve();
+    have i == n by close();
 }
 ```
 

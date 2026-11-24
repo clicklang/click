@@ -25,7 +25,7 @@ int32 gap(int32 n, int32 i) {
     have 1 <= n - i by { close() using { 0 <= i; i < n; }; }
     have n - i - 1 < n - i by { close() using { i >= 0; i < n; }; }
     step();
-    solve();
+    close();
 }
 ```
 

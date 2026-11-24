@@ -19,7 +19,7 @@ void update(struct node *g, struct node *p) {
     requires ((g->word & ~3) as (struct node*)) == p;
 } by {
     mark before;
-    have separate(memory(p->left), memory(g->word)) by { solve(); }
+    have separate(memory(p->left), memory(g->word)) by { close(); }
     step();
     have ((g->word & ~3) as (struct node*)) == p by {
         have separate(statement(0).footprint, memory(g->word)) by {
@@ -33,10 +33,10 @@ void update(struct node *g, struct node *p) {
         }
         have ((g->word & ~3) as (struct node *)) == at(before, ((g->word & ~3) as (struct node *))) by {
             rewrite(g->word, at(before, g->word));
-            known();
+            close();
         }
         rewrite(((g->word & ~3) as (struct node *)), at(before, ((g->word & ~3) as (struct node *))));
-        known();
+        close();
     }
     step();
 }

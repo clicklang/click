@@ -41,18 +41,18 @@ int32 assign_then_break(int32 n) {
         invariant i >= 0;
         invariant r == 0;
 
-        initialize by solve();
+        initialize by close();
         maintain by {
             step();
-            have r == 0 or r == 1 by known();
+            have r == 0 or r == 1 by close();
             step();
         }
         otherwise {
-            have r == 0 or r == 1 by known();
+            have r == 0 or r == 1 by close();
         }
     }
     step();
-    solve();
+    close();
 }
 ```
 

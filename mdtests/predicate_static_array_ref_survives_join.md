@@ -27,17 +27,17 @@ int32 keep_h(int32 flag) {
     ensures result == 7;
 } by {
     step();
-    have first_is(h, 7) by { known(); }
+    have first_is(h, 7) by { close(); }
     branch ensuring {
         fact local >= 0;
     } {
         true => { step(); }
         false => { step(); }
     }
-    have first_is(h, 7) by { known(); }
+    have first_is(h, 7) by { close(); }
     unfold(first_is(h, 7));
     step_until(function.exit);
-    solve();
+    close();
 }
 ```
 

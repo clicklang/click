@@ -2,33 +2,33 @@
 
 ```click
 theorem direct_proposition_lambda(x: Integer) {
-    ensures (|value: Integer| -> Prop { value == value })(x) by solve();
+    ensures (|value: Integer| -> Prop { value == value })(x) by close();
 }
 
 theorem range_lambda_values(lo: int32, hi: int32, limit: int32) {
     let below: fn(int32) -> Prop = |k: int32| -> Prop { k < limit };
     requires hi <= limit;
-    ensures (lo..hi).all(below) by { let k = intro(); intro(); solve(); }
+    ensures (lo..hi).all(below) by { let k = intro(); intro(); close(); }
 }
 theorem quantified_proposition_lambdas(value: Integer) {
     ensures (|x: Integer| -> Prop { forall (y: Integer) { x + y == y + x } })(value) by {
         intro();
-        solve();
+        close();
     }
     ensures (|x: Integer| -> Prop { exists (y: Integer) { y == x } })(value) by {
         witness(value);
-        solve();
+        close();
     }
 }
 
 theorem local_proposition_values(value: Integer) {
     let reflexive: Prop = prop { value == value };
-    ensures reflexive by solve();
+    ensures reflexive by close();
 }
 
 theorem proposition_connectives(value: Integer) {
-    ensures (|x: Integer| -> Prop { x == x and not (x != x) })(value) by solve();
-    ensures (|| -> Prop { true })() by solve();
+    ensures (|x: Integer| -> Prop { x == x and not (x != x) })(value) by close();
+    ensures (|| -> Prop { true })() by close();
 }
 
 theorem existential_range_lambda(lo: int32, hi: int32) {
@@ -36,15 +36,15 @@ theorem existential_range_lambda(lo: int32, hi: int32) {
     requires lo < hi;
     ensures (lo..hi).any(same) by {
         witness(lo);
-        solve();
+        close();
     }
 }
 
 theorem wide_range_predicates(lo: uint64, hi: uint64) {
     let identity: fn(uint64) -> Prop = |x: uint64| -> Prop { x == x };
     requires lo < hi;
-    ensures (lo..hi).all(identity) by { let index = intro(); intro(); solve(); }
-    ensures (lo..hi).any(identity) by { witness(lo); solve(); }
+    ensures (lo..hi).all(identity) by { let index = intro(); intro(); close(); }
+    ensures (lo..hi).any(identity) by { witness(lo); close(); }
 }
 
 function captured_predicate(limit: int32, value: int32) -> Integer {
@@ -56,14 +56,14 @@ function captured_predicate(limit: int32, value: int32) -> Integer {
 theorem proposition_capture_is_lexical() {
     ensures captured_predicate(5, 3) == 1 by {
         unfold(captured_predicate(5, 3));
-        solve();
+        close();
     }
 }
 
 theorem proposition_application_values(value: Integer) {
     let reflexive = |x: Integer| -> Prop { x == x };
     let claim = reflexive(value);
-    ensures claim by solve();
+    ensures claim by close();
 }
 
 predicate positive(value: int32) { value > 0 }
@@ -72,7 +72,7 @@ theorem proposition_literal_with_predicate(value: int32) {
     requires value > 0;
     ensures prop { positive(value) } by {
         unfold(positive(value));
-        solve();
+        close();
     }
 }
 

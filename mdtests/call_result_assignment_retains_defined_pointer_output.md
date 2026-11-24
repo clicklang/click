@@ -28,8 +28,8 @@ int32 caller(int32 **slot) {
 } by {
     step();
     step();
-    have at(statement(1).call(0).exit, defined(*slot)) by { known(); }
-    have separate(memory(ignored), memory(*slot)) by { known(); }
+    have at(statement(1).call(0).exit, defined(*slot)) by { close(); }
+    have separate(memory(ignored), memory(*slot)) by { close(); }
     step();
     have separate(statement(1).assignment(ignored, 0).footprint, memory(*slot)) by {
         close() using { separate(memory(ignored), memory(*slot)); };
@@ -38,7 +38,7 @@ int32 caller(int32 **slot) {
         preserve(memory(*slot), statement(1).assignment(ignored, 0));
     }
     step_until(function.exit);
-    have defined(*slot) by { solve(); }
+    have defined(*slot) by { close(); }
 }
 ```
 

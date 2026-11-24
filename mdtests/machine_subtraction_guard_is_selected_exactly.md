@@ -19,7 +19,7 @@ uint32 at(uint32* xs, uint64 n, uint64 r) {
     have xs[n - r] <= 100u32 by {
         have to_integer(n - r) < to_integer(n);
         instantiate(forall (k: uint64) { k < n implies xs[k] <= 100u32 }, n - r);
-        known();
+        close();
     }
 }
 ```

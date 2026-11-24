@@ -21,7 +21,7 @@ tactic stop() {
     unfold(dirty);
     let done = fold(ghost(0), { model: Walk::Done });
     have pending(done.model) == 0 by {
-        rewrite(done.model, Walk::Done); unfold(pending(Walk::Done)); known();
+        rewrite(done.model, Walk::Done); unfold(pending(Walk::Done)); close();
     }
 }
 void walk(int32 n) {
@@ -36,20 +36,20 @@ void walk(int32 n) {
             decreases n;
             invariant n > 0;
             invariant state.model == Walk::Active;
-            initialize by solve();
+            initialize by close();
             maintain by {
                 let { done: state } = stop({ dirty: state });
-                have pending(state.model) == 0 by known();
+                have pending(state.model) == 0 by close();
                 step();
             }
         }
         step();
-        have pending(state.model) == 0 by known();
-        solve();
+        have pending(state.model) == 0 by close();
+        close();
     } else {
-        have n == 0 by solve();
+        have n == 0 by close();
         step_until(function.exit);
-        solve();
+        close();
     }
 }
 ```

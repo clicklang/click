@@ -35,7 +35,7 @@ int32 count_down_or_stop(int32 n) {
             if n == 0 {
                 step();
                 step();
-                have n == 7 or n == 9 by known();
+                have n == 7 or n == 9 by close();
                 step();
             } else {
                 step();
@@ -43,7 +43,7 @@ int32 count_down_or_stop(int32 n) {
                 if n == 1 {
                     step();
                     step();
-                    have n == 7 or n == 9 by known();
+                    have n == 7 or n == 9 by close();
                     step();
                 } else {
                     step();

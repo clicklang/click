@@ -8,7 +8,7 @@ theorem weighted_definition(lo: int32, hi: int32) {
     requires lo < hi;
     ensures weighted(lo, hi) == (lo..hi).fold(0, |acc, k| { acc + to_integer(hi) }) by {
         unfold(weighted(lo, hi));
-        known();
+        close();
     }
 }
 ```

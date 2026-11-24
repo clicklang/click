@@ -16,7 +16,7 @@ theorem conv(x: int32, g: Integer) {
     requires forall (z: Integer) { sq(z) <= g };
     ensures sq(to_integer(x)) <= g by {
         instantiate(forall (z: Integer) { sq(z) <= g }, to_integer(x));
-        known();
+        close();
     }
 }
 
@@ -26,7 +26,7 @@ theorem guarded(x: int32, g: Integer) {
     ensures sq(to_integer(x)) <= g by {
         have 0 <= (to_integer(x));
         instantiate(forall (z: Integer) { 0 <= z implies sq(z) <= g }, to_integer(x));
-        known();
+        close();
     }
 }
 ```

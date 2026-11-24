@@ -36,11 +36,11 @@ int32 uses_exit_disjunction(int32 a, int32* p) {
         invariant a >= 0;
         invariant a <= 10;
 
-        initialize by solve();
+        initialize by close();
         maintain by {
             have a > 0 by {
                 if a > 0 {
-                    known();
+                    close();
                 } else {
                     have a == 0;
                     contradiction(a == 0);
@@ -49,7 +49,7 @@ int32 uses_exit_disjunction(int32 a, int32* p) {
             step();
         }
         otherwise {
-            have a == 0 or p[0] == 0 by known();
+            have a == 0 or p[0] == 0 by close();
         }
     }
     branch {
@@ -58,22 +58,22 @@ int32 uses_exit_disjunction(int32 a, int32* p) {
                 cases {
                     a == 0 => {
                         have a == 0 by {
-                            known();
+                            close();
                         }
                         contradiction(a == 0);
                     }
                     p[0] == 0 => {
-                        known();
+                        close();
                     }
                 }
             }
             step();
-            solve();
+            close();
         }
         false => {}
     }
     step();
-    solve();
+    close();
 }
 ```
 

@@ -20,7 +20,7 @@ int32 aligned_explicit_arithmetic(uint8* p) {
     have aligned(p + 24, 8) by {
         close() using { aligned(p, 16); };
     }
-    solve();
+    close();
 }
 ```
 

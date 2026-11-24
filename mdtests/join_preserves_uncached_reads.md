@@ -28,22 +28,22 @@ void keep(struct pair* p, int32 x) {
     owns p->left;
 } by {
     step();
-    have p->tag == 42 by { known(); }
-    have p->count == 17 by { known(); }
+    have p->tag == 42 by { close(); }
+    have p->count == 17 by { close(); }
     mark before_join;
     branch ensuring { fact 1 == 1; } { true => { step(); } false => { step(); } }
-    have p->tag == 42 by { known(); }
-    have p->count == 17 by { known(); }
+    have p->tag == 42 by { close(); }
+    have p->count == 17 by { close(); }
     have p->tag == 42 by {
         have p->tag == 42 by {
             close() using {
                 at(before_join, p->tag) == 42;
             };
         }
-        known();
+        close();
     }
     step();
-    solve();
+    close();
 }
 ```
 

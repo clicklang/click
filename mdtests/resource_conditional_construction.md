@@ -33,7 +33,7 @@ void set(int32* p, int32 value) {
 } by {
     step_until(function.exit);
     let c = fold(cell(p), { model: Maybe<int32>::Some(value) });
-    solve();
+    close();
 }
 
 void empty(int32* p) {
@@ -52,12 +52,12 @@ void nullable(int32* p, int32 value) {
         unfold(c);
         step_until(function.exit);
         let c = fold(guarded(p), { value: value });
-        solve();
+        close();
     } else {
         unfold(c);
         step_until(function.exit);
         let c = fold(guarded(p), { value: value });
-        solve();
+        close();
     }
 }
 ```

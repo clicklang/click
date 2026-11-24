@@ -31,11 +31,11 @@ int32 run(void* p) {
 } by {
     step();
     step();
-    branch { true => { step(); solve(); } false => {} }
+    branch { true => { step(); close(); } false => {} }
     have count(ticket(p)) == 1;
     step();
     step();
-    solve();
+    close();
 }
 ```
 

@@ -14,28 +14,28 @@ theorem slice_fields_after_rewrite(s: Slice<uint8>, p: uint8*, n: uint64) {
     ensures slice::len(s) == n by {
         rewrite(s, Slice<uint8>::Slice(p, n));
         unfold(slice::len(Slice<uint8>::Slice(p, n)));
-        known();
+        close();
     }
     ensures slice::as_ptr(s) == p by {
         rewrite(s, Slice<uint8>::Slice(p, n));
         unfold(slice::as_ptr(Slice<uint8>::Slice(p, n)));
-        known();
+        close();
     }
     ensures slice::len(s) == n by {
         unfold(slice::len(s));
         rewrite(s, Slice<uint8>::Slice(p, n));
-        known();
+        close();
     }
 }
 
 theorem direct_slice_fields(p: uint8*, n: uint64) {
     ensures slice::len(Slice<uint8>::Slice(p, n)) == n by {
         unfold(slice::len(Slice<uint8>::Slice(p, n)));
-        known();
+        close();
     }
     ensures slice::as_ptr(Slice<uint8>::Slice(p, n)) == p by {
         unfold(slice::as_ptr(Slice<uint8>::Slice(p, n)));
-        known();
+        close();
     }
 }
 ```

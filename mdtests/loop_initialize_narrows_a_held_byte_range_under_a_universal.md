@@ -5,7 +5,7 @@ A range of one-byte elements lowers its span unscaled: `a[0..n]` is `n`
 bytes, not `n * 1`. Range narrowing and the Surface spelling of a held range
 both read a span's element width off its scale factor, so a byte range
 had no width, the held `views a[0..n]` had no written spelling to cite, and
-`solve()` refused to narrow it to `viewable(a[0..k])`. An unscaled span is
+`close()` refused to narrow it to `viewable(a[0..k])`. An unscaled span is
 now read at byte granularity in both places, and the proof is the same as
 over `int32`.
 
@@ -40,9 +40,9 @@ int32 count_up(uint8 *a, int32 n) {
             have forall (k: int32) { 0 <= k and k <= n implies viewable(a[0..k]) } by {
                 intro();
                 intro();
-                solve();
+                close();
             }
-            solve();
+            close();
         }
         maintain by {
             step();
@@ -50,7 +50,7 @@ int32 count_up(uint8 *a, int32 n) {
             have forall (k: int32) { 0 <= k and k <= n implies viewable(a[0..k]) } by {
                 intro();
                 intro();
-                solve();
+                close();
             }
         }
     }

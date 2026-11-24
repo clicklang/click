@@ -41,7 +41,7 @@ int32 read_after_update(struct pair* p) {
     requires separate(memory(p->left), memory(p->right));
     ensures result == old(p->right);
 } by {
-    step() by { known(); }
+    step() by { close(); }
 }
 ```
 

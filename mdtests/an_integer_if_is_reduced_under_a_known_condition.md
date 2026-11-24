@@ -5,7 +5,7 @@ An Integer conditional is decided by the proof, as a machine one is
 `mdtests/normalize_using_decides_conditions_without_substituting.md`):
 lowering keeps both branches, and a known condition selects one. The omitted proof
 reads `requires limit > 0` to select the first branch of a postcondition,
-`close() using` decides a cited guard, and bare `solve()` can select the
+`close() using` decides a cited guard, and bare `close()` can select the
 guard from the facts.
 
 ```c filename=an_integer_if_is_reduced_under_a_known_condition.c
@@ -31,7 +31,7 @@ theorem guard_is_decided(x: Integer) {
 
 theorem solve_decides_the_condition(x: int32, n: Integer) {
     requires x > 3;
-    ensures (if x > 3 { n } else { n - 1 }) == n by solve();
+    ensures (if x > 3 { n } else { n - 1 }) == n by close();
 }
 ```
 

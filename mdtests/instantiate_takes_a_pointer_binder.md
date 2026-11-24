@@ -15,7 +15,7 @@ theorem ptr(q: int32*) {
     requires forall (p: int32*) { same(p, p) };
     ensures same(q, q) by {
         instantiate(forall (p: int32*) { same(p, p) }, q);
-        known();
+        close();
     }
 }
 ```

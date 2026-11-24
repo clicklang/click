@@ -24,7 +24,7 @@ int32 read_after(int32* p) {
     unfold(held);
     step_until(function.exit);
     fold(held);
-    solve();
+    close();
 }
 ```
 

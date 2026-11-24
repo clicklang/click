@@ -52,15 +52,15 @@ void put(struct pool* pool, struct slot* s, int32 value) {
     let { at: a, end: e } = unfold(r);
     have to_integer(a + 1) <= to_integer(e);
     have s->at == a by {
-        known();
+        close();
     }
     have to_integer(s->at + 1) <= to_integer(e) by {
         rewrite(s->at, a);
-        known();
+        close();
     }
     step_until(function.exit);
     let r = fold(pool_slot(s, pool), { at: a, end: e });
-    solve();
+    close();
 }
 
 void two_puts(struct pool* pool, struct slot* first, struct slot* second) {
@@ -72,24 +72,24 @@ void two_puts(struct pool* pool, struct slot* first, struct slot* second) {
     step(put, { r: a });
     have pool->data[first->at] == 11;
     let { at: first_at, end: first_end } = unfold(a);
-    have separate(memory(*pool), memory(*first)) by { known(); }
-    have separate(b, memory(*first)) by { known(); }
+    have separate(memory(*pool), memory(*first)) by { close(); }
+    have separate(b, memory(*first)) by { close(); }
     apply(separation::separate_star(memory(*pool), b, memory(*first)));
     have contains(memory(*first), memory(first->at)) by { normalize(); }
     apply(separation::contains_refl(memory(*pool) * b));
     apply(separation::separate_restrict(memory(*pool) * b, memory(*first), memory(*pool) * b, memory(first->at)));
 
-    have separate(memory(*pool), memory(pool->data[first_at..first_end])) by { known(); }
-    have separate(b, memory(pool->data[first_at..first_end])) by { known(); }
+    have separate(memory(*pool), memory(pool->data[first_at..first_end])) by { close(); }
+    have separate(b, memory(pool->data[first_at..first_end])) by { close(); }
     apply(separation::separate_star(memory(*pool), b, memory(pool->data[first_at..first_end])));
     apply(separation::contains_element(pool->data, first_at, first_end, first_at));
     have contains(memory(pool->data[first_at]), memory(*(pool->data + first_at))) by { normalize(); }
     apply(separation::contains_trans(memory(pool->data[first_at..first_end]), memory(pool->data[first_at]), memory(*(pool->data + first_at))));
     apply(separation::separate_restrict(memory(*pool) * b, memory(pool->data[first_at..first_end]), memory(*pool) * b, memory(*(pool->data + first_at))));
-    have pool->data[first_at] == 11 by { known(); }
+    have pool->data[first_at] == 11 by { close(); }
     mark m1;
     step(put, { r: b });
-    have contains(memory(*pool) * at(m1, b), statement(1).footprint) by { known(); }
+    have contains(memory(*pool) * at(m1, b), statement(1).footprint) by { close(); }
     apply(separation::contains_refl(memory(first->at)));
     apply(separation::separate_restrict(memory(*pool) * at(m1, b), memory(first->at), statement(1).footprint, memory(first->at)));
     have first->at == at(m1, first->at) by {
@@ -101,11 +101,11 @@ void two_puts(struct pool* pool, struct slot* first, struct slot* second) {
     have (let saved: int32* = at(m1, pool->data + first_at); saved[0]) == at(m1, pool->data[first_at]) by {
         preserve(memory(at(m1, pool->data + first_at)[0]), statement(1));
     }
-    have first->at == first_at by { known(); }
+    have first->at == first_at by { close(); }
     have pool->data[first->at] == 11 by {
         rewrite(first->at, first_at);
         rewrite(pool->data, at(m1, pool->data));
-        known();
+        close();
     }
     let a = fold(pool_slot(first, pool), { at: first_at, end: first_end });
 }

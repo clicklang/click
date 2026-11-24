@@ -81,7 +81,7 @@ theorem scaled_lower(x: float) {
         apply(click::float_order::float32_scale_lower(
             float32_from_bits(0x40000000), x, float32_from_bits(0xc1200000)
         ));
-        known();
+        close();
     }
 }
 theorem scaled_upper(x: float) {
@@ -90,7 +90,7 @@ theorem scaled_upper(x: float) {
         apply(click::float_order::float32_scale_upper(
             float32_from_bits(0x40000000), x, float32_from_bits(0x41200000)
         ));
-        known();
+        close();
     }
 }
 

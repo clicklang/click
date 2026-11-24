@@ -32,7 +32,7 @@ void inspect(struct pool* pool) {
     unfold(at(function.entry, valid_pool(pool)));
     have 0 < pool->checked_out by {
         rewrite(pool->checked_out, count(pool_object(pool, _)));
-        known();
+        close();
     }
 }
 ```

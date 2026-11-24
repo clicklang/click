@@ -41,19 +41,19 @@ void keep(int32* p) {
     match state.phase {
         Phase::Before => {
             let { first: first, second: second, child: child } = unfold(state);
-            have first >= 0 by { known(); }
+            have first >= 0 by { close(); }
             unfold(child); step_until(function.exit);
             let child = fold(cell(p), { value: first });
             let state = fold(holder(p), { phase: Phase::Before, first: first, second: second, child: child });
-            solve();
+            close();
         },
         Phase::After => {
             let { first: first, second: second, child: child } = unfold(state);
-            have second >= 1 by { known(); }
+            have second >= 1 by { close(); }
             unfold(child); step_until(function.exit);
             let child = fold(cell(p), { value: second });
             let state = fold(holder(p), { phase: Phase::After, first: first, second: second, child: child });
-            solve();
+            close();
         },
     }
 }

@@ -2,8 +2,8 @@
 
 This checks the two script shapes from the proof-scripts concept page: a
 whole-function proof that steps to function exit with
-`step_until(function.exit)` before `solve()`, which runs no C, and a
-`solve()` whose search is restricted to the facts listed in `using`.
+`step_until(function.exit)` before `close()`, which runs no C, and a
+`close()` whose search is restricted to the facts listed in `using`.
 
 ```c filename=identity_value.c
 int32 identity_value(int32 x) {
@@ -24,7 +24,7 @@ verifying "checked_index.c";
 int32 identity_value(int32 x) {
     ensures result == x by {
         step_until(function.exit);
-        solve();
+        close();
     }
 }
 

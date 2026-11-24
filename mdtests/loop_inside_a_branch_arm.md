@@ -42,7 +42,7 @@ int32 count_up(int32 n) {
         false => {}
     }
     step();
-    solve();
+    close();
 }
 ```
 

@@ -39,7 +39,7 @@ theorem array_fold_induction_bounds(lo: int32, hi: int32) {
             rewrite(to_integer(hi - 1), to_integer(hi) - 1);
             close() using { 0 <= lo; hi <= 1073741823; };
         }
-        have defined(hi - 1 - lo) by { known(); }
+        have defined(hi - 1 - lo) by { close(); }
         have to_integer(hi - 1 - lo) == to_integer(hi - 1) - to_integer(lo) by {
             apply(integer::int32_subtract_to_integer(hi - 1, lo));
         }
@@ -49,7 +49,7 @@ theorem array_fold_induction_bounds(lo: int32, hi: int32) {
         }
         have to_integer(hi - 1) < to_integer(hi) by {
             rewrite(to_integer(hi - 1), to_integer(hi) - 1);
-            known();
+            close();
         }
         have 0 <= to_integer(hi - lo) by {
             rewrite(to_integer(hi - lo), to_integer(hi) - to_integer(lo));
@@ -74,6 +74,6 @@ theorem array_fold_induction_bounds(lo: int32, hi: int32) {
         have to_integer(hi - 1) < 2147483647 by {
             close() using { to_integer(hi - 1) <= 1073741823; };
         }
-        known();
+        close();
     }
 }

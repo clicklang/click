@@ -58,7 +58,7 @@ int32 apply_read(
 }
 
 theorem read_at_satisfies_ReadAt() {
-    ensures ReadAt(&read_at) by { unfold(ReadAt(&read_at)); solve(); }
+    ensures ReadAt(&read_at) by { unfold(ReadAt(&read_at)); close(); }
 }
 
 int32 symbolic_borrowed_subrange_caller(

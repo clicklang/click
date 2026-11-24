@@ -28,7 +28,7 @@ int32 caller(int32 x) {
         step();
         step();
         step();
-        solve();
+        close();
     }
 }
 

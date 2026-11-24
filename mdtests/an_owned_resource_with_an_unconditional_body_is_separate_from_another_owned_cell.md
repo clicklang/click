@@ -17,7 +17,7 @@ void caller(struct node* child, int32* slot) {
     owns plain(child);
     owns *slot;
 } by {
-    have separate(plain(child), memory(*slot)) by { known(); }
+    have separate(plain(child), memory(*slot)) by { close(); }
 }
 ```
 

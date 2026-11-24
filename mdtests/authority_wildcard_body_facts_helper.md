@@ -28,7 +28,7 @@ int32 update(int32* pool, int32* p) {
 } by { with(slot(pool, p)) { step(); have 0 <= p[0]; } }
 int32 lifecycle() { ensures result == 0 or result == 9; } by {
     step(); step(); step(); step();
-    branch { true => { step_until(function.exit); solve(); } false => {} }
+    branch { true => { step_until(function.exit); close(); } false => {} }
     step(); step();
     fold(authority(slot(&pool, _)));
     have 0 <= p[0];

@@ -41,24 +41,24 @@ int32 f(int32 a) {
     have to_integer(a) <= 100 by close() using { a <= 100; };
     apply(integer::add_le(0, to_integer(a), 0, to_integer(a)));
     apply(integer::add_le(to_integer(a), 100, to_integer(a), 100));
-    have to_integer(first) == to_integer(a) + to_integer(a) by known();
+    have to_integer(first) == to_integer(a) + to_integer(a) by close();
     have 0 <= to_integer(first) by {
         rewrite(to_integer(first), to_integer(a) + to_integer(a));
-        known();
+        close();
     }
     have to_integer(first) <= 200 by {
         rewrite(to_integer(first), to_integer(a) + to_integer(a));
-        known();
+        close();
     }
     apply(integer::add_le(0, to_integer(first), 1, 1));
     apply(integer::add_le(to_integer(first), 200, 1, 1));
     have 1 <= to_integer(b) by {
         rewrite(to_integer(b), to_integer(first) + 1);
-        known();
+        close();
     }
     have to_integer(b) <= 201 by {
         rewrite(to_integer(b), to_integer(first) + 1);
-        known();
+        close();
     }
 
     // The second call doubles b within the signed int32 range.
@@ -71,7 +71,7 @@ int32 f(int32 a) {
         apply(integer::le_transitive(to_integer(b) + to_integer(b), 402, 2147483647));
     }
     step_until(statement(1).call(twice, 0).entry);
-    step() by { known(); }
+    step() by { close(); }
 
     step();
 

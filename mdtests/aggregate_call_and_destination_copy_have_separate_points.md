@@ -30,12 +30,12 @@ int32 caller() {
 } by {
     step_until(statement(1).call(0).entry);
     step();
-    have at(statement(1).call(0).exit, p.x == 7) by { known(); }
-    have load<int32>(statement(1).call(0).result) == 3 by { known(); }
+    have at(statement(1).call(0).exit, p.x == 7) by { close(); }
+    have load<int32>(statement(1).call(0).result) == 3 by { close(); }
     step();
-    have at(statement(1).assignment(p, 0).exit, p.x == 3) by { known(); }
+    have at(statement(1).assignment(p, 0).exit, p.x == 3) by { close(); }
     step_until(function.exit);
-    known();
+    close();
 }
 ```
 

@@ -60,7 +60,7 @@ void fill(struct buffer* b, int32 from, int32 to) {
     }
     step_until(function.exit);
     let r = fold(filled_prefix(b), { prefix: q });
-    solve();
+    close();
 }
 ```
 

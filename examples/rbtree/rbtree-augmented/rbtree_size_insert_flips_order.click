@@ -15,11 +15,11 @@ theorem sized_flip_result_preserves_inorder(chain: SizedFlipChain, sub: SizedTre
                 unfold(sized_flip_result(SizedFlipChain::Root, sub));
                 unfold(sized_flip_context(SizedFlipChain::Root));
                 unfold(sized_plug(SizedContext::Top, sub));
-                known();
+                close();
             },
             SizedFlipChain::Stop(ctx) => {
                 unfold(sized_flip_result(SizedFlipChain::Stop(ctx), sub));
-                unfold(sized_flip_context(SizedFlipChain::Stop(ctx))); known();
+                unfold(sized_flip_context(SizedFlipChain::Stop(ctx))); close();
             },
             SizedFlipChain::LL(p, g, pv, gv, other, uncle, up) => {
                 apply(ih(up, SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, SizedTree::Node(p, g, Color::Black, pv, sub, other), sized_recolor(uncle, Color::Black))));
@@ -27,7 +27,7 @@ theorem sized_flip_result_preserves_inorder(chain: SizedFlipChain, sub: SizedTre
                 apply(rb_insert_fix_recolor_preserves_inorder(sized_shape(SizedTree::Node(g, sized_flip_parent(up), Color::Black, gv, SizedTree::Node(p, g, Color::Red, pv, sub, other), uncle))));
                 unfold(sized_insert_fix_recolor(SizedTree::Node(g, sized_flip_parent(up), Color::Black, gv, SizedTree::Node(p, g, Color::Red, pv, sub, other), uncle)));
                 unfold(sized_recolor(SizedTree::Node(p, g, Color::Red, pv, sub, other), Color::Black));
-                have rb_inorder(sized_shape(SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, SizedTree::Node(p, g, Color::Black, pv, sub, other), sized_recolor(uncle, Color::Black)))) == rb_inorder(sized_shape(SizedTree::Node(g, sized_flip_parent(up), Color::Black, gv, SizedTree::Node(p, g, Color::Red, pv, sub, other), uncle))) by known();
+                have rb_inorder(sized_shape(SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, SizedTree::Node(p, g, Color::Black, pv, sub, other), sized_recolor(uncle, Color::Black)))) == rb_inorder(sized_shape(SizedTree::Node(g, sized_flip_parent(up), Color::Black, gv, SizedTree::Node(p, g, Color::Red, pv, sub, other), uncle))) by close();
                 apply(plug_inorder_transport(sized_context_shape(sized_flip_context(up)), sized_shape(SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, SizedTree::Node(p, g, Color::Black, pv, sub, other), sized_recolor(uncle, Color::Black))), sized_shape(SizedTree::Node(g, sized_flip_parent(up), Color::Black, gv, SizedTree::Node(p, g, Color::Red, pv, sub, other), uncle))));
                 apply(sized_plug_preserves_shape(sized_flip_context(up), SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, SizedTree::Node(p, g, Color::Black, pv, sub, other), sized_recolor(uncle, Color::Black))));
                 apply(sized_plug_preserves_shape(sized_flip_context(up), SizedTree::Node(g, sized_flip_parent(up), Color::Black, gv, SizedTree::Node(p, g, Color::Red, pv, sub, other), uncle)));
@@ -35,7 +35,7 @@ theorem sized_flip_result_preserves_inorder(chain: SizedFlipChain, sub: SizedTre
                 unfold(sized_flip_context(SizedFlipChain::LL(p, g, pv, gv, other, uncle, up)));
                 unfold(sized_plug(SizedContext::Left(p, g, Color::Red, pv, other, SizedContext::Left(g, sized_flip_parent(up), Color::Black, gv, uncle, sized_flip_context(up))), sub));
                 unfold(sized_plug(SizedContext::Left(g, sized_flip_parent(up), Color::Black, gv, uncle, sized_flip_context(up)), SizedTree::Node(p, g, Color::Red, pv, sub, other)));
-                known();
+                close();
             },
             SizedFlipChain::LR(p, g, pv, gv, other, uncle, up) => {
                 apply(ih(up, SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, SizedTree::Node(p, g, Color::Black, pv, other, sub), sized_recolor(uncle, Color::Black))));
@@ -43,7 +43,7 @@ theorem sized_flip_result_preserves_inorder(chain: SizedFlipChain, sub: SizedTre
                 apply(rb_insert_fix_recolor_preserves_inorder(sized_shape(SizedTree::Node(g, sized_flip_parent(up), Color::Black, gv, SizedTree::Node(p, g, Color::Red, pv, other, sub), uncle))));
                 unfold(sized_insert_fix_recolor(SizedTree::Node(g, sized_flip_parent(up), Color::Black, gv, SizedTree::Node(p, g, Color::Red, pv, other, sub), uncle)));
                 unfold(sized_recolor(SizedTree::Node(p, g, Color::Red, pv, other, sub), Color::Black));
-                have rb_inorder(sized_shape(SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, SizedTree::Node(p, g, Color::Black, pv, other, sub), sized_recolor(uncle, Color::Black)))) == rb_inorder(sized_shape(SizedTree::Node(g, sized_flip_parent(up), Color::Black, gv, SizedTree::Node(p, g, Color::Red, pv, other, sub), uncle))) by known();
+                have rb_inorder(sized_shape(SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, SizedTree::Node(p, g, Color::Black, pv, other, sub), sized_recolor(uncle, Color::Black)))) == rb_inorder(sized_shape(SizedTree::Node(g, sized_flip_parent(up), Color::Black, gv, SizedTree::Node(p, g, Color::Red, pv, other, sub), uncle))) by close();
                 apply(plug_inorder_transport(sized_context_shape(sized_flip_context(up)), sized_shape(SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, SizedTree::Node(p, g, Color::Black, pv, other, sub), sized_recolor(uncle, Color::Black))), sized_shape(SizedTree::Node(g, sized_flip_parent(up), Color::Black, gv, SizedTree::Node(p, g, Color::Red, pv, other, sub), uncle))));
                 apply(sized_plug_preserves_shape(sized_flip_context(up), SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, SizedTree::Node(p, g, Color::Black, pv, other, sub), sized_recolor(uncle, Color::Black))));
                 apply(sized_plug_preserves_shape(sized_flip_context(up), SizedTree::Node(g, sized_flip_parent(up), Color::Black, gv, SizedTree::Node(p, g, Color::Red, pv, other, sub), uncle)));
@@ -51,7 +51,7 @@ theorem sized_flip_result_preserves_inorder(chain: SizedFlipChain, sub: SizedTre
                 unfold(sized_flip_context(SizedFlipChain::LR(p, g, pv, gv, other, uncle, up)));
                 unfold(sized_plug(SizedContext::Right(p, g, Color::Red, pv, other, SizedContext::Left(g, sized_flip_parent(up), Color::Black, gv, uncle, sized_flip_context(up))), sub));
                 unfold(sized_plug(SizedContext::Left(g, sized_flip_parent(up), Color::Black, gv, uncle, sized_flip_context(up)), SizedTree::Node(p, g, Color::Red, pv, other, sub)));
-                known();
+                close();
             },
             SizedFlipChain::RL(p, g, pv, gv, other, uncle, up) => {
                 apply(ih(up, SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, sized_recolor(uncle, Color::Black), SizedTree::Node(p, g, Color::Black, pv, sub, other))));
@@ -59,7 +59,7 @@ theorem sized_flip_result_preserves_inorder(chain: SizedFlipChain, sub: SizedTre
                 apply(rb_insert_fix_recolor_preserves_inorder(sized_shape(SizedTree::Node(g, sized_flip_parent(up), Color::Black, gv, uncle, SizedTree::Node(p, g, Color::Red, pv, sub, other)))));
                 unfold(sized_insert_fix_recolor(SizedTree::Node(g, sized_flip_parent(up), Color::Black, gv, uncle, SizedTree::Node(p, g, Color::Red, pv, sub, other))));
                 unfold(sized_recolor(SizedTree::Node(p, g, Color::Red, pv, sub, other), Color::Black));
-                have rb_inorder(sized_shape(SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, sized_recolor(uncle, Color::Black), SizedTree::Node(p, g, Color::Black, pv, sub, other)))) == rb_inorder(sized_shape(SizedTree::Node(g, sized_flip_parent(up), Color::Black, gv, uncle, SizedTree::Node(p, g, Color::Red, pv, sub, other)))) by known();
+                have rb_inorder(sized_shape(SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, sized_recolor(uncle, Color::Black), SizedTree::Node(p, g, Color::Black, pv, sub, other)))) == rb_inorder(sized_shape(SizedTree::Node(g, sized_flip_parent(up), Color::Black, gv, uncle, SizedTree::Node(p, g, Color::Red, pv, sub, other)))) by close();
                 apply(plug_inorder_transport(sized_context_shape(sized_flip_context(up)), sized_shape(SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, sized_recolor(uncle, Color::Black), SizedTree::Node(p, g, Color::Black, pv, sub, other))), sized_shape(SizedTree::Node(g, sized_flip_parent(up), Color::Black, gv, uncle, SizedTree::Node(p, g, Color::Red, pv, sub, other)))));
                 apply(sized_plug_preserves_shape(sized_flip_context(up), SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, sized_recolor(uncle, Color::Black), SizedTree::Node(p, g, Color::Black, pv, sub, other))));
                 apply(sized_plug_preserves_shape(sized_flip_context(up), SizedTree::Node(g, sized_flip_parent(up), Color::Black, gv, uncle, SizedTree::Node(p, g, Color::Red, pv, sub, other))));
@@ -67,7 +67,7 @@ theorem sized_flip_result_preserves_inorder(chain: SizedFlipChain, sub: SizedTre
                 unfold(sized_flip_context(SizedFlipChain::RL(p, g, pv, gv, other, uncle, up)));
                 unfold(sized_plug(SizedContext::Left(p, g, Color::Red, pv, other, SizedContext::Right(g, sized_flip_parent(up), Color::Black, gv, uncle, sized_flip_context(up))), sub));
                 unfold(sized_plug(SizedContext::Right(g, sized_flip_parent(up), Color::Black, gv, uncle, sized_flip_context(up)), SizedTree::Node(p, g, Color::Red, pv, sub, other)));
-                known();
+                close();
             },
             SizedFlipChain::RR(p, g, pv, gv, other, uncle, up) => {
                 apply(ih(up, SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, sized_recolor(uncle, Color::Black), SizedTree::Node(p, g, Color::Black, pv, other, sub))));
@@ -75,7 +75,7 @@ theorem sized_flip_result_preserves_inorder(chain: SizedFlipChain, sub: SizedTre
                 apply(rb_insert_fix_recolor_preserves_inorder(sized_shape(SizedTree::Node(g, sized_flip_parent(up), Color::Black, gv, uncle, SizedTree::Node(p, g, Color::Red, pv, other, sub)))));
                 unfold(sized_insert_fix_recolor(SizedTree::Node(g, sized_flip_parent(up), Color::Black, gv, uncle, SizedTree::Node(p, g, Color::Red, pv, other, sub))));
                 unfold(sized_recolor(SizedTree::Node(p, g, Color::Red, pv, other, sub), Color::Black));
-                have rb_inorder(sized_shape(SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, sized_recolor(uncle, Color::Black), SizedTree::Node(p, g, Color::Black, pv, other, sub)))) == rb_inorder(sized_shape(SizedTree::Node(g, sized_flip_parent(up), Color::Black, gv, uncle, SizedTree::Node(p, g, Color::Red, pv, other, sub)))) by known();
+                have rb_inorder(sized_shape(SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, sized_recolor(uncle, Color::Black), SizedTree::Node(p, g, Color::Black, pv, other, sub)))) == rb_inorder(sized_shape(SizedTree::Node(g, sized_flip_parent(up), Color::Black, gv, uncle, SizedTree::Node(p, g, Color::Red, pv, other, sub)))) by close();
                 apply(plug_inorder_transport(sized_context_shape(sized_flip_context(up)), sized_shape(SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, sized_recolor(uncle, Color::Black), SizedTree::Node(p, g, Color::Black, pv, other, sub))), sized_shape(SizedTree::Node(g, sized_flip_parent(up), Color::Black, gv, uncle, SizedTree::Node(p, g, Color::Red, pv, other, sub)))));
                 apply(sized_plug_preserves_shape(sized_flip_context(up), SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, sized_recolor(uncle, Color::Black), SizedTree::Node(p, g, Color::Black, pv, other, sub))));
                 apply(sized_plug_preserves_shape(sized_flip_context(up), SizedTree::Node(g, sized_flip_parent(up), Color::Black, gv, uncle, SizedTree::Node(p, g, Color::Red, pv, other, sub))));
@@ -83,7 +83,7 @@ theorem sized_flip_result_preserves_inorder(chain: SizedFlipChain, sub: SizedTre
                 unfold(sized_flip_context(SizedFlipChain::RR(p, g, pv, gv, other, uncle, up)));
                 unfold(sized_plug(SizedContext::Right(p, g, Color::Red, pv, other, SizedContext::Right(g, sized_flip_parent(up), Color::Black, gv, uncle, sized_flip_context(up))), sub));
                 unfold(sized_plug(SizedContext::Right(g, sized_flip_parent(up), Color::Black, gv, uncle, sized_flip_context(up)), SizedTree::Node(p, g, Color::Red, pv, other, sub)));
-                known();
+                close();
             },
         }
     }

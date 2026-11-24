@@ -16,7 +16,7 @@ uint32 divide() {
     requires *divisor != 0u32;
     ensures true;
 } by {
-    step() by { known(); }
+    step() by { close(); }
 }
 ```
 

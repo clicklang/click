@@ -24,7 +24,7 @@ void touch(int32* p) {
     unfold(c);
     step_until(function.exit);
     let c = fold(cell(p), { rank: old(c.rank) });
-    solve();
+    close();
 }
 ```
 

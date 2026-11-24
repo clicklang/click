@@ -19,11 +19,11 @@ void put_i8(int8* p, int8* q) {
 } by {
     step();
     mark first;
-    have *p == -15 by { known(); }
-    have *q == -15 by { rewrite(q, p); known(); }
+    have *p == -15 by { close(); }
+    have *q == -15 by { rewrite(q, p); close(); }
     step();
-    have *p == 4 by { known(); }
-    have at(first, *p) == -15 by { known(); }
+    have *p == 4 by { close(); }
+    have at(first, *p) == -15 by { close(); }
 }
 void put_u8(uint8* p, uint8* q) {
     requires p == q;
@@ -32,11 +32,11 @@ void put_u8(uint8* p, uint8* q) {
 } by {
     step();
     mark first;
-    have *p == 241 by { known(); }
-    have *q == 241 by { rewrite(q, p); known(); }
+    have *p == 241 by { close(); }
+    have *q == 241 by { rewrite(q, p); close(); }
     step();
-    have *p == 4 by { known(); }
-    have at(first, *p) == 241 by { known(); }
+    have *p == 4 by { close(); }
+    have at(first, *p) == 241 by { close(); }
 }
 void put_i16(int16* p, int16* q) {
     requires p == q;
@@ -45,11 +45,11 @@ void put_i16(int16* p, int16* q) {
 } by {
     step();
     mark first;
-    have *p == -255 by { known(); }
-    have *q == -255 by { rewrite(q, p); known(); }
+    have *p == -255 by { close(); }
+    have *q == -255 by { rewrite(q, p); close(); }
     step();
-    have *p == 4 by { known(); }
-    have at(first, *p) == -255 by { known(); }
+    have *p == 4 by { close(); }
+    have at(first, *p) == -255 by { close(); }
 }
 void put_u16(uint16* p, uint16* q) {
     requires p == q;
@@ -58,11 +58,11 @@ void put_u16(uint16* p, uint16* q) {
 } by {
     step();
     mark first;
-    have *p == 65281 by { known(); }
-    have *q == 65281 by { rewrite(q, p); known(); }
+    have *p == 65281 by { close(); }
+    have *q == 65281 by { rewrite(q, p); close(); }
     step();
-    have *p == 4 by { known(); }
-    have at(first, *p) == 65281 by { known(); }
+    have *p == 4 by { close(); }
+    have at(first, *p) == 65281 by { close(); }
 }
 ```
 

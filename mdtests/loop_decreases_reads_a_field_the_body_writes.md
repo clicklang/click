@@ -30,14 +30,14 @@ int32 drain(struct box* box) {
     loop {
         decreases box->len;
         invariant 0 <= box->len;
-        initialize by solve();
+        initialize by close();
         maintain by {
             have 0 <= to_integer(box->len - 1);
             step();
         }
     }
     step();
-    solve();
+    close();
 }
 ```
 

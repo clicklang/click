@@ -33,8 +33,8 @@ int16 read_int16(int16 value) {
     step_until(statement(5).entry);
     mark written;
     step();
-    have *p == value by solve();
-    have separate(memory(*q), memory(*p)) by known();
+    have *p == value by close();
+    have separate(memory(*q), memory(*p)) by close();
     have separate(statement(5).footprint, memory(*p)) by {
         close() using { separate(memory(*q), memory(*p)); };
     }
@@ -42,7 +42,7 @@ int16 read_int16(int16 value) {
         preserve(memory(*p), statement(5));
     }
     step_until(function.exit);
-    solve();
+    close();
 }
 
 uint16 read_uint16(uint16 value) {
@@ -51,8 +51,8 @@ uint16 read_uint16(uint16 value) {
     step_until(statement(5).entry);
     mark written;
     step();
-    have *p == value by solve();
-    have separate(memory(*q), memory(*p)) by known();
+    have *p == value by close();
+    have separate(memory(*q), memory(*p)) by close();
     have separate(statement(5).footprint, memory(*p)) by {
         close() using { separate(memory(*q), memory(*p)); };
     }
@@ -60,7 +60,7 @@ uint16 read_uint16(uint16 value) {
         preserve(memory(*p), statement(5));
     }
     step_until(function.exit);
-    solve();
+    close();
 }
 ```
 

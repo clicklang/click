@@ -30,7 +30,7 @@ void keep(struct node* n, struct node* p) {
     let saved = fold(parent_word(n, p), { bits: n->tag });
     step_until(function.exit);
     unfold(saved);
-    have ((n->tag & ~3) as (struct node *)) == p by { known(); }
+    have ((n->tag & ~3) as (struct node *)) == p by { close(); }
 }
 ```
 

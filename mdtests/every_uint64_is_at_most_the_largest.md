@@ -1,7 +1,7 @@
 # Every uint64 is at most the largest
 
 `value <= 18446744073709551615u64` holds for every `uint64`, as
-`0u64 <= value` does, and `known()` checks both without premises. Together
+`0u64 <= value` does, and `close()` checks both without premises. Together
 they give the intrinsic bounds of a `uint64` observation.
 
 `a_uint64_is_not_always_below_the_largest.md` lowers the bound by one.
@@ -9,10 +9,10 @@ they give the intrinsic bounds of a `uint64` observation.
 ```click
 theorem top(value: uint64) {
     ensures value <= 18446744073709551615u64 by {
-        known();
+        close();
     }
     ensures 0u64 <= value by {
-        known();
+        close();
     }
 }
 ```

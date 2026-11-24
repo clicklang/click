@@ -27,7 +27,7 @@ theorem int32_equality_transitive(first: int32, second: int32, third: int32) {
     requires second == third;
 
     ensures first == third by {
-        solve();
+        close();
     }
 }
 
@@ -83,14 +83,14 @@ int32 owned_segmented_buffer_init(
     fold(owned_segmented_buffer(owner));
     have 0 < owner->first_len;
     have 0 < owner->second_len;
-    known();
-    known();
-    known();
-    known();
-    known();
-    known();
-    known();
-    known();
+    close();
+    close();
+    close();
+    close();
+    close();
+    close();
+    close();
+    close();
 }
 
 int32 owned_segmented_buffer_get_first(
@@ -105,7 +105,7 @@ int32 owned_segmented_buffer_get_first(
 } by {
     observe(owned_segmented_buffer(owner));
     step();
-    known();
+    close();
 }
 
 int32 owned_segmented_buffer_set_first(
@@ -140,7 +140,7 @@ int32 owned_segmented_buffer_set_first(
     have contains(memory(owner->first_data[0..owner->first_len]), memory(owner->first_data[index])) by {
         apply(separation::contains_element(owner->first_data, 0, owner->first_len, index));
     }
-    have separate(memory(owner->first_data[index]), memory(*owner)) by { solve(); }
+    have separate(memory(owner->first_data[index]), memory(*owner)) by { close(); }
     step();
     have separate(statement(0).footprint, memory(owner->first_data)) by {
         close() using { at(before_store, separate(memory(owner->first_data), memory(owner->first_data[index]))); };
@@ -155,7 +155,7 @@ int32 owned_segmented_buffer_set_first(
         preserve(memory(owner->second_data), statement(0));
     }
     step();
-    solve();
+    close();
 }
 
 int32 owned_segmented_buffer_set_second(
@@ -190,7 +190,7 @@ int32 owned_segmented_buffer_set_second(
     have contains(memory(owner->second_data[0..owner->second_len]), memory(owner->second_data[index])) by {
         apply(separation::contains_element(owner->second_data, 0, owner->second_len, index));
     }
-    have separate(memory(owner->second_data[index]), memory(*owner)) by { solve(); }
+    have separate(memory(owner->second_data[index]), memory(*owner)) by { close(); }
     step();
     have separate(statement(0).footprint, memory(owner->first_data)) by {
         close() using { at(before_store, separate(memory(owner->first_data), memory(owner->second_data[index]))); };
@@ -205,7 +205,7 @@ int32 owned_segmented_buffer_set_second(
         preserve(memory(owner->second_data), statement(0));
     }
     step();
-    solve();
+    close();
 }
 
 int32 owned_segmented_buffer_swap(struct owned_segmented_buffer* owner) {
@@ -229,39 +229,39 @@ int32 owned_segmented_buffer_swap(struct owned_segmented_buffer* owner) {
     step();
     step();
     have 1 <= owner->first_len by {
-        known();
+        close();
     }
     have 1 <= owner->second_len by {
-        known();
+        close();
     }
     have owner->first_data == old(owner->second_data);
     have owner->first_len == old(owner->second_len);
     have separate(memory(*owner), memory(owner->first_data[0..owner->first_len])) by {
         rewrite(owner->first_data, old(owner->second_data));
         rewrite(owner->first_len, old(owner->second_len));
-        known();
+        close();
     }
     have owner->second_data == old(owner->first_data);
     have owner->second_len == old(owner->first_len);
     have separate(memory(*owner), memory(owner->second_data[0..owner->second_len])) by {
         rewrite(owner->second_data, old(owner->first_data));
         rewrite(owner->second_len, old(owner->first_len));
-        known();
+        close();
     }
     fold(owned_segmented_buffer(owner));
     have 0 < owner->first_len by {
         have 0 < owner->first_len;
-        known();
+        close();
     }
     have 0 < owner->second_len by {
         have 0 < owner->second_len;
-        known();
+        close();
     }
-    known();
-    known();
-    known();
-    known();
-    known();
+    close();
+    close();
+    close();
+    close();
+    close();
 }
 
 int32 owned_segmented_buffer_pipeline(
@@ -296,26 +296,26 @@ int32 owned_segmented_buffer_pipeline(
     step();
     have at(statement(3).call(0).exit, first_data[0]) == first_value by {
         rewrite(first_data, at(statement(3).call(0).exit, owner->first_data));
-        known();
+        close();
     }
-    have separate(memory(ignored), memory(first_data[0])) by { known(); }
+    have separate(memory(ignored), memory(first_data[0])) by { close(); }
     have separate(statement(3).assignment(ignored, 0).footprint, memory(first_data[0])) by {
         close() using { separate(memory(ignored), memory(first_data[0])); };
     }
     have first_data[0] == at(statement(3).call(0).exit, first_data[0]) by {
         preserve(memory(first_data[0]), statement(3).assignment(ignored, 0));
     }
-    have first_data[0] == first_value by { known(); }
+    have first_data[0] == first_value by { close(); }
     step();
     step();
-    have owner->first_len == first_len by { known(); }
-    have owner->second_len == second_len by { known(); }
-    have 0 < owner->first_len by { known(); }
-    have 0 < owner->second_len by { known(); }
-    have separate(memory(second_data[0..1]), memory(first_data[0])) by { solve(); }
+    have owner->first_len == first_len by { close(); }
+    have owner->second_len == second_len by { close(); }
+    have 0 < owner->first_len by { close(); }
+    have 0 < owner->second_len by { close(); }
+    have separate(memory(second_data[0..1]), memory(first_data[0])) by { close(); }
     have contains(memory(second_data[0..1]), statement(4).call(0).footprint) by {
         rewrite(second_data, at(statement(4).call(0).entry, owner->second_data));
-        known();
+        close();
     }
     have contains(memory(first_data[0]), memory(first_data[0])) by { apply(click::separation::contains_refl(memory(first_data[0]))); }
     have separate(statement(4).call(0).footprint, memory(first_data[0])) by {
@@ -324,35 +324,35 @@ int32 owned_segmented_buffer_pipeline(
     have at(statement(4).call(0).exit, first_data[0]) == at(statement(4).call(0).entry, first_data[0]) by {
         preserve(memory(first_data[0]), statement(4).call(0));
     }
-    have separate(memory(ignored), memory(first_data[0])) by { known(); }
+    have separate(memory(ignored), memory(first_data[0])) by { close(); }
     have separate(statement(4).assignment(ignored, 0).footprint, memory(first_data[0])) by {
         close() using { separate(memory(ignored), memory(first_data[0])); };
     }
     have at(statement(4).assignment(ignored, 0).exit, first_data[0]) == at(statement(4).assignment(ignored, 0).entry, first_data[0]) by {
         preserve(memory(first_data[0]), statement(4).assignment(ignored, 0));
     }
-    have first_data[0] == first_value by { known(); }
-    have owner->first_data == first_data by { known(); }
-    have owner->second_data == second_data by { known(); }
+    have first_data[0] == first_value by { close(); }
+    have owner->first_data == first_data by { close(); }
+    have owner->second_data == second_data by { close(); }
     have at(statement(5).entry, second_data[0]) == at(statement(5).entry, second_value) by {
         rewrite(at(statement(5).entry, second_value), at(statement(5).entry, owner->second_data[0]));
         rewrite(at(statement(5).entry, owner->second_data), at(statement(5).entry, second_data));
-        known();
+        close();
     }
-    have second_data[0] == second_value by { known(); }
+    have second_data[0] == second_value by { close(); }
     fold(owned_segmented_buffer(owner));
     step();
     step();
-    have first_data[0] == first_value by { known(); }
+    have first_data[0] == first_value by { close(); }
     apply(int32_equality_transitive(program::result, first_data[0], first_value));
     step();
     have owner->first_data == first_data;
-    known();
-    known();
-    known();
-    known();
-    known();
-    known();
-    known();
-    known();
+    close();
+    close();
+    close();
+    close();
+    close();
+    close();
+    close();
+    close();
 }

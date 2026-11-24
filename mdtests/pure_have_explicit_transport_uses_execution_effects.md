@@ -33,10 +33,10 @@ int32 set_second_return_first(int32 p[2]) {
                 old(p[0]) == 7;
             };
         }
-        known();
+        close();
     }
     step();
-    solve();
+    close();
 }
 ```
 

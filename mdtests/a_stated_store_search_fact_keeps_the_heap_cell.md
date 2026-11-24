@@ -33,7 +33,7 @@ int32 read_first(int32 m) {
             step_until(function.exit);
         } else {
             step_until(statement(3).entry);
-            have ((m - 1) as int32) != 0 by solve();
+            have ((m - 1) as int32) != 0 by close();
             step_until(function.exit);
         }
     }

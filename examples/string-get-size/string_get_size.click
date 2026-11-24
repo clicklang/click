@@ -56,7 +56,7 @@ theorem kilo_quotient(n: Integer, d: Integer) {
         truncating_remainder(n, d) <= d - 1;
         d <= 1024;
     }; }
-    solve();
+    close();
     }
 }
 
@@ -73,7 +73,7 @@ theorem kilo_divide(x: uint64, d: uint32) {
         apply(integer::uint64_divide_to_integer(x, d as uint64));
         apply(kilo_quotient(to_integer(x), to_integer(d as uint64)));
         rewrite(to_integer(x / d as uint64), truncating_quotient(to_integer(x), to_integer(d as uint64)));
-        known();
+        close();
     }
 }
 
@@ -84,12 +84,12 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
     ensures result as uint64 < len as uint64 implies buf[result as uint64] == 0u8;
     ensures result as uint64 >= len as uint64 implies buf[len as uint64 - 1u64] == 0u8;
 } by {
-    have len as uint64 <= 2147483647u64 by { solve(); }
+    have len as uint64 <= 2147483647u64 by { close(); }
 // `size` is zero: both early exits print `0`, an empty fraction, and the
 // unit for `i == 0`.
     if blk_size == 0u64 {
         step_until(region(77).entry);
-        have stdio::decimal_length(size as uint32 as uint64) <= 20u64 by { unfold(stdio::decimal_length(size as uint32 as uint64)); solve(); }
+        have stdio::decimal_length(size as uint32 as uint64) <= 20u64 by { unfold(stdio::decimal_length(size as uint32 as uint64)); close(); }
         have len as uint64 != 0u64;
         have forall (k: uint64) { 0u64 <= k and k < 0u64 implies tmp[k] != 0u8 } by {
             intro();
@@ -104,21 +104,21 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                 if (units & 2147483648u32) != 0u32 {
                     step(snprintf, { n1: 0u64 });
                     step_until(function.exit);
-                    solve();
+                    close();
                 } else {
                     step(snprintf, { n1: 0u64 });
                     step_until(function.exit);
-                    solve();
+                    close();
                 }
             } else {
                 if (units & 2147483648u32) != 0u32 {
                     step(snprintf, { n1: 0u64 });
                     step_until(function.exit);
-                    solve();
+                    close();
                 } else {
                     step(snprintf, { n1: 0u64 });
                     step_until(function.exit);
-                    solve();
+                    close();
                 }
             }
         } else {
@@ -127,28 +127,28 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                 if (units & 2147483648u32) != 0u32 {
                     step(snprintf, { n1: 0u64 });
                     step_until(function.exit);
-                    solve();
+                    close();
                 } else {
                     step(snprintf, { n1: 0u64 });
                     step_until(function.exit);
-                    solve();
+                    close();
                 }
             } else {
                 if (units & 2147483648u32) != 0u32 {
                     step(snprintf, { n1: 0u64 });
                     step_until(function.exit);
-                    solve();
+                    close();
                 } else {
                     step(snprintf, { n1: 0u64 });
                     step_until(function.exit);
-                    solve();
+                    close();
                 }
             }
         }
     } else {
         if size == 0u64 {
             step_until(region(77).entry);
-            have stdio::decimal_length(size as uint32 as uint64) <= 20u64 by { unfold(stdio::decimal_length(size as uint32 as uint64)); solve(); }
+            have stdio::decimal_length(size as uint32 as uint64) <= 20u64 by { unfold(stdio::decimal_length(size as uint32 as uint64)); close(); }
             have len as uint64 != 0u64;
             have forall (k: uint64) { 0u64 <= k and k < 0u64 implies tmp[k] != 0u8 } by {
                 intro();
@@ -163,21 +163,21 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                     if (units & 2147483648u32) != 0u32 {
                         step(snprintf, { n1: 0u64 });
                         step_until(function.exit);
-                        solve();
+                        close();
                     } else {
                         step(snprintf, { n1: 0u64 });
                         step_until(function.exit);
-                        solve();
+                        close();
                     }
                 } else {
                     if (units & 2147483648u32) != 0u32 {
                         step(snprintf, { n1: 0u64 });
                         step_until(function.exit);
-                        solve();
+                        close();
                     } else {
                         step(snprintf, { n1: 0u64 });
                         step_until(function.exit);
-                        solve();
+                        close();
                     }
                 }
             } else {
@@ -186,21 +186,21 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                     if (units & 2147483648u32) != 0u32 {
                         step(snprintf, { n1: 0u64 });
                         step_until(function.exit);
-                        solve();
+                        close();
                     } else {
                         step(snprintf, { n1: 0u64 });
                         step_until(function.exit);
-                        solve();
+                        close();
                     }
                 } else {
                     if (units & 2147483648u32) != 0u32 {
                         step(snprintf, { n1: 0u64 });
                         step_until(function.exit);
-                        solve();
+                        close();
                     } else {
                         step(snprintf, { n1: 0u64 });
                         step_until(function.exit);
-                        solve();
+                        close();
                     }
                 }
             }
@@ -216,7 +216,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                 invariant i == 2 implies to_integer(blk_size) * 1000000 <= 18446744073709551615;
                 invariant i == 3 implies to_integer(blk_size) * 1000000000 <= 18446744073709551615;
                 invariant i == 4 implies to_integer(blk_size) * 1000000000000 <= 18446744073709551615;
-                initialize by solve();
+                initialize by close();
                 maintain by {
                     mark head;
                     step();
@@ -237,10 +237,10 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                     have blk_size < at(head, blk_size);
                     have at(head, i) < 4 by {
                         if at(head, i) < 4 {
-                            known();
+                            close();
                         } else {
                             have at(head, i) == 4;
-                            have to_integer(at(head, blk_size)) * 1000000000000 <= 18446744073709551615 by { solve(); }
+                            have to_integer(at(head, blk_size)) * 1000000000000 <= 18446744073709551615 by { close(); }
                             have false by { close() using {
                                 to_integer(at(head, blk_size)) * 1000000000000 <= 18446744073709551615;
                                 4294967296 <= to_integer(at(head, blk_size));
@@ -252,32 +252,32 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                     have i == 2 implies to_integer(blk_size) * 1000000 <= 18446744073709551615 by {
                         intro();
                         have at(head, i) == 1;
-                        have to_integer(at(head, blk_size)) * 1000 <= 18446744073709551615 by { solve(); }
+                        have to_integer(at(head, blk_size)) * 1000 <= 18446744073709551615 by { close(); }
                         have to_integer(blk_size) * 1000000 <= 18446744073709551615 by { close() using {
                             to_integer(at(head, blk_size) / at(div, __base) as uint64) * 1000 <= to_integer(at(head, blk_size));
                             to_integer(at(head, blk_size)) * 1000 <= 18446744073709551615;
                         }; }
-                        known();
+                        close();
                     }
                     have i == 3 implies to_integer(blk_size) * 1000000000 <= 18446744073709551615 by {
                         intro();
                         have at(head, i) == 2;
-                        have to_integer(at(head, blk_size)) * 1000000 <= 18446744073709551615 by { solve(); }
+                        have to_integer(at(head, blk_size)) * 1000000 <= 18446744073709551615 by { close(); }
                         have to_integer(blk_size) * 1000000000 <= 18446744073709551615 by { close() using {
                             to_integer(at(head, blk_size) / at(div, __base) as uint64) * 1000 <= to_integer(at(head, blk_size));
                             to_integer(at(head, blk_size)) * 1000000 <= 18446744073709551615;
                         }; }
-                        known();
+                        close();
                     }
                     have i == 4 implies to_integer(blk_size) * 1000000000000 <= 18446744073709551615 by {
                         intro();
                         have at(head, i) == 3;
-                        have to_integer(at(head, blk_size)) * 1000000000 <= 18446744073709551615 by { solve(); }
+                        have to_integer(at(head, blk_size)) * 1000000000 <= 18446744073709551615 by { close(); }
                         have to_integer(blk_size) * 1000000000000 <= 18446744073709551615 by { close() using {
                             to_integer(at(head, blk_size) / at(div, __base) as uint64) * 1000 <= to_integer(at(head, blk_size));
                             to_integer(at(head, blk_size)) * 1000000000 <= 18446744073709551615;
                         }; }
-                        known();
+                        close();
                     }
                 }
             }
@@ -293,7 +293,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                 invariant i == at(loop(1).entry, i) + 2 implies to_integer(size) * 1000000 <= 18446744073709551615;
                 invariant i == at(loop(1).entry, i) + 3 implies to_integer(size) * 1000000000 <= 18446744073709551615;
                 invariant i == at(loop(1).entry, i) + 4 implies to_integer(size) * 1000000000000 <= 18446744073709551615;
-                initialize by solve();
+                initialize by close();
                 maintain by {
                     have i <= 8;
                     mark head;
@@ -315,10 +315,10 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                     have size < at(head, size);
                     have at(head, i) < at(loop(1).entry, i) + 4 by {
                         if at(head, i) < at(loop(1).entry, i) + 4 {
-                            known();
+                            close();
                         } else {
                             have at(head, i) == at(loop(1).entry, i) + 4;
-                            have to_integer(at(head, size)) * 1000000000000 <= 18446744073709551615 by { solve(); }
+                            have to_integer(at(head, size)) * 1000000000000 <= 18446744073709551615 by { close(); }
                             have false by { close() using {
                                 to_integer(at(head, size)) * 1000000000000 <= 18446744073709551615;
                                 4294967296 <= to_integer(at(head, size));
@@ -330,32 +330,32 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                     have i == at(loop(1).entry, i) + 2 implies to_integer(size) * 1000000 <= 18446744073709551615 by {
                         intro();
                         have at(head, i) == at(loop(1).entry, i) + 1;
-                        have to_integer(at(head, size)) * 1000 <= 18446744073709551615 by { solve(); }
+                        have to_integer(at(head, size)) * 1000 <= 18446744073709551615 by { close(); }
                         have to_integer(size) * 1000000 <= 18446744073709551615 by { close() using {
                             to_integer(at(head, size) / at(div, __base) as uint64) * 1000 <= to_integer(at(head, size));
                             to_integer(at(head, size)) * 1000 <= 18446744073709551615;
                         }; }
-                        known();
+                        close();
                     }
                     have i == at(loop(1).entry, i) + 3 implies to_integer(size) * 1000000000 <= 18446744073709551615 by {
                         intro();
                         have at(head, i) == at(loop(1).entry, i) + 2;
-                        have to_integer(at(head, size)) * 1000000 <= 18446744073709551615 by { solve(); }
+                        have to_integer(at(head, size)) * 1000000 <= 18446744073709551615 by { close(); }
                         have to_integer(size) * 1000000000 <= 18446744073709551615 by { close() using {
                             to_integer(at(head, size) / at(div, __base) as uint64) * 1000 <= to_integer(at(head, size));
                             to_integer(at(head, size)) * 1000000 <= 18446744073709551615;
                         }; }
-                        known();
+                        close();
                     }
                     have i == at(loop(1).entry, i) + 4 implies to_integer(size) * 1000000000000 <= 18446744073709551615 by {
                         intro();
                         have at(head, i) == at(loop(1).entry, i) + 3;
-                        have to_integer(at(head, size)) * 1000000000 <= 18446744073709551615 by { solve(); }
+                        have to_integer(at(head, size)) * 1000000000 <= 18446744073709551615 by { close(); }
                         have to_integer(size) * 1000000000000 <= 18446744073709551615 by { close() using {
                             to_integer(at(head, size) / at(div, __base) as uint64) * 1000 <= to_integer(at(head, size));
                             to_integer(at(head, size)) * 1000000000 <= 18446744073709551615;
                         }; }
-                        known();
+                        close();
                     }
                 }
             }
@@ -389,7 +389,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                 invariant i == at(loop(2).entry, i) + 4 implies to_integer(size) * 1000000000000 <= 18446744073709551615;
                 invariant i == at(loop(2).entry, i) + 5 implies to_integer(size) * 1000000000000000 <= 18446744073709551615;
                 invariant i == at(loop(2).entry, i) + 6 implies to_integer(size) * 1000000000000000000 <= 18446744073709551615;
-                initialize by solve();
+                initialize by close();
                 maintain by {
                     have i <= 14;
                     mark head;
@@ -404,10 +404,10 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                             have (units & 1u32) != 1u32 implies remainder <= 999u32;
                             have at(head, i) < at(loop(2).entry, i) + 6 by {
                                 if at(head, i) < at(loop(2).entry, i) + 6 {
-                                    known();
+                                    close();
                                 } else {
                                     have at(head, i) == at(loop(2).entry, i) + 6;
-                                    have to_integer(at(head, size)) * 1000000000000000000 <= 18446744073709551615 by { solve(); }
+                                    have to_integer(at(head, size)) * 1000000000000000000 <= 18446744073709551615 by { close(); }
                                     have false by { close() using {
                                         to_integer(at(head, size)) * 1000000000000000000 <= 18446744073709551615;
                                         1024 <= to_integer(at(head, size));
@@ -422,52 +422,52 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                             have i == at(loop(2).entry, i) + 2 implies to_integer(size) * 1000000 <= 18446744073709551615 by {
                                 intro();
                                 have at(head, i) == at(loop(2).entry, i) + 1;
-                                have to_integer(at(head, size)) * 1000 <= 18446744073709551615 by { solve(); }
+                                have to_integer(at(head, size)) * 1000 <= 18446744073709551615 by { close(); }
                                 have to_integer(size) * 1000000 <= 18446744073709551615 by { close() using {
                                     to_integer(at(head, size) / 1024u32 as uint64) * 1000 <= to_integer(at(head, size));
                                     to_integer(at(head, size)) * 1000 <= 18446744073709551615;
                                 }; }
-                                known();
+                                close();
                             }
                             have i == at(loop(2).entry, i) + 3 implies to_integer(size) * 1000000000 <= 18446744073709551615 by {
                                 intro();
                                 have at(head, i) == at(loop(2).entry, i) + 2;
-                                have to_integer(at(head, size)) * 1000000 <= 18446744073709551615 by { solve(); }
+                                have to_integer(at(head, size)) * 1000000 <= 18446744073709551615 by { close(); }
                                 have to_integer(size) * 1000000000 <= 18446744073709551615 by { close() using {
                                     to_integer(at(head, size) / 1024u32 as uint64) * 1000 <= to_integer(at(head, size));
                                     to_integer(at(head, size)) * 1000000 <= 18446744073709551615;
                                 }; }
-                                known();
+                                close();
                             }
                             have i == at(loop(2).entry, i) + 4 implies to_integer(size) * 1000000000000 <= 18446744073709551615 by {
                                 intro();
                                 have at(head, i) == at(loop(2).entry, i) + 3;
-                                have to_integer(at(head, size)) * 1000000000 <= 18446744073709551615 by { solve(); }
+                                have to_integer(at(head, size)) * 1000000000 <= 18446744073709551615 by { close(); }
                                 have to_integer(size) * 1000000000000 <= 18446744073709551615 by { close() using {
                                     to_integer(at(head, size) / 1024u32 as uint64) * 1000 <= to_integer(at(head, size));
                                     to_integer(at(head, size)) * 1000000000 <= 18446744073709551615;
                                 }; }
-                                known();
+                                close();
                             }
                             have i == at(loop(2).entry, i) + 5 implies to_integer(size) * 1000000000000000 <= 18446744073709551615 by {
                                 intro();
                                 have at(head, i) == at(loop(2).entry, i) + 4;
-                                have to_integer(at(head, size)) * 1000000000000 <= 18446744073709551615 by { solve(); }
+                                have to_integer(at(head, size)) * 1000000000000 <= 18446744073709551615 by { close(); }
                                 have to_integer(size) * 1000000000000000 <= 18446744073709551615 by { close() using {
                                     to_integer(at(head, size) / 1024u32 as uint64) * 1000 <= to_integer(at(head, size));
                                     to_integer(at(head, size)) * 1000000000000 <= 18446744073709551615;
                                 }; }
-                                known();
+                                close();
                             }
                             have i == at(loop(2).entry, i) + 6 implies to_integer(size) * 1000000000000000000 <= 18446744073709551615 by {
                                 intro();
                                 have at(head, i) == at(loop(2).entry, i) + 5;
-                                have to_integer(at(head, size)) * 1000000000000000 <= 18446744073709551615 by { solve(); }
+                                have to_integer(at(head, size)) * 1000000000000000 <= 18446744073709551615 by { close(); }
                                 have to_integer(size) * 1000000000000000000 <= 18446744073709551615 by { close() using {
                                     to_integer(at(head, size) / 1024u32 as uint64) * 1000 <= to_integer(at(head, size));
                                     to_integer(at(head, size)) * 1000000000000000 <= 18446744073709551615;
                                 }; }
-                                known();
+                                close();
                             }
                         } else {
                             step();
@@ -485,10 +485,10 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                             have (units & 1u32) != 1u32 implies remainder <= 999u32;
                             have at(head, i) < at(loop(2).entry, i) + 6 by {
                                 if at(head, i) < at(loop(2).entry, i) + 6 {
-                                    known();
+                                    close();
                                 } else {
                                     have at(head, i) == at(loop(2).entry, i) + 6;
-                                    have to_integer(at(head, size)) * 1000000000000000000 <= 18446744073709551615 by { solve(); }
+                                    have to_integer(at(head, size)) * 1000000000000000000 <= 18446744073709551615 by { close(); }
                                     have false by { close() using {
                                         to_integer(at(head, size)) * 1000000000000000000 <= 18446744073709551615;
                                         1000 <= to_integer(at(head, size));
@@ -503,52 +503,52 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                             have i == at(loop(2).entry, i) + 2 implies to_integer(size) * 1000000 <= 18446744073709551615 by {
                                 intro();
                                 have at(head, i) == at(loop(2).entry, i) + 1;
-                                have to_integer(at(head, size)) * 1000 <= 18446744073709551615 by { solve(); }
+                                have to_integer(at(head, size)) * 1000 <= 18446744073709551615 by { close(); }
                                 have to_integer(size) * 1000000 <= 18446744073709551615 by { close() using {
                                     to_integer(at(head, size) / 1000u32 as uint64) * 1000 <= to_integer(at(head, size));
                                     to_integer(at(head, size)) * 1000 <= 18446744073709551615;
                                 }; }
-                                known();
+                                close();
                             }
                             have i == at(loop(2).entry, i) + 3 implies to_integer(size) * 1000000000 <= 18446744073709551615 by {
                                 intro();
                                 have at(head, i) == at(loop(2).entry, i) + 2;
-                                have to_integer(at(head, size)) * 1000000 <= 18446744073709551615 by { solve(); }
+                                have to_integer(at(head, size)) * 1000000 <= 18446744073709551615 by { close(); }
                                 have to_integer(size) * 1000000000 <= 18446744073709551615 by { close() using {
                                     to_integer(at(head, size) / 1000u32 as uint64) * 1000 <= to_integer(at(head, size));
                                     to_integer(at(head, size)) * 1000000 <= 18446744073709551615;
                                 }; }
-                                known();
+                                close();
                             }
                             have i == at(loop(2).entry, i) + 4 implies to_integer(size) * 1000000000000 <= 18446744073709551615 by {
                                 intro();
                                 have at(head, i) == at(loop(2).entry, i) + 3;
-                                have to_integer(at(head, size)) * 1000000000 <= 18446744073709551615 by { solve(); }
+                                have to_integer(at(head, size)) * 1000000000 <= 18446744073709551615 by { close(); }
                                 have to_integer(size) * 1000000000000 <= 18446744073709551615 by { close() using {
                                     to_integer(at(head, size) / 1000u32 as uint64) * 1000 <= to_integer(at(head, size));
                                     to_integer(at(head, size)) * 1000000000 <= 18446744073709551615;
                                 }; }
-                                known();
+                                close();
                             }
                             have i == at(loop(2).entry, i) + 5 implies to_integer(size) * 1000000000000000 <= 18446744073709551615 by {
                                 intro();
                                 have at(head, i) == at(loop(2).entry, i) + 4;
-                                have to_integer(at(head, size)) * 1000000000000 <= 18446744073709551615 by { solve(); }
+                                have to_integer(at(head, size)) * 1000000000000 <= 18446744073709551615 by { close(); }
                                 have to_integer(size) * 1000000000000000 <= 18446744073709551615 by { close() using {
                                     to_integer(at(head, size) / 1000u32 as uint64) * 1000 <= to_integer(at(head, size));
                                     to_integer(at(head, size)) * 1000000000000 <= 18446744073709551615;
                                 }; }
-                                known();
+                                close();
                             }
                             have i == at(loop(2).entry, i) + 6 implies to_integer(size) * 1000000000000000000 <= 18446744073709551615 by {
                                 intro();
                                 have at(head, i) == at(loop(2).entry, i) + 5;
-                                have to_integer(at(head, size)) * 1000000000000000 <= 18446744073709551615 by { solve(); }
+                                have to_integer(at(head, size)) * 1000000000000000 <= 18446744073709551615 by { close(); }
                                 have to_integer(size) * 1000000000000000000 <= 18446744073709551615 by { close() using {
                                     to_integer(at(head, size) / 1000u32 as uint64) * 1000 <= to_integer(at(head, size));
                                     to_integer(at(head, size)) * 1000000000000000 <= 18446744073709551615;
                                 }; }
-                                known();
+                                close();
                             }
                         } else {
                             step();
@@ -572,7 +572,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                 invariant 1u32 <= sf_cap and sf_cap <= 1023u32;
                 invariant j == 1 implies 10u32 <= sf_cap;
                 invariant j == 2 implies 100u32 <= sf_cap;
-                initialize by solve();
+                initialize by close();
                 maintain by {
                     mark head;
                     step_until(loop.back_edge);
@@ -585,10 +585,10 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                     have 10u32 <= sf_cap;
                     have at(head, j) < 2 by {
                         if at(head, j) < 2 {
-                            known();
+                            close();
                         } else {
                             have at(head, j) == 2;
-                            have 100u32 <= at(head, sf_cap) by { solve(); }
+                            have 100u32 <= at(head, sf_cap) by { close(); }
                             have 99u32 < at(head, sf_cap);
                             contradiction(at(head, sf_cap) <= 99u32);
                         }
@@ -598,9 +598,9 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                     have j == 2 implies 100u32 <= sf_cap by {
                         intro();
                         have at(head, j) == 1;
-                        have 10u32 <= at(head, sf_cap) by { solve(); }
+                        have 10u32 <= at(head, sf_cap) by { close(); }
                         have 100u32 <= sf_cap;
-                        known();
+                        close();
                     }
                 }
             }
@@ -613,10 +613,10 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                     apply(integer::uint32_multiply_guard_by_integer_bound(remainder, 1000u32));
                     apply(integer::uint32_multiply_to_integer(remainder, 1000u32));
                     have remainder * 1000u32 <= 1023000u32;
-                    have remainder * 1000u32 >> 10 <= 999u32 by { solve(); }
+                    have remainder * 1000u32 >> 10 <= 999u32 by { close(); }
                     step();
                     step();
-                    have to_integer(remainder) <= 999 by { known(); }
+                    have to_integer(remainder) <= 999 by { close(); }
                     apply(integer::uint32_to_integer_less_equal_implies_less_equal(remainder, 999u32));
                 }
                 false => {
@@ -672,19 +672,19 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
             if j == 0 ensuring {
                 fact tmp_len(j) <= 3u64;
             } then {
-                have tmp_len(j) == 0u64 by { unfold(tmp_len(j)); solve(); }
+                have tmp_len(j) == 0u64 by { unfold(tmp_len(j)); close(); }
                 have tmp_len(j) <= 3u64;
             } else {
                 if j == 1 ensuring {
                     fact tmp_len(j) <= 3u64;
                 } then {
-                    have tmp_len(j) == 2u64 by { unfold(tmp_len(j)); solve(); }
+                    have tmp_len(j) == 2u64 by { unfold(tmp_len(j)); close(); }
                     have tmp_len(j) <= 3u64;
                 } else {
                     have 1 <= j by { close() using { 0 <= j; j != 0; }; }
                     have 2 <= j by { close() using { 1 <= j; j != 1; }; }
                     have j == 2 by { close() using { 2 <= j; j <= 2; }; }
-                    have tmp_len(j) == 3u64 by { unfold(tmp_len(j)); solve(); }
+                    have tmp_len(j) == 3u64 by { unfold(tmp_len(j)); close(); }
                     have tmp_len(j) <= 3u64;
                 }
             }
@@ -707,32 +707,32 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                     step();
                     have tmp[0u64] == 46u8;
                     have tmp[0u64] != 0u8;
-                    have defined(tmp[0u64]) by { solve(); }
+                    have defined(tmp[0u64]) by { close(); }
                     have 0u64 < stdio::padded_length(remainder as uint64, 3u64);
                     have 1u64 + 0u64 + 1u64 < 12u64 by { normalize(); }
                     have tmp[1] == stdio::padded_digit(remainder as uint64, 3u64, 48u8, 0u64) by {
                         instantiate(forall (k: uint64) { k < stdio::padded_length(remainder as uint64, 3u64) and 1u64 + k + 1u64 < 12u64 implies tmp[1u64 + k] == stdio::padded_digit(remainder as uint64, 3u64, 48u8, k) }, 0u64);
-                        known();
+                        close();
                     }
                     apply(stdio::padded_digit_lower_bound(remainder as uint64, 3u64, 0u64));
                     have 48u8 <= tmp[1u64];
                     have tmp[1u64] != 0u8;
                     have defined(tmp[1]) by {
                         instantiate(forall (k: uint64) { k < stdio::padded_length(remainder as uint64, 3u64) and 1u64 + k + 1u64 < 12u64 implies defined(tmp[1u64 + k]) }, 0u64);
-                        known();
+                        close();
                     }
                     have 1u64 < stdio::padded_length(remainder as uint64, 3u64);
                     have 1u64 + 1u64 + 1u64 < 12u64 by { normalize(); }
                     have tmp[2] == stdio::padded_digit(remainder as uint64, 3u64, 48u8, 1u64) by {
                         instantiate(forall (k: uint64) { k < stdio::padded_length(remainder as uint64, 3u64) and 1u64 + k + 1u64 < 12u64 implies tmp[1u64 + k] == stdio::padded_digit(remainder as uint64, 3u64, 48u8, k) }, 1u64);
-                        known();
+                        close();
                     }
                     apply(stdio::padded_digit_lower_bound(remainder as uint64, 3u64, 1u64));
                     have 48u8 <= tmp[2u64];
                     have tmp[2u64] != 0u8;
                     have defined(tmp[2]) by {
                         instantiate(forall (k: uint64) { k < stdio::padded_length(remainder as uint64, 3u64) and 1u64 + k + 1u64 < 12u64 implies defined(tmp[1u64 + k]) }, 1u64);
-                        known();
+                        close();
                     }
                     if j == 1 ensuring {
                         fact to_integer(tmp_len(j)) + 1 <= 18446744073709551615;
@@ -753,7 +753,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                         have tmp[0u64] == at(fmt, tmp[0u64]) by {
                             preserve(memory(tmp[0u64]), statement(22).statement(1));
                         }
-                        have tmp[0u64] != 0u8 by { known(); }
+                        have tmp[0u64] != 0u8 by { close(); }
                         have defined(tmp[0u64]) by {
                             preserve(memory(tmp[0u64]), statement(22).statement(1));
                         }
@@ -767,14 +767,14 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                         have tmp[1u64] == at(fmt, tmp[1u64]) by {
                             preserve(memory(tmp[1u64]), statement(22).statement(1));
                         }
-                        have tmp[1u64] != 0u8 by { known(); }
+                        have tmp[1u64] != 0u8 by { close(); }
                         have defined(tmp[1u64]) by {
                             preserve(memory(tmp[1u64]), statement(22).statement(1));
                         }
                         have defined(tmp[2u64]) by { normalize() using { j == 1; }; }
                         have tmp[2u64] == 0u8 by { normalize() using { j == 1; }; }
-                        have tmp_len(j) == 2u64 by { unfold(tmp_len(j)); solve(); }
-                        have tmp[tmp_len(j)] == 0u8 by { rewrite(tmp_len(j), 2u64); known(); }
+                        have tmp_len(j) == 2u64 by { unfold(tmp_len(j)); close(); }
+                        have tmp[tmp_len(j)] == 0u8 by { rewrite(tmp_len(j), 2u64); close(); }
                         have to_integer(tmp_len(j)) + 1 <= 18446744073709551615;
                         have forall (k: uint64) { 0u64 <= k and k < 2u64 implies tmp[k] != 0u8 } by { enumerate(); }
                         have forall (k: uint64) { 0u64 <= k and k < 3u64 implies defined(tmp[k]) } by { enumerate(); }
@@ -783,14 +783,14 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                             intro();
                             have k < 2u64 by { close() using { k < tmp_len(j); tmp_len(j) == 2u64; }; }
                             instantiate(forall (k: uint64) { 0u64 <= k and k < 2u64 implies tmp[k] != 0u8 }, k);
-                            known();
+                            close();
                         }
                         have forall (k: uint64) { 0u64 <= k and k < tmp_len(j) + 1u64 implies defined(tmp[k]) } by {
                             intro();
                             intro();
                             have k < 3u64 by { close() using { k < tmp_len(j) + 1u64; tmp_len(j) == 2u64; }; }
                             instantiate(forall (k: uint64) { 0u64 <= k and k < 3u64 implies defined(tmp[k]) }, k);
-                            known();
+                            close();
                         }
                     } else {
                         have 0 <= j and j <= 2;
@@ -809,7 +809,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                         have tmp[0u64] == at(fmt, tmp[0u64]) by {
                             preserve(memory(tmp[0u64]), statement(22).statement(1));
                         }
-                        have tmp[0u64] != 0u8 by { known(); }
+                        have tmp[0u64] != 0u8 by { close(); }
                         have defined(tmp[0u64]) by {
                             preserve(memory(tmp[0u64]), statement(22).statement(1));
                         }
@@ -823,7 +823,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                         have tmp[1u64] == at(fmt, tmp[1u64]) by {
                             preserve(memory(tmp[1u64]), statement(22).statement(1));
                         }
-                        have tmp[1u64] != 0u8 by { known(); }
+                        have tmp[1u64] != 0u8 by { close(); }
                         have defined(tmp[1u64]) by {
                             preserve(memory(tmp[1u64]), statement(22).statement(1));
                         }
@@ -837,14 +837,14 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                         have tmp[2u64] == at(fmt, tmp[2u64]) by {
                             preserve(memory(tmp[2u64]), statement(22).statement(1));
                         }
-                        have tmp[2u64] != 0u8 by { known(); }
+                        have tmp[2u64] != 0u8 by { close(); }
                         have defined(tmp[2u64]) by {
                             preserve(memory(tmp[2u64]), statement(22).statement(1));
                         }
                         have defined(tmp[3u64]) by { normalize() using { j == 2; }; }
                         have tmp[3u64] == 0u8 by { normalize() using { j == 2; }; }
-                        have tmp_len(j) == 3u64 by { unfold(tmp_len(j)); solve(); }
-                        have tmp[tmp_len(j)] == 0u8 by { rewrite(tmp_len(j), 3u64); known(); }
+                        have tmp_len(j) == 3u64 by { unfold(tmp_len(j)); close(); }
+                        have tmp[tmp_len(j)] == 0u8 by { rewrite(tmp_len(j), 3u64); close(); }
                         have to_integer(tmp_len(j)) + 1 <= 18446744073709551615;
                         have forall (k: uint64) { 0u64 <= k and k < 3u64 implies tmp[k] != 0u8 } by { enumerate(); }
                         have forall (k: uint64) { 0u64 <= k and k < 4u64 implies defined(tmp[k]) } by { enumerate(); }
@@ -853,21 +853,21 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                             intro();
                             have k < 3u64 by { close() using { k < tmp_len(j); tmp_len(j) == 3u64; }; }
                             instantiate(forall (k: uint64) { 0u64 <= k and k < 3u64 implies tmp[k] != 0u8 }, k);
-                            known();
+                            close();
                         }
                         have forall (k: uint64) { 0u64 <= k and k < tmp_len(j) + 1u64 implies defined(tmp[k]) } by {
                             intro();
                             intro();
                             have k < 4u64 by { close() using { k < tmp_len(j) + 1u64; tmp_len(j) == 3u64; }; }
                             instantiate(forall (k: uint64) { 0u64 <= k and k < 4u64 implies defined(tmp[k]) }, k);
-                            known();
+                            close();
                         }
                     }
                 }
                 false => {
                     have j == 0;
-                    have tmp_len(j) == 0u64 by { unfold(tmp_len(j)); solve(); }
-                    have tmp[tmp_len(j)] == 0u8 by { rewrite(tmp_len(j), 0u64); known(); }
+                    have tmp_len(j) == 0u64 by { unfold(tmp_len(j)); close(); }
+                    have tmp[tmp_len(j)] == 0u8 by { rewrite(tmp_len(j), 0u64); close(); }
                     have to_integer(tmp_len(j)) + 1 <= 18446744073709551615;
                     have forall (k: uint64) { 0u64 <= k and k < tmp_len(j) implies tmp[k] != 0u8 } by {
                         intro();
@@ -881,7 +881,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                         have k < 1u64 by { close() using { k < tmp_len(j) + 1u64; tmp_len(j) == 0u64; }; }
                         have k == 0u64 by { close() using { k < 1u64; }; }
                         rewrite(k, 0u64);
-                        solve();
+                        close();
                     }
                 }
             }
@@ -890,7 +890,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
             have stdio::decimal_length(size as uint32 as uint64) <= 20u64 by {
                 unfold(stdio::decimal_length(size as uint32 as uint64));
                 have stdio::decimal_length(size as uint32 as uint64) <= 20u64;
-                known();
+                close();
             }
             have len as uint64 != 0u64;
             if 9 <= i {
@@ -900,21 +900,21 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                     if (units & 2147483648u32) != 0u32 {
                         step(snprintf, { n1: tmp_len(j) });
                         step_until(function.exit);
-                        solve();
+                        close();
                     } else {
                         step(snprintf, { n1: tmp_len(j) });
                         step_until(function.exit);
-                        solve();
+                        close();
                     }
                 } else {
                     if (units & 2147483648u32) != 0u32 {
                         step(snprintf, { n1: tmp_len(j) });
                         step_until(function.exit);
-                        solve();
+                        close();
                     } else {
                         step(snprintf, { n1: tmp_len(j) });
                         step_until(function.exit);
-                        solve();
+                        close();
                     }
                 }
             } else {
@@ -929,21 +929,21 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                             if (units & 2147483648u32) != 0u32 {
                                 step(snprintf, { n1: tmp_len(j) });
                                 step_until(function.exit);
-                                solve();
+                                close();
                             } else {
                                 step(snprintf, { n1: tmp_len(j) });
                                 step_until(function.exit);
-                                solve();
+                                close();
                             }
                         } else {
                             if (units & 2147483648u32) != 0u32 {
                                 step(snprintf, { n1: tmp_len(j) });
                                 step_until(function.exit);
-                                solve();
+                                close();
                             } else {
                                 step(snprintf, { n1: tmp_len(j) });
                                 step_until(function.exit);
-                                solve();
+                                close();
                             }
                         }
                     } else {
@@ -955,21 +955,21 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                 if (units & 2147483648u32) != 0u32 {
                                     step(snprintf, { n1: tmp_len(j) });
                                     step_until(function.exit);
-                                    solve();
+                                    close();
                                 } else {
                                     step(snprintf, { n1: tmp_len(j) });
                                     step_until(function.exit);
-                                    solve();
+                                    close();
                                 }
                             } else {
                                 if (units & 2147483648u32) != 0u32 {
                                     step(snprintf, { n1: tmp_len(j) });
                                     step_until(function.exit);
-                                    solve();
+                                    close();
                                 } else {
                                     step(snprintf, { n1: tmp_len(j) });
                                     step_until(function.exit);
-                                    solve();
+                                    close();
                                 }
                             }
                         } else {
@@ -981,21 +981,21 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                     if (units & 2147483648u32) != 0u32 {
                                         step(snprintf, { n1: tmp_len(j) });
                                         step_until(function.exit);
-                                        solve();
+                                        close();
                                     } else {
                                         step(snprintf, { n1: tmp_len(j) });
                                         step_until(function.exit);
-                                        solve();
+                                        close();
                                     }
                                 } else {
                                     if (units & 2147483648u32) != 0u32 {
                                         step(snprintf, { n1: tmp_len(j) });
                                         step_until(function.exit);
-                                        solve();
+                                        close();
                                     } else {
                                         step(snprintf, { n1: tmp_len(j) });
                                         step_until(function.exit);
-                                        solve();
+                                        close();
                                     }
                                 }
                             } else {
@@ -1007,21 +1007,21 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                         if (units & 2147483648u32) != 0u32 {
                                             step(snprintf, { n1: tmp_len(j) });
                                             step_until(function.exit);
-                                            solve();
+                                            close();
                                         } else {
                                             step(snprintf, { n1: tmp_len(j) });
                                             step_until(function.exit);
-                                            solve();
+                                            close();
                                         }
                                     } else {
                                         if (units & 2147483648u32) != 0u32 {
                                             step(snprintf, { n1: tmp_len(j) });
                                             step_until(function.exit);
-                                            solve();
+                                            close();
                                         } else {
                                             step(snprintf, { n1: tmp_len(j) });
                                             step_until(function.exit);
-                                            solve();
+                                            close();
                                         }
                                     }
                                 } else {
@@ -1033,21 +1033,21 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                             if (units & 2147483648u32) != 0u32 {
                                                 step(snprintf, { n1: tmp_len(j) });
                                                 step_until(function.exit);
-                                                solve();
+                                                close();
                                             } else {
                                                 step(snprintf, { n1: tmp_len(j) });
                                                 step_until(function.exit);
-                                                solve();
+                                                close();
                                             }
                                         } else {
                                             if (units & 2147483648u32) != 0u32 {
                                                 step(snprintf, { n1: tmp_len(j) });
                                                 step_until(function.exit);
-                                                solve();
+                                                close();
                                             } else {
                                                 step(snprintf, { n1: tmp_len(j) });
                                                 step_until(function.exit);
-                                                solve();
+                                                close();
                                             }
                                         }
                                     } else {
@@ -1059,21 +1059,21 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                                 if (units & 2147483648u32) != 0u32 {
                                                     step(snprintf, { n1: tmp_len(j) });
                                                     step_until(function.exit);
-                                                    solve();
+                                                    close();
                                                 } else {
                                                     step(snprintf, { n1: tmp_len(j) });
                                                     step_until(function.exit);
-                                                    solve();
+                                                    close();
                                                 }
                                             } else {
                                                 if (units & 2147483648u32) != 0u32 {
                                                     step(snprintf, { n1: tmp_len(j) });
                                                     step_until(function.exit);
-                                                    solve();
+                                                    close();
                                                 } else {
                                                     step(snprintf, { n1: tmp_len(j) });
                                                     step_until(function.exit);
-                                                    solve();
+                                                    close();
                                                 }
                                             }
                                         } else {
@@ -1085,21 +1085,21 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                                     if (units & 2147483648u32) != 0u32 {
                                                         step(snprintf, { n1: tmp_len(j) });
                                                         step_until(function.exit);
-                                                        solve();
+                                                        close();
                                                     } else {
                                                         step(snprintf, { n1: tmp_len(j) });
                                                         step_until(function.exit);
-                                                        solve();
+                                                        close();
                                                     }
                                                 } else {
                                                     if (units & 2147483648u32) != 0u32 {
                                                         step(snprintf, { n1: tmp_len(j) });
                                                         step_until(function.exit);
-                                                        solve();
+                                                        close();
                                                     } else {
                                                         step(snprintf, { n1: tmp_len(j) });
                                                         step_until(function.exit);
-                                                        solve();
+                                                        close();
                                                     }
                                                 }
                                             } else {
@@ -1111,21 +1111,21 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                                         if (units & 2147483648u32) != 0u32 {
                                                             step(snprintf, { n1: tmp_len(j) });
                                                             step_until(function.exit);
-                                                            solve();
+                                                            close();
                                                         } else {
                                                             step(snprintf, { n1: tmp_len(j) });
                                                             step_until(function.exit);
-                                                            solve();
+                                                            close();
                                                         }
                                                     } else {
                                                         if (units & 2147483648u32) != 0u32 {
                                                             step(snprintf, { n1: tmp_len(j) });
                                                             step_until(function.exit);
-                                                            solve();
+                                                            close();
                                                         } else {
                                                             step(snprintf, { n1: tmp_len(j) });
                                                             step_until(function.exit);
-                                                            solve();
+                                                            close();
                                                         }
                                                     }
                                                 } else {
@@ -1137,21 +1137,21 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                                         if (units & 2147483648u32) != 0u32 {
                                                             step(snprintf, { n1: tmp_len(j) });
                                                             step_until(function.exit);
-                                                            solve();
+                                                            close();
                                                         } else {
                                                             step(snprintf, { n1: tmp_len(j) });
                                                             step_until(function.exit);
-                                                            solve();
+                                                            close();
                                                         }
                                                     } else {
                                                         if (units & 2147483648u32) != 0u32 {
                                                             step(snprintf, { n1: tmp_len(j) });
                                                             step_until(function.exit);
-                                                            solve();
+                                                            close();
                                                         } else {
                                                             step(snprintf, { n1: tmp_len(j) });
                                                             step_until(function.exit);
-                                                            solve();
+                                                            close();
                                                         }
                                                     }
                                                 }
@@ -1170,21 +1170,21 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                             if (units & 2147483648u32) != 0u32 {
                                 step(snprintf, { n1: tmp_len(j) });
                                 step_until(function.exit);
-                                solve();
+                                close();
                             } else {
                                 step(snprintf, { n1: tmp_len(j) });
                                 step_until(function.exit);
-                                solve();
+                                close();
                             }
                         } else {
                             if (units & 2147483648u32) != 0u32 {
                                 step(snprintf, { n1: tmp_len(j) });
                                 step_until(function.exit);
-                                solve();
+                                close();
                             } else {
                                 step(snprintf, { n1: tmp_len(j) });
                                 step_until(function.exit);
-                                solve();
+                                close();
                             }
                         }
                     } else {
@@ -1196,21 +1196,21 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                 if (units & 2147483648u32) != 0u32 {
                                     step(snprintf, { n1: tmp_len(j) });
                                     step_until(function.exit);
-                                    solve();
+                                    close();
                                 } else {
                                     step(snprintf, { n1: tmp_len(j) });
                                     step_until(function.exit);
-                                    solve();
+                                    close();
                                 }
                             } else {
                                 if (units & 2147483648u32) != 0u32 {
                                     step(snprintf, { n1: tmp_len(j) });
                                     step_until(function.exit);
-                                    solve();
+                                    close();
                                 } else {
                                     step(snprintf, { n1: tmp_len(j) });
                                     step_until(function.exit);
-                                    solve();
+                                    close();
                                 }
                             }
                         } else {
@@ -1222,21 +1222,21 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                     if (units & 2147483648u32) != 0u32 {
                                         step(snprintf, { n1: tmp_len(j) });
                                         step_until(function.exit);
-                                        solve();
+                                        close();
                                     } else {
                                         step(snprintf, { n1: tmp_len(j) });
                                         step_until(function.exit);
-                                        solve();
+                                        close();
                                     }
                                 } else {
                                     if (units & 2147483648u32) != 0u32 {
                                         step(snprintf, { n1: tmp_len(j) });
                                         step_until(function.exit);
-                                        solve();
+                                        close();
                                     } else {
                                         step(snprintf, { n1: tmp_len(j) });
                                         step_until(function.exit);
-                                        solve();
+                                        close();
                                     }
                                 }
                             } else {
@@ -1248,21 +1248,21 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                         if (units & 2147483648u32) != 0u32 {
                                             step(snprintf, { n1: tmp_len(j) });
                                             step_until(function.exit);
-                                            solve();
+                                            close();
                                         } else {
                                             step(snprintf, { n1: tmp_len(j) });
                                             step_until(function.exit);
-                                            solve();
+                                            close();
                                         }
                                     } else {
                                         if (units & 2147483648u32) != 0u32 {
                                             step(snprintf, { n1: tmp_len(j) });
                                             step_until(function.exit);
-                                            solve();
+                                            close();
                                         } else {
                                             step(snprintf, { n1: tmp_len(j) });
                                             step_until(function.exit);
-                                            solve();
+                                            close();
                                         }
                                     }
                                 } else {
@@ -1274,21 +1274,21 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                             if (units & 2147483648u32) != 0u32 {
                                                 step(snprintf, { n1: tmp_len(j) });
                                                 step_until(function.exit);
-                                                solve();
+                                                close();
                                             } else {
                                                 step(snprintf, { n1: tmp_len(j) });
                                                 step_until(function.exit);
-                                                solve();
+                                                close();
                                             }
                                         } else {
                                             if (units & 2147483648u32) != 0u32 {
                                                 step(snprintf, { n1: tmp_len(j) });
                                                 step_until(function.exit);
-                                                solve();
+                                                close();
                                             } else {
                                                 step(snprintf, { n1: tmp_len(j) });
                                                 step_until(function.exit);
-                                                solve();
+                                                close();
                                             }
                                         }
                                     } else {
@@ -1300,21 +1300,21 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                                 if (units & 2147483648u32) != 0u32 {
                                                     step(snprintf, { n1: tmp_len(j) });
                                                     step_until(function.exit);
-                                                    solve();
+                                                    close();
                                                 } else {
                                                     step(snprintf, { n1: tmp_len(j) });
                                                     step_until(function.exit);
-                                                    solve();
+                                                    close();
                                                 }
                                             } else {
                                                 if (units & 2147483648u32) != 0u32 {
                                                     step(snprintf, { n1: tmp_len(j) });
                                                     step_until(function.exit);
-                                                    solve();
+                                                    close();
                                                 } else {
                                                     step(snprintf, { n1: tmp_len(j) });
                                                     step_until(function.exit);
-                                                    solve();
+                                                    close();
                                                 }
                                             }
                                         } else {
@@ -1326,21 +1326,21 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                                     if (units & 2147483648u32) != 0u32 {
                                                         step(snprintf, { n1: tmp_len(j) });
                                                         step_until(function.exit);
-                                                        solve();
+                                                        close();
                                                     } else {
                                                         step(snprintf, { n1: tmp_len(j) });
                                                         step_until(function.exit);
-                                                        solve();
+                                                        close();
                                                     }
                                                 } else {
                                                     if (units & 2147483648u32) != 0u32 {
                                                         step(snprintf, { n1: tmp_len(j) });
                                                         step_until(function.exit);
-                                                        solve();
+                                                        close();
                                                     } else {
                                                         step(snprintf, { n1: tmp_len(j) });
                                                         step_until(function.exit);
-                                                        solve();
+                                                        close();
                                                     }
                                                 }
                                             } else {
@@ -1352,21 +1352,21 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                                         if (units & 2147483648u32) != 0u32 {
                                                             step(snprintf, { n1: tmp_len(j) });
                                                             step_until(function.exit);
-                                                            solve();
+                                                            close();
                                                         } else {
                                                             step(snprintf, { n1: tmp_len(j) });
                                                             step_until(function.exit);
-                                                            solve();
+                                                            close();
                                                         }
                                                     } else {
                                                         if (units & 2147483648u32) != 0u32 {
                                                             step(snprintf, { n1: tmp_len(j) });
                                                             step_until(function.exit);
-                                                            solve();
+                                                            close();
                                                         } else {
                                                             step(snprintf, { n1: tmp_len(j) });
                                                             step_until(function.exit);
-                                                            solve();
+                                                            close();
                                                         }
                                                     }
                                                 } else {
@@ -1378,21 +1378,21 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                                         if (units & 2147483648u32) != 0u32 {
                                                             step(snprintf, { n1: tmp_len(j) });
                                                             step_until(function.exit);
-                                                            solve();
+                                                            close();
                                                         } else {
                                                             step(snprintf, { n1: tmp_len(j) });
                                                             step_until(function.exit);
-                                                            solve();
+                                                            close();
                                                         }
                                                     } else {
                                                         if (units & 2147483648u32) != 0u32 {
                                                             step(snprintf, { n1: tmp_len(j) });
                                                             step_until(function.exit);
-                                                            solve();
+                                                            close();
                                                         } else {
                                                             step(snprintf, { n1: tmp_len(j) });
                                                             step_until(function.exit);
-                                                            solve();
+                                                            close();
                                                         }
                                                     }
                                                 }

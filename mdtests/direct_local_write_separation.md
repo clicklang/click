@@ -23,8 +23,8 @@ int set_local(const int *viewed) {
     step();
     step();
     step();
-    have separate(memory((&local)[0..1]), memory(viewed[0..1])) by { solve(); }
-    step() by { known(); }
+    have separate(memory((&local)[0..1]), memory(viewed[0..1])) by { close(); }
+    step() by { close(); }
 }
 ```
 

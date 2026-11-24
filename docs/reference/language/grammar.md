@@ -73,8 +73,8 @@ minus retains its existing arithmetic and definedness conditions
 <!-- verified-example: mdtests/float_bit_literals_preserve_ieee_values.md -->
 ```click
 theorem float_bits() {
-    ensures iszero(float32_from_bits(0x80000000u32)) by { known(); }
-    ensures isnan(float64_from_bits(0x7ff8000000000123u64)) by { known(); }
+    ensures iszero(float32_from_bits(0x80000000u32)) by { close(); }
+    ensures isnan(float64_from_bits(0x7ff8000000000123u64)) by { close(); }
 }
 ```
 
@@ -101,7 +101,7 @@ because it is not the static type of `p`.
 uint64 read64(uint64* p) {
     views p[0..1];
     ensures load<uint64>(p) == result;
-} by { step(); solve(); }
+} by { step(); close(); }
 ```
 
 ## Word index
@@ -682,7 +682,7 @@ as `if P { true } else { false }`.
 <!-- verified-example: mdtests/proposition_lambdas.md -->
 ```click
 theorem direct_proposition_lambda(x: Integer) {
-    ensures (|value: Integer| -> Prop { value == value })(x) by solve();
+    ensures (|value: Integer| -> Prop { value == value })(x) by close();
 }
 ```
 
@@ -762,7 +762,7 @@ theorem existential_range_lambda(lo: int32, hi: int32) {
     requires lo < hi;
     ensures (lo..hi).any(same) by {
         witness(lo);
-        solve();
+        close();
     }
 }
 ```

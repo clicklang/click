@@ -10,11 +10,11 @@ function id<T>(p: T*) -> T* {
 }
 
 theorem id_is_its_argument(p: int32*) {
-    ensures id(p) == p by { unfold(id(p)); known(); }
+    ensures id(p) == p by { unfold(id(p)); close(); }
 }
 
 theorem id_of_bytes(p: uint8*) {
-    ensures id(p) == p by { unfold(id(p)); known(); }
+    ensures id(p) == p by { unfold(id(p)); close(); }
 }
 ```
 

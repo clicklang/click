@@ -24,7 +24,7 @@ int32 f(int32 n) diverges {
             invariant n <= 0;
         }
         step_until(function.exit);
-        solve();
+        close();
     } else {
         have n > 0;
         have n >= 0 by { close() using { n > 0; }; }
@@ -32,7 +32,7 @@ int32 f(int32 n) diverges {
             invariant n >= 0;
         }
         step_until(function.exit);
-        solve();
+        close();
     }
 }
 ```

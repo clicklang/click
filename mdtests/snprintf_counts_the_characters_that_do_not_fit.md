@@ -40,8 +40,8 @@ int32 clipped(char buf[]) {
         have stdio::decimal_length(123u64) >= 2u64 by {
             close() using { stdio::decimal_length(123u64) == 3u64; };
         }
-        have 2u64 != 0u64 by { known(); }
-        solve();
+        have 2u64 != 0u64 by { close(); }
+        close();
     }
 }
 ```

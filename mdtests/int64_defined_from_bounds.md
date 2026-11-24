@@ -55,7 +55,7 @@ int64 sum_by_solve(int64 a, int64 b) {
     ensures to_integer(result) == to_integer(a + b);
 } by {
     have defined(a + b) by {
-        solve();
+        close();
     }
 }
 

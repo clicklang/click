@@ -5,14 +5,14 @@ theorem split_sum(n: int32) {
     requires 0 <= n and n <= 100;
     ensures exists (a: int32, b: int32) { a + b == n and 0 <= a and 0 <= b } by {
         witness(n, 0);
-        solve();
+        close();
     }
 }
 
 theorem pointer_identity(p: int32*) {
     ensures exists (q: int32*) { q == p } by {
         witness(p);
-        solve();
+        close();
     }
 }
 ```

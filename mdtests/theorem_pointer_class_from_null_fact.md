@@ -13,7 +13,7 @@ void keep(struct node *p) {}
 verifying "null_class.c";
 
 theorem node_identity(p: struct node*) {
-    ensures p == p by { known(); }
+    ensures p == p by { close(); }
 }
 
 void keep(struct node *p) {
@@ -24,7 +24,7 @@ void keep(struct node *p) {
         apply(node_identity(p));
     }
     step_until(function.exit);
-    known();
+    close();
 }
 ```
 

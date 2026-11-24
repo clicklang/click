@@ -24,16 +24,16 @@ void mark_below(int32 *v, int32 lo, int32 hi, int32 j, int32 n) {
     ensures zeros(v, lo, hi) == old(zeros(v, lo, hi));
 } by {
     mark entry;
-    have zeros(at(entry, v), lo, hi) == zeros(at(entry, v), lo, hi) by known();
-    have 0 <= lo by { solve(); }
-    have 0 <= hi by { solve(); }
-    have viewable(v[0..n]) by { observe(v[0..n]); known(); }
+    have zeros(at(entry, v), lo, hi) == zeros(at(entry, v), lo, hi) by close();
+    have 0 <= lo by { close(); }
+    have 0 <= hi by { close(); }
+    have viewable(v[0..n]) by { observe(v[0..n]); close(); }
     step();
     have zeros(at(entry, v), lo, hi) == zeros(v, lo, hi) by {
         have forall (k: int32) { lo <= k and k < n implies v[k] == at(entry, v[k]) } by {
             intro(); intro();
-            have 0 <= k by { solve(); }
-            have j != k by { solve(); }
+            have 0 <= k by { close(); }
+            have j != k by { close(); }
             have separate(memory(v[j]), memory(v[k])) by {
                 apply(click::separation::separate_elements(v, j, k));
             }
@@ -42,9 +42,9 @@ void mark_below(int32 *v, int32 lo, int32 hi, int32 j, int32 n) {
             }
             preserve(memory(v[k]), statement(0));
         }
-        have viewable(v[0..n]) by { observe(v[0..n]); known(); }
+        have viewable(v[0..n]) by { observe(v[0..n]); close(); }
         apply(same_zeros(v, at(entry, v), lo, n, hi));
-        known();
+        close();
     }
 }
 ```

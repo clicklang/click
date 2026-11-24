@@ -5,7 +5,7 @@ fn tail(bytes: &[u8], size: usize) -> usize {
     ensures result == bytes.len() % size;
 } by {
     step_until(function.exit);
-    solve();
+    close();
 }
 
 fn walk(bytes: &[u8]) -> usize {
@@ -25,7 +25,7 @@ fn walk(bytes: &[u8]) -> usize {
         invariant iter.v == bytes + (bytes.len() - bytes.len() % 4u64 - iter.v.len());
         initialize by {
             have bytes.len() % 4u64 <= bytes.len();
-            solve();
+            close();
         }
         maintain by {
             if 4u64 <= iter.v.len() {
@@ -47,8 +47,8 @@ fn walk(bytes: &[u8]) -> usize {
     step_until(function.exit);
     have forall (k: uint64) {
         k < bytes.len() implies bytes[k] == old(bytes[k])
-    } by { intro(); intro(); solve(); }
-    solve();
+    } by { intro(); intro(); close(); }
+    close();
 }
 
 fn next_len(bytes: &[u8]) -> usize {
@@ -56,7 +56,7 @@ fn next_len(bytes: &[u8]) -> usize {
     ensures result == 4u64;
 } by {
     step_until(function.exit);
-    solve();
+    close();
 }
 
 fn tail_byte(bytes: &[u8]) -> u8 {
@@ -70,5 +70,5 @@ fn tail_byte(bytes: &[u8]) -> u8 {
     have tail.len() == 3u64;
     have tail == bytes + 4u64;
     step_until(function.exit);
-    solve();
+    close();
 }

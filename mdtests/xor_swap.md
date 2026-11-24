@@ -23,10 +23,10 @@ int32 xor_swap(int32 x, int32 y) {
         and at(region(3).entry, y) == old(x) by {
         step_until(region(3).entry);
         have x == x by {
-            known();
+            close();
         }
         step();
-        solve();
+        close();
     }
 }
 ```

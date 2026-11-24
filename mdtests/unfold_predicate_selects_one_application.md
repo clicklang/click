@@ -13,8 +13,8 @@ theorem unfold_selected_applications(a: int32, b: int32, c: int32) {
     ensures 0 <= a and 0 <= b by {
         unfold(small(a));
         unfold(small(b));
-        have small(c) by { unfold(small(c)); known(); }
-        known();
+        have small(c) by { unfold(small(c)); close(); }
+        close();
     }
 }
 ```

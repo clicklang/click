@@ -47,7 +47,7 @@ theorem length_nonnegative<T>(xs: List<T>) {
         match xs {
             List::Nil => {
                 unfold(length(List<T>::Nil));
-                solve();
+                close();
             }
             List::Cons(value, rest) => {
                 apply(ih(rest));
@@ -129,7 +129,7 @@ impl<T> generic_container::Stack<T> {
         let after = fold(nodes<T>(self.head), { values: List::Cons(value, old(before.values)), tail: before });
         unfold(length(List::Cons(value, old(before.values))));
         have to_integer(old(self.len) + 1u64) == to_integer(old(self.len)) + to_integer(1u64);
-        solve();
+        close();
     }
 
     fn pop(&mut self) -> Option<T> {
@@ -175,7 +175,7 @@ impl<T> generic_container::Stack<T> {
                             length(List::Cons(v, List<T>::Nil)) == length(List<T>::Nil) + 1;
                             length(List<T>::Nil) == 0;
                         };
-                        solve();
+                        close();
                     }
                     List::Cons(w, more) => {
                         let { tail: next } = unfold(tail);
@@ -190,7 +190,7 @@ impl<T> generic_container::Stack<T> {
                             to_integer(old(self.len)) == length(List::Cons(v, List::Cons(w, more)));
                             length(List::Cons(v, List::Cons(w, more))) == length(List::Cons(w, more)) + 1;
                         };
-                        solve();
+                        close();
                     }
                 }
             }
@@ -226,14 +226,14 @@ fn generic_container::round_trip(x: u32) -> Option<u32> {
 theorem first_cons<T>(v: T, xs: List<T>) {
     ensures first(List::Cons(v, xs)) == Option<T>::Some(v) by {
         unfold(first(List::Cons(v, xs)));
-        solve();
+        close();
     }
 }
 
 theorem rest_cons<T>(v: T, xs: List<T>) {
     ensures rest(List::Cons(v, xs)) == xs by {
         unfold(rest(List::Cons(v, xs)));
-        solve();
+        close();
     }
 }
 
@@ -271,7 +271,7 @@ impl<T> generic_container::Container<T> for generic_container::Stack<T> {
     }
     fn count(&self) -> usize {
     } by {
-        have separate(state, memory(*self)) by known();
+        have separate(state, memory(*self)) by close();
         step_until(function.exit);
     }
 }
@@ -288,7 +288,7 @@ fn generic_container::round_trip_dyn(container: &mut dyn generic_container::Cont
     step_until(function.exit);
     apply(first_cons(x, old(items(container))));
     apply(rest_cons(x, old(items(container))));
-    solve();
+    close();
 }
 
 // A new stack lent as a container returns what was put.
@@ -299,7 +299,7 @@ fn generic_container::through_dyn(x: u32) -> Option<u32> {
     let { after: empty } = step(__rust_q_I17_generic_container_T46___rust_q_I17_generic_container_I5_Stack_A3_u32_I3_new);
     step_until(statement(1).call(0).entry);
     let { object_resource(): packed } = step(__rust_q_T46___rust_q_I17_generic_container_I5_Stack_A3_u32_R50___rust_q_I17_generic_container_I9_Container_A3_u32_I6___pack, { state: empty });
-    have packed.size == 0u64 by known();
-    have packed.items == List<u32>::Nil by known();
+    have packed.size == 0u64 by close();
+    have packed.items == List<u32>::Nil by close();
     step_until(function.exit);
 }

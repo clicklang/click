@@ -14,7 +14,7 @@ theorem unmarked_nonnegative(v: int32[], lo: int32, n: int32, hi: int32) {
         let ih = induct(hi);
         if hi <= lo {
             unfold(unmarked(v, lo, hi));
-            solve();
+            close();
         } else {
             have 0 <= to_integer(hi - 1) by { close() using { 0 <= lo; lo < hi; }; }
             have to_integer(hi - 1) < to_integer(hi) by { close() using { 0 <= lo; lo < hi; }; }
@@ -32,7 +32,7 @@ theorem unmarked_nonnegative(v: int32[], lo: int32, n: int32, hi: int32) {
                     to_integer(0) <= to_integer(if v[hi - 1] == 0 { 1 } else { 0 });
                 };
             }
-            known();
+            close();
         }
     }
 }
@@ -60,7 +60,7 @@ theorem unmarked_frame(
         if hi <= lo {
             unfold(unmarked(a, lo, hi));
             unfold(unmarked(b, lo, hi));
-            solve();
+            close();
         } else {
             have 0 <= to_integer(hi - 1) by { close() using { 0 <= lo; lo < hi; }; }
             have to_integer(hi - 1) < to_integer(hi) by { close() using { 0 <= lo; lo < hi; }; }
@@ -74,7 +74,7 @@ theorem unmarked_frame(
                 instantiate(forall (k: int32) {
                     lo <= k and k < m implies a[k] == b[k]
                 }, hi - 1);
-                known();
+                close();
             }
             unfold(unmarked(a, lo, hi));
             unfold(unmarked(b, lo, hi));
@@ -92,7 +92,7 @@ theorem unmarked_frame(
                         == to_integer(if b[hi - 1] == 0 { 1 } else { 0 });
                 };
             }
-            known();
+            close();
         }
     }
 }
@@ -145,10 +145,10 @@ theorem unmarked_point_update(
                 unfold(unmarked(a, lo, hi));
                 unfold(unmarked(b, lo, hi));
                 have (if a[hi - 1] == 0 { 1 } else { 0 }) == 1 by {
-                    known();
+                    close();
                 }
                 have (if b[hi - 1] == 0 { 1 } else { 0 }) == 0 by {
-                    known();
+                    close();
                 }
                 have to_integer(if a[hi - 1] == 0 { 1 } else { 0 }) == 1 by {
                     close() using { (if a[hi - 1] == 0 { 1 } else { 0 }) == 1; };
@@ -166,11 +166,11 @@ theorem unmarked_point_update(
                         to_integer(if b[hi - 1] == 0 { 1 } else { 0 }) == 0;
                     };
                 }
-                known();
+                close();
             } else {
                 have to_integer(j) < to_integer(hi - 1) by {
                     apply(integer::int32_less_equal_and_not_equal_implies_less_than(j, hi - 1));
-                    known();
+                    close();
                 }
                 apply(ih(hi - 1));
                 have a[hi - 1] == b[hi - 1] by {
@@ -178,7 +178,7 @@ theorem unmarked_point_update(
                     instantiate(forall (k: int32) {
                         j < k and k < n implies a[k] == b[k]
                     }, hi - 1);
-                    known();
+                    close();
                 }
                 unfold(unmarked(a, lo, hi));
                 unfold(unmarked(b, lo, hi));
@@ -196,7 +196,7 @@ theorem unmarked_point_update(
                             == to_integer(if b[hi - 1] == 0 { 1 } else { 0 });
                     };
                 }
-                known();
+                close();
             }
         }
     }

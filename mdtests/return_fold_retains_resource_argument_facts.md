@@ -22,9 +22,9 @@ int32 f(int32* p) {
 } by {
     unfold(before);
     step_until(function.exit);
-    have result == 0 by known();
+    have result == 0 by close();
     let after = fold(Cell(p), { tag: 1 });
-    solve();
+    close();
 }
 ```
 ```expect

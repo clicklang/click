@@ -110,13 +110,13 @@ int32 break_once(int32 n) {
         decreases i;
         invariant i >= 0;
 
-        initialize by solve();
+        initialize by close();
         maintain by {
             step();
         }
     }
     step();
-    solve();
+    close();
 }
 
 int32 stop_at(int32 n) {
@@ -129,18 +129,18 @@ int32 stop_at(int32 n) {
         decreases i;
         invariant i >= 0;
 
-        initialize by solve();
+        initialize by close();
         maintain by {
             if i == 3 {
                 step();
-                have i == 3 or i == 0 by known();
+                have i == 3 or i == 0 by close();
                 step();
             } else {
                 step();
                 step();
                 if i == 0 {
                     step();
-                    have i == 3 or i == 0 by known();
+                    have i == 3 or i == 0 by close();
                     step();
                 } else {
                     step();
@@ -151,7 +151,7 @@ int32 stop_at(int32 n) {
         }
     }
     step();
-    solve();
+    close();
 }
 
 int32 break_once_automatically(int32 n) {
@@ -165,7 +165,7 @@ int32 break_once_automatically(int32 n) {
         invariant i >= 0;
     }
     step();
-    solve();
+    close();
 }
 
 int32 stop_at_automatically(int32 n) {
@@ -178,18 +178,18 @@ int32 stop_at_automatically(int32 n) {
         decreases i;
         invariant i >= 0;
 
-        initialize by solve();
+        initialize by close();
         maintain by {
             if i == 3 {
                 step();
-                have i == 3 or i == 0 by known();
+                have i == 3 or i == 0 by close();
                 step();
             } else {
                 step();
                 step();
                 if i == 0 {
                     step();
-                    have i == 3 or i == 0 by known();
+                    have i == 3 or i == 0 by close();
                     step();
                 } else {
                     step();
@@ -200,7 +200,7 @@ int32 stop_at_automatically(int32 n) {
         }
     }
     step();
-    solve();
+    close();
 }
 ```
 

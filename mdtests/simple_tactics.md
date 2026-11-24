@@ -18,7 +18,7 @@ theorem exact_known(x: int32) {
     requires x >= 0;
 
     ensures x >= 0 by {
-        known();
+        close();
     }
 }
 
@@ -33,7 +33,7 @@ theorem rewritten_identity(x: int32, y: int32) {
 
     ensures x + 1 == y + 1 by {
         rewrite(x, y);
-        known();
+        close();
     }
 }
 
@@ -43,7 +43,7 @@ int32 identity(int32 x) {
 } by {
     step_until(function.exit);
     rewrite(x, 7);
-    known();
+    close();
 }
 ```
 

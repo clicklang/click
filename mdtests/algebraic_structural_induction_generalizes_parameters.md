@@ -26,7 +26,7 @@ theorem rev_onto_appends(xs: List<int32>, acc: List<int32>) {
                 unfold(rev_onto(List<int32>::Nil, List<int32>::Nil));
                 apply(list::append_left_identity(acc));
                 rewrite(list::append(List<int32>::Nil, acc), acc);
-                known();
+                close();
             }
             List::Cons(head, tail) => {
                 apply(ih(tail, List<int32>::Cons(head, acc)));
@@ -46,7 +46,7 @@ theorem rev_onto_appends(xs: List<int32>, acc: List<int32>) {
                 rewrite(list::append(List<int32>::Nil, acc), acc);
                 rewrite(rev_onto(tail, List<int32>::Cons(head, acc)), list::append(rev_onto(tail, List<int32>::Nil),
                         List<int32>::Cons(head, acc)));
-                known();
+                close();
             }
         }
     }

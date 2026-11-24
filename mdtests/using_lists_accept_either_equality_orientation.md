@@ -10,14 +10,14 @@ This used to be a local rule in the two fixed-state checkers only.
 ```click
 theorem value_symmetric(a: int32, b: int32) {
     requires a == b;
-    ensures b == a by solve();
+    ensures b == a by close();
 }
 
 theorem pure_apply_mirrored(x: int32, y: int32) {
     requires x == y;
     ensures x == y by {
         apply(value_symmetric(y, x));
-        known();
+        close();
     }
 }
 
@@ -26,7 +26,7 @@ theorem instantiate_mirrored(x: int32, y: int32) {
     requires forall (k: int32) { k == x implies 0 <= 0 };
     ensures 0 <= 0 by {
         instantiate(forall (k: int32) { k == x implies 0 <= 0 }, y);
-        known();
+        close();
     }
 }
 ```

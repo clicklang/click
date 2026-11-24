@@ -11,13 +11,13 @@ import click::rust::vec;
 theorem vector_methods(v: Vec<uint32>, x: uint32) {
     requires 1u64 <= v.len();
     ensures v.len() == vec::len(v) by {
-        solve();
+        close();
     }
     ensures v[0u64] == vec::get(v, 0u64) by {
-        solve();
+        close();
     }
     ensures (let w = vec::push(v, x); w.len()) == vec::len(vec::push(v, x)) by {
-        solve();
+        close();
     }
 }
 ```

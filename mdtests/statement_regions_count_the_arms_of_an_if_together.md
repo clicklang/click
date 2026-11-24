@@ -37,12 +37,12 @@ int32 probe(int32 x) {
     step();
     if x > 0 {
         step(); step(); step(); step();
-        have at(statement(1).statement(0).call(f, 0).entry, y) == x by solve();
-        have at(statement(1).statement(0).exit, y) == x + 1 by solve();
-        have at(statement(1).statement(1).entry, y) == x + 1 by solve();
-        step_until(function.exit); solve();
+        have at(statement(1).statement(0).call(f, 0).entry, y) == x by close();
+        have at(statement(1).statement(0).exit, y) == x + 1 by close();
+        have at(statement(1).statement(1).entry, y) == x + 1 by close();
+        step_until(function.exit); close();
     } else {
-        step_until(function.exit); solve();
+        step_until(function.exit); close();
     }
 }
 ```

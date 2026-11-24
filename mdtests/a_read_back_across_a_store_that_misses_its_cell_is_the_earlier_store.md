@@ -102,12 +102,12 @@ int32 global_stepped(int32 u) {
         step();
         have r == 7;
         step();
-        solve();
+        close();
     } else {
         step();
         have r == 3;
         step();
-        solve();
+        close();
     }
 }
 
@@ -137,13 +137,13 @@ int32 heap_stepped(int32 u) {
             have r == 7;
             step();
             step();
-            solve();
+            close();
         } else {
             step();
             have r == 3;
             step();
             step();
-            solve();
+            close();
         }
     }
 }

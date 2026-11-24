@@ -22,7 +22,7 @@ theorem adler_recombine_difference(a: uint32) {
             rewrite(to_integer(65521u32 - a), 65521 - to_integer(a));
             close() using { 0 <= to_integer(a); };
         }
-        known();
+        close();
     }
 }
 
@@ -42,7 +42,7 @@ theorem adler_recombine_lane_1(a: uint32, b: uint32) {
             rewrite(to_integer(b + (65521u32 - a)), to_integer(b) + to_integer(65521u32 - a));
             rewrite(to_integer(65521u32 - a), 65521 - to_integer(a)); close() using {};
         }
-        known();
+        close();
     }
 }
 
@@ -54,7 +54,7 @@ theorem adler_recombine_lane_2(a: uint32, b: uint32) {
         and to_integer((b as int64 + ((65521u32 - a) * 2u32) as int64)) <= to_integer(4294967295i64) by {
         apply(adler_recombine_difference(a));
         have to_integer(65521u32 - a) <= to_integer(4294967295u32 / 2u32) by close() using { to_integer(65521u32 - a) <= to_integer(65521u32); };
-        have 2u32 == 0u32 or to_integer(65521u32 - a) <= to_integer(4294967295u32 / 2u32) by known();
+        have 2u32 == 0u32 or to_integer(65521u32 - a) <= to_integer(4294967295u32 / 2u32) by close();
         apply(integer::uint32_multiply_to_integer(65521u32 - a, 2u32));
         have to_integer((65521u32 - a) * 2u32) == (65521 - to_integer(a)) * 2 by {
             rewrite(to_integer((65521u32 - a) * 2u32), to_integer(65521u32 - a) * to_integer(2u32));
@@ -70,7 +70,7 @@ theorem adler_recombine_lane_2(a: uint32, b: uint32) {
             rewrite(to_integer(b + ((65521u32 - a) * 2u32)), to_integer(b) + to_integer((65521u32 - a) * 2u32));
             rewrite(to_integer((65521u32 - a) * 2u32), (65521 - to_integer(a)) * 2); close() using {};
         }
-        known();
+        close();
     }
 }
 
@@ -82,7 +82,7 @@ theorem adler_recombine_lane_3(a: uint32, b: uint32) {
         and to_integer((b as int64 + ((65521u32 - a) * 3u32) as int64)) <= to_integer(4294967295i64) by {
         apply(adler_recombine_difference(a));
         have to_integer(65521u32 - a) <= to_integer(4294967295u32 / 3u32) by close() using { to_integer(65521u32 - a) <= to_integer(65521u32); };
-        have 3u32 == 0u32 or to_integer(65521u32 - a) <= to_integer(4294967295u32 / 3u32) by known();
+        have 3u32 == 0u32 or to_integer(65521u32 - a) <= to_integer(4294967295u32 / 3u32) by close();
         apply(integer::uint32_multiply_to_integer(65521u32 - a, 3u32));
         have to_integer((65521u32 - a) * 3u32) == (65521 - to_integer(a)) * 3 by {
             rewrite(to_integer((65521u32 - a) * 3u32), to_integer(65521u32 - a) * to_integer(3u32));
@@ -98,6 +98,6 @@ theorem adler_recombine_lane_3(a: uint32, b: uint32) {
             rewrite(to_integer(b + ((65521u32 - a) * 3u32)), to_integer(b) + to_integer((65521u32 - a) * 3u32));
             rewrite(to_integer((65521u32 - a) * 3u32), (65521 - to_integer(a)) * 3); close() using {};
         }
-        known();
+        close();
     }
 }

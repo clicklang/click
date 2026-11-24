@@ -26,7 +26,7 @@ int32 count(uint32 n) {
     step();
     loop {
         decreases n - x;
-        initialize by { solve(); }
+        initialize by { close(); }
         maintain by {
             step();
         }

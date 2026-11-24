@@ -25,10 +25,10 @@ void copy(unsigned long* slot, int32* p) {
         preserve(memory(*slot), statement(0).region(0));
     }
     have ((*slot & ~1) as (int32 *)) == p by {
-        known();
+        close();
     }
     step();
-    have ((saved & ~1) as (int32 *)) == p by { known(); }
+    have ((saved & ~1) as (int32 *)) == p by { close(); }
 }
 ```
 

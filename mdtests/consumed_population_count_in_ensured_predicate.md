@@ -78,9 +78,9 @@ void consume_population(struct owner* owner, int32 amount) {
     step_until(function.exit);
     have valid_capacity(owner) by {
         unfold(valid_capacity(owner));
-        solve();
+        close();
     }
-    solve();
+    close();
 }
 ```
 

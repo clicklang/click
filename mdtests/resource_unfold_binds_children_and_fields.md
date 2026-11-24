@@ -67,7 +67,7 @@ int32 live_count(struct arena* arena) {
         live: n,
         marks: m, free: f
     });
-    solve();
+    close();
 }
 ```
 

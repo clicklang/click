@@ -9,28 +9,28 @@ theorem two_indicator_counts_commute(a: Bool, b: Bool) {
     ensures (0 + (if a { 1 } else { 0 }) + (if b { 1 } else { 0 })) ==
             (0 + (if b { 1 } else { 0 }) + (if a { 1 } else { 0 })) by {
         if a {
-            have (if a { 1 } else { 0 }) == 1 by known();
+            have (if a { 1 } else { 0 }) == 1 by close();
             rewrite((if a { 1 } else { 0 }), 1);
             if b {
-                have (if b { 1 } else { 0 }) == 1 by known();
+                have (if b { 1 } else { 0 }) == 1 by close();
                 rewrite((if b { 1 } else { 0 }), 1);
-                known();
+                close();
             } else {
-                have (if b { 1 } else { 0 }) == 0 by known();
+                have (if b { 1 } else { 0 }) == 0 by close();
                 rewrite((if b { 1 } else { 0 }), 0);
-                known();
+                close();
             }
         } else {
-            have (if a { 1 } else { 0 }) == 0 by known();
+            have (if a { 1 } else { 0 }) == 0 by close();
             rewrite((if a { 1 } else { 0 }), 0);
             if b {
-                have (if b { 1 } else { 0 }) == 1 by known();
+                have (if b { 1 } else { 0 }) == 1 by close();
                 rewrite((if b { 1 } else { 0 }), 1);
-                known();
+                close();
             } else {
-                have (if b { 1 } else { 0 }) == 0 by known();
+                have (if b { 1 } else { 0 }) == 0 by close();
                 rewrite((if b { 1 } else { 0 }), 0);
-                known();
+                close();
             }
         }
     }

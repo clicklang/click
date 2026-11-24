@@ -21,10 +21,10 @@ void check(int32* data) {
 } by {
     let { value: p } = unfold(before);
     step();
-    have defined(p + 1) by solve();
+    have defined(p + 1) by close();
     have forall (k: int32) {
         0 <= k and to_integer(k) < to_integer(p + 1) implies data[k] == data[k]
-    } by { intro(); intro(); known(); }
+    } by { intro(); intro(); close(); }
     step();
 }
 ```

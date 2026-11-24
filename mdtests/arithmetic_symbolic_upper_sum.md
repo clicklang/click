@@ -18,7 +18,7 @@ int32 f(int32 a, int32 b) {
         close() using { a + b <= 1000; a >= 0; a <= 1000; b >= 1; b <= 1000; };
     }
     step();
-    solve();
+    close();
 }
 ```
 

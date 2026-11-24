@@ -39,8 +39,8 @@ struct node* list_prepend(int32 value, struct node* tail) {
         step_until(function.exit);
     } else {
         step_until(function.exit);
-        have aligned(tail, 8) by known();
-        have result->word == address(tail) by known();
+        have aligned(tail, 8) by close();
+        have result->word == address(tail) by close();
         have (result->word & 1) == 0u64 by {
             rewrite(result->word, address(tail));
             close() using { aligned(tail, 8); };
@@ -48,7 +48,7 @@ struct node* list_prepend(int32 value, struct node* tail) {
         have result->word == address(tail) + (result->word & 1) by {
             rewrite((result->word & 1), 0u64);
             rewrite(result->word, address(tail));
-            known();
+            close();
         }
         have ((result->word & ~1) as (struct node *)) == tail by {
             rewrite(result->word, address(tail));
@@ -105,22 +105,22 @@ uint32 list_count_live(struct node* node) {
         mark before_local;
         step();
         have separate(statement(1).region(0).footprint, memory(node->word)) by {
-            known();
+            close();
         }
         have *((&node->word) as (int32 **)) == at(before_local, *((&node->word) as (int32 **))) by {
             preserve(memory(node->word), statement(1).region(0));
         }
-        have ((node->word & ~1) as (struct node *)) == child by { known(); }
-        have separate(marked_list(child), memory(node->word)) by { known(); }
+        have ((node->word & ~1) as (struct node *)) == child by { close(); }
+        have separate(marked_list(child), memory(node->word)) by { close(); }
         mark before_call;
         step();
-        have contains(marked_list(child), statement(1).region(1).footprint) by { known(); }
+        have contains(marked_list(child), statement(1).region(1).footprint) by { close(); }
         apply(separation::contains_refl(memory(node->word)));
         apply(separation::separate_restrict(marked_list(child), memory(node->word), statement(1).region(1).footprint, memory(node->word)));
         have *((&node->word) as (int32 **)) == at(before_call, *((&node->word) as (int32 **))) by {
             preserve(memory(node->word), statement(1).region(1));
         }
-        have ((node->word & ~1) as (struct node *)) == child by { known(); }
+        have ((node->word & ~1) as (struct node *)) == child by { close(); }
         step();
         branch {
             true => {
@@ -133,7 +133,7 @@ uint32 list_count_live(struct node* node) {
                         at(function.entry, *((&node->word) as (int32 **)))
                     );
                     rewrite(at(function.entry, ((node->word & ~1) as (struct node *))), child);
-                    known();
+                    close();
                 }
                 fold(marked_list(node));
             }

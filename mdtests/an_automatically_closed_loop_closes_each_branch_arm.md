@@ -49,7 +49,7 @@ int32 flip(int32 n) {
         invariant 0 <= x and x <= 1;
     }
     step();
-    solve();
+    close();
 }
 ```
 

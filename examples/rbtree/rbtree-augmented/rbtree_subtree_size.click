@@ -15,7 +15,7 @@ theorem rb_subtree_size_nonnegative(tree: RbTree) {
     ensures rb_subtree_size(tree) >= 0 by {
         let ih = induct(tree);
         match tree {
-            RbTree::Empty => { unfold(rb_subtree_size(RbTree::Empty)); known(); },
+            RbTree::Empty => { unfold(rb_subtree_size(RbTree::Empty)); close(); },
             RbTree::Node(node, parent, color, left, right) => {
                 apply(ih(left)); apply(ih(right));
                 unfold(rb_subtree_size(RbTree::Node(node, parent, color, left, right)));
@@ -29,12 +29,12 @@ theorem rb_subtree_size_reparent(tree: RbTree, parent: struct rb_node*) {
     ensures rb_subtree_size(rb_reparent(tree, parent)) == rb_subtree_size(tree) by {
         let ih = induct(tree);
         match tree {
-            RbTree::Empty => { unfold(rb_reparent(RbTree::Empty, parent)); known(); },
+            RbTree::Empty => { unfold(rb_reparent(RbTree::Empty, parent)); close(); },
             RbTree::Node(node, before, color, left, right) => {
                 unfold(rb_reparent(RbTree::Node(node, before, color, left, right), parent));
                 unfold(rb_subtree_size(RbTree::Node(node, parent, color, left, right)));
                 unfold(rb_subtree_size(RbTree::Node(node, before, color, left, right)));
-                known();
+                close();
             },
         }
     }
@@ -60,7 +60,7 @@ theorem rb_subtree_size_rotate_left(node: struct rb_node*, parent: struct rb_nod
         unfold(rb_subtree_size(RbTree::Node(node, pivot, color, a, rb_reparent(b, node))));
         apply(rb_subtree_size_reparent(b, node));
         rewrite(rb_subtree_size(rb_reparent(b, node)), rb_subtree_size(b));
-        known();
+        close();
     }
 }
 
@@ -84,6 +84,6 @@ theorem rb_subtree_size_rotate_right(node: struct rb_node*, parent: struct rb_no
         unfold(rb_subtree_size(RbTree::Node(node, pivot, color, rb_reparent(b, node), c)));
         apply(rb_subtree_size_reparent(b, node));
         rewrite(rb_subtree_size(rb_reparent(b, node)), rb_subtree_size(b));
-        known();
+        close();
     }
 }

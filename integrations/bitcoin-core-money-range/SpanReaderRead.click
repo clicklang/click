@@ -15,8 +15,8 @@ void SpanReader::read(std::span<std::byte> dst) throws std::ios_base::failure {
 } by {
     mark inputs;
     // The pinned span descriptor has two adjacent eight-byte fields.
-    have separate(memory((this as (uint8 *))[0..8]), memory(old(std_span_data(this->m_data))[0u64..old(std_span_size(this->m_data))])) by { solve(); }
-    have separate(memory((this as (uint8 *))[8..16]), memory(old(std_span_data(this->m_data))[0u64..old(std_span_size(this->m_data))])) by { solve(); }
+    have separate(memory((this as (uint8 *))[0..8]), memory(old(std_span_data(this->m_data))[0u64..old(std_span_size(this->m_data))])) by { close(); }
+    have separate(memory((this as (uint8 *))[8..16]), memory(old(std_span_data(this->m_data))[0u64..old(std_span_size(this->m_data))])) by { close(); }
     have separate(memory((this as (uint8 *))[0..8]) * memory((this as (uint8 *))[8..16]), memory(old(std_span_data(this->m_data))[0u64..old(std_span_size(this->m_data))])) by {
         apply(click::separation::separate_star(memory((this as (uint8 *))[0..8]), memory((this as (uint8 *))[8..16]), memory(old(std_span_data(this->m_data))[0u64..old(std_span_size(this->m_data))])));
     }
@@ -32,7 +32,7 @@ void SpanReader::read(std::span<std::byte> dst) throws std::ios_base::failure {
     branch {
         true => {
             step();
-            have old(std_span_size(dst)) == 0u64 by { solve(); }
+            have old(std_span_size(dst)) == 0u64 by { close(); }
             have forall (k: uint64) { 0u64 <= k and k < old(std_span_size(dst)) implies load<uint8>((old(std_span_data(dst)) + k)) == old(load<uint8>((std_span_data(this->m_data) + k))) and defined(load<uint8>((old(std_span_data(dst)) + k))) } by {
                 intro();
                 intro();
@@ -51,24 +51,24 @@ void SpanReader::read(std::span<std::byte> dst) throws std::ios_base::failure {
     let { result: output_pointer } = step();
     step();
     let { result: copy_size } = step();
-    have call(6).result == call(1).result by { solve(); }
-    have call(2).result == old(std_span_size(this->m_data)) by { known(); }
-    have call(1).result <= call(2).result by { known(); }
-    have call(5).result == old(std_span_data(this->m_data)) by { known(); }
+    have call(6).result == call(1).result by { close(); }
+    have call(2).result == old(std_span_size(this->m_data)) by { close(); }
+    have call(1).result <= call(2).result by { close(); }
+    have call(5).result == old(std_span_data(this->m_data)) by { close(); }
     step() {
         requires forall (k: uint64) { 0u64 <= k and k < call(6).result implies defined(load<uint8>((call(5).result + k))) } by {
             intro();
             intro();
-            have k < old(std_span_size(this->m_data)) by { solve(); }
+            have k < old(std_span_size(this->m_data)) by { close(); }
             instantiate(at(function.entry, forall (i: uint64) { 0u64 <= i and i < std_span_size(this->m_data) implies defined(load<uint8>((std_span_data(this->m_data) + i))) }), k);
             rewrite(call(5).result, old(std_span_data(this->m_data)));
-            known();
+            close();
         }
         requires separate(memory(((output_pointer as (void *)) as (uint8 *))[0u64..copy_size]), memory(old(std_span_data(this->m_data))[0u64..old(std_span_size(this->m_data))])) by {
-            have separate(memory(at(inputs, std_span_data(dst))[0u64..at(inputs, std_span_size(dst))]), memory(old(std_span_data(this->m_data))[0u64..old(std_span_size(this->m_data))])) by { known(); }
+            have separate(memory(at(inputs, std_span_data(dst))[0u64..at(inputs, std_span_size(dst))]), memory(old(std_span_data(this->m_data))[0u64..old(std_span_size(this->m_data))])) by { close(); }
             have contains(memory(at(inputs, std_span_data(dst))[0u64..at(inputs, std_span_size(dst))]), memory(((output_pointer as (void *)) as (uint8 *))[0u64..copy_size])) by {
-                have output_pointer == at(inputs, std_span_data(dst)) by { known(); }
-                have copy_size == at(inputs, std_span_size(dst)) by { solve(); }
+                have output_pointer == at(inputs, std_span_data(dst)) by { close(); }
+                have copy_size == at(inputs, std_span_size(dst)) by { close(); }
                 rewrite(output_pointer, at(inputs, std_span_data(dst)));
                 rewrite(copy_size, at(inputs, std_span_size(dst)));
                 normalize();
@@ -85,19 +85,19 @@ void SpanReader::read(std::span<std::byte> dst) throws std::ios_base::failure {
         intro();
         intro();
         instantiate(forall (j: uint64) { 0u64 <= j and j < copy_size implies defined(output_pointer[j]) }, k);
-        known();
+        close();
     }
     // Keep the memcpy byte equality before the subspan and assignment calls.
     have forall (k: uint64) { 0u64 <= k and k < call(6).result implies load<uint8>((call(4).result + (0u64 + k))) == at(call(memcpy, 0).entry, load<uint8>((call(5).result + (0u64 + k)))) } by {
-        known();
+        close();
     }
-    have separate(memory((this as (int32 *))[0..2]), memory(at(call(4).exit, call(4).result)[0u64..call(6).result])) by { known(); }
-    have separate(memory((byte_offset(this, 8) as (uint64 *))[0..1]), memory(at(call(4).exit, call(4).result)[0u64..call(6).result])) by { known(); }
+    have separate(memory((this as (int32 *))[0..2]), memory(at(call(4).exit, call(4).result)[0u64..call(6).result])) by { close(); }
+    have separate(memory((byte_offset(this, 8) as (uint64 *))[0..1]), memory(at(call(4).exit, call(4).result)[0u64..call(6).result])) by { close(); }
     have separate(memory((this as (uint8 *))[0..8]), memory(at(call(4).exit, call(4).result)[0u64..call(6).result])) by {
-        known();
+        close();
     }
     have separate(memory((this as (uint8 *))[8..16]), memory(at(call(4).exit, call(4).result)[0u64..call(6).result])) by {
-        known();
+        close();
     }
     have separate(memory((this as (uint8 *))[0..8]) * memory((this as (uint8 *))[8..16]), memory(at(call(4).exit, call(4).result)[0u64..call(6).result])) by {
         apply(separation::separate_star(memory((this as (uint8 *))[0..8]), memory((this as (uint8 *))[8..16]), memory(at(call(4).exit, call(4).result)[0u64..call(6).result])));
@@ -106,8 +106,8 @@ void SpanReader::read(std::span<std::byte> dst) throws std::ios_base::failure {
     have separate(memory((this as (uint8 *))[0..16]), memory(at(call(4).exit, call(4).result)[0u64..call(6).result])) by {
         apply(separation::separate_restrict(memory((this as (uint8 *))[0..8]) * memory((this as (uint8 *))[8..16]), memory(at(call(4).exit, call(4).result)[0u64..call(6).result]), memory((this as (uint8 *))[0..16]), memory(at(call(4).exit, call(4).result)[0u64..call(6).result])));
     }
-    have separate(memory(at(copied, (dst as (uint8 *)))[0..8]), memory(at(call(4).exit, call(4).result)[0u64..call(6).result])) by { known(); }
-    have separate(memory(at(copied, (dst as (uint8 *)))[8..16]), memory(at(call(4).exit, call(4).result)[0u64..call(6).result])) by { known(); }
+    have separate(memory(at(copied, (dst as (uint8 *)))[0..8]), memory(at(call(4).exit, call(4).result)[0u64..call(6).result])) by { close(); }
+    have separate(memory(at(copied, (dst as (uint8 *)))[8..16]), memory(at(call(4).exit, call(4).result)[0u64..call(6).result])) by { close(); }
     have separate(memory(at(copied, (dst as (uint8 *)))[0..8]) * memory(at(copied, (dst as (uint8 *)))[8..16]), memory(at(call(4).exit, call(4).result)[0u64..call(6).result])) by {
         apply(separation::separate_star(memory(at(copied, (dst as (uint8 *)))[0..8]), memory(at(copied, (dst as (uint8 *)))[8..16]), memory(at(call(4).exit, call(4).result)[0u64..call(6).result])));
     }
@@ -118,16 +118,16 @@ void SpanReader::read(std::span<std::byte> dst) throws std::ios_base::failure {
         apply(separation::separate_restrict(memory(at(copied, (dst as (uint8 *)))[0..8]) * memory(at(copied, (dst as (uint8 *)))[8..16]), memory(at(call(4).exit, call(4).result)[0u64..call(6).result]), memory(at(copied, (dst as (uint8 *)))[0..16]), memory(at(call(4).exit, call(4).result)[0u64..call(6).result])));
     }
     step_until(region(19).entry);
-    have separate(memory(at(region(18).exit, region(18).result)[0..16]), memory(at(call(4).exit, call(4).result)[0u64..call(6).result])) by { known(); }
+    have separate(memory(at(region(18).exit, region(18).result)[0..16]), memory(at(call(4).exit, call(4).result)[0u64..call(6).result])) by { close(); }
     step_until(function.exit);
-    have old(std_span_size(dst)) == call(6).result by { solve(); }
+    have old(std_span_size(dst)) == call(6).result by { close(); }
     // Transport one destination byte across each later write.
     have forall (k: uint64) { 0u64 <= k and k < old(std_span_size(dst)) implies load<uint8>((old(std_span_data(dst)) + k)) == old(load<uint8>((std_span_data(this->m_data) + k))) and defined(load<uint8>((old(std_span_data(dst)) + k))) } by {
         intro();
         intro();
         have k < call(6).result by {
             rewrite(call(6).result, old(std_span_size(dst)));
-            known();
+            close();
         }
         instantiate(at(copied, forall (j: uint64) { 0u64 <= j and j < call(6).result implies load<uint8>((call(4).result + (0u64 + j))) == at(call(memcpy, 0).entry, load<uint8>((call(5).result + (0u64 + j)))) }), k);
         have contains(memory(at(call(4).exit, call(4).result)[0u64..call(6).result]), memory(at(call(4).exit, call(4).result)[k])) by {
@@ -148,7 +148,7 @@ void SpanReader::read(std::span<std::byte> dst) throws std::ios_base::failure {
             normalize();
         }
         have at(call(memcpy, 0).entry, load<uint8>((old(std_span_data(this->m_data)) + k))) == old(load<uint8>((std_span_data(this->m_data) + k))) by {
-            known();
+            close();
         }
         have contains(memory(at(region(18).exit, region(18).result)[0..16]), memory(at(region(18).exit, region(18).result)[0..16])) by { apply(separation::contains_refl(memory(at(region(18).exit, region(18).result)[0..16]))); }
         have separate(memory(at(region(18).exit, region(18).result)[0..16]), memory(at(call(4).exit, call(4).result)[k])) by {
@@ -178,36 +178,36 @@ void SpanReader::read(std::span<std::byte> dst) throws std::ios_base::failure {
         }
         // Carry initialization through subspan, assignment, and local cleanup.
         instantiate(at(copied, forall (j: uint64) { 0u64 <= j and j < copy_size implies defined(output_pointer[j]) }), k);
-        have copy_size == call(6).result by { known(); }
-        have at(region(16).entry, defined(load<uint8>((call(4).result + k)))) by { known(); }
+        have copy_size == call(6).result by { close(); }
+        have at(region(16).entry, defined(load<uint8>((call(4).result + k)))) by { close(); }
         have at(region(16).exit, defined(load<uint8>((call(4).result + k)))) by {
             preserve(memory(at(call(4).exit, call(4).result)[k]), region(16));
         }
         have separate(region(17).footprint, memory(at(call(4).exit, call(4).result)[k])) by {
             normalize() using { separate(memory(at(region(18).exit, region(18).result)[0..16]), memory(at(call(4).exit, call(4).result)[k])); };
         }
-        have at(region(17).entry, defined(load<uint8>((call(4).result + k)))) by { known(); }
+        have at(region(17).entry, defined(load<uint8>((call(4).result + k)))) by { close(); }
         have at(region(17).exit, defined(load<uint8>((call(4).result + k)))) by {
             preserve(memory(at(call(4).exit, call(4).result)[k]), region(17));
         }
-        have at(region(18).entry, defined(load<uint8>((call(4).result + k)))) by { known(); }
+        have at(region(18).entry, defined(load<uint8>((call(4).result + k)))) by { close(); }
         have at(region(18).exit, defined(load<uint8>((call(4).result + k)))) by {
             preserve(memory(at(call(4).exit, call(4).result)[k]), region(18));
         }
         have at(region(19).entry, defined(load<uint8>((call(4).result + k)))) by {
-            known();
+            close();
         }
         have at(region(19).exit, defined(load<uint8>((call(4).result + k)))) by {
             preserve(memory(at(call(4).exit, call(4).result)[k]), region(19));
         }
         have at(region(20).entry, defined(load<uint8>((call(4).result + k)))) by {
-            known();
+            close();
         }
         have at(region(20).exit, defined(load<uint8>((call(4).result + k)))) by {
             preserve(memory(at(call(4).exit, call(4).result)[k]), region(20));
         }
         have at(region(21).entry, defined(load<uint8>((call(4).result + k)))) by {
-            known();
+            close();
         }
         have at(region(21).exit, defined(load<uint8>((call(4).result + k)))) by {
             preserve(memory(at(call(4).exit, call(4).result)[k]), region(21));
@@ -217,8 +217,8 @@ void SpanReader::read(std::span<std::byte> dst) throws std::ios_base::failure {
                 separate(memory(at(copied, (dst as (uint8 *)))[0..16]), memory(at(call(4).exit, call(4).result)[k]));
             };
         }
-        have old(std_span_data(dst)) == call(4).result by { known(); }
+        have old(std_span_data(dst)) == call(4).result by { close(); }
         rewrite(old(std_span_data(dst)), call(4).result);
-        known();
+        close();
     }
 }

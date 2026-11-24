@@ -14,7 +14,7 @@ verifying "pointer_cast.c";
 
 theorem keep(words: int32*, written: Resource) {
     requires separate(written, memory(words[0..2]));
-    ensures separate(written, memory(words[0..2])) by known();
+    ensures separate(written, memory(words[0..2])) by close();
 }
 
 void check(struct table* table, int* p) {

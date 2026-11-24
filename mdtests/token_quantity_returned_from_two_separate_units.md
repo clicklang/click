@@ -70,7 +70,7 @@ void checkout(struct pool* pool, struct payload* p) {
 } by {
     with(control(pool)) {
         have 1 <= to_integer(count(slot(pool))) by {
-            known();
+            close();
         }
         have defined((pool->checked_out + 1)) by {
             close() using { at(function.entry, pool->checked_out) < at(function.entry, 2147483647); };
@@ -115,7 +115,7 @@ void checkout(struct pool* pool, struct payload* p) {
         }
     }
     step();
-    known();
+    close();
     have to_integer(count(slot(pool))) == (to_integer(old(count(slot(pool)))) - 1) by {
         have -2147483648 <= (to_integer(old(count(slot(pool)))) - 1) by {
             close() using { 1 <= to_integer(old(count(slot(pool)))); };
@@ -126,7 +126,7 @@ void checkout(struct pool* pool, struct payload* p) {
         have to_integer(count(slot(pool))) == (to_integer(old(count(slot(pool)))) - 1) by {
             close() using { -2147483648 <= (to_integer(old(count(slot(pool)))) - 1); (to_integer(old(count(slot(pool)))) - 1) <= 2147483647; };
         }
-        known();
+        close();
     }
     have to_integer(count(item(pool, _))) == (to_integer(old(count(item(pool, _)))) + 1) by {
         have to_integer(count(item(pool, _))) <= (to_integer(old(count(item(pool, _)))) + 1) by {
@@ -148,13 +148,13 @@ void checkout(struct pool* pool, struct payload* p) {
                 _))); };
     }
     have to_integer(pool->checked_out) == (to_integer(old(pool->checked_out)) + 1) by {
-        known();
+        close();
     }
-    known();
-    known();
-    known();
-    known();
-    solve();
+    close();
+    close();
+    close();
+    close();
+    close();
 }
 void give_back(struct pool* pool, struct payload* p) {
     owns control(pool);
@@ -172,11 +172,11 @@ void give_back(struct pool* pool, struct payload* p) {
 } by {
     with(control(pool)) {
         have 1 <= to_integer(count(item(pool, _))) by {
-            known();
+            close();
         }
         have 1 <= pool->checked_out by {
             rewrite(to_integer(pool->checked_out), to_integer(count(item(pool, _))));
-            known();
+            close();
         }
         have defined((count(slot(pool)) + 1)) by {
             have (to_integer(count(slot(pool))) + to_integer(1)) >= -2147483648 by {
@@ -186,7 +186,7 @@ void give_back(struct pool* pool, struct payload* p) {
                 close() using { at(function.entry, to_integer(pool->capacity)) == at(function.entry,
                         (to_integer(pool->checked_out) + to_integer(count(slot(pool))))); 1 <= to_integer(pool->checked_out); };
             }
-            known();
+            close();
         }
         unfold(item(pool, p));
         have separate(memory(p->value), memory(pool->checked_out));
@@ -202,7 +202,7 @@ void give_back(struct pool* pool, struct payload* p) {
             close() using { at(function.entry, 1) <= at(function.entry, pool->checked_out); };
         }
         have to_integer(pool->checked_out) == to_integer(count(item(pool, _))) by {
-            known();
+            close();
         }
         have to_integer(pool->capacity) == (to_integer(pool->checked_out) + to_integer(count(slot(pool)))) by {
             have -2147483648 <= (to_integer(old(pool->checked_out)) - 1) by {
@@ -241,7 +241,7 @@ void give_back(struct pool* pool, struct payload* p) {
         }
     }
     step();
-    known();
+    close();
     have to_integer(count(slot(pool))) == (to_integer(old(count(slot(pool)))) + 1) by {
         have -2147483648 <= (to_integer(old(count(slot(pool)))) + 1) by {
             close() using { 0 <= to_integer(old(count(slot(pool)))); };
@@ -252,7 +252,7 @@ void give_back(struct pool* pool, struct payload* p) {
         have to_integer(count(slot(pool))) == (to_integer(old(count(slot(pool)))) + 1) by {
             close() using { -2147483648 <= (to_integer(old(count(slot(pool)))) + 1); (to_integer(old(count(slot(pool)))) + 1) <= 2147483647; };
         }
-        known();
+        close();
     }
     have to_integer(count(item(pool, _))) == (to_integer(old(count(item(pool, _)))) - 1) by {
         have to_integer(count(item(pool, _))) <= (to_integer(old(count(item(pool, _)))) - 1) by {
@@ -274,7 +274,7 @@ void give_back(struct pool* pool, struct payload* p) {
                 _))); };
     }
     have to_integer(pool->checked_out) == (to_integer(old(pool->checked_out)) - 1) by {
-        known();
+        close();
     }
     have defined((pool->checked_out + count(slot(pool)))) by {
         have (to_integer(pool->checked_out) + to_integer(count(slot(pool)))) >= -2147483648 by {
@@ -285,23 +285,23 @@ void give_back(struct pool* pool, struct payload* p) {
                     (to_integer((pool->checked_out - 1)) + to_integer((old(count(slot(pool))) +
                     1)))); to_integer(pool->checked_out) == to_integer(old(pool->checked_out) - 1); };
         }
-        known();
+        close();
     }
     have to_integer(pool->capacity) == (to_integer(pool->checked_out) + to_integer(count(slot(pool)))) by {
-        known();
+        close();
     }
     have 0 <= pool->checked_out and to_integer(pool->checked_out) == to_integer(count(item(pool, _))) and to_integer(pool->capacity) == (to_integer(pool->checked_out) + to_integer(count(slot(pool)))) by {
-        known();
+        close();
     }
-    known();
-    known();
-    known();
-    known();
-    known();
-    solve();
-    known();
-    known();
-    have p->value == old(p->value) by known();
+    close();
+    close();
+    close();
+    close();
+    close();
+    close();
+    close();
+    close();
+    have p->value == old(p->value) by close();
 }
 void pipeline(struct pool* pool, struct payload* first, struct payload* second) {
  consumes storage(pool);
@@ -313,7 +313,7 @@ void pipeline(struct pool* pool, struct payload* first, struct payload* second) 
 } by {
     step();
     have to_integer(count(item(pool, _))) == 0 by {
-        known();
+        close();
     }
     have defined((count(item(pool, _)) + 1)) by {
         have (to_integer(count(item(pool, _))) + to_integer(1)) >= -2147483648 by {
@@ -322,11 +322,11 @@ void pipeline(struct pool* pool, struct payload* first, struct payload* second) 
         have (to_integer(count(item(pool, _))) + to_integer(1)) <= 2147483647 by {
             close() using { to_integer(count(item(pool, _))) == 0; };
         }
-        known();
+        close();
     }
     step();
     have to_integer(count(item(pool, first))) == 1 by {
-        solve();
+        close();
     }
     step();
     step();

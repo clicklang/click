@@ -16,7 +16,7 @@ verifying "global.c";
 spec enum NodeRef { At(struct model_node*), }
 resource token() { field model: NodeRef; }
 struct model_node* get_node() { ensures result == &singleton; } by {
-    step_until(function.exit); known();
+    step_until(function.exit); close();
 }
 void wrapped(struct model_node* p) { produces held: token(); ensures held.model == NodeRef::At(p); } by {
     step_until(function.exit); let held = fold(token(), { model: NodeRef::At(p) });

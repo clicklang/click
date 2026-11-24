@@ -20,7 +20,7 @@ int32 touch(struct packet input) {
 } by {
     unfold(data_cell(input.data));
     mark copied_entry;
-    have old(input.data[0]) == 3 by { known(); }
+    have old(input.data[0]) == 3 by { close(); }
     have at(copied_entry, input.data) == old(input.data);
     have at(copied_entry, input.data[0]) == old(input.data[0]) by {
         rewrite(at(copied_entry, input.data), old(input.data));
@@ -30,11 +30,11 @@ int32 touch(struct packet input) {
     step_until(function.exit);
     have old(input.data) == at(copied_entry, input.data);
     have old(input.data[0]) == at(copied_entry, input.data[0]) by {
-        known();
+        close();
     }
     have old(input.data[0]) == 3;
     fold(data_cell(input.data));
-    solve();
+    close();
 }
 
 ```

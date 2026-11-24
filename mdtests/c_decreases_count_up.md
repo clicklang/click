@@ -24,13 +24,13 @@ int32 count_to_n(int32 n) {
         decreases n - i;
         invariant i >= 0;
         invariant i <= n;
-        initialize by solve();
+        initialize by close();
         maintain by {
             step();
         }
     }
     step();
-    solve();
+    close();
 }
 ```
 

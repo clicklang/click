@@ -24,7 +24,7 @@ uint64 forwarded(struct bytes v) {
         apply(click::separation::contains_refl(memory(at(call(0).entry, call(0).parameter(v).data)[0..4])));
     }
     step_until(function.exit);
-    solve();
+    close();
 }
 ```
 

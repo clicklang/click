@@ -11,10 +11,10 @@ fn sum(bytes: &[u8]) -> i32 {
 } by {
     step_until(region(7).entry);
     have prefix(bytes, ((i as uint32) as int32)) == 0 by {
-        unfold(prefix(bytes, ((i as uint32) as int32))); solve();
+        unfold(prefix(bytes, ((i as uint32) as int32))); close();
     }
     have to_integer(total) == 0 by {
-        solve();
+        close();
     }
     have to_integer(total) == prefix(bytes, ((i as uint32) as int32)) by {
         close() using {
@@ -56,13 +56,13 @@ fn sum(bytes: &[u8]) -> i32 {
                 }
             }
             have 0 <= ((i as uint32) as int32) by {
-                solve();
+                close();
             }
             have 0 <= ((bytes.len() as uint32) as int32) by {
-                solve();
+                close();
             }
             have 0 <= (bytes[((i as uint32) as int32)] as int32) and 255 >= (bytes[((i as uint32) as int32)] as int32) by {
-                solve();
+                close();
             }
             have defined(bytes[((i as uint32) as int32)]) by {
                 transport(at(function.entry, viewable(bytes[0..((bytes.len() as uint32) as int32)])), defined(bytes[((i as uint32) as int32)])) using {
@@ -91,7 +91,7 @@ fn sum(bytes: &[u8]) -> i32 {
                 }
             }
             have defined(total + (bytes[((i as uint32) as int32)] as int32)) by {
-                apply(integer::int32_add_defined_by_integer_bounds(total, (bytes[((i as uint32) as int32)] as int32))); solve();
+                apply(integer::int32_add_defined_by_integer_bounds(total, (bytes[((i as uint32) as int32)] as int32))); close();
             }
             have to_integer(total + (bytes[((i as uint32) as int32)] as int32)) == to_integer(total) + to_integer((bytes[((i as uint32) as int32)] as int32)) by {
                 apply(integer::int32_add_to_integer(total, (bytes[((i as uint32) as int32)] as int32)));
@@ -101,7 +101,7 @@ fn sum(bytes: &[u8]) -> i32 {
             }
             have prefix(bytes, ((i as uint32) as int32) + 1) == prefix(bytes, ((i as uint32) as int32)) + to_integer((bytes[((i as uint32) as int32)] as int32)) by {
                 unfold(prefix(bytes, ((i as uint32) as int32) + 1));
-                solve();
+                close();
             }
             have to_integer(total + (bytes[((i as uint32) as int32)] as int32)) == prefix(bytes, ((i as uint32) as int32) + 1) by {
                 close() using {
@@ -149,7 +149,7 @@ fn sum(bytes: &[u8]) -> i32 {
             step_until(region(26).entry);
             step();
             have i <= bytes.len() by {
-                solve();
+                close();
             }
             have i <= 1000u64 by {
                 normalize() using {
@@ -187,7 +187,7 @@ fn sum(bytes: &[u8]) -> i32 {
     }
     have prefix(bytes, ((i as uint32) as int32)) == prefix(bytes, ((bytes.len() as uint32) as int32)) by {
         rewrite((((i as uint32) as int32)), ((bytes.len() as uint32) as int32));
-        solve();
+        close();
     }
     have to_integer(total) == prefix(bytes, ((bytes.len() as uint32) as int32)) by {
         close() using {
@@ -196,7 +196,7 @@ fn sum(bytes: &[u8]) -> i32 {
         }
     }
     step_until(function.exit);
-    solve();
+    close();
 }
 
 import click::integer;

@@ -561,7 +561,7 @@ at a recorded point:
 <!-- verified-example: mdtests/viewable_segment_forms.md -->
 ```click
 have at(region(0).entry, viewable(p[0..n])) by {
-    known();
+    close();
 }
 ```
 

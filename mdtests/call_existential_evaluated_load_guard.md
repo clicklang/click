@@ -42,7 +42,7 @@ int32 parent(int32 *a, int32 *b, int32 n, int32 i) {
 } by {
     have defined(a[i]) by {
         instantiate(forall (k: int32) { 0 <= k and k < n implies defined(old(a[k])) }, i);
-        known();
+        close();
     }
     mark before_call;
     let { result: r } = step(child);
@@ -50,13 +50,13 @@ int32 parent(int32 *a, int32 *b, int32 n, int32 i) {
     have exists (path: Path) {
         pick(at(before_call, a[i]), path) == r
     } by {
-        known();
+        close();
     }
     let rest = obtain(exists (rest: Path) {
         pick(at(before_call, a[i]), rest) == r
     });
     step();
-    solve();
+    close();
 }
 ```
 

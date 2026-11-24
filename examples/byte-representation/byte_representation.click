@@ -29,31 +29,31 @@ int32 g(uint32 tag, int32 *p, int32 **restored) {
     branch {
         true => {
             step_until(function.exit);
-            solve();
+            close();
         }
         false => {}
     }
-    have separate(memory((src as (uint8*))[0..16]), memory(p[0..1])) by { solve(); }
+    have separate(memory((src as (uint8*))[0..16]), memory(p[0..1])) by { close(); }
     step();
     step();
     branch {
         true => {
             step_until(function.exit);
-            solve();
+            close();
         }
         false => {}
     }
-    have separate(memory(buf[0..16]), memory(p[0..1])) by { solve(); }
+    have separate(memory(buf[0..16]), memory(p[0..1])) by { close(); }
     step();
     step();
     branch {
         true => {
             step_until(function.exit);
-            solve();
+            close();
         }
         false => {}
     }
-    have separate(memory((dst as (uint8*))[0..16]), memory(p[0..1])) by { solve(); }
+    have separate(memory((dst as (uint8*))[0..16]), memory(p[0..1])) by { close(); }
 }
 
 int use_copy() {
@@ -70,7 +70,7 @@ int use_copy() {
                     contradiction(copied == 18);
                 }
                 copied == -1 => {
-                    known();
+                    close();
                 }
             }
         }

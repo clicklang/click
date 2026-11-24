@@ -52,12 +52,12 @@ int32 peek(struct cell* node) {
             }
             step();
             step();
-            solve();
+            close();
         },
         Sign::Pos(value) => {
             step();
             step();
-            solve();
+            close();
         },
     }
 }

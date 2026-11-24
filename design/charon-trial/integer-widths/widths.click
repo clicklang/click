@@ -84,6 +84,6 @@ fn step_below(i: u32, n: u32) -> u32 {
     ensures i < n implies result == i + 1u32;
     ensures i >= n implies result == i;
 } by {
-    if i < n { step_until(function.exit); solve(); }
-    else { step_until(function.exit); solve(); }
+    if i < n { step_until(function.exit); close(); }
+    else { step_until(function.exit); close(); }
 }

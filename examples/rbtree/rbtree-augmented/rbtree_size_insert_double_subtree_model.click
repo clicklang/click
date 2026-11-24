@@ -26,7 +26,7 @@ theorem sized_context_double_subtree_matches_insert_fix(g: struct rb_node*, p: s
         unfold(rb_recolor(RbTree::Node(g, node, Color::Black, rb_reparent(sized_shape(middle_right), g), sized_shape(uncle)), Color::Red));
         unfold(rb_recolor(RbTree::Node(node, above, Color::Red, RbTree::Node(p, node, Color::Red, sized_shape(far_left), rb_reparent(sized_shape(middle_left), p)), RbTree::Node(g, node, Color::Red, rb_reparent(sized_shape(middle_right), g), sized_shape(uncle))), Color::Black));
         unfold(sized_context_double_subtree_after(g, p, node, above, far_left, middle_left, middle_right, uncle));
-        known();
+        close();
     }
 }
 
@@ -37,7 +37,7 @@ theorem sized_context_double_subtree_preserves_inorder(g: struct rb_node*, p: st
         apply(rb_insert_fix_outer_left_preserves_inorder(rb_insert_fix_inner_left(sized_shape(sized_context_double_subtree_before(g, p, node, above, nv, pv, gv, far_left, middle_left, middle_right, uncle)))));
         apply(rb_insert_fix_inner_left_preserves_inorder(sized_shape(sized_context_double_subtree_before(g, p, node, above, nv, pv, gv, far_left, middle_left, middle_right, uncle))));
         rewrite(rb_inorder(rb_insert_fix_outer_left(rb_insert_fix_inner_left(sized_shape(sized_context_double_subtree_before(g, p, node, above, nv, pv, gv, far_left, middle_left, middle_right, uncle))))), rb_inorder(rb_insert_fix_inner_left(sized_shape(sized_context_double_subtree_before(g, p, node, above, nv, pv, gv, far_left, middle_left, middle_right, uncle)))));
-        known();
+        close();
     }
 }
 
@@ -64,7 +64,7 @@ theorem sized_mirrored_context_double_subtree_matches_insert_fix(g: struct rb_no
         unfold(rb_recolor(RbTree::Node(g, node, Color::Black, sized_shape(uncle), rb_reparent(sized_shape(middle_left), g)), Color::Red));
         unfold(rb_recolor(RbTree::Node(node, above, Color::Red, RbTree::Node(g, node, Color::Red, sized_shape(uncle), rb_reparent(sized_shape(middle_left), g)), RbTree::Node(p, node, Color::Red, rb_reparent(sized_shape(middle_right), p), sized_shape(far_right))), Color::Black));
         unfold(sized_mirrored_context_double_subtree_after(g, p, node, above, far_right, middle_left, middle_right, uncle));
-        known();
+        close();
     }
 }
 
@@ -75,6 +75,6 @@ theorem sized_mirrored_context_double_subtree_preserves_inorder(g: struct rb_nod
         apply(rb_insert_fix_outer_right_preserves_inorder(rb_insert_fix_inner_right(sized_shape(sized_mirrored_context_double_subtree_before(g, p, node, above, nv, pv, gv, far_right, middle_left, middle_right, uncle)))));
         apply(rb_insert_fix_inner_right_preserves_inorder(sized_shape(sized_mirrored_context_double_subtree_before(g, p, node, above, nv, pv, gv, far_right, middle_left, middle_right, uncle))));
         rewrite(rb_inorder(rb_insert_fix_outer_right(rb_insert_fix_inner_right(sized_shape(sized_mirrored_context_double_subtree_before(g, p, node, above, nv, pv, gv, far_right, middle_left, middle_right, uncle))))), rb_inorder(rb_insert_fix_inner_right(sized_shape(sized_mirrored_context_double_subtree_before(g, p, node, above, nv, pv, gv, far_right, middle_left, middle_right, uncle)))));
-        known();
+        close();
     }
 }

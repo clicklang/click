@@ -21,14 +21,14 @@ int32 good(int32 x) {
         have forall (w: int32) { w == 5 implies w == 5 } by {
             intro();
             intro();
-            known();
+            close();
         }
         intro();
         intro();
-        known();
+        close();
     }
     step();
-    solve();
+    close();
 }
 ```
 

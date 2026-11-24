@@ -38,8 +38,8 @@ int32 at_valid_position(parse_buffer * const b) {
     views b->content[0..b->length];
     ensures result == 1;
 } by {
-    have 0u64 < b->length by { solve(); }
-    have b->offset <= b->length by { solve(); }
+    have 0u64 < b->length by { close(); }
+    have b->offset <= b->length by { close(); }
     apply(separation::viewable_offset_nonnull(b->content, 0u64, b->length, b->offset));
 }
 ```

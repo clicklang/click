@@ -56,7 +56,7 @@ int32 apply_bundle(
 theorem keep_first_bundle_satisfies_PreserveBundles() {
     ensures PreserveBundles(&keep_first_bundle) by {
         unfold(PreserveBundles(&keep_first_bundle));
-        solve();
+        close();
     }
 }
 

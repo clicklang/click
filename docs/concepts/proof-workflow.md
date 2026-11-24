@@ -395,7 +395,7 @@ typical existential-introduction proof names a witness:
 ensures found_zero: (0..n).any(|k| { k == result }) by {
     step_until(function.exit);
     witness(0);
-    solve();
+    close();
 }
 ```
 
@@ -410,7 +410,7 @@ ensures exists (a: Integer, b: Integer) { a == b } by {
     let (left, right) = obtain(exists (x: Integer, y: Integer) { x == y });
     witness(left);
     witness(right);
-    known();
+    close();
 }
 ```
 
@@ -427,7 +427,7 @@ ensures opened_contains: bytes::contains(p, 0, n as uint64, 'x') by {
         0u64 <= found and found < n as uint64 and p[found] == 'x'
     });
     witness(found);
-    solve();
+    close();
 }
 ```
 
@@ -442,7 +442,7 @@ by {
     step();
     step();
     have i == 0 by {
-        solve();
+        close();
     }
     loop fill {
         decreases n - i;
@@ -488,11 +488,11 @@ order for execution targets and `at(...)` points:
 ```click
 step_until(region(4).entry);
 have y >= 0 by {
-    solve();
+    close();
 }
 step();
 have at(region(4).entry, y) >= 0 by {
-    known();
+    close();
 }
 ```
 
@@ -521,7 +521,7 @@ semantic proof-local name over repeating a numeric statement coordinate:
 ```click
 mark before_write;
 step();
-have p[0] == at(before_write, p[0]) + 1 by solve();
+have p[0] == at(before_write, p[0]) + 1 by close();
 ```
 
 The mark names the point the path is at now. It does not advance or rewind the
@@ -558,7 +558,7 @@ loop {
 
     maintain by {
         step();
-        solve();
+        close();
     }
 }
 ```

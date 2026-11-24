@@ -20,10 +20,10 @@ void touch(struct node* h, int32* q) {
     ensures *q == 1;
 } by {
     step_until(function.exit);
-    have exact(h->next) == h->next by known();
-    have exact(*q) == 1 by known();
-    have exact(*q) == *q by known();
-    have exact(exact(h->next)->next) == h->next->next by solve();
+    have exact(h->next) == h->next by close();
+    have exact(*q) == 1 by close();
+    have exact(*q) == *q by close();
+    have exact(exact(h->next)->next) == h->next->next by close();
 }
 ```
 

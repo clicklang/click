@@ -12,9 +12,9 @@ theorem pointer_disequality(model: Model, p: int32*, other: int32*) {
     requires model_pointer(model) == p;
     requires model_pointer(model) != other;
     ensures p != other by {
-        have model_pointer(model) == p by known();
-        have model_pointer(model) != other by known();
-        known();
+        have model_pointer(model) == p by close();
+        have model_pointer(model) != other by close();
+        close();
     }
 }
 ```

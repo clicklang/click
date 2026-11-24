@@ -31,11 +31,11 @@ unsigned long walk(const unsigned char *p, unsigned long n) {
         invariant forall (j: uint64) { j < n implies slice::from_raw_parts(p + j, n).as_ptr() == p + j };
         initialize by {
             have forall (j: uint64) { j < n implies slice::from_raw_parts(p + j, n).as_ptr() == p + j };
-            solve();
+            close();
         }
     }
     step_until(function.exit);
-    solve();
+    close();
 }
 ```
 

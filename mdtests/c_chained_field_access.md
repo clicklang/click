@@ -80,7 +80,7 @@ int32 chain_get(struct outer* o) {
     unfold(inner_cell(o));
     step_until(function.exit);
     fold(inner_cell(o));
-    solve();
+    close();
 }
 
 int32 chain_set(struct outer* o) {
@@ -90,7 +90,7 @@ int32 chain_set(struct outer* o) {
     unfold(inner_cell(o));
     step_until(function.exit);
     fold(inner_cell(o));
-    solve();
+    close();
 }
 
 int32 deep_get(struct root* r) {
@@ -101,7 +101,7 @@ int32 deep_get(struct root* r) {
     step_until(function.exit);
     fold(leaf_cell(r->mid));
     fold(nested(r));
-    solve();
+    close();
 }
 ```
 

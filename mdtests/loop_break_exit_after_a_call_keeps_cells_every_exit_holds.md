@@ -52,7 +52,7 @@ int32 keep(int32* p, int32* q, int32 flag) {
             if flag == 0 {
                 step();
                 step();
-                have q[0] == old(q[0]) by { known(); }
+                have q[0] == old(q[0]) by { close(); }
                 step();
             } else {
                 step();
@@ -67,7 +67,7 @@ int32 keep(int32* p, int32* q, int32 flag) {
         }
     }
     step();
-    solve();
+    close();
 }
 ```
 

@@ -46,7 +46,7 @@ Restore::Restore(int32* slot) {
     ensures separate(memory(*this), memory(this->pointer[0..1]));
 } by {
     step_until(function.exit);
-    solve();
+    close();
 }
 
 Restore::~Restore() {
@@ -59,7 +59,7 @@ Restore::~Restore() {
     ensures this->pointer[0] == old(this->saved);
 } by {
     step_until(function.exit);
-    solve();
+    close();
 }
 
 int32 helper(bool should_throw) throws int32 {
@@ -77,15 +77,15 @@ int32 single_guard_step(int32& value, bool should_throw) {
     outcomes {
         returned => { step_until(function.exit); }
         threw(error) => {
-            have error == 7 by known();
+            have error == 7 by close();
             step_until(function.exit);
         }
     }
     outcomes {
-        returned => { solve(); }
+        returned => { close(); }
         threw(saved_error) => {
-            have saved_error == 7 by known();
-            solve();
+            have saved_error == 7 by close();
+            close();
         }
     }
 }

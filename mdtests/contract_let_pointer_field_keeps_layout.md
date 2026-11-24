@@ -20,7 +20,7 @@ void caller(struct region* second) {
     owns second->arena->data;
 } by {
     step() {
-        requires separate(memory(*second), memory(second->arena->data)) by { known(); }
+        requires separate(memory(*second), memory(second->arena->data)) by { close(); }
     }
 }
 ```

@@ -42,19 +42,19 @@ int32 run(int32 *p, const uint8 *q) {
     ensures result == 0 or result == 1;
 } by {
     step();
-    have separate(memory(handle), memory(q[0..1])) by { known(); }
+    have separate(memory(handle), memory(q[0..1])) by { close(); }
     step();
     branch {
         true => {
-            step() by { known(); }
+            step() by { close(); }
             step();
-            solve();
+            close();
         }
         false => {}
     }
     step();
     step();
-    solve();
+    close();
 }
 ```
 

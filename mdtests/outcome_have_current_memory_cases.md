@@ -18,12 +18,12 @@ void set_seven(int32* cell) {
     step_until(function.exit);
     have cell[0] == 7 by {
         if cell[0] == 8 {
-            known();
+            close();
         } else {
-            known();
+            close();
         }
     }
-    known();
+    close();
 }
 ```
 

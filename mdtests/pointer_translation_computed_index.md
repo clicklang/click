@@ -13,9 +13,9 @@ theorem advance(p: const uint8*, bytes: const uint8*, n: uint64, remaining: int3
         have to_integer(n as uint32 as int32) - to_integer(remaining) < 2147483647 by {
             rewrite(to_integer(n as uint32 as int32) - to_integer(remaining),
                     to_integer(n as uint32 as int32 - remaining));
-            known();
+            close();
         }
-        have (n as uint32 as int32 - remaining) < 2147483647 by known();
+        have (n as uint32 as int32 - remaining) < 2147483647 by close();
         have defined((n as uint32 as int32 - remaining) + 1) by {
             apply(click::integer::int32_increment_below_max_is_defined((n as uint32 as int32 - remaining)));
         }
@@ -23,7 +23,7 @@ theorem advance(p: const uint8*, bytes: const uint8*, n: uint64, remaining: int3
             apply(click::integer::uint8_pointer_add_associate_int32(bytes, (n as uint32 as int32 - remaining), 1));
         }
         rewrite(p, bytes + (n as uint32 as int32 - remaining));
-        known();
+        close();
     }
 }
 ```

@@ -39,14 +39,14 @@ function tree_parent_is_null(t: Tree) -> int32 {
 
 theorem parent_is_stable(t: Tree, p: struct node*) {
     ensures parent_is(t, p) == parent_is(t, p) by {
-        known();
+        close();
     }
 }
 
 theorem tree_parent_is_null_stable(t: Tree) {
     ensures parent_is(t, 0) == parent_is(t, 0) by {
         apply(parent_is_stable(t, 0));
-        known();
+        close();
     }
 }
 

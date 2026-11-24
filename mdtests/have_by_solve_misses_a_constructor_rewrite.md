@@ -28,15 +28,15 @@ void touch(int32 n) {
 } by {
     match c.model {
         Walk::At(wd, rest) => {
-            have black(Walk::At(wd, rest)) == 1 by solve();
+            have black(Walk::At(wd, rest)) == 1 by close();
             step();
             step();
-            solve();
+            close();
         },
         Walk::Done => {
             step();
             step();
-            solve();
+            close();
         },
     }
 }

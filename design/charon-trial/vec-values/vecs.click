@@ -35,7 +35,7 @@ fn vec_values::pushed_len(x: u32) -> usize {
     have click::rust::vec::len(call(0).result) == 0u64;
     step_until(function.exit);
     have to_integer(result) == to_integer(click::rust::vec::len(call(0).result)) + 1;
-    solve();
+    close();
 }
 
 fn vec_values::empty_len() -> usize {

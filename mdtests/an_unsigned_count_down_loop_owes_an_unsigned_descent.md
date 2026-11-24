@@ -27,7 +27,7 @@ int32 drain(uint32 x) {
 } by {
     loop {
         decreases x;
-        initialize by { solve(); }
+        initialize by { close(); }
         maintain by {
             step();
         }

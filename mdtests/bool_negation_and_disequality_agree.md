@@ -11,36 +11,36 @@ function positive(x: int32) -> Bool { x > 0 }
 
 theorem not_false_is_true(x: int32) {
     requires positive(x) != false;
-    ensures positive(x) by { solve(); }
+    ensures positive(x) by { close(); }
 }
 
 theorem not_is_false(x: int32) {
     requires not positive(x);
-    ensures positive(x) == false by { solve(); }
+    ensures positive(x) == false by { close(); }
 }
 
 theorem not_true_is_not(x: int32) {
     requires positive(x) != true;
-    ensures not positive(x) by { solve(); }
+    ensures not positive(x) by { close(); }
 }
 
 theorem parameter_not_false_is_true(flag: Bool) {
     requires flag != false;
-    ensures flag by { solve(); }
+    ensures flag by { close(); }
 }
 
 theorem parameter_not_is_false(flag: Bool) {
     requires not flag;
-    ensures flag == false by { solve(); }
+    ensures flag == false by { close(); }
 }
 
 theorem range(x: int32) {
     ensures positive(x) == true or positive(x) == false by {
         if positive(x) {
-            known();
+            close();
         } else {
-            have positive(x) == false by solve();
-            known();
+            have positive(x) == false by close();
+            close();
         }
     }
 }

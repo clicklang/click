@@ -15,7 +15,7 @@ theorem add_uint32(flag: Bool, x: uint32, z: uint32, y: uint32) {
 }
 theorem add_wraps_uint32() {
     ensures ((4294967295u32 + 1u32) as uint32) == 0u32 by {
-        known();
+        close();
     }
 }
 theorem subtract_uint32(flag: Bool, x: uint32, z: uint32, y: uint32) {
@@ -32,7 +32,7 @@ theorem subtract_uint32(flag: Bool, x: uint32, z: uint32, y: uint32) {
 }
 theorem subtract_wraps_uint32() {
     ensures ((0u32 - 1u32) as uint32) == 4294967295u32 by {
-        known();
+        close();
     }
 }
 theorem add_uint64(flag: Bool, x: uint64, z: uint64, y: uint64) {
@@ -49,7 +49,7 @@ theorem add_uint64(flag: Bool, x: uint64, z: uint64, y: uint64) {
 }
 theorem add_wraps_uint64() {
     ensures ((18446744073709551615u64 + 1u64) as uint64) == 0u64 by {
-        known();
+        close();
     }
 }
 theorem subtract_uint64(flag: Bool, x: uint64, z: uint64, y: uint64) {
@@ -66,7 +66,7 @@ theorem subtract_uint64(flag: Bool, x: uint64, z: uint64, y: uint64) {
 }
 theorem subtract_wraps_uint64() {
     ensures ((0u64 - 1u64) as uint64) == 18446744073709551615u64 by {
-        known();
+        close();
     }
 }
 theorem multiply_uint32(flag: Bool, x: uint32, z: uint32, y: uint32) {
@@ -83,7 +83,7 @@ theorem multiply_uint32(flag: Bool, x: uint32, z: uint32, y: uint32) {
 }
 theorem multiply_wraps_uint32() {
     ensures ((4294967295u32 * 3u32) as uint32) == 4294967293u32 by {
-        known();
+        close();
     }
 }
 theorem multiply_uint64(flag: Bool, x: uint64, z: uint64, y: uint64) {
@@ -100,7 +100,7 @@ theorem multiply_uint64(flag: Bool, x: uint64, z: uint64, y: uint64) {
 }
 theorem multiply_wraps_uint64() {
     ensures ((18446744073709551615u64 * 3u64) as uint64) == 18446744073709551613u64 by {
-        known();
+        close();
     }
 }
 ```

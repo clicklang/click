@@ -251,10 +251,10 @@ loop {
     invariant i >= 0;
     invariant i <= n;
 
-    initialize by solve();
+    initialize by close();
     maintain by {
         step();
-        solve();
+        close();
     }
 }
 ```
@@ -388,7 +388,7 @@ have p[0] == 0 by {
             contradiction(a == 0);
         }
         p[0] == 0 => {
-            known();
+            close();
         }
     }
 }
@@ -803,7 +803,7 @@ void bump_n(struct cell* p, int32 n) {
         invariant i <= n;
         invariant c.count == old(c.count) + i;
 
-        initialize by solve();
+        initialize by close();
         maintain by {
             have c.count == i by { close() using { c.count == old(c.count) + i; old(c.count) == 0; }; }
             unfold(c);
@@ -812,7 +812,7 @@ void bump_n(struct cell* p, int32 n) {
             let c = fold(counter(p), { count: old(c.count) + i });
         }
     }
-    have i == n by solve();
+    have i == n by close();
 }
 ```
 

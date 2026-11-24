@@ -15,7 +15,7 @@ verifying "apply_using_accepts_a_constant_true_premise.c";
 theorem start_below(lo: int32, n: int32) {
     requires 0 <= lo;
     requires lo <= n;
-    ensures 0 <= n by solve();
+    ensures 0 <= n by close();
 }
 
 int32 probe(int32 n) {
@@ -24,7 +24,7 @@ int32 probe(int32 n) {
 } by {
     step();
     apply(start_below(0, n));
-    solve();
+    close();
 }
 ```
 

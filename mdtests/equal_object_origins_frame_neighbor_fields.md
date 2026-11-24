@@ -143,7 +143,7 @@ void inner(struct rb_node* node) {
             let { gs: gs, parent_tree: parent_tree, ns: ns } = unfold(state);
                     let { ps: ps } = unfold(parent_tree);
             step(); step(); step(); step(); step();
-            have parent == p by { solve(); }
+            have parent == p by { close(); }
             let parent_tree = fold(inner_node(g->rb_left), { model: InnerNode::At(p, g, old(state.pvalue)), ps: ps });
             let state = fold(inner_state(node), { phase: InnerPhase::Before(g, p), gvalue: old(state.gvalue), pvalue: old(state.pvalue), nvalue: old(state.nvalue), parent_model: old(state.parent_model), gs: gs, parent_tree: parent_tree, ns: ns });
             loop {
@@ -158,19 +158,19 @@ void inner(struct rb_node* node) {
                 invariant state.phase == InnerPhase::Before(g, p);
                 invariant old(state.phase) == InnerPhase::Before(g, p);
                 decreases 0;
-                initialize by solve();
+                initialize by close();
                 maintain by {
                     let { gs: gs, parent_tree: parent_tree, ns: ns } = unfold(state);
                     let { ps: ps } = unfold(parent_tree);
-                    have g->rb_left == p by { known(); }
+                    have g->rb_left == p by { close(); }
                     step(); step();
-                    have gparent == g by { known(); }
+                    have gparent == g by { close(); }
                     step(); step(); step();
                     mark after_store;
-                    have at(after_store, parent->rb_right == 0) by { known(); }
+                    have at(after_store, parent->rb_right == 0) by { close(); }
                     step(); step();
-                    have separate(memory(parent->rb_right), memory(node->rb_left)) by { known(); }
-                    have separate(memory(parent->rb_right), memory(p->__rb_parent_color)) by { known(); }
+                    have separate(memory(parent->rb_right), memory(node->rb_left)) by { close(); }
+                    have separate(memory(parent->rb_right), memory(p->__rb_parent_color)) by { close(); }
                     have separate(statement(1).statement(4).footprint, at(after_store, memory(parent->rb_right))) by {
                         normalize() using { separate(memory(parent->rb_right), memory(node->rb_left)); };
                     }
@@ -186,18 +186,18 @@ void inner(struct rb_node* node) {
                     have parent->rb_right == 0 by {
                         rewrite(parent->rb_right, at(statement(1).statement(4).exit, parent->rb_right));
                         rewrite(at(statement(1).statement(4).exit, parent->rb_right), at(after_store, parent->rb_right));
-                        known();
+                        close();
                     }
-                    have p->rb_right == 0 by { known(); }
+                    have p->rb_right == 0 by { close(); }
                     let state = fold(inner_state(node), { phase: InnerPhase::After(g, p), gvalue: old(state.gvalue), pvalue: old(state.pvalue), nvalue: old(state.nvalue), parent_model: old(state.parent_model), gs: gs, ps: ps, ns: ns });
                     have state.phase == inner_finish(old(state.phase)) by {
                         rewrite(old(state.phase), InnerPhase::Before(g, p));
-                        unfold(inner_finish(InnerPhase::Before(g, p))); known();
+                        unfold(inner_finish(InnerPhase::Before(g, p))); close();
                     }
                     step();
                 }
             }
-            step_until(function.exit); solve();
+            step_until(function.exit); close();
         },
     }
 }

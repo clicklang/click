@@ -19,7 +19,7 @@ uint32 shift(uint32 value, uint64 count) {
     step_until(function.exit);
     rewrite(count, 31u64);
     rewrite(value, 1u32);
-    known();
+    close();
 }
 ```
 

@@ -33,19 +33,19 @@ void stamp(struct node* p) {
             unfold(c);
             let c = fold(cell(p), { model: Model::At(first) });
             mark packed;
-            have (match c.model { Model::At(original) => original }) == first by known();
+            have (match c.model { Model::At(original) => original }) == first by close();
             match c.model {
                 Model::At(second) => {
                     unfold(c);
-                    have at(packed, c.model) == Model::At(first) by known();
+                    have at(packed, c.model) == Model::At(first) by close();
                     have (match at(packed, c.model) { Model::At(original) => original }) == first by {
                         close() using {};
                     }
-                    have second == first by known();
+                    have second == first by close();
                     step();
                     let c = fold(cell(p), { model: old(c.model) });
                     step();
-                    solve();
+                    close();
                 },
             }
         },

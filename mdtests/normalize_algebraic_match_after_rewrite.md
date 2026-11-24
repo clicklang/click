@@ -19,7 +19,7 @@ theorem selected(c: Color) {
     ensures choose(c) == Color::Red by {
         unfold(choose(c));
         rewrite(c, Color::Black);
-        solve();
+        close();
     }
 }
 spec enum Payload { Empty, At(int32, struct node*, Color) }
@@ -34,7 +34,7 @@ theorem payload(v: Payload, n: int32, p: struct node*, c: Color) {
     ensures repack(v) == Payload::At(n, p, c) by {
         unfold(repack(v));
         rewrite(v, Payload::At(n, p, c));
-        known();
+        close();
     }
 }
 ```

@@ -47,12 +47,12 @@ void bump_n(struct cell* p, int32 n) {
         invariant i <= n;
         invariant to_integer(c.count) == to_integer(old(c.count) + i);
 
-        initialize by solve();
+        initialize by close();
         maintain by {
             have c.count == i by {
                 rewrite(to_integer(c.count), to_integer((old(c.count) + i)));
                 rewrite(old(c.count), 0);
-                known();
+                close();
             }
             unfold(c);
             step();
@@ -60,7 +60,7 @@ void bump_n(struct cell* p, int32 n) {
             let d = fold(counter(p), { count: (old(c.count) + i) });
         }
         otherwise {
-            have to_integer(c.count) == to_integer(old(c.count) + i) by known();
+            have to_integer(c.count) == to_integer(old(c.count) + i) by close();
         }
     }
     have i == n;

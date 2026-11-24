@@ -51,9 +51,9 @@ void mark_all(struct arena* arena) {
         decreases (arena->capacity - i);
         owns arena->occupied[0..arena->capacity];
         invariant 0 <= i and i <= arena->capacity;
-        initialize by solve();
+        initialize by close();
         maintain by {
-            have separate(memory(arena->occupied[0..arena->capacity]), memory(*arena)) by { known(); }
+            have separate(memory(arena->occupied[0..arena->capacity]), memory(*arena)) by { close(); }
             apply(separation::contains_element(arena->occupied, 0, arena->capacity, i));
             apply(separation::contains_refl(memory(*arena)));
             apply(separation::separate_restrict(
@@ -61,7 +61,7 @@ void mark_all(struct arena* arena) {
                 memory(arena->occupied[i]), memory(*arena)
             ));
             step();
-            have separate(loop(0).statement(0).footprint, memory(*arena)) by { known(); }
+            have separate(loop(0).statement(0).footprint, memory(*arena)) by { close(); }
             apply(separation::contains_refl(loop(0).statement(0).footprint));
             apply(separation::separate_restrict(
                 loop(0).statement(0).footprint, memory(*arena),
@@ -72,17 +72,17 @@ void mark_all(struct arena* arena) {
             }
             step();
             have separate(loop(0).statement(1).footprint, memory((&arena->capacity)[0..1])) by {
-                solve();
+                close();
             }
             have arena->capacity == at(loop(0).statement(1).entry, arena->capacity) by {
                 preserve(memory((&arena->capacity)[0..1]), loop(0).statement(1));
             }
-            solve();
+            close();
         }
     }
     step();
     fold(state(arena));
-    solve();
+    close();
 }
 ```
 

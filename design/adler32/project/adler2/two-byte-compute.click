@@ -41,7 +41,7 @@ impl adler2::Adler32 {
      have b == 0u32 by {
      rewrite(b, at(scalar_mod, b) % 65521u32);
      rewrite(at(scalar_mod, b), 0u32);
-     solve();
+     close();
      }
      // Both lane vectors are still zero: neither loop ran, and each reduction
      // and the multiplication by four keep a zero lane zero.
@@ -94,7 +94,7 @@ impl adler2::Adler32 {
      rewrite(at(before_sum_a, a_vec.0[1]), 0u32);
      rewrite(at(before_sum_a, a_vec.0[2]), 0u32);
      rewrite(at(before_sum_a, a_vec.0[3]), 0u32);
-     solve();
+     close();
      }
      mark before_sum_b;
      have at(before_sum_b, b) == 0u32;
@@ -109,7 +109,7 @@ impl adler2::Adler32 {
      rewrite(at(before_sum_b, b_vec.0[1]), 65521u32);
      rewrite(at(before_sum_b, b_vec.0[2]), 131042u32);
      rewrite(at(before_sum_b, b_vec.0[3]), 196563u32);
-     solve();
+     close();
      }
      have b == 393126u32 by {
      rewrite(b, at(before_sum_b, b) + at(before_sum_b, b_vec.0[0]) + at(before_sum_b, b_vec.0[1]) + at(before_sum_b, b_vec.0[2]) + at(before_sum_b, b_vec.0[3]));
@@ -118,13 +118,13 @@ impl adler2::Adler32 {
      rewrite(at(before_sum_b, b_vec.0[1]), 65521u32);
      rewrite(at(before_sum_b, b_vec.0[2]), 131042u32);
      rewrite(at(before_sum_b, b_vec.0[3]), 196563u32);
-     solve();
+     close();
      }
      // Follow each serial iteration at its two accumulator updates.
      have loop(5).iter.len() == 2u64;
      have loop(5).iter.as_slice() == old(bytes) + 0u64;
      step_until(loop(5).statement(0).entry);
-     have byte == old(bytes[0]) by { known(); }
+     have byte == old(bytes[0]) by { close(); }
      have a == 1u32;
      have to_integer(a) <= 1;
      have to_integer(byte as u32) <= 255;
@@ -154,7 +154,7 @@ impl adler2::Adler32 {
      have loop(5).iter.len() == 1u64;
      have loop(5).iter.as_slice() == old(bytes) + 1u64;
      step_until(loop(5).statement(0).entry);
-     have byte == old(bytes[1]) by { known(); }
+     have byte == old(bytes[1]) by { close(); }
      have a == (1u32 + old((bytes[0] as u32)));
      have to_integer(a) <= 256;
      have to_integer(byte as u32) <= 255;
@@ -184,7 +184,7 @@ impl adler2::Adler32 {
      have at(output_a, a) == ((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32)));
      have (at(output_a, a) % 65521u32) == (((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32)))) % 65521u32 by {
      rewrite(at(output_a, a), ((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32))));
-     solve();
+     close();
      }
      have (at(output_a, a)) % 65521u32 < 65521u32;
      have 0 <= to_integer((at(output_a, a) % 65521u32));
@@ -196,7 +196,7 @@ impl adler2::Adler32 {
      have at(output_b, b) == ((393126u32 + (1u32 + old((bytes[0] as u32)))) + ((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32))));
      have (at(output_b, b) % 65521u32) == (((393126u32 + (1u32 + old((bytes[0] as u32)))) + ((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32))))) % 65521u32 by {
      rewrite(at(output_b, b), ((393126u32 + (1u32 + old((bytes[0] as u32)))) + ((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32)))));
-     solve();
+     close();
      }
      have (at(output_b, b)) % 65521u32 < 65521u32;
      have 0 <= to_integer((at(output_b, b) % 65521u32));
@@ -204,39 +204,39 @@ impl adler2::Adler32 {
      have to_integer((at(output_b, b) % 65521u32)) < to_integer(65521u32);
      have to_integer((at(output_b, b) % 65521u32)) <= 65535 by close() using { to_integer((at(output_b, b) % 65521u32)) < 65521; };
      step_until(function.exit);
-     have statement(22).call(0).result == 65521u32 by known();
-     have self.a == ((at(output_a, a) % statement(22).call(0).result) as u16) by known();
-     have self.a == ((at(output_a, a) % 65521u32) as u16) by { rewrite(self.a, ((at(output_a, a) % statement(22).call(0).result) as u16)); rewrite(statement(22).call(0).result, 65521u32); known(); }
+     have statement(22).call(0).result == 65521u32 by close();
+     have self.a == ((at(output_a, a) % statement(22).call(0).result) as u16) by close();
+     have self.a == ((at(output_a, a) % 65521u32) as u16) by { rewrite(self.a, ((at(output_a, a) % statement(22).call(0).result) as u16)); rewrite(statement(22).call(0).result, 65521u32); close(); }
      have to_integer(self.a) == to_integer((at(output_a, a) % 65521u32)) by { rewrite(self.a, ((at(output_a, a) % 65521u32) as u16)); close() using { 0 <= to_integer((at(output_a, a) % 65521u32)); to_integer((at(output_a, a) % 65521u32)) <= 65535; }; }
-     have statement(23).call(0).result == 65521u32 by known();
-     have self.b == ((at(output_b, b) % statement(23).call(0).result) as u16) by known();
-     have self.b == ((at(output_b, b) % 65521u32) as u16) by { rewrite(self.b, ((at(output_b, b) % statement(23).call(0).result) as u16)); rewrite(statement(23).call(0).result, 65521u32); known(); }
+     have statement(23).call(0).result == 65521u32 by close();
+     have self.b == ((at(output_b, b) % statement(23).call(0).result) as u16) by close();
+     have self.b == ((at(output_b, b) % 65521u32) as u16) by { rewrite(self.b, ((at(output_b, b) % statement(23).call(0).result) as u16)); rewrite(statement(23).call(0).result, 65521u32); close(); }
      have to_integer(self.b) == to_integer((at(output_b, b) % 65521u32)) by { rewrite(self.b, ((at(output_b, b) % 65521u32) as u16)); close() using { 0 <= to_integer((at(output_b, b) % 65521u32)); to_integer((at(output_b, b) % 65521u32)) <= 65535; }; }
      have bytes[0] == old(bytes[0]) by close() using {};
      have bytes[1] == old(bytes[1]) by close() using {};
      have to_integer(self.a) == to_integer((((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32)))) % 65521u32) by {
       rewrite(to_integer(self.a), to_integer((at(output_a, a) % 65521u32)));
-      rewrite((at(output_a, a) % 65521u32), (((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32)))) % 65521u32); known();
+      rewrite((at(output_a, a) % 65521u32), (((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32)))) % 65521u32); close();
      }
-     have to_integer((((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32)))) % 65521u32) == old(adler_spec_a(bytes, 2, 1)) by known();
+     have to_integer((((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32)))) % 65521u32) == old(adler_spec_a(bytes, 2, 1)) by close();
      have to_integer(self.a) == old(adler_spec_a(bytes, 2, 1)) by {
-      rewrite(to_integer(self.a), to_integer((((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32)))) % 65521u32)); known();
+      rewrite(to_integer(self.a), to_integer((((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32)))) % 65521u32)); close();
      }
      have to_integer(self.b) == to_integer((((393126u32 + (1u32 + old((bytes[0] as u32)))) + ((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32))))) % 65521u32) by {
       rewrite(to_integer(self.b), to_integer((at(output_b, b) % 65521u32)));
-      rewrite((at(output_b, b) % 65521u32), (((393126u32 + (1u32 + old((bytes[0] as u32)))) + ((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32))))) % 65521u32); known();
+      rewrite((at(output_b, b) % 65521u32), (((393126u32 + (1u32 + old((bytes[0] as u32)))) + ((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32))))) % 65521u32); close();
      }
-     have to_integer((((393126u32 + (1u32 + old((bytes[0] as u32)))) + ((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32))))) % 65521u32) == old(adler_spec_b(bytes, 2, 1, 0)) by known();
+     have to_integer((((393126u32 + (1u32 + old((bytes[0] as u32)))) + ((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32))))) % 65521u32) == old(adler_spec_b(bytes, 2, 1, 0)) by close();
      have to_integer(self.b) == old(adler_spec_b(bytes, 2, 1, 0)) by {
-      rewrite(to_integer(self.b), to_integer((((393126u32 + (1u32 + old((bytes[0] as u32)))) + ((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32))))) % 65521u32)); known();
+      rewrite(to_integer(self.b), to_integer((((393126u32 + (1u32 + old((bytes[0] as u32)))) + ((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32))))) % 65521u32)); close();
      }
      // Close the owned fields and the checked output equalities.
-     known();
-     known(); known();
-     known();
-     known();
-     known();
-     known();
-     known();
+     close();
+     close(); close();
+     close();
+     close();
+     close();
+     close();
+     close();
     }
 }

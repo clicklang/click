@@ -16,7 +16,7 @@ theorem empty(v: Vec<uint32>) {
     ensures total(v.len()) == 0 by {
         have to_integer(v.len()) <= to_integer(0u64);
         unfold(total(v.len()));
-        solve();
+        close();
     }
 }
 ```

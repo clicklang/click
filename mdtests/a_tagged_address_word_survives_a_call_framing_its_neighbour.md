@@ -51,7 +51,7 @@ void tag_then_count(struct node *p) {
     loop {
         owns c: cell(p);
         decreases 0;
-        initialize by solve();
+        initialize by close();
         maintain by {
             match c.model {
                 Identity::At(identity) => {
@@ -60,7 +60,7 @@ void tag_then_count(struct node *p) {
                     have identity->tag == (address(identity) | 1) by {
                         close() using { p->tag == (address(p) | 1); p == identity; };
                     }
-                    have separate(memory(p->count), memory(p->tag)) by { solve(); }
+                    have separate(memory(p->count), memory(p->tag)) by { close(); }
                     have contains(memory(p->tag), memory(p->tag)) by { apply(click::separation::contains_refl(memory(p->tag))); }
                     mark before_call;
                     step(set_count);
@@ -73,7 +73,7 @@ void tag_then_count(struct node *p) {
                     have identity->tag == (address(identity) | 1) by {
                         rewrite(identity, p);
                         rewrite(p->tag, at(before_call, p->tag));
-                        known();
+                        close();
                     }
                     step();
                 },

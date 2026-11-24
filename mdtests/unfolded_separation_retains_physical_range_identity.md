@@ -24,10 +24,10 @@ void idle(struct arena* arena) { owns st: state(arena); }
 void probe(struct arena* arena) { owns st: state(arena); } by {
     step(idle, { st: st });
     let { capacity: cap } = unfold(st);
-    have separate(memory(arena->occupied[0..arena->capacity]), memory(arena->data[0..arena->capacity])) by { known(); }
+    have separate(memory(arena->occupied[0..arena->capacity]), memory(arena->data[0..arena->capacity])) by { close(); }
     let st = fold(state(arena), { capacity: cap });
     step();
-    known();
+    close();
 }
 ```
 

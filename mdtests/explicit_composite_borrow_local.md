@@ -33,7 +33,7 @@ int32 use() {
     ensures result == 7;
 } by {
     step_until(function.exit);
-    solve();
+    close();
 }
 ```
 

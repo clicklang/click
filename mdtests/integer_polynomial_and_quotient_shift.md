@@ -25,7 +25,7 @@ theorem rewrite_numerator(x: Integer, y: Integer) {
     requires x == y;
     ensures truncating_quotient(x, 2) == truncating_quotient(y, 2) by {
         rewrite(x, y);
-        known();
+        close();
     }
 }
 ```

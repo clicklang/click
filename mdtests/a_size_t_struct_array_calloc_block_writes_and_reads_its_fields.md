@@ -41,7 +41,7 @@ int32 fill(size_t n) {
     branch {
         true => {
             step_until(function.exit);
-            solve();
+            close();
         }
         false => {}
     }
@@ -51,7 +51,7 @@ int32 fill(size_t n) {
         invariant i <= n;
     }
     step_until(function.exit);
-    solve();
+    close();
 }
 ```
 

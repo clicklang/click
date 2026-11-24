@@ -79,21 +79,21 @@ tactic advance_sized_path(child: struct rb_node*, parent_node: struct rb_node*,
             let { frames: frames } = unfold(path);
             have sized_path_context(old(path.model)) == context by {
                 rewrite(old(path.model), SizedPath::Path(root, context));
-                unfold(sized_path_context(SizedPath::Path(root, context))); known();
+                unfold(sized_path_context(SizedPath::Path(root, context))); close();
             }
             have parent_node == sized_context_parent(context, stop) by {
-                rewrite(context, sized_path_context(old(path.model))); known();
+                rewrite(context, sized_path_context(old(path.model))); close();
             }
             match frames.model {
                 SizedContext::Top => {
                     have sized_context_parent(context, stop) == stop by {
                         rewrite(context, SizedContext::Top);
-                        unfold(sized_context_parent(SizedContext::Top, stop)); known();
+                        unfold(sized_context_parent(SizedContext::Top, stop)); close();
                     }
-                    have parent_node == stop by { known(); }
+                    have parent_node == stop by { close(); }
                     unfold(frames);
                     have sized_parent_is(old(sub.model), stop) == 1 by {
-                        rewrite(stop, parent_node); known();
+                        rewrite(stop, parent_node); close();
                     }
                     let whole = fold(sized_result_at(stop), { model: SizedResult::Tree(root, old(sub.model)), tree: sub });
                     let next = fold(sized_walk_at(parent_node, stop), { model: SizedWalk::Done(SizedResult::Tree(root, old(sub.model))), whole: whole });
@@ -103,7 +103,7 @@ tactic advance_sized_path(child: struct rb_node*, parent_node: struct rb_node*,
                         unfold(sized_walk_root(SizedWalk::Done(SizedResult::Tree(root, old(sub.model)))));
                         unfold(sized_path_root(SizedPath::Path(root, context)));
                         unfold(sized_result_root(SizedResult::Tree(root, old(sub.model))));
-                        known();
+                        close();
                     }
                     have sized_walk_tree(next.model) == sized_plug(sized_path_context(old(path.model)), old(sub.model)) by {
                         rewrite(next.model, SizedWalk::Done(SizedResult::Tree(root, old(sub.model))));
@@ -113,7 +113,7 @@ tactic advance_sized_path(child: struct rb_node*, parent_node: struct rb_node*,
                         unfold(sized_result_tree(SizedResult::Tree(root, old(sub.model))));
                         rewrite(context, SizedContext::Top);
                         unfold(sized_plug(SizedContext::Top, old(sub.model)));
-                        known();
+                        close();
                     }
                     have sized_walk_rank(next.model) < sized_context_depth(sized_path_context(old(path.model))) + 1 by {
                         rewrite(next.model, SizedWalk::Done(SizedResult::Tree(root, old(sub.model))));
@@ -123,31 +123,31 @@ tactic advance_sized_path(child: struct rb_node*, parent_node: struct rb_node*,
 
                         rewrite(context, SizedContext::Top);
                         unfold(sized_context_depth(SizedContext::Top));
-                        known();
+                        close();
                     }
                     have sized_walk_pending(next.model) == 0 by {
-                        rewrite(next.model, SizedWalk::Done(SizedResult::Tree(root, old(sub.model)))); unfold(sized_walk_pending(SizedWalk::Done(SizedResult::Tree(root, old(sub.model))))); known();
+                        rewrite(next.model, SizedWalk::Done(SizedResult::Tree(root, old(sub.model)))); unfold(sized_walk_pending(SizedWalk::Done(SizedResult::Tree(root, old(sub.model))))); close();
                     }
-                    have sized_walk_pending(next.model) == 1 or parent_node == stop by { known(); }
-                    have address(parent_node) != address(stop) or sized_walk_pending(next.model) == 0 by { known(); }
+                    have sized_walk_pending(next.model) == 1 or parent_node == stop by { close(); }
+                    have address(parent_node) != address(stop) or sized_walk_pending(next.model) == 0 by { close(); }
                     have 0 <= sized_walk_rank(next.model) by {
-                        rewrite(next.model, SizedWalk::Done(SizedResult::Tree(root, old(sub.model)))); unfold(sized_walk_rank(SizedWalk::Done(SizedResult::Tree(root, old(sub.model))))); known();
+                        rewrite(next.model, SizedWalk::Done(SizedResult::Tree(root, old(sub.model)))); unfold(sized_walk_rank(SizedWalk::Done(SizedResult::Tree(root, old(sub.model))))); close();
                     }
                 },
                 SizedContext::Left(node, parent, color, value, sibling_model, up_model) => {
                     have sized_context_parent(context, stop) == node by {
                         rewrite(context, SizedContext::Left(node, parent, color, value, sibling_model, up_model));
-                        unfold(sized_context_parent(SizedContext::Left(node, parent, color, value, sibling_model, up_model), stop)); known();
+                        unfold(sized_context_parent(SizedContext::Left(node, parent, color, value, sibling_model, up_model), stop)); close();
                     }
-                    have parent_node == node by { known(); }
+                    have parent_node == node by { close(); }
                     let { metadata: metadata, sibling: sibling, up: up } = unfold(frames);
                     let focus = fold(sized_recompute_at(node), { model: SizedTree::Node(node, parent, color, value, old(sub.model), sibling_model), metadata: metadata, left: sub, right: sibling });
                     let remaining = fold(sized_path_at(parent_node, stop, value), { model: SizedPath::Path(root, up_model), frames: up });
-                    have sized_value(SizedTree::Node(node, parent, color, value, old(sub.model), sibling_model)) == value by { unfold(sized_value(SizedTree::Node(node, parent, color, value, old(sub.model), sibling_model))); known(); }
+                    have sized_value(SizedTree::Node(node, parent, color, value, old(sub.model), sibling_model)) == value by { unfold(sized_value(SizedTree::Node(node, parent, color, value, old(sub.model), sibling_model))); close(); }
                     have sized_parent_is(SizedTree::Node(node, parent, color, value, old(sub.model), sibling_model), sized_context_parent(sized_path_context(SizedPath::Path(root, up_model)), stop)) == 1 by {
                         unfold(sized_path_context(SizedPath::Path(root, up_model)));
                         unfold(sized_parent_is(SizedTree::Node(node, parent, color, value, old(sub.model), sibling_model), sized_context_parent(up_model, stop)));
-                        known();
+                        close();
                     }
                     let next = fold(sized_walk_at(parent_node, stop), { model: SizedWalk::Active(value, SizedTree::Node(node, parent, color, value, old(sub.model), sibling_model), SizedPath::Path(root, up_model)), focus: focus, path: remaining });
                     have sized_walk_root(next.model) == sized_path_root(old(path.model)) by {
@@ -156,7 +156,7 @@ tactic advance_sized_path(child: struct rb_node*, parent_node: struct rb_node*,
                         unfold(sized_walk_root(SizedWalk::Active(value, SizedTree::Node(node, parent, color, value, old(sub.model), sibling_model), SizedPath::Path(root, up_model))));
                         unfold(sized_path_root(SizedPath::Path(root, context)));
                         unfold(sized_path_root(SizedPath::Path(root, up_model)));
-                        known();
+                        close();
                     }
                     have sized_walk_tree(next.model) == sized_plug(sized_path_context(old(path.model)), old(sub.model)) by {
                         rewrite(next.model, SizedWalk::Active(value, SizedTree::Node(node, parent, color, value, old(sub.model), sibling_model), SizedPath::Path(root, up_model)));
@@ -166,7 +166,7 @@ tactic advance_sized_path(child: struct rb_node*, parent_node: struct rb_node*,
                         unfold(sized_path_context(SizedPath::Path(root, up_model)));
                         rewrite(context, SizedContext::Left(node, parent, color, value, sibling_model, up_model));
                         unfold(sized_plug(SizedContext::Left(node, parent, color, value, sibling_model, up_model), old(sub.model)));
-                        known();
+                        close();
                     }
                     have sized_walk_rank(next.model) < sized_context_depth(sized_path_context(old(path.model))) + 1 by {
                         rewrite(next.model, SizedWalk::Active(value, SizedTree::Node(node, parent, color, value, old(sub.model), sibling_model), SizedPath::Path(root, up_model)));
@@ -179,10 +179,10 @@ tactic advance_sized_path(child: struct rb_node*, parent_node: struct rb_node*,
                         close() using {};
                     }
                     have sized_walk_pending(next.model) == 1 by {
-                        rewrite(next.model, SizedWalk::Active(value, SizedTree::Node(node, parent, color, value, old(sub.model), sibling_model), SizedPath::Path(root, up_model))); unfold(sized_walk_pending(SizedWalk::Active(value, SizedTree::Node(node, parent, color, value, old(sub.model), sibling_model), SizedPath::Path(root, up_model)))); known();
+                        rewrite(next.model, SizedWalk::Active(value, SizedTree::Node(node, parent, color, value, old(sub.model), sibling_model), SizedPath::Path(root, up_model))); unfold(sized_walk_pending(SizedWalk::Active(value, SizedTree::Node(node, parent, color, value, old(sub.model), sibling_model), SizedPath::Path(root, up_model)))); close();
                     }
                     apply(sized_context_depth_nonnegative(up_model));
-                    have address(parent_node) != address(stop) or sized_walk_pending(next.model) == 0 by { known(); }
+                    have address(parent_node) != address(stop) or sized_walk_pending(next.model) == 0 by { close(); }
                     have 0 <= sized_walk_rank(next.model) by {
                         rewrite(next.model, SizedWalk::Active(value, SizedTree::Node(node, parent, color, value, old(sub.model), sibling_model), SizedPath::Path(root, up_model))); unfold(sized_walk_rank(SizedWalk::Active(value, SizedTree::Node(node, parent, color, value, old(sub.model), sibling_model), SizedPath::Path(root, up_model)))); unfold(sized_path_context(SizedPath::Path(root, up_model))); close() using { 0 <= sized_context_depth(up_model); };
                     }
@@ -190,17 +190,17 @@ tactic advance_sized_path(child: struct rb_node*, parent_node: struct rb_node*,
                 SizedContext::Right(node, parent, color, value, sibling_model, up_model) => {
                     have sized_context_parent(context, stop) == node by {
                         rewrite(context, SizedContext::Right(node, parent, color, value, sibling_model, up_model));
-                        unfold(sized_context_parent(SizedContext::Right(node, parent, color, value, sibling_model, up_model), stop)); known();
+                        unfold(sized_context_parent(SizedContext::Right(node, parent, color, value, sibling_model, up_model), stop)); close();
                     }
-                    have parent_node == node by { known(); }
+                    have parent_node == node by { close(); }
                     let { metadata: metadata, sibling: sibling, up: up } = unfold(frames);
                     let focus = fold(sized_recompute_at(node), { model: SizedTree::Node(node, parent, color, value, sibling_model, old(sub.model)), metadata: metadata, left: sibling, right: sub });
                     let remaining = fold(sized_path_at(parent_node, stop, value), { model: SizedPath::Path(root, up_model), frames: up });
-                    have sized_value(SizedTree::Node(node, parent, color, value, sibling_model, old(sub.model))) == value by { unfold(sized_value(SizedTree::Node(node, parent, color, value, sibling_model, old(sub.model)))); known(); }
+                    have sized_value(SizedTree::Node(node, parent, color, value, sibling_model, old(sub.model))) == value by { unfold(sized_value(SizedTree::Node(node, parent, color, value, sibling_model, old(sub.model)))); close(); }
                     have sized_parent_is(SizedTree::Node(node, parent, color, value, sibling_model, old(sub.model)), sized_context_parent(sized_path_context(SizedPath::Path(root, up_model)), stop)) == 1 by {
                         unfold(sized_path_context(SizedPath::Path(root, up_model)));
                         unfold(sized_parent_is(SizedTree::Node(node, parent, color, value, sibling_model, old(sub.model)), sized_context_parent(up_model, stop)));
-                        known();
+                        close();
                     }
                     let next = fold(sized_walk_at(parent_node, stop), { model: SizedWalk::Active(value, SizedTree::Node(node, parent, color, value, sibling_model, old(sub.model)), SizedPath::Path(root, up_model)), focus: focus, path: remaining });
                     have sized_walk_root(next.model) == sized_path_root(old(path.model)) by {
@@ -209,7 +209,7 @@ tactic advance_sized_path(child: struct rb_node*, parent_node: struct rb_node*,
                         unfold(sized_walk_root(SizedWalk::Active(value, SizedTree::Node(node, parent, color, value, sibling_model, old(sub.model)), SizedPath::Path(root, up_model))));
                         unfold(sized_path_root(SizedPath::Path(root, context)));
                         unfold(sized_path_root(SizedPath::Path(root, up_model)));
-                        known();
+                        close();
                     }
                     have sized_walk_tree(next.model) == sized_plug(sized_path_context(old(path.model)), old(sub.model)) by {
                         rewrite(next.model, SizedWalk::Active(value, SizedTree::Node(node, parent, color, value, sibling_model, old(sub.model)), SizedPath::Path(root, up_model)));
@@ -219,7 +219,7 @@ tactic advance_sized_path(child: struct rb_node*, parent_node: struct rb_node*,
                         unfold(sized_path_context(SizedPath::Path(root, up_model)));
                         rewrite(context, SizedContext::Right(node, parent, color, value, sibling_model, up_model));
                         unfold(sized_plug(SizedContext::Right(node, parent, color, value, sibling_model, up_model), old(sub.model)));
-                        known();
+                        close();
                     }
                     have sized_walk_rank(next.model) < sized_context_depth(sized_path_context(old(path.model))) + 1 by {
                         rewrite(next.model, SizedWalk::Active(value, SizedTree::Node(node, parent, color, value, sibling_model, old(sub.model)), SizedPath::Path(root, up_model)));
@@ -232,10 +232,10 @@ tactic advance_sized_path(child: struct rb_node*, parent_node: struct rb_node*,
                         close() using {};
                     }
                     have sized_walk_pending(next.model) == 1 by {
-                        rewrite(next.model, SizedWalk::Active(value, SizedTree::Node(node, parent, color, value, sibling_model, old(sub.model)), SizedPath::Path(root, up_model))); unfold(sized_walk_pending(SizedWalk::Active(value, SizedTree::Node(node, parent, color, value, sibling_model, old(sub.model)), SizedPath::Path(root, up_model)))); known();
+                        rewrite(next.model, SizedWalk::Active(value, SizedTree::Node(node, parent, color, value, sibling_model, old(sub.model)), SizedPath::Path(root, up_model))); unfold(sized_walk_pending(SizedWalk::Active(value, SizedTree::Node(node, parent, color, value, sibling_model, old(sub.model)), SizedPath::Path(root, up_model)))); close();
                     }
                     apply(sized_context_depth_nonnegative(up_model));
-                    have address(parent_node) != address(stop) or sized_walk_pending(next.model) == 0 by { known(); }
+                    have address(parent_node) != address(stop) or sized_walk_pending(next.model) == 0 by { close(); }
                     have 0 <= sized_walk_rank(next.model) by {
                         rewrite(next.model, SizedWalk::Active(value, SizedTree::Node(node, parent, color, value, sibling_model, old(sub.model)), SizedPath::Path(root, up_model))); unfold(sized_walk_rank(SizedWalk::Active(value, SizedTree::Node(node, parent, color, value, sibling_model, old(sub.model)), SizedPath::Path(root, up_model)))); unfold(sized_path_context(SizedPath::Path(root, up_model))); close() using { 0 <= sized_context_depth(up_model); };
                     }
@@ -264,10 +264,10 @@ tactic prepare_sized_focus(p: struct rb_node*) {
             let { checked: left } = certify_size(p->rb_left, { tree: left });
             let { checked: right } = certify_size(p->rb_right, { tree: right });
             have to_integer(sized_value(left_model)) == rb_subtree_size(sized_shape(left_model)) by {
-                rewrite(left_model, left.model); known();
+                rewrite(left_model, left.model); close();
             }
             have to_integer(sized_value(right_model)) == rb_subtree_size(sized_shape(right_model)) by {
-                rewrite(right_model, right.model); known();
+                rewrite(right_model, right.model); close();
             }
             apply(rb_subtree_size_nonnegative(sized_shape(left_model)));
             apply(rb_subtree_size_nonnegative(sized_shape(right_model)));
@@ -293,25 +293,25 @@ tactic prepare_sized_focus(p: struct rb_node*) {
                 rewrite(to_integer(sized_value(right_model)), rb_subtree_size(sized_shape(right_model)));
                 rewrite(1 + rb_subtree_size(sized_shape(left_model)) + rb_subtree_size(sized_shape(right_model)), rb_subtree_size(sized_shape(SizedTree::Node(node, parent, color, value, left_model, right_model))));
                 rewrite(SizedTree::Node(node, parent, color, value, left_model, right_model), old(tree.model));
-                known();
+                close();
             }
             apply(size_children_fit(sized_value(left_model), sized_value(right_model)));
             let prepared = fold(sized_recompute_at(p), { model: SizedTree::Node(node, parent, color, value, left_model, right_model), metadata: metadata, left: left, right: right });
-            have prepared.model == old(tree.model) by { known(); }
+            have prepared.model == old(tree.model) by { close(); }
             have sized_left(prepared.model) == left_model by {
                 rewrite(prepared.model, SizedTree::Node(node, parent, color, value, left_model, right_model));
-                unfold(sized_left(SizedTree::Node(node, parent, color, value, left_model, right_model))); known();
+                unfold(sized_left(SizedTree::Node(node, parent, color, value, left_model, right_model))); close();
             }
             have sized_right(prepared.model) == right_model by {
                 rewrite(prepared.model, SizedTree::Node(node, parent, color, value, left_model, right_model));
-                unfold(sized_right(SizedTree::Node(node, parent, color, value, left_model, right_model))); known();
+                unfold(sized_right(SizedTree::Node(node, parent, color, value, left_model, right_model))); close();
             }
-            have 0 <= sized_value(sized_left(prepared.model)) by { rewrite(sized_left(prepared.model), left_model); known(); }
-            have 0 <= sized_value(sized_right(prepared.model)) by { rewrite(sized_right(prepared.model), right_model); known(); }
-            have sized_value(sized_right(prepared.model)) <= 2147483646 by { rewrite(sized_right(prepared.model), right_model); known(); }
+            have 0 <= sized_value(sized_left(prepared.model)) by { rewrite(sized_left(prepared.model), left_model); close(); }
+            have 0 <= sized_value(sized_right(prepared.model)) by { rewrite(sized_right(prepared.model), right_model); close(); }
+            have sized_value(sized_right(prepared.model)) <= 2147483646 by { rewrite(sized_right(prepared.model), right_model); close(); }
             have sized_value(sized_left(prepared.model)) <= 2147483646 - sized_value(sized_right(prepared.model)) by {
                 rewrite(sized_left(prepared.model), left_model);
-                rewrite(sized_right(prepared.model), right_model); known();
+                rewrite(sized_right(prepared.model), right_model); close();
             }
         },
     }
@@ -332,33 +332,33 @@ tactic stop_sized_path(child: struct rb_node*, stop: struct rb_node*, previous: 
     match whole.model {
         SizedResult::Tree(root, tree_model) => {
             have sized_result_root(SizedResult::Tree(root, tree_model)) == root by {
-                unfold(sized_result_root(SizedResult::Tree(root, tree_model))); known();
+                unfold(sized_result_root(SizedResult::Tree(root, tree_model))); close();
             }
             have sized_result_tree(SizedResult::Tree(root, tree_model)) == tree_model by {
-                unfold(sized_result_tree(SizedResult::Tree(root, tree_model))); known();
+                unfold(sized_result_tree(SizedResult::Tree(root, tree_model))); close();
             }
             have root == sized_path_root(old(path.model)) by {
                 rewrite(root, sized_result_root(SizedResult::Tree(root, tree_model)));
-                rewrite(SizedResult::Tree(root, tree_model), whole.model); known();
+                rewrite(SizedResult::Tree(root, tree_model), whole.model); close();
             }
             have tree_model == sized_plug(sized_path_context(old(path.model)), old(sub.model)) by {
                 rewrite(tree_model, sized_result_tree(SizedResult::Tree(root, tree_model)));
-                rewrite(SizedResult::Tree(root, tree_model), whole.model); known();
+                rewrite(SizedResult::Tree(root, tree_model), whole.model); close();
             }
             let done = fold(sized_walk_at(child, stop), { model: SizedWalk::Done(SizedResult::Tree(root, tree_model)), whole: whole });
             have sized_walk_pending(done.model) == 0 by {
                 rewrite(done.model, SizedWalk::Done(SizedResult::Tree(root, tree_model)));
-                unfold(sized_walk_pending(SizedWalk::Done(SizedResult::Tree(root, tree_model)))); known();
+                unfold(sized_walk_pending(SizedWalk::Done(SizedResult::Tree(root, tree_model)))); close();
             }
             have sized_walk_root(done.model) == sized_path_root(old(path.model)) by {
                 rewrite(done.model, SizedWalk::Done(SizedResult::Tree(root, tree_model)));
                 unfold(sized_walk_root(SizedWalk::Done(SizedResult::Tree(root, tree_model))));
-                unfold(sized_result_root(SizedResult::Tree(root, tree_model))); known();
+                unfold(sized_result_root(SizedResult::Tree(root, tree_model))); close();
             }
             have sized_walk_tree(done.model) == sized_plug(sized_path_context(old(path.model)), old(sub.model)) by {
                 rewrite(done.model, SizedWalk::Done(SizedResult::Tree(root, tree_model)));
                 unfold(sized_walk_tree(SizedWalk::Done(SizedResult::Tree(root, tree_model))));
-                unfold(sized_result_tree(SizedResult::Tree(root, tree_model))); known();
+                unfold(sized_result_tree(SizedResult::Tree(root, tree_model))); close();
             }
         },
     }
@@ -377,10 +377,10 @@ tactic finish_sized_walk(rb: struct rb_node*, stop: struct rb_node*) {
         SizedWalk::Active(previous, sub_model, path_model) => {
             have sized_walk_pending(walk.model) == 1 by {
                 rewrite(walk.model, SizedWalk::Active(previous, sub_model, path_model));
-                unfold(sized_walk_pending(SizedWalk::Active(previous, sub_model, path_model))); known();
+                unfold(sized_walk_pending(SizedWalk::Active(previous, sub_model, path_model))); close();
             }
             have not (sized_walk_pending(walk.model) == 0) by {
-                rewrite(sized_walk_pending(walk.model), 1); known();
+                rewrite(sized_walk_pending(walk.model), 1); close();
             }
             contradiction(sized_walk_pending(walk.model) == 0);
         },
@@ -390,23 +390,23 @@ tactic finish_sized_walk(rb: struct rb_node*, stop: struct rb_node*) {
                 SizedResult::Tree(root, tree_model) => {
                     let { tree: tree } = unfold(result);
                     let { checked: checked } = certify_size(root, { tree: tree });
-                    have sized_counts_valid(tree_model) == 1 by { rewrite(tree_model, checked.model); known(); }
+                    have sized_counts_valid(tree_model) == 1 by { rewrite(tree_model, checked.model); close(); }
                     let whole = fold(sized_result_at(stop), { model: SizedResult::Tree(root, tree_model), tree: checked });
                     have sized_result_root(whole.model) == sized_walk_root(old(walk.model)) by {
                         rewrite(whole.model, SizedResult::Tree(root, tree_model));
                         rewrite(old(walk.model), SizedWalk::Done(result_model));
                         rewrite(result_model, SizedResult::Tree(root, tree_model));
-                        unfold(sized_walk_root(SizedWalk::Done(SizedResult::Tree(root, tree_model)))); known();
+                        unfold(sized_walk_root(SizedWalk::Done(SizedResult::Tree(root, tree_model)))); close();
                     }
                     have sized_result_tree(whole.model) == sized_walk_tree(old(walk.model)) by {
                         rewrite(whole.model, SizedResult::Tree(root, tree_model));
                         rewrite(old(walk.model), SizedWalk::Done(result_model));
                         rewrite(result_model, SizedResult::Tree(root, tree_model));
-                        unfold(sized_walk_tree(SizedWalk::Done(SizedResult::Tree(root, tree_model)))); known();
+                        unfold(sized_walk_tree(SizedWalk::Done(SizedResult::Tree(root, tree_model)))); close();
                     }
                     have sized_counts_valid(sized_result_tree(whole.model)) == 1 by {
                         rewrite(whole.model, SizedResult::Tree(root, tree_model));
-                        unfold(sized_result_tree(SizedResult::Tree(root, tree_model))); known();
+                        unfold(sized_result_tree(SizedResult::Tree(root, tree_model))); close();
                     }
                 },
             }

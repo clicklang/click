@@ -19,7 +19,7 @@ void release_beside_view(uint8 *p, const uint8 *q) {
     views q[0..1];
     requires separate(memory(((p as (void *)) as (uint8 *))[0..4]), memory(q[0..1]));
 } by {
-    step() by { known(); }
+    step() by { close(); }
 }
 ```
 

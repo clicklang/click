@@ -19,8 +19,8 @@ struct object* select(struct object* result, struct object* next) {
     requires program::result->value == 3 and next->value == 7;
     ensures program::result->value == 3 by {
         step_until(function.exit);
-        have program::result->value == 3 by { known(); }
-        have old(program::result->value) == 3 by { known(); }
+        have program::result->value == 3 by { close(); }
+        have old(program::result->value) == 3 by { close(); }
     }
     ensures result->value == 7;
 }

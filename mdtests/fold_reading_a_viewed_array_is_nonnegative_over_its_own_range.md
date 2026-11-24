@@ -11,7 +11,7 @@ spelling that still exists.
 Two lines disappear with the conjunction. The hypothesis premise is now the
 range itself, so `apply(ih(hi - 1))` names it as `viewable(v[lo..hi - 1])` —
 the fact form, which is how a `views` premise is named in a `using` list —
-instead of rebuilding `hi - 1 >= 0 and viewable(v[lo..hi - 1])` with `known()`.
+instead of rebuilding `hi - 1 >= 0 and viewable(v[lo..hi - 1])` with `close()`.
 
 Both proofs use `array_fold_induction_bounds` to establish their scalar order and
 span facts. The theorem carries `hi <= 1073741823`, which with `0 <= lo` bounds the range's
@@ -37,7 +37,7 @@ theorem unmarked_nonnegative(v: int32[], lo: int32, hi: int32) {
         let ih = induct(hi);
         if hi <= lo {
             unfold(unmarked(v, lo, hi));
-            solve();
+            close();
         } else {
             have lo < hi;
             apply(array_fold_induction_bounds(lo, hi));

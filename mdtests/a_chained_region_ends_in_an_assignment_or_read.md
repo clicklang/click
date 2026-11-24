@@ -30,11 +30,11 @@ int32 loaded(const uint8* p) {
     step();
     have 0 <= x and x <= 255;
     step_until(statement(2).statement(2).assignment(y, 0).entry);
-    have at(statement(2).statement(1).read(0).entry, y) == 1 by solve();
+    have at(statement(2).statement(1).read(0).entry, y) == 1 by close();
     step();
-    have y == 2 by known();
-    have 0 <= to_integer(x) by known();
-    have to_integer(x) <= 255 by known();
+    have y == 2 by close();
+    have 0 <= to_integer(x) by close();
+    have to_integer(x) <= 255 by close();
     have to_integer(x) <= to_integer(2147483647 - 2) by {
         apply(click::integer::le_transitive(to_integer(x), 255, to_integer(2147483647 - 2)));
     }
@@ -49,9 +49,9 @@ int32 loaded(const uint8* p) {
         apply(click::integer::add_right_order(to_integer(x), 255, 2));
     }
     step();
-    have to_integer(result) == to_integer(old(p[0])) + 2 by known();
-    have 2 <= result by known();
-    have result <= 257 by known();
+    have to_integer(result) == to_integer(old(p[0])) + 2 by close();
+    have 2 <= result by close();
+    have result <= 257 by close();
 }
 ```
 

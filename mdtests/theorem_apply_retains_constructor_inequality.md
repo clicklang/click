@@ -9,22 +9,22 @@ spec enum Tree { Empty, Node(int32), }
 
 theorem nonempty(child: Tree) {
     requires not(child == Tree::Empty);
-    ensures not(child == Tree::Empty) by known();
+    ensures not(child == Tree::Empty) by close();
 }
 
 theorem concrete(child: int32) {
     ensures not(Tree::Node(child) == Tree::Empty) by {
-        have not(Tree::Node(child) == Tree::Empty) by known();
+        have not(Tree::Node(child) == Tree::Empty) by close();
         apply(nonempty(Tree::Node(child)));
-        known();
+        close();
     }
 }
 
 theorem concrete_explicit(child: int32) {
     ensures not(Tree::Node(child) == Tree::Empty) by {
-        have not(Tree::Node(child) == Tree::Empty) by known();
+        have not(Tree::Node(child) == Tree::Empty) by close();
         apply(nonempty(Tree::Node(child)));
-        known();
+        close();
     }
 }
 ```

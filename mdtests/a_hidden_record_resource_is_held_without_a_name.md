@@ -46,7 +46,7 @@ int32 get(struct pair* p) {
     step_until(function.exit);
     have result == c.v;
     fold(pair(p), { first: c });
-    solve();
+    close();
 }
 
 int32 twice(struct pair* p) {

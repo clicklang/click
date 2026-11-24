@@ -46,7 +46,7 @@ struct node* pick(struct node* p, struct node* q, int32 c) {
         }
     }
     step();
-    solve();
+    close();
 }
 ```
 

@@ -12,13 +12,13 @@ theorem zlib_component_step(bytes: uint8[], n: int32) {
   have to_integer(n + 1 - 1) == to_integer(n) by close() using { 0 <= n; n < 2147483647; };
   unfold(zlib_byte_integer(bytes[n]));
   rewrite(to_integer(n), to_integer(((n + 1) - 1)));
-  known();
+  close();
  }
  ensures adler_weighted_sum(bytes, n + 1, n + 1) == adler_weighted_sum(bytes, n, n) + adler_byte_sum(bytes, n + 1) by {
   have 0 < to_integer(n + 1) by close() using { 0 <= n; n < 2147483647; };
   apply(adler_weighted_prefix_step(bytes, n + 1));
   have to_integer(n + 1 - 1) == to_integer(n) by close() using { 0 <= n; n < 2147483647; };
-  known();
+  close();
  }
 }
 
@@ -78,7 +78,7 @@ theorem zlib_native_component_step(bytes: uint8[], n: int32, a: uint64, b: uint6
      and to_integer(b + (a + value as uint32 as uint64)) <= 1415761 * to_integer(n + 1) by {
   have n <= 5551 by close() using { n < 5552; };
   have n < 2147483647 by close() using { n < 5552; };
-  have defined(n + 1) by solve();
+  have defined(n + 1) by close();
   have to_integer(n + 1) == to_integer(n) + to_integer(1);
   apply(zlib_byte_u64(value));
   apply(zlib_byte_integer_identity(value));
@@ -130,6 +130,6 @@ theorem zlib_native_component_step(bytes: uint8[], n: int32, a: uint64, b: uint6
    to_integer(a + value as uint32 as uint64) <= 1415761;
    to_integer(n + 1) == to_integer(n) + to_integer(1);
   };
-  solve();
+  close();
  }
 }

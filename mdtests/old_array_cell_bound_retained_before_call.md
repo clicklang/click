@@ -20,7 +20,7 @@ int32 visit(int32* links, int32 index, int32 n) {
     requires 0 <= links[index];
     ensures result == old(links[index]);
 } by {
-    have 0 <= old(links[index]) by known();
+    have 0 <= old(links[index]) by close();
 }
 ```
 

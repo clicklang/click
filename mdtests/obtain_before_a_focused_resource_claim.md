@@ -1,6 +1,6 @@
 # Obtain an established existential at function exit
 
-The binding is available after the first `known()` closes the ownership claim.
+The binding is available after the first `close()` closes the ownership claim.
 
 ```c filename=obtain_focus.c
 int obtain_at_exit(int *p, int n) { return n; }
@@ -16,9 +16,9 @@ int32 obtain_at_exit(int32* p, int32 n) {
 } by {
     step_until(function.exit);
     let k = obtain(exists (k: int32) { k < n });
-    known();
+    close();
     witness(k);
-    solve();
+    close();
 }
 ```
 

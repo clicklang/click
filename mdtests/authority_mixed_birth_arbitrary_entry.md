@@ -36,7 +36,7 @@ void increment(int32* o, int32 n) {
     have to_integer(old(count(tok(o)))) + to_integer(n + 1) <= 2147483647;
     have to_integer(old(count(tok(o)))) + to_integer(n + 1) >= -2147483648;
     have defined(old(count(tok(o))) + (n + 1));
-    solve();
+    close();
 }
 ```
 

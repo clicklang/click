@@ -44,7 +44,7 @@ int32 ring_buffer_init_linear(
     step_until(function.exit);
     fold(ring_frame(owner));
     fold(linear_ring(owner));
-    solve();
+    close();
 }
 
 int32 ring_buffer_push_wrap(
@@ -66,12 +66,12 @@ int32 ring_buffer_push_wrap(
     ensures owner->tail == 1;
 } by {
     step(); step();
-    have old(owner->data) == data by { known(); }
+    have old(owner->data) == data by { close(); }
     have separate(memory(data[0]), memory(owner->data));
     have separate(memory(data[0]), memory(owner->tail));
     have separate(memory(owner->tail), memory(owner->data));
     step();
-    have data[0] == value by { known(); }
+    have data[0] == value by { close(); }
     mark filled;
     step();
     have separate(statement(3).footprint, memory(data[0])) by {
@@ -81,16 +81,16 @@ int32 ring_buffer_push_wrap(
         preserve(memory(data[0]), statement(3));
     }
     have data[0] == value by {
-        known();
+        close();
     }
     have owner->data == data by {
-        known();
+        close();
     }
     have owner->data[0] == value by {
         rewrite(owner->data, data);
-        known();
+        close();
     }
-    step(); solve();
+    step(); close();
 }
 
 int32 ring_buffer_wrapped_tail(
@@ -142,18 +142,18 @@ int32 ring_buffer_pipeline(
     fold(linear_ring(owner));
     have result == replacement by {
         rewrite(at(region(4).entry, pushed), at(region(4).entry, replacement));
-        known();
+        close();
     }
     have owner->tail == 4 by {
-        known();
+        close();
     }
     have owner->data[0] == replacement by {
-        known();
+        close();
     }
-    known();
-    known();
-    known();
-    known();
-    known();
-    known();
+    close();
+    close();
+    close();
+    close();
+    close();
+    close();
 }

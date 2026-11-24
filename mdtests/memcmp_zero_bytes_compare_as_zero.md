@@ -19,7 +19,7 @@ int32 ordered() { ensures result == 1; } by {
         unfold(bytes::equal(left, 0u64, right, 0u64, 0u64));
         intro();
         intro();
-        solve();
+        close();
     }
     apply(bytes::comparison_zero_when_equal(left, right, 0u64, cmp));
 }

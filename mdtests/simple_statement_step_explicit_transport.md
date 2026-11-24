@@ -1,7 +1,7 @@
 # A store leaves a different array element unchanged
 
 The store to `p[1]` leaves the read of `p[0]` unchanged. After the store,
-`known()` uses the fact from the unfolded precondition to establish
+`close()` uses the fact from the unfolded precondition to establish
 `p[0] == 7` before the return reads it.
 
 ```c filename=simple_statement_step_explicit_transport.c
@@ -26,9 +26,9 @@ int32 set_second_return_first(int32 p[2]) {
 } by {
     unfold(first_is_seven(p));
     step();
-    have p[0] == 7 by { known(); }
+    have p[0] == 7 by { close(); }
     step();
-    solve();
+    close();
 }
 ```
 

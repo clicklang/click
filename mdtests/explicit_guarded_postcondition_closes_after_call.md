@@ -72,10 +72,10 @@ int32 restricted(struct box* b) {
     branch {
         true => {
             have got == 0 by {
-                solve();
+                close();
             }
             have at(m, st.live) == 1 by {
-                solve();
+                close();
             }
             have st.live == 1 by {
                 close() using {
@@ -85,12 +85,12 @@ int32 restricted(struct box* b) {
                 };
             }
             step();
-            solve();
+            close();
         }
         false => {}
     }
     step();
-    solve();
+    close();
 }
 ```
 

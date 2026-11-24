@@ -70,20 +70,20 @@ void sized_copy_from_table(struct rb_node* old, struct rb_node* new,
     ensures target.value == old(source.value);
 } by {
     with(sized_callback_table(augment)) {
-        have separate(source_tree, memory(augment->propagate)) by known();
-        have separate(target_tree, memory(augment->propagate)) by known();
-        have separate(source, memory(augment->propagate)) by known();
-        have separate(target, memory(augment->propagate)) by known();
+        have separate(source_tree, memory(augment->propagate)) by close();
+        have separate(target_tree, memory(augment->propagate)) by close();
+        have separate(source, memory(augment->propagate)) by close();
+        have separate(target, memory(augment->propagate)) by close();
         apply(separate_callback_inputs(source_tree, target_tree, source, target, memory(augment->propagate)));
-        have separate(source_tree, memory(augment->copy)) by known();
-        have separate(target_tree, memory(augment->copy)) by known();
-        have separate(source, memory(augment->copy)) by known();
-        have separate(target, memory(augment->copy)) by known();
+        have separate(source_tree, memory(augment->copy)) by close();
+        have separate(target_tree, memory(augment->copy)) by close();
+        have separate(source, memory(augment->copy)) by close();
+        have separate(target, memory(augment->copy)) by close();
         apply(separate_callback_inputs(source_tree, target_tree, source, target, memory(augment->copy)));
-        have separate(source_tree, memory(augment->rotate)) by known();
-        have separate(target_tree, memory(augment->rotate)) by known();
-        have separate(source, memory(augment->rotate)) by known();
-        have separate(target, memory(augment->rotate)) by known();
+        have separate(source_tree, memory(augment->rotate)) by close();
+        have separate(target_tree, memory(augment->rotate)) by close();
+        have separate(source, memory(augment->rotate)) by close();
+        have separate(target, memory(augment->rotate)) by close();
         apply(separate_callback_inputs(source_tree, target_tree, source, target, memory(augment->rotate)));
         apply(separate_from_sized_callback_reads(augment as (const int32 *), ((source_tree * target_tree) * source) * target));
         step(CopySizedStructure, {
@@ -162,9 +162,9 @@ void sized_rotate_from_table(struct rb_node* old, struct rb_node* new,
         match input.model {
             SizedRotationInput::Left(tree_model) => {
                 let { tree: tree } = unfold(input);
-                have separate(tree, memory(augment->propagate)) by known();
-                have separate(tree, memory(augment->copy)) by known();
-                have separate(tree, memory(augment->rotate)) by known();
+                have separate(tree, memory(augment->propagate)) by close();
+                have separate(tree, memory(augment->copy)) by close();
+                have separate(tree, memory(augment->rotate)) by close();
                 apply(separate_from_sized_callback_reads(augment as (const int32 *), tree));
                 let { checked: checked } = step(RotateTreeLeft, { tree: tree });
                 have sized_rotation_input_tree(old(input.model)) == tree_model by {
@@ -176,9 +176,9 @@ void sized_rotate_from_table(struct rb_node* old, struct rb_node* new,
             },
             SizedRotationInput::Right(tree_model) => {
                 let { tree: tree } = unfold(input);
-                have separate(tree, memory(augment->propagate)) by known();
-                have separate(tree, memory(augment->copy)) by known();
-                have separate(tree, memory(augment->rotate)) by known();
+                have separate(tree, memory(augment->propagate)) by close();
+                have separate(tree, memory(augment->copy)) by close();
+                have separate(tree, memory(augment->rotate)) by close();
                 apply(separate_from_sized_callback_reads(augment as (const int32 *), tree));
                 let { checked: checked } = step(RotateTreeRight, { tree: tree });
                 have sized_rotation_input_tree(old(input.model)) == tree_model by {
@@ -214,9 +214,9 @@ executes sized_rotate_from_table(struct rb_node* old, struct rb_node* new,
     ensures RotateTableLeft(&sized_rotate_from_table) as { tree: tree, checked: checked } by {
         let input = fold(sized_rotation_input_at(old, new), { model: SizedRotationInput::Left(tree.model), tree: tree });
         with(sized_callback_table(augment)) {
-            have separate(input, memory(augment->propagate)) by known();
-            have separate(input, memory(augment->copy)) by known();
-            have separate(input, memory(augment->rotate)) by known();
+            have separate(input, memory(augment->propagate)) by close();
+            have separate(input, memory(augment->copy)) by close();
+            have separate(input, memory(augment->rotate)) by close();
             apply(separate_from_sized_callback_reads(augment as (const int32 *), input));
         }
         let { checked: checked } = step(sized_rotate_from_table, { input: input });
@@ -224,7 +224,7 @@ executes sized_rotate_from_table(struct rb_node* old, struct rb_node* new,
             unfold(sized_rotation_input_tree(SizedRotationInput::Left(old(tree.model))));
             normalize();
         }
-        solve();
+        close();
     }
 }
 
@@ -250,9 +250,9 @@ executes sized_rotate_from_table(struct rb_node* old, struct rb_node* new,
     ensures RotateTableRight(&sized_rotate_from_table) as { tree: tree, checked: checked } by {
         let input = fold(sized_rotation_input_at(old, new), { model: SizedRotationInput::Right(tree.model), tree: tree });
         with(sized_callback_table(augment)) {
-            have separate(input, memory(augment->propagate)) by known();
-            have separate(input, memory(augment->copy)) by known();
-            have separate(input, memory(augment->rotate)) by known();
+            have separate(input, memory(augment->propagate)) by close();
+            have separate(input, memory(augment->copy)) by close();
+            have separate(input, memory(augment->rotate)) by close();
             apply(separate_from_sized_callback_reads(augment as (const int32 *), input));
         }
         let { checked: checked } = step(sized_rotate_from_table, { input: input });
@@ -260,7 +260,7 @@ executes sized_rotate_from_table(struct rb_node* old, struct rb_node* new,
             unfold(sized_rotation_input_tree(SizedRotationInput::Right(old(tree.model))));
             normalize();
         }
-        solve();
+        close();
     }
 }
 
@@ -276,9 +276,9 @@ void sized_propagate_from_table(struct rb_node* rb, struct rb_node* stop,
     ensures sized_counts_valid(sized_result_tree(whole.model)) == 1;
 } by {
     with(sized_callback_table(augment)) {
-        have separate(walk, memory(augment->propagate)) by known();
-        have separate(walk, memory(augment->copy)) by known();
-        have separate(walk, memory(augment->rotate)) by known();
+        have separate(walk, memory(augment->propagate)) by close();
+        have separate(walk, memory(augment->copy)) by close();
+        have separate(walk, memory(augment->rotate)) by close();
         apply(separate_from_sized_callback_reads(augment as (const int32 *), walk));
         let { whole: whole } = step(PropagateTree, { walk: walk });
         step_until(function.exit);

@@ -41,7 +41,7 @@ int32 read_cell(struct cell* node) {
             unfold(c);
             step_until(function.exit);
             let c = fold(cell(node), { model: Maybe::Some(value) });
-            solve();
+            close();
         },
     }
 }

@@ -7,7 +7,7 @@ is the one the body's end already had, applied one statement earlier: the
 loop's binders are bound again on the state the `continue` reached, the
 invariants are closed there, and a declared measure must have descended there.
 The script steps the `continue`, and the back edge closes each member with
-`solve()` there, exactly as it does at the body's end.
+`close()` there, exactly as it does at the body's end.
 
 Linux's `__rb_insert` uses `continue` for both uncle-red cases, the ones that
 recolour and climb two frames. `count_down` is that shape reduced to one
@@ -41,7 +41,7 @@ int32 count_down(int32 n) {
         decreases i;
         invariant i >= 0;
 
-        initialize by solve();
+        initialize by close();
         maintain by {
             have 0 <= to_integer(i - 1);
             step();
@@ -49,7 +49,7 @@ int32 count_down(int32 n) {
         }
     }
     step();
-    solve();
+    close();
 }
 ```
 

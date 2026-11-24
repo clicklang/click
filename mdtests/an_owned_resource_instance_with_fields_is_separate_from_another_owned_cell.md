@@ -19,7 +19,7 @@ void caller(struct node* child, int32* slot) {
     owns b: box(child);
     owns *slot;
 } by {
-    have separate(b, memory(*slot)) by { known(); }
+    have separate(b, memory(*slot)) by { close(); }
 }
 ```
 

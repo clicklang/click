@@ -22,13 +22,13 @@ int32 read_value(int32* p) {
     ensures result == old(root.value);
     ensures root.value == old(root.value);
 } by {
-    have scalar_index(root.value) == root.value by { unfold(scalar_index(root.value)); known(); }
+    have scalar_index(root.value) == root.value by { unfold(scalar_index(root.value)); close(); }
     let { value: v, child: child } = unfold(root);
     unfold(child);
     step_until(function.exit);
     let child = fold(cell(p, v), { value: v });
     let root = fold(holder(p), { value: v, child: child });
-    solve();
+    close();
 }
 ```
 ```expect

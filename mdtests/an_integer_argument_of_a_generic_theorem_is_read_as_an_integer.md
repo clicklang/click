@@ -31,14 +31,14 @@ theorem shifted_is_next<T>(b: Box<T>, k: Integer) {
     requires 0 <= k;
     ensures shifted(b, k) == k + 1 by {
         unfold(shifted(b, k));
-        known();
+        close();
     }
 }
 
 theorem at_a_literal(b: Box<uint64>) {
     ensures shifted(b, 2) == 3 by {
         apply(shifted_is_next(b, 2));
-        solve();
+        close();
     }
 }
 
@@ -57,7 +57,7 @@ unsigned long count(unsigned long n) {
         }
     }
     step_until(function.exit);
-    solve();
+    close();
 }
 ```
 

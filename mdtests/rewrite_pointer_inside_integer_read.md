@@ -17,21 +17,21 @@ theorem tail_pointer_read(p: const uint8*, bytes: uint8[], n: uint64) {
  requires p == bytes + n;
  ensures to_integer(p[0] as int32) == to_integer((bytes + n)[0] as int32) by {
   rewrite(p, bytes + n);
-  known();
+  close();
  }
 }
 theorem tail_wide_pointer_read(p: const uint8*, bytes: uint8[], n: uint64) {
  requires p == bytes + n;
  ensures to_integer(p[0] as uint64) == to_integer((bytes + n)[0] as uint64) by {
   rewrite(p, bytes + n);
-  known();
+  close();
  }
 }
 theorem loaded_byte_read(o: struct outer*, a: struct inner*) {
  requires o->in == a;
  ensures to_integer(o->in->cells[2] as int32) == to_integer(a->cells[2] as int32) by {
   rewrite(o->in, a);
-  known();
+  close();
  }
 }
 

@@ -31,7 +31,7 @@ void finish(int32* p, int32* stop) {
         owns w: walk_at();
         decreases 0;
         invariant address(p) != address(stop) or pending(w.model) == 0;
-        initialize by solve();
+        initialize by close();
         maintain by {
             unfold(w);
             let w = fold(walk_at(), { model: Walk::Done });
@@ -46,12 +46,12 @@ void finish(int32* p, int32* stop) {
             have pending(w.model) == 0 by {
                 cases {
                     address(p) != address(stop) => { contradiction(address(p) != address(stop)); }
-                    pending(w.model) == 0 => { known(); }
+                    pending(w.model) == 0 => { close(); }
                 }
             }
         }
     }
-    have pending(w.model) == 0 by { known(); }
+    have pending(w.model) == 0 by { close(); }
 }
 ```
 

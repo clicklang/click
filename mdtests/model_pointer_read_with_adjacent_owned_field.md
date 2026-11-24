@@ -27,7 +27,7 @@ struct node *read_right(struct node *p) {
  have p->left == qid;
  step(); step();
  have q == qid;
- step_until(function.exit); known();
+ step_until(function.exit); close();
  }, }
 }
 ```

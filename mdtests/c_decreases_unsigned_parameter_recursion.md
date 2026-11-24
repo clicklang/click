@@ -27,7 +27,7 @@ uint32 gcd(uint32 a, uint32 b) {
     branch {
         true => {
             step();
-            solve();
+            close();
         }
         false => {}
     }
@@ -36,7 +36,7 @@ uint32 gcd(uint32 a, uint32 b) {
     }
     step();
     step();
-    solve();
+    close();
 }
 ```
 

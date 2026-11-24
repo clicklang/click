@@ -18,16 +18,16 @@ function id8(x: uint8) -> uint8 {
 
 theorem body_is_the_uint8_sum(a: uint8, b: uint8) {
     let s: uint8 = a + b;
-    ensures add8(a, b) == s by { unfold(add8(a, b)); solve(); };
+    ensures add8(a, b) == s by { unfold(add8(a, b)); close(); };
 }
 
 theorem body_wraps() {
-    ensures add8(200u8, 100u8) == 44u8 by { unfold(add8(200u8, 100u8)); solve(); };
+    ensures add8(200u8, 100u8) == 44u8 by { unfold(add8(200u8, 100u8)); close(); };
 }
 
 theorem argument_is_the_uint8_sum(a: uint8, b: uint8) {
     let s: uint8 = a + b;
-    ensures id8(a + b) == s by { unfold(id8(a + b)); solve(); };
+    ensures id8(a + b) == s by { unfold(id8(a + b)); close(); };
 }
 ```
 

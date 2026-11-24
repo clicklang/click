@@ -52,7 +52,7 @@ int32 run(struct cell *task) {
     branch {
         true => {
             step();
-            solve();
+            close();
         }
         false => {}
     }
@@ -61,14 +61,14 @@ int32 run(struct cell *task) {
         true => {
             step();
             step();
-            solve();
+            close();
         }
         false => {}
     }
     step();
     step();
     step();
-    solve();
+    close();
 }
 ```
 

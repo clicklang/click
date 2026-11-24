@@ -23,25 +23,25 @@ resource erase_callbacks(augment: const struct rb_augment_callbacks*) {
 
 void dummy_propagate(struct rb_node* node, struct rb_node* stop) {
     ensures 1 == 1;
-} by { step_until(function.exit); known(); }
+} by { step_until(function.exit); close(); }
 void dummy_copy(struct rb_node* old, struct rb_node* new) {
     requires old != 0;
     requires new != 0;
     ensures 1 == 1;
-} by { step_until(function.exit); solve(); }
+} by { step_until(function.exit); close(); }
 void dummy_rotate(struct rb_node* old, struct rb_node* new) {
     requires new != 0;
     ensures 1 == 1;
-} by { step_until(function.exit); known(); }
+} by { step_until(function.exit); close(); }
 
 theorem dummy_propagate_contract() {
-    ensures ErasePropagate(&dummy_propagate) by { unfold(ErasePropagate(&dummy_propagate)); solve(); }
+    ensures ErasePropagate(&dummy_propagate) by { unfold(ErasePropagate(&dummy_propagate)); close(); }
 }
 theorem dummy_copy_contract() {
-    ensures EraseCopy(&dummy_copy) by { unfold(EraseCopy(&dummy_copy)); solve(); }
+    ensures EraseCopy(&dummy_copy) by { unfold(EraseCopy(&dummy_copy)); close(); }
 }
 theorem dummy_rotate_contract() {
-    ensures AugmentRotate(&dummy_rotate) by { unfold(AugmentRotate(&dummy_rotate)); solve(); }
+    ensures AugmentRotate(&dummy_rotate) by { unfold(AugmentRotate(&dummy_rotate)); close(); }
 }
 
 

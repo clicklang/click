@@ -36,11 +36,11 @@ theorem depth_ok_of(t: Tree) {
         match t {
             Tree::Empty => {
                 unfold(depth_ok(Tree::Empty));
-                known();
+                close();
             }
             Tree::Node(id, value, left) => {
                 unfold(depth_ok(Tree::Node(id, value, left)));
-                known();
+                close();
             }
         }
     }
@@ -75,17 +75,17 @@ int peek(struct node* p) {
             step();
             have depth_ok(left_model) == 1 by {
                 apply(depth_ok_of(left_model));
-                known();
+                close();
             }
             have depth_ok(Tree::Node(id, value, left_model)) == 1 by {
                 apply(depth_ok_of(Tree::Node(id, value, left_model)));
-                known();
+                close();
             }
             let u = fold(tree_at(p), {
                 model: Tree::Node(id, value, left_model),
                 left: l
             });
-            solve();
+            close();
         },
     }
 }

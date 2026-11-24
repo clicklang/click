@@ -13,7 +13,7 @@ import click::rust::slice;
 theorem slice_length_under_a_guard(p: uint8*, n: uint64) {
     requires n == 4u64;
     ensures forall (k: uint64) { k <= 4u64 implies slice::len(Slice<uint8>::Slice(p + k, n - k)) == n - k } by {
-        solve();
+        close();
     }
 }
 ```

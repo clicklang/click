@@ -58,7 +58,7 @@ int32 apply_guarded_inspect(
 theorem inspect_guarded_satisfies_InspectGuarded() {
     ensures InspectGuarded(&inspect_guarded) by {
         unfold(InspectGuarded(&inspect_guarded));
-        solve();
+        close();
     }
 }
 

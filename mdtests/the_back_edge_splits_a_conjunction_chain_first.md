@@ -41,7 +41,7 @@ int32 count_up(int32 n) {
         decreases n - i;
         invariant 0 <= i and i <= n and run == i;
 
-        initialize by solve();
+        initialize by close();
         maintain by {
             mark iteration;
             have 0 <= at(iteration, i);
@@ -65,7 +65,7 @@ int32 count_up(int32 n) {
         }
     }
     step();
-    solve();
+    close();
 }
 ```
 

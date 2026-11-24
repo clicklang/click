@@ -25,7 +25,7 @@ void stop() {
     ensures state.context == Context::Top;
 } by {
     have 0 == context_parent(Context::Top, 0) by {
-        unfold(context_parent(Context::Top, 0)); known();
+        unfold(context_parent(Context::Top, 0)); close();
     }
     let state = fold(stopped(), { model: Tree::Node(0), context: Context::Top });
 }

@@ -38,17 +38,17 @@ int32 fill_tail_keeps_first(int32 p[], int32 n) {
             }
             step();
             have at(before_store, separate(statement(2).statement(0).footprint, memory(p[0]))) by {
-                known();
+                close();
             }
             have p[0] == at(before_store, p[0]) by {
                 preserve(at(before_store, memory(p[0])), statement(2).statement(0));
             }
-            have p[0] == old(p[0]) by { known(); }
+            have p[0] == old(p[0]) by { close(); }
             step();
         }
     }
     step();
-    solve();
+    close();
 }
 ```
 

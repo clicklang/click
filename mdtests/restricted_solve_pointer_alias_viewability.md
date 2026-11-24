@@ -49,7 +49,7 @@ int32 alias_value(
         };
     }
     fold(valued_array(original, length, value));
-    solve();
+    close();
 }
 ```
 

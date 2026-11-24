@@ -2,7 +2,7 @@
 
 ```click
 theorem opaque_list_call_reflexive<T>(xs: List<T>, ys: List<T>) {
-    ensures list::append(xs, ys) == list::append(xs, ys) by known();
+    ensures list::append(xs, ys) == list::append(xs, ys) by close();
 }
 
 theorem symbolic_list_match_reflexive<T>(xs: List<T>, ys: List<T>) {
@@ -12,7 +12,7 @@ theorem symbolic_list_match_reflexive<T>(xs: List<T>, ys: List<T>) {
     }) == (match xs {
         List::Nil => ys,
         List::Cons(head, tail) => list::append(tail, ys),
-    }) by { known(); }
+    }) by { close(); }
 }
 ```
 

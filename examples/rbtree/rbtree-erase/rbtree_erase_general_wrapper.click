@@ -42,14 +42,14 @@ void rb_erase(struct rb_node* node, struct rb_root* root) {
     step(); // Store the returned rebalance pointer.
     match out.model {
         EraseOutcome::Balanced(t) => {
-            have erase_out_rb(EraseOutcome::Balanced(t)) == 1 by { rewrite(EraseOutcome::Balanced(t), out.model); known(); }
-            have is_rb_root(t) == 1 by { unfold(erase_out_rb(EraseOutcome::Balanced(t))); known(); }
+            have erase_out_rb(EraseOutcome::Balanced(t)) == 1 by { rewrite(EraseOutcome::Balanced(t), out.model); close(); }
+            have is_rb_root(t) == 1 by { unfold(erase_out_rb(EraseOutcome::Balanced(t))); close(); }
             have erase_out_tree(EraseOutcome::Balanced(t)) == t by { unfold(erase_out_tree(EraseOutcome::Balanced(t))); normalize(); }
             have rb_tree_parent_consistent(t) == 1 by {
-                rewrite(t, erase_out_tree(EraseOutcome::Balanced(t))); rewrite(EraseOutcome::Balanced(t), out.model); known();
+                rewrite(t, erase_out_tree(EraseOutcome::Balanced(t))); rewrite(EraseOutcome::Balanced(t), out.model); close();
             }
             have t == plug(old(up.model), erase_splice(old(tree.model))) by {
-                rewrite(t, erase_out_tree(EraseOutcome::Balanced(t))); rewrite(EraseOutcome::Balanced(t), out.model); known();
+                rewrite(t, erase_out_tree(EraseOutcome::Balanced(t))); rewrite(EraseOutcome::Balanced(t), out.model); close();
             }
             have erase_repaired(erase_outcome(old(tree.model), old(up.model))) == t by {
                 rewrite(erase_outcome(old(tree.model), old(up.model)), out.model);
@@ -62,21 +62,21 @@ void rb_erase(struct rb_node* node, struct rb_root* root) {
             step_until(function.exit);
         },
         EraseOutcome::Deficit(c) => {
-            have erase_out_rb(EraseOutcome::Deficit(c)) == 1 by { rewrite(EraseOutcome::Deficit(c), out.model); known(); }
-            have ctx_rb(c, Nat::Succ(Nat::Zero), Color::Black) == 1 by { unfold(erase_out_rb(EraseOutcome::Deficit(c))); known(); }
+            have erase_out_rb(EraseOutcome::Deficit(c)) == 1 by { rewrite(EraseOutcome::Deficit(c), out.model); close(); }
+            have ctx_rb(c, Nat::Succ(Nat::Zero), Color::Black) == 1 by { unfold(erase_out_rb(EraseOutcome::Deficit(c))); close(); }
             have ctx_rb(c, Nat::Succ(black_height(RbTree::Empty)), Color::Black) == 1 by {
-                unfold(black_height(RbTree::Empty)); known();
+                unfold(black_height(RbTree::Empty)); close();
             }
             have erase_out_tree(EraseOutcome::Deficit(c)) == plug(c, RbTree::Empty) by {
                 unfold(erase_out_tree(EraseOutcome::Deficit(c))); normalize();
             }
             have rb_tree_parent_consistent(plug(c, RbTree::Empty)) == 1 by {
                 rewrite(plug(c, RbTree::Empty), erase_out_tree(EraseOutcome::Deficit(c)));
-                rewrite(EraseOutcome::Deficit(c), out.model); known();
+                rewrite(EraseOutcome::Deficit(c), out.model); close();
             }
             have plug(c, RbTree::Empty) == plug(old(up.model), erase_splice(old(tree.model))) by {
                 rewrite(plug(c, RbTree::Empty), erase_out_tree(EraseOutcome::Deficit(c)));
-                rewrite(EraseOutcome::Deficit(c), out.model); known();
+                rewrite(EraseOutcome::Deficit(c), out.model); close();
             }
             have erase_repaired(erase_outcome(old(tree.model), old(up.model))) == erase_flips_red_all_result(c, RbTree::Empty) by {
                 rewrite(erase_outcome(old(tree.model), old(up.model)), out.model);

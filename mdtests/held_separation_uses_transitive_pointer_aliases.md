@@ -17,8 +17,8 @@ void f(int32 *a, int32 *b, int32 *x, int32 *y) {
     ensures true;
 } by {
     unfold(left); unfold(right);
-    have separate(memory(y[0]), memory(b[0])) by { known(); }
-    fold(left); fold(right); step_until(function.exit); known(); known(); known();
+    have separate(memory(y[0]), memory(b[0])) by { close(); }
+    fold(left); fold(right); step_until(function.exit); close(); close(); close();
 }
 ```
 

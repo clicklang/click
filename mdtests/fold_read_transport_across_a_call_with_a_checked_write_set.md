@@ -34,18 +34,18 @@ void caller(int32 *v, int32 i, int32 n) {
     ensures zeros(v, 0, i) == old(zeros(v, 0, i));
 } by {
     mark entry;
-    have zeros(at(entry, v), 0, i) == zeros(at(entry, v), 0, i) by known();
+    have zeros(at(entry, v), 0, i) == zeros(at(entry, v), 0, i) by close();
     have i <= n by { close() using { i < n; }; }
-    have 0 <= 0 by { known(); }
-    have viewable(v[0..n]) by { observe(v[0..n]); known(); }
+    have 0 <= 0 by { close(); }
+    have viewable(v[0..n]) by { observe(v[0..n]); close(); }
     have contains(memory(v[0..n]), memory(v[0..i])) by {
         apply(click::separation::contains_subrange(v, 0, n, 0, i));
     }
     have viewable(v[0..i]) by {
         apply(click::separation::viewable_restrict(memory(v[0..n]), memory(v[0..i])));
     }
-    have 0 <= to_integer(n - i) by { solve(); }
-    have to_integer(n - i) <= 1073741823 by { solve(); }
+    have 0 <= to_integer(n - i) by { close(); }
+    have to_integer(n - i) <= 1073741823 by { close(); }
     step();
     have zeros(v, 0, i) == zeros(at(entry, v), 0, i) by {
         have forall (k: int32) { 0 <= k and k < i implies v[k] == at(entry, v[k]) } by {
@@ -73,10 +73,10 @@ void caller(int32 *v, int32 i, int32 n) {
             }
             preserve(memory(v[k]), statement(0));
         }
-        have viewable(v[0..i]) by { observe(v[0..i]); known(); }
-        have i <= 1073741823 by { solve(); }
+        have viewable(v[0..i]) by { observe(v[0..i]); close(); }
+        have i <= 1073741823 by { close(); }
         apply(same_zeros(v, at(entry, v), 0, i, i));
-        known();
+        close();
     }
 }
 ```

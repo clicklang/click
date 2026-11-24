@@ -37,9 +37,9 @@ uint64 probe(const struct Input* src, uint8* dst, uint64 n, uint64 m) {
         requires forall (k: uint64) { 0u64 <= k and k < n implies defined(src->data[k]) } by {
             intro();
             intro();
-            have k < m by { solve(); }
+            have k < m by { close(); }
             instantiate(forall (i: uint64) { 0u64 <= i and i < m implies defined(src->data[i]) }, k);
-            known();
+            close();
         }
     }
 }

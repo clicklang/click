@@ -40,11 +40,11 @@ int32 keep_h() {
     have 0 <= 0;
     have icount(h, 0, 0) == 0 by {
         unfold(icount(h, 0, 0));
-        known();
+        close();
     }
     step_until(function.exit);
     have icount(h, 0, 0) == 0;
-    solve();
+    close();
 }
 ```
 

@@ -45,7 +45,7 @@ void mark_tail(struct arena* arena, int32 end) {
         invariant arena->occupied[0] == old(arena->occupied[0]);
         invariant arena->occupied[1] == old(arena->occupied[1]);
         decreases end - i;
-        initialize by solve();
+        initialize by close();
         maintain by {
             mark before_store;
             have i != 0 by { close() using { 2 <= i; }; }
@@ -88,7 +88,7 @@ void mark_tail(struct arena* arena, int32 end) {
             }
             have arena->occupied[0] == old(arena->occupied[0]) by {
                 rewrite(arena->occupied, at(before_store, arena->occupied));
-                known();
+                close();
             }
             have separate(loop(0).statement(0).footprint, at(before_store, memory(arena->occupied[1]))) by {
                 normalize() using {
@@ -100,10 +100,10 @@ void mark_tail(struct arena* arena, int32 end) {
             }
             have arena->occupied[1] == old(arena->occupied[1]) by {
                 rewrite(arena->occupied, at(before_store, arena->occupied));
-                known();
+                close();
             }
             step();
-            solve();
+            close();
         }
     }
 }

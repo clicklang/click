@@ -8,7 +8,7 @@ from the terminator at `dst[4]`.
 Both proofs name the preserved reads across the call and store and
 instantiate the saved `memcpy` postcondition. `copy_u` composes the
 equalities with rewrites. `copy_u_smart` supplies the same byte facts to
-`solve()` for the final equality.
+`close()` for the final equality.
 
 ```c filename=copy.c
 #include <string.h>
@@ -45,8 +45,8 @@ void copy_u(uint8* dst, const uint8* src) {
         instantiate(at(copied, (0u64..4u64).all(|j| {
             dst[0u64 + j] == old(src[0u64 + j])
         })), k);
-        have separate(memory(dst[0..4]), memory(src[k])) by { known(); }
-        have contains(memory(dst[0..4]), statement(0).footprint) by { known(); }
+        have separate(memory(dst[0..4]), memory(src[k])) by { close(); }
+        have contains(memory(dst[0..4]), statement(0).footprint) by { close(); }
         apply(separation::contains_refl(memory(src[k])));
         apply(separation::separate_restrict(
             memory(dst[0..4]), memory(src[k]),
@@ -55,7 +55,7 @@ void copy_u(uint8* dst, const uint8* src) {
         have at(copied, src[k]) == old(src[k]) by {
             preserve(memory(src[k]), statement(0));
         }
-        have separate(memory(dst[4u64]), memory(src[k])) by { known(); }
+        have separate(memory(dst[4u64]), memory(src[k])) by { close(); }
         have separate(statement(1).footprint, memory(src[k])) by {
             close() using { separate(memory(dst[4u64]), memory(src[k])); };
         }
@@ -65,7 +65,7 @@ void copy_u(uint8* dst, const uint8* src) {
         rewrite(src[k], at(copied, src[k]));
         rewrite(at(copied, src[k]), old(src[k]));
         rewrite(dst[k], at(copied, dst[k]));
-        known();
+        close();
     }
 }
 void copy_u_smart(uint8* dst, const uint8* src) {
@@ -93,8 +93,8 @@ void copy_u_smart(uint8* dst, const uint8* src) {
         instantiate(at(copied, (0u64..4u64).all(|j| {
             dst[0u64 + j] == old(src[0u64 + j])
         })), k);
-        have separate(memory(dst[0..4]), memory(src[k])) by { known(); }
-        have contains(memory(dst[0..4]), statement(0).footprint) by { known(); }
+        have separate(memory(dst[0..4]), memory(src[k])) by { close(); }
+        have contains(memory(dst[0..4]), statement(0).footprint) by { close(); }
         apply(separation::contains_refl(memory(src[k])));
         apply(separation::separate_restrict(
             memory(dst[0..4]), memory(src[k]),
@@ -103,14 +103,14 @@ void copy_u_smart(uint8* dst, const uint8* src) {
         have at(copied, src[k]) == old(src[k]) by {
             preserve(memory(src[k]), statement(0));
         }
-        have separate(memory(dst[4u64]), memory(src[k])) by { known(); }
+        have separate(memory(dst[4u64]), memory(src[k])) by { close(); }
         have separate(statement(1).footprint, memory(src[k])) by {
             close() using { separate(memory(dst[4u64]), memory(src[k])); };
         }
         have src[k] == at(copied, src[k]) by {
             preserve(memory(src[k]), statement(1));
         }
-        solve();
+        close();
     }
 }
 

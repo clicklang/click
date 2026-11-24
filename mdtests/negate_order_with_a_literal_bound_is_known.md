@@ -6,7 +6,7 @@ theorem negate_constant_bound(n: Integer, d: Integer) {
     requires truncating_quotient(n, -d) <= 4;
     ensures -4 <= -truncating_quotient(n, -d) by {
         apply(integer::negate_order(truncating_quotient(n, -d), 4));
-        known();
+        close();
     }
 }
 ```

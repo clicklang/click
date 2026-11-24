@@ -9,7 +9,7 @@ import click::integer;
 theorem adler_count_observation(r: uint64) {
  requires r <= 22208u64;
  ensures to_integer(r as uint32 as int32) == to_integer(r) by {
-  have 0u64 <= r by known();
+  have 0u64 <= r by close();
   close() using { 0 <= to_integer(r); to_integer(r) <= 22208; };
  }
 }
@@ -17,15 +17,15 @@ theorem adler_count_bounds(r: uint64) {
  requires r <= 22208u64;
  ensures 0 <= r as uint32 as int32 and r as uint32 as int32 <= 22208 by {
   apply(adler_count_observation(r));
-  have 0u64 <= r by known();
-  have 0 <= to_integer(r as uint32 as int32) by { rewrite(to_integer(r as uint32 as int32), to_integer(r)); known(); }
-  have to_integer(r as uint32 as int32) <= 22208 by { rewrite(to_integer(r as uint32 as int32), to_integer(r)); known(); }
+  have 0u64 <= r by close();
+  have 0 <= to_integer(r as uint32 as int32) by { rewrite(to_integer(r as uint32 as int32), to_integer(r)); close(); }
+  have to_integer(r as uint32 as int32) <= 22208 by { rewrite(to_integer(r as uint32 as int32), to_integer(r)); close(); }
   all {
       0 <= ((r as uint32) as int32) => {
-          known();
+          close();
       }
       ((r as uint32) as int32) <= 22208 => {
-          known();
+          close();
       }
   }
  }
@@ -40,9 +40,9 @@ theorem adler_count_at_least(r: uint64, k: uint64) {
   have to_integer(k as uint32 as int32) <= to_integer(r as uint32 as int32) by {
    rewrite(to_integer(k as uint32 as int32), to_integer(k));
    rewrite(to_integer(r as uint32 as int32), to_integer(r));
-   known();
+   close();
   }
-  known();
+  close();
  }
 }
 theorem adler_count_step(r: uint64, k: uint64) {
@@ -65,9 +65,9 @@ theorem adler_count_step(r: uint64, k: uint64) {
    rewrite(to_integer(r as uint32 as int32 - k as uint32 as int32), to_integer(r as uint32 as int32) - to_integer(k as uint32 as int32));
    rewrite(to_integer(r as uint32 as int32), to_integer(r));
    rewrite(to_integer(k as uint32 as int32), to_integer(k));
-   known();
+   close();
   }
-  known();
+  close();
  }
 }
 theorem adler_count_lane_step(r: uint64) {
@@ -99,10 +99,10 @@ theorem adler_count_zero(r: uint64) {
  requires r as uint32 as int32 == 0;
  ensures r == 0u64 by {
   apply(adler_count_observation(r));
-  have to_integer(r as uint32 as int32) == 0 by { rewrite(r as uint32 as int32, 0); known(); }
+  have to_integer(r as uint32 as int32) == 0 by { rewrite(r as uint32 as int32, 0); close(); }
   have to_integer(r) == 0 by close() using { to_integer(r as uint32 as int32) == to_integer(r); to_integer(r as uint32 as int32) == 0; };
   have to_integer(r) == to_integer(0u64) by close() using { to_integer(r) == 0; };
-  known();
+  close();
  }
 }
 
@@ -123,7 +123,7 @@ theorem adler_count_byte_observation(bytes: uint8[], count: uint64) {
   apply(adler_count_byte_pointer(bytes, count));
   have bytes[count] == bytes[count as uint32 as int32] by close() using { bytes + count == bytes + count as uint32 as int32; };
   rewrite(bytes[count], bytes[count as uint32 as int32]);
-  known();
+  close();
  }
 }
 theorem adler_count_chunk_byte_observation(bytes: uint8[], count: uint64, lane: int32) {
@@ -142,7 +142,7 @@ theorem adler_count_chunk_byte_observation(bytes: uint8[], count: uint64, lane: 
   }
   have (bytes + count)[lane] == bytes[count as uint32 as int32 + lane] by close() using { bytes + count + lane == bytes + (count as uint32 as int32 + lane); };
   rewrite((bytes + count)[lane], bytes[count as uint32 as int32 + lane]);
-  known();
+  close();
  }
 }
 
@@ -167,11 +167,11 @@ theorem adler_count_previous_chunk_byte_observation(bytes: uint8[], total: uint6
   have to_integer((total - remaining - 4u64) as uint32 as int32) == to_integer((total as uint32 as int32 - remaining as uint32 as int32) - 4) by {
    rewrite(to_integer((total - remaining - 4u64) as uint32 as int32), to_integer((total - remaining) as uint32 as int32 - 4));
    rewrite(to_integer((total - remaining) as uint32 as int32), to_integer(total as uint32 as int32 - remaining as uint32 as int32));
-   known();
+   close();
   }
   have to_integer((total as uint32 as int32 - remaining as uint32 as int32) - 4) == to_integer((total - remaining - 4u64) as uint32 as int32) by close() using { to_integer((total - remaining - 4u64) as uint32 as int32) == to_integer((total as uint32 as int32 - remaining as uint32 as int32) - 4); };
   rewrite(to_integer((total as uint32 as int32 - remaining as uint32 as int32) - 4), to_integer((total - remaining - 4u64) as uint32 as int32));
-  known();
+  close();
  }
 }
 
@@ -183,7 +183,7 @@ theorem adler_small_prefix_integer_advance(total: int32, remaining: int32) {
  requires 4 <= to_integer(total - remaining);
  ensures to_integer(total - remaining) == to_integer((total - remaining) - 4) + 4 by {
   have defined(total - remaining);
-  have defined(total - remaining) by known();
+  have defined(total - remaining) by close();
   have defined((total - remaining) - 4);
   have to_integer((total - remaining) - 4) == to_integer((total - remaining)) - to_integer(4);
   close() using { to_integer((total - remaining) - 4) == to_integer(total - remaining) - to_integer(4); };
@@ -209,10 +209,10 @@ theorem adler_count_previous_byte_observation(bytes: uint8[], total: uint64, rem
   have to_integer((total - remaining - 1u64) as uint32 as int32) == to_integer((total as uint32 as int32 - remaining as uint32 as int32) - 1) by {
    rewrite(to_integer((total - remaining - 1u64) as uint32 as int32), to_integer((total - remaining) as uint32 as int32 - 1));
    rewrite(to_integer((total - remaining) as uint32 as int32), to_integer(total as uint32 as int32 - remaining as uint32 as int32));
-   known();
+   close();
   }
   have to_integer((total as uint32 as int32 - remaining as uint32 as int32) - 1) == to_integer((total - remaining - 1u64) as uint32 as int32) by close() using { to_integer((total - remaining - 1u64) as uint32 as int32) == to_integer((total as uint32 as int32 - remaining as uint32 as int32) - 1); };
   rewrite(to_integer((total as uint32 as int32 - remaining as uint32 as int32) - 1), to_integer((total - remaining - 1u64) as uint32 as int32));
-  known();
+  close();
  }
 }

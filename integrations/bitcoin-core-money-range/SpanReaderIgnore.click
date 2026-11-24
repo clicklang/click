@@ -13,8 +13,8 @@ void SpanReader::ignore(uint64 n) throws std::ios_base::failure {
     exceptional ensures std_span_size(this->m_data) == old(std_span_size(this->m_data));
     exceptional ensures forall (k: uint64) { k < old(std_span_size(this->m_data)) implies old(std_span_data(this->m_data))[k] == old(std_span_data(this->m_data)[k]) };
 } by {
-    have separate(memory((this as (uint8 *))[0..8]), memory(old(std_span_data(this->m_data))[0u64..old(std_span_size(this->m_data))])) by { solve(); }
-    have separate(memory((this as (uint8 *))[8..16]), memory(old(std_span_data(this->m_data))[0u64..old(std_span_size(this->m_data))])) by { solve(); }
+    have separate(memory((this as (uint8 *))[0..8]), memory(old(std_span_data(this->m_data))[0u64..old(std_span_size(this->m_data))])) by { close(); }
+    have separate(memory((this as (uint8 *))[8..16]), memory(old(std_span_data(this->m_data))[0u64..old(std_span_size(this->m_data))])) by { close(); }
     have separate(memory((this as (uint8 *))[0..8]) * memory((this as (uint8 *))[8..16]), memory(old(std_span_data(this->m_data))[0u64..old(std_span_size(this->m_data))])) by {
         apply(click::separation::separate_star(memory((this as (uint8 *))[0..8]), memory((this as (uint8 *))[8..16]), memory(old(std_span_data(this->m_data))[0u64..old(std_span_size(this->m_data))])));
     }

@@ -15,17 +15,17 @@ theorem three_bounds(x: int32) {
 
     ensures x >= 0 by {
         unfold(small(x));
-        solve();
+        close();
     }
 
     ensures x <= 10 by {
         unfold(small(x));
-        solve();
+        close();
     }
 
     ensures x != 11 by {
         unfold(small(x));
-        solve();
+        close();
     }
 }
 
@@ -33,7 +33,7 @@ theorem needs_upper(x: int32) {
     requires x <= 10;
 
     ensures x <= 20 by {
-        solve();
+        close();
     }
 }
 
@@ -42,7 +42,7 @@ theorem needs_both_siblings(x: int32) {
     requires x != 11;
 
     ensures x >= 0 by {
-        known();
+        close();
     }
 }
 
@@ -52,7 +52,7 @@ theorem goal_is_the_first_conclusion(x: int32) {
     ensures x >= 0 by {
         apply(three_bounds(x));
         apply(needs_upper(x));
-        known();
+        close();
     }
 }
 
@@ -62,7 +62,7 @@ theorem goal_is_the_middle_conclusion(x: int32) {
     ensures x <= 10 by {
         apply(three_bounds(x));
         apply(needs_both_siblings(x));
-        known();
+        close();
     }
 }
 
@@ -72,9 +72,9 @@ theorem a_sibling_conclusion_is_restated(x: int32) {
     ensures x != 11 by {
         apply(three_bounds(x));
         have x <= 10 by {
-            known();
+            close();
         }
-        known();
+        close();
     }
 }
 
@@ -84,7 +84,7 @@ theorem goal_is_no_conclusion(x: int32) {
     ensures x <= 20 by {
         apply(three_bounds(x));
         apply(needs_upper(x));
-        known();
+        close();
     }
 }
 ```

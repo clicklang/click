@@ -15,7 +15,7 @@ theorem identity(x: Payload, a: int32, b: int32) {
     ensures joined(x, a) == joined(x, b) by {
         unfold(joined(x, a));
         unfold(joined(x, b));
-        solve();
+        close();
     }
 }
 ```

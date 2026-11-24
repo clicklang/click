@@ -13,7 +13,7 @@ theorem range_goal(n: int32) {
     ensures (0..n).all(|k| { k == k }) by {
         let i = intro();
         intro();
-        known();
+        close();
     }
 }
 
@@ -21,16 +21,16 @@ theorem range_variable_is_read_under_its_new_name(n: int32) {
     ensures (0..n).all(|k| { k < n }) by {
         let i = intro();
         intro();
-        have i < n by known();
-        known();
+        have i < n by close();
+        close();
     }
 }
 
 theorem enum_binder() {
     ensures forall (s: Shade) { s == s } by {
         let t = intro();
-        have t == t by solve();
-        solve();
+        have t == t by close();
+        close();
     }
 }
 ```

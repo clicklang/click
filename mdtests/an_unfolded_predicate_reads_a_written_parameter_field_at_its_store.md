@@ -38,10 +38,10 @@ void reset(struct counter* c, int32 limit) {
     step();
     unfold(valid(c));
     have to_integer(c->limit) == to_integer(c->used) + to_integer(count(slot(c))) by {
-        known();
+        close();
     }
-    known();
-    known();
+    close();
+    close();
 }
 ```
 

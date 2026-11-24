@@ -23,7 +23,7 @@ theorem first_cell_owner_is_wide_owner(
     ensures WideOwner(callback) by {
         unfold(FirstCellOwner(callback));
         unfold(WideOwner(callback));
-        solve();
+        close();
     }
 }
 ```

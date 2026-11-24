@@ -33,7 +33,7 @@ int32 ack(int32 m, int32 n) {
     branch {
         true => {
             step();
-            solve();
+            close();
         }
         false => {}
     }
@@ -49,7 +49,7 @@ int32 ack(int32 m, int32 n) {
         true => {
             step();
             step();
-            solve();
+            close();
         }
         false => {}
     }

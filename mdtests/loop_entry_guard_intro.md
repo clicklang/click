@@ -35,10 +35,10 @@ int32 loop_entry_guard_intro(int32 p[3]) {
             have i >= 0 and i <= 3 by {
                 all {
                     i >= 0 => {
-                        known();
+                        close();
                     }
                     i <= 3 => {
-                        known();
+                        close();
                     }
                 }
             }
@@ -46,10 +46,10 @@ int32 loop_entry_guard_intro(int32 p[3]) {
                 enumerate();
             }
         }
-        maintain by solve();
+        maintain by close();
     }
     step();
-    solve();
+    close();
 }
 ```
 

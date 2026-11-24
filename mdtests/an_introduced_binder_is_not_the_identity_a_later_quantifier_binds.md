@@ -28,9 +28,9 @@ void touch(uint8* dst) {
         have forall (j: int32) { 0 <= j and j < 5 implies j < 6 } by {
             intro();
             intro();
-            solve();
+            close();
         }
-        solve();
+        close();
     }
 }
 ```

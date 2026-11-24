@@ -15,27 +15,27 @@ function sum_machine_range_captured(n: int32, z: Integer) -> Integer {
 
 theorem integer_range_fold_reflexive(lo: Integer, hi: Integer) {
     ensures sum_integer_range(lo, hi) == sum_integer_range(lo, hi) by {
-        known();
+        close();
     }
 }
 
 theorem machine_range_reflexive(n: int32) {
     ensures sum_machine_range(n) == sum_machine_range(n) by {
-        known();
+        close();
     }
 }
 
 theorem machine_range_unfolds(n: int32) {
     ensures sum_machine_range(n) == (0..n).fold(0, |acc, k| { acc + to_integer(k) }) by {
         unfold(sum_machine_range(n));
-        known();
+        close();
     }
 }
 
 theorem machine_range_captured_unfolds(n: int32, z: Integer) {
     ensures sum_machine_range_captured(n, z) == (0..n).fold(z, |acc, k| { acc + z + to_integer(k) }) by {
         unfold(sum_machine_range_captured(n, z));
-        known();
+        close();
     }
 }
 

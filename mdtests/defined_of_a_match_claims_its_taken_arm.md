@@ -16,7 +16,7 @@ theorem arm_claims_its_root(a: int32, b: int32) {
         Step::Next(x) => x + a,
         Step::Stay(x) => x,
     });
-    ensures to_integer(b) + to_integer(a) <= 2147483647 by solve();
+    ensures to_integer(b) + to_integer(a) <= 2147483647 by close();
 }
 
 theorem other_arm_claims_nothing(a: int32, b: int32) {
@@ -24,7 +24,7 @@ theorem other_arm_claims_nothing(a: int32, b: int32) {
         Step::Next(x) => x + a,
         Step::Stay(x) => x,
     });
-    ensures 1 == 1 by solve();
+    ensures 1 == 1 by close();
 }
 
 theorem symbolic(s: Step, a: int32) {
@@ -32,7 +32,7 @@ theorem symbolic(s: Step, a: int32) {
         Step::Next(x) => x + a,
         Step::Stay(x) => x,
     });
-    ensures 1 == 1 by solve();
+    ensures 1 == 1 by close();
 }
 ```
 

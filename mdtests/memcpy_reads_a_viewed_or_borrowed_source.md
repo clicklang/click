@@ -48,7 +48,7 @@ void copy_viewed(uint8* dst, const uint8* src) {
             have src[k] == at(statement(0).entry, src[k]) by {
                 preserve(memory(src[k]), statement(0));
             }
-            known();
+            close();
         }
         step();
         unfold(click::bytes::equal(dst, 0u64, old(src), 0u64, 4u64));
@@ -59,9 +59,9 @@ void copy_viewed(uint8* dst, const uint8* src) {
             instantiate(forall (k1: uint64) { true and k1 < 4u64 implies dst[0u64 + k1] == old(src[0u64 + k1]) }, k);
             instantiate(forall (k1: uint64) { k1 < 4u64 implies src[k1] == old(src[k1]) }, k);
             rewrite(src[k], old(src[k]));
-            known();
+            close();
         }
-        known();
+        close();
     }
 }
 

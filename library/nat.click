@@ -41,14 +41,14 @@ function add(left: Nat, right: Nat) -> Nat
 theorem add_left_identity(n: Nat) {
     ensures nat::add(Nat::Zero, n) == n by {
         unfold(nat::add(Nat::Zero, n));
-        known();
+        close();
     }
 }
 
 theorem add_succ_left(n: Nat, m: Nat) {
     ensures nat::add(Nat::Succ(n), m) == Nat::Succ(nat::add(n, m)) by {
         unfold(nat::add(Nat::Succ(n), m));
-        known();
+        close();
     }
 }
 
@@ -60,7 +60,7 @@ theorem to_integer_add(n: Nat, m: Nat) {
                 unfold(nat::add(Nat::Zero, m));
                 apply(nat::to_integer_zero());
                 rewrite(to_integer(Nat::Zero), 0);
-                known();
+                close();
             }
             Nat::Succ(previous) => {
                 unfold(nat::add(Nat::Succ(previous), m));
@@ -70,7 +70,7 @@ theorem to_integer_add(n: Nat, m: Nat) {
                 rewrite(to_integer(Nat::Succ(nat::add(previous, m))), to_integer(nat::add(previous, m)) + 1);
                 rewrite(to_integer(nat::add(previous, m)), to_integer(previous) + to_integer(m));
                 rewrite(to_integer(Nat::Succ(previous)), to_integer(previous) + 1);
-                known();
+                close();
             }
         }
     }
@@ -82,13 +82,13 @@ theorem add_right_identity(n: Nat) {
         match n {
             Nat::Zero => {
                 unfold(nat::add(Nat::Zero, Nat::Zero));
-                known();
+                close();
             }
             Nat::Succ(previous) => {
                 apply(ih(previous));
                 unfold(nat::add(Nat::Succ(previous), Nat::Zero));
                 rewrite(nat::add(previous, Nat::Zero), previous);
-                known();
+                close();
             }
         }
     }
@@ -101,14 +101,14 @@ theorem add_succ_right(n: Nat, m: Nat) {
             Nat::Zero => {
                 unfold(nat::add(Nat::Zero, Nat::Succ(m)));
                 unfold(nat::add(Nat::Zero, m));
-                known();
+                close();
             }
             Nat::Succ(previous) => {
                 apply(ih(previous));
                 unfold(nat::add(Nat::Succ(previous), Nat::Succ(m)));
                 unfold(nat::add(Nat::Succ(previous), m));
                 rewrite(nat::add(previous, Nat::Succ(m)), Nat::Succ(nat::add(previous, m)));
-                known();
+                close();
             }
         }
     }
@@ -121,7 +121,7 @@ theorem add_associative(a: Nat, b: Nat, c: Nat) {
             Nat::Zero => {
                 unfold(nat::add(Nat::Zero, b));
                 unfold(nat::add(Nat::Zero, nat::add(b, c)));
-                known();
+                close();
             }
             Nat::Succ(previous) => {
                 apply(ih(previous));
@@ -132,7 +132,7 @@ theorem add_associative(a: Nat, b: Nat, c: Nat) {
                 apply(nat::add_succ_left(previous, nat::add(b, c)));
                 rewrite(nat::add(Nat::Succ(previous), nat::add(b, c)), Nat::Succ(nat::add(previous, nat::add(b, c))));
                 rewrite(nat::add(nat::add(previous, b), c), nat::add(previous, nat::add(b, c)));
-                known();
+                close();
             }
         }
     }
@@ -146,7 +146,7 @@ theorem add_commutative(a: Nat, b: Nat) {
                 unfold(nat::add(Nat::Zero, b));
                 apply(nat::add_right_identity(b));
                 rewrite(nat::add(b, Nat::Zero), b);
-                known();
+                close();
             }
             Nat::Succ(previous) => {
                 apply(ih(previous));
@@ -154,7 +154,7 @@ theorem add_commutative(a: Nat, b: Nat) {
                 apply(nat::add_succ_right(b, previous));
                 rewrite(nat::add(b, Nat::Succ(previous)), Nat::Succ(nat::add(b, previous)));
                 rewrite(nat::add(previous, b), nat::add(b, previous));
-                known();
+                close();
             }
         }
     }

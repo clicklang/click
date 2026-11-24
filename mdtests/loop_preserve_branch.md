@@ -48,7 +48,7 @@ int32 loop_preserve_branch(int32 n) {
         }
     }
     step();
-    solve();
+    close();
 }
 ```
 

@@ -197,7 +197,7 @@ struct rb_node* rb_up_while_right_child(struct rb_node* node, struct rb_node* pa
         invariant t.model != RbTree::Empty;
         invariant plug(c.model, t.model) == plug(old(c.model), old(t.model));
 
-        initialize by solve();
+        initialize by close();
         maintain by {
             match c.model {
                 Context::Top => { contradiction(c.model == Context::Top); },
@@ -212,7 +212,7 @@ struct rb_node* rb_up_while_right_child(struct rb_node* node, struct rb_node* pa
                                                   sibling_model, up_model), t.model));
                         rewrite(Context::Left(identity, grandparent, color,
                                               sibling_model, up_model), c.model);
-                        known();
+                        close();
                     }
                     let { sibling: s, up: u } = unfold(c);
                     // Finish the assignment from the inlined rb_parent call before folding.
@@ -233,7 +233,7 @@ struct rb_node* rb_up_while_right_child(struct rb_node* node, struct rb_node* pa
                                                    sibling_model, up_model), t.model));
                         rewrite(Context::Right(identity, grandparent, color,
                                                sibling_model, up_model), c.model);
-                        known();
+                        close();
                     }
                     let { sibling: s, up: u } = unfold(c);
                     step_until(loop(0).back_edge);
@@ -250,7 +250,7 @@ struct rb_node* rb_up_while_right_child(struct rb_node* node, struct rb_node* pa
         RbTree::Node(identity, color, left_model, right_model) => {
             let { left: l, right: r } = unfold(t);
             step();
-            solve();
+            close();
         },
     }
 }

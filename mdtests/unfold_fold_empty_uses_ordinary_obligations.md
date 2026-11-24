@@ -9,7 +9,7 @@ theorem empty_tally(lo: int32, hi: int32) {
     requires hi < lo;
     ensures tally(lo, hi) == 0 by {
         unfold(tally(lo, hi));
-        known();
+        close();
     }
 }
 ```

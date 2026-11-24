@@ -50,7 +50,7 @@ theorem holds_is_nonzero(p: void*) {
     requires holds(Box::Box(p), p) == 1;
     ensures holds(Box::Box(p), p) != 0 by {
         rewrite(holds(Box::Box(p), p), 1);
-        known();
+        close();
     }
 }
 
@@ -62,22 +62,22 @@ struct node* skip(struct node* p, struct node* q, int32 n) {
         decreases n;
         invariant n >= 0;
 
-        initialize by solve();
+        initialize by close();
         maintain by {
             have holds(Box::Box(p), p) == 1 by {
                 unfold(holds(Box::Box(p), p));
-                known();
+                close();
             }
             have holds(Box::Box(p), p) != 0 by {
                 apply(holds_is_nonzero(p));
-                known();
+                close();
             }
             step();
             step();
         }
     }
     step();
-    solve();
+    close();
 }
 ```
 

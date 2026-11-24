@@ -30,10 +30,10 @@ uint8 keep_h() {
     ensures result == 7;
 } by {
     step();
-    have first_is(h, 7) by { known(); }
+    have first_is(h, 7) by { close(); }
     unfold(first_is(h, 7));
     step_until(function.exit);
-    solve();
+    close();
 }
 ```
 

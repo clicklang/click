@@ -101,23 +101,23 @@ int32 run() {
     requires private_file::file_private.value == 4;
     ensures result == 5;
 } by {
-    have shared.value == 2 by solve();
-    have shared.value < 1000 by solve();
+    have shared.value == 2 by close();
+    have shared.value < 1000 by close();
     step();
-    have shared.value == 3 by solve();
-    have shared.value < 1000 by solve();
+    have shared.value == 3 by close();
+    have shared.value < 1000 by close();
     step();
-    have private_file::increment_local::local.value == 3 by solve();
-    have private_file::increment_local::local.value > -1000 by solve();
-    have private_file::increment_local::local.value < 1000 by solve();
-    have private_file::increment_local::local.ready == 0 by solve();
+    have private_file::increment_local::local.value == 3 by close();
+    have private_file::increment_local::local.value > -1000 by close();
+    have private_file::increment_local::local.value < 1000 by close();
+    have private_file::increment_local::local.ready == 0 by close();
     step();
-    have private_file::increment_local::local.value == 4 by solve();
-    have private_file::increment_local::local.value > -1000 by solve();
-    have private_file::increment_local::local.value < 1000 by solve();
-    have private_file::increment_local::local.ready == 0 by solve();
+    have private_file::increment_local::local.value == 4 by close();
+    have private_file::increment_local::local.value > -1000 by close();
+    have private_file::increment_local::local.value < 1000 by close();
+    have private_file::increment_local::local.ready == 0 by close();
     step();
-    have private_file::file_private.value < 1000 by solve();
+    have private_file::file_private.value < 1000 by close();
 }
 ```
 

@@ -20,10 +20,10 @@ void caller(struct node* child, int32* slot) {
     owns list(child);
     owns *slot;
 } by {
-    have separate(list(child), memory(*slot)) by { known(); }
+    have separate(list(child), memory(*slot)) by { close(); }
     mark before_call;
     step();
-    have contains(list(child), statement(0).footprint) by { known(); }
+    have contains(list(child), statement(0).footprint) by { close(); }
     apply(separation::contains_refl(memory(*slot)));
     apply(separation::separate_restrict(list(child), memory(*slot), statement(0).footprint, memory(*slot)));
     have *slot == at(before_call, *slot) by {

@@ -52,7 +52,7 @@ int32 apply_keep(
 theorem keep_first_satisfies_PreservePair() {
     ensures PreservePair(&keep_first) by {
         unfold(PreservePair(&keep_first));
-        solve();
+        close();
     }
 }
 

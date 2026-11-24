@@ -13,8 +13,8 @@ extern int32 callee(int32 x) {
 int32 caller(int32 a) {
     ensures result == a;
 } by {
-    step() by solve();
-    step(); solve();
+    step() by close();
+    step(); close();
 }
 ```
 

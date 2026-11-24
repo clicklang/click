@@ -77,15 +77,15 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
         invariant to_integer(run.lo + run_length) == to_integer(i);
         invariant 0 <= run_length and run_length <= i;
 
-        initialize by solve();
+        initialize by close();
         maintain by {
             mark iteration;
             let { lo: lo, hi: hi } = unfold(run);
             have hi == i by {
-                solve();
+                close();
             }
             have to_integer(lo + run_length) == to_integer(i) by {
-                solve();
+                close();
             }
             have lo <= i by {
                 close() using {
@@ -112,10 +112,10 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
                 }
                 step();
                 have hi == at(iteration, i) by {
-                    solve();
+                    close();
                 }
                 have to_integer(i) == to_integer(at(iteration, i) + 1) by {
-                    solve();
+                    close();
                 }
                 have lo <= at(iteration, i) by {
                     close() using {
@@ -126,38 +126,38 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
                 have to_integer(at(iteration, i)) < to_integer(at(iteration, i) + 1);
                 have at(iteration, i) < i by {
                     rewrite(to_integer(i), to_integer(at(iteration, i) + 1));
-                    known();
+                    close();
                 }
                 have at(iteration, i) <= i;
                 have lo <= i;
                 have i <= capacity by {
-                    solve();
+                    close();
                 }
                 have to_integer(run_length) == to_integer(at(iteration, run_length) + 1) by {
-                    solve();
+                    close();
                 }
                 have to_integer(lo + at(iteration, run_length)) == to_integer(at(iteration, i)) by {
-                    solve();
+                    close();
                 }
                 have to_integer(lo + run_length) == to_integer(i) by {
                     rewrite(to_integer(run_length), to_integer(at(iteration, run_length) + 1));
                     rewrite(to_integer(i), to_integer(at(iteration, i) + 1));
-                    solve();
+                    close();
                 }
                 have 0 <= run_length and run_length <= i by {
-                    solve();
+                    close();
                 }
                 let run = fold(arena_scan(data, occupied, capacity), {
                     lo: lo, hi: i
                 });
                 have run.hi == i by {
-                    solve();
+                    close();
                 }
                 have to_integer(run.lo + run_length) == to_integer(i) by {
-                    solve();
+                    close();
                 }
                 have 0 <= at(iteration, i) by {
-                    known();
+                    close();
                 }
                 have 0 <= to_integer(capacity - at(iteration, i) - 1) by {
                     close() using {
@@ -190,7 +190,7 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
                     lo: i, hi: i
                 });
                 have 0 <= at(iteration, i) by {
-                    known();
+                    close();
                 }
                 have 0 <= to_integer(capacity - at(iteration, i) - 1) by {
                     close() using {

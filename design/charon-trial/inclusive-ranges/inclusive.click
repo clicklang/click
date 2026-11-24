@@ -29,7 +29,7 @@ fn count_through(n: u32) -> u32 {
                 have iter.end() == n;
                 have iter.is_empty() == false implies iter.end() == n by {
                     intro();
-                    known();
+                    close();
                 }
             } else {
                 have iter.start() == n;
@@ -49,7 +49,7 @@ fn count_through(n: u32) -> u32 {
     have loop(0).iter.is_empty();
     have total == n + 1;
     step_until(function.exit);
-    solve();
+    close();
 }
 
 // The last byte is counted even though its successor cannot fit in a byte.
@@ -88,7 +88,7 @@ fn every_byte() -> u32 {
                 have total == 256u32;
                 have iter.is_empty() implies total == 256u32 by {
                     intro();
-                    known();
+                    close();
                 }
             }
         }
@@ -96,5 +96,5 @@ fn every_byte() -> u32 {
     have loop(0).iter.is_empty();
     have total == 256u32;
     step_until(function.exit);
-    solve();
+    close();
 }

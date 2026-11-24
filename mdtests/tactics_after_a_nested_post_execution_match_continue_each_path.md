@@ -1,6 +1,6 @@
 # Tactics after a nested post-execution `match` continue each path
 
-A `match` nested in a post-execution `if` arm is decided per outcome path, so it does not fork a shared proof state: a tactic written after it in the same arm continues each path after that path's `match` arm. Here the arms establish facts and the trailing `solve()` closes the claims.
+A `match` nested in a post-execution `if` arm is decided per outcome path, so it does not fork a shared proof state: a tactic written after it in the same arm continues each path after that path's `match` arm. Here the arms establish facts and the trailing `close()` closes the claims.
 
 ```c filename=tactics_after_a_nested_post_execution_match_continue_each_path.c
 int read(int* p) { return *p; }
@@ -28,9 +28,9 @@ int read(int* p) {
             Tri::One => { have old(c.model) == Tri::One; },
             Tri::Other(value) => { have old(c.model) == Tri::Other(value); },
         }
-        solve();
+        close();
     } else {
-        solve();
+        close();
     }
 }
 ```

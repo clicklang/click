@@ -15,8 +15,8 @@ theorem t(x: int32, y: int32, z: int32) {
     requires x < y;
     ensures y > 0 by {
         have y > 0 and z == 1;
-        have z == 1 by known();
-        known();
+        have z == 1 by close();
+        close();
     }
 }
 ```

@@ -1,7 +1,7 @@
-# The closing `solve()` returns a composite the body holds in pieces
+# The closing `close()` returns a composite the body holds in pieces
 
 The body owns `p[0..1]` and has stored `1` there, which is exactly the body
-of `initialized(p)`. The closing `solve()` reads the exit through the contract's
+of `initialized(p)`. The closing `close()` reads the exit through the contract's
 resource transition once the body establishes every returned resource
 definitionally, the same rule contract certification applies to a
 `produces` claim, so the explicit `fold` after it is not what closes the
@@ -28,7 +28,7 @@ int32 initialize(int32 p[]) {
     produces initialized(p);
 } by {
     step_until(function.exit);
-    solve();
+    close();
     fold(initialized(p));
 }
 ```

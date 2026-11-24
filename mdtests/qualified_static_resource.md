@@ -31,13 +31,13 @@ void clear() {
     owns both();
     ensures left::count == 0u64;
     ensures right_file::count == old(right_file::count);
-} by { unfold(both()); step_until(function.exit); fold(both()); solve(); }
+} by { unfold(both()); step_until(function.exit); fold(both()); close(); }
 
 unsigned long read_right() {
     owns both();
     ensures result == old(right_file::count);
     ensures result == 19u64;
-} by { unfold(both()); step_until(function.exit); fold(both()); solve(); }
+} by { unfold(both()); step_until(function.exit); fold(both()); close(); }
 
 int main() {
     ensures result == 1;

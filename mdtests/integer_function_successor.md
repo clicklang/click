@@ -8,7 +8,7 @@ function successor(z: Integer) -> Integer {
 theorem successor_unfolds(z: Integer) {
     ensures successor(z) == z + 1 by {
         unfold(successor(z));
-        known();
+        close();
     }
 }
 ```

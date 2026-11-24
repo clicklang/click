@@ -23,18 +23,18 @@ function second(p: Pair) -> uint64 {
 theorem a_program_function_stays_a_call(a: uint64) {
     ensures second(Pair::Pair(a, 7u64)) == 7u64 by {
         unfold(second(Pair::Pair(a, 7u64)));
-        known();
+        close();
     }
 }
 
 theorem from_its_parts(p: uint8*, m: uint64) {
     ensures slice::len(Slice<uint8>::Slice(p, m)) == m by {
         unfold(slice::len(Slice<uint8>::Slice(p, m)));
-        known();
+        close();
     }
     ensures slice::as_ptr(Slice<uint8>::Slice(p, m)) == p by {
         unfold(slice::as_ptr(Slice<uint8>::Slice(p, m)));
-        known();
+        close();
     }
 }
 
@@ -43,7 +43,7 @@ theorem after_a_rewrite(s: Slice<uint8>, p: uint8*, n: uint64) {
     ensures slice::len(s) == n by {
         rewrite(s, Slice<uint8>::Slice(p, n));
         unfold(slice::len(Slice<uint8>::Slice(p, n)));
-        known();
+        close();
     }
 }
 
@@ -51,7 +51,7 @@ theorem an_opaque_slice(s: Slice<uint8>) {
     requires s == Slice<uint8>::Slice(0, 3u64);
     ensures slice::len(s) == 3u64 by {
         unfold(slice::len(s));
-        solve();
+        close();
     }
 }
 ```

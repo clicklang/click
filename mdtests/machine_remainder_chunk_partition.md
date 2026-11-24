@@ -23,8 +23,8 @@ theorem complete_prefix(n: uint64) {
     let remainder: Integer = truncating_remainder(length, 4);
     requires n <= 2147483647u64;
     ensures (((n - n % 4u64) as uint32 as int32) % 4) == 0 by {
-        have tail <= n by known();
-        have to_integer(tail) <= length by known();
+        have tail <= n by close();
+        have to_integer(tail) <= length by close();
         apply(integer::uint64_subtract_to_integer(n, tail));
         apply(integer::uint64_remainder_to_integer(n, 4u64));
         apply(integer::truncation_identity(length, 4));
@@ -32,11 +32,11 @@ theorem complete_prefix(n: uint64) {
         have to_integer(prefix) == quotient * 4 + 0 by {
             rewrite(to_integer(prefix), length - to_integer(tail));
             rewrite(to_integer(tail), remainder);
-            have length - remainder == length + -remainder by known();
-            have quotient * 4 + 0 == quotient * 4 by known();
+            have length - remainder == length + -remainder by close();
+            have quotient * 4 + 0 == quotient * 4 by close();
             rewrite(length - remainder, length + -remainder);
             rewrite(quotient * 4 + 0, quotient * 4);
-            known();
+            close();
         }
 
         // Both narrowing casts preserve the nonnegative prefix.
@@ -50,13 +50,13 @@ theorem complete_prefix(n: uint64) {
         have to_integer(prefix) <= 4294967295 by {
             apply(integer::le_transitive(to_integer(prefix), 2147483647, 4294967295));
         }
-        have to_integer(word) == to_integer(prefix) by known();
-        have 0 <= to_integer(word) by known();
+        have to_integer(word) == to_integer(prefix) by close();
+        have 0 <= to_integer(word) by close();
         have -2147483648 <= to_integer(word) by {
             apply(integer::le_transitive(-2147483648, 0, to_integer(word)));
         }
-        have to_integer(word) <= 2147483647 by known();
-        have to_integer(narrowed) == to_integer(word) by known();
+        have to_integer(word) <= 2147483647 by close();
+        have to_integer(narrowed) == to_integer(word) by close();
 
         apply(integer::nonnegative_remainder_from_reconstruction(to_integer(prefix), 4, quotient, 0));
         apply(integer::int32_remainder_to_integer(narrowed, 4));
@@ -64,9 +64,9 @@ theorem complete_prefix(n: uint64) {
             rewrite(to_integer(narrowed % 4), truncating_remainder(to_integer(narrowed), 4));
             rewrite(to_integer(narrowed), to_integer(word));
             rewrite(to_integer(word), to_integer(prefix));
-            known();
+            close();
         }
-        known();
+        close();
     }
 }
 theorem consume_chunk(n: int32) {
@@ -86,12 +86,12 @@ theorem consume_chunk(n: int32) {
         // Restoring the chunk increments the quotient and leaves the residue unchanged.
         apply(integer::equal_add(shorter, quotient * 4 + remainder, 4, 4));
         apply(integer::multiply_add(quotient, 1, 4));
-        have shorter + 4 == to_integer(n) by known();
+        have shorter + 4 == to_integer(n) by close();
         have (quotient * 4 + remainder) + 4 == (quotient + 1) * 4 + remainder by {
             rewrite((quotient + 1) * 4, quotient * 4 + 1 * 4);
-            known();
+            close();
         }
-        have to_integer(n) == (quotient + 1) * 4 + remainder by known();
+        have to_integer(n) == (quotient + 1) * 4 + remainder by close();
         apply(integer::nonnegative_remainder_from_reconstruction(to_integer(n), 4, quotient + 1, remainder));
 
         apply(integer::int32_nonnegative_subtract_within_value_is_defined(n, 4));
@@ -102,9 +102,9 @@ theorem consume_chunk(n: int32) {
             rewrite(to_integer(n % 4), truncating_remainder(to_integer(n), 4));
             rewrite(to_integer((n - 4) % 4), truncating_remainder(to_integer(n - 4), 4));
             rewrite(to_integer(n - 4), shorter);
-            known();
+            close();
         }
-        known();
+        close();
     }
 }
 theorem short_tail(n: int32) {

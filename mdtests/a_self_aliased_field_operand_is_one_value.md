@@ -54,10 +54,10 @@ void subtract_assign(struct FeeFrac* self, struct FeeFrac* other) {
     }
     have other->size == old(self->size) by {
         rewrite(other, self);
-        known();
+        close();
     }
     step_until(function.exit);
-    solve();
+    close();
 }
 
 void add_assign(struct FeeFrac* self, struct FeeFrac* other) {
@@ -86,10 +86,10 @@ void add_assign(struct FeeFrac* self, struct FeeFrac* other) {
     }
     have other->size == old(self->size) by {
         rewrite(other, self);
-        known();
+        close();
     }
     step_until(function.exit);
-    solve();
+    close();
 }
 ```
 

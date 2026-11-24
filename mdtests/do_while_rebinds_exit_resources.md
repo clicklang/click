@@ -46,7 +46,7 @@ void walk(struct Node* p) {
         owns c: path(p);
         decreases t;
         invariant p != 0;
-        initialize by solve();
+        initialize by close();
         maintain by {
             match t.model {
                 Chain::Empty => { unfold(t); contradiction(p == 0); },
@@ -61,10 +61,10 @@ void walk(struct Node* p) {
             }
         }
     }
-    have c.model != Path::Top by known();
+    have c.model != Path::Top by close();
     match c.model {
         Path::Top => { contradiction(c.model == Path::Top); },
-        Path::Step(identity, before) => { step_until(function.exit); solve(); },
+        Path::Step(identity, before) => { step_until(function.exit); close(); },
     }
 }
 ```

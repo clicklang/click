@@ -2,7 +2,7 @@
 
 `Stable` promises that the cell either keeps its value or grows. `increment`
 always grows it, so the clause is refined through the right arm only. The
-proof establishes that arm with a `have`, and `known()` closes the
+proof establishes that arm with a `have`, and `close()` closes the
 disjunction from it: one side being a fact is all a disjunction needs.
 
 ```c filename=disjunctive_step.c
@@ -37,7 +37,7 @@ void increment(int32* state) {
 theorem increment_is_stable() {
     ensures Stable(&increment) by {
         unfold(Stable(&increment));
-        solve();
+        close();
     }
 }
 

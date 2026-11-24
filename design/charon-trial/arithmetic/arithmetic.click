@@ -25,8 +25,8 @@ fn low_byte(value: u32) -> u8 {
 fn high_bit(value: u32) -> bool {
     ensures result == (if value > 2147483647u32 { true } else { false });
 } by {
-    if value > 2147483647u32 { step_until(function.exit); solve(); }
-    else { step_until(function.exit); solve(); }
+    if value > 2147483647u32 { step_until(function.exit); close(); }
+    else { step_until(function.exit); close(); }
 }
 
 fn shifted_byte(value: u8, count: u32) -> u8 {
@@ -87,4 +87,4 @@ fn conditional_divide(value: u32, divisor: u32, skip: bool) -> u32 {
     requires skip == true or divisor != 0u32;
     ensures skip == true implies result == 0u32;
     ensures skip == false implies result == value / divisor;
-} by { if skip == true { step_until(function.exit); solve(); } else { have divisor != 0u32 by { cases { skip == true => { contradiction(skip == true); } divisor != 0u32 => { known(); } } } step_until(function.exit); solve(); } }
+} by { if skip == true { step_until(function.exit); close(); } else { have divisor != 0u32 by { cases { skip == true => { contradiction(skip == true); } divisor != 0u32 => { close(); } } } step_until(function.exit); close(); } }

@@ -52,7 +52,7 @@ resource context(p: struct node*, root: struct root*) { field model: Context; ma
 void helper(struct node *p, struct node *q, struct root *root) {
  consumes before: context(p, root);
  produces after: context(q, root);
-} by { match before.model { Context::Top => { unfold(before); step_until(function.exit); let after = fold(context(q, root), {model: Context::Top}); solve(); } } }
+} by { match before.model { Context::Top => { unfold(before); step_until(function.exit); let after = fold(context(q, root), {model: Context::Top}); close(); } } }
 void probe(struct node *p, struct root *root) {
  owns p->tag; owns p->right;
  consumes b: shell(p->right); consumes c: context(p, root);
@@ -62,21 +62,21 @@ void probe(struct node *p, struct root *root) {
  match bm { Branch::At(nid, lm) => {
  match lm { Leaf::At(rid) => {
   let {child: near_tree} = unfold(b);
-  have p->right == sid by { known(); }
+  have p->right == sid by { close(); }
   step(); step(); step(); step(); step(); step();
   let { after: c } = step(helper, { before: c });
   step();
   let {child: far_tree} = unfold(near_tree);
-  have cursor == nid by { known(); }
+  have cursor == nid by { close(); }
   step();
   unfold(far_tree);
-  have near == rid by { known(); }
+  have near == rid by { close(); }
   have near->tag == rid->tag by { normalize() using { near == rid; }; }
   step();
   have near->tag == rid->tag by { normalize() using { near == rid; }; }
   have rid->tag == 0u64 by { normalize() using { near == rid; }; }
   step_until(function.exit);
-  known();
+  close();
  } }
  } }
  } }

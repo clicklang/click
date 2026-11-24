@@ -21,11 +21,11 @@ int32 keep(int32 a, int32 c) {
     ensures (if c > 0 { a + 1 } else { a }) > result - 1 by {
         step_until(function.exit);
         if c > 0 {
-            have (if c > 0 { a + 1 } else { a }) == a + 1 by solve();
-            solve();
+            have (if c > 0 { a + 1 } else { a }) == a + 1 by close();
+            close();
         } else {
-            have (if c > 0 { a + 1 } else { a }) == a by solve();
-            solve();
+            have (if c > 0 { a + 1 } else { a }) == a by close();
+            close();
         }
     }
 }

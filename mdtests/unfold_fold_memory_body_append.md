@@ -19,7 +19,7 @@ int32 prefix_sum_equation(int32 a[], int32 n) {
     ensures icount(a, 0, n) == icount(a, 0, n - 1) + to_integer(a[n - 1]) by {
         step_until(function.exit);
         unfold(icount(a, 0, n));
-        solve();
+        close();
     }
 }
 ```

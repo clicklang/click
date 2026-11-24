@@ -41,7 +41,7 @@ int32 note(int32 x) {
         }
     }
     step();
-    solve();
+    close();
 }
 ```
 

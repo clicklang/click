@@ -94,7 +94,7 @@ int32 increment_value(int32 x) {
     ensures predicate_value: one_more(x, result) by {
         step_until(function.exit);
         unfold(one_more(x, result));
-        solve();
+        close();
     }
 }
 
@@ -119,7 +119,7 @@ int32 range_helpers() {
     ensures any_has_one: (0..3).any(|k| { k == 1 }) by {
         step_until(function.exit);
         witness(1);
-        solve();
+        close();
     }
 }
 
@@ -128,7 +128,7 @@ int32 identity_permutation(int32 p[3]) {
     ensures same_multiset: permutation::permutation(p, p, 0, 3) by {
         step_until(function.exit);
         unfold(permutation::permutation(p, p, 0, 3));
-        solve();
+        close();
     }
 }
 ```

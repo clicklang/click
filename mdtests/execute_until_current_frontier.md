@@ -54,7 +54,7 @@ int32 execute_until_after_step(int32 x) {
         step();
         step_until(region(3).entry);
         step();
-        solve();
+        close();
     }
 }
 
@@ -69,7 +69,7 @@ int32 execute_until_selected_branch(int32 flag) {
         step_until(region(3).entry);
         step_until(region(5).entry);
         step();
-        solve();
+        close();
     }
 }
 
@@ -88,7 +88,7 @@ int32 execute_until_after_advance(int32 flag) {
         }
         step_until(region(6).entry);
         step();
-        solve();
+        close();
     }
 }
 ```

@@ -10,7 +10,7 @@ theorem typed_witness() {
     } by {
         intro();
         witness(0);
-        solve();
+        close();
     }
 }
 
@@ -21,7 +21,7 @@ theorem typed_witness_under_implication() {
         intro();
         intro();
         witness(0);
-        solve();
+        close();
     }
 }
 

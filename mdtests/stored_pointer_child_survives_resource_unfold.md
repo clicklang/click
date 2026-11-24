@@ -50,7 +50,7 @@ void set(struct node* p, struct node* q, struct node* r) {
     let { whole: packaged } = pack(p, tmp, { child: child });
     let { child: returned } = unfold(packaged);
     let whole = fold(box(p), { tag: returned.tag, child: returned });
-    step(); solve();
+    step(); close();
 }
 ```
 ```expect

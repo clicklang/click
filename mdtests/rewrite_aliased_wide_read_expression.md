@@ -40,12 +40,12 @@ uint64 lowbit(struct item* root, struct item* parent, struct item* node) {
     let { child: leaf } = unfold(child);
     unfold(leaf);
     unfold(color_bit(Color::Red));
-    have (node->word & 1) == color_bit(Color::Red) by { known(); }
-    have color_bit(Color::Red) == 0 by { known(); }
+    have (node->word & 1) == color_bit(Color::Red) by { close(); }
+    have color_bit(Color::Red) == 0 by { close(); }
     have (node->word & 1) == 0 by {
         rewrite((node->word & 1), color_bit(Color::Red));
         rewrite(color_bit(Color::Red), 0);
-        known();
+        close();
     }
 }
 ```

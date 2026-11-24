@@ -22,8 +22,8 @@ void advance(int32 *p, int32 *q, int32 i) {
     mark before;
     step();
     step();
-    have separate(memory(old(p)[0..2]), memory(q[0..2])) by { known(); }
-    have separate(memory(at(before, p)[0..2]), memory(q[0..2])) by { known(); }
+    have separate(memory(old(p)[0..2]), memory(q[0..2])) by { close(); }
+    have separate(memory(at(before, p)[0..2]), memory(q[0..2])) by { close(); }
     have i == 1;
     have i != 0;
     have separate(memory(old(p)[i]), memory(old(p)[0])) by {

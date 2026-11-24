@@ -24,9 +24,9 @@ int32* resize() {
 } by {
     step_until(statement(1).call(0).entry);
     step();
-    have at(statement(1).call(0).exit, p == 0) by { known(); }
+    have at(statement(1).call(0).exit, p == 0) by { close(); }
     step();
-    have p == statement(1).call(0).result by { known(); }
+    have p == statement(1).call(0).result by { close(); }
     step();
     fold(allocation_result(result));
 }

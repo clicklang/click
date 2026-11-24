@@ -34,16 +34,16 @@ int32 fill3_array_loop(int32 p[3]) {
             0 <= k and k < i implies p[k] == k
         };
 
-        initialize by solve();
+        initialize by close();
         maintain by {
             step();
             step();
             have to_integer(i) == to_integer(at(region(3).entry, i) + 1);
-            solve();
+            close();
         }
     }
     step();
-    have 3 <= at(loop(0).exit, i) by known();
+    have 3 <= at(loop(0).exit, i) by close();
     have 0 < at(loop(0).exit, i) by {
         apply(click::integer::int32_less_than_less_equal_transitive(0, 3, at(loop(0).exit, i)));
     }
@@ -53,7 +53,7 @@ int32 fill3_array_loop(int32 p[3]) {
     have 2 < at(loop(0).exit, i) by {
         apply(click::integer::int32_less_than_less_equal_transitive(2, 3, at(loop(0).exit, i)));
     }
-    solve();
+    close();
 }
 ```
 

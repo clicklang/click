@@ -25,7 +25,7 @@ int32 mul_i32(int32 a, int32 b) {
     have to_integer(a * b) == to_integer(a) * to_integer(b) by {
         close() using { -2147483648 <= to_integer(a) * to_integer(b); to_integer(a) * to_integer(b) <= 2147483647; };
     };
-    solve();
+    close();
 }
 
 uint32 wrapping_add_u32(uint32 a, uint32 b) {
@@ -123,8 +123,8 @@ bool below_i32(int32 a, int32 b) {
     ensures a < b implies result;
     ensures (a == -2147483648 and b == 0) implies result;
 } by {
-    if a == -2147483648 and b == 0 { step_until(function.exit); solve(); }
-    else { step_until(function.exit); solve(); }
+    if a == -2147483648 and b == 0 { step_until(function.exit); close(); }
+    else { step_until(function.exit); close(); }
 }
 
 bool below_u32(uint32 a, uint32 b) {
@@ -132,8 +132,8 @@ bool below_u32(uint32 a, uint32 b) {
     ensures a < b implies result;
     ensures (a == 2147483648u32 and b == 0u32) implies not result;
 } by {
-    if a == 2147483648u32 and b == 0u32 { step_until(function.exit); solve(); }
-    else { step_until(function.exit); solve(); }
+    if a == 2147483648u32 and b == 0u32 { step_until(function.exit); close(); }
+    else { step_until(function.exit); close(); }
 }
 
 bool sign_bit_set(uint32 u) {

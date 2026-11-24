@@ -19,7 +19,7 @@ theorem explicit_chain_through_literals(a: int32, b: int32) {
     requires a <= 1;
     requires 2 <= b;
     ensures a < b by {
-        have 1 < 2 by { known(); }
+        have 1 < 2 by { close(); }
         have a < 2 by {
             apply(click::integer::int32_less_equal_less_than_transitive(a, 1, 2));
         }

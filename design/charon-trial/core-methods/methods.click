@@ -20,12 +20,12 @@ fn smaller(a: u32, b: u32) -> u32 {
     if a <= b {
         have u32::min(a, b) == a by {
             unfold(u32::min(a, b));
-            solve();
+            close();
         }
     } else {
         have u32::min(a, b) == b by {
             unfold(u32::min(a, b));
-            solve();
+            close();
         }
     }
 }
@@ -41,7 +41,7 @@ fn clamp_add(a: u32, b: u32) -> u32 {
     have u32::checked_add(a, b) == Option<u32>::Some(a + b) by {
         unfold(u32::checked_add(a, b));
         have to_integer(a) + to_integer(b) <= 4294967295;
-        solve();
+        close();
     }
 }
 
@@ -51,7 +51,7 @@ fn spend(a: u32, b: u32) -> u32 {
 } by {
     have u32::checked_sub(a, b) == Option<u32>::Some(a - b) by {
         unfold(u32::checked_sub(a, b));
-        solve();
+        close();
     }
 }
 
@@ -111,44 +111,44 @@ fn reverse_three(xs: &mut [i64]) {
     ensures xs[2] == old(xs[0]);
 } by {
     step_until(function.exit);
-    have 1u64 < xs.len() and 1u64 != 0u64 and 1u64 != 2u64 by { solve(); }
+    have 1u64 < xs.len() and 1u64 != 0u64 and 1u64 != 2u64 by { close(); }
     have xs[1] == old(xs[1]) by {
         instantiate(forall (k: usize) { k < xs.len() and k != 0u64 and k != 2u64 implies xs[k] == old(xs[k]) }, 1u64);
-        known();
+        close();
     }
 }
 
 theorem i8_wrapping_add_wraps() {
     ensures i8::wrapping_add(127i8, 1i8) == -128i8 by {
         unfold(i8::wrapping_add(127i8, 1i8));
-        solve();
+        close();
     }
 }
 
 theorem u8_wrapping_add_wraps() {
     ensures u8::wrapping_add(200u8, 100u8) == 44u8 by {
         unfold(u8::wrapping_add(200u8, 100u8));
-        solve();
+        close();
     }
 }
 
 theorem i16_saturating_add_saturates() {
     ensures i16::saturating_add(30000i16, 10000i16) == 32767i16 by {
         unfold(i16::saturating_add(30000i16, 10000i16));
-        solve();
+        close();
     }
 }
 
 theorem i8_unsigned_abs_of_min() {
     ensures i8::unsigned_abs(-128i8) == 128u8 by {
         unfold(i8::unsigned_abs(-128i8));
-        solve();
+        close();
     }
 }
 
 theorem i32_abs_diff_spans_the_type() {
     ensures i32::abs_diff(-2147483648i32, 2147483647i32) == 4294967295u32 by {
         unfold(i32::abs_diff(-2147483648i32, 2147483647i32));
-        solve();
+        close();
     }
 }

@@ -1,7 +1,7 @@
 # Pointer stores preserve return facts
 
 Resolving stored symbolic pointers must preserve the comparisons used by
-`known()`, rather than replace their goals with an unrecorded literal truth.
+`close()`, rather than replace their goals with an unrecorded literal truth.
 
 ```c filename=store.c
 struct pair { int32 *left; int32 *right; };
@@ -18,7 +18,7 @@ void set(struct pair* owner, int32* left, int32* right) {
     ensures owner->right == right;
 } by {
     step(); step(); step();
-    known(); known(); known();
+    close(); close(); close();
 }
 ```
 ```expect

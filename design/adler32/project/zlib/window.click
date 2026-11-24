@@ -9,7 +9,7 @@ theorem zlib_remaining_step(total: uint64, remaining: uint64, amount: uint64) {
  ensures to_integer(remaining - amount) <= to_integer(total) by close() using { remaining <= total; total <= 5551u64; amount <= remaining; };
  ensures to_integer(total - (remaining - amount)) <= to_integer(5551u64) by close() using { remaining <= total; total <= 5551u64; amount <= remaining; };
  ensures to_integer(remaining - amount) == to_integer(remaining) - to_integer(amount) by {
-  have to_integer(remaining - amount) == to_integer(remaining) - to_integer(amount); known();
+  have to_integer(remaining - amount) == to_integer(remaining) - to_integer(amount); close();
  }
  ensures to_integer(zlib_prefix_count(total, remaining - amount)) == to_integer(zlib_prefix_count(total, remaining)) + to_integer(amount) by {
   have to_integer(total - remaining) <= to_integer(22208u64) by close() using { remaining <= total; total <= 5551u64; };
@@ -42,7 +42,7 @@ theorem zlib_block_lane_defined(bytes: uint8[], total: uint64, remaining: uint64
   have to_integer(total - remaining) <= to_integer(5535u64) by close() using { remaining <= total; total <= 5551u64; 16u64 <= remaining; };
   have to_integer(total - remaining) <= to_integer(22208u64) by close() using { to_integer(total - remaining) <= to_integer(5535u64); };
   apply(zlib_prefix_observation(total, remaining));
-  solve();
+  close();
  }
 }
 
@@ -72,7 +72,7 @@ theorem zlib_block_lane(bytes: uint8[], total: uint64, remaining: uint64, lane: 
    to_integer(lane) <= 15;
   };
   all {
-      0 <= to_integer((zlib_prefix_count(total, remaining) + lane)) => { known(); }
+      0 <= to_integer((zlib_prefix_count(total, remaining) + lane)) => { close(); }
       to_integer((zlib_prefix_count(total, remaining) + lane)) < 5552 => { close() using { to_integer(zlib_prefix_count(total, remaining) + lane) <= 5550; }; }
   }
  }

@@ -32,8 +32,8 @@ tactic expose(root: struct slot*) {
     ensures defined(root->p);
 } by {
     match state.shape {
-        Shape::A => { let { child: out } = unfold(state); have defined(root->p) by { known(); } },
-        Shape::B => { let { child: out } = unfold(state); have defined(root->p) by { known(); } },
+        Shape::A => { let { child: out } = unfold(state); have defined(root->p) by { close(); } },
+        Shape::B => { let { child: out } = unfold(state); have defined(root->p) by { close(); } },
     }
 }
 void user(struct slot* root) {
@@ -51,8 +51,8 @@ tactic expose_reversed(root: struct slot*) {
     ensures defined(root->p);
 } by {
     match state.shape {
-        Shape::A => { let { child: out } = unfold(state); have defined(root->p) by { known(); } },
-        Shape::B => { let { child: out } = unfold(state); have defined(root->p) by { known(); } },
+        Shape::A => { let { child: out } = unfold(state); have defined(root->p) by { close(); } },
+        Shape::B => { let { child: out } = unfold(state); have defined(root->p) by { close(); } },
     }
 }
 void reversed(struct slot* root) {
@@ -109,8 +109,8 @@ tactic expose_chain(root: struct slot*) {
     ensures defined(root->next->p);
 } by {
     match state.shape {
-        Shape::A => { let { child: out } = unfold(state); have defined(root->next) by { known(); } have defined(root->next->p) by { solve(); } },
-        Shape::B => { let { child: out } = unfold(state); have defined(root->next) by { known(); } have defined(root->next->p) by { solve(); } },
+        Shape::A => { let { child: out } = unfold(state); have defined(root->next) by { close(); } have defined(root->next->p) by { close(); } },
+        Shape::B => { let { child: out } = unfold(state); have defined(root->next) by { close(); } have defined(root->next->p) by { close(); } },
     }
 }
 void chained(struct slot* root) {

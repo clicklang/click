@@ -43,8 +43,8 @@ uint64 consumed(parse_buffer * const b) {
 } by {
     step_until(statement(2).entry);
     step();
-    have separate(memory(out[0..1]), memory(b->content)) by { solve(); }
-    have separate(statement(2).footprint, memory(b->content)) by { solve(); }
+    have separate(memory(out[0..1]), memory(b->content)) by { close(); }
+    have separate(statement(2).footprint, memory(b->content)) by { close(); }
     have b->content == at(statement(2).entry, b->content) by {
         preserve(memory(b->content), statement(2));
     }

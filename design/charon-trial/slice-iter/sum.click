@@ -27,7 +27,7 @@ fn sum(bytes: &[u8]) -> i32 {
         rewrite(bytes.len() - loop(0).iter.len(), 0u64);
         have 0u64 <= 0u64;
         unfold(prefix(bytes, 0u64));
-        solve();
+        close();
     }
     have 0 <= to_integer(total) and to_integer(total) <= 255 * to_integer(bytes.len() - loop(0).iter.len());
     have to_integer(total) == prefix(bytes, bytes.len() - loop(0).iter.len());
@@ -51,7 +51,7 @@ fn sum(bytes: &[u8]) -> i32 {
                     have to_integer(0u64) <= to_integer(bytes.len() - iter.len());
                     have to_integer(bytes.len() - iter.len()) < to_integer(18446744073709551615u64);
                     unfold(prefix(bytes, (bytes.len() - iter.len()) + 1u64));
-                    solve();
+                    close();
                 }
                 have to_integer((bytes.len() - iter.len())) + 1 <= 18446744073709551615;
                 have to_integer((bytes.len() - iter.len()) + 1u64) == to_integer((bytes.len() - iter.len())) + 1;
@@ -65,7 +65,7 @@ fn sum(bytes: &[u8]) -> i32 {
                 apply(pointer_association(bytes, bytes.len() - at(iteration, iter.len()), 1u64));
                 have iter.as_slice() == bytes + ((bytes.len() - at(iteration, iter.len())) + 1u64) by {
                     rewrite(bytes + ((bytes.len() - at(iteration, iter.len())) + 1u64), (bytes + (bytes.len() - at(iteration, iter.len()))) + 1u64);
-                    known();
+                    close();
                 }
                 step_until(read(0).entry);
                 let { result: loaded_byte } = step();
@@ -84,7 +84,7 @@ fn sum(bytes: &[u8]) -> i32 {
                 have iter.len() <= bytes.len();
                 have iter.as_slice() == bytes + (bytes.len() - iter.len()) by {
                     rewrite((bytes.len() - iter.len()), (bytes.len() - at(iteration, iter.len())) + 1u64);
-                    known();
+                    close();
                 }
                 have iter.len() < at(iteration, iter.len());
             } else {

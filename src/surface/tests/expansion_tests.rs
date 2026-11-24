@@ -6691,7 +6691,8 @@ fn branch_interface_fixture_proofs_verify_expand_and_recheck() {
             .unwrap_or_else(|error| panic!("{name}: {}", error.message()));
         // The nested-branch fixture is already fully expanded. For the others,
         // expand their closing tactic and reparse/recheck the full proof.
-        if let Some(offset) = source.rfind("solve();") {
+        if name != "step_nested_branches.md" {
+            let offset = source.rfind("close();").unwrap();
             let position = expansion::position_at_offset(source, offset);
             let expanded =
                 expand_c_tactic_source_at(source, &sources, position.line, position.column)

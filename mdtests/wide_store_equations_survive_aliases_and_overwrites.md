@@ -24,11 +24,11 @@ void put_u(uint64* p, uint64* q) {
 } by {
     step();
     mark first;
-    have *p == 18364758544493064720 as uint64 by { known(); }
-    have *q == 18364758544493064720 as uint64 by { rewrite(q, p); known(); }
+    have *p == 18364758544493064720 as uint64 by { close(); }
+    have *q == 18364758544493064720 as uint64 by { rewrite(q, p); close(); }
     step();
-    have *p == 9 by { known(); }
-    have at(first, *p) == 18364758544493064720 as uint64 by { known(); }
+    have *p == 9 by { close(); }
+    have at(first, *p) == 18364758544493064720 as uint64 by { close(); }
 }
 void put_i(int64* p, int64* q) {
     requires p == q;
@@ -37,11 +37,11 @@ void put_i(int64* p, int64* q) {
 } by {
     step();
     mark first;
-    have *p == -7 by { known(); }
-    have *q == -7 by { rewrite(q, p); known(); }
+    have *p == -7 by { close(); }
+    have *q == -7 by { rewrite(q, p); close(); }
     step();
-    have *p == 9 by { known(); }
-    have at(first, *p) == -7 by { known(); }
+    have *p == 9 by { close(); }
+    have at(first, *p) == -7 by { close(); }
 }
 ```
 

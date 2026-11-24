@@ -46,7 +46,7 @@ void rotate_child_link(struct rb_node* gparent, struct rb_node* tmp) {
         invariant parent == gparent->rb_left;
         invariant parent == old(gparent->rb_left);
         decreases 0;
-        initialize by solve();
+        initialize by close();
         maintain by {
             let { child: c } = unfold(s);
             unfold(c);
@@ -54,9 +54,9 @@ void rotate_child_link(struct rb_node* gparent, struct rb_node* tmp) {
             have gparent->rb_left == parent by { close() using { parent == gparent->rb_left; }; }
             have separate(memory(gparent->rb_left), memory(gparent->rb_left->rb_right)) by {
                 rewrite(gparent->rb_left, parent);
-                known();
+                close();
             }
-            have defined(gparent->rb_left) by { known(); }
+            have defined(gparent->rb_left) by { close(); }
             mark before_store;
             step();
             mark after_store;
@@ -68,10 +68,10 @@ void rotate_child_link(struct rb_node* gparent, struct rb_node* tmp) {
                 }
                 preserve(memory(gparent->rb_left), loop(0).statement(0));
             }
-            have parent == at(before_store, gparent->rb_left) by { known(); }
+            have parent == at(before_store, gparent->rb_left) by { close(); }
             have parent->__rb_parent_color == at(before_store, parent->__rb_parent_color) by {
                 rewrite(parent, at(before_store, gparent->rb_left));
-                known();
+                close();
             }
             have separate(loop(0).statement(0).footprint, memory(gparent->rb_left)) by {
                 close() using { at(before_store, separate(memory(gparent->rb_left), memory(gparent->rb_left->rb_right))); };

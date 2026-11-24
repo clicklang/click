@@ -24,10 +24,10 @@ void keep(struct node* p) {
     match held.model {
         Ref::At(identity) => {
             unfold(held);
-            have p == identity by known();
-            have Ref::At(p) == Ref::At(identity) by { solve(); }
+            have p == identity by close();
+            have Ref::At(p) == Ref::At(identity) by { close(); }
             let held = fold(token(p), { model: Ref::At(identity) });
-            step_until(function.exit); solve();
+            step_until(function.exit); close();
         },
     }
 }

@@ -33,7 +33,7 @@ struct node* unpack(struct node* node) {
     unfold(packed(node));
     step_until(function.exit);
     fold(packed(node));
-    known();
+    close();
     close() using {
         aligned(result, 8);
         node->word == address(result) + (node->word & 1);

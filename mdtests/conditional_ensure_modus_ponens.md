@@ -48,10 +48,10 @@ int32 use_five(int32* cell) {
             };
         }
         step_until(function.exit);
-        known();
+        close();
     } else {
         step_until(function.exit);
-        known();
+        close();
     }
 }
 ```

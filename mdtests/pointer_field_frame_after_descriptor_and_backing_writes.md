@@ -64,31 +64,31 @@ int32 owned_string_push(struct owned_string* owner, int32 value) {
     step();
     have 0 <= to_integer(old(owner->len) + 1);
     have owner->data == old(owner->data) by {
-        solve();
+        close();
     }
     have terminated_at(owner->data, owner->len) by {
         unfold(terminated_at(owner->data, owner->len));
-        solve();
+        close();
     }
     have owner->data[old(owner->len)] == value by {
-        solve();
+        close();
     }
     have owner->data[owner->len] == 0 by {
         unfold(terminated_at(owner->data, owner->len));
-        known();
+        close();
     }
     fold(owned_string(owner));
     have to_integer(owner->len) == to_integer((old(owner->len) + 1)) by {
         rewrite(to_integer(owner->len), to_integer(at(region(3).entry, (index + 1))));
-        known();
+        close();
     }
-    known();
-    known();
-    known();
-    known();
-    known();
-    known();
-    known();
+    close();
+    close();
+    close();
+    close();
+    close();
+    close();
+    close();
 }
 
 ```

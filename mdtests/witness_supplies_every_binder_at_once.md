@@ -9,7 +9,7 @@ theorem split_sum(n: Integer) {
     requires 0 <= n;
     ensures exists (a: Integer, b: Integer) { a + b == n and 0 <= a and 0 <= b } by {
         witness(n, 0);
-        solve();
+        close();
     }
 }
 
@@ -18,7 +18,7 @@ theorem reopen(n: Integer) {
     ensures exists (b: Integer, a: Integer) { a + b == n and 0 <= a and 0 <= b } by {
         let (a, b) = obtain(exists (a: Integer, b: Integer) { a + b == n and 0 <= a and 0 <= b });
         witness(b, a);
-        solve();
+        close();
     }
 }
 ```

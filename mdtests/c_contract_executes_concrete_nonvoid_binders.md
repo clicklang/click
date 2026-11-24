@@ -17,7 +17,7 @@ int32 echo(int32 x) {
 theorem echo_is_echo() executes echo(int32 x) {
     ensures Echo(&echo) as { cell: c } by {
         step(echo, { marker: c });
-        solve();
+        close();
     }
 }
 ```

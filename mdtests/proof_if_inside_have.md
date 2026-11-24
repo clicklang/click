@@ -20,13 +20,13 @@ int32 sign_partition(int32 x) {
         step();
         have y <= 0 or y > 0 by {
             if y <= 0 {
-                solve();
+                close();
             } else {
-                solve();
+                close();
             }
         }
         step();
-        solve();
+        close();
     }
 }
 ```

@@ -34,7 +34,7 @@ void release(int32* pool, int32* p) {
 }
 int32 lifecycle() { ensures result == 0 or result == 2; } by {
     step(); step(); step(); step();
-    branch { true => { step_until(function.exit); solve(); } false => {} }
+    branch { true => { step_until(function.exit); close(); } false => {} }
     step(); step();
     fold(authority(slot(&pool, _)));
     have count(slot(&pool, p)) == 0;

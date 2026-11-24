@@ -14,21 +14,21 @@ tactic sized_link_replacement_distinct(child: struct rb_node*, replacement: stru
 } by {
     match link.model {
         SizedContext::Top => {
-            have link.model == old(link.model) by { known(); }
+            have link.model == old(link.model) by { close(); }
             have sized_context_parent(link.model, 0) == 0 by {
                 rewrite(link.model, SizedContext::Top);
-                unfold(sized_context_parent(SizedContext::Top, 0)); known();
+                unfold(sized_context_parent(SizedContext::Top, 0)); close();
             }
             have sized_context_parent(link.model, 0) == 0 or replacement != sized_context_parent(link.model, 0) by {
-                known();
+                close();
             }
         },
         SizedContext::Left(a, above, shade, value, sibling_model, up_model) => {
             let { frames: frames } = unfold(link);
             let { metadata: metadata, sibling: sibling, up: up } = unfold(frames);
-            have separate(memory(replacement->__rb_parent_color), memory(a->__rb_parent_color)) by { known(); }
+            have separate(memory(replacement->__rb_parent_color), memory(a->__rb_parent_color)) by { close(); }
             have replacement != a by {
-                known();
+                close();
             }
             let frames = fold(sized_context_at(child, root->rb_node, 0, previous), {
                 model: SizedContext::Left(a, above, shade, value, sibling_model, up_model),
@@ -40,21 +40,21 @@ tactic sized_link_replacement_distinct(child: struct rb_node*, replacement: stru
             });
             have sized_context_parent(link.model, 0) == a by {
                 rewrite(link.model, SizedContext::Left(a, above, shade, value, sibling_model, up_model));
-                unfold(sized_context_parent(SizedContext::Left(a, above, shade, value, sibling_model, up_model), 0)); known();
+                unfold(sized_context_parent(SizedContext::Left(a, above, shade, value, sibling_model, up_model), 0)); close();
             }
             have replacement != sized_context_parent(link.model, 0) by {
-                rewrite(sized_context_parent(link.model, 0), a); known();
+                rewrite(sized_context_parent(link.model, 0), a); close();
             }
             have sized_context_parent(link.model, 0) == 0 or replacement != sized_context_parent(link.model, 0) by {
-                known();
+                close();
             }
         },
         SizedContext::Right(a, above, shade, value, sibling_model, up_model) => {
             let { frames: frames } = unfold(link);
             let { metadata: metadata, sibling: sibling, up: up } = unfold(frames);
-            have separate(memory(replacement->__rb_parent_color), memory(a->__rb_parent_color)) by { known(); }
+            have separate(memory(replacement->__rb_parent_color), memory(a->__rb_parent_color)) by { close(); }
             have replacement != a by {
-                known();
+                close();
             }
             let frames = fold(sized_context_at(child, root->rb_node, 0, previous), {
                 model: SizedContext::Right(a, above, shade, value, sibling_model, up_model),
@@ -66,13 +66,13 @@ tactic sized_link_replacement_distinct(child: struct rb_node*, replacement: stru
             });
             have sized_context_parent(link.model, 0) == a by {
                 rewrite(link.model, SizedContext::Right(a, above, shade, value, sibling_model, up_model));
-                unfold(sized_context_parent(SizedContext::Right(a, above, shade, value, sibling_model, up_model), 0)); known();
+                unfold(sized_context_parent(SizedContext::Right(a, above, shade, value, sibling_model, up_model), 0)); close();
             }
             have replacement != sized_context_parent(link.model, 0) by {
-                rewrite(sized_context_parent(link.model, 0), a); known();
+                rewrite(sized_context_parent(link.model, 0), a); close();
             }
             have sized_context_parent(link.model, 0) == 0 or replacement != sized_context_parent(link.model, 0) by {
-                known();
+                close();
             }
         },
     }

@@ -7,7 +7,7 @@ theorem incremented_zero_is_one(before: int32, after: int32) {
     ensures after == 1 by {
         rewrite(after, before + 1);
         rewrite(before, 0);
-        solve();
+        close();
     }
 }
 
@@ -16,7 +16,7 @@ theorem int32_equality_transitive(first: int32, second: int32, third: int32) {
     requires second == third;
 
     ensures first == third by {
-        solve();
+        close();
     }
 }
 
@@ -61,7 +61,7 @@ int32 input_cursor_init(
 } by {
     step_until(function.exit);
     fold(input_cursor(owner));
-    solve();
+    close();
 }
 
 int32 input_cursor_remaining(struct input_cursor* owner) {
@@ -96,7 +96,7 @@ int32 input_cursor_take(struct input_cursor* owner) {
     step();
     step();
     fold(input_cursor(owner));
-    solve();
+    close();
 }
 
 int32 input_cursor_clone(
@@ -152,7 +152,7 @@ int32 input_cursor_clone(
             preserve(memory(source->data), statement(1));
         }
         rewrite(source->data, at(after_pos, source->data));
-        known();
+        close();
     }
     mark after_len;
     step();
@@ -164,7 +164,7 @@ int32 input_cursor_clone(
             preserve(memory(source->data), statement(2));
         }
         rewrite(source->data, at(after_len, source->data));
-        known();
+        close();
     }
     step();
     have target->data == old(source->data);
@@ -172,10 +172,10 @@ int32 input_cursor_clone(
     have separate(memory(*target), memory(target->data[0..target->len])) by {
         rewrite(target->data, old(source->data));
         rewrite(target->len, old(source->len));
-        known();
+        close();
     }
     fold(input_cursor(target));
-    solve();
+    close();
 }
 
 int32 input_cursor_shared_pipeline(
@@ -215,7 +215,7 @@ int32 input_cursor_shared_pipeline(
     have left->data == data;
     step();
     step();
-    have left->pos < left->len by { known(); }
+    have left->pos < left->len by { close(); }
     have right->pos < right->len by {
         close() using {
             1 <= length;
@@ -227,16 +227,16 @@ int32 input_cursor_shared_pipeline(
     have right->data == data;
     have left->data == data by {
 
-        known();
+        close();
     }
-    have left->len == length by { known(); }
+    have left->len == length by { close(); }
     step();
     step();
-    have right->len == length by { known(); }
-    have left->len == length by { known(); }
+    have right->len == length by { close(); }
+    have left->len == length by { close(); }
     have right->pos == 0 by {
 
-        known();
+        close();
     }
     have 0 < right->len by {
         close() using {
@@ -251,7 +251,7 @@ int32 input_cursor_shared_pipeline(
     step();
     step();
     have right_value == right->data[right->pos] by {
-        known();
+        close();
     }
     have right->pos == 0;
     have right->data == data;
@@ -264,5 +264,5 @@ int32 input_cursor_shared_pipeline(
     }
     apply(int32_equality_transitive(right_value, right->data[right->pos], data[0]));
     step();
-    solve();
+    close();
 }

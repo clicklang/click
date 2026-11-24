@@ -36,20 +36,20 @@ int32 advance_selected_pointer(int32* left, int32* right, int32 choose_left) {
             true => {
                 step();
                 have selected == left or selected == right by {
-                    have selected == left by known();
-                    known();
+                    have selected == left by close();
+                    close();
                 }
             }
             false => {
                 step();
                 have selected == left or selected == right by {
-                    have selected == right by known();
-                    known();
+                    have selected == right by close();
+                    close();
                 }
             }
         }
         step();
-        solve();
+        close();
     }
 }
 ```

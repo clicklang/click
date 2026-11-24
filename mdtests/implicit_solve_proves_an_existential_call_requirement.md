@@ -14,7 +14,7 @@ int32 caller(int32 a) {
     ensures result == a;
 } by {
     step();
-    step(); solve();
+    step(); close();
 }
 ```
 

@@ -19,7 +19,7 @@ theorem selected_branch(c: Color, x: int32, unused: Payload) {
         unfold(wrapped(c, x, unused));
         rewrite(c, Color::Black);
         rewrite(opaque(x), 1);
-        known();
+        close();
     }
 }
 theorem distinct_constructor(c: Color, x: int32) {

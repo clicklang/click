@@ -22,53 +22,53 @@ fn restore(early: bool, value: &mut i32) -> i32 {
         step_until(call(Guard_drop, 0).entry);
         mark drop_normal;
         step() by {
-            known();
+            close();
         }
-        have *moved.slot == at(drop_normal, moved.saved) by known();
-        have moved.slot == at(drop_normal, moved.slot) by known();
-        have at(drop_normal, moved.slot) == value by known();
+        have *moved.slot == at(drop_normal, moved.saved) by close();
+        have moved.slot == at(drop_normal, moved.slot) by close();
+        have at(drop_normal, moved.slot) == value by close();
         have moved.slot == value by {
             rewrite(moved.slot, at(drop_normal, moved.slot));
-            known();
+            close();
         }
         have *value == at(drop_normal, moved.saved) by {
             rewrite(value, moved.slot);
-            known();
+            close();
         }
         step_until(function.exit);
         have result == (if early == true { 7 } else { 9 }) by {
-            known();
+            close();
         }
-        have at(drop_normal, moved.saved) == old(*value) by known();
+        have at(drop_normal, moved.saved) == old(*value) by close();
         have *value == old(*value) by {
             rewrite(*value, at(drop_normal, moved.saved));
-            known();
+            close();
         }
     } else {
         step_until(call(Guard_drop, 1).entry);
         mark drop_early;
         step() by {
-            known();
+            close();
         }
-        have *moved.slot == at(drop_early, moved.saved) by known();
-        have moved.slot == at(drop_early, moved.slot) by known();
-        have at(drop_early, moved.slot) == value by known();
+        have *moved.slot == at(drop_early, moved.saved) by close();
+        have moved.slot == at(drop_early, moved.slot) by close();
+        have at(drop_early, moved.slot) == value by close();
         have moved.slot == value by {
             rewrite(moved.slot, at(drop_early, moved.slot));
-            known();
+            close();
         }
         have *value == at(drop_early, moved.saved) by {
             rewrite(value, moved.slot);
-            known();
+            close();
         }
         step_until(function.exit);
         have result == (if early == true { 7 } else { 9 }) by {
-            known();
+            close();
         }
-        have at(drop_early, moved.saved) == old(*value) by known();
+        have at(drop_early, moved.saved) == old(*value) by close();
         have *value == old(*value) by {
             rewrite(*value, at(drop_early, moved.saved));
-            known();
+            close();
         }
     }
 }

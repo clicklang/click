@@ -8,12 +8,12 @@ and `x > 0` excludes the one divisor, `-1`, that can overflow `y / x`.
 ```click
 theorem shift(s: uint64) {
     requires s < 64u64 implies (1u64 << s) >= 1u64;
-    ensures 1 == 1 by solve();
+    ensures 1 == 1 by close();
 }
 
 theorem divide(x: int32, y: int32) {
     requires x > 0 implies y / x > 1;
-    ensures 1 == 1 by solve();
+    ensures 1 == 1 by close();
 }
 ```
 

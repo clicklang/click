@@ -14,8 +14,8 @@ uint32 divide32(uint32 n, uint32 d) { ensures true; }
 uint64 divide64(uint64 n, uint64 d) { ensures true; }
 uint32 remain32(uint32 n, uint32 d) { ensures true; }
 uint64 remain64(uint64 n, uint64 d) { ensures true; } by {
-    step() by { known(); }
-    known();
+    step() by { close(); }
+    close();
 }
 ```
 

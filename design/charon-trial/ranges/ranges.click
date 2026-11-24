@@ -54,7 +54,7 @@ fn last_byte(bytes: &[u8]) -> u8 {
         invariant iter.start <= bytes.len();
         invariant iter.start != 0u64 implies last == bytes[iter.start - 1u64];
     }
-    have loop(0).iter.start == bytes.len() by solve();
+    have loop(0).iter.start == bytes.len() by close();
 }
 
 // In nested loops, `iter` is the inner loop's iterator inside it; the outer

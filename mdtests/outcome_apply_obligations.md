@@ -9,7 +9,7 @@ int increment_result(int x) { return x + 1; }
 verifying "outcome_apply.c";
 theorem nonnegative(value: int32) {
     requires value >= 0;
-    ensures value >= 0 by known();
+    ensures value >= 0 by close();
 }
 int32 choose_positive(int32 x) {
     ensures result >= 0 by {
@@ -17,19 +17,19 @@ int32 choose_positive(int32 x) {
             true => {
                 step_until(function.exit);
                 apply(nonnegative(result));
-                known();
+                close();
             }
             false => {
                 step_until(function.exit);
                 apply(nonnegative(result));
-                known();
+                close();
             }
         }
     }
 }
 theorem increased(before: int32, after: int32) {
     requires after > before;
-    ensures after > before by known();
+    ensures after > before by close();
 }
 int32 increment_result(int32 x) {
     requires 0 <= x;
@@ -37,7 +37,7 @@ int32 increment_result(int32 x) {
     ensures result > old(x) by {
         step();
         apply(increased(old(x), result));
-        known();
+        close();
     }
 }
 ```

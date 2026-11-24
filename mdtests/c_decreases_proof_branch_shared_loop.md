@@ -30,17 +30,17 @@ int32 count_to_bound(int32 n) {
             invariant n < 0;
         }
         step_until(function.exit);
-        solve();
+        close();
     } else {
         have n >= 0;
         loop {
             decreases n - i;
             invariant 0 <= i and i <= n;
-            initialize by solve();
+            initialize by close();
             maintain by { step(); }
         }
         step_until(function.exit);
-        solve();
+        close();
     }
 }
 ```

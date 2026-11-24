@@ -19,13 +19,13 @@ int32* forwarded(int32* p) {
 } by {
     step_until(call(0).entry);
     step();
-    have address(call(0).result) == address(old(p)) by { known(); }
-    have address(at(function.entry, p)) == old(address(p)) by { known(); }
+    have address(call(0).result) == address(old(p)) by { close(); }
+    have address(at(function.entry, p)) == old(address(p)) by { close(); }
     have contains(memory(at(call(0).exit, call(0).result)[0..1]), memory(at(call(0).exit, call(0).result)[0..1])) by {
         apply(click::separation::contains_refl(memory(at(call(0).exit, call(0).result)[0..1])));
     }
     step_until(function.exit);
-    solve();
+    close();
 }
 ```
 

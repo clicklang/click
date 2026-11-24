@@ -12,7 +12,7 @@ theorem sized_double_preserves_counts(g: struct rb_node*, p: struct rb_node*, no
     ensures sized_counts_valid(sized_double_cached_after(g, p, node, above, gv, pc, gc, far, ml, mr, uncle)) == 1 by {
         unfold(sized_context_double_subtree_before(g, p, node, above, nv, pv, gv, far, ml, mr, uncle));
         have sized_counts_valid(SizedTree::Node(g, above, Color::Black, gv, SizedTree::Node(p, g, Color::Red, pv, far, SizedTree::Node(node, p, Color::Red, nv, ml, mr)), uncle)) == 1 by {
-            rewrite(SizedTree::Node(g, above, Color::Black, gv, SizedTree::Node(p, g, Color::Red, pv, far, SizedTree::Node(node, p, Color::Red, nv, ml, mr)), uncle), sized_context_double_subtree_before(g, p, node, above, nv, pv, gv, far, ml, mr, uncle)); known();
+            rewrite(SizedTree::Node(g, above, Color::Black, gv, SizedTree::Node(p, g, Color::Red, pv, far, SizedTree::Node(node, p, Color::Red, nv, ml, mr)), uncle), sized_context_double_subtree_before(g, p, node, above, nv, pv, gv, far, ml, mr, uncle)); close();
         }
         apply(sized_valid_parts(g, above, Color::Black, gv, SizedTree::Node(p, g, Color::Red, pv, far, SizedTree::Node(node, p, Color::Red, nv, ml, mr)), uncle));
         apply(sized_valid_parts(p, g, Color::Red, pv, far, SizedTree::Node(node, p, Color::Red, nv, ml, mr)));
@@ -35,7 +35,7 @@ theorem sized_double_preserves_counts(g: struct rb_node*, p: struct rb_node*, no
             };
         }
         apply(sized_double_cached_valid(g, p, node, above, gv, pc, gc, far, ml, mr, uncle));
-        known();
+        close();
     }
 }
 
@@ -48,7 +48,7 @@ theorem sized_mirrored_double_preserves_counts(g: struct rb_node*, p: struct rb_
     ensures sized_counts_valid(sized_mirrored_double_cached_after(g, p, node, above, gv, pc, gc, far, ml, mr, uncle)) == 1 by {
         unfold(sized_mirrored_context_double_subtree_before(g, p, node, above, nv, pv, gv, far, ml, mr, uncle));
         have sized_counts_valid(SizedTree::Node(g, above, Color::Black, gv, uncle, SizedTree::Node(p, g, Color::Red, pv, SizedTree::Node(node, p, Color::Red, nv, ml, mr), far))) == 1 by {
-            rewrite(SizedTree::Node(g, above, Color::Black, gv, uncle, SizedTree::Node(p, g, Color::Red, pv, SizedTree::Node(node, p, Color::Red, nv, ml, mr), far)), sized_mirrored_context_double_subtree_before(g, p, node, above, nv, pv, gv, far, ml, mr, uncle)); known();
+            rewrite(SizedTree::Node(g, above, Color::Black, gv, uncle, SizedTree::Node(p, g, Color::Red, pv, SizedTree::Node(node, p, Color::Red, nv, ml, mr), far)), sized_mirrored_context_double_subtree_before(g, p, node, above, nv, pv, gv, far, ml, mr, uncle)); close();
         }
         apply(sized_valid_parts(g, above, Color::Black, gv, uncle, SizedTree::Node(p, g, Color::Red, pv, SizedTree::Node(node, p, Color::Red, nv, ml, mr), far)));
         apply(sized_valid_parts(p, g, Color::Red, pv, SizedTree::Node(node, p, Color::Red, nv, ml, mr), far));
@@ -71,6 +71,6 @@ theorem sized_mirrored_double_preserves_counts(g: struct rb_node*, p: struct rb_
             };
         }
         apply(sized_mirrored_double_cached_valid(g, p, node, above, gv, pc, gc, far, ml, mr, uncle));
-        known();
+        close();
     }
 }

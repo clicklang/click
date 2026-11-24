@@ -8,7 +8,7 @@ theorem named_fact(x: int32, y: int32) {
     requires x > 0;
     requires x > 0 implies y > 0;
     ensures y > 0 by {
-        have h: x > 0 implies y > 0 by known();
+        have h: x > 0 implies y > 0 by close();
         apply(h);
     }
 }
@@ -35,8 +35,8 @@ theorem continue_after_application(x: int32, y: int32, z: int32) {
     requires x > 0 implies (y > 0 and z > 0);
     ensures y > 0 by {
         apply(x > 0 implies (y > 0 and z > 0));
-        have z > 0 by known();
-        known();
+        have z > 0 by close();
+        close();
     }
 }
 

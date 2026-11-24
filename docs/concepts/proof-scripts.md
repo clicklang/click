@@ -7,7 +7,7 @@ Omit a function's proof clause when the default automation is sufficient.
 Every proof script, the omitted one included, ends with an implicit tail that
 runs the C left, splitting at each C branch the facts do not decide into paths
 that each run to function exit, and then closes every open goal on every path.
-A one-tactic proof can be written as `by solve();` or `by { solve(); }`. Use a
+A one-tactic proof can be written as `by close();` or `by { close(); }`. Use a
 `by { ... }` block for a sequence of tactics.
 
 Prefer smart tactics while authoring unless profiling identifies a hotspot.
@@ -36,12 +36,13 @@ requirement in `mdtests/explicit_solve_proves_an_existential_call_requirement.md
 and `mdtests/implicit_solve_proves_an_existential_call_requirement.md`.
 
 A proof of one step needs no braces: `by T(args);` is `by { T(args); }` for
-any tactic written as a call, as in `have 0 <= x by known();`. `click
+any tactic written as a call, as in `have 0 <= x by close();`. `click
 expand`, `profile` and `audit` read it as that block, and an expansion that
 needs the braces writes them. Tactic calls always require parentheses,
-including `solve()`.
+including `close()`.
 
-`solve()` does not execute C, so on a C function's claim `by solve();` is
+`close()` works on a C function's claim once execution reaches function exit.
+Before that, `by close();` is
 refused: execution has not reached function exit. Omit the proof, or step to
 exit first:
 
@@ -49,13 +50,13 @@ exit first:
 ```click
 ensures result == x by {
     step_until(function.exit);
-    solve();
+    close();
 }
 ```
 
 `step_until(function.exit)` repeats `step()` until the function returns and
 never splits: at a C branch the facts do not decide it is refused, and names
-the split to write there. The closing `solve()` is optional, since the
+the split to write there. The closing `close()` is optional, since the
 implicit tail closes what is open.
 
 A callback statement may lower to several checked operations. When one of its
@@ -77,8 +78,8 @@ that returned state (`mdtests/resource_instance_fold_after_return_in_open.md`).
 [Smart and simple tactics](smart-and-simple-tactics.md) defines the classes;
 this section shows how they appear in scripts.
 
-Smart tactics plan or search. The written smart tactic is `solve()`, with
-`close() using { ... }`. The implicit tail, which runs the C a
+Smart tactics plan or search. `close()` checks the goal directly before
+searching and `close() using { ... }` searches from listed premises. The implicit tail, which runs the C a
 script leaves and closes what is open, is smart work too, including the
 `solve()` closure of each loop-bundle member at a back edge, as are the
 searches behind elided arguments. An elided form
@@ -100,7 +101,7 @@ close() using {
 
 An empty `using {}` block is valid on every tactic that takes a list. It means
 the tactic uses no pure premises, which is not the same as leaving `using`
-off: `solve()` searches the context while `close() using {}` uses nothing.
+off: `close()` can use the context while `close() using {}` uses no premises.
 `step()` is simple and executes the next statement with the whole proof
 context visible to the kernel. `step_until(...)` and the implicit tail's
 execution are its repetitions; expansion replaces them with the corresponding

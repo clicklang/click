@@ -30,7 +30,7 @@ void restored(struct object* obj) {
         step();
         step_until(function.exit);
     }
-    solve();
+    close();
 }
 ```
 

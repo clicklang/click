@@ -97,7 +97,7 @@ void erase_mutating(struct node* node, struct node* parent,
         apply(separation::separate_star(memory(parent->left), memory(parent->right), memory(*augment)));
         mark before_propagate;
         step();
-        have contains(memory(parent->left), statement(0).footprint) by { known(); }
+        have contains(memory(parent->left), statement(0).footprint) by { close(); }
         apply(separation::separate_restrict(memory(parent->left), memory(*augment), statement(0).footprint, memory(augment->propagate)));
         have augment->propagate == at(before_propagate, augment->propagate) by { preserve(memory(augment->propagate), statement(0)); }
         apply(separation::separate_restrict(memory(parent->left), memory(*augment), statement(0).footprint, memory(augment->copy)));
@@ -106,7 +106,7 @@ void erase_mutating(struct node* node, struct node* parent,
         have augment->rotate == at(before_propagate, augment->rotate) by { preserve(memory(augment->rotate), statement(0)); }
         mark before_copy;
         step();
-        have contains(memory(parent->left), statement(1).footprint) by { known(); }
+        have contains(memory(parent->left), statement(1).footprint) by { close(); }
         apply(separation::separate_restrict(memory(parent->left), memory(*augment), statement(1).footprint, memory(augment->propagate)));
         have augment->propagate == at(before_copy, augment->propagate) by { preserve(memory(augment->propagate), statement(1)); }
         apply(separation::separate_restrict(memory(parent->left), memory(*augment), statement(1).footprint, memory(augment->copy)));
@@ -115,7 +115,7 @@ void erase_mutating(struct node* node, struct node* parent,
         have augment->rotate == at(before_copy, augment->rotate) by { preserve(memory(augment->rotate), statement(1)); }
         mark before_rotate;
         step();
-        have contains(memory(parent->left) * memory(parent->right), statement(2).footprint) by { known(); }
+        have contains(memory(parent->left) * memory(parent->right), statement(2).footprint) by { close(); }
         apply(separation::separate_restrict(memory(parent->left) * memory(parent->right), memory(*augment), statement(2).footprint, memory(augment->propagate)));
         have augment->propagate == at(before_rotate, augment->propagate) by { preserve(memory(augment->propagate), statement(2)); }
         apply(separation::separate_restrict(memory(parent->left) * memory(parent->right), memory(*augment), statement(2).footprint, memory(augment->copy)));

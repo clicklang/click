@@ -17,7 +17,7 @@ int32 echo(int32 x) {
 } by {
     step();
     unfold(same(result, x));
-    known();
+    close();
 }
 ```
 

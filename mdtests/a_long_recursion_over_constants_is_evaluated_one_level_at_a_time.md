@@ -2,7 +2,7 @@
 
 `emit` records `output_from` of its sixty-byte format. The implicit proof
 evaluates the call one level at a time: each level is a `have` that one call
-equals the arm its constant guards select, proved by `unfold` and `known()`,
+equals the arm its constant guards select, proved by `unfold` and `close()`,
 all inside one `have` for the call's value, so the work grows linearly with
 the measure and the goal is read once at the end.
 

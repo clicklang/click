@@ -23,10 +23,9 @@ budgets, so it can fail to find a proof that exists. That is bounded
 incompleteness, not evidence that the claim is false. Every piece of smart
 work expands into simple tactics:
 
-- `solve()` is the one written smart tactic. It closes the first open goal
-  with the available facts and bounded rules and runs no C. It first checks
-  the indexed whole goal; an exact available fact expands to `known()`
-  without decomposition or a search for an alternative derivation.
+- `close()` closes the first open goal using available facts and bounded
+  rules. It first checks the whole goal through its index. An exact hit
+  closes immediately and expands to `close()`.
   `close() using { P; ... }` closes it from only the listed premises, trying
   arithmetic over them before a final indexed one-theorem search; a miss
   adds arithmetic's reason. Theorem discovery infers arguments from a

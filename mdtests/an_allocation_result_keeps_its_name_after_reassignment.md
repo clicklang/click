@@ -20,19 +20,19 @@ verifying "allocation.c";
 int32 use_allocation() { ensures result == 0; } by {
     step();
     step();
-    have statement(1).result == p by known();
+    have statement(1).result == p by close();
     branch { true => { step(); } false => {} }
     have statement(1).allocation == p;
     have statement(1).allocation != 0;
-    have (statement(1).allocation as (void *)) as (int32 *) == p by solve();
-    have (byte_offset(statement(1).allocation, 4) as (void *)) as (int32 *) == p + 1 by solve();
+    have (statement(1).allocation as (void *)) as (int32 *) == p by close();
+    have (byte_offset(statement(1).allocation, 4) as (void *)) as (int32 *) == p + 1 by close();
     have contains(
         memory(p[0..1]),
         memory(((statement(1).allocation as (void *)) as (int32 *))[0..1])
-    ) by solve();
+    ) by close();
     step();
     step();
-    have statement(1).allocation != 0 by known();
+    have statement(1).allocation != 0 by close();
 }
 ```
 

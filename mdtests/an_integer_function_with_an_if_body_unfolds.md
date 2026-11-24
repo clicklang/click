@@ -12,7 +12,7 @@ function pick(n: Integer, c: Bool) -> Integer { if c { n + 1 } else { n } }
 theorem pick_true(n: Integer) {
     ensures pick(n, true) == n + 1 by {
         unfold(pick(n, true));
-        known();
+        close();
     }
 }
 
@@ -20,11 +20,11 @@ theorem pick_is_at_least_its_argument(n: Integer, c: Bool) {
     ensures pick(n, c) >= n by {
         unfold(pick(n, c));
         if c {
-            have (if c { n + 1 } else { n }) == n + 1 by solve();
-            solve();
+            have (if c { n + 1 } else { n }) == n + 1 by close();
+            close();
         } else {
-            have (if c { n + 1 } else { n }) == n by solve();
-            solve();
+            have (if c { n + 1 } else { n }) == n by close();
+            close();
         }
     }
 }

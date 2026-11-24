@@ -18,7 +18,7 @@ void copy_prefix(char* dst, const char* src, uint64 n) {
     ensures dst[n] == '\0';
 } by {
     step();
-    have 0u64 <= n by { solve(); }
+    have 0u64 <= n by { close(); }
     have contains(memory(dst[0u64..32u64]), memory(dst[n])) by {
         apply(click::separation::contains_element(dst, 0u64, 32u64, n));
     }

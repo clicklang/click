@@ -32,7 +32,7 @@ void invoke(struct links* p) {
     owns m: metadata(p);
     ensures m.value == 1;
 } by {
-    have separate(memory((p as (void *) as (struct node *))->size), memory(*p)) by known();
+    have separate(memory((p as (void *) as (struct node *))->size), memory(*p)) by close();
     step(resize, { m: m });
 }
 ```

@@ -61,7 +61,7 @@ void graft(int32* p) {
             have shape_left(old(t.model)) == left by {
                 rewrite(old(t.model), Shape::Node(left, right));
                 unfold(shape_left(Shape::Node(left, right)));
-                known();
+                close();
             }
             have left != Shape::Empty;
             unfold(t);
@@ -69,7 +69,7 @@ void graft(int32* p) {
                 model: Shape::Node(Shape::Node(shape_left(old(t.model)), Shape::Empty), Shape::Empty)
             });
             step_until(function.exit);
-            solve();
+            close();
         },
     }
 }

@@ -15,10 +15,10 @@ resource list(p: struct node*) { if p != 0 { owns p->next; owns list(p->next); }
 resource relist(p: struct node*) { owns list(p); }
 void touch(struct node* child) { consumes list(child); produces relist(child); } by { fold(relist(child)); }
 void caller(struct node* child, int32* slot) { consumes list(child); owns *slot; produces relist(child); } by {
-    have separate(list(child), memory(*slot)) by { known(); }
+    have separate(list(child), memory(*slot)) by { close(); }
     mark before_call;
     step();
-    have contains(list(child), statement(0).footprint) by { known(); }
+    have contains(list(child), statement(0).footprint) by { close(); }
     apply(separation::contains_refl(memory(*slot)));
     apply(separation::separate_restrict(list(child), memory(*slot), statement(0).footprint, memory(*slot)));
     have *slot == at(before_call, *slot) by {

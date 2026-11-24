@@ -25,12 +25,12 @@ int read(int* p) {
     cases {
         result > 0 => {
             match old(c.model) {
-                Tri::Zero => { solve(); },
-                Tri::One => { solve(); },
+                Tri::Zero => { close(); },
+                Tri::One => { close(); },
                 Tri::Other(value) => { have old(c.model) == Tri::Other(value); },
             }
         }
-        result <= 0 => { solve(); }
+        result <= 0 => { close(); }
     }
 }
 ```

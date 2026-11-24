@@ -16,13 +16,13 @@ theorem sized_recolor_observations(tree: SizedTree, shade: Color) {
         match tree {
             SizedTree::Empty => {
                 rewrite(tree, SizedTree::Empty);
-                unfold(sized_recolor(SizedTree::Empty, shade)); known();
+                unfold(sized_recolor(SizedTree::Empty, shade)); close();
             },
             SizedTree::Node(node, parent, before, value, left, right) => {
                 rewrite(tree, SizedTree::Node(node, parent, before, value, left, right));
                 unfold(sized_recolor(SizedTree::Node(node, parent, before, value, left, right), shade));
                 unfold(sized_value(SizedTree::Node(node, parent, shade, value, left, right)));
-                unfold(sized_value(SizedTree::Node(node, parent, before, value, left, right))); known();
+                unfold(sized_value(SizedTree::Node(node, parent, before, value, left, right))); close();
             },
         }
     }
@@ -30,13 +30,13 @@ theorem sized_recolor_observations(tree: SizedTree, shade: Color) {
         match tree {
             SizedTree::Empty => {
                 rewrite(tree, SizedTree::Empty);
-                unfold(sized_recolor(SizedTree::Empty, shade)); known();
+                unfold(sized_recolor(SizedTree::Empty, shade)); close();
             },
             SizedTree::Node(node, parent, before, value, left, right) => {
                 rewrite(tree, SizedTree::Node(node, parent, before, value, left, right));
                 unfold(sized_recolor(SizedTree::Node(node, parent, before, value, left, right), shade));
                 unfold(sized_counts_valid(SizedTree::Node(node, parent, shade, value, left, right)));
-                unfold(sized_counts_valid(SizedTree::Node(node, parent, before, value, left, right))); known();
+                unfold(sized_counts_valid(SizedTree::Node(node, parent, before, value, left, right))); close();
             },
         }
     }
@@ -45,14 +45,14 @@ theorem sized_recolor_observations(tree: SizedTree, shade: Color) {
             SizedTree::Empty => {
                 rewrite(tree, SizedTree::Empty);
                 unfold(sized_recolor(SizedTree::Empty, shade)); unfold(sized_shape(SizedTree::Empty));
-                unfold(rb_recolor(RbTree::Empty, shade)); known();
+                unfold(rb_recolor(RbTree::Empty, shade)); close();
             },
             SizedTree::Node(node, parent, before, value, left, right) => {
                 rewrite(tree, SizedTree::Node(node, parent, before, value, left, right));
                 unfold(sized_recolor(SizedTree::Node(node, parent, before, value, left, right), shade));
                 unfold(sized_shape(SizedTree::Node(node, parent, shade, value, left, right)));
                 unfold(sized_shape(SizedTree::Node(node, parent, before, value, left, right)));
-                unfold(rb_recolor(RbTree::Node(node, parent, before, sized_shape(left), sized_shape(right)), shade)); known();
+                unfold(rb_recolor(RbTree::Node(node, parent, before, sized_shape(left), sized_shape(right)), shade)); close();
             },
         }
     }
@@ -72,13 +72,13 @@ theorem sized_insert_fix_recolor_observations(tree: SizedTree) {
         match tree {
             SizedTree::Empty => {
                 rewrite(tree, SizedTree::Empty);
-                unfold(sized_insert_fix_recolor(SizedTree::Empty)); known();
+                unfold(sized_insert_fix_recolor(SizedTree::Empty)); close();
             },
             SizedTree::Node(node, parent, before, value, left, right) => {
                 rewrite(tree, SizedTree::Node(node, parent, before, value, left, right));
                 unfold(sized_insert_fix_recolor(SizedTree::Node(node, parent, before, value, left, right)));
                 unfold(sized_value(SizedTree::Node(node, parent, Color::Red, value, sized_recolor(left, Color::Black), sized_recolor(right, Color::Black))));
-                unfold(sized_value(SizedTree::Node(node, parent, before, value, left, right))); known();
+                unfold(sized_value(SizedTree::Node(node, parent, before, value, left, right))); close();
             },
         }
     }
@@ -86,7 +86,7 @@ theorem sized_insert_fix_recolor_observations(tree: SizedTree) {
         match tree {
             SizedTree::Empty => {
                 rewrite(tree, SizedTree::Empty);
-                unfold(sized_insert_fix_recolor(SizedTree::Empty)); known();
+                unfold(sized_insert_fix_recolor(SizedTree::Empty)); close();
             },
             SizedTree::Node(node, parent, before, value, left, right) => {
                 apply(sized_recolor_observations(left, Color::Black));
@@ -98,7 +98,7 @@ theorem sized_insert_fix_recolor_observations(tree: SizedTree) {
                 rewrite(sized_value(sized_recolor(left, Color::Black)), sized_value(left));
                 rewrite(sized_value(sized_recolor(right, Color::Black)), sized_value(right));
                 rewrite(sized_counts_valid(sized_recolor(left, Color::Black)), sized_counts_valid(left));
-                rewrite(sized_counts_valid(sized_recolor(right, Color::Black)), sized_counts_valid(right)); known();
+                rewrite(sized_counts_valid(sized_recolor(right, Color::Black)), sized_counts_valid(right)); close();
             },
         }
     }
@@ -110,7 +110,7 @@ theorem sized_insert_fix_recolor_observations(tree: SizedTree) {
                 unfold(rb_insert_fix_recolor(RbTree::Empty));
                 unfold(rb_recolor_right(RbTree::Empty, Color::Black));
                 unfold(rb_recolor_left(RbTree::Empty, Color::Black));
-                unfold(rb_recolor(RbTree::Empty, Color::Red)); known();
+                unfold(rb_recolor(RbTree::Empty, Color::Red)); close();
             },
             SizedTree::Node(node, parent, before, value, left, right) => {
                 apply(sized_recolor_observations(left, Color::Black));
@@ -124,7 +124,7 @@ theorem sized_insert_fix_recolor_observations(tree: SizedTree) {
                 unfold(rb_recolor_left(RbTree::Node(node, parent, before, sized_shape(left), rb_recolor(sized_shape(right), Color::Black)), Color::Black));
                 unfold(rb_recolor(RbTree::Node(node, parent, before, rb_recolor(sized_shape(left), Color::Black), rb_recolor(sized_shape(right), Color::Black)), Color::Red));
                 rewrite(sized_shape(sized_recolor(left, Color::Black)), rb_recolor(sized_shape(left), Color::Black));
-                rewrite(sized_shape(sized_recolor(right, Color::Black)), rb_recolor(sized_shape(right), Color::Black)); known();
+                rewrite(sized_shape(sized_recolor(right, Color::Black)), rb_recolor(sized_shape(right), Color::Black)); close();
             },
         }
     }

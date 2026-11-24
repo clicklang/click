@@ -44,7 +44,7 @@ fn bags::through_fill(x: i32) -> u32 {
 } by {
     step_until(statement(1).call(0).entry);
     let { object_resource(): packed } = step(__rust_q_T27___rust_q_I4_bags_I7_Counter_R30___rust_q_I4_bags_I3_Bag_A3_i32_I6___pack);
-    have packed.count == 0u32 by known();
+    have packed.count == 0u32 by close();
     step_until(function.exit);
 }
 
@@ -53,7 +53,7 @@ fn bags::through_dyn(x: i32) -> i32 {
 } by {
     step_until(statement(1).call(0).entry);
     let { object_resource(): packed } = step(__rust_q_T27___rust_q_I4_bags_I7_Counter_R30___rust_q_I4_bags_I3_Bag_A3_i32_I6___pack);
-    have packed.count == 3u32 by known();
+    have packed.count == 3u32 by close();
     step_until(function.exit);
 }
 

@@ -47,7 +47,7 @@ int32 update_value(struct packet* packet) {
     step();
     step();
     step();
-    solve();
+    close();
 }
 
 uint8 update_byte(struct byte_packet* packet) {
@@ -60,7 +60,7 @@ uint8 update_byte(struct byte_packet* packet) {
     step();
     step();
     step();
-    solve();
+    close();
 }
 ```
 

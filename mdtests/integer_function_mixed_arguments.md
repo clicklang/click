@@ -15,21 +15,21 @@ function nat_to_integer_probe(n: Nat) -> Integer decreases n {
 theorem int_from_c_unfolds(x: int32) {
     ensures int_from_c(x) == to_integer(x) by {
         unfold(int_from_c(x));
-        known();
+        close();
     }
 }
 
 theorem nat_to_integer_zero_unfolds() {
     ensures nat_to_integer_probe(Nat::Zero) == 0 by {
         unfold(nat_to_integer_probe(Nat::Zero));
-        known();
+        close();
     }
 }
 
 theorem nat_to_integer_succ_unfolds(k: Nat) {
     ensures nat_to_integer_probe(Nat::Succ(k)) == nat_to_integer_probe(k) + 1 by {
         unfold(nat_to_integer_probe(Nat::Succ(k)));
-        known();
+        close();
     }
 }
 ```

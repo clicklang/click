@@ -43,7 +43,7 @@ int32 read_right_when_active(struct pair* p, int32 enabled) {
     requires separate(memory(p->left), memory(p->right));
     ensures result == old(p->right);
 } by {
-    step() by { known(); }
+    step() by { close(); }
 }
 
 int32 read_left_when_inactive(struct pair* p) {

@@ -98,32 +98,32 @@ void reset(struct node* old, struct node* new) {
 } by {
     // The borrowed shape exposes both child links and their combined span.
     observe(shape(new));
-    have separate(memory(old->augmented), shape(new)) by { known(); }
+    have separate(memory(old->augmented), shape(new)) by { close(); }
     apply(click::separation::contains_refl(memory(old->augmented)));
     apply(click::separation::separate_restrict(memory(old->augmented), shape(new), memory(old->augmented), memory(new->left)));
     apply(click::separation::separate_restrict(memory(old->augmented), shape(new), memory(old->augmented), memory(new->right)));
     apply(click::separation::separate_star(memory(new->left), memory(new->right), memory(old->augmented)));
     apply(click::separation::contains_joined_ranges(new as (int32 *), 0, 2, 4));
-    have contains(memory(new->left) * memory(new->right), memory((new as (int32 *))[0..4])) by { known(); }
+    have contains(memory(new->left) * memory(new->right), memory((new as (int32 *))[0..4])) by { close(); }
     apply(click::separation::separate_restrict(memory(new->left) * memory(new->right), memory(old->augmented), memory((new as (int32 *))[0..4]), memory(old->augmented)));
     apply(click::separation::separate_star(memory((new as (int32 *))[0..4]), memory(new->left), memory(old->augmented)));
     apply(click::separation::separate_star(memory((new as (int32 *))[0..4]) * memory(new->left), memory(new->right), memory(old->augmented)));
     apply(click::separation::separate_symm(memory((new as (int32 *))[0..4]) * memory(new->left) * memory(new->right), memory(old->augmented)));
     step();
-    have separate(memory(new->augmented), shape(new)) by { known(); }
+    have separate(memory(new->augmented), shape(new)) by { close(); }
     apply(click::separation::contains_refl(memory(new->augmented)));
     apply(click::separation::separate_restrict(memory(new->augmented), shape(new), memory(new->augmented), memory(new->left)));
     apply(click::separation::separate_restrict(memory(new->augmented), shape(new), memory(new->augmented), memory(new->right)));
     apply(click::separation::separate_star(memory(new->left), memory(new->right), memory(new->augmented)));
     apply(click::separation::contains_joined_ranges(new as (int32 *), 0, 2, 4));
-    have contains(memory(new->left) * memory(new->right), memory((new as (int32 *))[0..4])) by { known(); }
+    have contains(memory(new->left) * memory(new->right), memory((new as (int32 *))[0..4])) by { close(); }
     apply(click::separation::separate_restrict(memory(new->left) * memory(new->right), memory(new->augmented), memory((new as (int32 *))[0..4]), memory(new->augmented)));
     apply(click::separation::separate_star(memory((new as (int32 *))[0..4]), memory(new->left), memory(new->augmented)));
     apply(click::separation::separate_star(memory((new as (int32 *))[0..4]) * memory(new->left), memory(new->right), memory(new->augmented)));
     apply(click::separation::separate_symm(memory((new as (int32 *))[0..4]) * memory(new->left) * memory(new->right), memory(new->augmented)));
     step();
     step();
-    solve();
+    close();
 }
 
 struct node* rotate_left(
@@ -150,9 +150,9 @@ struct node* rotate_left(
     // Carry the untouched link reads across each store before folding.
     step_until(statement(2).entry);
     have defined(node->left) by { normalize(); }
-    have separate(memory(node->left), memory(node->right)) by { known(); }
+    have separate(memory(node->left), memory(node->right)) by { close(); }
     have defined(pivot->right) by { normalize(); }
-    have separate(memory(pivot->right), memory(node->right)) by { known(); }
+    have separate(memory(pivot->right), memory(node->right)) by { close(); }
     mark before_right;
     step_until(statement(3).entry);
     have separate(statement(2).footprint, memory(node->left)) by {
@@ -164,12 +164,12 @@ struct node* rotate_left(
     }
     have defined(pivot->right) by { preserve(memory(pivot->right), statement(2)); }
 
-    have separate(memory(node->left), memory(pivot->left)) by { known(); }
+    have separate(memory(node->left), memory(pivot->left)) by { close(); }
     have defined(node->right) by { normalize(); }
     have node->right == middle by { normalize(); }
-    have separate(memory(node->right), memory(pivot->left)) by { known(); }
+    have separate(memory(node->right), memory(pivot->left)) by { close(); }
     have defined(pivot->right) by { normalize(); }
-    have separate(memory(pivot->right), memory(pivot->left)) by { known(); }
+    have separate(memory(pivot->right), memory(pivot->left)) by { close(); }
     mark before_left;
     step_until(statement(4).entry);
     have separate(statement(3).footprint, memory(node->left)) by {
@@ -183,7 +183,7 @@ struct node* rotate_left(
     have node->right == at(before_left, node->right) by { preserve(memory(node->right), statement(3)); }
     have node->right == middle by {
         rewrite(node->right, at(before_left, node->right));
-        known();
+        close();
     }
     have pivot->left == node by { normalize(); }
     have separate(statement(3).footprint, memory(pivot->right)) by {
@@ -195,7 +195,7 @@ struct node* rotate_left(
     fold(shape(pivot));
     step();
     step();
-    solve();
+    close();
 }
 
 struct node* rotate_bump(struct node* node) {

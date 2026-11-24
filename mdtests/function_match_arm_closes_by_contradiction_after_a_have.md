@@ -67,21 +67,21 @@ int32 peek(struct node* p) {
         Cell::Missing => {
             have is_present(Cell::Missing) == 1 by {
                 rewrite(Cell::Missing, x.model);
-                known();
+                close();
             }
             have is_present(Cell::Missing) != 0 by {
                 rewrite(is_present(Cell::Missing), 1);
-                known();
+                close();
             }
             have is_present(Cell::Missing) == 0 by {
                 unfold(is_present(Cell::Missing));
-                known();
+                close();
             }
             contradiction(is_present(Cell::Missing) == 0);
         },
         Cell::Present(identity) => {
             step_until(function.exit);
-            solve();
+            close();
         },
     }
 }

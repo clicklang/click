@@ -15,7 +15,7 @@ import "specification_imports_helpers.click";
 verifying "specification_imports_helpers.c";
 
 theorem imported_contract_is_available() {
-    ensures ImportedIdentity(&imported_helper) by { unfold(ImportedIdentity(&imported_helper)); solve(); }
+    ensures ImportedIdentity(&imported_helper) by { unfold(ImportedIdentity(&imported_helper)); close(); }
 }
 
 int32 imported_caller(int32 x) {

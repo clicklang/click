@@ -58,7 +58,7 @@ void keep(struct counter *counter) {
     have held(&counter->mu);
     fold(h);
     step();
-    solve();
+    close();
 }
 
 int32 read_counter(struct counter *counter) {
@@ -79,7 +79,7 @@ int32 read_counter(struct counter *counter) {
     step();
     step();
     step();
-    solve();
+    close();
 }
 ```
 

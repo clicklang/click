@@ -39,11 +39,11 @@ theorem insert_contains<T>(xs: List<T>, x: T) {
         } else {
             have insert(xs, x) == List<T>::Cons(x, xs) by {
                 unfold(insert(xs, x));
-                known();
+                close();
             }
             rewrite(insert(xs, x), List<T>::Cons(x, xs));
             unfold(list::contains(List<T>::Cons(x, xs), x));
-            known();
+            close();
         }
     }
 }
@@ -57,7 +57,7 @@ theorem insert_absent_grows<T>(xs: List<T>, x: T) {
         }
         rewrite(insert(xs, x), List<T>::Cons(x, xs));
         unfold(list::length(List<T>::Cons(x, xs)));
-        known();
+        close();
     }
 }
 

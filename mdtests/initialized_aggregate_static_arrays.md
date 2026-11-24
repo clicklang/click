@@ -93,34 +93,34 @@ int32 run() {
     requires private_file::increment_private::local_table[0].value < 1000;
     ensures result == 4;
 } by {
-    have shared_table[1].value == 2 by solve();
-    have shared_table[1].value < 1000 by solve();
-    have private_file::private_table[1].value == 5 by solve();
-    have private_file::private_table[1].value > -1000 by solve();
-    have private_file::private_table[1].value < 1000 by solve();
-    have private_file::increment_private::local_table[0].value == 2 by solve();
-    have private_file::increment_private::local_table[0].value > -1000 by solve();
-    have private_file::increment_private::local_table[0].value < 1000 by solve();
+    have shared_table[1].value == 2 by close();
+    have shared_table[1].value < 1000 by close();
+    have private_file::private_table[1].value == 5 by close();
+    have private_file::private_table[1].value > -1000 by close();
+    have private_file::private_table[1].value < 1000 by close();
+    have private_file::increment_private::local_table[0].value == 2 by close();
+    have private_file::increment_private::local_table[0].value > -1000 by close();
+    have private_file::increment_private::local_table[0].value < 1000 by close();
     step();
-    have shared_table[1].value == 3 by solve();
-    have shared_table[1].value < 1000 by solve();
+    have shared_table[1].value == 3 by close();
+    have shared_table[1].value < 1000 by close();
     step();
-    have private_file::private_table[1].value == 5 by solve();
-    have private_file::private_table[1].value > -1000 by solve();
-    have private_file::private_table[1].value < 1000 by solve();
-    have private_file::increment_private::local_table[0].value == 2 by solve();
-    have private_file::increment_private::local_table[0].value > -1000 by solve();
-    have private_file::increment_private::local_table[0].value < 1000 by solve();
+    have private_file::private_table[1].value == 5 by close();
+    have private_file::private_table[1].value > -1000 by close();
+    have private_file::private_table[1].value < 1000 by close();
+    have private_file::increment_private::local_table[0].value == 2 by close();
+    have private_file::increment_private::local_table[0].value > -1000 by close();
+    have private_file::increment_private::local_table[0].value < 1000 by close();
     step();
-    have private_file::private_table[1].value == 6 by solve();
-    have private_file::private_table[1].value > -1000 by solve();
-    have private_file::private_table[1].value < 1000 by solve();
-    have private_file::increment_private::local_table[0].value == 3 by solve();
-    have private_file::increment_private::local_table[0].value > -1000 by solve();
-    have private_file::increment_private::local_table[0].value < 1000 by solve();
+    have private_file::private_table[1].value == 6 by close();
+    have private_file::private_table[1].value > -1000 by close();
+    have private_file::private_table[1].value < 1000 by close();
+    have private_file::increment_private::local_table[0].value == 3 by close();
+    have private_file::increment_private::local_table[0].value > -1000 by close();
+    have private_file::increment_private::local_table[0].value < 1000 by close();
     step();
     step();
-    solve();
+    close();
 }
 ```
 

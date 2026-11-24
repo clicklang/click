@@ -42,12 +42,12 @@ int32 identity(int32 x) {
     step_until(function.exit);
     have exists (j: int32) { j == result } by {
         witness(result);
-        solve();
+        close();
     }
     have exists (j: int32) { j == x } by {
         let k = obtain(exists (k: int32) { k == x });
         witness(k);
-        solve();
+        close();
     }
 }
 
@@ -71,7 +71,7 @@ int32 current_have(int32 x) {
 } by {
     have exists (j: int32) { j == x } by {
         witness(x);
-        solve();
+        close();
     }
 }
 ```

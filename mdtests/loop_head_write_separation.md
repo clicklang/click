@@ -27,7 +27,7 @@ int32 write_and_read(int32* target, const int32* viewed, int32 count) {
 } by {
     step();
     step();
-    have separate(memory(target[0..1]), memory(viewed[0..1])) by { known(); }
+    have separate(memory(target[0..1]), memory(viewed[0..1])) by { close(); }
     loop {
         invariant i >= 0 and i <= count;
         decreases count - i;

@@ -17,7 +17,7 @@ theorem lit(g: Integer) {
     requires forall (z: Integer) { 0 <= z implies sq(z) <= g };
     ensures sq(5) <= g by {
         instantiate(forall (z: Integer) { 0 <= z implies sq(z) <= g }, 5);
-        known();
+        close();
     }
 }
 ```

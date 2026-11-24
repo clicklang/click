@@ -35,12 +35,12 @@ int32 count_up(int32 n) {
             invariant i <= n;
         }
         step();
-        solve();
+        close();
     } else {
         step();
         step();
         step();
-        solve();
+        close();
     }
 }
 ```

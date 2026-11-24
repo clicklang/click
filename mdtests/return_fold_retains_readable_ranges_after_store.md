@@ -135,39 +135,39 @@ void arena_write(struct region* region, int32 index, int32 value) {
     have to_integer(s) <= to_integer(s + index);
     have to_integer(s + index + 1) <= to_integer(e);
     have region->start == s by {
-        known();
+        close();
     }
     have defined(region->start);
     have defined(region->start + index) by {
         rewrite(region->start, s);
-        known();
+        close();
     }
     have to_integer(region->start) <= to_integer(region->start + index) by {
         rewrite(region->start, s);
-        known();
+        close();
     }
     have defined(s + index + 1);
     have defined(region->start + index + 1) by {
         rewrite(region->start, s);
-        known();
+        close();
     }
     have to_integer(region->start + index + 1) <= to_integer(e) by {
         rewrite(region->start, s);
-        known();
+        close();
     }
     have 0 <= to_integer(region->start + index) by {
         rewrite(region->start, s);
         have 0 <= to_integer(s + index);
-        known();
+        close();
     }
     have to_integer(s + index) < to_integer(c);
     have region->arena->capacity == c by {
-        solve();
+        close();
     }
     have to_integer(region->start + index) < to_integer(region->arena->capacity) by {
         rewrite(region->start, s);
         rewrite(region->arena->capacity, c);
-        known();
+        close();
     }
     mark w;
     step();
@@ -232,19 +232,19 @@ void arena_write(struct region* region, int32 index, int32 value) {
         intro();
         have 0 <= k;
         have k < at(w, region->arena->capacity);
-        have k < region->arena->capacity by { solve(); }
+        have k < region->arena->capacity by { close(); }
         have contains(memory(region->arena->occupied[0..region->arena->capacity]), memory(region->arena->occupied[k])) by {
             apply(separation::contains_element(region->arena->occupied, 0, region->arena->capacity, k));
         }
-        have 0 <= at(before_access, region->start + index) by { solve(); }
-        have at(before_access, region->start + index) < region->arena->capacity by { solve(); }
-        have 0 <= to_integer(at(before_access, region->start + index)) by { solve(); }
-        have to_integer(at(before_access, region->start + index)) < to_integer(region->arena->capacity) by { solve(); }
-        have at(before_access, region->arena->data) == region->arena->data by { known(); }
+        have 0 <= at(before_access, region->start + index) by { close(); }
+        have at(before_access, region->start + index) < region->arena->capacity by { close(); }
+        have 0 <= to_integer(at(before_access, region->start + index)) by { close(); }
+        have to_integer(at(before_access, region->start + index)) < to_integer(region->arena->capacity) by { close(); }
+        have at(before_access, region->arena->data) == region->arena->data by { close(); }
         have contains(memory(at(before_access, region->arena->data)[0..region->arena->capacity]), memory(at(before_access, region->arena->data)[at(before_access, region->start + index)])) by {
             apply(separation::contains_element(at(before_access, region->arena->data), 0, region->arena->capacity, at(before_access, region->start + index)));
         }
-        have contains(memory(region->arena->data[0..region->arena->capacity]), memory(at(before_access, region->arena->data)[at(before_access, region->start + index)])) by { rewrite(region->arena->data, at(before_access, region->arena->data)); known(); }
+        have contains(memory(region->arena->data[0..region->arena->capacity]), memory(at(before_access, region->arena->data)[at(before_access, region->start + index)])) by { rewrite(region->arena->data, at(before_access, region->arena->data)); close(); }
         have separate(memory(at(before_access, region->arena->data)[at(before_access, region->start + index)]), memory(region->arena->occupied[k])) by {
             apply(separation::separate_symm(memory(region->arena->occupied[0..region->arena->capacity]), memory(region->arena->data[0..region->arena->capacity])));
             apply(separation::separate_restrict(
@@ -266,32 +266,32 @@ void arena_write(struct region* region, int32 index, int32 value) {
         have at(statement(2).exit, region->arena->occupied[k]) == at(statement(2).entry, region->arena->occupied[k]) by {
             preserve(memory(region->arena->occupied[k]), statement(2));
         }
-        known();
+        close();
     }
-    have region->arena->capacity == old(region->arena->capacity) by solve();
+    have region->arena->capacity == old(region->arena->capacity) by close();
     have separate(memory(*region->arena), memory(region->arena->data[0..region->arena->capacity])) by {
         rewrite(region->arena->capacity, old(region->arena->capacity));
         rewrite(region->arena->data, old(region->arena->data));
         rewrite(region->arena, old(region->arena));
-        known();
+        close();
     }
-    have region->arena->occupied == old(region->arena->occupied) by solve();
+    have region->arena->occupied == old(region->arena->occupied) by close();
     have separate(memory(*region->arena), memory(region->arena->occupied[0..region->arena->capacity])) by {
         rewrite(region->arena->capacity, old(region->arena->capacity));
         rewrite(region->arena->occupied, old(region->arena->occupied));
         rewrite(region->arena, old(region->arena));
-        known();
+        close();
     }
     have separate(memory(region->arena->occupied[0..region->arena->capacity]), memory(region->arena->data[0..region->arena->capacity])) by {
         rewrite(region->arena->capacity, old(region->arena->capacity));
         rewrite(region->arena->occupied, old(region->arena->occupied));
         rewrite(region->arena->data, old(region->arena->data));
-        known();
+        close();
     }
     let r = fold(arena_region(region), { start: s, end: e });
     let st = fold(arena_state(region->arena), { live: n, capacity: c });
     step_until(function.exit);
-    solve();
+    close();
 }
 
 ```

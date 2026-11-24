@@ -43,7 +43,7 @@ void copy_n(char* dst, const char* src, uint64 n) {
             (dst as (uint8 *))[0u64 + j] == old((src as (uint8 *))[0u64 + j])
         })), k);
         apply(separation::contains_element(src as (uint8 *), 0u64, n, k));
-        have contains(memory(dst[0u64..n]), statement(0).footprint) by { known(); }
+        have contains(memory(dst[0u64..n]), statement(0).footprint) by { close(); }
         apply(separation::separate_restrict(
             memory(dst[0u64..n]), memory(src[0u64..n]),
             statement(0).footprint, memory((src as (uint8 *))[k])
@@ -65,7 +65,7 @@ void copy_n(char* dst, const char* src, uint64 n) {
         rewrite((src as (uint8 *))[k], at(copied, (src as (uint8 *))[k]));
         rewrite(at(copied, (src as (uint8 *))[k]), old((src as (uint8 *))[k]));
         rewrite((dst as (uint8 *))[k], at(copied, (dst as (uint8 *))[k]));
-        known();
+        close();
     }
 }
 ```

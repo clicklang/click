@@ -8,16 +8,16 @@ pasted before the `apply`, states the native requirement `100u64 < a` at
 ```click
 theorem big(a: uint64) {
     requires 100u64 < a;
-    ensures true by { solve(); }
+    ensures true by { close(); }
 }
 
 theorem wrapped(n: uint64, k: uint64) {
     requires n == 5u64;
     requires k == 30u64;
     ensures true by {
-        have to_integer(100u64) < to_integer((n - k)) by { solve(); }
+        have to_integer(100u64) < to_integer((n - k)) by { close(); }
         apply(big(n - k));
-        solve();
+        close();
     }
 }
 ```

@@ -10,13 +10,13 @@ uint64 click_zlib_incremental(uint64 seed, const uint8* buf, uint64 len, uint64 
  ensures to_integer(result) == adler_spec_checksum_u64(old(buf), old(len), to_integer(zlib_seed_a(old(seed))), to_integer(zlib_seed_b(old(seed))));
  ensures forall (k: uint64) { k < old(len) implies old(buf)[k] == old(buf[k]) };
 } by {
- have viewable(buf[0u64..len]) by solve();
+ have viewable(buf[0u64..len]) by close();
  apply(zlib_seed_bounds(seed));
- have viewable(buf[0u64..split]) by solve();
+ have viewable(buf[0u64..split]) by close();
  step_until(assignment(prefix, 0).entry); step();
  apply(zlib_checksum_seed_u64(buf, split, prefix, to_integer(zlib_seed_a(seed)), to_integer(zlib_seed_b(seed))));
- have buf + split != 0 by known();
- have viewable((buf + split)[0u64..len - split]) by solve();
+ have buf + split != 0 by close();
+ have viewable((buf + split)[0u64..len - split]) by close();
  have to_integer(len - split) == to_integer(len) - to_integer(split);
  have to_integer(split) + to_integer(len - split) <= 18446744073709551615 by close() using {
   to_integer(len - split) == to_integer(len) - to_integer(split);
@@ -36,5 +36,5 @@ uint64 click_zlib_incremental(uint64 seed, const uint8* buf, uint64 len, uint64 
  have to_integer(result) == adler_spec_checksum_u64(old(buf), old(len), to_integer(zlib_seed_a(old(seed))), to_integer(zlib_seed_b(old(seed)))) by {
   close() using { to_integer(result) == adler_spec_checksum_u64(old(buf) + split, len - split, to_integer(zlib_seed_a(at(before_suffix, prefix))), to_integer(zlib_seed_b(at(before_suffix, prefix)))); adler_spec_checksum_u64(old(buf) + split, len - split, to_integer(zlib_seed_a(at(before_suffix, prefix))), to_integer(zlib_seed_b(at(before_suffix, prefix)))) == adler_spec_checksum_u64(old(buf), old(len), to_integer(zlib_seed_a(old(seed))), to_integer(zlib_seed_b(old(seed)))); };
  }
- solve();
+ close();
 }

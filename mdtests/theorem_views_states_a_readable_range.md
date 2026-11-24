@@ -26,14 +26,14 @@ theorem cell_of_a_viewed_range(v: int32[], lo: int32, hi: int32, k: int32) {
     views v[lo..hi];
     requires lo <= k;
     requires k < hi;
-    ensures to_integer(v[k]) == to_integer(v[k]) by solve();
+    ensures to_integer(v[k]) == to_integer(v[k]) by close();
 }
 
 theorem cell_of_a_stated_range(v: int32[], lo: int32, hi: int32, k: int32) {
     requires viewable(v[lo..hi]);
     requires lo <= k;
     requires k < hi;
-    ensures to_integer(v[k]) == to_integer(v[k]) by solve();
+    ensures to_integer(v[k]) == to_integer(v[k]) by close();
 }
 
 theorem first_cell_of_a_viewed_range(v: int32[], hi: int32) {
@@ -42,7 +42,7 @@ theorem first_cell_of_a_viewed_range(v: int32[], hi: int32) {
     ensures to_integer(v[0]) == to_integer(v[0]) by {
         have 0 <= 0;
         apply(cell_of_a_viewed_range(v, 0, hi, 0));
-        known();
+        close();
     }
 }
 ```

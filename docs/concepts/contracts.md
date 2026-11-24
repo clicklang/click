@@ -184,7 +184,7 @@ The `by` clause says how a guarantee is proved:
 <!-- verified-example: mdtests/contract_clause_forms.md -->
 ```click
 ensures result == 0;
-ensures result == x by { step_until(function.exit); solve(); }
+ensures result == x by { step_until(function.exit); close(); }
 ```
 
 An omitted proof clause runs the function and closes the claim at its exit.

@@ -39,13 +39,13 @@ unsigned long walk(unsigned char *p, unsigned long n) {
             } by {
                 intro();
                 intro();
-                solve();
+                close();
             }
-            solve();
+            close();
         }
     }
     step_until(function.exit);
-    solve();
+    close();
 }
 ```
 

@@ -24,8 +24,8 @@ theorem bounded_product(x: int32, y: int32) {
 theorem bounded_remainder(x: int32) {
     requires 0 <= x;
 
-    ensures 0 <= x % 4 by known();
-    ensures x % 4 < 4 by known();
+    ensures 0 <= x % 4 by close();
+    ensures x % 4 < 4 by close();
 }
 
 theorem bounded_mask(x: int32) {

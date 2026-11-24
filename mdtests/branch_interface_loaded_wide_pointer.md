@@ -28,10 +28,10 @@ void put(struct Holder* h, int32 x, uint64 stamp) {
     have *q == address(p) + stamp;
     branch ensuring { fact *q == address(p) + stamp; } {
         true => {
-            step(); have *q == address(p) + stamp by { solve(); }
+            step(); have *q == address(p) + stamp by { close(); }
         }
         false => {
-            step(); have *q == address(p) + stamp by { solve(); }
+            step(); have *q == address(p) + stamp by { close(); }
         }
     }
 }

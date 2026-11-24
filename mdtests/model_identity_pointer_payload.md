@@ -90,7 +90,7 @@ int cell_same(struct cell* p, struct cell* q) {
                         unfold(cell_member(CellModel::Present(identity, value), q));
                         close() using { address(identity) == address(q); };
                     }
-                    solve();
+                    close();
                 }
                 false => {}
             }
@@ -102,7 +102,7 @@ int cell_same(struct cell* p, struct cell* q) {
                 unfold(cell_member(CellModel::Present(identity, value), q));
                 close() using { not(address(identity) == address(q)); };
             }
-            solve();
+            close();
         },
     }
 }

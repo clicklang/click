@@ -1,6 +1,6 @@
 # Instantiation uses an ordinary guard proof through equality
 
-`have k < n by known()` uses equality closure. Instantiation itself preserves
+`have k < n by close()` uses equality closure. Instantiation itself preserves
 the guard, which exact propagation then discharges from this ordinary fact.
 
 ```click
@@ -12,11 +12,11 @@ theorem bare_instantiate_missing_guard(n: int32, m: int32, k: int32) {
     requires k < m;
     requires m == n;
     ensures tag(k) == 0 by {
-        have k < n by known();
+        have k < n by close();
         instantiate(forall (j: int32) {
             0 <= j and j < n implies tag(j) == 0
         }, k);
-        known();
+        close();
     }
 }
 ```

@@ -47,7 +47,7 @@ int32 advance_owned_selected_pointer(
         }
         step();
         step();
-        solve();
+        close();
     }
 }
 ```

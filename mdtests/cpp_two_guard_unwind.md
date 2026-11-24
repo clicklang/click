@@ -51,7 +51,7 @@ Restore::Restore(int32* slot) {
     ensures separate(memory(*this), memory(this->pointer[0..1]));
 } by {
     step_until(function.exit);
-    solve();
+    close();
 }
 
 Restore::~Restore() {
@@ -64,7 +64,7 @@ Restore::~Restore() {
     ensures this->pointer[0] == old(this->saved);
 } by {
     step_until(function.exit);
-    solve();
+    close();
 }
 
 int32 helper(bool should_throw) throws int32 {
@@ -89,13 +89,13 @@ int32 guarded2(int32& first_cell, int32& second_cell, bool should_throw) {
             step();
             have second_cell == old(second_cell);
             step_until(function.exit);
-            solve();
+            close();
         }
         threw => {
             step();
             have second_cell == old(second_cell);
             step_until(function.exit);
-            solve();
+            close();
         }
     }
 }

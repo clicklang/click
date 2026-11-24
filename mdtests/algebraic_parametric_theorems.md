@@ -2,7 +2,7 @@
 
 ```click
 theorem reflexive<T>(x: T) {
-    ensures x == x by known();
+    ensures x == x by close();
 }
 
 theorem via_generic<T>(x: T) {

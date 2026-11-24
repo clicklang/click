@@ -167,22 +167,22 @@ void pool_pipeline(struct pool* pool, struct object* first, struct object* secon
     unfold(pool_control(pool));
     have count(pool_object(pool, _)) == 0 by {
         rewrite(old(count(pool_object(pool, _))), 0);
-        solve();
+        close();
     }
     have count(pool_slot(pool)) == 2 by {
         rewrite(old(count(pool_slot(pool))), 0);
-        solve();
+        close();
     }
     have pool->checked_out == 0 by {
         rewrite(pool->checked_out, count(pool_object(pool, _)));
         rewrite(count(pool_object(pool, _)), 0);
-        solve();
+        close();
     }
     have pool->capacity == 2 by {
         rewrite(pool->capacity, pool->checked_out + count(pool_slot(pool)));
         rewrite(pool->checked_out, 0);
         rewrite(count(pool_slot(pool)), 2);
-        solve();
+        close();
     }
     fold(pool_control(pool));
     step();
@@ -247,7 +247,7 @@ void pool_grow(struct pool* pool, int32 amount) {
 } by {
     with(pool_control(pool)) {
         have defined(count(pool_slot(pool)) + amount);
-        have defined(pool->capacity) by { known(); }
+        have defined(pool->capacity) by { close(); }
         have defined(pool->capacity + amount);
         step();
         fold(amount of pool_slot(pool));
@@ -310,7 +310,7 @@ void pool_transfer(struct pool* source, struct pool* destination, struct object*
                 preserve(memory(destination->capacity), statement(1));
             }
             have destination->capacity == at(before_source_write, destination->capacity) by {
-                known();
+                close();
             }
             fold(pool_object(destination, object));
             fold(pool_slot(source));

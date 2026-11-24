@@ -33,7 +33,7 @@ int32 f(char buf[], int32 len, uint32 flags) {
     owns buf[0..len as uint64];
     ensures result <= 1;
 } by {
-    have 0 <= len and len <= 2147483647 by solve();
+    have 0 <= len and len <= 2147483647 by close();
     have to_integer(len as uint64) == to_integer(len) by {
         close() using { 0 <= to_integer(len); to_integer(len) <= 2147483647; };
     }
@@ -42,11 +42,11 @@ int32 f(char buf[], int32 len, uint32 flags) {
     if (flags & 1u32) != 0u32 {
         step(snprintf, { n0: 0u64 });
         step_until(function.exit);
-        solve();
+        close();
     } else {
         let { result: count } = step(snprintf, { n0: 0u64 });
         step_until(function.exit);
-        solve();
+        close();
     }
 }
 ```

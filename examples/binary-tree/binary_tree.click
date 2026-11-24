@@ -23,7 +23,7 @@ struct node* tree_empty() {
 } by {
     step_until(function.exit);
     fold(tree(result));
-    solve();
+    close();
 }
 
 int32 tree_root(struct node* node) {
@@ -34,7 +34,7 @@ int32 tree_root(struct node* node) {
 } by {
     observe(tree(node));
     step();
-    known();
+    close();
 }
 
 int32 tree_make_root(
@@ -59,11 +59,11 @@ int32 tree_make_root(
     step();
     step();
     fold(tree(node));
-    known();
-    known();
-    known();
-    known();
-    known();
+    close();
+    close();
+    close();
+    close();
+    close();
 }
 
 int32 tree_swap_children(struct node* node) {
@@ -93,10 +93,10 @@ int32 tree_leaf_pipeline(struct node* node, int32 value) {
     step_until(statement(8).entry);
     unfold(tree(node));
     step();
-    have at(statement(8).call(0).exit, defined(node->left)) by { known(); }
-    have at(statement(8).call(0).exit, defined(node->right)) by { known(); }
-    have separate(memory(swapped), memory(node->left)) by { known(); }
-    have separate(memory(swapped), memory(node->right)) by { known(); }
+    have at(statement(8).call(0).exit, defined(node->left)) by { close(); }
+    have at(statement(8).call(0).exit, defined(node->right)) by { close(); }
+    have separate(memory(swapped), memory(node->left)) by { close(); }
+    have separate(memory(swapped), memory(node->right)) by { close(); }
     step();
     have separate(statement(8).assignment(swapped, 0).footprint, memory(node->left)) by {
         close() using { separate(memory(swapped), memory(node->left)); };
@@ -112,11 +112,11 @@ int32 tree_leaf_pipeline(struct node* node, int32 value) {
     }
     fold(tree(node));
     step_until(function.exit);
-    known();
-    known();
-    known();
-    known();
-    known();
+    close();
+    close();
+    close();
+    close();
+    close();
 }
 
 int32 tree_is_leaf(struct node* node) {
@@ -153,12 +153,12 @@ int32 tree_is_leaf(struct node* node) {
         have node->left == 0 implies node->right != 0 implies result == 0;
         have node->left == 0 implies node->right == 0 implies result == 1;
         have result == 0 or result == 1;
- known();
-        known();
-        known();
-        known();
-        known();
-        known();
+ close();
+        close();
+        close();
+        close();
+        close();
+        close();
     } else {
         if at(function.entry, node->right) != at(function.entry, 0) {
             have result == 1 implies node->left == 0;
@@ -167,12 +167,12 @@ int32 tree_is_leaf(struct node* node) {
             have node->left == 0 implies node->right != 0 implies result == 0;
             have node->left == 0 implies node->right == 0 implies result == 1;
             have result == 0 or result == 1;
-     known();
-            known();
-            known();
-            known();
-            known();
-            known();
+     close();
+            close();
+            close();
+            close();
+            close();
+            close();
         } else {
             have result == 1 implies node->left == 0;
             have result == 1 implies node->right == 0;
@@ -180,12 +180,12 @@ int32 tree_is_leaf(struct node* node) {
             have node->left == 0 implies node->right != 0 implies result == 0;
             have node->left == 0 implies node->right == 0 implies result == 1;
             have result == 0 or result == 1;
-     known();
-            known();
-            known();
-            known();
-            known();
-            known();
+     close();
+            close();
+            close();
+            close();
+            close();
+            close();
         }
     }
 }
@@ -210,7 +210,7 @@ int32 tree_sum_root_and_children(struct node* node) {
     step();
     step();
     step();
-    solve();
+    close();
 }
 
 struct node* tree_rotate_left(struct node* node) {
@@ -234,9 +234,9 @@ struct node* tree_rotate_left(struct node* node) {
     have node->right == old(node->right->left);
     fold(tree(node));
     fold(tree(result));
-    known();
-    known();
-    known();
+    close();
+    close();
+    close();
 }
 
 int32 tree_walk(struct node* node) {
@@ -261,7 +261,7 @@ int32 tree_walk(struct node* node) {
             step();
             step();
             step();
-            known();
+            close();
         } else {
             step();
             step();
@@ -276,7 +276,7 @@ int32 tree_walk(struct node* node) {
             step();
             step();
             step();
-            known();
+            close();
         }
     } else {
         if node->right == 0 {
@@ -293,7 +293,7 @@ int32 tree_walk(struct node* node) {
             step();
             step();
             step();
-            known();
+            close();
         } else {
             step();
             step();
@@ -309,7 +309,7 @@ int32 tree_walk(struct node* node) {
             step();
             step();
             step();
-            known();
+            close();
         }
     }
 }

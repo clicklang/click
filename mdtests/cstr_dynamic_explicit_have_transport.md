@@ -24,18 +24,18 @@ int32 read_terminator(uint8 bytes[], uint64 known_len) {
     ensures result == '\0' by {
         step_until(region(1).entry);
         observe(click::c::string::cstr_at(bytes, known_len));
-        have viewable(bytes[0..known_len + 1u64]) by { observe(bytes[0..known_len + 1u64]); known(); }
+        have viewable(bytes[0..known_len + 1u64]) by { observe(bytes[0..known_len + 1u64]); close(); }
         have forall (k: uint64) { to_integer(k) < to_integer(known_len + 1u64) implies defined(bytes[k]) } by {
             intro(); intro();
-            have 0u64 <= k by { known(); }
+            have 0u64 <= k by { close(); }
             instantiate(forall (j: uint64) { 0u64 <= j and to_integer(j) < to_integer(known_len + 1u64) implies defined(bytes[j]) }, k);
-            known();
+            close();
         }
         have forall (k: uint64) { k < known_len implies bytes[k] != '\0' } by {
             intro(); intro();
-            have 0u64 <= k by { known(); }
+            have 0u64 <= k by { close(); }
             instantiate(forall (j: uint64) { 0u64 <= j and j < known_len implies bytes[j] != '\0' }, k);
-            known();
+            close();
         }
         have exists (len: uint64) {
             len < 18446744073709551615u64 and
@@ -45,7 +45,7 @@ int32 read_terminator(uint8 bytes[], uint64 known_len) {
                 forall (k: uint64) { to_integer(k) < to_integer(len + 1u64) implies defined(bytes[k]) }
         } by {
             witness(known_len);
-            known();
+            close();
         }
     }
 }

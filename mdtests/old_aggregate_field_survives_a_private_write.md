@@ -12,8 +12,8 @@ void redirect(struct packet input, int32* q) {
     ensures q == old(q);
 } by {
     step();
-    have input.data == q by { known(); }
-    have old(input.data) != q by { known(); }
+    have input.data == q by { close(); }
+    have old(input.data) != q by { close(); }
 }
 ```
 

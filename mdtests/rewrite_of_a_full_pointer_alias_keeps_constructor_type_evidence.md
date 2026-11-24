@@ -37,17 +37,17 @@ int parent(struct node* node) {
         Wrapped::Node(id, unp, left, right) => {
             unfold(t);
             step(); step();
-            have unp == gparent by { solve(); }
+            have unp == gparent by { close(); }
             have Wrapped::Node(id, unp, left, right) == Wrapped::Node(id, gparent, left, right) by {
                 rewrite(unp, gparent);
-                known();
+                close();
             }
-            have ((node->word & ~3) as (struct node *)) == unp by { solve(); }
+            have ((node->word & ~3) as (struct node *)) == unp by { close(); }
             let t = fold(tree(node), { model: Wrapped::Node(id, unp, left, right) });
             step_until(function.exit);
         },
     }
-    solve();
+    close();
 }
 ```
 

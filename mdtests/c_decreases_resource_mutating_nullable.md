@@ -40,11 +40,11 @@ void list_destroy(struct node* node) {
     if node == 0 {
         unfold(allocated_list(node));
         step_until(function.exit);
-        solve();
+        close();
     } else {
         unfold(allocated_list(node));
         step_until(function.exit);
-        solve();
+        close();
     }
 }
 ```

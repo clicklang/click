@@ -34,7 +34,7 @@ uint64 lp(const uint8* b, uint64 n) {
         invariant v == b + (n - n % 4u64 - vl);
         initialize by {
             have n % 4u64 <= n;
-            solve();
+            close();
         }
         maintain by {
             if 4u64 <= vl {
@@ -46,15 +46,15 @@ uint64 lp(const uint8* b, uint64 n) {
                 step_until(loop(0).back_edge);
                 have v == at(head, v) + 4u64;
                 have vl == at(head, vl) - 4u64;
-                have 4u64 <= at(head, vl) by known();
+                have 4u64 <= at(head, vl) by close();
                 apply(click::integer::uint64_subtract_to_integer(at(head, vl), 4u64));
-                have to_integer(vl) == to_integer(at(head, vl)) - 4 by known();
+                have to_integer(vl) == to_integer(at(head, vl)) - 4 by close();
                 have vl < at(head, vl) by {
                     have to_integer(vl) < to_integer(at(head, vl)) by {
                         rewrite(to_integer(vl), to_integer(at(head, vl)) - 4);
-                        known();
+                        close();
                     }
-                    known();
+                    close();
                 }
                 have at(head, v) == b + (n - n % 4u64 - at(head, vl));
                 have to_integer(n - n % 4u64 - at(head, vl)) + 4 <= 18446744073709551615;

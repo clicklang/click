@@ -20,7 +20,7 @@ int32 identity(int32 x) {
     let k = obtain(exists (k: int32) { k == x });
     step_until(function.exit);
     witness(k);
-    solve();
+    close();
 }
 ```
 

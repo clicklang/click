@@ -26,7 +26,7 @@ unsigned long set_black(unsigned long word, struct node* next) {
     have result == address(next) + 3 by {
         close() using { word == address(next) + 1; aligned(next, 8); };
     }
-    solve();
+    close();
 }
 ```
 

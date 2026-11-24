@@ -40,39 +40,39 @@ int32 set_at(struct S* s, uint64 i, int32 v) {
     ensures forall (k: uint64) { k < s->e.v and k != i implies s->p[k] == old(s->p[k]) };
 } by {
     step_until(statement(1).entry);
-    have s->p == old(s->p) by { solve(); }
-    have s->e.v == old(s->e.v) by { solve(); }
-    have e == s->p + i by { known(); }
+    have s->p == old(s->p) by { close(); }
+    have s->e.v == old(s->e.v) by { close(); }
+    have e == s->p + i by { close(); }
     step();
-    have separate(memory(*e), memory(s->p) * memory(s->e.v)) by { known(); }
+    have separate(memory(*e), memory(s->p) * memory(s->e.v)) by { close(); }
     apply(separation::contains_left(memory(s->p), memory(s->e.v)));
     apply(separation::contains_refl(memory(*e)));
     apply(separation::separate_restrict(
         memory(*e), memory(s->p) * memory(s->e.v), memory(*e), memory(s->p)
     ));
     have separate(statement(1).footprint, memory(s->p)) by {
-        known();
+        close();
     }
     have s->p == at(statement(1).entry, s->p) by {
         preserve(memory(s->p), statement(1));
     }
     have s->p == old(s->p) by {
         rewrite(s->p, at(statement(1).entry, s->p));
-        known();
+        close();
     }
     apply(separation::contains_right(memory(s->p), memory(s->e.v)));
     apply(separation::separate_restrict(
         memory(*e), memory(s->p) * memory(s->e.v), memory(*e), memory(s->e.v)
     ));
     have separate(statement(1).footprint, memory(s->e.v)) by {
-        known();
+        close();
     }
     have s->e.v == at(statement(1).entry, s->e.v) by {
         preserve(memory(s->e.v), statement(1));
     }
     have s->e.v == old(s->e.v) by {
         rewrite(s->e.v, at(statement(1).entry, s->e.v));
-        known();
+        close();
     }
     have forall (k: uint64) { k < s->e.v and k != i implies s->p[k] == old(s->p[k]) } by {
         intro(); intro();
@@ -80,21 +80,21 @@ int32 set_at(struct S* s, uint64 i, int32 v) {
         have separate(memory(*e), memory(at(statement(1).entry, s->p + k)[0])) by {
             rewrite(e, s->p + i);
             rewrite(at(statement(1).entry, s->p), s->p);
-            known();
+            close();
         }
         have separate(statement(1).footprint, memory(at(statement(1).entry, s->p + k)[0])) by {
-            known();
+            close();
         }
         have (let saved: int32* = at(statement(1).entry, s->p + k); saved[0]) ==
             at(statement(1).entry, s->p[k]) by {
             preserve(memory(at(statement(1).entry, s->p + k)[0]), statement(1));
         }
-        have at(statement(1).entry, s->p[k]) == old(s->p[k]) by { known(); }
+        have at(statement(1).entry, s->p[k]) == old(s->p[k]) by { close(); }
         rewrite(s->p, at(statement(1).entry, s->p));
-        known();
+        close();
     }
     step();
-    solve();
+    close();
 }
 ```
 

@@ -44,7 +44,7 @@ void object_retain(struct object *obj) {
     let restored = fold(control(obj), { refs: refs + 1, slack: slack - 1 });
     step(pthread_mutex_unlock, { access: access, guard: guard, state: restored });
     step();
-    solve();
+    close();
 }
 void object_release(struct object *obj) {
     owns access: mutex_use(&obj->mu, control(obj));
@@ -74,7 +74,7 @@ void object_release(struct object *obj) {
     let restored = fold(control(obj), { refs: refs - 1, slack: slack + 1 });
     step(pthread_mutex_unlock, { access: access, guard: guard, state: restored });
     step();
-    solve();
+    close();
 }
 void* user(void* argument) {
     owns access: mutex_use(&(argument as (struct object *))->mu, control(argument as (struct object *)));
@@ -85,7 +85,7 @@ void* user(void* argument) {
     step();
     step(object_release, { access: access });
     step();
-    solve();
+    close();
 }
 int32 run() {
     ensures result == -1 or result == 0 or result == 1;
@@ -94,7 +94,7 @@ int32 run() {
     step();
     step();
     step();
-    branch { true => { step(); solve(); } false => {} }
+    branch { true => { step(); close(); } false => {} }
     step();
     fold(authority(reference(obj)));
     fold(authority(permit(obj)));
@@ -118,7 +118,7 @@ int32 run() {
             unfold(authority(permit(obj)));
             step();
             step();
-            solve();
+            close();
         }
         false => {}
     }
@@ -138,7 +138,7 @@ int32 run() {
             unfold(authority(permit(obj)));
             step();
             step();
-            solve();
+            close();
         }
         false => {}
     }
@@ -154,7 +154,7 @@ int32 run() {
     unfold(authority(permit(obj)));
     step();
     step();
-    solve();
+    close();
 }
 
 int32 run_reverse_join() {
@@ -164,7 +164,7 @@ int32 run_reverse_join() {
     step();
     step();
     step();
-    branch { true => { step(); solve(); } false => {} }
+    branch { true => { step(); close(); } false => {} }
     step();
     fold(authority(reference(obj)));
     fold(authority(permit(obj)));
@@ -188,7 +188,7 @@ int32 run_reverse_join() {
             unfold(authority(permit(obj)));
             step();
             step();
-            solve();
+            close();
         }
         false => {}
     }
@@ -208,7 +208,7 @@ int32 run_reverse_join() {
             unfold(authority(permit(obj)));
             step();
             step();
-            solve();
+            close();
         }
         false => {}
     }
@@ -224,5 +224,5 @@ int32 run_reverse_join() {
     unfold(authority(permit(obj)));
     step();
     step();
-    solve();
+    close();
 }

@@ -27,7 +27,7 @@ int32 run(const int32 *q) {
 } by {
     step();
     have separate(memory(((&holder.mutex) as (uint8 *))[0..40]), memory(q[0..1])) by {
-        known();
+        close();
     }
     step();
     step();

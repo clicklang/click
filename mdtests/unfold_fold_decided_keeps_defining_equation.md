@@ -9,7 +9,7 @@ theorem tally_definition(lo: int32, hi: int32) {
     requires lo < hi;
     ensures tally(lo, hi) == (lo..hi).fold(to_integer(0), |acc, k| { acc + 1 }) by {
         unfold(tally(lo, hi));
-        known();
+        close();
     }
 }
 ```

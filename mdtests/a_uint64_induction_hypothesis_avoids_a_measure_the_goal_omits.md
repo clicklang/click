@@ -19,9 +19,9 @@ theorem with_using(n: uint64) {
         let ih = induct(n);
         if n <= 0u64 {
             unfold(k(3u64));
-            known();
+            close();
         } else {
-            have 0u64 < n by solve();
+            have 0u64 < n by close();
             have to_integer(n - 1u64) < to_integer(n);
             apply(ih(n - 1u64));
         }
@@ -33,9 +33,9 @@ theorem bare(n: uint64) {
         let ih = induct(n);
         if n <= 0u64 {
             unfold(k(3u64));
-            known();
+            close();
         } else {
-            have 0u64 < n by solve();
+            have 0u64 < n by close();
             have to_integer(n - 1u64) < to_integer(n);
             apply(ih(n - 1u64));
         }

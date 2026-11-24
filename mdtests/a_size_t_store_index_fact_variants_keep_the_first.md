@@ -79,14 +79,14 @@ int32 stated_word(size_t n) {
     requires 2u64 <= n and n <= 1000u64;
     ensures result == 0 or result == 7;
 } by {
-    have ((n - 1) as uint64) != 0 by solve();
+    have ((n - 1) as uint64) != 0 by close();
 }
 
 int32 stated_integer(size_t n) {
     requires 2u64 <= n and n <= 1000u64;
     ensures result == 0 or result == 7;
 } by {
-    have n - 1 != 0 by solve();
+    have n - 1 != 0 by close();
 }
 ```
 

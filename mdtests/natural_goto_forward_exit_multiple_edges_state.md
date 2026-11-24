@@ -30,14 +30,14 @@ int32 count_down_or_stop(int32 n) {
         maintain by {
             if n == 0 {
                 step();
-                have n == 0 or n == 1 by known();
+                have n == 0 or n == 1 by close();
                 step();
             } else {
                 step();
                 step();
                 if n == 1 {
                     step();
-                    have n == 0 or n == 1 by known();
+                    have n == 0 or n == 1 by close();
                     step();
                 } else {
                     step();

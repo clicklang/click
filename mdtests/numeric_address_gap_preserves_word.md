@@ -18,8 +18,8 @@ uint64 keep(uint64* p, uint64* q) {
     ensures result == 17;
 } by {
     step();
-    have separate(memory(*p), memory(*q)) by { known(); }
-    have *p == 17 by { known(); }
+    have separate(memory(*p), memory(*q)) by { close(); }
+    have *p == 17 by { close(); }
 }
 ```
 

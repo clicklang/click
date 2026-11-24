@@ -32,7 +32,7 @@ int32 object_refcount(struct object* obj) {
     with(control(obj)) {
         step_until(function.exit);
     }
-    solve();
+    close();
 }
 ```
 

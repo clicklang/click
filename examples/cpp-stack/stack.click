@@ -32,7 +32,7 @@ theorem length_nonnegative(xs: List<int32>) {
         match xs {
             List::Nil => {
                 unfold(length(List<int32>::Nil));
-                solve();
+                close();
             }
             List::Cons(value, rest) => {
                 apply(ih(rest));
@@ -82,7 +82,7 @@ void Stack<int>::push(int value) {
         to_integer(old(this->count)) == length(old(before.items));
         length(List::Cons(value, old(before.items))) == length(old(before.items)) + 1;
     };
-    solve();
+    close();
 }
 
 bool Stack<int>::pop(int& out) {
@@ -119,13 +119,13 @@ bool Stack<int>::pop(int& out) {
                     unfold(tail);
                     let after = fold(nodes(this->head), { items: List<int32>::Nil });
                     unfold(length(List<int32>::Nil));
-                    have length(tail_items) == 0 by solve();
+                    have length(tail_items) == 0 by close();
                     have to_integer(old(this->count)) == 1 by close() using {
                         to_integer(old(this->count)) == length(List::Cons(value, tail_items));
                         length(List::Cons(value, tail_items)) == length(tail_items) + 1;
                         length(tail_items) == 0;
                     };
-                    solve();
+                    close();
                 },
                 List::Cons(next_value, next_items) => {
                     let { tail: next } = unfold(tail);
@@ -139,7 +139,7 @@ bool Stack<int>::pop(int& out) {
                         to_integer(old(this->count) - 1u64) == to_integer(old(this->count)) - to_integer(1u64);
                         to_integer(old(this->count)) == length(tail_items) + 1;
                     };
-                    solve();
+                    close();
                 },
             }
         },
@@ -160,7 +160,7 @@ Stack<int>::~Stack() {
         owns list: nodes(this->head);
         decreases length(list.items);
 
-        initialize by solve();
+        initialize by close();
         maintain by {
             match list.items {
                 List::Nil => { contradiction(list.items == List<int32>::Nil); },
@@ -168,7 +168,7 @@ Stack<int>::~Stack() {
                     let { tail: tail } = unfold(list);
                     unfold(length(List::Cons(value, rest)));
                     apply(length_nonnegative(rest));
-                    have 0 <= length(tail.items) by solve();
+                    have 0 <= length(tail.items) by close();
                     have length(tail.items) < length(List::Cons(value, rest)) by close() using {
                         length(List::Cons(value, rest)) == length(rest) + 1;
                         tail.items == rest;
@@ -183,11 +183,11 @@ Stack<int>::~Stack() {
                     have this->head->next == at(before_node, this->head->next) by {
                         preserve(memory(this->head->next), region(1));
                     }
-                    have node == this->head by { known(); }
+                    have node == this->head by { close(); }
                     step();
-                    have this->head == at(before_node, this->head->next) by { known(); }
+                    have this->head == at(before_node, this->head->next) by { close(); }
                     // Delete affects the whole typed node, not just its first scalar cell.
-                    have at(region(1).exit, separate(memory(*this->head), memory(this->head))) by { known(); }
+                    have at(region(1).exit, separate(memory(*this->head), memory(this->head))) by { close(); }
                     mark before_delete;
                     step();
                     have separate(region(3).footprint, memory(this->head)) by {
@@ -196,14 +196,14 @@ Stack<int>::~Stack() {
                     have this->head == at(before_delete, this->head) by {
                         preserve(memory(this->head), region(3));
                     }
-                    have this->head == at(before_node, this->head->next) by { known(); }
+                    have this->head == at(before_node, this->head->next) by { close(); }
                 },
             }
         }
     }
     unfold(list);
     step();
-    solve();
+    close();
 }
 
 int round_trip(int x) {
@@ -214,19 +214,19 @@ int round_trip(int x) {
     unfold(length(List<int32>::Nil));
     have length(List<int32>::Nil) < 1000000 by close() using { length(List<int32>::Nil) == 0; };
     let { after: pushed } = step(__cpp_q_X10_537461636b3c696e743e_I4_push, { before: empty }) {
-        requires length(empty.items) < 1000000 by solve();
-        requires to_integer(stack.count) == length(empty.items) by solve();
-        requires aligned(&stack, 8) by solve();
+        requires length(empty.items) < 1000000 by close();
+        requires to_integer(stack.count) == length(empty.items) by close();
+        requires aligned(&stack, 8) by close();
     }
     step();
     let { after: remaining } = step(__cpp_q_X10_537461636b3c696e743e_I3_pop, { before: pushed }) {
-        requires to_integer(stack.count) == length(pushed.items) by solve();
-        requires aligned(&stack, 8) by solve();
+        requires to_integer(stack.count) == length(pushed.items) by close();
+        requires aligned(&stack, 8) by close();
     }
     step_until(function.exit);
     unfold(length(List<int32>::Cons(x, List<int32>::Nil)));
     unfold(first_or(List<int32>::Cons(x, List<int32>::Nil), 0));
-    solve();
+    close();
 }
 
 unsigned long pushed_size(int x) {
@@ -243,14 +243,14 @@ unsigned long pushed_size(int x) {
         length(List<int32>::Nil) == 0;
     };
     let { after: one } = step(__cpp_q_X10_537461636b3c696e743e_I4_push, { before: empty }) {
-        requires length(empty.items) < 1000000 by solve();
-        requires to_integer(stack.count) == length(empty.items) by solve();
-        requires aligned(&stack, 8) by solve();
+        requires length(empty.items) < 1000000 by close();
+        requires to_integer(stack.count) == length(empty.items) by close();
+        requires aligned(&stack, 8) by close();
     }
     let { after: pushed } = step(__cpp_q_X10_537461636b3c696e743e_I4_push, { before: one }) {
-        requires length(one.items) < 1000000 by solve();
-        requires to_integer(stack.count) == length(one.items) by solve();
-        requires aligned(&stack, 8) by solve();
+        requires length(one.items) < 1000000 by close();
+        requires to_integer(stack.count) == length(one.items) by close();
+        requires aligned(&stack, 8) by close();
     }
     step();
     have separate(region(15).footprint, memory(stack.head)) by { close() using {}; }
@@ -270,5 +270,5 @@ unsigned long pushed_size(int x) {
         length(List<int32>::Cons(x, List<int32>::Nil)) == length(List<int32>::Nil) + 1;
         length(List<int32>::Nil) == 0;
     };
-    solve();
+    close();
 }

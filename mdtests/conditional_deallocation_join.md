@@ -52,7 +52,7 @@ int32 conditional_deallocation_join(int32* p, int32 error) {
         }
     }
     step();
-    solve();
+    close();
 }
 ```
 

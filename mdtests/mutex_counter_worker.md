@@ -71,7 +71,7 @@ void* increment_counter(void* argument) {
         access: access, guard: guard, state: restored
     });
     step();
-    solve();
+    close();
 }
 
 int32 increment_twice(struct mutex_counter* counter) {
@@ -85,14 +85,14 @@ int32 increment_twice(struct mutex_counter* counter) {
     step();
     let state = fold(counter_state(counter), { value: counter->value });
     let { lifetime: lifetime } = step(pthread_mutex_init, { state: state });
-    branch { true => { unfold(state); step(); solve(); } false => {} }
+    branch { true => { unfold(state); step(); close(); } false => {} }
     step();
     branch {
         true => {
             step(pthread_mutex_destroy, { lifetime: lifetime });
             unfold(state);
             step();
-            solve();
+            close();
         }
         false => {}
     }
@@ -103,7 +103,7 @@ int32 increment_twice(struct mutex_counter* counter) {
             step(pthread_mutex_destroy, { lifetime: lifetime });
             unfold(state);
             step();
-            solve();
+            close();
         }
         false => {}
     }
@@ -112,7 +112,7 @@ int32 increment_twice(struct mutex_counter* counter) {
     step(pthread_mutex_destroy, { lifetime: lifetime });
     unfold(state);
     step();
-    solve();
+    close();
 }
 ```
 

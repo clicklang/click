@@ -91,7 +91,7 @@ void erase_augmented(struct node* node, struct node* parent,
     ensures parent->left == old(parent->left);
     ensures parent->right == old(parent->right);
 } by {
-    have separate(callback_suite(augment), memory(*parent)) by { known(); }
+    have separate(callback_suite(augment), memory(*parent)) by { close(); }
     observe(callback_suite(augment));
     apply(separation::contains_refl(memory(*parent)));
     apply(separation::separate_restrict(callback_suite(augment), memory(*parent), memory(augment->propagate), memory(*parent)));

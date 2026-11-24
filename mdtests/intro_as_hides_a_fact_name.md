@@ -11,7 +11,7 @@ theorem t(x: int32) {
     ensures forall (k: int32) { x == 5 } by {
         have five: x == 5;
         let five = intro();
-        have five == five by known();
+        have five == five by close();
         close() using { x == 5; };
     }
 }

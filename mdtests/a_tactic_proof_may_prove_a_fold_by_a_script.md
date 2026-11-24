@@ -2,7 +2,7 @@
 
 A tactic's proof runs no C, so it may not `step`. A `fold` that proves the
 facts of the instance it folds with `by { ... }`, as in
-`let y = fold(cell_at(p), { value: x.value }) by { known(); }`, runs no C
+`let y = fold(cell_at(p), { value: x.value }) by { close(); }`, runs no C
 either: the script proves facts at the fold's point. The tactic is accepted.
 Expansion writes this form for a smart `fold`, so expanding a tactic that
 folds produces it.
@@ -34,9 +34,9 @@ tactic convert(p: int32*) {
 } by {
     unfold(x);
     let y = fold(cell2_at(p), { value: old(x.value) }) by {
-        known();
+        close();
     }
-    have y.value == old(x.value) by { known(); }
+    have y.value == old(x.value) by { close(); }
 }
 
 void user(int32* p) {
@@ -45,7 +45,7 @@ void user(int32* p) {
 } by {
     let { y: b } = convert(p, { x: a });
     step_until(function.exit);
-    solve();
+    close();
 }
 ```
 

@@ -11,7 +11,7 @@ theorem selected_index(a: Vec<uint32>, b: Vec<uint32>, c: Vec<uint32>, y: uint32
             close() using { vec::len(a) == 0u64; to_integer(vec::len(b)) == to_integer(vec::len(a)) + 1; }
         }
         rewrite(1u64, vec::len(b));
-        known();
+        close();
     }
 }
 

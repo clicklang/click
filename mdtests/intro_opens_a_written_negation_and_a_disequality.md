@@ -17,7 +17,7 @@ theorem written_negation(n: int32) {
             have false by { close() using { n == 0; n == 1; }; }
             contradiction();
         } else {
-            known();
+            close();
         }
     }
 }
@@ -29,7 +29,7 @@ theorem disequality(a: Integer, b: Integer) {
             have false by { close() using { a < b; a == b; }; }
             contradiction();
         } else {
-            known();
+            close();
         }
     }
 }
@@ -40,7 +40,7 @@ theorem written_order_negation(x: int32, y: int32) {
         if x >= y {
             contradiction(x < y);
         } else {
-            known();
+            close();
         }
     }
 }

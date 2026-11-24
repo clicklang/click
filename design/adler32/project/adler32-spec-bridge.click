@@ -8,8 +8,8 @@ import "adler32-spec-u64.click";
 
 theorem adler_byte_widen(value: uint8) {
  ensures to_integer(value as int32) == to_integer(value) by {
-  have 0 <= value as int32 by solve();
-  have value as int32 <= 255 by solve();
+  have 0 <= value as int32 by close();
+  have value as int32 <= 255 by close();
   close() using { 0 <= to_integer(value as int32); to_integer(value as int32) <= 255; };
  }
 }
@@ -26,9 +26,9 @@ theorem adler_byte_sum_bridge(bytes: uint8[], m: uint64) {
    rewrite(n, 0);
    apply(adler_sum_empty(bytes, 0));
    apply(adler_sum_empty_u64(bytes, 0));
-   solve();
+   close();
   } else {
-   have 0u64 < m by solve();
+   have 0u64 < m by close();
    have 0 < n by close() using { to_integer(n) == to_integer(m); 0u64 < m; };
    have to_integer(m - 1u64) < to_integer(m) by close() using { 0u64 < m; };
    have defined(n - 1) by close() using { 0 < n; };
@@ -67,9 +67,9 @@ theorem adler_weighted_sum_bridge(bytes: uint8[], m: uint64, w: int32) {
    rewrite(n, 0);
    apply(adler_sum_empty(bytes, w));
    apply(adler_sum_empty_u64(bytes, to_integer(w)));
-   solve();
+   close();
   } else {
-   have 0u64 < m by solve();
+   have 0u64 < m by close();
    have 0 < n by close() using { to_integer(n) == to_integer(m); 0u64 < m; };
    have to_integer(m - 1u64) < to_integer(m) by close() using { 0u64 < m; };
    have defined(n - 1) by close() using { 0 < n; };
@@ -91,7 +91,7 @@ theorem adler_weighted_sum_bridge(bytes: uint8[], m: uint64, w: int32) {
    rewrite(adler_weighted_sum(bytes, n - 1, w), adler_weighted_sum_u64(bytes, m - 1u64, to_integer(w)));
    rewrite(to_integer(n - 1), to_integer(m - 1u64));
    rewrite(to_integer(bytes[n - 1] as int32), to_integer(bytes[m - 1u64]));
-   known();
+   close();
   }
  }
 }
@@ -104,7 +104,7 @@ theorem adler_spec_a_bridge(bytes: uint8[], n: int32, m: uint64, a0: Integer) {
   unfold(adler_spec_a(bytes, n, a0));
   unfold(adler_spec_a_u64(bytes, m, a0));
   rewrite(adler_byte_sum(bytes, n), adler_byte_sum_u64(bytes, m));
-  known();
+  close();
  }
 }
 
@@ -117,7 +117,7 @@ theorem adler_spec_b_bridge(bytes: uint8[], n: int32, m: uint64, a0: Integer, b0
   unfold(adler_spec_b_u64(bytes, m, a0, b0));
   rewrite(adler_weighted_sum(bytes, n, n), adler_weighted_sum_u64(bytes, m, to_integer(n)));
   rewrite(to_integer(n), to_integer(m));
-  known();
+  close();
  }
 }
 
@@ -130,6 +130,6 @@ theorem adler_spec_checksum_bridge(bytes: uint8[], n: int32, m: uint64, a0: Inte
   unfold(adler_spec_checksum_u64(bytes, m, a0, b0));
   rewrite(adler_spec_a(bytes, n, a0), adler_spec_a_u64(bytes, m, a0));
   rewrite(adler_spec_b(bytes, n, a0, b0), adler_spec_b_u64(bytes, m, a0, b0));
-  known();
+  close();
  }
 }

@@ -79,13 +79,13 @@ struct node* h(struct node* p) {
         owns p->right->right;
         owns tl: tree(p->right->left);
         owns tr: tree(p->right->right);
-        initialize by solve();
+        initialize by close();
         maintain by {
             step();
-            have s == p->right by solve();
+            have s == p->right by close();
             let ns = fold(tree(s), { model: Tree::Node(tl.model, tr.model), left: tl, right: tr });
             let { left: nl, right: nr } = unfold(ns);
-            have s->left == p->right->left by known();
+            have s->left == p->right->left by close();
             step();
             step(); step();
         }

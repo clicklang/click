@@ -34,10 +34,10 @@ int32 flip_to_n(int32 n) {
         decreases n - i;
         invariant i >= 0;
         invariant parity >= 0 and parity <= 1;
-        initialize by solve();
+        initialize by close();
     }
     step();
-    solve();
+    close();
 }
 ```
 

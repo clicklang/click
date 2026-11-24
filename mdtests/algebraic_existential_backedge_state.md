@@ -44,12 +44,12 @@ void traverse(int32 *next, int32 *visited) diverges {
                 witness(Nat::Zero);
                 unfold(walk(next, 0, Nat::Zero));
             }
-            solve();
+            close();
         }
         maintain by {
             have separate(memory(visited[cur]), memory(next[0])) by {
                 rewrite(cur, 0);
-                known();
+                close();
             }
             mark before_visit;
             step();
@@ -68,7 +68,7 @@ void traverse(int32 *next, int32 *visited) diverges {
                 witness(Nat::Succ(Nat::Zero));
                 unfold(walk(next, 0, Nat::Zero));
                 unfold(walk(next, 0, Nat::Succ(Nat::Zero)));
-                solve();
+                close();
             }
         }
     }

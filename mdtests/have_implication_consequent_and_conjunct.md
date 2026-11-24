@@ -9,7 +9,7 @@ theorem consequent_then_conjunct(x: int32, y: int32, z: int32) {
     ensures z == 1 or x == 4 by {
         have y > 0 and z == 1;
         have z == 1;
-        known();
+        close();
     }
 }
 
@@ -18,7 +18,7 @@ theorem conjunct_of_a_consequent(x: int32, y: int32, z: int32) {
     requires x < y;
     ensures y > 0 or x == 4 by {
         have y > 0;
-        known();
+        close();
     }
 }
 ```

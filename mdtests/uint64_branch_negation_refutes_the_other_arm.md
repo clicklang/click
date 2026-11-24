@@ -52,7 +52,7 @@ uint64 fit_explicit(uint64 x) {
         intro();
         contradiction(x < 32u64);
     }
-    known();
+    close();
 }
 ```
 

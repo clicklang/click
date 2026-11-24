@@ -11,8 +11,8 @@ theorem add32_domain(a: int32, b: int32) {
     requires to_integer(a) + to_integer(b) >= -2147483648;
     ensures defined(a + b) by {
         all {
-            to_integer(a) + to_integer(b) <= 2147483647 => { known(); }
-            to_integer(a) + to_integer(b) >= -2147483648 => { known(); }
+            to_integer(a) + to_integer(b) <= 2147483647 => { close(); }
+            to_integer(a) + to_integer(b) >= -2147483648 => { close(); }
         }
     }
 }
@@ -28,8 +28,8 @@ theorem subtract32_domain(a: int32, b: int32) {
     requires to_integer(a) - to_integer(b) >= -2147483648;
     ensures defined(a - b) by {
         all {
-            to_integer(a) - to_integer(b) <= 2147483647 => { known(); }
-            to_integer(a) - to_integer(b) >= -2147483648 => { known(); }
+            to_integer(a) - to_integer(b) <= 2147483647 => { close(); }
+            to_integer(a) - to_integer(b) >= -2147483648 => { close(); }
         }
     }
 }
@@ -45,8 +45,8 @@ theorem multiply32_domain(a: int32, b: int32) {
     requires to_integer(a) * to_integer(b) >= -2147483648;
     ensures defined(a * b) by {
         all {
-            to_integer(a) * to_integer(b) <= 2147483647 => { known(); }
-            to_integer(a) * to_integer(b) >= -2147483648 => { known(); }
+            to_integer(a) * to_integer(b) <= 2147483647 => { close(); }
+            to_integer(a) * to_integer(b) >= -2147483648 => { close(); }
         }
     }
 }
@@ -73,8 +73,8 @@ theorem add64_domain(a: int64, b: int64) {
     requires to_integer(a) + to_integer(b) >= -9223372036854775808;
     ensures defined(a + b) by {
         all {
-            to_integer(a) + to_integer(b) <= 9223372036854775807 => { known(); }
-            to_integer(a) + to_integer(b) >= -9223372036854775808 => { known(); }
+            to_integer(a) + to_integer(b) <= 9223372036854775807 => { close(); }
+            to_integer(a) + to_integer(b) >= -9223372036854775808 => { close(); }
         }
     }
 }
@@ -90,8 +90,8 @@ theorem subtract64_domain(a: int64, b: int64) {
     requires to_integer(a) - to_integer(b) >= -9223372036854775808;
     ensures defined(a - b) by {
         all {
-            to_integer(a) - to_integer(b) <= 9223372036854775807 => { known(); }
-            to_integer(a) - to_integer(b) >= -9223372036854775808 => { known(); }
+            to_integer(a) - to_integer(b) <= 9223372036854775807 => { close(); }
+            to_integer(a) - to_integer(b) >= -9223372036854775808 => { close(); }
         }
     }
 }
@@ -107,8 +107,8 @@ theorem multiply64_domain(a: int64, b: int64) {
     requires to_integer(a) * to_integer(b) >= -9223372036854775808;
     ensures defined(a * b) by {
         all {
-            to_integer(a) * to_integer(b) <= 9223372036854775807 => { known(); }
-            to_integer(a) * to_integer(b) >= -9223372036854775808 => { known(); }
+            to_integer(a) * to_integer(b) <= 9223372036854775807 => { close(); }
+            to_integer(a) * to_integer(b) >= -9223372036854775808 => { close(); }
         }
     }
 }

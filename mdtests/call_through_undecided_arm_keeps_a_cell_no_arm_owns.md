@@ -77,13 +77,13 @@ void overwrite(struct node* p) {
             unfold(s);
             step_until(function.exit);
             let s = fold(slot_at(p), { model: Slot::Empty });
-            solve();
+            close();
         },
         Slot::Full(v) => {
             let { rest: r } = unfold(s);
             step_until(function.exit);
             let s = fold(slot_at(p), { model: Slot::Full(v), rest: r });
-            solve();
+            close();
         },
     }
 }
@@ -107,7 +107,7 @@ int32 caller(struct node* p) {
                 at(before, p->spare) == at(before, p->spare);
             };
         }
-        known();
+        close();
     }
     let { tag: rt1, child: rc0 } = unfold(o);
     let { tag: rt0 } = unfold(rc0);

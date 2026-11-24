@@ -35,12 +35,12 @@ void probe() {
     step();
     step();
     step();
-    have load<int32>(&x) == at(statement(2).call(0).exit, load<int32>(&x)) by known();
+    have load<int32>(&x) == at(statement(2).call(0).exit, load<int32>(&x)) by close();
     step();
     step();
-    have saved == at(statement(2).call(0).exit, load<int32>(&x)) by known();
+    have saved == at(statement(2).call(0).exit, load<int32>(&x)) by close();
     step();
-    have saved == at(statement(2).call(0).exit, load<int32>(&x)) by known();
+    have saved == at(statement(2).call(0).exit, load<int32>(&x)) by close();
     step();
 }
 ```

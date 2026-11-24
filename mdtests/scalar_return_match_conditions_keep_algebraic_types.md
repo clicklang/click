@@ -17,14 +17,14 @@ function black(t: Tree) -> int32 {
 theorem black_node() {
     ensures black(Tree::Node(Color::Black, Tree::Empty, Tree::Empty)) == 1 by {
         unfold(black(Tree::Node(Color::Black, Tree::Empty, Tree::Empty)));
-        known();
+        close();
     }
 }
 
 theorem red_node() {
     ensures black(Tree::Node(Color::Red, Tree::Empty, Tree::Empty)) == 0 by {
         unfold(black(Tree::Node(Color::Red, Tree::Empty, Tree::Empty)));
-        known();
+        close();
     }
 }
 ```

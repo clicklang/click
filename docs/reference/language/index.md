@@ -951,9 +951,9 @@ function reaches its return frontier:
 step_until(function.exit);
 have exists (k: int32) { k == result } by {
     witness(result);
-    solve();
+    close();
 }
-solve();
+close();
 ```
 
 The scoped proof may use `obtain` and `witness`. Its established proposition
@@ -1363,7 +1363,7 @@ theorem cell_of_a_viewed_range(v: int32[], lo: int32, hi: int32, k: int32) {
     views v[lo..hi];
     requires lo <= k;
     requires k < hi;
-    ensures to_integer(v[k]) == to_integer(v[k]) by solve();
+    ensures to_integer(v[k]) == to_integer(v[k]) by close();
 }
 ```
 
@@ -1439,7 +1439,7 @@ theorem nonnegative_body(x: int32) {
     requires nonnegative(x);
     ensures x >= 0 by {
         unfold(nonnegative(x));
-        solve();
+        close();
     }
 }
 
@@ -1447,7 +1447,7 @@ theorem reuses_nonnegative_body(y: int32) {
     requires nonnegative(y);
     ensures y >= 0 by {
         apply(nonnegative_body(y));
-        solve();
+        close();
     }
 }
 ```
@@ -1606,7 +1606,7 @@ theorem raw_is_buffered(callback: void (*)(int32*, int32))
         unfold(Buffer(data, count));
         step(Raw);
         fold(Buffer(data, count));
-        solve();
+        close();
     }
 }
 ```
@@ -1723,7 +1723,7 @@ run by the single call step.
 theorem increment_is_exact() executes increment(int32* state) {
     ensures Exact(&increment) as { cell: c } by {
         step(increment, { first: c });
-        solve();
+        close();
     }
 }
 ```
@@ -2280,7 +2280,7 @@ void init(int32* p, int32 value) {
 } by {
     step_until(function.exit);
     let c = fold(cell(p), { value: value });
-    solve();
+    close();
 }
 ```
 
@@ -3852,7 +3852,7 @@ For a symbolic `.any`, the range item name is the existential binder:
 ensures found: (lo..hi).any(|k| { p[k] == result }) by {
     step_until(function.exit);
     witness(lo);
-    solve();
+    close();
 }
 ```
 
@@ -4171,8 +4171,8 @@ have is refused with what it does have
 
 <!-- verified-example: mdtests/statement_regions_name_points_of_statements_as_written.md -->
 ```click
-have at(statement(1).call(f, 1).entry, y) == x + 1 by solve();
-have at(statement(1).region(1).entry, y) == x + 1 by solve();
+have at(statement(1).call(f, 1).entry, y) == x + 1 by close();
+have at(statement(1).region(1).entry, y) == x + 1 by close();
 ```
 
 There `y = f(f(y));` is `statement(1)`, and its outer call is both its second
@@ -4233,7 +4233,7 @@ aggregate, and a region whose call has not been prepared, are refused
 <!-- verified-example: mdtests/a_by_value_struct_argument_is_spelled_by_its_call_parameter.md -->
 ```click
 step() {
-    requires statement(3).call(first, 0).parameter(p).a <= 1000u32 by solve();
+    requires statement(3).call(first, 0).parameter(p).a <= 1000u32 by close();
 }
 have statement(3).call(first, 0).parameter(p).a == x;
 ```
@@ -4390,8 +4390,8 @@ only: `exact(p[i]->next)` reads `->next` exactly through the ordinary read of
 
 <!-- verified-example: mdtests/an_exact_read_of_an_unchanged_cell_equals_its_ordinary_read.md -->
 ```click
-have exact(p[0]) == p[0] by known();
-have old(exact(p[0])) == old(p[0]) by known();
+have exact(p[0]) == p[0] by close();
+have old(exact(p[0])) == old(p[0]) by close();
 ```
 
 `exact` grants no access permission and adds no facts. A C read after it
@@ -4597,7 +4597,7 @@ Use `*obj` for the complete storage of a struct object:
 owns *owner;
 owns data[0..length];
 ...
-have separate(memory(*owner), memory(data[0..length])) by known();
+have separate(memory(*owner), memory(data[0..length])) by close();
 ```
 
 `*owner` is layout-aware: it denotes the imported C struct's aligned
@@ -4725,13 +4725,13 @@ import click::rust::slice;
 theorem slice_methods(s: Slice<uint8>) {
     requires 2u64 <= s.len();
     ensures s.len() == slice::len(s) by {
-        solve();
+        close();
     }
     ensures s.as_ptr() == slice::as_ptr(s) by {
-        solve();
+        close();
     }
     ensures s[1..].len() == s.len() - 1u64 by {
-        solve();
+        close();
     }
 }
 ```

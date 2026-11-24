@@ -47,7 +47,7 @@ int32 ensure_premise_caller(int32 count, int32* cell) {
             };
         }
         have cell[0] == 1;
-        known();
+        close();
     }
 }
 ```

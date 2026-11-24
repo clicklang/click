@@ -18,7 +18,7 @@ int use_view(const int *(*f)(int *), int *p) {
 theorem view_satisfies_View() {
     ensures View(&view) by {
         unfold(View(&view));
-        solve();
+        close();
     }
 }
 

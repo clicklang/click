@@ -22,12 +22,12 @@ float negate32(float x) {
 
 double negate64(double x) {
     requires -x == -x;
-    ensures result == flip(x) by { step(); unfold(flip(x)); solve(); }
+    ensures result == flip(x) by { step(); unfold(flip(x)); close(); }
 }
 
 theorem negate_zero() {
-    ensures float32_from_bits(0x3f800000) / -float32_from_bits(0) == float32_from_bits(0xff800000) by { known(); }
-    ensures float64_from_bits(0x3ff0000000000000) / -float64_from_bits(0) == float64_from_bits(0xfff0000000000000) by { known(); }
+    ensures float32_from_bits(0x3f800000) / -float32_from_bits(0) == float32_from_bits(0xff800000) by { close(); }
+    ensures float64_from_bits(0x3ff0000000000000) / -float64_from_bits(0) == float64_from_bits(0xfff0000000000000) by { close(); }
 }
 ```
 

@@ -33,7 +33,7 @@ int32 run() {
     step();
     have first_list("a_byte_function_reads_a_string_literal_as_unsigned_bytes.c"::run.string_literal(0)) == List::Cons(233u8, List::Nil) by {
         unfold(first_list("a_byte_function_reads_a_string_literal_as_unsigned_bytes.c"::run.string_literal(0)));
-        solve();
+        close();
     }
     step();
 }

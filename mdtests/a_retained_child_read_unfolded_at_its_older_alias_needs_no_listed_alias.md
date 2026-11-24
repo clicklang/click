@@ -91,7 +91,7 @@ void probe(struct node* g, struct node* n) {
                 invariant state.anchor == Anchor::At(gg, nn, tag);
                 invariant n == old(n);
                 decreases 0;
-                initialize by { known(); }
+                initialize by { close(); }
                 maintain by {
                     let { word: w } = unfold(state);
                     step(); step(); step(); step(); step(); step();
@@ -100,20 +100,20 @@ void probe(struct node* g, struct node* n) {
                     let { after: after } =
                         step(set_word, { w: w });
 
-                    have n == old(n) by { known(); }
+                    have n == old(n) by { close(); }
 
                     have n->right == at(before_call,n->right) by {
                         have n->right == at(before_call, n->right) by {
-                            known();
+                            close();
                         }
-                        known();
+                        close();
                     }
 
                     step(); step();
                 }
             }
 
-            step_until(function.exit); known();
+            step_until(function.exit); close();
         },
     }
 }

@@ -1,6 +1,6 @@
 # a counter loop names its initialize and preserve obligations
 
-This checks the full induction syntax for a counter loop: `initialize by solve()`
+This checks the full induction syntax for a counter loop: `initialize by close()`
 proves the invariants at loop entry, and `maintain` executes one iteration and
 reestablishes them before the implicit invariant closer.
 
@@ -28,14 +28,14 @@ int32 count_to(int32 n) {
         invariant i >= 0;
         invariant i <= n;
 
-        initialize by solve();
+        initialize by close();
         maintain by {
             step();
-            solve();
+            close();
         }
     }
     step();
-    solve();
+    close();
 }
 ```
 

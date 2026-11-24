@@ -1,3 +1,3 @@
 theorem multiply_add(a: Integer, b: Integer, c: Integer) {
-    ensures a == a by solve();
+    ensures a == a by close();
 }

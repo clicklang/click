@@ -44,7 +44,7 @@ void release(struct object *obj) {
     consumes reference(obj);
 } by {
     let { guard: guard, state: state } = step(pthread_mutex_lock, { access: access });
-    have count(reference(obj)) == at(statement(0).exit, count(reference(obj))) by known();
+    have count(reference(obj)) == at(statement(0).exit, count(reference(obj))) by close();
     unfold(state);
     unfold(reference(obj));
     step();
@@ -52,14 +52,14 @@ void release(struct object *obj) {
     let restored = fold(control(obj), { refs: obj->refs });
     step(pthread_mutex_unlock, { access: access, guard: guard, state: restored });
     step();
-    solve();
+    close();
 }
 int32 run() {
     ensures result == -1 or result == 0;
 } by {
     step();
     step();
-    branch { true => { step(); solve(); } false => {} }
+    branch { true => { step(); close(); } false => {} }
     step();
     fold(authority(reference(obj)));
     fold(reference(obj));
@@ -72,7 +72,7 @@ int32 run() {
     unfold(authority(reference(obj)));
     step();
     step();
-    solve();
+    close();
 }
 ```
 

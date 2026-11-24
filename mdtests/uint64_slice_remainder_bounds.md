@@ -28,7 +28,7 @@ uint64 remainder(uint64 length, uint64 mid) {
         have to_integer(mid) <= to_integer(length) by close() using { mid <= length; };
         apply(integer::uint64_subtract_to_integer(length, mid));
         rewrite(to_integer(length - mid), to_integer(length) - to_integer(mid));
-        have 0 <= to_integer(mid) by known();
+        have 0 <= to_integer(mid) by close();
         close() using { 0 <= to_integer(mid); };
     }
 }
