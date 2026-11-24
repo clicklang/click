@@ -36,8 +36,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         &self,
         step: ProofStep,
     ) -> Result<Proof<'a>, ClickError> {
-        let written = crate::surface::proof::raise_lower_census::enabled()
-            && self.proof.site().written_source_tactic_path().is_some();
+        let written = !self.proof.site().is_generated();
         self.observe_step(step, written, |step| {
             self.apply_step_with_origin_inner(step, None)
         })
