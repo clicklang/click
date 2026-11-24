@@ -317,6 +317,14 @@ impl PureFactContext {
             .clone()
         {
             ProgramValue::PointerInteger(_) => unreachable!("numeric projection"),
+            // A read decoded at an algebraic type resolves to the same
+            // decoding at the state's own point.
+            ProgramValue::Parameter(value) => match value.node {
+                AlgebraicTermNode::MemoryLoad { point, pointer } => {
+                    crate::kernel::MachineTerm::read_named(point, *pointer, *kind)
+                }
+                _ => return None,
+            },
             ProgramValue::Int8(value) => value,
             ProgramValue::Bool(value)
             | ProgramValue::Int16(value)
@@ -330,7 +338,6 @@ impl PureFactContext {
             | ProgramValue::UInt128(value) => value,
             ProgramValue::Void
             | ProgramValue::Pointer(_)
-            | ProgramValue::Parameter(_)
             | ProgramValue::Float32(_)
             | ProgramValue::Float64(_) => {
                 return None;
@@ -521,9 +528,10 @@ impl PureFactContext {
             LoadKind::UInt16 => Some(memory.symbolic_uint16_load(None, pointer)),
             LoadKind::Int32 => Some(memory.symbolic_int32_load(None, pointer)),
             LoadKind::UInt32 => Some(memory.symbolic_uint32_load(None, pointer)),
-            // A value of abstract type's stand-in is the 64-bit carrier.
-            LoadKind::Bits64 | LoadKind::Abstract(_) => {
-                Some(memory.symbolic_int64_load(None, pointer))
+            LoadKind::Bits64 => Some(memory.symbolic_int64_load(None, pointer)),
+            // A value of algebraic type is its own decoding of the cell.
+            LoadKind::Algebraic(parameter) => {
+                Some(memory.symbolic_algebraic_load(None, pointer, parameter))
             }
             LoadKind::Int128 => {
                 memory.symbolic_wide_integer_load(pointer, MachineIntegerType::Int128)

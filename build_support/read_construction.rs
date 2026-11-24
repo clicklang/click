@@ -98,20 +98,10 @@ const BASELINE: &[(&str, Form, usize)] = &[
     // `LoadKind::Bits64`, classified for step 3b (`design/loads.md`).
     // The pointer-word bridge, the one remaining pointer-cell use.
     ("src/kernel/primitives/load.rs", Form::Bits64, 1),
-    // The algebraic stand-in, a value of algebraic type carried as an
-    // eight-byte read (step 3b, PR 2): `memory_load_from_carrier`, the
-    // native algebraic collector's havoc framing, and the algebraic reads of
-    // a proposition's read-over-write.
-    ("src/kernel/primitives.rs", Form::Bits64, 1),
-    (
-        "src/kernel/reasoning/variable_collection/retained_folds.rs",
-        Form::Bits64,
-        1,
-    ),
-    // Genuine 64-bit integer reads (step 3b, PR 4), some sharing an arm with
-    // the algebraic stand-in or a float (`memory_conditions.rs`,
-    // `memory_loads.rs`'s producer equation, `term_width.rs`); `memory_loads.rs`
-    // also holds one algebraic stand-in (`comparison_form_uncached`).
+    // Genuine 64-bit integer reads (step 3b, PR 4). The algebraic stand-in
+    // is decoded at its own type, `LoadKind::Algebraic` (PR 2); two arms
+    // still name it beside `Bits64` and a float, sharing the 64-bit width
+    // (`term_width.rs`, `memory_loads.rs`'s producer equation).
     ("src/kernel/assumptions.rs", Form::Bits64, 1),
     (
         "src/kernel/assumptions/condition_reasoning/memory_conditions.rs",
@@ -120,7 +110,7 @@ const BASELINE: &[(&str, Form, usize)] = &[
     ),
     ("src/kernel/equality_graph.rs", Form::Bits64, 1),
     ("src/kernel/equality_graph/terms.rs", Form::Bits64, 2),
-    ("src/kernel/eval/memory_loads.rs", Form::Bits64, 7),
+    ("src/kernel/eval/memory_loads.rs", Form::Bits64, 6),
     (
         "src/kernel/eval/memory_loads/read_observations.rs",
         Form::Bits64,

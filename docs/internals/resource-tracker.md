@@ -648,7 +648,11 @@ signedness stored it, while a typed read of the other signedness returns
 the sign cast σ of it (rule K5,
 [mathematical integers](mathematical-integers.md#the-32-bit-sign-cast)).
 Eight-byte reads are one kind, `Bits64`, and let the `ProgramValue` wrapper choose
-signed or unsigned. A pointer read is an `Int32` read, because Click names a
+signed or unsigned. A value of an algebraic type held in memory
+(`AlgebraicTermNode::MemoryLoad`) is no integer read: walkers and load-atom
+comparisons reach it through a stand-in decoded at its own type,
+`LoadKind::Algebraic(T)` (`AlgebraicTermNode::memory_load_carrier`), which
+equals no C scalar read of its cell. A pointer read is an `Int32` read, because Click names a
 pointer value by the four-byte word at its address, as a materialized
 pointer field's cells hold it.
 

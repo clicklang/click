@@ -3,9 +3,13 @@
 Priority: P2.
 
 Soundness: incomplete. Concurrency beyond fork/join, mutexes and one-shot
-publication is refused. For example, `#include <stdatomic.h>` with
-`atomic_fetch_add` is rejected at include processing under the default
-target. The modeled pthread interface is a documented trusted specification
+publication is refused. Click's `<stdatomic.h>` projection
+(`src/languages/c/modeled_stdatomic.h`) is available on every user-space
+target but declares only `atomic_init`, `atomic_store_explicit` and
+`atomic_load_explicit` on `atomic_int`, so `atomic_fetch_add` is undeclared;
+a declared operation reached without the modeled-pthread runtime is refused
+by name (`mdtests/stdatomic_operations_need_the_modeled_pthread_runtime.md`).
+The modeled pthread interface is a documented trusted specification
 in `docs/concepts/trust.md`, not an open gap of this issue.
 
 Proofs are stated against Click's own `<pthread.h>` and `<stdatomic.h>`

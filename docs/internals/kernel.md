@@ -1112,8 +1112,10 @@ accesses it checks. A claim that a size or offset is one number, such as
 `sizeof(Pair<T>) == 16`, is not decided by anything and fails.
 
 An access of a `T` value reaches `AccessExtent::Object(T)`: its load kind is
-`LoadKind::Abstract(T)`, its cells and resource-tracker cells carry the
-extent, and store, free and history checks take the extent rather than a
+`LoadKind::Algebraic(T)`, the decoding of the cell at `T` that every
+algebraic read's stand-in takes (an enum or library value's decoding keeps
+the model's eight-byte width instead), its cells and resource-tracker cells
+carry the extent, and store, free and history checks take the extent rather than a
 byte count. Only the checks that take an extent can carry such an access:
 a stated separation, the owner of a whole object found by its base, a span
 in the separated-address index keyed by the size term (`SpanWidth`), or the

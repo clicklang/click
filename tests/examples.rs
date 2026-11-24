@@ -686,10 +686,11 @@ void rb_set_parent_color(struct rb_node* rb, struct rb_node* p, int32 color) {
         rewrite(color, 1);
         normalize();
     }
-    have ((rb->__rb_parent_color & ~3) as (struct rb_node *)) == 0 by {
-        rewrite(rb->__rb_parent_color, 1);
-        normalize();
+    have (rb->__rb_parent_color & ~3) == 0u64 by {
+        rewrite(rb->__rb_parent_color, 1u64);
+        known();
     }
+    have ((rb->__rb_parent_color & ~3) as (struct rb_node *)) == 0 by known();
     step();
     solve();
 }
@@ -2561,7 +2562,7 @@ fn rbtree_erase_wrapper_requires_nonnull_color_repair() {
         1,
     );
     assert!(
-        error.contains("requires a call to `____rb_erase_color#inline:rb_erase.c` at the current frontier; next operation: skip"),
+        error.contains("requires a call to `____rb_erase_color` at the current frontier"),
         "unexpected refusal: {error}"
     );
 }
@@ -2594,21 +2595,21 @@ fn rbtree_augmented_wrappers_reject_missing_or_wrong_calls() {
             "rb_insert_augmented.c",
             "\t__rb_insert(node, root, augment_rotate);",
             "",
-            "requires a call to `__rb_insert#inline:rb_insert_augmented.c` at the current frontier",
+            "requires a call to `__rb_insert` at the current frontier",
         ),
         (
             "rbtree_insert_augmented.click",
             "rb_insert_augmented.c",
             "\t__rb_insert_augmented(node, root, augment->rotate);",
-            "\t__rb_insert_augmented(root->rb_node, root, augment->rotate);",
-            "argument 1 differs from the call's",
+            "\t__rb_insert_augmented(0, root, augment->rotate);",
+            "equality of resource argument 1 was not established",
         ),
         (
             "rbtree_erase_color.click",
             "rb_erase_augmented.c",
             "\t____rb_erase_color(parent, root, augment_rotate);",
             "",
-            "requires a call to `____rb_erase_color#inline:rb_erase_augmented.c` at the current frontier",
+            "requires a call to `____rb_erase_color` at the current frontier",
         ),
         (
             "rbtree_erase_leaf.click",

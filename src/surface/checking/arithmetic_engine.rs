@@ -4,8 +4,7 @@
 //! and Surface expands its plan into ordinary checked proof steps. Every caller outside
 //! this module plans through [`plan_arithmetic`], [`arithmetic_plans`], or
 //! [`refute_integer_goal`], so the engines `arithmetic` owns, and the order
-//! it tries them in, are written once (`roadmap/smart-tactics.md`, plan steps
-//! 5 and 6).
+//! it tries them in, are written once.
 
 use super::integer_affine_planner::plan_integer_affine;
 use super::integer_refutation_planner::{IntegerRefutation, plan_integer_refutation_with_ranges};

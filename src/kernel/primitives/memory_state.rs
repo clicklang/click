@@ -8986,6 +8986,22 @@ impl SymbolicMemory {
         ))
     }
 
+    /// The value of algebraic type `parameter` this memory holds at
+    /// `pointer`, the counterpart of [`Self::symbolic_int64_load`] for the
+    /// stand-in of an algebraic read.
+    pub(in crate::kernel) fn symbolic_algebraic_load(
+        &self,
+        site: Option<&ProgramPoint>,
+        pointer: &Address,
+        parameter: crate::kernel::TypeParameterName,
+    ) -> ProgramValue {
+        crate::kernel::AlgebraicTermNode::parameter_load_at(
+            self.legacy_read_point(site),
+            pointer.clone(),
+            parameter,
+        )
+    }
+
     #[cfg_attr(test, track_caller)]
     pub(in crate::kernel) fn symbolic_uint64_load(
         &self,

@@ -3087,7 +3087,10 @@ fn load_type_spelling(kind: crate::kernel::LoadKind) -> &'static str {
         K::UInt16 => "uint16",
         K::Int32 => "int32",
         K::UInt32 => "uint32",
-        K::Bits64 | K::Abstract(_) => "int64",
+        // An algebraic read keeps the spelling of the eight-byte stand-in it
+        // had before it was decoded at its own type (`design/loads.md`, step
+        // 3b PR 2); a `load<T>` spelling is open question 1's to settle.
+        K::Bits64 | K::Algebraic(_) => "int64",
         K::Int128 => "int128",
         K::UInt128 => "uint128",
         K::Float32 => "float",
