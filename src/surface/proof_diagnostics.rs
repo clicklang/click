@@ -300,9 +300,11 @@ impl ProofFailureDiagnostic {
     ) -> Option<String> {
         let state = self.state.as_ref()?;
         let goal = state.kernel_goal()?;
-        if let Some(written) = state.written_goal()
-            && (render::pointer_comparison_needs_source(goal)
-                || (!render::typed_notation() && !render::renders_exactly(goal, labels)))
+        // Retained source can preserve pointer casts, but an unqualified
+        // written goal can hide the historical state of a read. Keep the
+        // checked goal's state labels in the general case.
+        if render::pointer_comparison_needs_source(goal)
+            && let Some(written) = state.written_goal()
         {
             return Some(super::printing::source_click_proposition(written));
         }

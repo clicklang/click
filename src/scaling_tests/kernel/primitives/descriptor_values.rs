@@ -219,7 +219,11 @@ fn condition_hash_reuses_the_key_of_a_growing_shared_dag() {
                 assert_eq!(hash(), fingerprint);
             }
         });
-        assert_eq!(warm_work, *warm_baseline.get_or_insert(warm_work), "size={size}");
+        assert_eq!(
+            warm_work,
+            *warm_baseline.get_or_insert(warm_work),
+            "size={size}"
+        );
         assert!(!root.has_cached_native_argument());
     }
 }
