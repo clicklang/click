@@ -300,6 +300,7 @@ impl KernelTerm {
             | KernelTermNode::PointerRead { value, .. }
             | KernelTermNode::PointerArithmetic { value, .. }
             | KernelTermNode::PointerCall { value, .. } => Some(value),
+            KernelTermNode::ObservedPointer(value) => value.source().pointer_payload(),
             _ => None,
         }
     }
@@ -313,6 +314,9 @@ impl KernelTerm {
     }
 
     pub(crate) fn pointer_argument_native(&self) -> Option<&PureFunctionArgument> {
+        if let KernelTermNode::ObservedPointer(value) = self.node() {
+            return value.source().pointer_argument_native();
+        }
         if let KernelTermNode::ArrayReference {
             point,
             pointer,

@@ -7,6 +7,7 @@ use crate::kernel::MachineCastSpelling;
 mod boolean;
 pub(crate) use boolean::BooleanOperandView;
 pub use boolean::KernelPointerEquality;
+pub use pointer_observations::KernelObservedPointer;
 // Scoped payloads shared by evaluation, checking, and Surface synthesis.
 mod folds;
 pub use folds::KernelFold;
@@ -166,6 +167,9 @@ pub enum KernelTermNode {
     },
     /// Complete formed pointer value with prepared address and metadata children.
     Pointer(SharedPointer),
+    /// Semantic observation of a pointer or array argument. The exact
+    /// source remains available for raising and explicit output.
+    ObservedPointer(KernelObservedPointer),
     /// A pointer argument with the point its array is read at.
     ArrayReference {
         point: ProgramPoint,
@@ -1284,6 +1288,7 @@ impl KernelTerm {
     /// Immediate expression operands; unmigrated leaves remain opaque.
     pub fn children(&self) -> &[Self] {
         match self.node() {
+            KernelTermNode::ObservedPointer(value) => std::slice::from_ref(value.source()),
             KernelTermNode::Fold(fold) => &fold.arguments,
             KernelTermNode::Match(matched) => &matched.arguments,
             KernelTermNode::Constructor(constructor) => &constructor.fields,
@@ -2205,6 +2210,9 @@ impl KernelTermExport {
                 input.format(),
                 input.value().clone(),
             )));
+        }
+        if let KernelTermNode::ObservedPointer(value) = term.node() {
+            return self.argument(value.source());
         }
         if let KernelTermNode::CallArgument(argument) = term.node() {
             return Ok(argument.value().clone());
