@@ -4431,8 +4431,8 @@ impl RetainedIntegerScopeSummaries {
                 Node::MachineObservationInput { observation, .. } => {
                     collect_bitvector_scope_summary(observation.value(), &mut self.native)
                 }
-                Node::Legacy(payload) => {
-                    collect_scope_summary_in_argument(payload.value(), &mut self.native)
+                Node::Legacy(_) | Node::CallArgument(_) => {
+                    collect_scope_summary_in_argument(term.written_argument()?, &mut self.native)
                 }
                 _ if children.is_some() => IntegerScopeSummary::default(),
                 // Existing native readers preserve the scope of C pointer

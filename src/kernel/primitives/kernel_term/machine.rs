@@ -656,14 +656,16 @@ impl KernelTermImport {
                         // This is a typed input descriptor, not a boxed value
                         // argument. Keep its existing shared operand and exact
                         // envelope through native field storage/output.
-                        KernelTerm::native_call_argument(application, index, true)
+                        KernelTerm::written_call_argument(application, index)
                     } else {
-                        self.argument(argument)
+                        self.structural_argument(argument).unwrap_or_else(|| {
+                            KernelTerm::written_call_argument(application, index)
+                        })
                     }
                 } else if let Some(root) = application.common_argument(index) {
                     root
                 } else {
-                    KernelTerm::native_call_argument(application, index, true)
+                    KernelTerm::written_call_argument(application, index)
                 }
             })
             .collect();
@@ -903,8 +905,8 @@ impl KernelTermExport {
                 operand,
             } => Old::cast_node(*encoding, *source, *destination, Self::machine(operand)?),
             Node::MachineObservationInput { observation, .. } => observation.value().clone(),
-            Node::Legacy(value) => {
-                let PureFunctionArgument::Value(value) = value.value() else {
+            Node::Legacy(_) | Node::CallArgument(_) => {
+                let Some(PureFunctionArgument::Value(value)) = term.written_argument() else {
                     return Err("expected a machine value legacy payload");
                 };
                 let (integer_c_value!(bits)) = value else {

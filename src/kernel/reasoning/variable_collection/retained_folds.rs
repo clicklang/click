@@ -318,12 +318,12 @@ pub(super) fn common_variables(
                     &mut SeenTerms::default(),
                 );
             }
-            KernelTermNode::Legacy(value) => {
+            KernelTermNode::Legacy(_) | KernelTermNode::CallArgument(_) => {
                 // Each opaque leaf gets its complete intrinsic answer. A seen
                 // set belonging to another leaf would discard shared payload
                 // variables before the enclosing body can filter its binders.
                 collect_argument(
-                    value.value(),
+                    term.written_argument().unwrap(),
                     mode,
                     &mut leaf_variables,
                     &mut SeenTerms::default(),

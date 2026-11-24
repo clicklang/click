@@ -4695,6 +4695,12 @@ fn raise_kernel_term_dispatch(
                 bound_variables,
             )?
         }
+        Node::CallArgument(argument) => synthesize_legacy_call_argument(
+            argument.value(),
+            parameter_binding,
+            state,
+            bound_variables,
+        )?,
         Node::Legacy(legacy) => match legacy.value() {
             crate::kernel::PureFunctionArgument::Integer(value) => {
                 let mut import = crate::kernel::KernelTermImport::default();

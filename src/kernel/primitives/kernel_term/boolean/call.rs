@@ -24,7 +24,7 @@ impl KernelTermImport {
                         if let Some(root) = application.common_argument(index) {
                             root
                         } else {
-                            KernelTerm::native_call_argument(application, index, true)
+                            KernelTerm::written_call_argument(application, index)
                         }
                     })
             })
@@ -47,7 +47,7 @@ impl KernelTerm {
                 .map(|argument| {
                     if let KernelType::Program(ty) = argument.ty()
                         && let Some(format) = MachineIntegerType::from_program_type(*ty)
-                        && !matches!(argument.node(), KernelTermNode::Legacy(_))
+                        && argument.written_argument().is_none()
                     {
                         PureFunctionArgument::SharedMachine(
                             MachineOperandView::Shared(argument).retain(format),

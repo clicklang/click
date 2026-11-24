@@ -234,8 +234,39 @@ pub enum KernelTermNode {
         name: String,
         arguments: Vec<KernelTerm>,
     },
+    /// An exact foreign argument carried by its producer's call descriptor.
+    CallArgument(KernelCallArgument),
     /// Temporary adapter, not a second spelling or equality interpretation.
     Legacy(KernelLegacyTerm),
+}
+
+/// Reference to the written slot of a particular call. Pure applications
+/// compare by semantic identity, but exact call arguments retain their producer.
+#[derive(Clone, Debug)]
+pub struct KernelCallArgument {
+    application: SharedPureApplication,
+    index: usize,
+}
+
+impl KernelCallArgument {
+    pub fn value(&self) -> &PureFunctionArgument {
+        &self.application.arguments()[self.index]
+    }
+}
+
+impl PartialEq for KernelCallArgument {
+    fn eq(&self, other: &Self) -> bool {
+        self.application.payload_id() == other.application.payload_id() && self.index == other.index
+    }
+}
+
+impl Eq for KernelCallArgument {}
+
+impl Hash for KernelCallArgument {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.application.payload_id().hash(state);
+        self.index.hash(state);
+    }
 }
 
 /// An exact unmigrated payload, with identity supplied by its producer.
@@ -250,12 +281,6 @@ pub struct KernelLegacyTerm {
 enum LegacyIdentity {
     Machine(u64),
     NativeObservation(Box<PureFunctionArgument>),
-    ApplicationArgument(SharedPureApplication, usize),
-    ExactApplicationArgument {
-        application: SharedPureApplication,
-        payload: usize,
-        index: usize,
-    },
     Fresh(u64),
 }
 impl PartialEq for KernelLegacyTerm {
@@ -291,10 +316,6 @@ impl KernelLegacyTerm {
             return value;
         }
         match &self.identity {
-            LegacyIdentity::ApplicationArgument(application, index)
-            | LegacyIdentity::ExactApplicationArgument {
-                application, index, ..
-            } => &application.arguments()[*index],
             LegacyIdentity::NativeObservation(argument) => argument,
             _ => unreachable!("native expression identity without a payload"),
         }
@@ -451,11 +472,10 @@ impl NodeKey {
             | KernelTermNode::AlgebraicRead(_)
             | KernelTermNode::FloatRead(_) => true,
             KernelTermNode::MachineObservationInput { exact, .. } => *exact,
+            KernelTermNode::CallArgument(_) => true,
             KernelTermNode::Legacy(value) => matches!(
                 value.identity,
-                LegacyIdentity::Fresh(_)
-                    | LegacyIdentity::Machine(_)
-                    | LegacyIdentity::ExactApplicationArgument { .. }
+                LegacyIdentity::Fresh(_) | LegacyIdentity::Machine(_)
             ),
             KernelTermNode::Call { .. } if matches!(ty, KernelType::Program(ty) if MachineIntegerType::from_program_type(ty).is_some()) => {
                 true
@@ -803,9 +823,7 @@ impl KernelTerm {
     /// Reuse the existing root-owned compatibility slot; cloning or retaining
     /// the stored value never requests this reading.
     pub(crate) fn program_value_native_compat(&self) -> Option<&ProgramValue> {
-        if let KernelTermNode::Legacy(legacy) = self.node()
-            && let PureFunctionArgument::Value(value) = legacy.value()
-        {
+        if let Some(PureFunctionArgument::Value(value)) = self.written_argument() {
             return Some(value);
         }
         if let Some(value) = self
@@ -1463,29 +1481,23 @@ impl KernelTerm {
         )
     }
 
-    // The application already owns the exact input descriptor. An opaque
-    // child refers to one argument slot instead of copying that descriptor.
-    fn native_call_argument(
-        application: &SharedPureApplication,
-        index: usize,
-        exact_payload: bool,
-    ) -> Self {
-        let identity = if exact_payload {
-            LegacyIdentity::ExactApplicationArgument {
-                application: application.clone(),
-                payload: application.payload_id(),
-                index,
-            }
-        } else {
-            LegacyIdentity::ApplicationArgument(application.clone(), index)
-        };
+    fn written_call_argument(application: &SharedPureApplication, index: usize) -> Self {
         Self::intern(
             Self::native_argument_type(&application.arguments()[index]),
-            KernelTermNode::Legacy(KernelLegacyTerm {
-                identity,
-                value: None,
+            KernelTermNode::CallArgument(KernelCallArgument {
+                application: application.clone(),
+                index,
             }),
         )
+    }
+
+    /// Borrow an explicitly written argument or a still-native input.
+    pub(crate) fn written_argument(&self) -> Option<&PureFunctionArgument> {
+        match self.node() {
+            KernelTermNode::CallArgument(argument) => Some(argument.value()),
+            KernelTermNode::Legacy(argument) => Some(argument.value()),
+            _ => None,
+        }
     }
 
     fn legacy_at(argument: PureFunctionArgument, identity: LegacyIdentity) -> Self {
@@ -1652,7 +1664,7 @@ impl KernelTermImport {
                     .enumerate()
                     .map(|(index, _)| {
                         application.common_argument(index).unwrap_or_else(|| {
-                            KernelTerm::native_call_argument(application, index, true)
+                            KernelTerm::written_call_argument(application, index)
                         })
                     })
                     .collect();
@@ -2091,6 +2103,9 @@ impl KernelTermExport {
         &mut self,
         term: &KernelTerm,
     ) -> Result<PureFunctionArgument, &'static str> {
+        if let KernelTermNode::CallArgument(argument) = term.node() {
+            return Ok(argument.value().clone());
+        }
         if FloatOperandView::from_shared(term).is_some() {
             return Self::float(term).map(PureFunctionArgument::Value);
         }
