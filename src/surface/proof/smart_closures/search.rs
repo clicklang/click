@@ -683,8 +683,13 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if let Some(proof) = Self::try_linked_pointer_viewability(input)? {
             return Ok(Some(proof));
         }
-        if let Some(proof) =
-            Self::try_indexed_read_preservation(input, MAX_TRANSPORT_SOURCE_POINTS, false)?
+        if let Some(target) = input.surface_goal()
+            && let Some(proof) = Self::try_indexed_read_preservation(
+                input,
+                target,
+                MAX_TRANSPORT_SOURCE_POINTS,
+                false,
+            )?
         {
             return Ok(Some(proof));
         }
@@ -6748,12 +6753,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 .surface_goal()
                 .and_then(old_reflexive_transport_source)
                 .and_then(|source| {
-                    crate::kernel::search::ProofSearch::try_planned_execution_proposition_fact_transport(&(else_branch),
-                            &source,
-                            else_branch.surface_goal()?,
-                        )
-                        .ok()
-                        .flatten()
+                    crate::kernel::search::ProofSearch::try_execution_proposition_read_preservation(
+                        &(else_branch),
+                        &source,
+                        else_branch.surface_goal()?,
+                        MAX_TRANSPORT_SOURCE_POINTS,
+                    )
+                    .ok()
+                    .flatten()
                 })
                 .filter(Proof::focused_discharged);
             let rewritten_else = match else_branch
@@ -6766,9 +6773,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         .as_ref()
                         .and_then(old_reflexive_transport_source)
                         .and_then(|source| {
-                            crate::kernel::search::ProofSearch::try_planned_execution_proposition_fact_transport(&(rewritten),
+                            crate::kernel::search::ProofSearch::try_execution_proposition_read_preservation(&(rewritten),
                                     &source,
                                     rewritten_surface_goal.as_ref()?,
+                                    MAX_TRANSPORT_SOURCE_POINTS,
                                 )
                                 .ok()
                                 .flatten()
@@ -7642,8 +7650,13 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             {
                 return Ok(Some(proof));
             }
-            if let Some(proof) =
-                Self::try_indexed_read_preservation(&introduced, MAX_TRANSPORT_SOURCE_POINTS, true)?
+            if let Some(target) = introduced.surface_goal()
+                && let Some(proof) = Self::try_indexed_read_preservation(
+                    &introduced,
+                    target,
+                    MAX_TRANSPORT_SOURCE_POINTS,
+                    true,
+                )?
                 && proof.is_complete()
             {
                 return Ok(Some(proof));
@@ -7684,13 +7697,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         };
         if let Some(source) = old_reflexive_transport_source(surface_goal) {
-            if search_input.execution_proposition_fixed_state_view().is_some()
-                && let Some(proof) =
-                    crate::kernel::search::ProofSearch::try_planned_execution_proposition_fact_transport(search_input, &source, surface_goal)?
-                && proof.is_complete()
-            {
-                return Ok(Some(proof));
-            }
             match crate::kernel::search::ProofSearch::try_fixed_state_fact_transport(
                 search_input,
                 &source,
@@ -7878,6 +7884,17 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_cell_frame_transport_closure");
+        if let Some(source) = old_reflexive_transport_source(surface_goal)
+            && let Some(proof) = Self::try_execution_proposition_read_preservation(
+                search_input,
+                &source,
+                surface_goal,
+                MAX_TRANSPORT_SOURCE_POINTS,
+            )?
+            && proof.is_complete()
+        {
+            return Ok(Some(proof));
+        }
         let Some((
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,

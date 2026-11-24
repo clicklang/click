@@ -27402,6 +27402,42 @@ fn indexed_signed_left_shift_definedness_expands_with_preservation() {
 }
 
 #[test]
+fn indexed_equality_with_a_historical_read_expands_with_preservation() {
+    let sources = [("keep.c", "void f(int *p, int i, int j) { p[j] = 10; }")];
+    let source = r#"
+        verifying "keep.c";
+        void f(int32 *p, int32 i, int32 j) {
+            owns p[0..8];
+            requires 0 <= i and i < 8 and 0 <= j and j < 8;
+            requires i != j;
+            ensures true;
+        } by {
+            step();
+            have p[i] == SAVED by { solve(); }
+        }
+    "#;
+    for saved in ["old(p[i])", "at(function.entry, p[i])"] {
+        let source = source.replace("SAVED", saved);
+        let expanded = expand_c_claim_source_by_label(&source, &sources, "f.contract").unwrap();
+        assert!(
+            expanded.contains("separation::separate_elements"),
+            "{expanded}"
+        );
+        assert!(
+            expanded.contains("preserve(memory(p[i]), region(0))"),
+            "{expanded}"
+        );
+        assert!(!expanded.contains("transport("), "{expanded}");
+        without_implicit_solve_for_claim("f.contract", || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap();
+        let overlapping = expanded.replace("requires i != j;", "");
+        assert!(verify_c_sources(&overlapping, &sources).is_err());
+    }
+}
+
+#[test]
 fn two_indexed_reads_expand_with_preservation() {
     let c_source = "void keep(int *p, int i, int j, int k) { p[j] = 10; }";
     let source = r#"

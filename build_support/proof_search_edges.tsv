@@ -499,7 +499,7 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_state_transport_closure	try_state_transport_closure_candidates	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_state_transport_closure_candidates	try_cell_frame_transport_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_state_transport_closure_candidates	try_fixed_state_fact_transport	2
-src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_state_transport_closure_candidates	try_planned_execution_proposition_fact_transport	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_cell_frame_transport_closure	try_execution_proposition_read_preservation	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_state_transport_closure_candidates	try_projected_state_transport	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure	try_solve_closure_strategies	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_after_direct	try_solve_closure_after_direct_with_surfaces	1
@@ -606,7 +606,7 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_unsigned_stri
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_upper_bound_split_closure	available_surface_fact	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_upper_bound_split_closure	driver	8
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_upper_bound_split_closure	increment_headroom_premises	1
-src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_upper_bound_split_closure	try_planned_execution_proposition_fact_transport	2
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_upper_bound_split_closure	try_execution_proposition_read_preservation	2
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_upper_bound_split_closure	try_solve_closure_with_surfaces	6
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_zero_witness_closure	driver	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_zero_witness_closure	try_solve_closure	1
@@ -623,7 +623,8 @@ src/surface/proof/smart_execution/search.rs	search	ProofSearch::try_execution_fa
 src/surface/proof/smart_execution/search.rs	search	ProofSearch::try_execution_fact_transport_or_refusal	fact_transport_candidate_search	1
 src/surface/proof/smart_execution/search.rs	search	ProofSearch::try_fact_transport_from_candidates	fact_transport_candidate_search	1
 src/surface/proof/smart_execution/search.rs	search	ProofSearch::try_fixed_state_fact_transport	try_fact_transport_from_candidates	1
-src/surface/proof/smart_execution/search.rs	search	ProofSearch::try_planned_execution_proposition_fact_transport	driver	1
+src/surface/proof/smart_execution/search.rs	search	ProofSearch::try_execution_proposition_read_preservation	try_indexed_read_preservation	1
+src/surface/proof/smart_execution/search.rs	search	ProofSearch::try_execution_proposition_read_preservation	try_recorded_footprint_preservation	1
 src/surface/proof/wide_arithmetic/search.rs	search	ProofSearch::try_wide_arithmetic_using	wide_arithmetic_with	5
 src/surface/proof/wide_arithmetic/search.rs	search	ProofSearch::wide_arithmetic_with	driver	13
 src/surface/proof/wide_arithmetic/search.rs	search	ProofSearch::wide_arithmetic_with	try_direct_logical_closure	1
