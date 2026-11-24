@@ -1624,7 +1624,11 @@ fn collect_integer_substitution_term_variables(term: &Term, variables: &mut Carr
         }
         Term::Condition(value) => collect_stored_condition_carriers(value, variables),
         Term::PointerOffset(value) => {
-            collect_pointer_offset_carriers(value.native_compat(), variables)
+            if let Some(root) = value.root() {
+                collect_retained_offset_carriers(root, variables);
+            } else {
+                collect_pointer_offset_carriers(value.native_compat(), variables);
+            }
         }
         Term::Algebraic(value) => collect_algebraic_carriers(value.native_compat(), variables),
         Term::Sequence(value)

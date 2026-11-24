@@ -3662,8 +3662,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_term(
             substitute_bitvector_variable_in_integer(integer.native_compat(), from, to).into(),
         ),
         Term::PointerOffset(offset) => Term::PointerOffset(
-            substitute_bitvector_variable_in_pointer_offset(offset.native_compat(), from, to)
-                .into(),
+            substitute_bitvector_variable_in_stored_offset(offset, from, to),
         ),
         Term::ProgramValue(value) => Term::ProgramValue(
             substitute_bitvector_variable_in_program_value(value.native_compat(), from, to).into(),
@@ -6254,67 +6253,91 @@ fn substitute_bitvector_variable_in_pointer_offset_cow<'a>(
             }
         }
         AddressOffset::Int32Scaled { value, byte_width } => {
-            let rewritten = crate::kernel::memory_history::map_shared_pointer_index_with_fold(
-                value,
-                |leaf| Some(substitute_bitvector_variable(leaf, from, to)),
-                crate::kernel::proof::equality_rewrite::rebuild_normalized_machine_node,
-                |_| true,
-                |root| {
-                    let source = MachineTerm::Variable(from);
-                    let mut rewrite =
-                        crate::kernel::proof::term_rewrite::TermRewrite::for_bits(&source, to);
-                    rewrite.enable_registered_load_resolution();
-                    let result = rewrite.shared_machine_operand(root);
-                    let refusal = rewrite.refusal();
-                    result.filter(|_| refusal.is_none()).map(Some).ok_or(())
-                },
-            )
-            .unwrap_or_else(|| value.clone());
-            let unchanged =
-                crate::kernel::memory_history::pointer_index_syntax_equal(value, &rewritten);
-            if unchanged {
-                Cow::Borrowed(offset)
-            } else {
-                Cow::Owned(crate::kernel::memory_history::rebuild_scaled_pointer_index(
-                    rewritten,
-                    *byte_width,
-                    None,
-                ))
-            }
+            substitute_in_scaled_pointer_index(value, *byte_width, None, from, to)
+                .map_or(Cow::Borrowed(offset), Cow::Owned)
         }
         AddressOffset::Int64Scaled {
             value,
             byte_width,
             unsigned,
-        } => {
-            let rewritten = crate::kernel::memory_history::map_shared_pointer_index_with_fold(
-                value,
-                |leaf| Some(substitute_bitvector_variable(leaf, from, to)),
-                crate::kernel::proof::equality_rewrite::rebuild_normalized_machine_node,
-                |_| true,
-                |root| {
-                    let source = MachineTerm::Variable(from);
-                    let mut rewrite =
-                        crate::kernel::proof::term_rewrite::TermRewrite::for_bits(&source, to);
-                    rewrite.enable_registered_load_resolution();
-                    let result = rewrite.shared_machine_operand(root);
-                    let refusal = rewrite.refusal();
-                    result.filter(|_| refusal.is_none()).map(Some).ok_or(())
-                },
+        } => substitute_in_scaled_pointer_index(value, *byte_width, Some(*unsigned), from, to)
+            .map_or(Cow::Borrowed(offset), Cow::Owned),
+    }
+}
+
+fn substitute_in_scaled_pointer_index(
+    value: &SharedMachineIntegerTerm,
+    byte_width: i64,
+    unsigned: Option<bool>,
+    from: Variable,
+    to: &MachineTerm,
+) -> Option<AddressOffset> {
+    let rewritten = crate::kernel::memory_history::map_shared_pointer_index_with_fold(
+        value,
+        |leaf| Some(substitute_bitvector_variable(leaf, from, to)),
+        crate::kernel::proof::equality_rewrite::rebuild_normalized_machine_node,
+        |_| true,
+        |root| {
+            let source = MachineTerm::Variable(from);
+            let mut rewrite =
+                crate::kernel::proof::term_rewrite::TermRewrite::for_bits(&source, to);
+            rewrite.enable_registered_load_resolution();
+            let result = rewrite.shared_machine_operand(root);
+            let refusal = rewrite.refusal();
+            result.filter(|_| refusal.is_none()).map(Some).ok_or(())
+        },
+    )
+    .unwrap_or_else(|| value.clone());
+    (!crate::kernel::memory_history::pointer_index_syntax_equal(value, &rewritten)).then(|| {
+        crate::kernel::memory_history::rebuild_scaled_pointer_index(rewritten, byte_width, unsigned)
+    })
+}
+
+fn substitute_bitvector_variable_in_stored_offset(
+    offset: &crate::kernel::StoredPointerOffset,
+    from: Variable,
+    to: &MachineTerm,
+) -> crate::kernel::StoredPointerOffset {
+    use crate::kernel::{KernelAddressOffset, SharedAddressOffset, StoredPointerOffset};
+
+    let Some(root) = offset.root() else {
+        return substitute_bitvector_variable_in_pointer_offset(offset.native_compat(), from, to)
+            .into();
+    };
+    let rewritten = root
+        .try_map_root(|original, node| {
+            let (index, byte_width, unsigned) = match node {
+                KernelAddressOffset::Add([left, right])
+                    if [&left, &right]
+                        .into_iter()
+                        .ne(original.node().offset_children()) =>
+                {
+                    return Ok::<_, std::convert::Infallible>(SharedAddressOffset::add(
+                        left, right,
+                    ));
+                }
+                KernelAddressOffset::Int32Scaled { value, byte_width } => (value, byte_width, None),
+                KernelAddressOffset::Int64Scaled {
+                    value,
+                    byte_width,
+                    unsigned,
+                } => (value, byte_width, Some(unsigned)),
+                _ => return Ok(original.clone()),
+            };
+            let value = SharedAddressOffset::exact_index(&index);
+            Ok(
+                substitute_in_scaled_pointer_index(&value, byte_width, unsigned, from, to)
+                    .map_or_else(
+                        || original.clone(),
+                        |offset| KernelAddressOffset::import(&offset),
+                    ),
             )
-            .unwrap_or_else(|| value.clone());
-            let unchanged =
-                crate::kernel::memory_history::pointer_index_syntax_equal(value, &rewritten);
-            if unchanged {
-                Cow::Borrowed(offset)
-            } else {
-                Cow::Owned(crate::kernel::memory_history::rebuild_scaled_pointer_index(
-                    rewritten,
-                    *byte_width,
-                    Some(*unsigned),
-                ))
-            }
-        }
+        })
+        .expect("offset substitution is infallible");
+    if rewritten == *root {
+        offset.clone()
+    } else {
+        StoredPointerOffset::from_rewritten_root(rewritten)
     }
 }
 
@@ -10433,4 +10456,29 @@ fn contract_offset_freshness_includes_retained_fold_binders() {
     let mut actual = BTreeSet::new();
     collect_term_bound_variables(&Term::PointerOffset(stored), &mut actual);
     assert_eq!(actual, BTreeSet::from([accumulator, item]));
+}
+
+#[cfg(test)]
+#[test]
+fn variable_substitution_keeps_contract_displacements_retained() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let from = Variable(999989);
+    let to = MachineTerm::constant(17);
+    let input = AddressOffset::Add(
+        Box::new(AddressOffset::scaled_int32_node(
+            MachineTerm::Variable(from),
+            4,
+        )),
+        Box::new(AddressOffset::Constant(16)),
+    );
+    let stored = crate::kernel::StoredPointerOffset::from_written(&input);
+    let output = substitute_bitvector_variable_in_stored_offset(&stored, from, &to);
+    let expected = substitute_bitvector_variable_in_pointer_offset(&input, from, &to);
+    assert_eq!(output, crate::kernel::StoredPointerOffset::from(expected));
+    assert!(!stored.has_cached_native_offset());
+    assert!(!output.has_cached_native_offset());
+
+    let unchanged = substitute_bitvector_variable_in_stored_offset(&stored, Variable(999990), &to);
+    assert_eq!(unchanged.root(), stored.root());
+    assert!(!unchanged.has_cached_native_offset());
 }
