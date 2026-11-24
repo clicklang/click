@@ -1122,21 +1122,59 @@ fn charon_nested_live_refresh_and_rejected_array_borrows() {
         ),
         (
             "pub fn bad()->usize { let bytes=[7u16;8]; let slice:&[u16]=&bytes; slice.len() }",
-            "Rust frontend does not support",
-        ),
-        (
-            "pub fn bad(n:i32) { let mut i=0; while i<n { let mut j=0; while j<n { if j==2 { break; } j+=1; } i+=1; } }",
-            "extra exit",
+            "Rust frontend does not support array unsize pointer/length/type mismatch",
         ),
     ] {
         fs::remove_file(p.artifact("nested.rs")).unwrap();
         fs::write(p.root.join("nested.rs"), source).unwrap();
-        let error = p.refresh().unwrap_err();
+        let error = p.refresh().expect_err(source);
         assert!(error.contains(diagnostic), "{error}");
         assert!(!p.artifact("nested.rs").exists());
         fs::write(p.root.join("nested.rs"), CHARON_NESTED_SOURCE).unwrap();
         p.refresh().unwrap();
     }
+
+    fs::write(
+        p.root.join("nested.rs"),
+        r#"pub fn nested_break(n: i32) -> i32 {
+    let mut i = 0;
+    while i < n {
+        let mut j = 0;
+        while j < n {
+            if j == 2 { break; }
+            j += 1;
+        }
+        i += 1;
+    }
+    i
+}"#,
+    )
+    .unwrap();
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
+    let proof = r#"verifying "nested.rs";
+fn nested_break(n: i32) -> i32 {
+    requires n >= 0;
+    ensures result == n;
+} by {
+    step_until(loop(0).entry);
+    loop {
+        decreases n - i;
+        invariant 0 <= i and i <= n;
+        maintain by {
+            step_until(loop(1).entry);
+            loop {
+                decreases n - j;
+                invariant 0 <= i and i < n;
+                invariant 0 <= j and j <= n;
+            }
+            step_until(loop.back_edge);
+        }
+    }
+}"#;
+    verify_rust_function(proof, &prepared, "nested_break").unwrap();
+    let invalid = proof.replace("ensures result == n;", "ensures result < n;");
+    assert!(verify_rust_function(&invalid, &prepared, "nested_break").is_err());
 }
 
 const CHARON_CHUNK_SOURCE: &str = include_str!("../design/charon-trial/chunks/chunks.rs");
@@ -6162,7 +6200,7 @@ fn rust_while_loop_rejects_unsupported_control_flow_and_guards() {
     for (source, diagnostic) in [
         (
             "pub fn bad(mut i:i32, n:i32) { while i + 1 < n { i += 1; } }",
-            "MIR while header",
+            "an unnamed compiler local requires storage with no supported identity",
         ),
         (
             "fn guard()->bool { false } pub fn bad() { while guard() {} }",
@@ -6170,7 +6208,7 @@ fn rust_while_loop_rejects_unsupported_control_flow_and_guards() {
         ),
         (
             "pub fn bad(bytes:&[u8]) { while bytes[0] != 0 {} }",
-            "MIR while header",
+            "an unnamed compiler local requires storage with no supported identity",
         ),
     ] {
         let p = Project::new(source);

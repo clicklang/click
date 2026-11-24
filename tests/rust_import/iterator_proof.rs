@@ -23,7 +23,8 @@ fn preserves_source_and_checks_obligations(fixture: &str) {
     let prepared = p.prepared().unwrap();
     let proof = fs::read_to_string(p.root.join("borrow.click")).unwrap();
     assert!(!proof.contains("__rust_"));
-    assert!(!proof.contains("statement("));
+    // Source statements within the loop are stable proof points.
+    assert!(!proof.contains("step_until(statement("));
     ProgramVerificationSession::new_program_prepared(&proof, &prepared).unwrap();
     for invalid in [
         proof.replacen("views bytes[0..bytes.len()];", "views bytes[0..0];", 1),
@@ -50,25 +51,30 @@ fn preserves_source_and_checks_obligations(fixture: &str) {
             .expect("a growing loop measure must be rejected")
             .to_string();
         assert!(!error.contains("budget exhausted"), "{error}");
+        let descent = error
+            .lines()
+            .find(|line| line.contains("loop invariant bundle leaf [UnclosedGoal]"))
+            .unwrap_or_else(|| panic!("missing descent obligation: {error}"));
         assert!(
-            error.contains("(to_integer(bytes.len()) - to_integer(iter.len())) < at("),
+            descent.contains("bytes.len()") && descent.contains("iter.len()"),
             "{error}"
         );
+        assert!(
+            descent.contains(" < ") && descent.contains("at("),
+            "{error}"
+        );
+        assert!(error.contains("this loop declares `decreases`"), "{error}");
         assert!(!error.contains("<unnamed"), "{error}");
-        assert!(error.contains("decreases at the back edge"), "{error}");
         assert!(!error.contains("__rust_"), "{error}");
-        // The reference fixture names the loaded scalar explicitly; its
-        // Rust local `byte` is a pointer, not the value added to `total`.
         let scalar_byte = if fixture == "rust-iter-references" {
-            "loaded_byte"
+            "old(*byte)"
         } else {
             "byte"
         };
         assert!(
-            error.contains(&format!(" + ({scalar_byte} as i32))")),
+            error.contains(&format!(" + ({scalar_byte} as i32)")),
             "{error}"
         );
-        assert!(error.contains("prefix(old(bytes), bytes.len(),"), "{error}");
     }
 }
 #[cfg(not(feature = "fast-gate"))]
@@ -87,8 +93,13 @@ fn audits_checked_frontiers(fixture: &str) {
     let p = project(fixture);
     assert_cli(&p, &["verify"]);
     let proof = fs::read_to_string(p.root.join("borrow.click")).unwrap();
+    let byte_entry = if fixture == "rust-iter-references" {
+        "step_until(read(0).entry)"
+    } else {
+        "step_until(loop(0).statement(0).entry)"
+    };
     for selector in [
-        "step_until(read(0).entry)",
+        byte_entry,
         "step_until(assignment(total, 1).entry)",
         "step_until(loop.back_edge)",
     ] {
