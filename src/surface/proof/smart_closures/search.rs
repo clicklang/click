@@ -6701,16 +6701,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 None
             }
         }
-        let indexed_order_operand = || {
-            if !matches!(
-                operator,
-                ComparisonOperator::LessThan
-                    | ComparisonOperator::LessEqual
-                    | ComparisonOperator::GreaterThan
-                    | ComparisonOperator::GreaterEqual
-            ) {
-                return None;
-            }
+        let indexed_operand_against_binding = || {
             [(left, right), (right, left)]
                 .into_iter()
                 .find_map(|(read, bound)| {
@@ -6730,7 +6721,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     .then_some(read)
                 })
         };
-        let Some(expression) = operand_against_literal(left, right).or_else(indexed_order_operand)
+        let Some(expression) =
+            operand_against_literal(left, right).or_else(indexed_operand_against_binding)
         else {
             return Ok(None);
         };
