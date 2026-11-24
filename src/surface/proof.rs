@@ -555,7 +555,7 @@ mod certificate_tests {
                 }
 
                 theorem reflexive(x: int32) {
-                    ensures x == x by solve();
+                    ensures x == x by close();
                 }
 
                 theorem applied(x: int32) {
@@ -569,21 +569,21 @@ mod certificate_tests {
                     requires x >= 0;
                     ensures (x >= 0) and (x >= 0) by {
                         apply(required(x));
-                        solve();
+                        close();
                     }
                 }
 
                 theorem implication(x: int32) {
                     ensures (x >= 0) implies (x >= 0) by {
                         intro();
-                        known();
+                        close();
                     }
                 }
 
                 theorem conjunction(x: int32) {
                     requires x >= 0;
                     requires x <= 10;
-                    ensures (x >= 0) and (x <= 10) by solve();
+                    ensures (x >= 0) and (x <= 10) by close();
                 }
 
                 theorem disjunction(x: int32) {
