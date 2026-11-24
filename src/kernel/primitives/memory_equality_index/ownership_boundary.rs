@@ -76,7 +76,7 @@ impl ResourceContext {
                 matches!(
                     range.base().base,
                     AddressBase::Symbolic(_)
-                        | AddressBase::LoadedPointer(_)
+                        | AddressBase::Load(_)
                         | AddressBase::FunctionSymbolic(_)
                         | AddressBase::ExternalArgument
                         | AddressBase::ExternalObject(_)

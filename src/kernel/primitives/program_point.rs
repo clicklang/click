@@ -2182,7 +2182,7 @@ impl ProgramPoint {
                 && matches!(pointer.offset, AddressOffset::Constant(_))
                 && !ty.has_abstract_size());
         if let Some(category) = super::PointerLoadCategory::of_type(value_type) {
-            return self.indexed_pointer_version(pointer, category);
+            return self.indexed_pointer_version(pointer, Some(category));
         }
         if value_type == ProgramType::Bool || value_type.is_pointer() || indexed_algebraic {
             return self.indexed_version(pointer, value_type.byte_width(), |store| {
@@ -2199,14 +2199,18 @@ impl ProgramPoint {
     /// category answers it at any pointee type, while a store of the other
     /// category does not. A partial or overlapping store still ends the
     /// version by `indexed_version`'s extent check.
+    ///
+    /// With no category the question is about the cell's bytes, not a
+    /// decoding of them: a store of a pointer of either category answers.
     pub(crate) fn indexed_pointer_version(
         &self,
         pointer: &Address,
-        category: super::PointerLoadCategory,
+        category: Option<super::PointerLoadCategory>,
     ) -> Option<Self> {
         self.indexed_version(pointer, super::C_POINTER_BYTE_WIDTH, |store| {
             matches!(store, MemoryDerivation::Store { value, .. }
-                if super::PointerLoadCategory::of_type(value.program_type()) == Some(category))
+                if super::PointerLoadCategory::of_type(value.program_type())
+                    .is_some_and(|stored| category.is_none_or(|category| stored == category)))
         })
     }
 
@@ -2587,10 +2591,7 @@ mod tests {
             ProgramType::Int32Pointer,
             &pointer_slot,
         );
-        assert!(matches!(
-            pointer.address().base,
-            AddressBase::LoadedPointer(_)
-        ));
+        assert!(matches!(pointer.address().base, AddressBase::Load(_)));
         let declared = entry
             .clone()
             .with_memory(entry.memory().clone().with_block(slot().base, 4));
@@ -2626,10 +2627,7 @@ mod tests {
             ProgramType::Int32Pointer,
             &slot,
         );
-        assert!(matches!(
-            pointer.address().base,
-            AddressBase::LoadedPointer(_)
-        ));
+        assert!(matches!(pointer.address().base, AddressBase::Load(_)));
         assert!(
             point
                 .ordinary_typed_version(pointer.address(), ProgramType::Int32)

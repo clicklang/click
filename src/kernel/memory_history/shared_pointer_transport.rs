@@ -94,11 +94,10 @@ impl<'a> Transport<'a> {
     fn address(&mut self, source: &SharedAddress) -> Option<SharedAddress> {
         let node = source.node();
         if self.reconstructed_word
-            && let AddressBase::LoadedPointer(identity) = node.base.native_atom()
+            && let AddressBase::Load(load) = node.base.native_atom()
         {
-            let (_, defining_address) = crate::kernel::eval::registered_pointer_load(*identity)?;
             let after = crate::kernel::intern_memory_ref(self.after);
-            let target = Address::loaded_value(&after, &defining_address);
+            let target = Address::loaded_value(&after, load.cell());
             let before = Address {
                 base: node.base.native_atom().clone(),
                 offset: AddressOffset::Constant(0),

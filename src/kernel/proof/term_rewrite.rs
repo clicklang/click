@@ -230,7 +230,7 @@ struct CarrierVariables {
     budgeted: bool,
     work_exhausted: bool,
     registered_loads: BTreeSet<Variable>,
-    pointer_loads: BTreeSet<crate::kernel::PointerLoadId>,
+    pointer_loads: BTreeSet<crate::kernel::Load>,
     pointer_applications: BTreeSet<u64>,
     shared_machine_operands: BTreeSet<u64>,
     mathematical_integers: BTreeSet<u64>,
@@ -954,11 +954,8 @@ fn collect_address_base_carriers(block: &AddressBase, variables: &mut CarrierVar
         }
         // A loaded pointer carries whatever its defining read's address
         // carries, as a registered load variable's offset does.
-        AddressBase::LoadedPointer(identity) if variables.pointer_loads.insert(*identity) => {
-            if let Some((_, address)) = crate::kernel::eval::registered_pointer_load(*identity) {
-                collect_pointer_carriers(&address, variables);
-                if variables.exhausted() {}
-            }
+        AddressBase::Load(load) if variables.pointer_loads.insert(load.clone()) => {
+            collect_pointer_carriers(load.cell(), variables);
         }
         _ => {}
     }
@@ -1983,7 +1980,7 @@ pub(crate) struct TermRewrite<'a> {
     integer_cache: HashMap<(u64, u64, bool, bool), IntegerTerm>,
     fold_integer_bridge: KernelTermExport,
     pointer_application_cache: HashMap<(u64, u64, bool, bool), AddressBase>,
-    pointer_origin_cache: HashMap<(PointerLoadId, u64, bool, bool), AddressBase>,
+    pointer_origin_cache: HashMap<(crate::kernel::Load, u64, bool, bool), AddressBase>,
     scope_renaming_max: u64,
     integer_body_summaries: crate::kernel::prelude::RetainedIntegerScopeSummaries,
     integer_variables: Option<IntegerVariableRewrite<'a>>,
@@ -5495,7 +5492,7 @@ impl<'a> TermRewrite<'a> {
             && !self.source_disabled
             && p.base == from.base
             && from.offset == AddressOffset::Constant(0)
-            && matches!(from.base, AddressBase::LoadedPointer(_))
+            && matches!(from.base, AddressBase::Load(_))
         {
             self.changed = true;
             let displacement = self.offset(&p.offset);

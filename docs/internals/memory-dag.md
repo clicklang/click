@@ -246,7 +246,7 @@ the *history* everywhere, which is the point.
 A cell the state holds materialized is named by its value before any walk.
 An integer cell holding a load variable resolves to that variable through the
 canonical form. A pointer cell whose value is exactly the pointer a typed load
-of that cell produces (the read's own `LoadedPointer` name at displacement
+of that cell produces (the read's own `AddressBase::Load` base at displacement
 zero, defined at the same address) is that read, at its defining memory.
 That is what keeps a struct field such as `arena->occupied` one name across a
 loop head: the walk is assumption-free and stops at the head's havoc, while

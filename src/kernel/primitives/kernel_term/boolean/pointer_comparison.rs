@@ -16,7 +16,7 @@ impl KernelTerm {
         if left == right {
             let comparison = Self::address_offset_equal([a.offset.clone(), b.offset.clone()]);
             if let KernelTermNode::BoolLiteral(value) = comparison.node()
-                && !(*value && matches!(left, AddressBase::LoadedPointer(_)))
+                && !(*value && matches!(left, AddressBase::Load(_)))
             {
                 return comparison;
             }

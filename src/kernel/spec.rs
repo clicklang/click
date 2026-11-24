@@ -2765,7 +2765,7 @@ fn integer_carrier_in_pointer(pointer: &Address, variable: Variable) -> bool {
     // application or registry DAG once for every fold obligation.
     matches!(
         pointer.base,
-        AddressBase::PureFunctionApplication(_) | AddressBase::LoadedPointer(_)
+        AddressBase::PureFunctionApplication(_) | AddressBase::Load(_)
     ) || integer_carrier_in_pointer_offset(&pointer.offset, variable)
 }
 
@@ -8364,7 +8364,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 };
                 let integer_read_through_loaded_pointer =
                     MachineIntegerType::from_program_type(*value_type).is_some()
-                        && matches!(pointer.base, AddressBase::LoadedPointer(_));
+                        && matches!(pointer.base, AddressBase::Load(_));
                 let version = if !*exact
                     && (ProgramPoint::supports_indexed_version(&pointer)
                         || integer_read_through_loaded_pointer

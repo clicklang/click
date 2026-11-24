@@ -7199,7 +7199,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 crate::kernel::proposition_mentions_load_variable(goal)
                     || crate::kernel::proof::term_rewrite::proposition_pointer_terms(goal)
                         .iter()
-                        .any(|pointer| matches!(pointer.base, AddressBase::LoadedPointer(_)))
+                        .any(|pointer| matches!(pointer.base, AddressBase::Load(_)))
             });
             if calls.is_empty() && !reads_memory {
                 return Ok(None);

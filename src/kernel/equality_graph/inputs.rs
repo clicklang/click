@@ -284,9 +284,6 @@ impl EqualityGraph {
             pointer.as_loaded_value().is_some()
                 || reads.definitions.contains_key(pointer)
                 || is_read_offset(&pointer.offset)
-                || matches!(&pointer.base, AddressBase::FunctionSymbolic(variable)
-                    if pointer.offset == AddressOffset::Constant(0)
-                    && crate::kernel::registered_load_term_for_variable(variable).is_some())
         };
         let depth = |node: &Option<Arc<History>>| node.as_ref().map_or(0, |node| node.depth);
         while !match (&current, &previous) {

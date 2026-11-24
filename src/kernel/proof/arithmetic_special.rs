@@ -52,7 +52,7 @@ fn address_base_payload(block: &AddressBase) -> Option<usize> {
         | AddressBase::ExternalArgument
         | AddressBase::ExternalObject(_)
         | AddressBase::Symbolic(_)
-        | AddressBase::LoadedPointer(_)
+        | AddressBase::Load(_)
         | AddressBase::Heap(_)
         | AddressBase::Temporary(_) => 1,
     };

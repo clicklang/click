@@ -3896,7 +3896,7 @@ fn collect_pointer_capture_variables(
         | AddressBase::ExternalArgument
         // The identity is opaque here, like a scalar load name. The equality
         // graph separately indexes its defining address exactly once.
-        | AddressBase::LoadedPointer(_)
+        | AddressBase::Load(_)
         | AddressBase::Heap(_)
         | AddressBase::Temporary(_) => {}
     }
@@ -6055,11 +6055,7 @@ fn collect_address_base_bitvector_variables(
         // A pointer read has no variable of its own, but it is the value at
         // the address it was read from, so it depends on that address's
         // variables, as a load term depends on its address's.
-        AddressBase::LoadedPointer(identity) => {
-            if let Some((_, address)) = crate::kernel::eval::registered_pointer_load(*identity) {
-                collect_pointer_bitvector_variables(&address, variables);
-            }
-        }
+        AddressBase::Load(load) => collect_pointer_bitvector_variables(load.cell(), variables),
         AddressBase::ContractResult
         | AddressBase::ContractException
         | AddressBase::AggregateReturn { .. }
@@ -6738,7 +6734,7 @@ fn block_variables(block: &AddressBase, contents: &MemoryBlock) -> BTreeSet<Vari
         | AddressBase::StringLiteral { .. }
         | AddressBase::Function(_)
         | AddressBase::ExternalArgument
-        | AddressBase::LoadedPointer(_)
+        | AddressBase::Load(_)
         | AddressBase::Heap(_)
         | AddressBase::Temporary(_) => {}
     }
@@ -7098,7 +7094,7 @@ pub(in crate::kernel) fn collect_memory_bitvector_variables_whole(
             | AddressBase::StringLiteral { .. }
             | AddressBase::Function(_)
             | AddressBase::ExternalArgument
-            | AddressBase::LoadedPointer(_)
+            | AddressBase::Load(_)
             | AddressBase::Heap(_)
             | AddressBase::Temporary(_) => {}
         }

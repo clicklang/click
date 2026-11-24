@@ -117,7 +117,7 @@ impl SharedAddressBase {
                 | AddressBase::FunctionSymbolic(_)
                 | AddressBase::ExternalArgument
                 | AddressBase::ExternalObject(_)
-                | AddressBase::LoadedPointer(_)
+                | AddressBase::Load(_)
                 | AddressBase::Heap(_)
                 | AddressBase::Temporary(_)
         ) {
@@ -279,7 +279,11 @@ mod tests {
             AddressBase::ExternalArgument,
             AddressBase::ExternalObject(Variable(998002)),
             AddressBase::Symbolic(Variable(998003)),
-            AddressBase::LoadedPointer(PointerLoadId(998004)),
+            Address::loaded_value(
+                &crate::kernel::intern_memory(SymbolicMemory::new()),
+                &Address::symbolic(Variable(998004)),
+            )
+            .base,
             AddressBase::PureFunctionApplication(SharedPureApplication::intern(
                 "call".into(),
                 vec![],

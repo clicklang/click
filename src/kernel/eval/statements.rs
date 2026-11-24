@@ -965,7 +965,7 @@ fn write_program_lvalue_paths_for_initialization(
                 .as_ref()
                 .filter(|_| {
                     !matches!(pointer.offset, AddressOffset::Add(_, _))
-                        && !matches!(pointer.base, AddressBase::LoadedPointer(_))
+                        && !matches!(pointer.base, AddressBase::Load(_))
                 })
                 .and_then(|range| {
                     effective_assumptions

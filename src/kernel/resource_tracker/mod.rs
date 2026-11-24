@@ -1651,16 +1651,14 @@ fn collect_pointer_reads(pointer: &Address, reads: &mut Vec<ResourceRead>) {
 }
 
 fn collect_address_base_reads(block: &AddressBase, reads: &mut Vec<ResourceRead>) {
-    if let AddressBase::LoadedPointer(identity) = *block
-        && let Some((memory, address)) = crate::kernel::eval::registered_pointer_load(identity)
-    {
+    if let AddressBase::Load(load) = block {
         push_read(
             reads,
             OwnedResource::Cell {
-                pointer: address,
+                pointer: load.cell().clone(),
                 bytes: crate::kernel::AccessExtent::from(crate::kernel::C_POINTER_BYTE_WIDTH),
             },
-            ProgramPoint::at(&memory),
+            ProgramPoint::at(load.point().shared_memory()),
         );
     }
 }

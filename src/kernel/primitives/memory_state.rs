@@ -102,8 +102,8 @@ fn write_havoc_block(identity: &mut String, block: AddressBase) {
         AddressBase::Symbolic(variable) => {
             let _ = write!(identity, "bs{};", variable.0);
         }
-        AddressBase::LoadedPointer(identity_id) => {
-            let _ = write!(identity, "blp{};", identity_id.0);
+        AddressBase::Load(load) => {
+            let _ = write!(identity, "blp{};", load.id());
         }
         AddressBase::Heap(value) => {
             let _ = write!(identity, "bh{value};");

@@ -86,7 +86,7 @@ impl KernelTerm {
         if !matches!(value.address().offset, AddressOffset::Constant(0))
             || !matches!(
                 value.address().base,
-                AddressBase::LoadedPointer(_) | AddressBase::FunctionSymbolic(_)
+                AddressBase::Load(_) | AddressBase::FunctionSymbolic(_)
             )
         {
             return None;

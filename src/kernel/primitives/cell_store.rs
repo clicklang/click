@@ -1719,7 +1719,7 @@ impl CellStore {
     }
 
     /// Projects the concrete cells onto what a load through an unresolved
-    /// pointer (`Symbolic`, `LoadedPointer`, or an external block) can observe,
+    /// pointer (`Symbolic`, `Load`, or an external block) can observe,
     /// keeping a cell when `keep` holds. Such a block may alias every block
     /// except the slot of a local whose address is never taken and, for a
     /// loaded pointer, locals that did not exist when it was read; so `keep`

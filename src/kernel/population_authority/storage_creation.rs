@@ -231,12 +231,9 @@ enum StorageEvent {
 /// block it was read from; it is external exactly when that storage is, as
 /// the storage-block spelling of the same read was.
 pub(in crate::kernel) fn is_external_population_anchor(anchor: &crate::kernel::Address) -> bool {
-    match anchor.base {
+    match &anchor.base {
         AddressBase::ExternalArgument => true,
-        AddressBase::LoadedPointer(identity) => {
-            crate::kernel::eval::registered_pointer_load(identity)
-                .is_some_and(|(_, address)| address.base == AddressBase::ExternalArgument)
-        }
+        AddressBase::Load(load) => load.cell().base == AddressBase::ExternalArgument,
         _ => false,
     }
 }

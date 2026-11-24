@@ -7047,10 +7047,7 @@ mod declared_scalar_field_observation_tests {
         let read = named.address().as_loaded_value().expect("pointer read");
         assert_eq!(read.point.read_version_id(), stored.observation_point_id());
         assert_eq!(read.defining_address, base);
-        assert_eq!(
-            read.category,
-            Some(crate::kernel::PointerLoadCategory::Object)
-        );
+        assert!(read.identity.is_point_named());
     }
 
     #[test]

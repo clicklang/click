@@ -189,7 +189,7 @@ pub(in crate::kernel) fn memory_block_may_alias(block: &AddressBase) -> bool {
         AddressBase::ExternalArgument
             | AddressBase::Symbolic(_)
             | AddressBase::FunctionSymbolic(_)
-            | AddressBase::LoadedPointer(_)
+            | AddressBase::Load(_)
     )
 }
 
@@ -5578,7 +5578,7 @@ impl ResourceContext {
                 // A loaded pointer's displacement is all of its offset: the
                 // read itself, at displacement zero, is the object's base.
                 AddressOffset::Int32Scaled { .. } | AddressOffset::Int64Scaled { .. }
-                    if matches!(base.base, AddressBase::LoadedPointer(_)) =>
+                    if matches!(base.base, AddressBase::Load(_)) =>
                 {
                     AddressOffset::Constant(0)
                 }
@@ -7962,11 +7962,10 @@ impl ResourceContext {
         // of it, holds the field.
         let by_member = || -> Option<&MemoryRange> {
             let stored = match &object.base {
-                AddressBase::LoadedPointer(identity) => {
-                    crate::kernel::eval::loaded_pointer_stored_address(*identity).and_then(
-                        |stored| (object.offset == AddressOffset::Constant(0)).then_some(stored),
-                    )
-                }
+                AddressBase::Load(load) => crate::kernel::eval::loaded_pointer_stored_address(
+                    load, None,
+                )
+                .and_then(|stored| (object.offset == AddressOffset::Constant(0)).then_some(stored)),
                 _ => None,
             };
             std::iter::once(object.clone())
