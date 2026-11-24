@@ -3523,9 +3523,16 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         else {
             return Ok(None);
         };
-        let Some(proved) = attempt::candidate_outcome(scope.driver().apply_step(
-            ProofStep::CompatibilityNormalize(Some(vec![condition.clone()])),
-        ))?
+        let Some(rewritten) = attempt::candidate_outcome(
+            scope
+                .driver()
+                .apply_step(ProofStep::Rewrite(condition.clone())),
+        )?
+        else {
+            return Ok(None);
+        };
+        let Some(proved) =
+            attempt::candidate_outcome(rewritten.driver().apply_step(ProofStep::Known))?
         else {
             return Ok(None);
         };
@@ -4110,10 +4117,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         }
         for signed in [false, true] {
             if let Some(bounds) = shifted_one_bounds(goal, signed)
-                && let Some(closed) = Self::try_normalize_after_arithmetic_bounds(
-                    search_input,
-                    &bounds,
-                    introduced_surfaces,
+                && let Some((proof, surfaces)) =
+                    Self::establish_arithmetic_bounds(search_input, &bounds, introduced_surfaces)?
+                && let Some(closed) = attempt::candidate_outcome(
+                    proof
+                        .driver()
+                        .apply_step(ProofStep::NormalizeUsing(surfaces)),
                 )?
             {
                 return Ok(Some(closed));
@@ -4346,11 +4355,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                             operator,
                             right: right.clone(),
                         };
-                        if let Some(proof) =
-                            attempt::candidate_outcome(search_input.driver().apply_step(
-                                ProofStep::CompatibilityNormalize(Some(vec![premise])),
-                            ))?
-                        {
+                        if let Some(proof) = attempt::candidate_outcome(
+                            search_input
+                                .driver()
+                                .apply_step(ProofStep::NormalizeUsing(vec![premise])),
+                        )? {
                             return Ok(Some(proof));
                         }
                     }
