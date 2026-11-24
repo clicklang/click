@@ -1,6 +1,7 @@
 //! Shared typed expression nodes. Arithmetic and calls migrate first; the
 //! explicitly named Legacy leaf is a lossless boundary for unmigrated sorts.
 //! No constructor consults facts, evaluates arithmetic, or unfolds a call.
+use super::integer::{IntegerIdentity, IntegerRangeIdentity, IntegerShallowKey};
 use super::*;
 use crate::kernel::MachineCastSpelling;
 mod boolean;
@@ -321,6 +322,7 @@ struct TermData {
     key: NodeKey,
     // Temporary reverse bridge. Weak because the old node caches this term.
     integer: Mutex<WeakIntegerTerm>,
+    integer_identity: OnceLock<Arc<IntegerIdentity>>,
     machine_leaf: MachineLeafCache,
     integer_output: OnceLock<Box<IntegerTerm>>,
     argument_leaf: std::sync::OnceLock<Box<PureFunctionArgument>>,
@@ -332,6 +334,7 @@ struct NodeKeyData {
     node: KernelTermNode,
     shared_machine_operand: bool,
     mathematical_integer: bool,
+    retained_integer_identity: bool,
     integer_observation_arithmetic: bool,
     literal_integer_arithmetic: bool,
     opaque_observation_boundary: bool,
@@ -660,6 +663,32 @@ impl NodeKey {
                 }
                 _ => false,
             };
+        let retained_integer_identity = ty == KernelType::Integer
+            && (mathematical_integer
+                || match &node {
+                    KernelTermNode::IntegerOperation { arguments, .. } => arguments
+                        .iter()
+                        .all(KernelTerm::has_retained_integer_identity),
+                    KernelTermNode::MachineObservation { format, operand } => {
+                        !opaque_observation_boundary
+                            && operand.is_shared_machine_operand()
+                            && operand.ty() == &KernelType::Program(format.program_type())
+                    }
+                    KernelTermNode::IntegerIf {
+                        arguments: [condition, yes, no],
+                    } => {
+                        matches!(
+                            condition.node(),
+                            KernelTermNode::BoolLiteral(_) | KernelTermNode::Variable(_)
+                        ) && yes.has_retained_integer_identity()
+                            && no.has_retained_integer_identity()
+                    }
+                    KernelTermNode::Fold(fold) if fold.index == KernelFoldIndex::Integer => fold
+                        .arguments
+                        .iter()
+                        .all(KernelTerm::has_retained_integer_identity),
+                    _ => false,
+                });
         let literal_integer_arithmetic = match &node {
             KernelTermNode::IntegerLiteral(_) => true,
             KernelTermNode::IntegerOperation { arguments, .. } => arguments
@@ -671,6 +700,7 @@ impl NodeKey {
         Self(Arc::new(NodeKeyData {
             machine_constant,
             mathematical_integer,
+            retained_integer_identity,
             integer_observation_arithmetic,
             literal_integer_arithmetic,
             fingerprint: hash.finish(),
@@ -747,6 +777,7 @@ impl Interner {
             id,
             key: key.clone(),
             integer: Mutex::default(),
+            integer_identity: Default::default(),
             machine_leaf: Default::default(),
             argument_leaf: Default::default(),
             integer_output: Default::default(),
@@ -949,6 +980,122 @@ impl KernelTerm {
     /// Arithmetic with typed shared machine observations and no internal binders.
     pub(crate) fn is_integer_observation_arithmetic(&self) -> bool {
         self.0.key.0.integer_observation_arithmetic
+    }
+
+    pub(super) fn integer_exact_key(&self) -> Option<IntegerShallowKey> {
+        if self.is_mathematical_integer() {
+            return Some(IntegerShallowKey::mathematical(self));
+        }
+        Some(self.mixed_integer_identity()?.key.clone())
+    }
+
+    pub(super) fn retained_integer_exact_id(&self) -> Option<u64> {
+        if self.is_mathematical_integer() {
+            return Some(SharedIntegerTerm::mathematical_id(self));
+        }
+        Some(self.mixed_integer_identity()?.id)
+    }
+
+    fn has_retained_integer_identity(&self) -> bool {
+        self.0.key.0.retained_integer_identity
+    }
+
+    fn mixed_integer_identity(&self) -> Option<&IntegerIdentity> {
+        if let Some(identity) = self.0.integer_identity.get() {
+            return Some(identity);
+        }
+        // An opaque observation may still have a producer-specific native
+        // key. Keep its existing identity boundary until that carrier moves.
+        if !self.has_retained_integer_identity() {
+            return None;
+        }
+
+        let child_id = |child: &KernelTerm| {
+            if child.is_mathematical_integer() {
+                SharedIntegerTerm::mathematical_id(child)
+            } else {
+                child
+                    .0
+                    .integer_identity
+                    .get()
+                    .expect("registered Integer child")
+                    .id
+            }
+        };
+        let mut pending = vec![(self, false)];
+        while let Some((root, expanded)) = pending.pop() {
+            if root.is_mathematical_integer() || root.0.integer_identity.get().is_some() {
+                continue;
+            }
+            crate::instrumentation::record_deterministic_work(1);
+            if !expanded {
+                let children = match root.node() {
+                    KernelTermNode::IntegerOperation { arguments, .. } => arguments.as_slice(),
+                    KernelTermNode::IntegerIf { arguments } => &arguments[1..],
+                    KernelTermNode::Fold(fold) => fold.arguments.as_slice(),
+                    KernelTermNode::MachineObservation { .. } => &[],
+                    _ => unreachable!("retained Integer identity"),
+                };
+                if !children.is_empty() {
+                    pending.push((root, true));
+                    pending.extend(children.iter().rev().map(|child| (child, false)));
+                    continue;
+                }
+            }
+            let (key, observation) = match root.node() {
+                KernelTermNode::MachineObservation { format, operand } => {
+                    let observation =
+                        SharedMachineIntegerTerm::from_shared(*format, operand.clone())
+                            .expect("retained Integer observation");
+                    (
+                        IntegerShallowKey::Machine(observation.id()),
+                        Some(observation),
+                    )
+                }
+                KernelTermNode::IntegerOperation {
+                    operator,
+                    arguments,
+                } => (
+                    IntegerShallowKey::operation(
+                        *operator,
+                        child_id(&arguments[0]),
+                        arguments.get(1).map(child_id),
+                    ),
+                    None,
+                ),
+                KernelTermNode::IntegerIf {
+                    arguments: [condition, yes, no],
+                } => {
+                    let condition = match condition.node() {
+                        KernelTermNode::BoolLiteral(value) => ConditionTerm::Constant(*value),
+                        KernelTermNode::Variable(variable) => ConditionTerm::Variable(*variable),
+                        _ => unreachable!("retained Integer guard identity"),
+                    };
+                    (
+                        IntegerShallowKey::If(Box::new(condition), child_id(yes), child_id(no)),
+                        None,
+                    )
+                }
+                KernelTermNode::Fold(fold) => {
+                    let [start, end, initial, body] = &fold.arguments;
+                    (
+                        IntegerShallowKey::RangeFold(
+                            IntegerRangeIdentity::Integer(child_id(start), child_id(end)),
+                            child_id(initial),
+                            fold.accumulator,
+                            fold.item,
+                            child_id(body),
+                        ),
+                        None,
+                    )
+                }
+                _ => unreachable!("retained Integer identity"),
+            };
+            root.0
+                .integer_identity
+                .get_or_init(|| IntegerIdentity::retained(key, observation));
+        }
+        self.0.integer_identity.get().map(Arc::as_ref)
     }
 
     /// The exact observation key for a single retained leaf. Keep any native

@@ -1263,7 +1263,7 @@ enum SharedIntegerStorage {
 }
 
 struct SharedIntegerNode {
-    id: u64,
+    identity: Arc<IntegerIdentity>,
     term: IntegerTerm,
     literal_arithmetic: bool,
     kernel_term: OnceLock<KernelTerm>,
@@ -1324,14 +1324,14 @@ impl SharedIntegerTerm {
         }
     }
 
-    fn mathematical_id(root: &KernelTerm) -> u64 {
+    pub(super) fn mathematical_id(root: &KernelTerm) -> u64 {
         (1 << 63) | root.id()
     }
 
     pub(crate) fn id(&self) -> u64 {
         match &self.0 {
             SharedIntegerStorage::Retained(root) => Self::mathematical_id(root),
-            SharedIntegerStorage::Native(node) => node.id,
+            SharedIntegerStorage::Native(node) => node.identity.id,
         }
     }
 
@@ -1654,6 +1654,22 @@ pub(super) enum IntegerRangeIdentity {
 }
 
 impl IntegerShallowKey {
+    pub(super) fn operation(
+        operator: KernelIntegerOperator,
+        left: u64,
+        right: Option<u64>,
+    ) -> Self {
+        use KernelIntegerOperator as Op;
+        match operator {
+            Op::Negate => Self::Negate(left),
+            Op::Add => Self::Add(left, right.unwrap()),
+            Op::Subtract => Self::Subtract(left, right.unwrap()),
+            Op::Multiply => Self::Multiply(left, right.unwrap()),
+            Op::TruncatingQuotient => Self::TruncatingQuotient(left, right.unwrap()),
+            Op::TruncatingRemainder => Self::TruncatingRemainder(left, right.unwrap()),
+        }
+    }
+
     pub(super) fn mathematical(root: &KernelTerm) -> Self {
         let id = SharedIntegerTerm::mathematical_id;
         match root.node() {
@@ -1662,18 +1678,7 @@ impl IntegerShallowKey {
             KernelTermNode::IntegerOperation {
                 operator,
                 arguments,
-            } => {
-                let left = id(&arguments[0]);
-                use KernelIntegerOperator as Op;
-                match operator {
-                    Op::Negate => Self::Negate(left),
-                    Op::Add => Self::Add(left, id(&arguments[1])),
-                    Op::Subtract => Self::Subtract(left, id(&arguments[1])),
-                    Op::Multiply => Self::Multiply(left, id(&arguments[1])),
-                    Op::TruncatingQuotient => Self::TruncatingQuotient(left, id(&arguments[1])),
-                    Op::TruncatingRemainder => Self::TruncatingRemainder(left, id(&arguments[1])),
-                }
-            }
+            } => Self::operation(*operator, id(&arguments[0]), arguments.get(1).map(id)),
             KernelTermNode::Fold(fold) => {
                 let [start, end, initial, body] = &fold.arguments;
                 Self::RangeFold(
@@ -1968,62 +1973,110 @@ pub(crate) fn machine_value_reading(
     }
 }
 
+/// Exact identity shared by a native node and retained syntax. The optional
+/// observation keeps its ID live even when the native node goes away.
+pub(super) struct IntegerIdentity {
+    pub(super) id: u64,
+    pub(super) key: IntegerShallowKey,
+    _observation: Option<SharedMachineIntegerTerm>,
+}
+
+impl IntegerIdentity {
+    pub(super) fn retained(
+        key: IntegerShallowKey,
+        observation: Option<SharedMachineIntegerTerm>,
+    ) -> Arc<Self> {
+        integer_interner()
+            .lock()
+            .expect("Integer interner lock poisoned")
+            .intern_identity(key, observation)
+            .0
+    }
+}
+
+struct IntegerInternEntry {
+    identity: Weak<IntegerIdentity>,
+    native: Weak<SharedIntegerNode>,
+}
+
+#[derive(Default)]
 struct IntegerInterner {
     next_id: u64,
-    nodes: crate::id_hash::U64Map<Vec<(IntegerShallowKey, Weak<SharedIntegerNode>)>>,
+    identities: crate::id_hash::U64Map<Vec<IntegerInternEntry>>,
     cleanup_queue: VecDeque<(u64, usize)>,
 }
 
 static INTEGER_INTERNER: OnceLock<Mutex<IntegerInterner>> = OnceLock::new();
 
 fn integer_interner() -> &'static Mutex<IntegerInterner> {
-    INTEGER_INTERNER.get_or_init(|| {
-        Mutex::new(IntegerInterner {
-            next_id: 0,
-            nodes: Default::default(),
-            cleanup_queue: VecDeque::new(),
-        })
-    })
+    INTEGER_INTERNER.get_or_init(Default::default)
 }
 
 impl IntegerInterner {
-    fn intern(&mut self, term: IntegerTerm) -> SharedIntegerTerm {
+    fn intern_identity(
+        &mut self,
+        key: IntegerShallowKey,
+        observation: Option<SharedMachineIntegerTerm>,
+    ) -> (Arc<IntegerIdentity>, &mut Weak<SharedIntegerNode>) {
         for _ in 0..8 {
             let Some((fingerprint, pointer)) = self.cleanup_queue.pop_front() else {
                 break;
             };
-            if let Some(bucket) = self.nodes.get_mut(&fingerprint) {
-                if bucket
-                    .iter()
-                    .any(|(_, node)| node.as_ptr() as usize == pointer && node.strong_count() != 0)
-                {
+            if let Some(bucket) = self.identities.get_mut(&fingerprint) {
+                if bucket.iter().any(|entry| {
+                    entry.identity.as_ptr() as usize == pointer
+                        && entry.identity.strong_count() != 0
+                }) {
                     self.cleanup_queue.push_back((fingerprint, pointer));
                 }
-                bucket.retain(|(_, node)| {
-                    node.as_ptr() as usize != pointer || node.strong_count() != 0
+                bucket.retain(|entry| {
+                    entry.identity.as_ptr() as usize != pointer
+                        || entry.identity.strong_count() != 0
                 });
                 if bucket.is_empty() {
-                    self.nodes.remove(&fingerprint);
+                    self.identities.remove(&fingerprint);
                 }
             }
         }
-        let key = term.shallow_key();
         let fingerprint = integer_key_fingerprint(&key);
-        if let Some(bucket) = self.nodes.get(&fingerprint) {
-            for (candidate, node) in bucket {
-                if candidate == &key
-                    && let Some(node) = node.upgrade()
-                {
-                    return SharedIntegerTerm(SharedIntegerStorage::Native(node));
-                }
-            }
+        let bucket = self.identities.entry(fingerprint).or_default();
+        if let Some((index, identity)) = bucket.iter().enumerate().find_map(|(index, entry)| {
+            let identity = entry.identity.upgrade()?;
+            (identity.key == key).then_some((index, identity))
+        }) {
+            return (identity, &mut bucket[index].native);
         }
         let id = self.next_id;
-        self.next_id = self
-            .next_id
+        self.next_id = id
             .checked_add(1)
             .filter(|id| *id < (1 << 63))
             .expect("native Integer node identity exhausted");
+        let identity = Arc::new(IntegerIdentity {
+            id,
+            key,
+            _observation: observation,
+        });
+        bucket.push(IntegerInternEntry {
+            identity: Arc::downgrade(&identity),
+            native: Weak::new(),
+        });
+        self.cleanup_queue
+            .push_back((fingerprint, Arc::as_ptr(&identity) as usize));
+        (
+            identity,
+            &mut bucket.last_mut().expect("interned Integer").native,
+        )
+    }
+
+    fn intern(&mut self, term: IntegerTerm) -> SharedIntegerTerm {
+        let observation = match &term {
+            IntegerTerm::Machine(value) => Some(value.clone()),
+            _ => None,
+        };
+        let (identity, native) = self.intern_identity(term.shallow_key(), observation);
+        if let Some(node) = native.upgrade() {
+            return SharedIntegerTerm(SharedIntegerStorage::Native(node));
+        }
         let literal_arithmetic = match &term {
             IntegerTerm::Constant(_) => true,
             IntegerTerm::Machine(value) => value.literal_conversion_value().is_some(),
@@ -2038,18 +2091,13 @@ impl IntegerInterner {
             _ => false,
         };
         let node = Arc::new(SharedIntegerNode {
-            id,
+            identity,
             term,
             literal_arithmetic,
             kernel_term: OnceLock::new(),
             read_through: OnceLock::new(),
         });
-        self.nodes
-            .entry(fingerprint)
-            .or_default()
-            .push((key, Arc::downgrade(&node)));
-        self.cleanup_queue
-            .push_back((fingerprint, Arc::as_ptr(&node) as usize));
+        *native = Arc::downgrade(&node);
         SharedIntegerTerm(SharedIntegerStorage::Native(node))
     }
 }
