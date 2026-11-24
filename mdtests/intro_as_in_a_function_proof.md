@@ -1,6 +1,6 @@
 # Named intro in a function proof
 
-`let name = intro()` works wherever `intro()` does in a C function's proof: on
+`intro(name) { ... }` can open a universal in a C function proof: on
 a quantified postcondition after execution, and inside a `have` before it.
 
 ```c filename=intro_as_in_a_function_proof.c
@@ -16,8 +16,9 @@ int32 keep(int32 x) {
     ensures forall (k: int32) { k < result implies k < x };
 } by {
     step_until(function.exit);
-    let below = intro();
-    close();
+    intro(below) {
+        close();
+    }
 }
 
 int32 keep_again(int32 x) {

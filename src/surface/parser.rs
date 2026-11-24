@@ -10947,9 +10947,7 @@ impl Parser {
                 )));
             };
             if tactic == "intro" {
-                self.expect_empty_tactic_args("intro")?;
-                self.expect(Token::Semicolon)?;
-                return self.named_intro(name.into());
+                return Err(self.error("write `intro(name) { ... }` to introduce a named binder"));
             }
             self.refuse_cast_type_binder(&name)?;
             self.expect(Token::LParen)?;
@@ -11880,7 +11878,7 @@ impl Parser {
         self.parse_named_proof_tactic(name)
     }
 
-    fn named_intro(&mut self, name: SurfaceBinder) -> Result<ProofTactic, ClickError> {
+    fn named_intro(&mut self, name: SurfaceBinder) -> Result<(), ClickError> {
         if let Some(name) = name.written() {
             self.refuse_cast_type_binder(name)?;
         }
@@ -11888,10 +11886,7 @@ impl Parser {
         if let Some(name) = name.written() {
             self.names.ended_fact_names.remove(name);
         }
-        Ok(match name {
-            SurfaceBinder::Written(name) => ProofTactic::IntroAs(name),
-            name => ProofTactic::IntroBinder(name),
-        })
+        Ok(())
     }
 
     fn parse_intro_tactic(&mut self) -> Result<ProofTactic, ClickError> {
@@ -19628,7 +19623,7 @@ mod tactic_classification_tests {
 
     #[test]
     fn logical_bindings_use_let_and_round_trip() {
-        for source in ["intro();", "let x = intro();", "let ih = induct(n);"] {
+        for source in ["intro();", "let ih = induct(n);"] {
             let tactic = Parser::new(source).unwrap().parse_proof_tactic().unwrap();
             let printed = super::super::printing::format_partial_tactic_sequence(
                 std::slice::from_ref(&tactic),
@@ -19637,7 +19632,6 @@ mod tactic_classification_tests {
             Parser::new(&printed).unwrap().parse_proof_tactic().unwrap();
             match (source, &tactic) {
                 ("intro();", ProofTactic::Intro) => {}
-                ("let x = intro();", ProofTactic::IntroAs(name)) => assert_eq!(name, "x"),
                 (
                     "let ih = induct(n);",
                     ProofTactic::Induct {
@@ -19651,6 +19645,11 @@ mod tactic_classification_tests {
                 _ => panic!("unexpected tactic: {source}"),
             }
         }
+        let removed = Parser::new("let x = intro();")
+            .unwrap()
+            .parse_proof_tactic()
+            .unwrap_err();
+        assert!(removed.message().contains("intro(name) { ... }"));
         for source in [
             "intro() as x;",
             "intro() as binder(7);",
@@ -19777,7 +19776,7 @@ mod tactic_classification_tests {
         ("normalize-using", "normalize() using { x == 1; };"),
         ("preserve", "preserve(memory(*p), statement(0));"),
         ("intro", "intro();"),
-        ("intro-as", "let name = intro();"),
+        ("intro-as", "intro(name) { normalize(); }"),
         ("enumerate", "enumerate();"),
         ("contradiction", "contradiction(x == 1);"),
         ("contradiction-false", "contradiction();"),

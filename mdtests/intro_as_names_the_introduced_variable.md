@@ -1,9 +1,8 @@
 # Named intro names the introduced variable
 
-Bare `intro()` introduces a universal's variable under the name its
-quantifier wrote, which may be in a contract far from the proof. `let name = intro()` lets the proof choose: the variable is `row` from here on, in the
-remaining goal and in every later step, for machine integer, mathematical
-`Integer` and pointer binders alike, and for nested quantifiers.
+Use `intro(row) { ... }` to choose the name for an introduced variable. The
+name is available throughout the block for machine integer, mathematical
+`Integer`, and pointer binders.
 
 ```click
 theorem int32_binder(n: int32) {

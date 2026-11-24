@@ -1130,7 +1130,7 @@ step is still checked.
 | `preserve(resource, region)` | simple | Specialized | Preserve a selected read across a separated effect. | [Reference](#preservation) |
 | `rewrite(from, to)` | simple | Core | Rewrite the goal using an equality. | [Reference](#rewriting) |
 | `intro()` | simple | Core | Introduce a universal binder or implication premise. | [Reference](#introducing-a-binder-or-premise) |
-| `let name = intro()` | simple | Specialized | Choose the name introduced into the proof. | [Reference](#naming-an-introduced-binder) |
+| `intro(name) { ... }` | control | Specialized | Choose the name introduced into the block. | [Reference](#naming-an-introduced-binder) |
 | `enumerate()` | simple | Expansion output | Close a constant-bounded universal from its instances. | [Reference](#finite-enumeration) |
 | `contradiction(P)` | simple | Core | Close a goal from incompatible facts. | [Reference](#contradictions) |
 | `contradiction()` | simple | Core | Close a goal from an established `false`. | [Reference](#contradictions) |
@@ -2626,8 +2626,8 @@ charges the affected expression.
 the consequent. For a universal, it fixes an arbitrary value and proves
 the body at that value. The closing brace discharges the original goal and
 ends the scope of the premise or binder. In a grouped contract proof the
-next tactic can then work on the next claim. The flat forms `intro();` and
-`let name = intro();` are also accepted.
+next tactic can then work on the next claim. The flat unnamed form `intro();`
+is also accepted.
 
 With `intro()`, a universal's variable keeps the name its quantifier wrote.
 An earlier binding of the same name stays readable as `outer.name`. That
@@ -2675,7 +2675,7 @@ expansion can retain that proof as an `intro` block.
 
 ### Naming an introduced binder
 
-**Form:** `let name = intro()`
+**Form:** `intro(name) { ... }`
 
 **Specialized.** Write it when the quantifier's own variable name would clash
 with or obscure a name the proof uses. For a goal written `forall (x: T) { ...
@@ -2695,15 +2695,14 @@ binder type it accepts, when `name` is new:
 - A fact named by `have name: P` is hidden, not refused: `name` reads the
   variable for the rest of the block, and the fact stays available by its
   proposition.
-- After a range quantifier's variable, the next `intro()` introduces its
-  range guard; after a binder whose body lowering guarded, the next `intro()`
-  introduces that guard.
+- For a written range, the block normally introduces membership with the
+  binder. An intervening lowering premise has its own introduction.
 
 **Outside it**, with what to write instead:
 
 - A name already in scope: choose another; nothing is shadowed.
-- An implication or negation goal, which introduces a fact, and facts have no
-  names: write `intro();`, and cite the fact by its proposition.
+- An implication or negation goal, which introduces a fact: write `intro() { ... }` and
+  cite the premise by its proposition.
 
 **Failure, checking, and tools:**
 
@@ -3283,7 +3282,7 @@ with that reason
 ([`have_name_is_not_cited_in_its_own_proof.md`](https://github.com/clicklang/click/blob/master/mdtests/have_name_is_not_cited_in_its_own_proof.md),
 [`have_name_is_cited_only_in_its_block.md`](https://github.com/clicklang/click/blob/master/mdtests/have_name_is_cited_only_in_its_block.md)).
 
-A quantifier variable, including one named by `let name = intro()`, hides a
+A quantifier variable, including one named by `intro(name) { ... }`, hides a
 fact of the same name in its body. The chosen name must not reuse an active
 value binding.
 The container stays intrinsically control; its selectable source site may own
