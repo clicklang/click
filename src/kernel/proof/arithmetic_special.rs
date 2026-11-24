@@ -2813,7 +2813,14 @@ fn signed_max_shift_bound(
         | (ConditionTerm::IntegerLessThan(left, right), false) => (right, left),
         _ => return None,
     };
-    let IntegerTerm::Machine(bound) = right.value_read() else {
+    let (format, count) = signed_max_shift(right)?;
+    Some((left, format, count))
+}
+
+fn signed_max_shift(
+    bound: &crate::kernel::SharedIntegerTerm,
+) -> Option<(MachineIntegerType, crate::kernel::MachineOperandView<'_>)> {
+    let IntegerTerm::Machine(bound) = bound.value_read() else {
         return None;
     };
     let mut shifted = bound.operand_view();
@@ -2833,7 +2840,20 @@ fn signed_max_shift_bound(
     if format.constant_from_term(&max.literal()?)?.to_integer() != max_value.into() {
         return None;
     }
-    Some((left, unsigned, count))
+    Some((unsigned, count))
+}
+
+/// A positive signed maximum has the same signed and unsigned right shift
+/// when both shifts use the same in-range count.
+pub(super) fn signed_max_shift_identity_count_bound(
+    left: &crate::kernel::SharedIntegerTerm,
+    right: &crate::kernel::SharedIntegerTerm,
+) -> Option<Proposition> {
+    let (format, count) = signed_max_shift(left)?;
+    let (other_format, other_count) = signed_max_shift(right)?;
+    (format == other_format && count.try_retain(format)? == other_count.try_retain(format)?)
+        .then(|| shift_count_upper_bound(format, count))
+        .flatten()
 }
 
 pub(crate) fn same_signed_max_shift_bound(premise: &Proposition, goal: &Proposition) -> bool {
@@ -2852,12 +2872,74 @@ pub(crate) fn same_signed_max_shift_bound(premise: &Proposition, goal: &Proposit
             .is_some_and(|(a, b)| a == b)
 }
 
+fn shifted_max_operand(comparison: &Proposition) -> Option<&crate::kernel::SharedIntegerTerm> {
+    match comparison.condition_native()? {
+        (ConditionTerm::IntegerLessEqual(_, bound), true)
+        | (ConditionTerm::IntegerGreaterThan(_, bound), false)
+        | (ConditionTerm::IntegerGreaterEqual(bound, _), true)
+        | (ConditionTerm::IntegerLessThan(bound, _), false) => Some(bound),
+        _ => None,
+    }
+}
+
+pub(crate) fn signed_max_shift_bound_identity(
+    premise: &Proposition,
+    goal: &Proposition,
+) -> Option<Proposition> {
+    if !same_signed_max_shift_bound(premise, goal) {
+        return None;
+    }
+    let from = shifted_max_operand(goal)?;
+    let to = shifted_max_operand(premise)?;
+    (from.value_read() != to.value_read()).then(|| {
+        Proposition::condition_is(ConditionTerm::IntegerEqual(from.clone(), to.clone()), true)
+    })
+}
+
+/// Recover the signed spelling when the premise index supplies only the
+/// unsigned reading of the comparison. The rewrite still checks the identity
+/// and the resulting signed bound independently.
+pub(crate) fn signed_max_shift_signed_identity(goal: &Proposition) -> Option<Proposition> {
+    use crate::kernel::{
+        KernelTerm, KernelTermImport, MachineOperandView, SharedMachineIntegerTerm,
+    };
+
+    let from = shifted_max_operand(goal)?;
+    let (unsigned, count) = signed_max_shift(from)?;
+    let signed = match unsigned {
+        MachineIntegerType::UInt32 => MachineIntegerType::Int32,
+        MachineIntegerType::UInt64 => MachineIntegerType::Int64,
+        _ => return None,
+    };
+    let maximum =
+        crate::kernel::machine_integer::range::constant_word(signed, &signed.format().bounds().1)?;
+    let mut import = KernelTermImport::default();
+    let maximum = import.machine_arithmetic(signed, &maximum)?;
+    let count = match count {
+        MachineOperandView::Shared(count) => count.clone(),
+        MachineOperandView::Legacy(count) => import.machine_arithmetic(unsigned, count)?,
+    };
+    let signed_shift =
+        KernelTerm::machine_binary_shared(signed, MachineBinaryOp::ShiftRight, [maximum, count]);
+    let to = IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(signed, signed_shift)?);
+    (from.value_read() != &to).then(|| {
+        Proposition::condition_is(ConditionTerm::IntegerEqual(from.clone(), to.into()), true)
+    })
+}
+
 pub(crate) fn signed_max_shift_count_bound(goal: &Proposition) -> Option<Proposition> {
+    let (_, format, count) = signed_max_shift_bound(goal)?;
+    shift_count_upper_bound(format, count)
+}
+
+fn shift_count_upper_bound(
+    format: MachineIntegerType,
+    count: crate::kernel::MachineOperandView<'_>,
+) -> Option<Proposition> {
     use crate::kernel::MachineOperandView as View;
     use crate::kernel::machine_integer::{
         comparison::condition_for_operand_views, range::constant_word,
     };
-    let (_, format, count) = signed_max_shift_bound(goal)?;
     let limit = constant_word(format, &format.format().bits().into())?;
     Some(Proposition::condition_is(
         condition_for_operand_views(
@@ -2869,14 +2951,10 @@ pub(crate) fn signed_max_shift_count_bound(goal: &Proposition) -> Option<Proposi
     ))
 }
 
-/// Explicit premises for one signed right-shift bound on a promoted narrow
-/// unsigned value, or for carrying that bound through the shift-count widening.
-pub(crate) fn promoted_right_shift_bounds(goal: &Proposition) -> Option<Vec<Proposition>> {
-    use crate::kernel::MachineOperandView as View;
-    use crate::kernel::machine_integer::comparison::{
-        condition_for_operand_views, structural_boolean_comparison_view,
-    };
-    use crate::kernel::machine_integer::range::constant_word;
+/// One root shift of a zero-extended narrow word has an intrinsic range.
+/// A subsequent signed widening preserves the result and its endpoints.
+pub(crate) fn promoted_right_shift_bound(goal: &Proposition) -> Option<bool> {
+    use crate::kernel::machine_integer::comparison::structural_boolean_comparison_view;
 
     let Proposition::ConditionIs(condition, expected) = goal else {
         return None;
@@ -2912,15 +2990,15 @@ pub(crate) fn promoted_right_shift_bounds(goal: &Proposition) -> Option<Vec<Prop
         | (R::GreaterThan, true, false) => R::GreaterEqual,
         _ => return None,
     };
-    let (shift, widened) = match format {
-        MachineIntegerType::Int32 => (operand, false),
+    let shift = match format {
+        MachineIntegerType::Int32 => operand,
         MachineIntegerType::Int64 => {
             let (_, MachineIntegerType::Int32, MachineIntegerType::Int64, source) =
                 operand.cast()?
             else {
                 return None;
             };
-            (source, true)
+            source
         }
         _ => return None,
     };
@@ -2930,31 +3008,20 @@ pub(crate) fn promoted_right_shift_bounds(goal: &Proposition) -> Option<Vec<Prop
         return None;
     };
     let (narrow, _) = promoted.narrow_widening32_operand()?;
-    if narrow.format().is_signed()
-        || crate::kernel::machine_integer::bounds::constant_shift_count(amount)? >= 32
-    {
+    let count = crate::kernel::machine_integer::bounds::constant_shift_count(amount)?;
+    if narrow.format().is_signed() || count >= 32 {
         return None;
     }
-    let bound = |operand, relation, endpoint: &num_bigint::BigInt| {
-        let literal = constant_word(MachineIntegerType::Int32, endpoint)?;
-        Some(Proposition::condition_is(
-            condition_for_operand_views(
-                MachineIntegerType::Int32,
-                relation,
-                [operand, View::Legacy(&literal)],
-            ),
-            true,
-        ))
-    };
-    if widened {
-        let endpoint = format.constant_from_term(&literal)?.to_integer();
-        return Some(vec![bound(shift, relation, &endpoint)?]);
-    }
-    let (lo, hi) = narrow.format().bounds();
-    Some(vec![
-        bound(promoted, R::GreaterEqual, &lo)?,
-        bound(promoted, R::LessEqual, &hi)?,
-    ])
+    let (minimum, maximum) = narrow.format().bounds();
+    let maximum = maximum >> count;
+    let endpoint = format.constant_from_term(&literal)?.to_integer();
+    Some(match relation {
+        R::LessThan => maximum < endpoint,
+        R::LessEqual => maximum <= endpoint,
+        R::GreaterThan => minimum > endpoint,
+        R::GreaterEqual => minimum >= endpoint,
+        _ => unreachable!("order relation"),
+    })
 }
 
 fn with_shifted_one_count<R>(

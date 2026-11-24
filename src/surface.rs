@@ -131,7 +131,7 @@ pub fn click_source_is_declaration_module(source: &str) -> bool {
     parser::declares_only_definitions(source)
 }
 use parser::ContractLetBinding;
-pub use printing::{format_proof_certificate, format_proof_tactics};
+pub use printing::{format_proof_certificate, format_proof_tactics, with_expansion_close_output};
 use proof::*;
 pub(crate) use pure_fact_list::PureFactList;
 use source_registry::*;

@@ -3581,6 +3581,25 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_normalize_after_arithmetic_bounds");
+        let Some((proof, surfaces)) =
+            Self::establish_arithmetic_bounds(input, requirements, introduced_surfaces)?
+        else {
+            return Ok(None);
+        };
+        attempt::candidate_outcome(
+            proof
+                .driver()
+                .apply_step(ProofStep::CompatibilityNormalize(Some(surfaces))),
+        )
+    }
+
+    fn establish_arithmetic_bounds(
+        input: &Proof<'a>,
+        requirements: &[Proposition],
+        introduced_surfaces: &[ClickProposition],
+    ) -> Result<Option<(Proof<'a>, Vec<ClickProposition>)>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("establish_arithmetic_bounds");
         let mut proof = input.clone();
         let mut surfaces = Vec::with_capacity(requirements.len());
         for required in requirements {
@@ -3610,11 +3629,67 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
             surfaces.push(surface);
         }
-        attempt::candidate_outcome(
-            proof
-                .driver()
-                .apply_step(ProofStep::CompatibilityNormalize(Some(surfaces))),
-        )
+        Ok(Some((proof, surfaces)))
+    }
+
+    fn try_signed_max_shift_bound(
+        input: &Proof<'a>,
+        bound: &Proposition,
+        count: &Proposition,
+        introduced_surfaces: &[ClickProposition],
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_signed_max_shift_bound");
+        use crate::kernel::proof::arithmetic_special::{
+            signed_max_shift_bound_identity, signed_max_shift_signed_identity,
+        };
+        let Some(goal) = input.goal() else {
+            return Ok(None);
+        };
+        let Some((proof, surfaces)) = Self::establish_arithmetic_bounds(
+            input,
+            &[bound.clone(), count.clone()],
+            introduced_surfaces,
+        )?
+        else {
+            return Ok(None);
+        };
+        if let Some(closed) =
+            attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Known))?
+        {
+            return Ok(Some(closed));
+        }
+        // The execution checker can know the count via its range index
+        // before that exact bound has been published as an available fact.
+        let Some(count_surface) = surfaces.last() else {
+            return Ok(None);
+        };
+        let Some(proof) = attempt::candidate_outcome(proof.driver().apply_step(
+            super::super::wide_arithmetic::have(count_surface.clone(), vec![ProofStep::Known]),
+        ))?
+        else {
+            return Ok(None);
+        };
+        let identities = signed_max_shift_bound_identity(bound, goal)
+            .into_iter()
+            .chain(std::iter::once_with(|| signed_max_shift_signed_identity(goal)).flatten());
+        for identity in identities {
+            if let Some(equality) = proof.structural_proposition_candidate(&identity)
+                && let Some(with_identity) = attempt::candidate_outcome(proof.driver().apply_step(
+                    super::super::wide_arithmetic::have(equality.clone(), vec![ProofStep::Known]),
+                ))?
+                && let Some(rewritten) = attempt::candidate_outcome(
+                    with_identity
+                        .driver()
+                        .apply_step(ProofStep::Rewrite(equality)),
+                )?
+                && let Some(closed) =
+                    attempt::candidate_outcome(rewritten.driver().apply_step(ProofStep::Known))?
+            {
+                return Ok(Some(closed));
+            }
+        }
+        Ok(None)
     }
 
     fn try_exact_float_bound_transfer(
@@ -3947,7 +4022,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_bounded_arithmetic_closure");
         use crate::kernel::proof::arithmetic_special::{
-            float_compound_bound_operand, is_float_bound, promoted_right_shift_bounds,
+            float_compound_bound_operand, is_float_bound, promoted_right_shift_bound,
             shift_count_mask_requirements, shifted_one_bounds, signed_max_shift_count_bound,
             signed_product_guard_candidates, signed_quotient_bridge_requirement,
             signed_shift_bound_mask_identity,
@@ -3958,21 +4033,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if let Proposition::Or(left, right) = goal {
             return Self::try_distinct_constant_exclusion(search_input, left, right);
         }
-        if let Some(requirements) = shift_count_mask_requirements(goal) {
-            return Self::try_normalize_after_arithmetic_bounds(
-                search_input,
-                &requirements,
-                introduced_surfaces,
-            );
-        }
-        if let Some(requirements) = promoted_right_shift_bounds(goal)
-            && let Some(closed) = Self::try_normalize_after_arithmetic_bounds(
-                search_input,
-                &requirements,
-                introduced_surfaces,
-            )?
+        if let Some(requirements) = shift_count_mask_requirements(goal)
+            && let Some((proof, _)) =
+                Self::establish_arithmetic_bounds(search_input, &requirements, introduced_surfaces)?
         {
-            return Ok(Some(closed));
+            return attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Known));
         }
         if let Some(identity) = signed_shift_bound_mask_identity(goal)
             && let Some(equality) = search_input.structural_proposition_candidate(&identity)
@@ -4004,7 +4069,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if let Proposition::And(left, right) = goal
             && [left.as_ref(), right.as_ref()].iter().all(|leaf| {
                 is_float_bound(leaf)
-                    || promoted_right_shift_bounds(leaf).is_some()
+                    || promoted_right_shift_bound(leaf) == Some(true)
                     || signed_product_guard_candidates(leaf).next().is_some()
             })
         {
@@ -4048,6 +4113,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             goal,
         ) {
             if let Some(count) = signed_max_shift_count_bound(goal) {
+                if let Some(closed) = Self::try_signed_max_shift_bound(
+                    search_input,
+                    &bound,
+                    &count,
+                    introduced_surfaces,
+                )? {
+                    return Ok(Some(closed));
+                }
                 if let Some(closed) = Self::try_normalize_after_arithmetic_bounds(
                     search_input,
                     &[bound, count],
@@ -7028,6 +7101,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                             Some(expression)
                         }
                         ContractExpression::BitwiseAnd(left, right)
+                        | ContractExpression::BitwiseOr(left, right)
                             if matches!(
                                 operand_against_literal(left, right),
                                 Some(ContractExpression::Index(..))

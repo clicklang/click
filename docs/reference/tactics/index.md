@@ -1135,7 +1135,7 @@ step is still checked.
 | `check_termination_component("f", mode)` | simple | Expansion output | Classify a generated recursive component using established premises. | [Reference](#termination-checks) |
 | `check_termination_callbacks()` | simple | Expansion output | Classify callback safety using established strict return premises. | [Reference](#termination-checks) |
 | `close()` | smart | Core | Try the direct goal check, then search if it fails. | [Reference](#closing-a-goal) |
-| `known()` | simple | Expansion output | Close a goal from available facts or goal-local computation. | [Reference](#available-facts) |
+| `known()` | simple | Specialized | Require a direct goal check. | [Reference](#available-facts) |
 | `normalize()` | simple | Compatibility | Close a goal by evaluation without context. | [Reference](#context-free-normalization) |
 | `normalize() using { P; ... }` | simple | Compatibility | Check normalization against written premises. | [Reference](#normalization-with-selected-premises) |
 | `preserve(resource, region)` | simple | Specialized | Preserve a selected read across a separated effect. | [Reference](#preservation) |
@@ -1611,8 +1611,8 @@ the rule gap, and profiling reports the restricted site.
 `close()` first runs the same direct check as `known()`. On a hit it
 finishes immediately. On a miss ordinary verification runs the standard
 `solve()` search with its usual budget. Checked-only verification reports
-the direct-check failure at the tactic. Expansion emits the checked steps
-selected by either path.
+the direct-check failure at the tactic. `click expand` emits the checked
+steps selected by either path, spelling direct goal closures `close()`.
 
 <!-- verified-example: mdtests/close_tactic.md -->
 ```click
@@ -1629,9 +1629,9 @@ The former form `assumption()` is refused with a diagnostic naming
 `known()`. It reuses available facts and also checks the computational leaves
 described below.
 
-**Expansion output.** `click expand` writes it; by hand, write it to close a
-goal that is already available or true by direct computation, without search,
-typically after a `rewrite`. It closes the goal or refuses; it adds no fact.
+**Specialized.** Use `known()` when the preceding steps should have made the
+goal directly available, for example after a `rewrite`. It refuses when the
+direct check fails. Expansion writes this checked operation as `close()`.
 
 Smart closure uses `known()` for computational leaves, including residuals
 after a rewrite or unfold and leaves inside logical proofs. Proof strategies
@@ -1778,8 +1778,16 @@ require a nonnegative source. A bitwise-and with a nonnegative literal mask
 is between zero and the mask, and is at most a nonnegative source. For
 unsigned words, this range also supports comparisons of compound expressions.
 For example, `known()` can prove `((y & 7u32) + 1u32) as uint32 != 0u32`
-because the addition's range is `[1, 8]` and fits the word. A root conditional
-equals its selected arm when its written guard is available.
+because the addition's range is `[1, 8]` and fits the word.
+
+For a 32- or 64-bit shift count, `known()` can remove the mask `width - 1`
+when the count is known in range. It also checks the equality of the signed
+and unsigned right shifts of the positive signed maximum at the same in-range
+count. A constant right shift of a zero-extended unsigned byte or halfword
+has a range computed from its source width and count, including after a
+signed widening of the result.
+
+A root conditional equals its selected arm when its written guard is available.
 A root Integer or machine conditional with identical arms equals that shared
 arm without a guard premise.
 Shared native comparison guards retain their operand DAGs; other shared

@@ -2483,7 +2483,7 @@ fn wide_fee_evaluation_source_with_profile(mode: &str, positive: bool, result_fi
     );
     let helper = bounds(
         "to_integer(rounded)",
-        "to_integer(denominator)",
+        "to_integer(at(denominator, this->size))",
         "to_integer(product)",
     );
     let fit_bounds = |product: &str| {
