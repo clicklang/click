@@ -345,8 +345,8 @@ impl StoredConditionTerm {
     }
 }
 
-/// Retained contract displacement. Exact legacy indices still enter as a
-/// native input because their carrier identity cannot be recovered from a root.
+/// Retained contract displacement. Opaque indices retain their exact
+/// carrier in the corresponding typed machine input.
 #[derive(Clone)]
 pub struct StoredPointerOffset(Arc<PointerOffsetStorage>);
 
@@ -372,20 +372,11 @@ impl From<AddressOffset> for StoredPointerOffset {
 impl StoredPointerOffset {
     pub(in crate::kernel) fn from_rewritten_root(root: SharedAddressOffset) -> Self {
         let mut indices = Vec::new();
-        if !root.visit_root_while(|node| {
+        root.visit_root_in_order(false, |node| {
             if let Some(index) = node.index() {
-                let index = SharedAddressOffset::exact_index(index);
-                if index.shared_operand().is_none() {
-                    return false;
-                }
-                indices.push(index);
+                indices.push(SharedAddressOffset::exact_index(index));
             }
-            true
-        }) {
-            // A rewrite can introduce an exact opaque index. Keep that result
-            // in the same native storage as a written offset with such an index.
-            return Self::from(KernelAddressOffset::export(&root).expect("rewritten offset"));
-        }
+        });
         Self(Arc::new(PointerOffsetStorage::Shared {
             root,
             _index_identities: indices,
@@ -405,18 +396,14 @@ impl StoredPointerOffset {
     }
 
     fn retain(written: &AddressOffset) -> Option<PointerOffsetStorage> {
+        let root = KernelAddressOffset::try_import(written).ok()?;
         let mut indices = Vec::new();
-        if written.any_scaled_operand(|value| {
-            if value.shared_operand().is_none() {
-                return true;
-            }
+        written.any_scaled_operand(|value| {
             indices.push(value.clone());
             false
-        }) {
-            return None;
-        }
+        });
         Some(PointerOffsetStorage::Shared {
-            root: KernelAddressOffset::import(written),
+            root,
             _index_identities: indices,
             native: OnceLock::new(),
         })
@@ -570,6 +557,32 @@ mod protocol_value_tests {
             stored.native_compat().cmp(distinct.native_compat()),
         );
         assert_eq!(hash(&stored), hash(&same));
+    }
+
+    #[test]
+    fn retained_contract_offset_keeps_opaque_index_carrier() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let index = SharedMachineIntegerTerm::index(
+            MachineIntegerType::Int32,
+            MachineTerm::PureFunctionApplication {
+                name: "opaque_displacement".into(),
+                arguments: vec![MachineTerm::Variable(Variable(998985))],
+            },
+        );
+        let source = AddressOffset::Int32Scaled {
+            value: index.clone(),
+            byte_width: 4,
+        };
+        let stored = StoredPointerOffset::from_written(&source);
+        let root = stored.root().expect("typed displacement");
+        let first = KernelAddressOffset::index_key(root.node().index().unwrap()).unwrap();
+        assert!(std::ptr::eq(
+            first.structural_value(),
+            index.structural_value()
+        ));
+        assert_eq!(first, index);
+        assert!(!stored.has_cached_native_offset());
+        assert_eq!(stored.native_compat(), &source);
     }
 
     #[test]

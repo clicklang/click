@@ -246,14 +246,42 @@ pub enum KernelTermNode {
 /// reading the operand can reuse the provided syntax by reference.
 #[derive(Clone, Debug)]
 pub struct KernelWrittenMachine {
-    identity: u64,
     format: MachineIntegerType,
-    value: Arc<MachineTerm>,
+    source: WrittenMachineSource,
+}
+
+#[derive(Clone, Debug)]
+enum WrittenMachineSource {
+    Expression {
+        identity: u64,
+        value: Arc<MachineTerm>,
+    },
+    AddressIndex(SharedMachineIntegerTerm),
+}
+
+#[derive(Eq, PartialEq, Hash)]
+enum WrittenMachineIdentity {
+    Expression(u64),
+    AddressIndex(usize),
 }
 
 impl KernelWrittenMachine {
+    fn identity(&self) -> WrittenMachineIdentity {
+        match &self.source {
+            WrittenMachineSource::Expression { identity, .. } => {
+                WrittenMachineIdentity::Expression(*identity)
+            }
+            WrittenMachineSource::AddressIndex(index) => {
+                WrittenMachineIdentity::AddressIndex(index.payload_id())
+            }
+        }
+    }
+
     pub(crate) fn value(&self) -> &MachineTerm {
-        &self.value
+        match &self.source {
+            WrittenMachineSource::Expression { value, .. } => value,
+            WrittenMachineSource::AddressIndex(index) => index.structural_value(),
+        }
     }
 
     pub(crate) fn format(&self) -> MachineIntegerType {
@@ -262,13 +290,13 @@ impl KernelWrittenMachine {
 }
 impl PartialEq for KernelWrittenMachine {
     fn eq(&self, other: &Self) -> bool {
-        self.identity == other.identity
+        self.identity() == other.identity()
     }
 }
 impl Eq for KernelWrittenMachine {}
 impl Hash for KernelWrittenMachine {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.identity.hash(state);
+        self.identity().hash(state);
     }
 }
 
@@ -1444,12 +1472,42 @@ impl KernelTerm {
                 Self::intern(
                     KernelType::Program(format.program_type()),
                     KernelTermNode::WrittenMachine(KernelWrittenMachine {
-                        identity: id,
                         format,
-                        value: Arc::new(value.clone()),
+                        source: WrittenMachineSource::Expression {
+                            identity: id,
+                            value: Arc::new(value.clone()),
+                        },
                     }),
                 )
             })
+    }
+
+    /// An opaque address index already owns its exact producer syntax and
+    /// semantic identity. Keep both through offset import and checked reads.
+    pub(super) fn retain_address_index(index: &SharedMachineIntegerTerm) -> Self {
+        if let Some(root) = index.shared_operand() {
+            return root.clone();
+        }
+        Self::intern(
+            KernelType::Program(index.ty().program_type()),
+            KernelTermNode::WrittenMachine(KernelWrittenMachine {
+                format: index.ty(),
+                source: WrittenMachineSource::AddressIndex(index.clone()),
+            }),
+        )
+    }
+
+    pub(super) fn retained_address_index(
+        &self,
+        format: MachineIntegerType,
+    ) -> Option<&SharedMachineIntegerTerm> {
+        let KernelTermNode::WrittenMachine(input) = self.node() else {
+            return None;
+        };
+        match &input.source {
+            WrittenMachineSource::AddressIndex(index) if index.ty() == format => Some(index),
+            _ => None,
+        }
     }
 
     /// Rebuild a selected native leaf while preserving a common call producer.
