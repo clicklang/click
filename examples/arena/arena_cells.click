@@ -247,6 +247,8 @@ int32 arena_init(struct arena* arena, int32 capacity) {
         false => {}
     }
     have 1 <= capacity;
+    have separate(memory(occupied[0..capacity]), memory(data[0..capacity])) by { known(); }
+    have separate(memory(*arena), memory(data[0..capacity])) by { known(); }
     step();
     have separate(memory(occupied[0..capacity]), memory(*arena)) by { known(); }
     have contains(memory(*arena), memory(arena->live_regions)) by { normalize(); }
@@ -336,6 +338,7 @@ int32 arena_init(struct arena* arena, int32 capacity) {
     step();
     step();
     have arena->occupied == occupied;
+    have arena->data == data by { known(); }
     have arena->capacity == capacity;
     have forall (k: int32) {
         0 <= k and k < arena->capacity implies arena->occupied[k] == 0
@@ -362,19 +365,26 @@ int32 arena_init(struct arena* arena, int32 capacity) {
         memory(arena->occupied[0..arena->capacity]),
         memory(arena->data[0..arena->capacity])
     ) by {
-        solve();
+        rewrite(arena->occupied, occupied);
+        rewrite(arena->data, data);
+        rewrite(arena->capacity, capacity);
+        known();
     }
     have separate(
         memory(*arena),
         memory(arena->data[0..arena->capacity])
     ) by {
-        solve();
+        rewrite(arena->data, data);
+        rewrite(arena->capacity, capacity);
+        known();
     }
     have separate(
         memory(*arena),
         memory(arena->occupied[0..arena->capacity])
     ) by {
-        solve();
+        rewrite(arena->occupied, occupied);
+        rewrite(arena->capacity, capacity);
+        known();
     }
     fold(arena_cells(arena->data, arena->occupied, arena->capacity)[..]);
     fold(arena_cells(arena->data, arena->occupied, arena->capacity));
