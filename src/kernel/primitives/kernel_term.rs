@@ -34,6 +34,7 @@ mod offsets;
 mod pointers;
 pub(crate) use addresses::{SharedAddress, SharedAddressBase};
 pub use machine::KernelMachineLiteral;
+pub(in crate::kernel) use machine::wrap_exact as wrap_exact_machine_value;
 use num_bigint::BigInt;
 pub(crate) use offsets::{KernelAddressOffset, SharedAddressOffset};
 pub(crate) use pointers::{
@@ -986,10 +987,10 @@ impl KernelTerm {
         WeakKernelTerm(Arc::downgrade(&self.0))
     }
 
-    pub(in crate::kernel) fn float_storage_key(
+    pub(in crate::kernel) fn scalar_storage_key(
         &self,
-    ) -> crate::kernel::execution_value::storage_keys::FloatStorageKey {
-        crate::kernel::execution_value::storage_keys::float_for_root(self)
+    ) -> crate::kernel::execution_value::storage_keys::ScalarStorageKey {
+        crate::kernel::execution_value::storage_keys::scalar_for_root(self)
     }
     pub(in crate::kernel) fn condition_storage_key(
         &self,

@@ -100,3 +100,35 @@ fn complete_pointer_construction_retains_shared_bounds_width_dags() {
         assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
 }
+
+#[test]
+fn pointer_storage_keys_hash_the_shared_bounds_width_once() {
+    use std::hash::Hash;
+
+    for depth in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let source = SharedPointer::import(&complete_source());
+        let mut value = source.node().clone();
+        let mut width =
+            KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(1000012));
+        for _ in 0..depth {
+            width = KernelTerm::machine_binary_shared(
+                MachineIntegerType::Int32,
+                MachineBinaryOp::Add,
+                [width.clone(), width],
+            );
+        }
+        let mut bounds = value.array.bounds().unwrap().clone();
+        bounds.width = width;
+        value.array = value.array.with_bounds(Some(bounds));
+        let root = KernelTerm::shared_pointer_value(SharedPointer::new(value));
+        let exports = KernelTermExport::machine_export_count();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            crate::kernel::execution_value::storage_keys::pointer_for_root(&root)
+                .hash(&mut std::collections::hash_map::DefaultHasher::new());
+        });
+        assert!(work <= 4 * depth + 64, "depth={depth}, work={work}");
+        assert!(!root.has_cached_native_argument());
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+}

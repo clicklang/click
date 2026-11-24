@@ -76,7 +76,9 @@ fn resource_argument_arrays_keep_native_identity_order_hash_and_debug() {
     for value in &inputs {
         let native: NativeResourceArguments = vec![value.clone()].into();
         let stored = ResourceArguments::from(native.clone());
-        assert_eq!(hash(&stored), hash(&native));
+        let written = ResourceArguments::from_stored([StoredResourceField::Input(value.clone())]);
+        assert_eq!(stored, written);
+        assert_eq!(hash(&stored), hash(&written));
         assert_eq!(format!("{stored:?}"), format!("{native:?}"));
         for other in &inputs {
             let other_native: NativeResourceArguments = vec![other.clone()].into();
