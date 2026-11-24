@@ -124,3 +124,64 @@ fn retained_integer_fold_keys_scale_without_native_exports() {
         );
     }
 }
+
+#[test]
+fn common_fold_keys_read_mixed_conversions_without_exporting_integer_arithmetic() {
+    use crate::kernel::{KernelTermImport, SharedMachineIntegerTerm, StoredIntegerTerm};
+    let format = MachineIntegerType::Int32;
+    let mut work_by_size = Vec::new();
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let fold = |accumulator| {
+            let variable = KernelTerm::variable(KernelType::Integer, Variable(accumulator));
+            let mut body = variable;
+            for _ in 0..size {
+                body = KernelTerm::integer_operation(
+                    KernelIntegerOperator::Add,
+                    vec![body.clone(), body],
+                )
+                .unwrap();
+            }
+            let conversion = KernelTerm::integer_to_machine(format, body).unwrap();
+            let observed = SharedMachineIntegerTerm::from_shared(format, conversion).unwrap();
+            let observation =
+                KernelTermImport::default().integer(&IntegerTerm::Machine(observed).into());
+            let zero = KernelTerm::integer_literal(0.into());
+            KernelFold::new(
+                KernelFoldIndex::Integer,
+                Variable(accumulator),
+                Variable(accumulator + 1),
+                [zero.clone(), zero.clone(), zero, observation],
+            )
+            .unwrap()
+        };
+        let left = fold(910301);
+        let right = fold(910401);
+        let exports = KernelTermExport::integer_export_count();
+        let (result, work) =
+            crate::instrumentation::measure_deterministic_work(|| alpha_equivalent(&left, &right));
+        assert_eq!(result, Some(true));
+        let body = &left.arguments[3];
+        let retained = Proposition::Predicate {
+            name: "mixed_integer_argument".into(),
+            arguments: vec![Term::Integer(
+                StoredIntegerTerm::from_root(body.clone()).unwrap(),
+            )],
+        };
+        let retained_key = proposition_identity_key(&retained).unwrap();
+        assert_eq!(KernelTermExport::integer_export_count(), exports);
+        assert!(!body.has_cached_native_argument());
+        let native = Proposition::Predicate {
+            name: "mixed_integer_argument".into(),
+            arguments: vec![Term::Integer(
+                body.integer_native_compat().unwrap().clone().into(),
+            )],
+        };
+        assert!(proposition_identity_key(&native).is_some_and(|key| key == retained_key));
+        work_by_size.push(work);
+    }
+    assert!(
+        work_by_size.windows(2).all(|pair| pair[1] <= 5 * pair[0]),
+        "{work_by_size:?}"
+    );
+}

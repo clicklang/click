@@ -2,7 +2,7 @@
 use super::*;
 use crate::kernel::{
     KernelFold, KernelFoldIndex, KernelIntegerOperator, KernelTerm, KernelTermExport,
-    KernelTermNode, KernelType, MachineOperandView, SharedIntegerRangeEndpoint,
+    KernelTermNode, KernelType, MachineOperandView,
 };
 
 pub(super) fn bindings() -> AlphaBindings {
@@ -112,6 +112,14 @@ pub(super) fn unchanged_integer_comparison_key(
         key: AlphaPropositionKey::Condition(condition, true),
         work_units: bindings.work_units,
     })
+}
+
+pub(super) fn integer_operand_key(
+    term: &KernelTerm,
+    bindings: &mut AlphaBindings,
+    next_binder: &mut usize,
+) -> Option<AlphaIntegerKey> {
+    RetainedIntegerKey::integer(term, bindings, next_binder)
 }
 
 #[derive(Default)]
@@ -254,15 +262,20 @@ impl RetainedIntegerKey {
                 self.node(end, bindings, next_binder)?,
             ),
             KernelFoldIndex::Int32 | KernelFoldIndex::UInt64 => {
-                let start = SharedIntegerRangeEndpoint::from_shared(start.clone())?;
-                let end = SharedIntegerRangeEndpoint::from_shared(end.clone())?;
+                if !start.is_shared_machine_operand() || !end.is_shared_machine_operand() {
+                    return None;
+                }
+                // Native Integer folds historically key both machine-index forms
+                // through the same retagged endpoint carrier.
+                let start = start.with_machine_observation_type(MachineIntegerType::Int32);
+                let end = end.with_machine_observation_type(MachineIntegerType::Int32);
                 let start = alpha_machine_key::<false>(
-                    start.machine_operand().operand_view(),
+                    MachineOperandView::Shared(&start),
                     bindings,
                     next_binder,
                 )?;
                 let end = alpha_machine_key::<false>(
-                    end.machine_operand().operand_view(),
+                    MachineOperandView::Shared(&end),
                     bindings,
                     next_binder,
                 )?;

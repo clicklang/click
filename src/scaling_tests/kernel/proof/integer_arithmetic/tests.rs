@@ -503,3 +503,59 @@ fn constant_arithmetic_checking_visits_shared_nodes_once_and_bounds_squaring() {
         "checking must refuse before evaluating a giant numeral"
     );
 }
+
+#[test]
+fn mixed_affine_claims_read_observations_without_exporting_integer_arithmetic() {
+    use crate::kernel::{
+        KernelTermExport, KernelTermImport, KernelType, MachineIntegerType,
+        SharedMachineIntegerTerm, Variable,
+    };
+    let mut work_by_size = Vec::new();
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let format = MachineIntegerType::UInt64;
+        let mut sum = KernelTerm::integer_literal(0.into());
+        for index in 0..size {
+            let machine = KernelTerm::variable(
+                KernelType::Program(format.program_type()),
+                Variable(980200 + index),
+            );
+            let observed = SharedMachineIntegerTerm::from_shared(format, machine).unwrap();
+            let operand =
+                KernelTermImport::default().integer(&IntegerTerm::Machine(observed).into());
+            sum = KernelTerm::integer_operation(KernelIntegerOperator::Add, vec![sum, operand])
+                .unwrap();
+        }
+        let zero = KernelTerm::integer_literal(0.into());
+        let comparison =
+            KernelTerm::integer_comparison(IntegerComparisonOperator::Equal, [sum, zero]).unwrap();
+        let condition = StoredConditionTerm::from_root(comparison.clone()).unwrap();
+        let premise = Proposition::condition_is(condition.clone(), true);
+        let exports = (
+            KernelTermExport::integer_export_count(),
+            KernelTermExport::machine_export_count(),
+        );
+        let (claim, work) = crate::instrumentation::measure_deterministic_work(|| {
+            integer_affine_claim(&premise).unwrap()
+        });
+        assert_eq!(claim.terms.len(), size as usize);
+        assert!(claim.constant.is_zero());
+        assert!(claim.terms.values().all(|weight| weight.is_one()));
+        assert_eq!(integer_affine_machine_values(&premise).len(), size as usize);
+        let disequal = Proposition::condition_is(condition, false);
+        assert_eq!(integer_disequality_claims(&disequal), vec![claim]);
+        assert!(!comparison.has_cached_native_argument());
+        assert_eq!(
+            exports,
+            (
+                KernelTermExport::integer_export_count(),
+                KernelTermExport::machine_export_count()
+            )
+        );
+        work_by_size.push(work);
+    }
+    assert!(
+        work_by_size.windows(2).all(|pair| pair[1] <= 5 * pair[0]),
+        "{work_by_size:?}"
+    );
+}
