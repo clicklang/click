@@ -979,7 +979,14 @@ int32 identity(int32 x) {
             written.contains("Selected proof still contains normalize()"),
             "{written}"
         );
-        check(&fixture, "divide_two.ensures_0").unwrap();
+        let division = check(&fixture, "divide_two.ensures_0").unwrap();
+        for law in [
+            "float32_divide_positive_lower",
+            "float32_divide_positive_upper",
+        ] {
+            assert!(division.contains(law), "{division}");
+        }
+        check(&fixture, "add_one.ensures_0").unwrap();
 
         let directory = tempfile::tempdir().unwrap();
         let negative_divisor = directory.path().join("negative_divisor.click");
