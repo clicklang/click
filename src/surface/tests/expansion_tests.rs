@@ -5942,6 +5942,22 @@ fn whole_claim_expansion_of_a_user_tactic_omits_the_supplied_ending() {
 }
 
 #[test]
+fn whole_claim_expansion_of_a_tactic_without_ensures_omits_the_supplied_ending() {
+    let (source, sources) = mdtest_sources("mdtests/user_tactic_requires_obligations.md");
+    let sources = crate::cli::source_refs(&sources);
+    let claim = "discard_counter.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    let declaration = &expanded[expanded.find("tactic discard_counter(").unwrap()..];
+    let proof = &declaration[..declaration.find("\n}\n").unwrap()];
+    assert!(proof.ends_with("by {\n    unfold(input);"), "{proof}");
+    without_implicit_solve_for_claim(claim, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
 fn user_tactic_call_obligations_expand_and_recheck() {
     let (source, sources) = mdtest_sources("mdtests/user_tactic_requires_obligations.md");
     let sources = crate::cli::source_refs(&sources);
@@ -27073,6 +27089,7 @@ fn indexed_read_comparisons_expand_with_preservation() {
         ("p[i]", "=="),
         ("p[i]", "!="),
         ("(p[i] & 2)", "<"),
+        ("*(p + i)", "<"),
     ] {
         let source = source
             .replace("OBSERVATION", observation)
@@ -27089,6 +27106,50 @@ fn indexed_read_comparisons_expand_with_preservation() {
         })
         .unwrap();
         let overlapping = expanded.replace("requires i != j;", "");
+        assert_ne!(overlapping, expanded);
+        assert!(
+            without_implicit_solve_for_claim("keep.contract", || {
+                verify_c_sources(&overlapping, &sources).map_err(|error| error.report())
+            })
+            .is_err()
+        );
+    }
+}
+
+#[test]
+fn two_indexed_reads_expand_with_preservation() {
+    let c_source = "void keep(int *p, int i, int j, int k) { p[j] = 10; }";
+    let source = r#"
+        verifying "read_order.c";
+        void keep(int32 *p, int32 i, int32 j, int32 k) {
+            owns p[0..8];
+            requires 0 <= i and i < 8 and 0 <= j and j < 8;
+            requires 0 <= k and k < 8;
+            requires i != j;
+            requires k != j;
+            requires p[i] < p[k];
+            ensures p[i] < p[k];
+        } by {
+            step();
+            have p[i] < p[k] by { solve(); }
+        }
+    "#;
+    let sources = [("read_order.c", c_source)];
+    let expanded = expand_c_claim_source_by_label(source, &sources, "keep.contract").unwrap();
+    for read in ["p[i]", "p[k]"] {
+        assert!(
+            expanded.contains(&format!("preserve(memory({read}), region(0))")),
+            "{expanded}"
+        );
+        assert!(expanded.contains(&format!("rewrite({read},")), "{expanded}");
+    }
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim("keep.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+    for requirement in ["requires i != j;", "requires k != j;"] {
+        let overlapping = expanded.replace(requirement, "");
         assert_ne!(overlapping, expanded);
         assert!(
             without_implicit_solve_for_claim("keep.contract", || {
@@ -28085,6 +28146,10 @@ fn arithmetic_certificates_cold_replay_or_report_legacy_normalization() {
         ("signed_odd_divisor", &[("divide", true)][..]),
         ("negative_signed_product", &[("product", false)][..]),
         ("float_add_pair", &[("sum", false)][..]),
+        (
+            "unsigned_masked_divisor",
+            &[("divide", true), ("remainder", true)][..],
+        ),
     ] {
         let (source, sources) =
             mdtest_sources(&format!("mdtests/arithmetic_expression_{fixture}.md"));

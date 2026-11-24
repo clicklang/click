@@ -225,6 +225,11 @@ fn lower_function(
                 .map(|place| place.declaration_id.as_str()),
         )
         .collect::<std::collections::BTreeSet<_>>();
+    let function_name = names.require(&source.declaration_id)?;
+    let owner = LocalFunctionId::new(
+        Some(import.logical_source().to_owned()),
+        function_name.to_owned(),
+    );
     let parameters = source
         .parameters
         .iter()
@@ -235,14 +240,18 @@ fn lower_function(
                 receiver.name = RECEIVER_NAME.to_string();
                 return lower_parameter(&receiver, layouts, RECEIVER_NAME.into());
             }
-            if !is_reference_parameter(index, parameter) {
-                return lower_parameter(parameter, layouts, parameter.name.clone().into());
-            }
-            lower_parameter(
-                parameter,
-                layouts,
-                BindingName::reference_carrier(parameter.name.as_str()),
-            )
+            let binding = if source.axiom.is_some() && parameter.name.is_empty() {
+                let ordinal = u32::try_from(index).map_err(|_| "too many C++ parameters")?;
+                BindingName::from(LocalBindingId::new(owner.clone(), true, ordinal, None))
+            } else {
+                BindingName::from(parameter.name.as_str())
+            };
+            let binding = if is_reference_parameter(index, parameter) {
+                BindingName::reference_carrier(binding)
+            } else {
+                binding
+            };
+            lower_parameter(parameter, layouts, binding)
         })
         .collect::<Result<Vec<_>, String>>()?;
     let mut context = LoweringContext {
@@ -253,12 +262,9 @@ fn lower_function(
             .map(|parameter| parameter.declaration_id.as_str()),
         reference_parameters,
         source_unit: import.logical_source(),
-        function_name: names.require(&source.declaration_id)?,
+        function_name,
         names,
-        temporary_owner: LocalFunctionId::new(
-            Some(import.logical_source().to_owned()),
-            names.require(&source.declaration_id)?.to_owned(),
-        ),
+        temporary_owner: owner,
         next_temporary: 0,
         next_result_step: std::cell::Cell::new(0),
         places,
@@ -301,13 +307,8 @@ fn lower_function(
         body
     };
     let return_constant = scalar::returns_constant_element(&source.return_type);
-    let mut function = program_function(
-        return_type,
-        names.require(&source.declaration_id)?.to_owned(),
-        parameters,
-        body,
-    )
-    .with_return_pointee_constant(return_constant);
+    let mut function = program_function(return_type, function_name.to_owned(), parameters, body)
+        .with_return_pointee_constant(return_constant);
     if let CppFunctionKind::Constructor { record_name, .. } = &source.function_kind {
         function = function.with_construction_parameter(0, context.record_layout(record_name)?);
     }

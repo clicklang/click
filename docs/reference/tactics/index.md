@@ -1754,14 +1754,19 @@ not search for an interval or derive missing bounds.
 For a valid literal shift count, a left-shift observation equals multiplication
 by its power of two when the exact result is in range; signed shifts also
 require a nonnegative source. A bitwise-and with a nonnegative literal mask
-is between zero and the mask, and is at most a nonnegative source. For a 32-
-or 64-bit shift count, `known()` can remove the mask `width - 1` when the
-count is known in range. It also checks the equality of the signed and
-unsigned right shifts of the positive signed maximum at the same in-range
+is between zero and the mask, and is at most a nonnegative source. For
+unsigned words, this range also supports comparisons of compound expressions.
+For example, `known()` can prove `((y & 7u32) + 1u32) as uint32 != 0u32`
+because the addition's range is `[1, 8]` and fits the word.
+
+For a 32- or 64-bit shift count, `known()` can remove the mask `width - 1`
+when the count is known in range. It also checks the equality of the signed
+and unsigned right shifts of the positive signed maximum at the same in-range
 count. A constant right shift of a zero-extended unsigned byte or halfword
 has a range computed from its source width and count, including after a
-signed widening of the result. A root conditional equals its selected arm
-when its written guard is available.
+signed widening of the result.
+
+A root conditional equals its selected arm when its written guard is available.
 A root Integer or machine conditional with identical arms equals that shared
 arm without a guard premise.
 Shared native comparison guards retain their operand DAGs; other shared
@@ -1925,7 +1930,8 @@ goal needs at least one strict link. Replay checks the listed links directly.
 
 A true `float` or `double` comparison against a literal can cite one stronger
 bound. Exact widening from `float` to `double` widens the endpoint and preserves
-the direction. Unary float negation negates the endpoint and reverses the
+the direction. Narrowing from `double` to `float` rounds the endpoint and
+gives a non-strict bound in the original direction. Unary float negation negates the endpoint and reverses the
 direction. Adding or subtracting a finite literal, subtracting from a finite
 literal, and multiplying or dividing by a finite nonzero literal transform
 and round the endpoint at the same width. Subtraction from a literal and
@@ -1933,9 +1939,16 @@ multiplication or division by a negative literal reverse the direction.
 The rounded endpoint gives a non-strict bound because
 distinct inputs can round to the same result. An unchanged or exact endpoint
 requires a strict premise for a strict goal with that endpoint. A negated comparison can hold for NaN and cannot
-supply an ordered bound. A sum of two float operands can cite one ordered
-bound per operand with finite literal endpoints. Both bounds must point in
-the goal's direction. The rule adds and rounds the endpoints at that width.
+supply an ordered bound. A sum or difference of two float operands can
+cite one ordered bound per operand with finite literal endpoints. A sum
+uses two bounds in the goal's direction. For a difference the right
+operand's bound points in the opposite direction. The rule combines and
+rounds the endpoints at the operation's width.
+
+For two negative signed operands, `x < 0`, `y < 0`, and
+`x >= MAX / y` bound their product by `MAX`. This guard permits
+`y == -1` because `MAX / -1` is defined. A lower product bound
+using `MIN / y` with a negative divisor still needs `y < -1`.
 
 For an unsigned left shift of one, citing the count bound proves the result
 is nonzero. For example, `normalize() using { d < 32u32; }` proves

@@ -202,6 +202,14 @@ impl Check {
             return None;
         }
         use MachineBinaryOp::*;
+        if op == BitwiseAnd && !format.format().is_signed() {
+            // A literal mask bounds all possible inputs without reading the
+            // masked operand. The parent operation must still fit its format.
+            let mask = [a, b]
+                .into_iter()
+                .find_map(|operand| format.constant_from_term(&operand.literal()?)?.to_i128())?;
+            return Self::read_at(ty, format, Range { min: 0, max: mask });
+        }
         if !matches!(op, Add | Subtract | Divide | Remainder) {
             return None;
         }
@@ -252,6 +260,45 @@ impl Check {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn masked_unsigned_ranges_skip_the_masked_operand() {
+        use MachineBinaryOp as Op;
+        use MachineIntegerType as Ty;
+
+        let ty = Ty::UInt32;
+        let literal = MachineTerm::constant;
+        let binary = |op, left, right| MachineTerm::Binary {
+            format: ty,
+            op,
+            left: Box::new(left),
+            right: Box::new(right),
+        };
+        let samples = [4, 16, 64].map(|size| {
+            let mut input = MachineTerm::var(crate::kernel::Variable(996000));
+            for _ in 0..size {
+                input = binary(Op::Add, input, literal(1));
+            }
+            let equality = |mask, offset| ConditionTerm::Compare {
+                format: ty,
+                relation: CompareRelation::Equal,
+                left: Box::new(binary(
+                    Op::Add,
+                    binary(Op::BitwiseAnd, input.clone(), literal(mask)),
+                    literal(offset),
+                )),
+                right: Box::new(literal(0)),
+            };
+            let goal = equality(7, 1);
+            let wrapped = equality(1 << 31, 1 << 31);
+            let (answer, work) =
+                crate::instrumentation::measure_deterministic_work(|| comparison_value(&goal));
+            assert_eq!(answer, Some(false));
+            assert_eq!(comparison_value(&wrapped), None);
+            work
+        });
+        assert_eq!(samples, [samples[0]; 3]);
+    }
 
     #[test]
     fn unfolded_machine_ranges_refuse_wrapping_bounds_and_invalid_division() {

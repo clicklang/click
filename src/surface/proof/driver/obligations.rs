@@ -793,6 +793,13 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         let _ = take_unclosed_bundle_member();
         // Catch every error here; `?` must not skip the obligation
         // diagnostic below.
+        if body == [ProofTactic::Solve]
+            && crate::surface::proof::implicit_solve_scope::checked_only()
+        {
+            return Err(driver_proof.step_error(
+                "checked-only verification requires an explicit proof for `close_invariants()`",
+            ));
+        }
         let attempted = {
             if body == [ProofTactic::Solve] {
                 crate::instrumentation::measure_operation(

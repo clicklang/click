@@ -13,9 +13,9 @@ compiler. Use [`click capture`](capture.md) to refresh inputs explicitly.
 ## Synopsis
 
 ```text
-usage: click verify [--locked] [--work-limit <UNITS>] [--time-limit <DURATION>] <sidecar.click|mdtest.md>[:<line>:<column>]
-       click verify [--locked] --trace-proof <PROOF|PATH:LINE[:COLUMN]> [--trace-to <LINE[:COLUMN]>] <sidecar.click|mdtest.md>
-       click verify [--locked] [--work-limit <UNITS>] [--time-limit <DURATION>] <project-directory|examples-directory>
+usage: click verify [--checked-only] [--locked] [--work-limit <UNITS>] [--time-limit <DURATION>] <sidecar.click|mdtest.md>[:<line>:<column>]
+       click verify [--checked-only] [--locked] --trace-proof <PROOF|PATH:LINE[:COLUMN]> [--trace-to <LINE[:COLUMN]>] <sidecar.click|mdtest.md>
+       click verify [--checked-only] [--locked] [--work-limit <UNITS>] [--time-limit <DURATION>] <project-directory|examples-directory>
        click verify --changed-since <REVISION> [--explain] <sidecar.click|directory>
 ```
 
@@ -73,6 +73,7 @@ rather than checking their proofs.
 
 | Option | Meaning |
 | --- | --- |
+| `--checked-only` | Replay with proof search disabled. Write the execution steps and obligation proofs explicitly. Requires full or location-selected verification without `--allow-sorry` or `--changed-since`. |
 | `--locked` | Require existing, current captures and skip compiler invocation. |
 | `--work-limit UNITS` | Set the deterministic whole-run work budget independently for each selected sidecar, mdtest, or proof unit. The default is `50000000`. |
 | `--time-limit DURATION` | Set the wall-clock crash-containment bound independently for each selected sidecar, mdtest, or proof unit. The default is `10m`. This is not a verdict about the proof; see [Deterministic verdicts](#deterministic-verdicts). |
@@ -83,6 +84,11 @@ rather than checking their proofs.
 | `--allow-sorry` | Dev-only debugging switch: admit proof units whose body is exactly `sorry();` without checking them. Admissions are reported loudly, never recorded in incremental baselines, and `click audit`, `click expand`, and `scripts/check.sh` never enable the flag. Cannot be combined with `--changed-since`. |
 | `-h`, `--help` | Print command help and exit successfully. |
 | `--` | Stop option parsing; the remaining argument is the target path. |
+
+To replay a single expanded claim, give its source location as
+`click verify --checked-only proof.click:LINE:COLUMN`. Whole-file
+checked-only verification also checks the program termination proof
+explicitly. Generate that proof with `click expand --claim program.termination`.
 
 A C parsing stop at the whole-run work budget reports `work limit reached`.
 The report identifies the budget and parsing phase. Audit reports use the

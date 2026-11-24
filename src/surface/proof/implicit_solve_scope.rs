@@ -10,6 +10,7 @@ struct Selection {
     label: String,
     visited: Cell<bool>,
     strict: bool,
+    checked_only: bool,
     replay: Option<ReplayMeasurement>,
 }
 
@@ -21,17 +22,60 @@ struct ReplayMeasurement {
 
 thread_local! {
     static SELECTION: RefCell<Option<Rc<Selection>>> = const { RefCell::new(None) };
+    static CHECKED_ONLY: Cell<bool> = const { Cell::new(false) };
     static STRICT_CLAIM: Cell<bool> = const { Cell::new(false) };
 }
 
 pub(super) fn selected_claim_is_strict() -> bool {
-    STRICT_CLAIM.with(Cell::get)
+    CHECKED_ONLY.with(Cell::get) || STRICT_CLAIM.with(Cell::get)
+}
+
+/// True inside replay that refuses explicit search as well as implicit solving.
+pub(super) fn checked_only() -> bool {
+    CHECKED_ONLY.with(Cell::get)
+}
+
+struct CheckedOnlyScope(bool);
+
+impl CheckedOnlyScope {
+    fn enter(checked_only: bool) -> Self {
+        Self(CHECKED_ONLY.with(|active| active.replace(active.get() || checked_only)))
+    }
+}
+
+impl Drop for CheckedOnlyScope {
+    fn drop(&mut self) {
+        CHECKED_ONLY.with(|active| active.set(self.0));
+    }
+}
+
+/// Verify all proofs visited by an operation with proof search disabled.
+pub fn without_proof_search<R>(operation: impl FnOnce() -> Result<R, String>) -> Result<R, String> {
+    let _policy = CheckedOnlyScope::enter(true);
+    let discovery = ReplayDiscovery::default();
+    let _discovery = ReplayDiscoveryScope::enter(&discovery);
+    let result = operation();
+    match discovery.borrow_mut().take() {
+        Some(operation) => Err(format!(
+            "checked-only verification {operation}; write the selected evidence explicitly"
+        )),
+        None => result,
+    }
+}
+
+/// Replay one selected claim and its nested proofs with search disabled.
+pub fn without_proof_search_for_claim<R>(
+    claim_label: &str,
+    operation: impl FnOnce() -> Result<R, String>,
+) -> Result<R, String> {
+    check_selected_claim(claim_label, true, true, true, operation).map(|(result, _)| result)
 }
 
 /// The selected claim and proofs nested inside it remain strict. Separate
 /// sibling claims restore the surrounding policy when their scope ends.
 pub(super) struct ClaimScope {
     previous_strict: bool,
+    _checked_only: CheckedOnlyScope,
     measurement: Option<ClaimMeasurement>,
 }
 
@@ -56,6 +100,8 @@ impl ClaimScope {
         let previous_strict = STRICT_CLAIM.with(|strict| {
             strict.replace(strict.get() || selected.as_ref().is_some_and(|s| s.strict))
         });
+        let checked_only =
+            CheckedOnlyScope::enter(selected.as_ref().is_some_and(|s| s.checked_only));
         let measurement = selected.and_then(|selected| {
             let replay = selected.replay.as_ref()?;
             let discovery = selected
@@ -69,6 +115,7 @@ impl ClaimScope {
         });
         Self {
             previous_strict,
+            _checked_only: checked_only,
             measurement,
         }
     }
@@ -99,7 +146,7 @@ pub fn without_implicit_solve_for_claim<R>(
     claim_label: &str,
     operation: impl FnOnce() -> Result<R, String>,
 ) -> Result<R, String> {
-    check_selected_claim(claim_label, true, false, operation).map(|(result, _)| result)
+    check_selected_claim(claim_label, true, false, false, operation).map(|(result, _)| result)
 }
 
 /// Cold-checks an audit claim and measures time spent inside its proof scope.
@@ -109,13 +156,14 @@ pub fn check_audit_claim<R>(
     complete_rewrite: bool,
     operation: impl FnOnce() -> Result<R, String>,
 ) -> Result<(R, Duration), String> {
-    check_selected_claim(claim_label, complete_rewrite, true, operation)
+    check_selected_claim(claim_label, complete_rewrite, true, false, operation)
 }
 
 fn check_selected_claim<R>(
     claim_label: &str,
     strict: bool,
     measure_replay: bool,
+    checked_only: bool,
     operation: impl FnOnce() -> Result<R, String>,
 ) -> Result<(R, Duration), String> {
     struct Restore(Option<Rc<Selection>>);
@@ -128,6 +176,7 @@ fn check_selected_claim<R>(
         label: claim_label.to_string(),
         visited: Cell::new(false),
         strict,
+        checked_only,
         replay: measure_replay.then(ReplayMeasurement::default),
     });
     let _restore =

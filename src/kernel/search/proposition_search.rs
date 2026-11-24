@@ -438,20 +438,20 @@ impl super::ProofSearch<PureFactContext> {
 
     /// Select bounds independently, so a large premise bucket cannot
     /// cause a Cartesian product of candidate pairs.
-    pub(crate) fn select_float_sum_bounds(
+    pub(crate) fn select_float_pair_bounds(
         context: &PureFactContext,
         goal: &Proposition,
     ) -> Option<[Proposition; 2]> {
         #[cfg(test)]
-        crate::kernel::search::record_discovery("select_float_sum_bounds");
-        let sum = crate::kernel::proof::arithmetic_special::FloatSumBound::new(goal)?;
+        crate::kernel::search::record_discovery("select_float_pair_bounds");
+        let pair = crate::kernel::proof::arithmetic_special::FloatPairBound::new(goal)?;
         let mut best: [Option<(u64, Proposition)>; 2] = [None, None];
         Self::find_connected_arithmetic_bound(context, goal, true, |premise| {
             for (index, slot) in best.iter_mut().enumerate() {
-                if let Some(endpoint) = sum.operand_endpoint(index, premise)
-                    && slot
-                        .as_ref()
-                        .is_none_or(|(previous, _)| sum.stronger_endpoint(endpoint, *previous))
+                if let Some(endpoint) = pair.operand_endpoint(index, premise)
+                    && slot.as_ref().is_none_or(|(previous, _)| {
+                        pair.stronger_endpoint(index, endpoint, *previous)
+                    })
                 {
                     *slot = Some((endpoint, premise.clone()));
                 }
@@ -459,7 +459,7 @@ impl super::ProofSearch<PureFactContext> {
             let [Some((left, a)), Some((right, b))] = &best else {
                 return None;
             };
-            sum.established_by([*left, *right])
+            pair.established_by([*left, *right])
                 .then(|| [a.clone(), b.clone()])
         })
     }

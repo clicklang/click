@@ -639,6 +639,7 @@ pub struct CppConstantReference {
 #[serde(deny_unknown_fields)]
 pub struct CppPlace {
     pub declaration_id: String,
+    /// Written spelling, empty for an unnamed standard-library parameter.
     pub name: String,
     pub value_type: CppType,
     pub span: CppSpan,
@@ -6906,12 +6907,16 @@ fn validate_argument_types(
             _ => false,
         };
         if !compatible {
+            let parameter = if parameter_name.is_empty() {
+                String::new()
+            } else {
+                format!(" for parameter `{parameter_name}`")
+            };
             return Err(format!(
-                "C++ call from `{}` to `{}` has unsupported argument {} for parameter `{}`",
+                "C++ call from `{}` to `{}` has unsupported argument {}{parameter}",
                 caller.function.name,
                 callee_name,
                 index + 1,
-                parameter_name
             ));
         }
     }

@@ -622,16 +622,14 @@ mod tests {
         assert_eq!(scope.get(&second), None);
     }
     #[test]
-    fn generated_binder_syntax_and_beta_capture_roundtrip() {
+    fn lexical_binders_and_beta_capture_roundtrip() {
         for source in [
-            "theorem check() { ensures forall (binder(7): Integer) { binder(7) == binder(7) } by { let binder(8) = intro(); solve(); } }",
-            "theorem check() { ensures (|binder(3): Integer| -> Integer { binder(3) + 1 })(41) == 42 by solve(); }",
-            "theorem check() { ensures (|binder(5): uint64| -> uint64 { binder(5) + 1u64 })(41u64) == 42u64 by solve(); }",
-            "spec enum Boxed { Value(Integer) } function unpack(b: Boxed) -> Integer { match b { Boxed::Value(binder(2)) => binder(2) } } theorem check() { ensures unpack(Boxed::Value(42)) == 42 by { unfold(unpack(Boxed::Value(42))); solve(); } }",
-            "theorem check() { ensures (let binder(7): fn(Integer) -> Integer = |x: Integer| -> Integer { x + 1 }; binder(7)(41)) == 42 by solve(); }",
-            // Expansion spells a range predicate it cannot show as a lambda
-            // value with an untyped generated item.
-            "theorem check(lo: int32, hi: int32) { requires lo < hi; ensures (lo..hi).all(|binder(9)| { binder(9) < hi }) by { intro(); intro(); solve(); } }",
+            "theorem check() { ensures forall (value: Integer) { value == value } by { let other = intro(); solve(); } }",
+            "theorem check() { ensures (|i: Integer| -> Integer { i + 1 })(41) == 42 by solve(); }",
+            "theorem check() { ensures (|i: uint64| -> uint64 { i + 1u64 })(41u64) == 42u64 by solve(); }",
+            "spec enum Boxed { Value(Integer) } function unpack(b: Boxed) -> Integer { match b { Boxed::Value(value) => value } } theorem check() { ensures unpack(Boxed::Value(42)) == 42 by { unfold(unpack(Boxed::Value(42))); solve(); } }",
+            "theorem check() { ensures (let value: fn(Integer) -> Integer = |x: Integer| -> Integer { x + 1 }; value(41)) == 42 by solve(); }",
+            "theorem check(lo: int32, hi: int32) { requires lo < hi; ensures (lo..hi).all(|i| { i < hi }) by { intro(); intro(); solve(); } }",
             "function apply(x: Integer, y: Integer) -> Integer { (|y: Integer| -> Integer { x + y })(0) } theorem check(y: Integer) { ensures apply(y, 99) == y by { unfold(apply(y, 99)); solve(); } }",
             "theorem check(__click_binder_0: Integer, __lambda_0: Integer, __click_lambda_0: Integer) { ensures (|x: Integer| -> Integer { x + __click_binder_0 })(__lambda_0) == __lambda_0 + __click_binder_0 by solve(); }",
         ] {
@@ -642,14 +640,15 @@ mod tests {
     #[test]
     fn generated_binders_expand_and_cold_replay_without_search() {
         for source in [
-            "theorem check() { ensures answer: forall (binder(7): Integer) { binder(7) == binder(7) } by { intro(); solve(); } }",
+            "theorem check() { ensures answer: forall (value: Integer) { value == value } by { intro(); solve(); } }",
             "function every(p: fn(int32) -> Prop, lo: int32, hi: int32) -> Prop { (lo..hi).all(p) } theorem check(lo: int32, hi: int32) { requires lo < hi; ensures answer: every(|i: int32| -> Prop { i < hi }, lo, hi) by { intro(); intro(); solve(); } }",
-            "theorem check(lo: int32, hi: int32, limit: int32) { let p = |x: int32| -> Prop { x < limit }; requires hi <= limit; ensures answer: (lo..hi).all(p) by { let binder(7) = intro(); intro(); solve(); } }",
+            "theorem check(lo: int32, hi: int32, limit: int32) { let p = |x: int32| -> Prop { x < limit }; requires hi <= limit; ensures answer: (lo..hi).all(p) by { let value = intro(); intro(); solve(); } }",
         ] {
             let expanded =
                 crate::surface::expand_c_claim_source_by_label(source, &[], "check.answer")
                     .unwrap_or_else(|error| panic!("{source}: {}", error.report()));
             assert!(!expanded.contains("solve("), "{expanded}");
+            assert!(!expanded.contains("binder("), "{expanded}");
             crate::surface::without_implicit_solve(|| {
                 crate::surface::verify_c_sources(&expanded, &[])
             })
@@ -657,52 +656,17 @@ mod tests {
         }
     }
     #[test]
-    fn generated_binders_reject_unbound_references_and_c_addresses() {
+    fn source_cannot_declare_numeric_binder_identities() {
         for source in [
             "theorem check() { ensures binder(7) == binder(7) by solve(); }",
-            "theorem check() { ensures forall (binder(7): int32) { &binder(7) == &binder(7) } by solve(); }",
-            "theorem check() { ensures forall (binder(7): Integer) { binder(7) + 1 == binder(7) } by { intro(); solve(); } }",
+            "theorem check() { ensures forall (binder(7): int32) { binder(7) == 0 } by solve(); }",
+            "theorem check() { ensures forall (x: Integer) { x == x } by { let binder(7) = intro(); solve(); } }",
+            "theorem check() { ensures (let binder(7): Integer = 0; binder(7)) == 0 by solve(); }",
         ] {
             assert!(
                 crate::surface::verify_c_sources(source, &[]).is_err(),
                 "{source}"
             );
-        }
-    }
-    #[test]
-    fn explicit_binder_numbers_are_stable_and_sparse_numbers_do_not_exhaust_allocation() {
-        let max = crate::kernel::GeneratedBinderId::from_spelling(u64::MAX);
-        assert_eq!(max.number(), u64::MAX);
-        let next = SurfaceBinder::fresh();
-        assert_ne!(next, SurfaceBinder::Generated(max));
-        let source = "function identity() -> Integer { (|binder(7): Integer| -> Integer { binder(7) })(42) }";
-        let parsed = crate::surface::parser::parse(source).unwrap();
-        let body = parsed.click_function_definitions()[0].body().unwrap();
-        let printed = crate::surface::diagnostics::describe_contract_expression(body);
-        let reparsed = crate::surface::parser::parse(&format!(
-            "function identity() -> Integer {{ {printed} }}"
-        ))
-        .unwrap();
-        assert_eq!(Some(body), reparsed.click_function_definitions()[0].body());
-    }
-    #[test]
-    fn generated_introductions_do_not_encode_shadowed_identities_in_strings() {
-        for ty in ["Integer", "int32"] {
-            let source = format!(
-                "theorem check() {{ ensures forall (binder(7): {ty}) {{ forall (binder(7): {ty}) {{ binder(7) == binder(7) }} }} by {{ intro(); intro(); solve(); }} }}"
-            );
-            let error = crate::surface::verify_c_sources(&source, &[])
-                .expect_err("an identity cannot denote two active introductions");
-            assert!(
-                error.report().contains("already introduced"),
-                "{}",
-                error.report()
-            );
-            crate::surface::verify_c_sources(
-                &source.replace("intro(); intro();", "intro(); let binder(8) = intro();"),
-                &[],
-            )
-            .unwrap_or_else(|error| panic!("{}", error.report()));
         }
     }
     #[test]

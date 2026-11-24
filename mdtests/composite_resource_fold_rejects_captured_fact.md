@@ -35,5 +35,5 @@ int32 make(int32* p, int32 i) {
 ```
 
 ```expect
-fail: `fold(bound(p, i))` requires forall (binder(
+fail: `fold(bound(p, i))` requires forall (x
 ```

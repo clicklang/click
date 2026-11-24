@@ -1083,7 +1083,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             spelled.push(fact);
         }
         let goal_forms = DefinitionGoal {
-            text: crate::surface::printing::source_click_proposition(surface_goal),
+            text: crate::surface::printing::identity_click_proposition(surface_goal),
             surface: surface_goal,
             kernel: goal,
         };
@@ -1319,7 +1319,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 // as `v == x` against a postcondition's `result == x`, is
                 // lowered only when its shape is the goal's. The checked
                 // steps decide whether the condition is the goal.
-                if crate::surface::printing::source_click_proposition(&condition) == goal.text
+                if crate::surface::printing::identity_click_proposition(&condition) == goal.text
                     || (same_shape(&condition, goal.surface)
                         && search_input
                             .lower_surface_proposition(&condition, "`solve` definition condition")
