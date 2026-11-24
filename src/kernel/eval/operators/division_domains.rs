@@ -2,29 +2,87 @@
 //! atom. The zero-divisor split has already happened on entry here.
 use super::*;
 
-/// A nonzero literal in a word OR fixes at least one bit of the divisor.
-/// Inspect only the OR root and its literal children. The signed overflow
-/// exception is checked separately after ruling out zero.
+/// The XOR with a literal is zero exactly when the other operand equals
+/// that literal. A nonzero literal in an OR rules out zero directly.
 pub(super) fn decide_zero(
     divisor: &MachineTerm,
     zero: &ConditionTerm,
     assumptions: &PureFactContext,
     facts: &ExecutionFacts,
 ) -> Option<bool> {
-    if let Some((format, MachineBinaryOp::BitwiseOr, operands)) =
+    use MachineBinaryOp::{BitwiseOr, BitwiseXor};
+    if let Some((format, operator @ (BitwiseOr | BitwiseXor), [left, right])) =
         MachineOperandView::Legacy(divisor).binary()
     {
         crate::instrumentation::record_deterministic_work(1);
-        if operands.iter().any(|operand| {
-            operand
-                .literal()
-                .and_then(|literal| format.constant_from_term(&literal))
-                .is_some_and(|literal| literal.bits() != 0)
-        }) {
-            return Some(false);
+        for (operand, literal) in [(left, right), (right, left)] {
+            let Some(literal) = literal.literal() else {
+                continue;
+            };
+            if operator == BitwiseOr {
+                if format
+                    .constant_from_term(&literal)
+                    .is_some_and(|literal| literal.bits() != 0)
+                {
+                    return Some(false);
+                }
+            } else {
+                let equal = condition_for_operand_views(
+                    format,
+                    CompareRelation::Equal,
+                    [operand, MachineOperandView::Legacy(&literal)],
+                );
+                if let Some(value) = indexed_condition_value(assumptions, facts, &equal) {
+                    return Some(value);
+                }
+            }
         }
     }
     decide_with_facts(assumptions, facts, zero)
+}
+
+fn or_cannot_be_minus_one(
+    format: MachineIntegerType,
+    divisor: &MachineTerm,
+    assumptions: &PureFactContext,
+    facts: &ExecutionFacts,
+) -> bool {
+    use MachineOperandView as View;
+    let Some((operation_format, MachineBinaryOp::BitwiseOr, [left, right])) =
+        View::Legacy(divisor).binary()
+    else {
+        return false;
+    };
+    if operation_format != format {
+        return false;
+    }
+    crate::instrumentation::record_deterministic_work(1);
+    let zero = if format == MachineIntegerType::Int64 {
+        MachineTerm::int64_constant(0)
+    } else {
+        MachineTerm::constant(0)
+    };
+    [(left, right), (right, left)]
+        .into_iter()
+        .any(|(operand, literal)| {
+            if !literal
+                .literal()
+                .and_then(|literal| format.constant_from_term(&literal))
+                .is_some_and(|literal| literal.to_i128().is_some_and(|value| value >= 0))
+            {
+                return false;
+            }
+            [
+                (CompareRelation::GreaterEqual, true),
+                (CompareRelation::LessThan, false),
+            ]
+            .into_iter()
+            .any(|(relation, expected)| {
+                let condition =
+                    condition_for_operand_views(format, relation, [operand, View::Legacy(&zero)]);
+                indexed_condition_value(assumptions, facts, &condition) == Some(expected)
+            })
+        })
 }
 
 pub(super) fn apply_nonzero(
@@ -47,6 +105,8 @@ pub(super) fn apply_nonzero(
         Some(false)
     } else if assumptions.proves_exact(&exceptional) {
         Some(true)
+    } else if or_cannot_be_minus_one(format, &right, assumptions, &facts) {
+        Some(false)
     } else {
         match (
             decide_with_facts(assumptions, &facts, &minimum),

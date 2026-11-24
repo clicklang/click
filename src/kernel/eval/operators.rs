@@ -1,9 +1,14 @@
 use super::*;
 use crate::kernel::MachineTerm;
 use crate::kernel::binary_term;
+use crate::kernel::machine_integer::comparison::condition_for_operand_views;
 use crate::kernel::{bits32_constant, constant_u32};
 
 mod division_domains;
+#[cfg(test)]
+mod signed_literal_shift_scaling_tests {
+    include!("../../scaling_tests/kernel/eval/operators/signed_literal_shifts.rs");
+}
 mod narrow_arithmetic;
 mod spec_arithmetic;
 pub(in crate::kernel) use narrow_arithmetic::{
@@ -5064,12 +5069,23 @@ fn apply_program_int64_shift_left_nonnegative(
     assumptions: &PureFactContext,
     unsigned_count: bool,
 ) -> Vec<ExpressionPath> {
-    let fits = ConditionTerm::signed_shift_result_fits(
+    let fits = if literal_signed_shift_fits(
         MachineIntegerType::Int64,
-        left.clone(),
-        right.clone(),
+        &left,
+        &right,
         unsigned_count,
-    );
+        assumptions,
+        &facts,
+    ) {
+        ConditionTerm::Constant(true)
+    } else {
+        ConditionTerm::signed_shift_result_fits(
+            MachineIntegerType::Int64,
+            left.clone(),
+            right.clone(),
+            unsigned_count,
+        )
+    };
     signed_shift_result_path(fits, facts, obligations, assumptions, || {
         ProgramValue::Int64(MachineTerm::int64_shift_left(left, right))
     })
@@ -5375,14 +5391,91 @@ fn apply_program_int32_shift_left_nonnegative(
     assumptions: &PureFactContext,
     unsigned_count: bool,
 ) -> Vec<ExpressionPath> {
-    let fits = ConditionTerm::signed_shift_result_fits(
+    let fits = if literal_signed_shift_fits(
         MachineIntegerType::Int32,
-        left.clone(),
-        right.clone(),
+        &left,
+        &right,
         unsigned_count,
-    );
+        assumptions,
+        &facts,
+    ) {
+        ConditionTerm::Constant(true)
+    } else {
+        ConditionTerm::signed_shift_result_fits(
+            MachineIntegerType::Int32,
+            left.clone(),
+            right.clone(),
+            unsigned_count,
+        )
+    };
     signed_shift_result_path(fits, facts, obligations, assumptions, || {
         int32(MachineTerm::shift_left(left, right))
+    })
+}
+
+/// This path has already checked the count's validity and the left operand's
+/// sign. For a positive literal, the number of shifts before the sign bit
+/// is reached gives an ordinary upper-bound query on the original count.
+fn literal_signed_shift_fits(
+    format: MachineIntegerType,
+    left: &MachineTerm,
+    count: &MachineTerm,
+    unsigned_count: bool,
+    assumptions: &PureFactContext,
+    facts: &ExecutionFacts,
+) -> bool {
+    let Some(value) = format
+        .constant_from_term(left)
+        .and_then(|value| value.to_i128())
+    else {
+        return false;
+    };
+    if value <= 0 {
+        return false;
+    }
+    let bits = format.format().bits();
+    let limit = bits - (value as u128).ilog2() - 1;
+    let (count_format, endpoint) = match (format, unsigned_count) {
+        (MachineIntegerType::Int32, true) => {
+            (MachineIntegerType::UInt32, MachineTerm::constant(limit))
+        }
+        (MachineIntegerType::Int64, true) => (
+            MachineIntegerType::UInt64,
+            MachineTerm::uint64_constant(limit.into()),
+        ),
+        (MachineIntegerType::Int64, false) => (
+            MachineIntegerType::Int64,
+            MachineTerm::int64_constant(limit.into()),
+        ),
+        _ => (MachineIntegerType::Int32, MachineTerm::constant(limit)),
+    };
+    crate::instrumentation::record_deterministic_work(1);
+    let condition = condition_for_operand_views(
+        count_format,
+        CompareRelation::LessThan,
+        [
+            MachineOperandView::Legacy(count),
+            MachineOperandView::Legacy(&endpoint),
+        ],
+    );
+    indexed_condition_value(assumptions, facts, &condition) == Some(true)
+}
+
+/// Decide a fixed comparison from its exact context or path index, without
+/// scanning additional path facts. Retain the written comparison otherwise.
+fn indexed_condition_value(
+    assumptions: &PureFactContext,
+    facts: &ExecutionFacts,
+    condition: &ConditionTerm,
+) -> Option<bool> {
+    if let ConditionTerm::Constant(value) = condition {
+        return Some(*value);
+    }
+    assumptions.known_condition_value(condition).or_else(|| {
+        [true, false].into_iter().find(|truth| {
+            facts
+                .contains_indexed_proposition(&Proposition::condition_is(condition.clone(), *truth))
+        })
     })
 }
 

@@ -441,13 +441,14 @@ impl super::ProofSearch<PureFactContext> {
     pub(crate) fn select_float_pair_bounds(
         context: &PureFactContext,
         goal: &Proposition,
-    ) -> Option<[Proposition; 2]> {
+    ) -> Option<Vec<Proposition>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("select_float_pair_bounds");
         let pair = crate::kernel::proof::arithmetic_special::FloatPairBound::new(goal)?;
-        let mut best: [Option<(u64, Proposition)>; 2] = [None, None];
+        let mut best: [Option<(u64, Proposition)>; 4] = [None, None, None, None];
         Self::find_connected_arithmetic_bound(context, goal, true, |premise| {
-            for (index, slot) in best.iter_mut().enumerate() {
+            let count = pair.premise_count();
+            for (index, slot) in best[..count].iter_mut().enumerate() {
                 if let Some(endpoint) = pair.operand_endpoint(index, premise)
                     && slot.as_ref().is_none_or(|(previous, _)| {
                         pair.stronger_endpoint(index, endpoint, *previous)
@@ -456,11 +457,17 @@ impl super::ProofSearch<PureFactContext> {
                     *slot = Some((endpoint, premise.clone()));
                 }
             }
-            let [Some((left, a)), Some((right, b))] = &best else {
-                return None;
-            };
-            pair.established_by([*left, *right])
-                .then(|| [a.clone(), b.clone()])
+            let mut endpoints = [0; 4];
+            for (index, source) in best[..count].iter().enumerate() {
+                endpoints[index] = source.as_ref()?.0;
+            }
+            pair.established_by(endpoints).then(|| {
+                best[..count]
+                    .iter()
+                    .flatten()
+                    .map(|(_, premise)| premise.clone())
+                    .collect()
+            })
         })
     }
 

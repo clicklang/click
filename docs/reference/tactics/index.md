@@ -1964,6 +1964,14 @@ cite one ordered bound per operand with finite literal endpoints. A sum
 uses two bounds in the goal's direction. For a difference the right
 operand's bound points in the opposite direction. The rule combines and
 rounds the endpoints at the operation's width.
+A positive finite literal divided by an operand with a positive finite
+lower endpoint has lower bound zero and an upper bound obtained by dividing
+by that endpoint. The operand may be positive infinity.
+For a product or quotient with two positive finite operand ranges, cite the
+lower and upper endpoints of both ranges. The rule checks the appropriate
+corner at the operation's width. A product's lower bound can instead cite
+just the two strictly positive lower endpoints.
+
 
 For two negative signed operands, `x < 0`, `y < 0`, and
 `x >= MAX / y` bound their product by `MAX`. This guard permits

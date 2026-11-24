@@ -1177,14 +1177,9 @@ pub(super) fn normalizes_selected(goal: &Proposition, premises: &[Proposition]) 
     {
         return true;
     }
-    if let [left, right] = premises
+    if matches!(premises.len(), 2 | 4)
         && let Some(bound) = FloatPairBound::new(goal)
-        && ([[left, right], [right, left]].into_iter().any(|pair| {
-            bound
-                .operand_endpoint(0, pair[0])
-                .zip(bound.operand_endpoint(1, pair[1]))
-                .is_some_and(|(a, b)| bound.established_by([a, b]))
-        }))
+        && bound.check(premises)
     {
         return true;
     }
@@ -3526,6 +3521,29 @@ pub(crate) fn float_bound_weakens(premise: &Proposition, goal: &Proposition) -> 
     {
         return float_endpoint_establishes(&goal, premise.endpoint, premise.strict);
     }
+    if let Some((crate::kernel::FloatBinaryOperator::Divide, [numerator, divisor])) =
+        goal.operand.binary()
+        && let Some(numerator) = numerator.literal_bits()
+        && positive_finite_float(goal.format, numerator)
+        && premise.format == goal.format
+        && premise.lower
+        && positive_finite_float(goal.format, premise.endpoint)
+        && same_float_operand(premise.operand, divisor)
+    {
+        // The divisor is positive and may be +infinity. The reciprocal
+        // decreases to +0, and its upper endpoint rounds at this width.
+        let endpoint = if goal.lower {
+            0
+        } else {
+            crate::kernel::primitives::float_binary_bits_at(
+                goal.format,
+                numerator,
+                premise.endpoint,
+                crate::kernel::FloatBinaryOperator::Divide,
+            )
+        };
+        return float_endpoint_establishes(&goal, endpoint, false);
+    }
     let Some((operand, operation)) = float_bound_operation(goal.operand) else {
         return false;
     };
@@ -3598,13 +3616,28 @@ impl FloatBoundWeakening {
 }
 
 fn same_float_operand(left: FloatOperandView<'_>, right: FloatOperandView<'_>) -> bool {
-    match (left, right) {
-        (FloatOperandView::Shared(left), FloatOperandView::Shared(right)) if left == right => true,
-        (left, right) => match (left.native_compat(), right.native_compat()) {
-            (Some(left), Some(right)) => bitvector_equal(left, right),
-            _ => false,
-        },
+    if left.format() != right.format() {
+        return false;
     }
+    if let (FloatOperandView::Shared(left), FloatOperandView::Shared(right)) = (left, right)
+        && left == right
+    {
+        return true;
+    }
+    if let (Some(left), Some(right)) = (left.native_compat(), right.native_compat())
+        && bitvector_equal(left, right)
+    {
+        return true;
+    }
+    // The fact buckets can supply a native spelling of a compound operand.
+    // Retain that explicit syntax, so comparing it with a retained goal
+    // does not export the goal's DAG.
+    let mut import = crate::kernel::KernelTermImport::default();
+    let mut retain = |operand| match operand {
+        FloatOperandView::Native(format, term) => import.float(format, term),
+        FloatOperandView::Shared(term) => term.clone(),
+    };
+    retain(left) == retain(right)
 }
 
 fn float_endpoint_establishes(
@@ -3646,8 +3679,19 @@ fn float_endpoint_compare(
     comparison == ConditionTerm::Constant(true)
 }
 
-/// An ordered sum or difference of two nonliteral operands, with one
-/// finite endpoint per operand.
+fn float_infinity(format: KernelFloatType) -> u64 {
+    match format {
+        KernelFloatType::Float32 => 0x7f80_0000,
+        KernelFloatType::Float64 => 0x7ff0_0000_0000_0000,
+    }
+}
+
+fn positive_finite_float(format: KernelFloatType, endpoint: u64) -> bool {
+    endpoint > 0 && endpoint < float_infinity(format)
+}
+
+/// Ordered sum and difference bounds and products or quotients over
+/// strictly positive finite operand ranges.
 pub(crate) struct FloatPairBound<'a> {
     goal: FloatBound<'a>,
     operator: crate::kernel::FloatBinaryOperator,
@@ -3656,11 +3700,8 @@ pub(crate) struct FloatPairBound<'a> {
 
 impl<'a> FloatPairBound<'a> {
     pub(crate) fn new(goal: &'a Proposition) -> Option<Self> {
-        use crate::kernel::FloatBinaryOperator::{Add, Subtract};
         let goal = float_bound(goal)?;
-        let (operator @ (Add | Subtract), operands) = goal.operand.binary()? else {
-            return None;
-        };
+        let (operator, operands) = goal.operand.binary()?;
         operands
             .iter()
             .all(|operand| operand.literal_bits().is_none())
@@ -3671,21 +3712,37 @@ impl<'a> FloatPairBound<'a> {
             })
     }
 
+    pub(crate) fn premise_count(&self) -> usize {
+        use crate::kernel::FloatBinaryOperator::*;
+        match self.operator {
+            Add | Subtract => 2,
+            Multiply if self.goal.lower => 2,
+            Multiply | Divide => 4,
+        }
+    }
+
     fn lower_operand_bound(&self, index: usize) -> bool {
-        let reverse = index == 1 && self.operator == crate::kernel::FloatBinaryOperator::Subtract;
-        self.goal.lower != reverse
+        use crate::kernel::FloatBinaryOperator::*;
+        match self.operator {
+            Add => self.goal.lower,
+            Subtract => self.goal.lower != (index == 1),
+            Multiply | Divide => index < 2,
+        }
     }
 
     pub(crate) fn operand_endpoint(&self, index: usize, premise: &Proposition) -> Option<u64> {
+        use crate::kernel::FloatBinaryOperator::*;
         let premise = float_bound(premise)?;
-        let infinity = match self.goal.format {
-            KernelFloatType::Float32 => 0x7f80_0000,
-            KernelFloatType::Float64 => 0x7ff0_0000_0000_0000,
+        let acceptable = match self.operator {
+            Add | Subtract => {
+                premise.endpoint & !float_sign_bit(premise.format) < float_infinity(premise.format)
+            }
+            Multiply | Divide => positive_finite_float(premise.format, premise.endpoint),
         };
-        (premise.format == self.goal.format
+        (acceptable
+            && premise.format == self.goal.format
             && premise.lower == self.lower_operand_bound(index)
-            && premise.endpoint & !float_sign_bit(premise.format) < infinity
-            && same_float_operand(premise.operand, self.operands[index]))
+            && same_float_operand(premise.operand, self.operands[index % 2]))
         .then_some(premise.endpoint)
     }
 
@@ -3698,10 +3755,46 @@ impl<'a> FloatPairBound<'a> {
         float_endpoint_compare(self.goal.format, candidate, previous, operator)
     }
 
-    pub(crate) fn established_by(&self, [left, right]: [u64; 2]) -> bool {
-        // The ordered bounds exclude NaNs and one infinity per operand.
-        // The directions exclude opposing infinities for addition, and
-        // matching infinities for subtraction.
+    fn check(&self, premises: &[Proposition]) -> bool {
+        if premises.len() != self.premise_count() {
+            return false;
+        }
+        // Independent endpoint checks allow either citation order. Repeated
+        // operands can use the same bound in each position.
+        let mut endpoints = [0; 4];
+        for (index, endpoint) in endpoints.iter_mut().enumerate().take(premises.len()) {
+            let Some(bound) = premises
+                .iter()
+                .filter_map(|premise| self.operand_endpoint(index, premise))
+                .reduce(|a, b| {
+                    if self.stronger_endpoint(index, b, a) {
+                        b
+                    } else {
+                        a
+                    }
+                })
+            else {
+                return false;
+            };
+            *endpoint = bound;
+        }
+        self.established_by(endpoints)
+    }
+
+    pub(crate) fn established_by(
+        &self,
+        [left_lower, right_lower, left_upper, right_upper]: [u64; 4],
+    ) -> bool {
+        use crate::kernel::FloatBinaryOperator::*;
+        let (left, right) = match (self.operator, self.goal.lower) {
+            (Add | Subtract, _) | (Multiply, true) => (left_lower, right_lower),
+            (Multiply, false) => (left_upper, right_upper),
+            (Divide, true) => (left_lower, right_upper),
+            (Divide, false) => (left_upper, right_lower),
+        };
+        // The true ordered bounds exclude NaNs. The chosen signs and
+        // finite endpoints exclude invalid operations, and rounding can
+        // weaken a strict bound at the resulting endpoint.
         let endpoint = crate::kernel::primitives::float_binary_bits_at(
             self.goal.format,
             left,
