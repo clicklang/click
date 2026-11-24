@@ -15,6 +15,49 @@ fn write(state: &mut Lanes, index: usize, value: u32) {
     ensures state.marker == old(state.marker);
 } by {
     have (index as uint32 as int32) == 1 by { rewrite(index, 1u64); solve(); }
+    have separate(memory((((state as (void *)) as (uint32 *)) + index)[0..1]), memory(state.marker)) by {
+        rewrite(index, 1u64);
+        normalize();
+    }
+    have separate(memory((((state as (void *)) as (uint32 *)) + index)[0..1]), memory(*(((state as (void *)) as (uint32 *)) + 0u64))) by {
+        rewrite(index, 1u64);
+        normalize();
+    }
+    have separate(
+        memory((((state as (void *)) as (uint32 *)) + index)[0..1]),
+        memory(*(((state as (void *)) as (uint32 *)) + 2u64))
+    ) by {
+        rewrite(index, 1u64);
+        normalize();
+    }
+    have separate(
+        memory((((state as (void *)) as (uint32 *)) + index)[0..1]),
+        memory(*(((state as (void *)) as (uint32 *)) + 3u64))
+    ) by {
+        rewrite(index, 1u64);
+        normalize();
+    }
+    step_until(statement(0).region(5).entry);
+    step();
+    have separate(statement(0).region(5).footprint, memory(*(((state as (void *)) as (uint32 *)) + 0u64))) by {
+        known();
+    }
+    have state.values[0] == old(state.values[0]) by {
+        preserve(memory(*(((state as (void *)) as (uint32 *)) + 0u64)), statement(0).region(5));
+    }
+    have separate(statement(0).region(5).footprint, memory(*(((state as (void *)) as (uint32 *)) + 2u64))) by {
+        known();
+    }
+    have state.values[2] == old(state.values[2]) by {
+        preserve(memory(*(((state as (void *)) as (uint32 *)) + 2u64)), statement(0).region(5));
+    }
+    have separate(statement(0).region(5).footprint, memory(*(((state as (void *)) as (uint32 *)) + 3u64))) by {
+        known();
+    }
+    have state.values[3] == old(state.values[3]) by {
+        preserve(memory(*(((state as (void *)) as (uint32 *)) + 3u64)), statement(0).region(5));
+    }
+    step_until(function.exit);
 }
 fn array_first(values: &[u32; 4]) -> u32 {
     views values[0..4];

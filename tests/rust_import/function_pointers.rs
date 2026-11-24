@@ -61,7 +61,7 @@ fn charon_calls_through_a_function_pointer_meet_its_named_contract() {
             Some("fn function_pointers::relay("),
             relay,
             &relay.replace("    requires Doubling(f);\n", ""),
-            "is missing prerequisite (precondition clause 1 of",
+            "requires an explicit prerequisite proof (precondition clause 1 of",
         ),
         (
             Some("fn function_pointers::caller("),

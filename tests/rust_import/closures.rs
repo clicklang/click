@@ -41,7 +41,7 @@ fn charon_closures_passed_for_a_function_pointer_meet_its_named_contract() {
             Some("fn closures::caller("),
             caller_closure,
             String::new(),
-            "is missing prerequisite (precondition clause 1 of",
+            "requires an explicit prerequisite proof (precondition clause 1 of",
         ),
         (
             None,
