@@ -82,6 +82,29 @@ impl TermRewrite<'_> {
                             }
                         }
                     }
+                    KernelTermNode::Fold(fold) if term.ty() == &KernelType::Integer => {
+                        variables.integer.insert(fold.accumulator);
+                        if fold.index == KernelFoldIndex::Integer {
+                            variables.integer.insert(fold.item);
+                            pending.extend(&fold.arguments);
+                        } else {
+                            variables.program_values.insert(fold.item);
+                            for endpoint in &fold.arguments[..2] {
+                                collect_machine_operand_carriers(
+                                    MachineOperandView::Shared(endpoint),
+                                    &mut variables,
+                                );
+                            }
+                            pending.extend(&fold.arguments[2..]);
+                        }
+                    }
+                    KernelTermNode::Call { arguments, .. }
+                        if arguments
+                            .iter()
+                            .all(|argument| argument.ty() == &KernelType::Integer) =>
+                    {
+                        pending.extend(arguments);
+                    }
                     KernelTermNode::MachineObservation { operand, .. } => {
                         collect_machine_operand_carriers(
                             MachineOperandView::Shared(operand),
@@ -105,6 +128,14 @@ impl TermRewrite<'_> {
         root: &KernelTerm,
     ) -> Option<KernelTerm> {
         self.shared_integer_operand_in(root, false)
+    }
+
+    pub(in crate::kernel) fn retained_integer_field(
+        &mut self,
+        root: &KernelTerm,
+    ) -> Option<KernelTerm> {
+        self.reserve_shared_rewrite_variables_once(root)?;
+        self.shared_fold_integer_child(root)
     }
 
     /// Fold scope already performs capture checks. Rewrite the supported
@@ -204,15 +235,24 @@ impl TermRewrite<'_> {
                 }
                 _ => false,
             };
+            let retained_integer_call = fold_child
+                && exact.is_none()
+                && matches!(
+                    term.node(),
+                    KernelTermNode::Call { arguments, .. }
+                        if arguments.iter().all(|argument| argument.ty() == &KernelType::Integer)
+                );
             if fold_child
                 && exact.is_none()
                 && !retained_fold_if
+                && !retained_integer_call
                 && !matches!(
                     term.node(),
                     KernelTermNode::IntegerLiteral(_)
                         | KernelTermNode::Variable(_)
                         | KernelTermNode::IntegerOperation { .. }
                         | KernelTermNode::Fold(_)
+                        | KernelTermNode::MachineObservation { .. }
                 )
             {
                 let native = self.fold_integer_bridge.integer(&term).ok()?;
@@ -294,7 +334,7 @@ impl TermRewrite<'_> {
                         self.shared_machine_operand(operand)
                     };
                     let Some(rewritten) = rewritten else {
-                        if !exact || self.refusal_status().is_some() {
+                        if (!exact && !fold_child) || self.refusal_status().is_some() {
                             return None;
                         }
                         // Native-only payloads can themselves contain Integer
@@ -414,6 +454,22 @@ impl TermRewrite<'_> {
                         } else {
                             KernelTerm::integer_if_raw([guard, yes, no])
                         }
+                    }
+                }
+                KernelTermNode::Call { name, arguments } if retained_integer_call => {
+                    if !finish && !arguments.is_empty() {
+                        pending.push((term.clone(), true));
+                        pending.extend(arguments.iter().rev().cloned().map(|child| (child, false)));
+                        continue;
+                    }
+                    let rewritten: Vec<_> = arguments
+                        .iter()
+                        .map(|child| memo.borrow()[&key(child)].clone())
+                        .collect();
+                    if rewritten == *arguments {
+                        term.clone()
+                    } else {
+                        KernelTerm::checked_call(KernelType::Integer, name.clone(), rewritten)
                     }
                 }
                 KernelTermNode::IntegerOperation {

@@ -1260,7 +1260,7 @@ impl MachineIntegerInterner {
 pub struct SharedIntegerTerm(KernelTerm);
 
 impl SharedIntegerTerm {
-    pub(super) fn from_root(root: KernelTerm) -> Self {
+    pub(in crate::kernel) fn from_root(root: KernelTerm) -> Self {
         debug_assert_eq!(root.ty(), &KernelType::Integer);
         if let KernelTermNode::Legacy(value) = root.node()
             && let PureFunctionArgument::Integer(value) = value.value()
@@ -1353,10 +1353,12 @@ impl SharedIntegerTerm {
                         })
                         .collect();
                     (children != *arguments).then(|| {
-                        Self::from_root(
-                            KernelTerm::integer_operation(*operator, children)
-                                .expect("Integer reading"),
-                        )
+                        Self::from_root(KernelTerm::intern_native_integer(
+                            KernelTermNode::IntegerOperation {
+                                operator: *operator,
+                                arguments: children,
+                            },
+                        ))
                     })
                 }
                 _ => None,
@@ -1376,7 +1378,13 @@ impl SharedIntegerTerm {
         if let Some(root) = term.mathematical_root() {
             return Self::from_root(root);
         }
-        Self::from_root(KernelTermImport::default().integer_input(&term))
+        let root = KernelTermImport::default().integer_input(&term);
+        root.remember_integer_identity(&term);
+        let shared = Self::from_root(root);
+        // Native callers introduce a node before they publish its identity or
+        // rule-W reading as a fact. Preserve lookup-only identity and reading.
+        let _ = shared.read_through_ref().id();
+        shared
     }
 }
 

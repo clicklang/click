@@ -2,9 +2,7 @@
 //! Plans are expanded into ordinary proof steps; they are not proof objects.
 use super::fact_keys::retained_integer_fold_alpha_key;
 pub(crate) use super::integer_affine_atoms::IntegerAffineAtom;
-use super::integer_affine_atoms::{
-    IntegerFoldAtomRecord, intern_integer_fold_atom, intern_integer_fold_key,
-};
+use super::integer_affine_atoms::{IntegerFoldAtomRecord, intern_integer_fold_key};
 
 use crate::kernel::{
     ConditionTerm, IntegerComparisonOperator, IntegerTerm, KernelIntegerOperator, KernelTerm,
@@ -255,9 +253,9 @@ pub(crate) fn integer_disequality_claims(proposition: &Proposition) -> Vec<Integ
         return Vec::new();
     }
     let mut context = IntegerAffineCollectionContext::default();
-    if let Some((_, arguments)) = retained_affine_comparison(condition)
+    if let Some((_, arguments)) = retained_integer_comparison(condition)
         && let Some(difference) =
-            affine_difference(arguments, |operand, weight, terms, constant| {
+            affine_difference(arguments.each_ref(), |operand, weight, terms, constant| {
                 collect_retained_affine_operand(operand, weight, terms, constant, &mut context)
             })
     {
@@ -291,7 +289,13 @@ pub(crate) fn integer_disequality_claims(proposition: &Proposition) -> Vec<Integ
         };
         if let Some(difference) =
             affine_difference([left, right], |operand, weight, terms, constant| {
-                collect_integer_affine_terms(operand, weight, terms, constant, &mut context)
+                collect_retained_affine_operand(
+                    operand.root(),
+                    weight,
+                    terms,
+                    constant,
+                    &mut context,
+                )
             })
             && !difference.terms.is_empty()
             && !differences.contains(&difference)
@@ -341,40 +345,12 @@ pub(crate) fn integer_affine_machine_values(
         },
         _ => return Vec::new(),
     };
-    if let Some((operator, operands)) = retained_affine_comparison(condition) {
-        if *operator == IntegerComparisonOperator::NotEqual {
-            return Vec::new();
-        }
-        let mut seen = HashSet::new();
-        let mut values = Vec::new();
-        let mut pending = vec![operands[1].root, operands[0].root];
-        while let Some(root) = pending.pop() {
-            if !seen.insert(root.id()) {
-                continue;
-            }
-            match root.node() {
-                KernelTermNode::MachineObservation { .. } => {
-                    if let Some(observation) = root.exact_shared_integer_observation() {
-                        values.push(observation);
-                    }
-                }
-                KernelTermNode::IntegerOperation {
-                    operator: KernelIntegerOperator::Multiply,
-                    arguments,
-                } => {
-                    pending.push(
-                        retained_literal_factor(arguments)
-                            .expect("selected literal factor")
-                            .1,
-                    );
-                }
-                KernelTermNode::IntegerOperation { arguments, .. } => {
-                    pending.extend(arguments.iter().rev());
-                }
-                _ => {}
-            }
-        }
-        return values;
+    if let Some((operator, operands)) = retained_integer_comparison(condition) {
+        return if *operator == IntegerComparisonOperator::NotEqual {
+            Vec::new()
+        } else {
+            retained_affine_machine_values(operands.each_ref())
+        };
     }
     if crate::instrumentation::deadline_exceeded_with_work(0) {
         return Vec::new();
@@ -401,27 +377,40 @@ pub(crate) fn integer_affine_machine_values(
         | ConditionTerm::IntegerEqual(left, right) => (left, right),
         _ => return Vec::new(),
     };
+    retained_affine_machine_values([left.root(), right.root()])
+}
+
+fn retained_affine_machine_values(
+    [left, right]: [&KernelTerm; 2],
+) -> Vec<crate::kernel::SharedMachineIntegerTerm> {
     let mut seen = HashSet::new();
     let mut values = Vec::new();
-    let mut stack = vec![right.clone(), left.clone()];
-    while let Some(node) = stack.pop() {
-        if !seen.insert(node.id()) {
+    let mut pending = vec![right, left];
+    while let Some(root) = pending.pop() {
+        if !seen.insert(root.id()) {
             continue;
         }
-        match node.as_ref() {
-            IntegerTerm::Machine(value) => values.push(value.clone()),
-            IntegerTerm::Negate(child) => stack.push(child.clone()),
-            IntegerTerm::Add(left, right) | IntegerTerm::Subtract(left, right) => {
-                stack.push(right.clone());
-                stack.push(left.clone());
-            }
-            IntegerTerm::Multiply(left, right) => {
-                if left.as_const().is_some() {
-                    stack.push(right.clone());
-                } else if right.as_const().is_some() {
-                    stack.push(left.clone());
+        match root.node() {
+            KernelTermNode::MachineObservation { .. } => {
+                if let Some(observation) = root.exact_shared_integer_observation() {
+                    values.push(observation);
                 }
             }
+            KernelTermNode::IntegerOperation {
+                operator: KernelIntegerOperator::Multiply,
+                arguments,
+            } => match (arguments[0].node(), arguments[1].node()) {
+                (KernelTermNode::IntegerLiteral(_), _) => pending.push(&arguments[1]),
+                (_, KernelTermNode::IntegerLiteral(_)) => pending.push(&arguments[0]),
+                _ => {}
+            },
+            KernelTermNode::IntegerOperation {
+                operator:
+                    KernelIntegerOperator::Negate
+                    | KernelIntegerOperator::Add
+                    | KernelIntegerOperator::Subtract,
+                arguments,
+            } => pending.extend(arguments.iter().rev()),
             _ => {}
         }
     }
@@ -435,32 +424,7 @@ pub(crate) fn integer_affine_machine_values(
 #[derive(Default)]
 struct IntegerAffineCollectionContext {
     constants: HashMap<u64, Option<BigInt>>,
-    fold_atoms: HashMap<SharedIntegerTerm, Arc<IntegerFoldAtomRecord>>,
     retained_fold_atoms: HashMap<u64, Arc<IntegerFoldAtomRecord>>,
-}
-
-#[cfg(test)]
-thread_local! {
-    static INTEGER_FOLD_ALPHA_CONSTRUCTIONS: std::cell::Cell<usize> = const {
-        std::cell::Cell::new(0)
-    };
-}
-
-fn fold_atom_for_claim(
-    context: &mut IntegerAffineCollectionContext,
-    term: &crate::kernel::SharedIntegerTerm,
-) -> Option<Arc<IntegerFoldAtomRecord>> {
-    if let Some(atom) = context.fold_atoms.get(term) {
-        if crate::instrumentation::deadline_exceeded_with_work(1) {
-            return None;
-        }
-        return Some(atom.clone());
-    }
-    #[cfg(test)]
-    INTEGER_FOLD_ALPHA_CONSTRUCTIONS.with(|count| count.set(count.get() + 1));
-    let atom = intern_integer_fold_atom(term)?;
-    context.fold_atoms.insert(term.clone(), atom.clone());
-    Some(atom)
 }
 
 /// Normalize one integer proposition for use in a certificate node.
@@ -550,11 +514,11 @@ fn integer_affine_claim_with_context(
     context: &mut IntegerAffineCollectionContext,
 ) -> Option<IntegerAffineClaim> {
     let (condition, value) = affine_condition(proposition)?;
-    if let Some((operator, arguments)) = retained_affine_comparison(condition)
+    if let Some((operator, arguments)) = retained_integer_comparison(condition)
         && let Some(claim) = integer_affine_comparison_claim(
             *operator,
             value,
-            arguments,
+            arguments.each_ref(),
             |operand, weight, terms, constant| {
                 collect_retained_affine_operand(operand, weight, terms, constant, context)
             },
@@ -606,7 +570,7 @@ fn integer_affine_claim_with_context(
         value,
         operands,
         |operand, weight, terms, constant| {
-            collect_integer_affine_terms(operand, weight, terms, constant, context)
+            collect_retained_affine_operand(operand.root(), weight, terms, constant, context)
         },
     )?
 }
@@ -622,80 +586,6 @@ fn retained_integer_comparison(
         return None;
     };
     Some((operator, arguments))
-}
-
-struct RetainedAffineOperand<'a> {
-    root: &'a KernelTerm,
-    /// Fold bodies remain inside their opaque atoms.
-    postorder: Vec<&'a KernelTerm>,
-}
-
-fn retained_affine_comparison(
-    condition: &StoredConditionTerm,
-) -> Option<(&IntegerComparisonOperator, [RetainedAffineOperand<'_>; 2])> {
-    let (operator, [left, right]) = retained_integer_comparison(condition)?;
-    Some((
-        operator,
-        [
-            retained_affine_operand(left)?,
-            retained_affine_operand(right)?,
-        ],
-    ))
-}
-
-fn retained_affine_operand(root: &KernelTerm) -> Option<RetainedAffineOperand<'_>> {
-    let mut postorder = Vec::new();
-    let mut pending = vec![(root, false)];
-    let mut seen = HashSet::new();
-    while let Some((term, expanded)) = pending.pop() {
-        if expanded {
-            postorder.push(term);
-            continue;
-        }
-        if !seen.insert(term.id()) {
-            continue;
-        }
-        if crate::instrumentation::deadline_exceeded_with_work(1) {
-            return None;
-        }
-        pending.push((term, true));
-        match term.node() {
-            KernelTermNode::Fold(_)
-            | KernelTermNode::IntegerLiteral(_)
-            | KernelTermNode::Variable(_) => {}
-            KernelTermNode::MachineObservation { format, operand }
-                if operand.is_shared_machine_operand()
-                    && operand.ty()
-                        == &crate::kernel::KernelType::Program(format.program_type()) => {}
-            KernelTermNode::IntegerOperation {
-                operator:
-                    KernelIntegerOperator::Add
-                    | KernelIntegerOperator::Subtract
-                    | KernelIntegerOperator::Negate,
-                arguments,
-            } => pending.extend(arguments.iter().rev().map(|argument| (argument, false))),
-            KernelTermNode::IntegerOperation {
-                operator: KernelIntegerOperator::Multiply,
-                arguments,
-            } => {
-                let (_, child) = retained_literal_factor(arguments)?;
-                pending.push((child, false));
-            }
-            _ => return None,
-        }
-    }
-    Some(RetainedAffineOperand { root, postorder })
-}
-
-fn retained_literal_factor(arguments: &[KernelTerm]) -> Option<(&BigInt, &KernelTerm)> {
-    let [left, right] = arguments else {
-        return None;
-    };
-    match (left.node(), right.node()) {
-        (KernelTermNode::IntegerLiteral(factor), _) => Some((factor, right)),
-        (_, KernelTermNode::IntegerLiteral(factor)) => Some((factor, left)),
-        _ => None,
-    }
 }
 
 fn affine_condition(proposition: &Proposition) -> Option<(&StoredConditionTerm, bool)> {
@@ -779,58 +669,144 @@ fn integer_affine_comparison_claim<T>(
 }
 
 fn collect_retained_affine_operand(
-    operand: RetainedAffineOperand<'_>,
+    root: &KernelTerm,
     coefficient: &BigInt,
     terms: &mut BTreeMap<IntegerAffineAtom, BigInt>,
     constant: &mut BigInt,
     context: &mut IntegerAffineCollectionContext,
 ) -> Option<()> {
-    // Combine weights before visiting a child, including when two edges
-    // name the same expression. No intermediate affine map is constructed.
-    let mut weights = HashMap::from([(operand.root.id(), coefficient.clone())]);
-    for term in operand.postorder.into_iter().rev() {
+    let mut scheduled = HashSet::new();
+    let mut pending = vec![(root, false)];
+    let mut order = Vec::new();
+    while let Some((node, expanded)) = pending.pop() {
+        if expanded {
+            order.push(node);
+            continue;
+        }
+        if !scheduled.insert(node.id()) {
+            continue;
+        }
+        if crate::instrumentation::deadline_exceeded_with_work(1) {
+            return None;
+        }
+        pending.push((node, true));
+        if node.is_literal_integer_arithmetic() {
+            collect_integer_constants(node, &mut context.constants)?;
+            if context
+                .constants
+                .get(&node.id())
+                .and_then(Option::as_ref)
+                .is_some()
+            {
+                continue;
+            }
+        }
+        if let KernelTermNode::IntegerOperation {
+            operator,
+            arguments,
+        } = node.node()
+        {
+            match operator {
+                KernelIntegerOperator::Negate
+                | KernelIntegerOperator::Add
+                | KernelIntegerOperator::Subtract => {
+                    pending.extend(arguments.iter().rev().map(|child| (child, false)));
+                }
+                KernelIntegerOperator::Multiply => {
+                    for child in arguments {
+                        if child.is_literal_integer_arithmetic() {
+                            collect_integer_constants(child, &mut context.constants)?;
+                        }
+                    }
+                    if let Some((_, child)) = affine_factor(arguments, &context.constants) {
+                        pending.push((child, false));
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let mut weights = HashMap::from([(root.id(), coefficient.clone())]);
+    for term in order.into_iter().rev() {
         let Some(weight) = weights.remove(&term.id()) else {
             continue;
         };
         if crate::instrumentation::deadline_exceeded_with_work(weight.bits() as usize + 1) {
             return None;
         }
-        match term.node() {
-            KernelTermNode::IntegerOperation {
-                operator,
-                arguments,
-            } => {
-                let ok = match operator {
-                    KernelIntegerOperator::Negate => {
-                        add_weight(&mut weights, arguments[0].id(), -weight)
-                    }
-                    KernelIntegerOperator::Add | KernelIntegerOperator::Subtract => {
-                        add_weight(&mut weights, arguments[0].id(), weight.clone())
-                            && add_weight(
-                                &mut weights,
-                                arguments[1].id(),
-                                if *operator == KernelIntegerOperator::Subtract {
-                                    -weight
-                                } else {
-                                    weight
-                                },
-                            )
-                    }
-                    KernelIntegerOperator::Multiply => {
-                        let (factor, child) = retained_literal_factor(arguments)?;
-                        charge_integer_product(&weight, factor)
-                            && add_weight(&mut weights, child.id(), weight * factor)
-                    }
-                    _ => unreachable!("retained affine operator"),
-                };
-                if !ok {
-                    return None;
-                }
+        if weight.is_zero() {
+            continue;
+        }
+        if let Some(value) = context.constants.get(&term.id()).and_then(Option::as_ref) {
+            if !charge_integer_product(&weight, value)
+                || crate::instrumentation::deadline_exceeded_with_work(
+                    constant.bits() as usize + value.bits() as usize + weight.bits() as usize + 1,
+                )
+            {
+                return None;
             }
-            _ => collect_retained_affine_leaf(term, &weight, terms, constant, context)?,
+            *constant += weight * value;
+            continue;
+        }
+        let KernelTermNode::IntegerOperation {
+            operator,
+            arguments,
+        } = term.node()
+        else {
+            collect_retained_affine_leaf(term, &weight, terms, constant, context)?;
+            continue;
+        };
+        let ok = match operator {
+            KernelIntegerOperator::Negate => add_weight(&mut weights, arguments[0].id(), -weight),
+            KernelIntegerOperator::Add | KernelIntegerOperator::Subtract => {
+                add_weight(&mut weights, arguments[0].id(), weight.clone())
+                    && add_weight(
+                        &mut weights,
+                        arguments[1].id(),
+                        if *operator == KernelIntegerOperator::Subtract {
+                            -weight
+                        } else {
+                            weight
+                        },
+                    )
+            }
+            KernelIntegerOperator::Multiply
+                if let Some((factor, child)) = affine_factor(arguments, &context.constants) =>
+            {
+                charge_integer_product(&weight, factor)
+                    && add_weight(&mut weights, child.id(), weight * factor)
+            }
+            _ => {
+                let reading = SharedIntegerTerm::from_root(term.clone()).read_through();
+                add_atom_weight(terms, IntegerAffineAtom::Nonlinear(reading.id()), weight)?;
+                true
+            }
+        };
+        if !ok {
+            return None;
         }
     }
     Some(())
+}
+
+fn affine_factor<'a>(
+    arguments: &'a [KernelTerm],
+    constants: &'a HashMap<u64, Option<BigInt>>,
+) -> Option<(&'a BigInt, &'a KernelTerm)> {
+    let [left, right] = arguments else {
+        return None;
+    };
+    constants
+        .get(&left.id())
+        .and_then(Option::as_ref)
+        .map(|factor| (factor, right))
+        .or_else(|| {
+            constants
+                .get(&right.id())
+                .and_then(Option::as_ref)
+                .map(|factor| (factor, left))
+        })
 }
 
 fn collect_retained_affine_leaf(
@@ -865,20 +841,16 @@ fn collect_retained_affine_leaf(
             let observation = operand.exact_shared_integer_observation()?;
             collect_affine_observation(&observation, coefficient, terms, constant)
         }
-        KernelTermNode::IntegerLiteral(value) => {
-            if !charge_integer_product(coefficient, value)
-                || crate::instrumentation::deadline_exceeded_with_work(
-                    constant.bits() as usize
-                        + coefficient.bits() as usize
-                        + value.bits() as usize
-                        + 1,
-                )
-            {
-                return None;
-            }
-            *constant += coefficient * value;
-            Some(())
-        }
+        KernelTermNode::IntegerIf { .. } => add_atom_weight(
+            terms,
+            IntegerAffineAtom::Nonlinear(SharedIntegerTerm::from_root(operand.clone()).id()),
+            coefficient.clone(),
+        ),
+        KernelTermNode::Call { .. } => add_atom_weight(
+            terms,
+            IntegerAffineAtom::Application(operand.integer_application()?.id()),
+            coefficient.clone(),
+        ),
         _ => None,
     }
 }
@@ -909,8 +881,8 @@ pub(crate) fn literal_integer_value(term: &crate::kernel::SharedIntegerTerm) -> 
         return None;
     }
     let mut cache = HashMap::new();
-    collect_integer_constants(term, &mut cache)?;
-    cache.remove(&term.id())?
+    collect_integer_constants(term.root(), &mut cache)?;
+    cache.remove(&term.root().id())?
 }
 
 /// Literal arithmetic is builtin proof checking, not a lowering rewrite.
@@ -929,10 +901,10 @@ pub(crate) fn literal_integer_comparison_value(condition: &ConditionTerm) -> Opt
         return None;
     }
     let mut cache = HashMap::new();
-    collect_integer_constants(left, &mut cache)?;
-    collect_integer_constants(right, &mut cache)?;
-    let left = cache.get(&left.id())?.as_ref()?;
-    let right = cache.get(&right.id())?.as_ref()?;
+    collect_integer_constants(left.root(), &mut cache)?;
+    collect_integer_constants(right.root(), &mut cache)?;
+    let left = cache.get(&left.root().id())?.as_ref()?;
+    let right = cache.get(&right.root().id())?.as_ref()?;
     if crate::instrumentation::deadline_exceeded_with_work(
         left.bits() as usize + right.bits() as usize + 1,
     ) {
@@ -953,10 +925,10 @@ pub(crate) fn literal_integer_comparison_value(condition: &ConditionTerm) -> Opt
 /// checker's numeric budget. None in the cache means a symbolic or undefined
 /// value, not zero. Lowering and rewriting never call this evaluator.
 fn collect_integer_constants(
-    root: &crate::kernel::SharedIntegerTerm,
+    root: &KernelTerm,
     cache: &mut HashMap<u64, Option<BigInt>>,
 ) -> Option<()> {
-    let mut stack = vec![(root.clone(), false)];
+    let mut stack = vec![(root, false)];
     while let Some((node, expanded)) = stack.pop() {
         if cache.contains_key(&node.id()) {
             continue;
@@ -964,274 +936,71 @@ fn collect_integer_constants(
         if crate::instrumentation::deadline_exceeded_with_work(1) {
             return None;
         }
-        if !node.is_literal_arithmetic() {
+        if !node.is_literal_integer_arithmetic() {
             cache.insert(node.id(), None);
             continue;
         }
-        if !expanded {
-            stack.push((node.clone(), true));
-            match node.as_ref() {
-                IntegerTerm::Negate(child) => stack.push((child.clone(), false)),
-                IntegerTerm::Add(left, right)
-                | IntegerTerm::Subtract(left, right)
-                | IntegerTerm::Multiply(left, right)
-                | IntegerTerm::TruncatingQuotient(left, right)
-                | IntegerTerm::TruncatingRemainder(left, right) => {
-                    stack.push((right.clone(), false));
-                    stack.push((left.clone(), false));
-                }
-                _ => {}
-            }
+        if !expanded && let KernelTermNode::IntegerOperation { arguments, .. } = node.node() {
+            stack.push((node, true));
+            stack.extend(arguments.iter().rev().map(|child| (child, false)));
             continue;
         }
-        let value = match node.as_ref() {
-            IntegerTerm::Constant(value) => {
+        use KernelIntegerOperator as Op;
+        let value = match node.node() {
+            KernelTermNode::IntegerLiteral(value) => {
                 if crate::instrumentation::deadline_exceeded_with_work(value.bits() as usize + 1) {
                     return None;
                 }
                 Some(value.clone())
             }
-            IntegerTerm::Machine(value) => value
+            KernelTermNode::MachineObservation { .. } => node
+                .exact_shared_integer_observation()?
                 .literal_conversion_value()
                 .map(|value| value.to_integer()),
-            IntegerTerm::Negate(child) => match cache.get(&child.id()).and_then(Option::as_ref) {
-                Some(value) => {
-                    if crate::instrumentation::deadline_exceeded_with_work(
-                        value.bits() as usize + 1,
-                    ) {
-                        return None;
-                    }
-                    Some(-value)
-                }
-                None => None,
-            },
-            IntegerTerm::Add(left, right)
-            | IntegerTerm::Subtract(left, right)
-            | IntegerTerm::Multiply(left, right)
-            | IntegerTerm::TruncatingQuotient(left, right)
-            | IntegerTerm::TruncatingRemainder(left, right) => {
-                match (
-                    cache.get(&left.id()).and_then(Option::as_ref),
-                    cache.get(&right.id()).and_then(Option::as_ref),
-                ) {
-                    (Some(left), Some(right)) => {
-                        let work = if matches!(
-                            node.as_ref(),
-                            IntegerTerm::Add(..) | IntegerTerm::Subtract(..)
+            KernelTermNode::IntegerOperation {
+                operator,
+                arguments,
+            } => {
+                let value =
+                    |index: usize| cache.get(&arguments[index].id()).and_then(Option::as_ref);
+                let left = value(0);
+                if *operator == Op::Negate {
+                    if let Some(value) = left {
+                        if crate::instrumentation::deadline_exceeded_with_work(
+                            value.bits() as usize + 1,
                         ) {
-                            (left.bits() as usize + 1).saturating_add(right.bits() as usize + 1)
-                        } else {
-                            (left.bits() as usize + 1).saturating_mul(right.bits() as usize + 1)
-                        };
-                        if crate::instrumentation::numeric_operation_work_exceeded(work) {
                             return None;
                         }
-                        match node.as_ref() {
-                            IntegerTerm::Add(..) => Some(left + right),
-                            IntegerTerm::Subtract(..) => Some(left - right),
-                            IntegerTerm::Multiply(..) => Some(left * right),
-                            IntegerTerm::TruncatingQuotient(..) if !right.is_zero() => {
-                                Some(left / right)
-                            }
-                            IntegerTerm::TruncatingRemainder(..) if !right.is_zero() => {
-                                Some(left % right)
-                            }
-                            _ => None,
-                        }
+                        Some(-value)
+                    } else {
+                        None
                     }
-                    _ => None,
+                } else if let (Some(left), Some(right)) = (left, value(1)) {
+                    let left_work = left.bits() as usize + 1;
+                    let right_work = right.bits() as usize + 1;
+                    let work = if matches!(operator, Op::Add | Op::Subtract) {
+                        left_work.saturating_add(right_work)
+                    } else {
+                        left_work.saturating_mul(right_work)
+                    };
+                    if crate::instrumentation::numeric_operation_work_exceeded(work) {
+                        return None;
+                    }
+                    match operator {
+                        Op::Add => Some(left + right),
+                        Op::Subtract => Some(left - right),
+                        Op::Multiply => Some(left * right),
+                        Op::TruncatingQuotient if !right.is_zero() => Some(left / right),
+                        Op::TruncatingRemainder if !right.is_zero() => Some(left % right),
+                        _ => None,
+                    }
+                } else {
+                    None
                 }
             }
             _ => None,
         };
         cache.insert(node.id(), value);
-    }
-    Some(())
-}
-
-fn collect_integer_affine_terms(
-    term: &crate::kernel::SharedIntegerTerm,
-    coefficient: &BigInt,
-    terms: &mut BTreeMap<IntegerAffineAtom, BigInt>,
-    constant: &mut BigInt,
-    context: &mut IntegerAffineCollectionContext,
-) -> Option<()> {
-    collect_integer_constants(term, &mut context.constants)?;
-    // First collect the reachable DAG in postorder.  The interner gives each
-    // node a stable identity, so this schedules a shared node exactly once.
-    let mut scheduled = HashSet::new();
-    let mut stack = vec![(term.clone(), false)];
-    let mut order = Vec::new();
-    while let Some((node, expanded)) = stack.pop() {
-        if expanded {
-            order.push(node);
-            continue;
-        }
-        if !scheduled.insert(node.id()) {
-            continue;
-        }
-        if crate::instrumentation::deadline_exceeded_with_work(1) {
-            return None;
-        }
-        stack.push((node.clone(), true));
-        collect_integer_constants(&node, &mut context.constants)?;
-        if context
-            .constants
-            .get(&node.id())
-            .and_then(Option::as_ref)
-            .is_some()
-        {
-            continue;
-        }
-        match node.as_ref() {
-            IntegerTerm::Negate(child) => stack.push((child.clone(), false)),
-            IntegerTerm::Add(left, right) | IntegerTerm::Subtract(left, right) => {
-                stack.push((right.clone(), false));
-                stack.push((left.clone(), false));
-            }
-            IntegerTerm::Multiply(left, right) => {
-                // A symbolic product is one opaque atom. Cached shape flags
-                // let constant coefficients be checked without walking a
-                // symbolic operand's DAG.
-                if left.is_literal_arithmetic() {
-                    collect_integer_constants(left, &mut context.constants)?;
-                }
-                if right.is_literal_arithmetic() {
-                    collect_integer_constants(right, &mut context.constants)?;
-                }
-                if context.constants.get(&left.id()).and_then(Option::as_ref).is_some() {
-                    stack.push((right.clone(), false));
-                } else if context.constants.get(&right.id()).and_then(Option::as_ref).is_some() {
-                    stack.push((left.clone(), false));
-                }
-            }
-            IntegerTerm::TruncatingQuotient(_, _) | IntegerTerm::TruncatingRemainder(_, _) => {}
-            IntegerTerm::Constant(_)
-            | IntegerTerm::Variable(_)
-            | IntegerTerm::Machine(_)
-            | IntegerTerm::PureFunctionApplication(_)
-            | IntegerTerm::AlgebraicMatch { .. }
-            // An unresolved conditional is an opaque atom, as a machine
-            // conditional's observation is.
-            | IntegerTerm::If { .. } => {}
-            // A RangeFold is a checked opaque atom.  Its body and endpoints
-            // are represented by the kernel-issued alpha key below; affine
-            // normalization must never enumerate or lower the range here.
-            IntegerTerm::RangeFold { .. } => {}
-        }
-    }
-
-    // Propagate the coefficient from each root toward the leaves.  This
-    // keeps only one scalar per reachable node; no internal node constructs
-    // or clones a complete affine map.
-    let mut weights = HashMap::new();
-    weights.insert(term.id(), coefficient.clone());
-    for node in order.into_iter().rev() {
-        let Some(weight) = weights.remove(&node.id()) else {
-            continue;
-        };
-        if crate::instrumentation::deadline_exceeded_with_work(weight.bits() as usize + 1) {
-            return None;
-        }
-        if weight.is_zero() {
-            continue;
-        }
-        if let Some(value) = context.constants.get(&node.id()).and_then(Option::as_ref) {
-            if !charge_integer_product(&weight, value)
-                || crate::instrumentation::deadline_exceeded_with_work(
-                    constant.bits() as usize + weight.bits() as usize + value.bits() as usize + 1,
-                )
-            {
-                return None;
-            }
-            *constant += &weight * value;
-            continue;
-        }
-        match node.as_ref() {
-            IntegerTerm::Constant(_) => unreachable!("constants were evaluated above"),
-            IntegerTerm::Variable(_)
-            | IntegerTerm::Machine(_)
-            | IntegerTerm::PureFunctionApplication(_)
-            | IntegerTerm::AlgebraicMatch { .. }
-            | IntegerTerm::If { .. }
-            | IntegerTerm::TruncatingQuotient(_, _)
-            | IntegerTerm::TruncatingRemainder(_, _) => {
-                let atom = match node.as_ref() {
-                    IntegerTerm::Variable(variable) => IntegerAffineAtom::Variable(*variable),
-                    // An observation is the atom of its value reading
-                    // (rule W): `to_integer(widen(v))` and `to_integer(v)`
-                    // are one atom. One cached lookup per observation.
-                    IntegerTerm::Machine(source) => {
-                        collect_affine_observation(source, &weight, terms, constant)?;
-                        continue;
-                    }
-                    IntegerTerm::AlgebraicMatch { .. } => return None,
-                    // An unresolved conditional is an opaque atom by its
-                    // shared identity, as a quotient is.
-                    IntegerTerm::If { .. } => IntegerAffineAtom::Nonlinear(node.id()),
-                    // A quotient or remainder is keyed by its reading through
-                    // its observations' value relations (rule W), so its two
-                    // spellings are one atom.
-                    IntegerTerm::TruncatingQuotient(_, _)
-                    | IntegerTerm::TruncatingRemainder(_, _) => {
-                        IntegerAffineAtom::Nonlinear(node.read_through().id())
-                    }
-                    IntegerTerm::PureFunctionApplication(application) => {
-                        IntegerAffineAtom::Application(application.id())
-                    }
-                    _ => unreachable!(),
-                };
-                add_atom_weight(terms, atom, weight)?;
-            }
-            IntegerTerm::RangeFold { .. } => {
-                let atom = IntegerAffineAtom::Fold(fold_atom_for_claim(context, &node)?);
-                add_atom_weight(terms, atom, weight)?;
-            }
-            IntegerTerm::Negate(child) => {
-                if !add_weight(&mut weights, child.id(), -weight) {
-                    return None;
-                }
-            }
-            IntegerTerm::Add(left, right) => {
-                if !add_weight(&mut weights, left.id(), weight.clone())
-                    || !add_weight(&mut weights, right.id(), weight)
-                {
-                    return None;
-                }
-            }
-            IntegerTerm::Subtract(left, right) => {
-                if !add_weight(&mut weights, left.id(), weight.clone())
-                    || !add_weight(&mut weights, right.id(), -weight)
-                {
-                    return None;
-                }
-            }
-            IntegerTerm::Multiply(left, right) => {
-                let (child, factor) = if let Some(value) =
-                    context.constants.get(&left.id()).and_then(Option::as_ref)
-                {
-                    (right, value)
-                } else if let Some(value) =
-                    context.constants.get(&right.id()).and_then(Option::as_ref)
-                {
-                    (left, value)
-                } else {
-                    // A symbolic product is keyed by its reading (rule W).
-                    add_atom_weight(
-                        terms,
-                        IntegerAffineAtom::Nonlinear(node.read_through().id()),
-                        weight,
-                    )?;
-                    continue;
-                };
-                if !charge_integer_product(&weight, factor) {
-                    return None;
-                }
-                if !add_weight(&mut weights, child.id(), weight * factor) {
-                    return None;
-                }
-            }
-        }
     }
     Some(())
 }
