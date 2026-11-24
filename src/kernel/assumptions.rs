@@ -115,17 +115,11 @@ fn address_bases_equal_with_load_atoms(
 ) -> bool {
     left == right
         || match (left, right) {
+            // The rule compares integer reads; a pointer load reaches it
+            // through the one legacy bridge (`legacy_pointer_word_read`).
             (AddressBase::Load(a), AddressBase::Load(b)) => loads_match(
-                &crate::kernel::MachineTerm::read_named(
-                    ProgramPoint::at(a.point().shared_memory()),
-                    a.cell().clone(),
-                    LoadKind::Bits64,
-                ),
-                &crate::kernel::MachineTerm::read_named(
-                    ProgramPoint::at(b.point().shared_memory()),
-                    b.cell().clone(),
-                    LoadKind::Bits64,
-                ),
+                &crate::kernel::legacy_pointer_word_read(a.point().shared_memory(), a.cell()),
+                &crate::kernel::legacy_pointer_word_read(b.point().shared_memory(), b.cell()),
             ),
             (AddressBase::Symbolic(_), AddressBase::Symbolic(_)) => {
                 let base = |block: &AddressBase| Address {
@@ -13823,6 +13817,41 @@ fn mirrored_order32(condition: &ConditionTerm) -> Option<ConditionTerm> {
 mod shared_load_atom_comparison_tests {
     use super::*;
     use crate::kernel::{KernelTerm, KernelTermExport, KernelType, MachineBinaryOp};
+
+    /// Two pointer loads of one cell are one address base, decided without
+    /// the load-atom rule; loads of two cells reach the rule only through
+    /// the pointer-word bridge, as the memory-named reads of their cells.
+    #[test]
+    fn pointer_load_bases_compare_as_loads_and_reach_the_rule_through_one_bridge() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let memory = crate::kernel::intern_memory(SymbolicMemory::new());
+        let cell = Address::symbolic(Variable(998_621));
+        let other = Address::symbolic(Variable(998_622));
+        let loaded = |cell: &Address| crate::kernel::Load::at(ProgramPoint::at(&memory), cell);
+        let same = loaded(&cell).address();
+        assert!(pointers_equal_with_load_atoms(
+            &same,
+            &loaded(&cell).address(),
+            &|_, _| panic!("one load needs no load-atom rule"),
+        ));
+        let asked = std::cell::RefCell::new(Vec::new());
+        let rule = |left: &MachineTerm, right: &MachineTerm| {
+            asked.borrow_mut().push((left.clone(), right.clone()));
+            false
+        };
+        assert!(!pointers_equal_with_load_atoms(
+            &same,
+            &loaded(&other).address(),
+            &rule
+        ));
+        assert_eq!(
+            asked.into_inner(),
+            vec![(
+                crate::kernel::legacy_pointer_word_read(&memory, &cell),
+                crate::kernel::legacy_pointer_word_read(&memory, &other),
+            )]
+        );
+    }
 
     fn load_pair(ty: MachineIntegerType) -> (MachineTerm, MachineTerm, Variable, Variable) {
         let kind = match ty {

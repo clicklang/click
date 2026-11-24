@@ -404,6 +404,38 @@ pub(crate) fn read_operands(point: ProgramPoint, address: Box<Address>) -> (Read
     (ReadPoint(point), LoadCell { load, address })
 }
 
+/// The eight-byte integer read the legacy scalar machinery takes in place of
+/// a pointer cell: the memory-named read of `cell` in `memory` at
+/// `LoadKind::Bits64` (`design/loads.md`, step 3b, PR 1).
+///
+/// A pointer load is named, compared and keyed as a [`Load`]. Two consumers
+/// still ask the integer read machinery about a pointer cell, because that
+/// machinery has no form keyed by a load:
+///
+/// - `Address::canonical_read` and `Address::canonical_loaded_value` select
+///   the cell's version through `canonical_scalar_read`, whose identity
+///   cache, read observations and access widths are keyed by
+///   `(memory, address, kind)` and shared with 64-bit integer reads of the
+///   cell;
+/// - `pointers_equal_with_load_atoms` compares two load bases through the
+///   caller's load-atom rule, whose fact-dependent forms
+///   (`memory_loads_proven_equal`, the quantified frame's unchanged-load
+///   rule) decide frame equality of integer reads.
+///
+/// Both go through this one bridge, so that splitting `Bits64` into signed
+/// and unsigned formats has one place to replace.
+/// `build_support/read_construction.rs` counts its callers.
+pub(crate) fn legacy_pointer_word_read(
+    memory: &crate::kernel::SharedMemory,
+    cell: &Address,
+) -> crate::kernel::MachineTerm {
+    crate::kernel::MachineTerm::read_named(
+        ProgramPoint::at(memory),
+        cell.clone(),
+        crate::kernel::LoadKind::Bits64,
+    )
+}
+
 /// The interned loads, as one value a reusable session captures and
 /// restores with the rest of the load registry state.
 #[derive(Clone, Default)]

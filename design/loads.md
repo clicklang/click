@@ -1,7 +1,7 @@
 # Pointers, loads and stores
 
-Status: approved (2026-11-23). Steps 0, 1, 2 and 3a-i of the migration are
-implemented; the rest is not.
+Status: approved (2026-11-23). Steps 0, 1, 2 and 3a-i of the migration, and
+PR 1 of step 3b, are implemented; the rest is not.
 
 ## Scope
 
@@ -380,7 +380,58 @@ is one PR, measured with the gate harnesses, the raise-lower audit and
      special. The held-value and indexed lookups answer a load at another
      format of the same width, `decode<U>(encode<T>(v))`, where today they
      miss and fall to the legacy walk. This changes how terms print, so it is
-     classified on its own.
+     classified on its own. Signedness belongs to the decoding (decision 1),
+     so no untyped `BitsN` kind remains. In four PRs:
+     - **PR 1, pointer-word detours.** *Done.* Of the 41 production
+       `LoadKind::Bits64` spellings, five built an eight-byte integer read
+       only to name, compare or key a pointer load. The fact keys
+       (`proof/fact_keys.rs`) key a pointer load by its load: its read key
+       and cell, not shared with the eight-byte read of its cell (unit test
+       `pointer_loads_are_keyed_by_their_load_and_not_by_an_integer_read`).
+       The other four cannot become `Load`-based without changing what they
+       decide, so they go through one bridge,
+       `legacy_pointer_word_read(memory, cell)` (`primitives/load.rs`),
+       building the same terms as before:
+       `Address::canonical_read` and `canonical_loaded_value` select a pointer
+       cell's version through `canonical_scalar_read`, whose identity cache,
+       read observations and access widths are keyed by
+       `(memory, address, kind)` and shared with 64-bit integer reads of the
+       cell; and `pointers_equal_with_load_atoms` compares two load bases
+       through its caller's load-atom rule, whose fact-dependent forms
+       (`memory_loads_proven_equal`, `load_atoms_equal_modulo_origin_unchanged`,
+       the quantified frame's `loads_unchanged`) decide frame equality of
+       integer reads through `memory_history`. Replacing the bridge needs
+       that selection and those frame checks keyed by cell and width; the
+       program-point session owns the selection. The e-graph does not relate
+       pointer loads through `Bits64` atoms: its pointer read definitions
+       (`logical_pointer_read_term`) and several pointer-cell producers
+       (`Address::version_read_value`'s fallback, `symbolic_pointer_load`,
+       `symbolic_storage_cell_value`) build `Int32` reads of a pointer cell
+       instead, a detour of the same kind that this PR leaves.
+       `build_support/read_construction.rs` holds the bridge's callers (two
+       each in `assumptions.rs` and `term_operations.rs`) and every
+       production `LoadKind::Bits64` spelling, per file, at 37.
+     - **PR 2, the algebraic stand-in.** `LoadKind::of_algebraic` and
+       `memory_load_from_carrier` become a decoding at the algebraic type.
+       `Bits64` spellings of this class: `memory_load_from_carrier`
+       (`primitives.rs`), the native algebraic collector's havoc framing
+       (`reasoning/variable_collection/retained_folds.rs`), the algebraic
+       reads of `comparison_form_uncached` (`eval/memory_loads.rs`), and the
+       `Bits64 | Abstract(_)` arms that read a stand-in as a 64-bit integer
+       (`condition_reasoning/memory_conditions.rs`, the producer equation in
+       `eval/memory_loads.rs`, `primitives/term_width.rs`).
+     - **PR 3** adds the e-graph sign relation at 16 and 128 bits.
+     - **PR 4** splits `Bits64` into `Int64` and `UInt64`. The remaining
+       spellings are genuine 64-bit integer reads: their construction from a
+       format (`memory_state.rs`, `program_point.rs`,
+       `cached_symbolic_storage_cell_value`), the wide-read observations and
+       load variables (`eval/memory_loads.rs`, `read_observations.rs`), the
+       wide-read value checks (`memory_history.rs`, `assumptions.rs`), the
+       `UInt64` graph's read atoms (`equality_graph.rs`,
+       `equality_graph/terms.rs`), and raising and diagnostics
+       (`surface/`). The pointer-word bridge needs its cell-keyed
+       replacement (PR 1) first, since neither signed nor unsigned is the
+       decoding of a pointer's bytes.
 4. **Algebraic and abstract loads** become decodings of `Load`.
 5. **Abstract bytes**: uninitialized bytes and provenance fragments.
 6. **`loaded_value`** and the remaining scalar load variables go with the

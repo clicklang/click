@@ -12,6 +12,17 @@
 //! - loads, `Load { .. }`, by `Load::at`, and pointer bases,
 //!   `AddressBase::Load(..)`, by `Load::base`.
 //!
+//! Two further counts hold `design/loads.md`'s step 3b, which removes the
+//! untyped eight-byte kind:
+//!
+//! - every `LoadKind::Bits64` written in an expression, a pattern or a macro,
+//!   so that the kind is not used anew while the step classifies and
+//!   converts its uses;
+//! - calls of `legacy_pointer_word_read`, the one bridge by which a pointer
+//!   cell still reaches the integer read machinery as an eight-byte read.
+//!   A pointer load is named, compared and keyed as a `Load`; any other
+//!   integer read built for a pointer cell is a detour.
+//!
 //! Each file may build each form directly at most as often as [`BASELINE`]
 //! says, outside test code. Converting a site lowers its count; the table
 //! must then be lowered to match, so it never grows back.
@@ -28,6 +39,8 @@ pub(super) enum Form {
     LoadCell,
     Load,
     LoadBase,
+    Bits64,
+    PointerWordRead,
 }
 
 impl Form {
@@ -39,16 +52,24 @@ impl Form {
             Self::LoadCell => "`LoadCell { .. }`",
             Self::Load => "`Load { .. }`",
             Self::LoadBase => "`AddressBase::Load(..)`",
+            Self::Bits64 => "`LoadKind::Bits64` spellings",
+            Self::PointerWordRead => "`legacy_pointer_word_read(..)` calls",
         }
     }
 
-    fn constructor(self) -> &'static str {
+    /// What to do instead of adding one more of this form.
+    fn advice(self) -> &'static str {
         match self {
-            Self::MemoryLoad => "`MachineTerm::read_named`",
-            Self::ReadOperands => "`MachineTerm::read_named`",
-            Self::ReadPoint | Self::LoadCell => "`read_operands`",
-            Self::Load => "`Load::at`",
-            Self::LoadBase => "`Load::base`",
+            Self::MemoryLoad | Self::ReadOperands => "build them with `MachineTerm::read_named`",
+            Self::ReadPoint | Self::LoadCell => "build them with `read_operands`",
+            Self::Load => "build them with `Load::at`",
+            Self::LoadBase => "build them with `Load::base`",
+            Self::Bits64 => {
+                "a 64-bit integer read takes its kind from its format, and a pointer load is a `Load` (design/loads.md, step 3b)"
+            }
+            Self::PointerWordRead => {
+                "name, compare and key a pointer load as a `Load` (design/loads.md, step 3b)"
+            }
         }
     }
 }
@@ -74,6 +95,61 @@ const BASELINE: &[(&str, Form, usize)] = &[
     // `Load::at` and `Load::base` themselves.
     ("src/kernel/primitives/load.rs", Form::Load, 1),
     ("src/kernel/primitives/load.rs", Form::LoadBase, 1),
+    // `LoadKind::Bits64`, classified for step 3b (`design/loads.md`).
+    // The pointer-word bridge, the one remaining pointer-cell use.
+    ("src/kernel/primitives/load.rs", Form::Bits64, 1),
+    // The algebraic stand-in, a value of algebraic type carried as an
+    // eight-byte read (step 3b, PR 2): `memory_load_from_carrier`, the
+    // native algebraic collector's havoc framing, and the algebraic reads of
+    // a proposition's read-over-write.
+    ("src/kernel/primitives.rs", Form::Bits64, 1),
+    (
+        "src/kernel/reasoning/variable_collection/retained_folds.rs",
+        Form::Bits64,
+        1,
+    ),
+    // Genuine 64-bit integer reads (step 3b, PR 4), some sharing an arm with
+    // the algebraic stand-in or a float (`memory_conditions.rs`,
+    // `memory_loads.rs`'s producer equation, `term_width.rs`); `memory_loads.rs`
+    // also holds one algebraic stand-in (`comparison_form_uncached`).
+    ("src/kernel/assumptions.rs", Form::Bits64, 1),
+    (
+        "src/kernel/assumptions/condition_reasoning/memory_conditions.rs",
+        Form::Bits64,
+        1,
+    ),
+    ("src/kernel/equality_graph.rs", Form::Bits64, 1),
+    ("src/kernel/equality_graph/terms.rs", Form::Bits64, 2),
+    ("src/kernel/eval/memory_loads.rs", Form::Bits64, 7),
+    (
+        "src/kernel/eval/memory_loads/read_observations.rs",
+        Form::Bits64,
+        1,
+    ),
+    ("src/kernel/memory_history.rs", Form::Bits64, 8),
+    ("src/kernel/primitives/memory_state.rs", Form::Bits64, 2),
+    ("src/kernel/primitives/program_point.rs", Form::Bits64, 2),
+    ("src/kernel/primitives/term_width.rs", Form::Bits64, 1),
+    ("src/surface/diagnostics.rs", Form::Bits64, 1),
+    (
+        "src/surface/proof/smart_closures/search.rs",
+        Form::Bits64,
+        1,
+    ),
+    ("src/surface/proof/surface_synthesis.rs", Form::Bits64, 4),
+    (
+        "src/surface/proof_diagnostics/render/surface.rs",
+        Form::Bits64,
+        2,
+    ),
+    // The two consumers that still ask the integer read machinery about a
+    // pointer cell (`legacy_pointer_word_read`'s documentation).
+    ("src/kernel/assumptions.rs", Form::PointerWordRead, 2),
+    (
+        "src/kernel/primitives/term_operations.rs",
+        Form::PointerWordRead,
+        2,
+    ),
 ];
 
 /// Direct constructions of each form in `file`, outside test code.
@@ -96,10 +172,10 @@ pub(super) fn check(counts: &BTreeMap<(String, Form), usize>) -> Result<(), Vec<
     let mut errors = Vec::new();
     for ((path, form), &found) in counts {
         let expected = baseline.get(&(path.as_str(), *form)).copied().unwrap_or(0);
-        let (spelling, constructor) = (form.spelling(), form.constructor());
+        let (spelling, advice) = (form.spelling(), form.advice());
         if found > expected {
             errors.push(format!(
-                "{path}: {found} direct {spelling} constructions, {expected} allowed; build them with {constructor} (build_support/read_construction.rs)"
+                "{path}: {found} direct {spelling} constructions, {expected} allowed; {advice} (build_support/read_construction.rs)"
             ));
         } else if found < expected {
             errors.push(format!(
@@ -167,6 +243,9 @@ impl<'ast> Visit<'ast> for Counter {
                 [.., last] if *last == "MemoryLoad" => self.add(Form::MemoryLoad),
                 [.., last] if *last == "read_operands" => self.add(Form::ReadOperands),
                 [.., last] if *last == "ReadPoint" => self.add(Form::ReadPoint),
+                [.., last] if *last == "legacy_pointer_word_read" => {
+                    self.add(Form::PointerWordRead)
+                }
                 [.., owner, last]
                     if *last == "Load"
                         && (*owner == "AddressBase"
@@ -179,6 +258,20 @@ impl<'ast> Visit<'ast> for Counter {
         }
         syn::visit::visit_expr_call(self, call);
     }
+    // Expression and pattern paths: a pattern's path is an `ExprPath` too.
+    fn visit_expr_path(&mut self, path: &'ast syn::ExprPath) {
+        if names_bits64(path.path.segments.iter().map(|segment| &segment.ident)) {
+            self.add(Form::Bits64);
+        }
+        syn::visit::visit_expr_path(self, path);
+    }
+    // Macro arguments (`matches!`, `assert_eq!`) are tokens, not syntax.
+    fn visit_macro(&mut self, mac: &'ast syn::Macro) {
+        for _ in 0..bits64_in_tokens(mac.tokens.clone()) {
+            self.add(Form::Bits64);
+        }
+        syn::visit::visit_macro(self, mac);
+    }
     fn visit_expr_struct(&mut self, expression: &'ast syn::ExprStruct) {
         match expression.path.segments.last() {
             Some(segment) if segment.ident == "Load" => self.add(Form::Load),
@@ -187,4 +280,35 @@ impl<'ast> Visit<'ast> for Counter {
         }
         syn::visit::visit_expr_struct(self, expression);
     }
+}
+
+/// Whether a path ends in `LoadKind::Bits64`.
+fn names_bits64<'a>(segments: impl Iterator<Item = &'a syn::Ident>) -> bool {
+    let segments: Vec<_> = segments.collect();
+    matches!(segments.as_slice(), [.., kind, variant] if *kind == "LoadKind" && *variant == "Bits64")
+}
+
+/// How many times `LoadKind::Bits64` is spelled in a macro's tokens.
+fn bits64_in_tokens(tokens: proc_macro2::TokenStream) -> usize {
+    let mut found = 0;
+    let mut recent: Vec<String> = Vec::new();
+    for token in tokens {
+        match token {
+            proc_macro2::TokenTree::Group(group) => {
+                found += bits64_in_tokens(group.stream());
+                recent.clear();
+            }
+            proc_macro2::TokenTree::Ident(ident) => {
+                recent.push(ident.to_string());
+                if recent.len() >= 4
+                    && recent[recent.len() - 4..] == ["LoadKind", ":", ":", "Bits64"]
+                {
+                    found += 1;
+                }
+            }
+            proc_macro2::TokenTree::Punct(punct) => recent.push(punct.as_char().to_string()),
+            proc_macro2::TokenTree::Literal(_) => recent.clear(),
+        }
+    }
+    found
 }

@@ -78,11 +78,11 @@ mod memory_construction_tests;
 pub(crate) use load::allow_cross_arena_loads;
 #[cfg(test)]
 pub(crate) use load::interned_load_count;
-pub(crate) use load::read_operands;
 pub use load::{Load, LoadCell, ReadPoint};
 pub(crate) use load::{
     LoadInternerState, capture_load_interner, clear_load_interner, restore_load_interner,
 };
+pub(crate) use load::{legacy_pointer_word_read, read_operands};
 pub(crate) mod program_point;
 pub use program_point::ProgramPoint;
 mod statement_clone;
