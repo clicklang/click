@@ -14,7 +14,7 @@ verifying "intro_does_not_refute_an_order_comparison.c";
 theorem order(x: int32, y: int32) {
     requires x < y;
     ensures x < y by {
-        intro();
+        intro() {}
     }
 }
 ```

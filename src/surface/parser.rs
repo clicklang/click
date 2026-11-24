@@ -11025,9 +11025,7 @@ impl Parser {
                 )));
             };
             if tactic == "intro" {
-                self.expect_empty_tactic_args("intro")?;
-                self.expect(Token::Semicolon)?;
-                return self.named_intro(name.into());
+                return Err(self.error("write `intro(name) { ... }` to introduce a named binder"));
             }
             self.refuse_cast_type_binder(&name)?;
             self.expect(Token::LParen)?;
@@ -11958,7 +11956,7 @@ impl Parser {
         self.parse_named_proof_tactic(name)
     }
 
-    fn named_intro(&mut self, name: SurfaceBinder) -> Result<ProofTactic, ClickError> {
+    fn named_intro(&mut self, name: SurfaceBinder) -> Result<(), ClickError> {
         if let Some(name) = name.written() {
             self.refuse_cast_type_binder(name)?;
         }
@@ -11966,15 +11964,12 @@ impl Parser {
         if let Some(name) = name.written() {
             self.names.ended_fact_names.remove(name);
         }
-        Ok(match name {
-            SurfaceBinder::Written(name) => ProofTactic::IntroAs(name),
-            name => ProofTactic::IntroBinder(name),
-        })
+        Ok(())
     }
 
     fn parse_intro_tactic(&mut self) -> Result<ProofTactic, ClickError> {
         if self.peek() != Some(&Token::LParen) {
-            return Err(self.error("`intro` requires parentheses; write `intro()`"));
+            return Err(self.error("write `intro() { ... }` to introduce the focused goal"));
         }
         self.expect(Token::LParen)?;
         let binder = if self.peek() == Some(&Token::RParen) {
@@ -11987,8 +11982,7 @@ impl Parser {
             if self.peek_ident() == Some("as") {
                 return Err(self.error("write `intro(name) { ... }` to introduce a named binder"));
             }
-            self.expect(Token::Semicolon)?;
-            return Ok(ProofTactic::Intro);
+            return Err(self.error("write `intro() { ... }` to introduce the focused goal"));
         }
         let scope = self.names.scope();
         let old_names = self.names.take(NameKind::ProofBinder);
@@ -19711,29 +19705,27 @@ mod tactic_classification_tests {
 
     #[test]
     fn logical_bindings_use_let_and_round_trip() {
-        for source in ["intro();", "let x = intro();", "let ih = induct(n);"] {
-            let tactic = Parser::new(source).unwrap().parse_proof_tactic().unwrap();
-            let printed = super::super::printing::format_partial_tactic_sequence(
-                std::slice::from_ref(&tactic),
-            );
-            assert_eq!(printed, source);
-            Parser::new(&printed).unwrap().parse_proof_tactic().unwrap();
-            match (source, &tactic) {
-                ("intro();", ProofTactic::Intro) => {}
-                ("let x = intro();", ProofTactic::IntroAs(name)) => assert_eq!(name, "x"),
-                (
-                    "let ih = induct(n);",
-                    ProofTactic::Induct {
-                        parameter,
-                        hypothesis,
-                    },
-                ) => {
-                    assert_eq!(parameter, "n");
-                    assert_eq!(hypothesis, "ih");
-                }
-                _ => panic!("unexpected tactic: {source}"),
-            }
-        }
+        let source = "let ih = induct(n);";
+        let tactic = Parser::new(source).unwrap().parse_proof_tactic().unwrap();
+        let printed =
+            super::super::printing::format_partial_tactic_sequence(std::slice::from_ref(&tactic));
+        assert_eq!(printed, source);
+        Parser::new(&printed).unwrap().parse_proof_tactic().unwrap();
+        assert!(matches!(
+            tactic,
+            ProofTactic::Induct { parameter, hypothesis }
+                if parameter == "n" && hypothesis == "ih"
+        ));
+        let removed = Parser::new("let x = intro();")
+            .unwrap()
+            .parse_proof_tactic()
+            .unwrap_err();
+        assert!(removed.message().contains("intro(name) { ... }"));
+        let removed = Parser::new("intro();")
+            .unwrap()
+            .parse_proof_tactic()
+            .unwrap_err();
+        assert!(removed.message().contains("intro() { ... }"));
         for source in [
             "intro() as x;",
             "intro() as binder(7);",
@@ -19859,8 +19851,8 @@ mod tactic_classification_tests {
         ("normalize", "normalize();"),
         ("normalize-using", "normalize() using { x == 1; };"),
         ("preserve", "preserve(memory(*p), statement(0));"),
-        ("intro", "intro();"),
-        ("intro-as", "let name = intro();"),
+        ("intro", "intro() { normalize(); }"),
+        ("intro-as", "intro(name) { normalize(); }"),
         ("enumerate", "enumerate();"),
         ("contradiction", "contradiction(x == 1);"),
         ("contradiction-false", "contradiction();"),
@@ -20108,22 +20100,22 @@ mod loop_name_tests {
 
     #[test]
     fn loop_names_keep_program_locals_quantifiers_and_phase_binders() {
-        parse_loop("decreases n - i; invariant forall (k: int32) { k == k }; invariant i <= n; views p[0..n]; maintain by { have forall (saved: int32) { saved == saved } by { intro(); have saved == saved; } }").unwrap();
+        parse_loop("decreases n - i; invariant forall (k: int32) { k == k }; invariant i <= n; views p[0..n]; maintain by { have forall (saved: int32) { saved == saved } by { intro() { have saved == saved; } } }").unwrap();
     }
 
     #[test]
     fn loop_range_binders_and_invariant_proof_binders_are_recognized() {
-        parse_loop("invariant (0..n).all(|k| { k >= 0 }); invariant (0..n).fold(0, |acc, k| { acc + k }) >= 0; invariant forall (v: int32) { v == v }; maintain by { intro(); have v == v; }").unwrap();
+        parse_loop("invariant (0..n).all(|k| { k >= 0 }); invariant (0..n).fold(0, |acc, k| { acc + k }) >= 0; invariant forall (v: int32) { v == v }; maintain by { intro() { have v == v; } }").unwrap();
     }
 
     #[test]
     fn loop_phase_proofs_recognize_binders_from_predicate_goals() {
-        parse_loop("invariant alias(); initialize by { intro(); have introduced == introduced; } maintain by { have alias() by { intro(); have introduced == introduced; } }").unwrap();
+        parse_loop("invariant alias(); initialize by { intro() { have introduced == introduced; } } maintain by { have alias() by { intro() { have introduced == introduced; } } }").unwrap();
     }
 
     #[test]
     fn loop_proof_values_remain_visible_in_nested_blocks() {
-        parse_loop("invariant i <= n; maintain by { let { result: saved } = step(); if i == 0 { have forall (k: int32) { saved == saved } by { intro(); have saved == saved; } } else { have saved == n; } }").unwrap();
+        parse_loop("invariant i <= n; maintain by { let { result: saved } = step(); if i == 0 { have forall (k: int32) { saved == saved } by { intro() { have saved == saved; } } } else { have saved == n; } }").unwrap();
     }
 
     #[test]

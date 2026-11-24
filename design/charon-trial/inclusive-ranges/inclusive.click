@@ -28,8 +28,9 @@ fn count_through(n: u32) -> u32 {
                 have total <= n + 1;
                 have iter.end() == n;
                 have iter.is_empty() == false implies iter.end() == n by {
-                    intro();
-                    close();
+                    intro() {
+                        close();
+                    }
                 }
             } else {
                 have iter.start() == n;
@@ -40,8 +41,9 @@ fn count_through(n: u32) -> u32 {
                 have total <= n + 1;
                 have not (iter.is_empty() == false);
                 have iter.is_empty() == false implies iter.end() == n by {
-                    intro();
-                    contradiction(iter.is_empty() == false);
+                    intro() {
+                        contradiction(iter.is_empty() == false);
+                    }
                 }
             }
         }
@@ -75,8 +77,9 @@ fn every_byte() -> u32 {
                 have to_integer(total) == to_integer(iter.start());
                 have total == (iter.start() as u32);
                 have iter.is_empty() implies total == 256u32 by {
-                    intro();
-                    contradiction(iter.is_empty() == false);
+                    intro() {
+                        contradiction(iter.is_empty() == false);
+                    }
                 }
             } else {
                 have iter.start() == 255u8;
@@ -87,8 +90,9 @@ fn every_byte() -> u32 {
                 have to_integer(total) == 256;
                 have total == 256u32;
                 have iter.is_empty() implies total == 256u32 by {
-                    intro();
-                    close();
+                    intro() {
+                        close();
+                    }
                 }
             }
         }

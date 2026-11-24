@@ -843,7 +843,7 @@ Binder scope is the body between braces. Renaming a bound variable doesn't
 change the proposition or expression it denotes.
 
 Expansion gives an introduced proof value an ordinary lexical name.
-For example, `let x = intro();` introduces the value for a universal goal.
+For example, `intro(x) { ... }` introduces the value for a universal goal.
 References use `x` within its scope. Expansion chooses names that avoid
 the surrounding source bindings.
 

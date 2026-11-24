@@ -836,15 +836,23 @@ fn invariant_bundle_closure_descends_surface_free_both_and_intro_and_rechecks() 
         .expect("explicit leaf facts should close the generated bundle");
     assert!(checked.is_complete());
     let certificate = checked.certificate();
+    let [
+        ProofStep::Both {
+            left_proof,
+            right_proof,
+            ..
+        },
+    ] = certificate.steps()
+    else {
+        panic!("expected a split bundle: {certificate:?}");
+    };
+    assert_eq!(left_proof.steps(), [ProofStep::Known]);
+    let [ProofStep::IntroBlock { binder: None, body }] = right_proof.steps() else {
+        panic!("expected a scoped guard introduction: {right_proof:?}");
+    };
     assert!(matches!(
-        certificate.steps(),
-        [ProofStep::Both { left_proof, right_proof, .. }]
-            if left_proof.steps() == [ProofStep::Known]
-                && right_proof.steps() == [
-                    ProofStep::Intro,
-                    ProofStep::Intro,
-                    ProofStep::Known,
-                ]
+        body.steps(),
+        [ProofStep::IntroBlock { binder: None, body }] if body.steps() == [ProofStep::Known]
     ));
     let rechecked = root
         .driver()

@@ -4,9 +4,10 @@
 theorem integer_quantifier_shadow(z: Integer) {
     requires z == 0;
     ensures forall (z: Integer) { z == 0 } by {
-        intro();
-        have z == z by close();
-        close();
+        intro() {
+            have z == z by close();
+            close();
+        }
     }
 }
 ```

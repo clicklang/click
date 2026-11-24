@@ -105,7 +105,15 @@ fn condition_kind(condition: &ConditionTerm) -> String {
 /// `goal`), the kind, the claim, the tactic, the origin (`written` for a step
 /// a person wrote, `smart` for one a smart tactic's search took, which matters
 /// only if that search succeeds), and the diagnostic rendering.
-pub(super) fn record(raised: bool, role: &str, kind: &str, claim: &str, tactic: &str, text: &str) {
+pub(super) fn record(
+    raised: bool,
+    role: &str,
+    kind: &str,
+    claim: &str,
+    tactic: &str,
+    written: bool,
+    text: &str,
+) {
     if !enabled() {
         return;
     }
@@ -114,7 +122,7 @@ pub(super) fn record(raised: bool, role: &str, kind: &str, claim: &str, tactic: 
         .map(|c| if c == '\n' || c == '\t' { ' ' } else { c })
         .take(300)
         .collect();
-    let origin = if crate::instrumentation::smart_tactic_active() {
+    let origin = if !written && crate::instrumentation::smart_tactic_active() {
         "smart"
     } else {
         "written"
@@ -374,7 +382,7 @@ mod tests {
                         ensures forall (unused: Integer) {{
                             {prefix}(match {scrutinee} {{ Packet::Empty => 0, Packet::Full(n) => n }})
                                 {relation} (match {scrutinee} {{ Packet::Empty => 0, Packet::Full(n) => n }}){suffix}
-                        }} by {{ intro(); normalize(); }}
+                        }} by {{ intro() {{ normalize(); }} }}
                     }}
                     "#
                 );
@@ -1093,8 +1101,9 @@ theorem only_element(v: int32, x: int32) {
                 r#"
                 theorem bounded() {{
                     ensures forall (x: {ty}) {{ x == x }} by {{
-                        let value = intro();
-                        normalize();
+                        intro(value) {{
+                            normalize();
+                        }}
                     }}
                 }}
             "#

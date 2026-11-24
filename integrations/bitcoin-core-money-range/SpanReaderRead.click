@@ -34,13 +34,15 @@ void SpanReader::read(std::span<std::byte> dst) throws std::ios_base::failure {
             step();
             have old(std_span_size(dst)) == 0u64 by { close(); }
             have forall (k: uint64) { 0u64 <= k and k < old(std_span_size(dst)) implies load<uint8>((old(std_span_data(dst)) + k)) == old(load<uint8>((std_span_data(this->m_data) + k))) and defined(load<uint8>((old(std_span_data(dst)) + k))) } by {
-                intro();
-                intro();
-                have old(std_span_size(dst)) <= k by {
-                    rewrite(old(std_span_size(dst)), 0u64);
-                    normalize();
+                intro() {
+                    intro() {
+                        have old(std_span_size(dst)) <= k by {
+                            rewrite(old(std_span_size(dst)), 0u64);
+                            normalize();
+                        }
+                        contradiction(k < old(std_span_size(dst)));
+                    }
                 }
-                contradiction(k < old(std_span_size(dst)));
             }
         }
         false => {}
@@ -57,12 +59,14 @@ void SpanReader::read(std::span<std::byte> dst) throws std::ios_base::failure {
     have call(5).result == old(std_span_data(this->m_data)) by { close(); }
     step() {
         requires forall (k: uint64) { 0u64 <= k and k < call(6).result implies defined(load<uint8>((call(5).result + k))) } by {
-            intro();
-            intro();
-            have k < old(std_span_size(this->m_data)) by { close(); }
-            instantiate(at(function.entry, forall (i: uint64) { 0u64 <= i and i < std_span_size(this->m_data) implies defined(load<uint8>((std_span_data(this->m_data) + i))) }), k);
-            rewrite(call(5).result, old(std_span_data(this->m_data)));
-            close();
+            intro() {
+                intro() {
+                    have k < old(std_span_size(this->m_data)) by { close(); }
+                    instantiate(at(function.entry, forall (i: uint64) { 0u64 <= i and i < std_span_size(this->m_data) implies defined(load<uint8>((std_span_data(this->m_data) + i))) }), k);
+                    rewrite(call(5).result, old(std_span_data(this->m_data)));
+                    close();
+                }
+            }
         }
         requires separate(memory(((output_pointer as (void *)) as (uint8 *))[0u64..copy_size]), memory(old(std_span_data(this->m_data))[0u64..old(std_span_size(this->m_data))])) by {
             have separate(memory(at(inputs, std_span_data(dst))[0u64..at(inputs, std_span_size(dst))]), memory(old(std_span_data(this->m_data))[0u64..old(std_span_size(this->m_data))])) by { close(); }
@@ -82,10 +86,12 @@ void SpanReader::read(std::span<std::byte> dst) throws std::ios_base::failure {
     mark copied;
     // Keep the guarded initialization fact at the copy's return point.
     have forall (k: uint64) { 0u64 <= k and k < copy_size implies defined(output_pointer[k]) } by {
-        intro();
-        intro();
-        instantiate(forall (j: uint64) { 0u64 <= j and j < copy_size implies defined(output_pointer[j]) }, k);
-        close();
+        intro() {
+            intro() {
+                instantiate(forall (j: uint64) { 0u64 <= j and j < copy_size implies defined(output_pointer[j]) }, k);
+                close();
+            }
+        }
     }
     // Keep the memcpy byte equality before the subspan and assignment calls.
     have forall (k: uint64) { 0u64 <= k and k < call(6).result implies load<uint8>((call(4).result + (0u64 + k))) == at(call(memcpy, 0).entry, load<uint8>((call(5).result + (0u64 + k)))) } by {
@@ -123,102 +129,104 @@ void SpanReader::read(std::span<std::byte> dst) throws std::ios_base::failure {
     have old(std_span_size(dst)) == call(6).result by { close(); }
     // Transport one destination byte across each later write.
     have forall (k: uint64) { 0u64 <= k and k < old(std_span_size(dst)) implies load<uint8>((old(std_span_data(dst)) + k)) == old(load<uint8>((std_span_data(this->m_data) + k))) and defined(load<uint8>((old(std_span_data(dst)) + k))) } by {
-        intro();
-        intro();
-        have k < call(6).result by {
-            rewrite(call(6).result, old(std_span_size(dst)));
-            close();
+        intro() {
+            intro() {
+                have k < call(6).result by {
+                    rewrite(call(6).result, old(std_span_size(dst)));
+                    close();
+                }
+                instantiate(at(copied, forall (j: uint64) { 0u64 <= j and j < call(6).result implies load<uint8>((call(4).result + (0u64 + j))) == at(call(memcpy, 0).entry, load<uint8>((call(5).result + (0u64 + j)))) }), k);
+                have contains(memory(at(call(4).exit, call(4).result)[0u64..call(6).result]), memory(at(call(4).exit, call(4).result)[k])) by {
+                    apply(separation::contains_element(at(call(4).exit, call(4).result), 0u64, call(6).result, k));
+                }
+                have contains(memory((this as (uint8 *))[0..16]), memory((this as (uint8 *))[0..16])) by { apply(separation::contains_refl(memory((this as (uint8 *))[0..16]))); }
+                have separate(memory((this as (uint8 *))[0..16]), memory(at(call(4).exit, call(4).result)[k])) by {
+                    apply(separation::separate_restrict(memory((this as (uint8 *))[0..16]), memory(at(call(4).exit, call(4).result)[0u64..call(6).result]), memory((this as (uint8 *))[0..16]), memory(at(call(4).exit, call(4).result)[k])));
+                }
+                have separate(region(19).footprint, memory(at(call(4).exit, call(4).result)[k])) by {
+                    normalize() using { separate(memory((this as (uint8 *))[0..16]), memory(at(call(4).exit, call(4).result)[k])); };
+                }
+                have at(region(19).exit, load<uint8>((call(4).result + k))) == at(region(19).entry, load<uint8>((call(4).result + k))) by {
+                    preserve(memory(at(call(4).exit, call(4).result)[k]), region(19));
+                }
+                have at(call(memcpy, 0).entry, load<uint8>((old(std_span_data(this->m_data)) + k))) == at(call(memcpy, 0).entry, load<uint8>((call(5).result + k))) by {
+                    rewrite(call(5).result, old(std_span_data(this->m_data)));
+                    normalize();
+                }
+                have at(call(memcpy, 0).entry, load<uint8>((old(std_span_data(this->m_data)) + k))) == old(load<uint8>((std_span_data(this->m_data) + k))) by {
+                    close();
+                }
+                have contains(memory(at(region(18).exit, region(18).result)[0..16]), memory(at(region(18).exit, region(18).result)[0..16])) by { apply(separation::contains_refl(memory(at(region(18).exit, region(18).result)[0..16]))); }
+                have separate(memory(at(region(18).exit, region(18).result)[0..16]), memory(at(call(4).exit, call(4).result)[k])) by {
+                    apply(separation::separate_restrict(memory(at(region(18).exit, region(18).result)[0..16]), memory(at(call(4).exit, call(4).result)[0u64..call(6).result]), memory(at(region(18).exit, region(18).result)[0..16]), memory(at(call(4).exit, call(4).result)[k])));
+                }
+                have separate(region(16).footprint, memory(at(call(4).exit, call(4).result)[k])) by { normalize() using { separate(memory(at(region(18).exit, region(18).result)[0..16]), memory(at(call(4).exit, call(4).result)[k])); }; }
+                have at(region(16).exit, load<uint8>((call(4).result + k))) == at(region(16).entry, load<uint8>((call(4).result + k))) by {
+                    preserve(memory(at(call(4).exit, call(4).result)[k]), region(16));
+                }
+                have separate(region(18).footprint, memory(at(call(4).exit, call(4).result)[k])) by { normalize() using { separate(memory(at(region(18).exit, region(18).result)[0..16]), memory(at(call(4).exit, call(4).result)[k])); }; }
+                have at(region(18).exit, load<uint8>((call(4).result + k))) == at(region(18).entry, load<uint8>((call(4).result + k))) by {
+                    preserve(memory(at(call(4).exit, call(4).result)[k]), region(18));
+                }
+                have separate(region(20).footprint, memory(at(call(4).exit, call(4).result)[k])) by { normalize() using { separate(memory(at(region(18).exit, region(18).result)[0..16]), memory(at(call(4).exit, call(4).result)[k])); }; }
+                have at(region(20).exit, load<uint8>((call(4).result + k))) == at(region(20).entry, load<uint8>((call(4).result + k))) by {
+                    preserve(memory(at(call(4).exit, call(4).result)[k]), region(20));
+                }
+                have contains(memory(at(copied, (dst as (uint8 *)))[0..16]), memory(at(copied, (dst as (uint8 *)))[0..16])) by { apply(separation::contains_refl(memory(at(copied, (dst as (uint8 *)))[0..16]))); }
+                have separate(memory(at(copied, (dst as (uint8 *)))[0..16]), memory(at(call(4).exit, call(4).result)[k])) by {
+                    apply(separation::separate_restrict(memory(at(copied, (dst as (uint8 *)))[0..16]), memory(at(call(4).exit, call(4).result)[0u64..call(6).result]), memory(at(copied, (dst as (uint8 *)))[0..16]), memory(at(call(4).exit, call(4).result)[k])));
+                }
+                have separate(region(21).footprint, memory(at(call(4).exit, call(4).result)[k])) by {
+                    normalize() using { separate(memory(at(copied, (dst as (uint8 *)))[0..16]), memory(at(call(4).exit, call(4).result)[k])); };
+                }
+                have at(region(21).exit, load<uint8>((call(4).result + k))) == at(region(21).entry, load<uint8>((call(4).result + k))) by {
+                    preserve(memory(at(call(4).exit, call(4).result)[k]), region(21));
+                }
+                // Carry initialization through subspan, assignment, and local cleanup.
+                instantiate(at(copied, forall (j: uint64) { 0u64 <= j and j < copy_size implies defined(output_pointer[j]) }), k);
+                have copy_size == call(6).result by { close(); }
+                have at(region(16).entry, defined(load<uint8>((call(4).result + k)))) by { close(); }
+                have at(region(16).exit, defined(load<uint8>((call(4).result + k)))) by {
+                    preserve(memory(at(call(4).exit, call(4).result)[k]), region(16));
+                }
+                have separate(region(17).footprint, memory(at(call(4).exit, call(4).result)[k])) by {
+                    normalize() using { separate(memory(at(region(18).exit, region(18).result)[0..16]), memory(at(call(4).exit, call(4).result)[k])); };
+                }
+                have at(region(17).entry, defined(load<uint8>((call(4).result + k)))) by { close(); }
+                have at(region(17).exit, defined(load<uint8>((call(4).result + k)))) by {
+                    preserve(memory(at(call(4).exit, call(4).result)[k]), region(17));
+                }
+                have at(region(18).entry, defined(load<uint8>((call(4).result + k)))) by { close(); }
+                have at(region(18).exit, defined(load<uint8>((call(4).result + k)))) by {
+                    preserve(memory(at(call(4).exit, call(4).result)[k]), region(18));
+                }
+                have at(region(19).entry, defined(load<uint8>((call(4).result + k)))) by {
+                    close();
+                }
+                have at(region(19).exit, defined(load<uint8>((call(4).result + k)))) by {
+                    preserve(memory(at(call(4).exit, call(4).result)[k]), region(19));
+                }
+                have at(region(20).entry, defined(load<uint8>((call(4).result + k)))) by {
+                    close();
+                }
+                have at(region(20).exit, defined(load<uint8>((call(4).result + k)))) by {
+                    preserve(memory(at(call(4).exit, call(4).result)[k]), region(20));
+                }
+                have at(region(21).entry, defined(load<uint8>((call(4).result + k)))) by {
+                    close();
+                }
+                have at(region(21).exit, defined(load<uint8>((call(4).result + k)))) by {
+                    preserve(memory(at(call(4).exit, call(4).result)[k]), region(21));
+                }
+                have defined(load<uint8>((call(4).result + k))) by {
+                    transport(at(region(21).exit, defined(load<uint8>((call(4).result + k)))), defined(load<uint8>((call(4).result + k)))) using {
+                        separate(memory(at(copied, (dst as (uint8 *)))[0..16]), memory(at(call(4).exit, call(4).result)[k]));
+                    };
+                }
+                have old(std_span_data(dst)) == call(4).result by { close(); }
+                rewrite(old(std_span_data(dst)), call(4).result);
+                close();
+            }
         }
-        instantiate(at(copied, forall (j: uint64) { 0u64 <= j and j < call(6).result implies load<uint8>((call(4).result + (0u64 + j))) == at(call(memcpy, 0).entry, load<uint8>((call(5).result + (0u64 + j)))) }), k);
-        have contains(memory(at(call(4).exit, call(4).result)[0u64..call(6).result]), memory(at(call(4).exit, call(4).result)[k])) by {
-            apply(separation::contains_element(at(call(4).exit, call(4).result), 0u64, call(6).result, k));
-        }
-        have contains(memory((this as (uint8 *))[0..16]), memory((this as (uint8 *))[0..16])) by { apply(separation::contains_refl(memory((this as (uint8 *))[0..16]))); }
-        have separate(memory((this as (uint8 *))[0..16]), memory(at(call(4).exit, call(4).result)[k])) by {
-            apply(separation::separate_restrict(memory((this as (uint8 *))[0..16]), memory(at(call(4).exit, call(4).result)[0u64..call(6).result]), memory((this as (uint8 *))[0..16]), memory(at(call(4).exit, call(4).result)[k])));
-        }
-        have separate(region(19).footprint, memory(at(call(4).exit, call(4).result)[k])) by {
-            normalize() using { separate(memory((this as (uint8 *))[0..16]), memory(at(call(4).exit, call(4).result)[k])); };
-        }
-        have at(region(19).exit, load<uint8>((call(4).result + k))) == at(region(19).entry, load<uint8>((call(4).result + k))) by {
-            preserve(memory(at(call(4).exit, call(4).result)[k]), region(19));
-        }
-        have at(call(memcpy, 0).entry, load<uint8>((old(std_span_data(this->m_data)) + k))) == at(call(memcpy, 0).entry, load<uint8>((call(5).result + k))) by {
-            rewrite(call(5).result, old(std_span_data(this->m_data)));
-            normalize();
-        }
-        have at(call(memcpy, 0).entry, load<uint8>((old(std_span_data(this->m_data)) + k))) == old(load<uint8>((std_span_data(this->m_data) + k))) by {
-            close();
-        }
-        have contains(memory(at(region(18).exit, region(18).result)[0..16]), memory(at(region(18).exit, region(18).result)[0..16])) by { apply(separation::contains_refl(memory(at(region(18).exit, region(18).result)[0..16]))); }
-        have separate(memory(at(region(18).exit, region(18).result)[0..16]), memory(at(call(4).exit, call(4).result)[k])) by {
-            apply(separation::separate_restrict(memory(at(region(18).exit, region(18).result)[0..16]), memory(at(call(4).exit, call(4).result)[0u64..call(6).result]), memory(at(region(18).exit, region(18).result)[0..16]), memory(at(call(4).exit, call(4).result)[k])));
-        }
-        have separate(region(16).footprint, memory(at(call(4).exit, call(4).result)[k])) by { normalize() using { separate(memory(at(region(18).exit, region(18).result)[0..16]), memory(at(call(4).exit, call(4).result)[k])); }; }
-        have at(region(16).exit, load<uint8>((call(4).result + k))) == at(region(16).entry, load<uint8>((call(4).result + k))) by {
-            preserve(memory(at(call(4).exit, call(4).result)[k]), region(16));
-        }
-        have separate(region(18).footprint, memory(at(call(4).exit, call(4).result)[k])) by { normalize() using { separate(memory(at(region(18).exit, region(18).result)[0..16]), memory(at(call(4).exit, call(4).result)[k])); }; }
-        have at(region(18).exit, load<uint8>((call(4).result + k))) == at(region(18).entry, load<uint8>((call(4).result + k))) by {
-            preserve(memory(at(call(4).exit, call(4).result)[k]), region(18));
-        }
-        have separate(region(20).footprint, memory(at(call(4).exit, call(4).result)[k])) by { normalize() using { separate(memory(at(region(18).exit, region(18).result)[0..16]), memory(at(call(4).exit, call(4).result)[k])); }; }
-        have at(region(20).exit, load<uint8>((call(4).result + k))) == at(region(20).entry, load<uint8>((call(4).result + k))) by {
-            preserve(memory(at(call(4).exit, call(4).result)[k]), region(20));
-        }
-        have contains(memory(at(copied, (dst as (uint8 *)))[0..16]), memory(at(copied, (dst as (uint8 *)))[0..16])) by { apply(separation::contains_refl(memory(at(copied, (dst as (uint8 *)))[0..16]))); }
-        have separate(memory(at(copied, (dst as (uint8 *)))[0..16]), memory(at(call(4).exit, call(4).result)[k])) by {
-            apply(separation::separate_restrict(memory(at(copied, (dst as (uint8 *)))[0..16]), memory(at(call(4).exit, call(4).result)[0u64..call(6).result]), memory(at(copied, (dst as (uint8 *)))[0..16]), memory(at(call(4).exit, call(4).result)[k])));
-        }
-        have separate(region(21).footprint, memory(at(call(4).exit, call(4).result)[k])) by {
-            normalize() using { separate(memory(at(copied, (dst as (uint8 *)))[0..16]), memory(at(call(4).exit, call(4).result)[k])); };
-        }
-        have at(region(21).exit, load<uint8>((call(4).result + k))) == at(region(21).entry, load<uint8>((call(4).result + k))) by {
-            preserve(memory(at(call(4).exit, call(4).result)[k]), region(21));
-        }
-        // Carry initialization through subspan, assignment, and local cleanup.
-        instantiate(at(copied, forall (j: uint64) { 0u64 <= j and j < copy_size implies defined(output_pointer[j]) }), k);
-        have copy_size == call(6).result by { close(); }
-        have at(region(16).entry, defined(load<uint8>((call(4).result + k)))) by { close(); }
-        have at(region(16).exit, defined(load<uint8>((call(4).result + k)))) by {
-            preserve(memory(at(call(4).exit, call(4).result)[k]), region(16));
-        }
-        have separate(region(17).footprint, memory(at(call(4).exit, call(4).result)[k])) by {
-            normalize() using { separate(memory(at(region(18).exit, region(18).result)[0..16]), memory(at(call(4).exit, call(4).result)[k])); };
-        }
-        have at(region(17).entry, defined(load<uint8>((call(4).result + k)))) by { close(); }
-        have at(region(17).exit, defined(load<uint8>((call(4).result + k)))) by {
-            preserve(memory(at(call(4).exit, call(4).result)[k]), region(17));
-        }
-        have at(region(18).entry, defined(load<uint8>((call(4).result + k)))) by { close(); }
-        have at(region(18).exit, defined(load<uint8>((call(4).result + k)))) by {
-            preserve(memory(at(call(4).exit, call(4).result)[k]), region(18));
-        }
-        have at(region(19).entry, defined(load<uint8>((call(4).result + k)))) by {
-            close();
-        }
-        have at(region(19).exit, defined(load<uint8>((call(4).result + k)))) by {
-            preserve(memory(at(call(4).exit, call(4).result)[k]), region(19));
-        }
-        have at(region(20).entry, defined(load<uint8>((call(4).result + k)))) by {
-            close();
-        }
-        have at(region(20).exit, defined(load<uint8>((call(4).result + k)))) by {
-            preserve(memory(at(call(4).exit, call(4).result)[k]), region(20));
-        }
-        have at(region(21).entry, defined(load<uint8>((call(4).result + k)))) by {
-            close();
-        }
-        have at(region(21).exit, defined(load<uint8>((call(4).result + k)))) by {
-            preserve(memory(at(call(4).exit, call(4).result)[k]), region(21));
-        }
-        have defined(load<uint8>((call(4).result + k))) by {
-            transport(at(region(21).exit, defined(load<uint8>((call(4).result + k)))), defined(load<uint8>((call(4).result + k)))) using {
-                separate(memory(at(copied, (dst as (uint8 *)))[0..16]), memory(at(call(4).exit, call(4).result)[k]));
-            };
-        }
-        have old(std_span_data(dst)) == call(4).result by { close(); }
-        rewrite(old(std_span_data(dst)), call(4).result);
-        close();
     }
 }

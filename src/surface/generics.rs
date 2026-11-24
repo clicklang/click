@@ -1291,6 +1291,18 @@ fn instantiate_proof_tactic(
                 .map(proposition)
                 .collect::<Result<Vec<_>, _>>()?,
         },
+        ProofTactic::CompatibilityFactTransport {
+            source,
+            target,
+            premises,
+        } => ProofTactic::CompatibilityFactTransport {
+            source: proposition(source)?,
+            target: proposition(target)?,
+            premises: premises
+                .iter()
+                .map(proposition)
+                .collect::<Result<Vec<_>, _>>()?,
+        },
         ProofTactic::Instantiate {
             quantified,
             arguments,

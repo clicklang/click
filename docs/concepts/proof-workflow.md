@@ -234,11 +234,10 @@ expansion output.
   explicit tactic vocabulary covers the selected proof, expansion fails
   locally instead of retaining a hidden search step.
 
-- `intro();`, `contradiction(P);`: one
-  structural logical rule each. `contradiction(P)` accepts either structural
-  `not P` or the exact opposite polarity of the same lowered C condition. They are
-  accepted only while a pure goal is active, typically inside `have ... by` or
-  a theorem proof.
+- `intro() { ... }` opens the focused universal or implication and proves
+  its body within the block. `contradiction(P)` accepts either structural
+  `not P` or the exact opposite polarity of the same lowered C condition.
+  Both work on pure goals, including inside `have ... by` and theorem proofs.
 - `close();`: close the first open goal by smart contextual simplification.
   It runs no C.
 

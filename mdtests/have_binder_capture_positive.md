@@ -16,16 +16,22 @@ int32 good(int32 x) {
     have forall (u: int32) {
         u == 5 implies forall (z: int32) { z == 5 implies z == 5 }
     } by {
-        intro();
-        intro();
-        have forall (w: int32) { w == 5 implies w == 5 } by {
-            intro();
-            intro();
-            close();
+        intro() {
+            intro() {
+                have forall (w: int32) { w == 5 implies w == 5 } by {
+                    intro() {
+                        intro() {
+                            close();
+                        }
+                    }
+                }
+                intro() {
+                    intro() {
+                        close();
+                    }
+                }
+            }
         }
-        intro();
-        intro();
-        close();
     }
     step();
     close();

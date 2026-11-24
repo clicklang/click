@@ -6345,11 +6345,12 @@ pub enum ProofTactic {
     /// A compatibility check used in verification. It has no expansion spelling.
     CompatibilityNormalize(Option<Vec<ClickProposition>>),
     ArithmeticUsing(Vec<ClickProposition>),
+    /// An internal introduction step used while building a checked scope.
     Intro,
-    /// `let name = intro()`: introduce a universal goal's variable under a
-    /// name the proof chooses instead of the one the proposition wrote.
+    /// Internal named introductions used by proof plans and their certificates.
     IntroAs(String),
     IntroBinder(SurfaceBinder),
+    /// A source introduction and the proof of its opened goal.
     IntroBlock {
         binder: Option<SurfaceBinder>,
         body: Vec<ProofTactic>,
@@ -6364,6 +6365,12 @@ pub enum ProofTactic {
         target: ClickProposition,
     },
     TransportUsing {
+        source: ClickProposition,
+        target: ClickProposition,
+        premises: Vec<ClickProposition>,
+    },
+    /// A legacy frame check with no ordinary Surface expansion.
+    CompatibilityFactTransport {
         source: ClickProposition,
         target: ClickProposition,
         premises: Vec<ClickProposition>,
@@ -6760,13 +6767,13 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
     },
     PublicTacticForm {
         id: "intro",
-        syntax: "intro()",
-        class: "simple",
+        syntax: "intro() { ... }",
+        class: "control",
     },
     PublicTacticForm {
         id: "intro-as",
-        syntax: "let name = intro()",
-        class: "simple",
+        syntax: "intro(name) { ... }",
+        class: "control",
     },
     PublicTacticForm {
         id: "enumerate",
@@ -6975,7 +6982,9 @@ impl ProofTactic {
             Self::Transport { .. } => {
                 TacticClass::Smart(SmartSite::Elided(ElidedArgument::FrameEvidence))
             }
-            Self::TransportUsing { .. } => TacticClass::Simple(SimpleTactic::FactTransport),
+            Self::TransportUsing { .. } | Self::CompatibilityFactTransport { .. } => {
+                TacticClass::Simple(SimpleTactic::FactTransport)
+            }
             Self::Instantiate { .. } => TacticClass::Simple(SimpleTactic::Instantiate),
             Self::FoldResource(_) => TacticClass::Simple(SimpleTactic::FoldResource),
             Self::ReleaseView(_) => TacticClass::Simple(SimpleTactic::ReleaseView),

@@ -16,19 +16,23 @@ theorem lift(callback: int32 (*)(int32)) {
     ensures Target(callback) by {
         unfold(Source(callback));
         unfold(Target(callback));
-        intro();
-        have forall (k: int32) { k == x implies k >= 0 } by {
-            intro();
-            intro();
-            rewrite(k, x);
+        intro() {
+            have forall (k: int32) { k == x implies k >= 0 } by {
+                intro() {
+                    intro() {
+                        rewrite(k, x);
+                        close();
+                    }
+                }
+            }
+            have result == x implies result >= 0 by {
+                intro() {
+                    instantiate(forall (k: int32) { k == x implies k >= 0 }, result);
+                    close();
+                }
+            }
             close();
         }
-        have result == x implies result >= 0 by {
-            intro();
-            instantiate(forall (k: int32) { k == x implies k >= 0 }, result);
-            close();
-        }
-        close();
     }
 }
 ```

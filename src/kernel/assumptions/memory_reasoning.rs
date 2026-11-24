@@ -5910,11 +5910,18 @@ pub(in crate::kernel) use crate::kernel::AccessExtent;
 pub(in crate::kernel) fn access_extent_of_value(
     value: &crate::kernel::ProgramValue,
 ) -> AccessExtent {
-    match value.program_type() {
+    access_extent_of_type(value.program_type(), value.byte_width())
+}
+
+pub(in crate::kernel) fn access_extent_of_type(
+    ty: crate::kernel::ProgramType,
+    bytes: u32,
+) -> AccessExtent {
+    match ty {
         crate::kernel::ProgramType::Parameter(parameter) if parameter.has_abstract_size() => {
             AccessExtent::Object(parameter)
         }
-        _ => AccessExtent::Bytes(crate::kernel::reasoning::cell_access_byte_width(value)),
+        _ => AccessExtent::Bytes(crate::kernel::reasoning::nonzero_cell_access_width(bytes)),
     }
 }
 

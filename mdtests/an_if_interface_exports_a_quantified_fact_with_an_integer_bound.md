@@ -30,22 +30,26 @@ int32 q(int32 j) {
     } then {
         have forall (k: uint64) { 0u64 <= k and k < 1u64 implies tmp[k] != 0u8 } by { enumerate(); }
         have forall (k: uint64) { 0u64 <= k and k < j as uint64 + 1u64 implies tmp[k] != 0u8 } by {
-            intro();
-            intro();
-            have k < 1u64 by { close(); }
-            instantiate(forall (k: uint64) { 0u64 <= k and k < 1u64 implies tmp[k] != 0u8 }, k);
-            close();
+            intro() {
+                intro() {
+                    have k < 1u64 by { close(); }
+                    instantiate(forall (k: uint64) { 0u64 <= k and k < 1u64 implies tmp[k] != 0u8 }, k);
+                    close();
+                }
+            }
         }
     } else {
         have 1 <= j by { close() using { 0 <= j; j != 0; }; }
         have j == 1 by { close() using { 1 <= j; j <= 1; }; }
         have forall (k: uint64) { 0u64 <= k and k < 2u64 implies tmp[k] != 0u8 } by { enumerate(); }
         have forall (k: uint64) { 0u64 <= k and k < j as uint64 + 1u64 implies tmp[k] != 0u8 } by {
-            intro();
-            intro();
-            have k < 2u64 by { close(); }
-            instantiate(forall (k: uint64) { 0u64 <= k and k < 2u64 implies tmp[k] != 0u8 }, k);
-            close();
+            intro() {
+                intro() {
+                    have k < 2u64 by { close(); }
+                    instantiate(forall (k: uint64) { 0u64 <= k and k < 2u64 implies tmp[k] != 0u8 }, k);
+                    close();
+                }
+            }
         }
     }
 }

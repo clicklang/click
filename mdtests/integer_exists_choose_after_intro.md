@@ -4,10 +4,11 @@
 theorem integer_exists_choose_after_intro() {
     requires exists (z: Integer) { z == z };
     ensures forall (q: Integer) { exists (k: Integer) { k == k } } by {
-        intro();
-        let candidate = obtain(exists (candidate: Integer) { candidate == candidate });
-        witness(candidate);
-        close();
+        intro() {
+            let candidate = obtain(exists (candidate: Integer) { candidate == candidate });
+            witness(candidate);
+            close();
+        }
     }
 }
 ```

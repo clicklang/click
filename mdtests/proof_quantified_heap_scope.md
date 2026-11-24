@@ -24,9 +24,11 @@ int32 proof_quantified_heap_scope(int32 p[2]) {
     have forall (k: int32) {
         0 <= k and k < 2 implies p[k] == p[k]
     } by {
-        intro();
-        intro();
-        close();
+        intro() {
+            intro() {
+                close();
+            }
+        }
     }
     close();
 }

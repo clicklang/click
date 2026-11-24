@@ -131,45 +131,55 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
             have to_integer(result) <= 9223372036854775807;
             have to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + 1;
             have round_down == true and truncating_remainder(to_integer(n), to_integer(d)) < 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + -1 by {
-                intro();
-                contradiction(truncating_remainder(to_integer(n), to_integer(d)) < 0);
+                intro() {
+                    contradiction(truncating_remainder(to_integer(n), to_integer(d)) < 0);
+                }
             }
             have round_down == true and 0 <= truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by {
-                intro();
-                contradiction(round_down == false);
+                intro() {
+                    contradiction(round_down == false);
+                }
             }
             have round_down == false and 0 < truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + 1 by {
-                intro();
-                close();
+                intro() {
+                    close();
+                }
             }
             have round_down == false and truncating_remainder(to_integer(n), to_integer(d)) <= 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by {
-                intro();
-                contradiction(truncating_remainder(to_integer(n), to_integer(d)) <= 0);
+                intro() {
+                    contradiction(truncating_remainder(to_integer(n), to_integer(d)) <= 0);
+                }
             }
             have 0 < truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + 1 by {
-                intro();
-                close();
+                intro() {
+                    close();
+                }
             }
             have truncating_remainder(to_integer(n), to_integer(d)) <= 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by {
-                intro();
-                contradiction(truncating_remainder(to_integer(n), to_integer(d)) <= 0);
+                intro() {
+                    contradiction(truncating_remainder(to_integer(n), to_integer(d)) <= 0);
+                }
             }
             apply(integer::ceiling_from_remainder(to_integer(n), to_integer(d), truncating_quotient(to_integer(n), to_integer(d)), truncating_remainder(to_integer(n), to_integer(d)), to_integer(result)));
             have round_down == true implies to_integer(result) * to_integer(d) <= to_integer(n) by {
-                intro();
-                contradiction(round_down == false);
+                intro() {
+                    contradiction(round_down == false);
+                }
             }
             have round_down == true implies to_integer(n) < (to_integer(result) + 1) * to_integer(d) by {
-                intro();
-                contradiction(round_down == false);
+                intro() {
+                    contradiction(round_down == false);
+                }
             }
             have round_down == false implies to_integer(n) <= to_integer(result) * to_integer(d) by {
-                intro();
-                close();
+                intro() {
+                    close();
+                }
             }
             have round_down == false implies (to_integer(result) + -1) * to_integer(d) < to_integer(n) by {
-                intro();
-                close();
+                intro() {
+                    close();
+                }
             }
             close();
         } else {
@@ -178,45 +188,55 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
             have to_integer(result) <= 9223372036854775807;
             have to_integer(result) == truncating_quotient(to_integer(n), to_integer(d));
             have round_down == true and truncating_remainder(to_integer(n), to_integer(d)) < 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + -1 by {
-                intro();
-                contradiction(truncating_remainder(to_integer(n), to_integer(d)) < 0);
+                intro() {
+                    contradiction(truncating_remainder(to_integer(n), to_integer(d)) < 0);
+                }
             }
             have round_down == true and 0 <= truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by {
-                intro();
-                close();
+                intro() {
+                    close();
+                }
             }
             have round_down == false and 0 < truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + 1 by {
-                intro();
-                contradiction(round_down == false);
+                intro() {
+                    contradiction(round_down == false);
+                }
             }
             have round_down == false and truncating_remainder(to_integer(n), to_integer(d)) <= 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by {
-                intro();
-                contradiction(truncating_remainder(to_integer(n), to_integer(d)) <= 0);
+                intro() {
+                    contradiction(truncating_remainder(to_integer(n), to_integer(d)) <= 0);
+                }
             }
             have truncating_remainder(to_integer(n), to_integer(d)) < 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + -1 by {
-                intro();
-                contradiction(truncating_remainder(to_integer(n), to_integer(d)) < 0);
+                intro() {
+                    contradiction(truncating_remainder(to_integer(n), to_integer(d)) < 0);
+                }
             }
             have 0 <= truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by {
-                intro();
-                close();
+                intro() {
+                    close();
+                }
             }
             apply(integer::floor_from_remainder(to_integer(n), to_integer(d), truncating_quotient(to_integer(n), to_integer(d)), truncating_remainder(to_integer(n), to_integer(d)), to_integer(result)));
             have round_down == true implies to_integer(result) * to_integer(d) <= to_integer(n) by {
-                intro();
-                close();
+                intro() {
+                    close();
+                }
             }
             have round_down == true implies to_integer(n) < (to_integer(result) + 1) * to_integer(d) by {
-                intro();
-                close();
+                intro() {
+                    close();
+                }
             }
             have round_down == false implies to_integer(n) <= to_integer(result) * to_integer(d) by {
-                intro();
-                contradiction(round_down == false);
+                intro() {
+                    contradiction(round_down == false);
+                }
             }
             have round_down == false implies (to_integer(result) + -1) * to_integer(d) < to_integer(n) by {
-                intro();
-                contradiction(round_down == false);
+                intro() {
+                    contradiction(round_down == false);
+                }
             }
             close();
         }
@@ -261,45 +281,55 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
                 have to_integer(result) <= 9223372036854775807;
                 have to_integer(result) == truncating_quotient(to_integer(n), to_integer(d));
                 have round_down == true and truncating_remainder(to_integer(n), to_integer(d)) < 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + -1 by {
-                    intro();
-                    contradiction(round_down == false);
+                    intro() {
+                        contradiction(round_down == false);
+                    }
                 }
                 have round_down == true and 0 <= truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by {
-                    intro();
-                    contradiction(0 <= truncating_remainder(to_integer(n), to_integer(d)));
+                    intro() {
+                        contradiction(0 <= truncating_remainder(to_integer(n), to_integer(d)));
+                    }
                 }
                 have round_down == false and 0 < truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + 1 by {
-                    intro();
-                    contradiction(0 < truncating_remainder(to_integer(n), to_integer(d)));
+                    intro() {
+                        contradiction(0 < truncating_remainder(to_integer(n), to_integer(d)));
+                    }
                 }
                 have round_down == false and truncating_remainder(to_integer(n), to_integer(d)) <= 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by {
-                    intro();
-                    close();
+                    intro() {
+                        close();
+                    }
                 }
                 have 0 < truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + 1 by {
-                    intro();
-                    contradiction(0 < truncating_remainder(to_integer(n), to_integer(d)));
+                    intro() {
+                        contradiction(0 < truncating_remainder(to_integer(n), to_integer(d)));
+                    }
                 }
                 have truncating_remainder(to_integer(n), to_integer(d)) <= 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by {
-                    intro();
-                    close();
+                    intro() {
+                        close();
+                    }
                 }
                 apply(integer::ceiling_from_remainder(to_integer(n), to_integer(d), truncating_quotient(to_integer(n), to_integer(d)), truncating_remainder(to_integer(n), to_integer(d)), to_integer(result)));
                 have round_down == true implies to_integer(result) * to_integer(d) <= to_integer(n) by {
-                    intro();
-                    contradiction(round_down == false);
+                    intro() {
+                        contradiction(round_down == false);
+                    }
                 }
                 have round_down == true implies to_integer(n) < (to_integer(result) + 1) * to_integer(d) by {
-                    intro();
-                    contradiction(round_down == false);
+                    intro() {
+                        contradiction(round_down == false);
+                    }
                 }
                 have round_down == false implies to_integer(n) <= to_integer(result) * to_integer(d) by {
-                    intro();
-                    close();
+                    intro() {
+                        close();
+                    }
                 }
                 have round_down == false implies (to_integer(result) + -1) * to_integer(d) < to_integer(n) by {
-                    intro();
-                    close();
+                    intro() {
+                        close();
+                    }
                 }
                 close();
             } else {
@@ -308,45 +338,55 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
                 have to_integer(result) <= 9223372036854775807;
                 have to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + -1;
                 have round_down == true and truncating_remainder(to_integer(n), to_integer(d)) < 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + -1 by {
-                    intro();
-                    close();
+                    intro() {
+                        close();
+                    }
                 }
                 have round_down == true and 0 <= truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by {
-                    intro();
-                    contradiction(0 <= truncating_remainder(to_integer(n), to_integer(d)));
+                    intro() {
+                        contradiction(0 <= truncating_remainder(to_integer(n), to_integer(d)));
+                    }
                 }
                 have round_down == false and 0 < truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + 1 by {
-                    intro();
-                    contradiction(0 < truncating_remainder(to_integer(n), to_integer(d)));
+                    intro() {
+                        contradiction(0 < truncating_remainder(to_integer(n), to_integer(d)));
+                    }
                 }
                 have round_down == false and truncating_remainder(to_integer(n), to_integer(d)) <= 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by {
-                    intro();
-                    contradiction(round_down == false);
+                    intro() {
+                        contradiction(round_down == false);
+                    }
                 }
                 have truncating_remainder(to_integer(n), to_integer(d)) < 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + -1 by {
-                    intro();
-                    close();
+                    intro() {
+                        close();
+                    }
                 }
                 have 0 <= truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by {
-                    intro();
-                    contradiction(0 <= truncating_remainder(to_integer(n), to_integer(d)));
+                    intro() {
+                        contradiction(0 <= truncating_remainder(to_integer(n), to_integer(d)));
+                    }
                 }
                 apply(integer::floor_from_remainder(to_integer(n), to_integer(d), truncating_quotient(to_integer(n), to_integer(d)), truncating_remainder(to_integer(n), to_integer(d)), to_integer(result)));
                 have round_down == true implies to_integer(result) * to_integer(d) <= to_integer(n) by {
-                    intro();
-                    close();
+                    intro() {
+                        close();
+                    }
                 }
                 have round_down == true implies to_integer(n) < (to_integer(result) + 1) * to_integer(d) by {
-                    intro();
-                    close();
+                    intro() {
+                        close();
+                    }
                 }
                 have round_down == false implies to_integer(n) <= to_integer(result) * to_integer(d) by {
-                    intro();
-                    contradiction(round_down == false);
+                    intro() {
+                        contradiction(round_down == false);
+                    }
                 }
                 have round_down == false implies (to_integer(result) + -1) * to_integer(d) < to_integer(n) by {
-                    intro();
-                    contradiction(round_down == false);
+                    intro() {
+                        contradiction(round_down == false);
+                    }
                 }
                 close();
             }
@@ -373,45 +413,55 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
                 have to_integer(result) <= 9223372036854775807;
                 have to_integer(result) == truncating_quotient(to_integer(n), to_integer(d));
                 have round_down == true and truncating_remainder(to_integer(n), to_integer(d)) < 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + -1 by {
-                    intro();
-                    contradiction(truncating_remainder(to_integer(n), to_integer(d)) < 0);
+                    intro() {
+                        contradiction(truncating_remainder(to_integer(n), to_integer(d)) < 0);
+                    }
                 }
                 have round_down == true and 0 <= truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by {
-                    intro();
-                    contradiction(round_down == false);
+                    intro() {
+                        contradiction(round_down == false);
+                    }
                 }
                 have round_down == false and 0 < truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + 1 by {
-                    intro();
-                    contradiction(0 < truncating_remainder(to_integer(n), to_integer(d)));
+                    intro() {
+                        contradiction(0 < truncating_remainder(to_integer(n), to_integer(d)));
+                    }
                 }
                 have round_down == false and truncating_remainder(to_integer(n), to_integer(d)) <= 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by {
-                    intro();
-                    close();
+                    intro() {
+                        close();
+                    }
                 }
                 have 0 < truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + 1 by {
-                    intro();
-                    contradiction(0 < truncating_remainder(to_integer(n), to_integer(d)));
+                    intro() {
+                        contradiction(0 < truncating_remainder(to_integer(n), to_integer(d)));
+                    }
                 }
                 have truncating_remainder(to_integer(n), to_integer(d)) <= 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by {
-                    intro();
-                    close();
+                    intro() {
+                        close();
+                    }
                 }
                 apply(integer::ceiling_from_remainder(to_integer(n), to_integer(d), truncating_quotient(to_integer(n), to_integer(d)), truncating_remainder(to_integer(n), to_integer(d)), to_integer(result)));
                 have round_down == true implies to_integer(result) * to_integer(d) <= to_integer(n) by {
-                    intro();
-                    contradiction(round_down == false);
+                    intro() {
+                        contradiction(round_down == false);
+                    }
                 }
                 have round_down == true implies to_integer(n) < (to_integer(result) + 1) * to_integer(d) by {
-                    intro();
-                    contradiction(round_down == false);
+                    intro() {
+                        contradiction(round_down == false);
+                    }
                 }
                 have round_down == false implies to_integer(n) <= to_integer(result) * to_integer(d) by {
-                    intro();
-                    close();
+                    intro() {
+                        close();
+                    }
                 }
                 have round_down == false implies (to_integer(result) + -1) * to_integer(d) < to_integer(n) by {
-                    intro();
-                    close();
+                    intro() {
+                        close();
+                    }
                 }
                 close();
             } else {
@@ -420,45 +470,55 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
                 have to_integer(result) <= 9223372036854775807;
                 have to_integer(result) == truncating_quotient(to_integer(n), to_integer(d));
                 have round_down == true and truncating_remainder(to_integer(n), to_integer(d)) < 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + -1 by {
-                    intro();
-                    contradiction(truncating_remainder(to_integer(n), to_integer(d)) < 0);
+                    intro() {
+                        contradiction(truncating_remainder(to_integer(n), to_integer(d)) < 0);
+                    }
                 }
                 have round_down == true and 0 <= truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by {
-                    intro();
-                    close();
+                    intro() {
+                        close();
+                    }
                 }
                 have round_down == false and 0 < truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + 1 by {
-                    intro();
-                    contradiction(0 < truncating_remainder(to_integer(n), to_integer(d)));
+                    intro() {
+                        contradiction(0 < truncating_remainder(to_integer(n), to_integer(d)));
+                    }
                 }
                 have round_down == false and truncating_remainder(to_integer(n), to_integer(d)) <= 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by {
-                    intro();
-                    contradiction(round_down == false);
+                    intro() {
+                        contradiction(round_down == false);
+                    }
                 }
                 have truncating_remainder(to_integer(n), to_integer(d)) < 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + -1 by {
-                    intro();
-                    contradiction(truncating_remainder(to_integer(n), to_integer(d)) < 0);
+                    intro() {
+                        contradiction(truncating_remainder(to_integer(n), to_integer(d)) < 0);
+                    }
                 }
                 have 0 <= truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by {
-                    intro();
-                    close();
+                    intro() {
+                        close();
+                    }
                 }
                 apply(integer::floor_from_remainder(to_integer(n), to_integer(d), truncating_quotient(to_integer(n), to_integer(d)), truncating_remainder(to_integer(n), to_integer(d)), to_integer(result)));
                 have round_down == true implies to_integer(result) * to_integer(d) <= to_integer(n) by {
-                    intro();
-                    close();
+                    intro() {
+                        close();
+                    }
                 }
                 have round_down == true implies to_integer(n) < (to_integer(result) + 1) * to_integer(d) by {
-                    intro();
-                    close();
+                    intro() {
+                        close();
+                    }
                 }
                 have round_down == false implies to_integer(n) <= to_integer(result) * to_integer(d) by {
-                    intro();
-                    contradiction(round_down == false);
+                    intro() {
+                        contradiction(round_down == false);
+                    }
                 }
                 have round_down == false implies (to_integer(result) + -1) * to_integer(d) < to_integer(n) by {
-                    intro();
-                    contradiction(round_down == false);
+                    intro() {
+                        contradiction(round_down == false);
+                    }
                 }
                 close();
             }

@@ -112,47 +112,49 @@ void fill(struct arena *arena, int32 start, int32 end) {
                 at(opened, i) < k and k < end implies
                     arena->occupied[k] == 0
             } by {
-                intro();
-                intro();
-                have at(opened, i) < k;
-                have k < end;
-                have at(opened, i) <= k;
-                have m <= k;
-                have at(opened, arena->occupied[k]) == 0 by {
-                    have at(opened, m) <= at(opened, k) and
-                            at(opened, k) < at(opened, end);
-                    instantiate(forall (j: int32) {
-                        at(opened, m) <= at(opened, j) and
-                            at(opened, j) < at(opened, end) implies
-                            at(opened, arena->occupied[j]) == at(opened, 0)
-                    }, k);
-                    close();
+                intro() {
+                    intro() {
+                        have at(opened, i) < k;
+                        have k < end;
+                        have at(opened, i) <= k;
+                        have m <= k;
+                        have at(opened, arena->occupied[k]) == 0 by {
+                            have at(opened, m) <= at(opened, k) and
+                                    at(opened, k) < at(opened, end);
+                            instantiate(forall (j: int32) {
+                                at(opened, m) <= at(opened, j) and
+                                    at(opened, j) < at(opened, end) implies
+                                    at(opened, arena->occupied[j]) == at(opened, 0)
+                            }, k);
+                            close();
+                        }
+                        have 0 <= k;
+                        have k < at(opened, arena->capacity);
+                        have at(opened, i) != k by { close() using { at(opened, i) < k; }; }
+                        have at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))) by {
+                            apply(separation::separate_elements(at(opened, arena->occupied), at(opened, i), k));
+                        }
+                        have arena->occupied == at(opened, arena->occupied) by { close(); }
+                        // Select the preserved cell as one complete int32 observation.
+                        have contains(at(opened, memory(arena->occupied[k])), at(opened, memory((&arena->occupied[k])[0..1]))) by { normalize(); }
+                        apply(separation::contains_refl(at(opened, memory(arena->occupied[i]))));
+                        have separate(at(opened, memory(arena->occupied[i])), at(opened, memory((&arena->occupied[k])[0..1]))) by {
+                            apply(separation::separate_restrict(at(opened, memory(arena->occupied[i])), at(opened, memory(arena->occupied[k])), at(opened, memory(arena->occupied[i])), at(opened, memory((&arena->occupied[k])[0..1]))));
+                        }
+                        have separate(loop(0).statement(0).footprint, at(opened, memory((&arena->occupied[k])[0..1]))) by {
+                            close();
+                        }
+                        have at(loop(0).statement(0).exit, load<int32>(at(opened, &arena->occupied[k])))
+                                == at(loop(0).statement(0).entry, load<int32>(at(opened, &arena->occupied[k]))) by {
+                            preserve(at(opened, memory((&arena->occupied[k])[0..1])), loop(0).statement(0));
+                        }
+                        have arena->occupied[k] == at(opened, arena->occupied[k]) by {
+                            rewrite(arena->occupied, at(opened, arena->occupied));
+                            close();
+                        }
+                        close();
+                    }
                 }
-                have 0 <= k;
-                have k < at(opened, arena->capacity);
-                have at(opened, i) != k by { close() using { at(opened, i) < k; }; }
-                have at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))) by {
-                    apply(separation::separate_elements(at(opened, arena->occupied), at(opened, i), k));
-                }
-                have arena->occupied == at(opened, arena->occupied) by { close(); }
-                // Select the preserved cell as one complete int32 observation.
-                have contains(at(opened, memory(arena->occupied[k])), at(opened, memory((&arena->occupied[k])[0..1]))) by { normalize(); }
-                apply(separation::contains_refl(at(opened, memory(arena->occupied[i]))));
-                have separate(at(opened, memory(arena->occupied[i])), at(opened, memory((&arena->occupied[k])[0..1]))) by {
-                    apply(separation::separate_restrict(at(opened, memory(arena->occupied[i])), at(opened, memory(arena->occupied[k])), at(opened, memory(arena->occupied[i])), at(opened, memory((&arena->occupied[k])[0..1]))));
-                }
-                have separate(loop(0).statement(0).footprint, at(opened, memory((&arena->occupied[k])[0..1]))) by {
-                    close();
-                }
-                have at(loop(0).statement(0).exit, load<int32>(at(opened, &arena->occupied[k])))
-                        == at(loop(0).statement(0).entry, load<int32>(at(opened, &arena->occupied[k]))) by {
-                    preserve(at(opened, memory((&arena->occupied[k])[0..1])), loop(0).statement(0));
-                }
-                have arena->occupied[k] == at(opened, arena->occupied[k]) by {
-                    rewrite(arena->occupied, at(opened, arena->occupied));
-                    close();
-                }
-                close();
             }
             step();
         }

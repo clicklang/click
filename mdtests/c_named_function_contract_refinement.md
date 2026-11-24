@@ -55,30 +55,32 @@ int32 apply_step(int32 (*callback)(int32), int32 input) {
 theorem increment_is_positive_step() {
     ensures PositiveStep(&increment) by {
         unfold(PositiveStep(&increment));
-        intro();
-        have -100 <= to_integer(input) by {
-            close() using { 0 <= input; };
-        }
-        have input <= 1000 by {
-            close() using { input <= 100; };
-        }
-        all {
-            -100 <= to_integer(input) => { close(); }
-            input <= 1000 => { close(); }
-            (
-                (to_integer(input) + 1 <= 2147483647 and
-                 to_integer(input) + 1 >= -2147483648 and
-                 to_integer(result) == to_integer(input + 1) and input < result)
-                implies
-                (to_integer(input) + 1 <= 2147483647 and
-                 to_integer(input) + 1 >= -2147483648 and
-                 to_integer(result) == to_integer(input + 1) and 0 < result)
-            ) => {
-                intro();
-                have 0 < result by {
-                    close() using { 0 <= input; input < result; };
+        intro() {
+            have -100 <= to_integer(input) by {
+                close() using { 0 <= input; };
+            }
+            have input <= 1000 by {
+                close() using { input <= 100; };
+            }
+            all {
+                -100 <= to_integer(input) => { close(); }
+                input <= 1000 => { close(); }
+                (
+                    (to_integer(input) + 1 <= 2147483647 and
+                     to_integer(input) + 1 >= -2147483648 and
+                     to_integer(result) == to_integer(input + 1) and input < result)
+                    implies
+                    (to_integer(input) + 1 <= 2147483647 and
+                     to_integer(input) + 1 >= -2147483648 and
+                     to_integer(result) == to_integer(input + 1) and 0 < result)
+                ) => {
+                    intro() {
+                        have 0 < result by {
+                            close() using { 0 <= input; input < result; };
+                        }
+                        close();
+                    }
                 }
-                close();
             }
         }
     }

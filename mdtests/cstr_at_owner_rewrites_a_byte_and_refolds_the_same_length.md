@@ -23,24 +23,26 @@ void poke(uint8* s, uint64 n) {
     unfold(cstr_at(s, n));
     step();
     have forall (k: uint64) { 0u64 <= k and k < n implies s[k] != '\0' } by {
-        intro();
-        intro();
-        if k == 0u64 {
-            rewrite(k, 0u64);
-            close();
-        } else {
-            instantiate(forall (k: uint64) { 0u64 <= k and k < n implies old(s[k]) != '\0' }, k);
-            have separate(memory(s[k]), memory(s[0u64])) by {
-                apply(click::separation::separate_elements(s, k, 0u64));
+        intro() {
+            intro() {
+                if k == 0u64 {
+                    rewrite(k, 0u64);
+                    close();
+                } else {
+                    instantiate(forall (k: uint64) { 0u64 <= k and k < n implies old(s[k]) != '\0' }, k);
+                    have separate(memory(s[k]), memory(s[0u64])) by {
+                        apply(click::separation::separate_elements(s, k, 0u64));
+                    }
+                    have separate(statement(0).footprint, memory(s[k])) by {
+                        close() using { separate(memory(s[k]), memory(s[0u64])); };
+                    }
+                    have s[k] == old(s[k]) by {
+                        preserve(memory(s[k]), statement(0));
+                    }
+                    rewrite(s[k], old(s[k]));
+                    close();
+                }
             }
-            have separate(statement(0).footprint, memory(s[k])) by {
-                close() using { separate(memory(s[k]), memory(s[0u64])); };
-            }
-            have s[k] == old(s[k]) by {
-                preserve(memory(s[k]), statement(0));
-            }
-            rewrite(s[k], old(s[k]));
-            close();
         }
     }
     have n != 0u64 by { close() using { 0u64 < n; }; }
@@ -55,20 +57,22 @@ void poke(uint8* s, uint64 n) {
     }
     have s[n] == '\0' by { close(); }
     have forall (k: uint64) { 0u64 <= k and to_integer(k) < to_integer(n + 1u64) implies defined(s[k]) } by {
-        intro();
-        intro();
-        if k == 0u64 {
-            rewrite(k, 0u64);
-            close();
-        } else {
-            instantiate(forall (k: uint64) { 0u64 <= k and to_integer(k) < to_integer(n + 1u64) implies defined(old(s[k])) }, k);
-            have separate(memory(s[k]), memory(s[0u64])) by {
-                apply(click::separation::separate_elements(s, k, 0u64));
+        intro() {
+            intro() {
+                if k == 0u64 {
+                    rewrite(k, 0u64);
+                    close();
+                } else {
+                    instantiate(forall (k: uint64) { 0u64 <= k and to_integer(k) < to_integer(n + 1u64) implies defined(old(s[k])) }, k);
+                    have separate(memory(s[k]), memory(s[0u64])) by {
+                        apply(click::separation::separate_elements(s, k, 0u64));
+                    }
+                    have separate(statement(0).footprint, memory(s[k])) by {
+                        close() using { separate(memory(s[k]), memory(s[0u64])); };
+                    }
+                    preserve(memory(s[k]), statement(0));
+                }
             }
-            have separate(statement(0).footprint, memory(s[k])) by {
-                close() using { separate(memory(s[k]), memory(s[0u64])); };
-            }
-            preserve(memory(s[k]), statement(0));
         }
     }
     fold(cstr_at(s, n));

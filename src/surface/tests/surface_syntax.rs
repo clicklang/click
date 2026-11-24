@@ -1778,23 +1778,26 @@ fn verifies_explicit_structural_logic_tactics() {
 
         theorem intro_implication_rule(x: int32) {
             ensures x == x implies x == x by {
-                intro();
-                close();
+                intro() {
+                    close();
+                }
             }
         }
 
         theorem intro_forall_rule() {
             ensures forall (k: int32) { k == k } by {
-                intro();
-                close();
+                intro() {
+                    close();
+                }
             }
         }
 
         theorem vacuous_rule(x: int32) {
             requires not (x != x);
             ensures x != x implies x == 0 by {
-                intro();
-                contradiction(x != x);
+                intro() {
+                    contradiction(x != x);
+                }
             }
         }
 
@@ -2383,8 +2386,9 @@ theorem reflexive_implication(x: int32) {
     let explicit = r#"
 theorem reflexive_implication(x: int32) {
     ensures x == 0 implies x == 0 by {
-        intro();
-        close();
+        intro() {
+            close();
+        }
     }
 }
 "#;
@@ -2459,8 +2463,9 @@ theorem false_guard(x: int32) {
         r#"
 theorem false_guard(x: int32) {
     ensures 1 == 2 implies x == 0 by {
-        intro();
-        contradiction(0u32 == 1u32);
+        intro() {
+            contradiction(0u32 == 1u32);
+        }
     }
 }
 "#,

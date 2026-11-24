@@ -8,12 +8,17 @@ theorem pointer_transitivity() {
     ensures forall (a: int32*) { forall (b: int32*) { forall (c: int32*) {
         a == b implies (b == c implies a == c)
     } } } by {
-        intro();
-        intro();
-        intro();
-        intro();
-        intro();
-        normalize() using { };
+        intro() {
+            intro() {
+                intro() {
+                    intro() {
+                        intro() {
+                            normalize() using { };
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 ```

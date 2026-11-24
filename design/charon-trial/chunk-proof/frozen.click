@@ -127,7 +127,7 @@ fn cover(bytes: &[u8]) -> usize {
     step_until(function.exit);
     have forall (k: int32) {
         0 <= k and k < ((bytes.len() as uint32) as int32) implies bytes[k] == old(bytes[k])
-    } by { intro(); intro(); close(); }
+    } by { intro() { intro() { close(); } } }
     close();
 }
 

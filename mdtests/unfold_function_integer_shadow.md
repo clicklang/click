@@ -6,7 +6,9 @@ function number(b: NumberBox) -> Integer { match b { NumberBox::Wrap(v) => v } }
 theorem shadowed_integer(d: Integer) {
     requires d == 0;
     ensures forall (d: Integer) { number(NumberBox::Wrap(d)) == d } by {
-        intro(); unfold(number(NumberBox::Wrap(d))); close();
+        intro() {
+            unfold(number(NumberBox::Wrap(d))); close();
+        }
     }
 }
 ```

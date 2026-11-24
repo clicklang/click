@@ -52,7 +52,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             || self.proof.focused_outcome_data().is_some()
         {
             let step = ProofStep::ApplyTheorem(application.clone());
-            return self.observe_step(step, |_| {
+            return self.observe_step(step, false, |_| {
                 self.apply_prepared_theorem(application, !implicit_solve_disabled())
             });
         }
