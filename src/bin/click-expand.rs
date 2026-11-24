@@ -979,13 +979,24 @@ int32 identity(int32 x) {
             written.contains("Selected proof still contains normalize()"),
             "{written}"
         );
-        let generated = check(&fixture, "divide_two.ensures_0").unwrap_err();
+        check(&fixture, "divide_two.ensures_0").unwrap();
+
+        let directory = tempfile::tempdir().unwrap();
+        let negative_divisor = directory.path().join("negative_divisor.click");
+        fs::write(
+            &negative_divisor,
+            "theorem negative_divisor_bound(x: float) {\n\
+                requires x >= float32_from_bits(0xc1200000);\n\
+                ensures x / float32_from_bits(0xc0000000) <= float32_from_bits(0x40a00000) by close();\n\
+            }\n",
+        )
+        .unwrap();
+        let generated = check(&negative_divisor, "negative_divisor_bound.ensures_0").unwrap_err();
         assert!(
             generated.contains("Expanded proof still contains normalize()"),
             "{generated}"
         );
 
-        let directory = tempfile::tempdir().unwrap();
         let hidden = directory.path().join("mirror.click");
         fs::write(
             &hidden,

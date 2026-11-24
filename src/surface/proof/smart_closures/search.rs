@@ -4147,9 +4147,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_float_scale_bound");
-        use crate::kernel::proof::arithmetic_special::float_scale_bound_weakening;
-        let Some((plan, factor, literal_on_left)) = float_scale_bound_weakening(source, goal)
-        else {
+        use crate::kernel::proof::arithmetic_special::{
+            FloatScaleOperation, float_scale_bound_weakening,
+        };
+        let Some((plan, factor, scale)) = float_scale_bound_weakening(source, goal) else {
             return Ok(None);
         };
         let source_order = surface_comparison_with_anchored_operands(source_surface);
@@ -4179,11 +4180,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             operator: ComparisonOperator::LessThan,
             right: factor.clone(),
         };
-        let name = match (literal_on_left, plan.lower) {
-            (true, true) => "float32_scale_lower",
-            (true, false) => "float32_scale_upper",
-            (false, true) => "float32_scale_right_lower",
-            (false, false) => "float32_scale_right_upper",
+        use FloatScaleOperation::{Divide, MultiplyLeft, MultiplyRight};
+        let name = match (scale, plan.lower) {
+            (MultiplyLeft, true) => "float32_scale_lower",
+            (MultiplyLeft, false) => "float32_scale_upper",
+            (MultiplyRight, true) => "float32_scale_right_lower",
+            (MultiplyRight, false) => "float32_scale_right_upper",
+            (Divide, true) => "float32_divide_positive_lower",
+            (Divide, false) => "float32_divide_positive_upper",
         };
         let application = ProofStep::ApplyPlannedTheorem {
             application: TheoremApplication {
