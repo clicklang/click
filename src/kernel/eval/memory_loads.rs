@@ -5048,26 +5048,8 @@ fn common_float_conversion_mentions_load(root: &KernelTerm) -> bool {
             KernelTermNode::FloatRead(_)
             | KernelTermNode::MemoryLoad { .. }
             | KernelTermNode::FloatCall(_) => return true,
-            KernelTermNode::Legacy(value) => {
-                let crate::kernel::PureFunctionArgument::Value(value) = value.value() else {
-                    unreachable!("numeric conversion operand");
-                };
-                let native = match value {
-                    ProgramValue::Int8(value)
-                    | ProgramValue::UInt8(value)
-                    | ProgramValue::Int16(value)
-                    | ProgramValue::UInt16(value)
-                    | ProgramValue::Int32(value)
-                    | ProgramValue::UInt32(value)
-                    | ProgramValue::Int64(value)
-                    | ProgramValue::UInt64(value)
-                    | ProgramValue::Int128(value)
-                    | ProgramValue::UInt128(value)
-                    | ProgramValue::Float32(value)
-                    | ProgramValue::Float64(value) => value,
-                    _ => unreachable!("numeric conversion operand"),
-                };
-                if term_mentions_a_memory_load(native) {
+            KernelTermNode::ImportedScalar(input) => {
+                if term_mentions_a_memory_load(input.value()) {
                     return true;
                 }
             }

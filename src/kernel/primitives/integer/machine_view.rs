@@ -53,7 +53,6 @@ pub(crate) fn shared_machine_syntax_variables(
                 | KernelTermNode::IntegerToMachine { .. }
                 | KernelTermNode::FloatConvert { .. }
                 | KernelTermNode::BoolCast { .. }
-                | KernelTermNode::Legacy(_)
                 | KernelTermNode::MachineObservationInput { .. }
                 | KernelTermNode::WrittenMachine(_)
                 | KernelTermNode::IntegerAddress { .. }
@@ -127,7 +126,6 @@ pub(crate) fn shared_machine_conversion_leaves(
                 KernelTermNode::IntegerToMachine { .. }
                     | KernelTermNode::FloatConvert { .. }
                     | KernelTermNode::BoolCast { .. }
-                    | KernelTermNode::Legacy(_)
                     | KernelTermNode::MachineObservationInput { .. }
                     | KernelTermNode::WrittenMachine(_)
                     | KernelTermNode::IntegerAddress { .. }
@@ -523,11 +521,6 @@ impl<'a> MachineOperandView<'a> {
                 let KernelTermNode::Match(matched) = root.node() else {
                     return None;
                 };
-                if let KernelTermNode::Legacy(value) = matched.arguments[0].node()
-                    && let PureFunctionArgument::Algebraic(value) = value.value()
-                {
-                    return Some(Cow::Borrowed(value));
-                }
                 let PureFunctionArgument::Algebraic(value) = KernelTermExport::default()
                     .argument(&matched.arguments[0])
                     .ok()?
@@ -711,8 +704,7 @@ impl<'a> MachineOperandView<'a> {
         match self {
             Self::Shared(root) => match root.node() {
                 KernelTermNode::MemoryLoad { kind, .. } => Some(*kind),
-                KernelTermNode::Legacy(_)
-                | KernelTermNode::MachineObservationInput { .. }
+                KernelTermNode::MachineObservationInput { .. }
                 | KernelTermNode::WrittenMachine(_) => {
                     Self::Legacy(self.retained_native_input()?).read_kind()
                 }

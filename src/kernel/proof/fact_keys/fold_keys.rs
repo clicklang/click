@@ -134,7 +134,6 @@ pub(super) fn integer_operand_key(
 struct RetainedIntegerKey {
     nodes: Vec<AlphaIntegerNode>,
     retained: HashMap<(u64, u64, u64), usize>,
-    native: HashMap<(u64, u64, u64), usize>,
     argument_export: KernelTermExport,
     unchanged_in_comparisons: bool,
 }
@@ -234,20 +233,6 @@ impl RetainedIntegerKey {
                 name: name.clone(),
                 arguments: self.arguments(arguments, bindings, next_binder)?,
             },
-            Node::Legacy(value) => {
-                let PureFunctionArgument::Integer(value) = value.value() else {
-                    return None;
-                };
-                let index = alpha_integer_node(
-                    value,
-                    bindings,
-                    &mut self.native,
-                    &mut self.nodes,
-                    next_binder,
-                )?;
-                self.retained.insert(key, index);
-                return Some(index);
-            }
             // The native alpha key refuses algebraic matches too.
             _ => return None,
         };

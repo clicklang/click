@@ -111,11 +111,6 @@ fn exact_index(value: &KernelTerm) -> Option<SharedMachineIntegerTerm> {
         return None;
     };
     let format = MachineIntegerType::from_program_type(*ty)?;
-    if matches!(value.node(), crate::kernel::KernelTermNode::Legacy(_))
-        && let Some(native) = value.machine_conversion_leaf()
-    {
-        return Some(SharedMachineIntegerTerm::index(format, native.clone()));
-    }
     SharedMachineIntegerTerm::from_shared(format, value.clone())
 }
 

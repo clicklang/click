@@ -1961,7 +1961,6 @@ impl EqualityGraph {
                             pending.push(Work::SharedMachine(word));
                         }
                         N::IntegerToMachine { .. }
-                        | N::Legacy(_)
                         | N::MachineObservationInput { .. }
                         | N::WrittenMachine(_)
                         | N::Call { .. }

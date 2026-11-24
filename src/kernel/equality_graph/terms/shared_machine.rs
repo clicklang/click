@@ -503,7 +503,6 @@ impl TermClasses {
                 | N::IntegerToMachine { .. }
                 | N::BoolCast { .. }
                 | N::IntegerAddress { .. }
-                | N::Legacy(_)
                 | N::MachineObservationInput { .. }
                 | N::WrittenMachine(_)
                 | N::Call { .. } => self.intern_typed_machine(

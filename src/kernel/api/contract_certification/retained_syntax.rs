@@ -10,6 +10,52 @@ mod pointers;
 enum CallArgument<'a> {
     Native(&'a A),
     Shared(&'a KernelTerm),
+    Scalar(ProgramType, &'a MachineTerm),
+}
+
+impl<'a> CallArgument<'a> {
+    fn retained(self) -> Self {
+        let Self::Shared(root) = self else {
+            return self;
+        };
+        match root.node() {
+            N::ObservedPointer(value) => Self::Shared(value.source()).retained(),
+            N::ImportedScalar(input) => Self::Scalar(input.carrier(), input.value()),
+            _ => root.written_argument().map_or(self, Self::Native),
+        }
+    }
+
+    fn scalar_operand(self) -> Option<(ProgramType, Operand<'a>)> {
+        match self {
+            Self::Scalar(ty, word) => Some((ty, Operand::Legacy(word))),
+            Self::Native(A::Value(value)) => {
+                Some((value.program_type(), Operand::Legacy(scalar(value)?)))
+            }
+            Self::Native(A::SharedMachine(value)) => {
+                Some((value.ty().program_type(), value.operand_view()))
+            }
+            Self::Shared(root) => match root.ty() {
+                KernelType::Program(ty)
+                    if MachineIntegerType::from_program_type(*ty).is_some()
+                        || crate::kernel::KernelFloatType::from_program_type(*ty).is_some() =>
+                {
+                    Some((*ty, Operand::Shared(root)))
+                }
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+}
+
+fn scalar(value: &ProgramValue) -> Option<&MachineTerm> {
+    match value {
+        crate::kernel::integer_c_value!(term)
+        | ProgramValue::Bool(term)
+        | ProgramValue::Float32(term)
+        | ProgramValue::Float64(term) => Some(term),
+        _ => None,
+    }
 }
 
 #[derive(Default)]
@@ -311,27 +357,8 @@ impl Comparison {
     }
 
     fn call_argument(&mut self, left: CallArgument<'_>, right: CallArgument<'_>) -> bool {
-        use CallArgument::{Native, Shared};
-        if let Shared(root) = left
-            && let N::ObservedPointer(value) = root.node()
-        {
-            return self.call_argument(Shared(value.source()), right);
-        }
-        if let Shared(root) = right
-            && let N::ObservedPointer(value) = root.node()
-        {
-            return self.call_argument(left, Shared(value.source()));
-        }
-        if let Shared(root) = left
-            && let Some(value) = root.written_argument()
-        {
-            return self.call_argument(Native(value), right);
-        }
-        if let Shared(root) = right
-            && let Some(value) = root.written_argument()
-        {
-            return self.call_argument(left, Native(value));
-        }
+        use CallArgument::{Native, Scalar, Shared};
+        let (left, right) = (left.retained(), right.retained());
         // Only literals and raw C Boolean variables have an admitted word
         // reading here. Other logical roots become native BoolCast syntax,
         // which this route refuses; do not export their condition to refuse it.
@@ -344,7 +371,7 @@ impl Comparison {
             let Some(word) = boolean_argument_word(root) else {
                 return false;
             };
-            return self.call_argument(Native(&A::Value(ProgramValue::Bool(word))), right);
+            return self.call_argument(Scalar(ProgramType::Bool, &word), right);
         }
         if let Shared(root) = right
             && matches!(
@@ -355,12 +382,20 @@ impl Comparison {
             let Some(word) = boolean_argument_word(root) else {
                 return false;
             };
-            return self.call_argument(left, Native(&A::Value(ProgramValue::Bool(word))));
+            return self.call_argument(left, Scalar(ProgramType::Bool, &word));
         }
         if let Some(equal) = self.pointer_arguments(left, right) {
             return equal;
         }
         match (left, right) {
+            (Scalar(..), _) | (_, Scalar(..)) => {
+                let (Some((a_type, a)), Some((b_type, b))) =
+                    (left.scalar_operand(), right.scalar_operand())
+                else {
+                    return false;
+                };
+                a_type == b_type && self.machine(a, b)
+            }
             (Native(a), Native(b)) => self.argument(a, b),
             (Shared(a), Shared(b)) if matches!(a.ty(), KernelType::Algebraic(_)) => {
                 self.common_algebraic(a, b)
@@ -448,15 +483,6 @@ impl Comparison {
     }
 
     fn argument(&mut self, left: &A, right: &A) -> bool {
-        fn scalar(value: &ProgramValue) -> Option<&MachineTerm> {
-            match value {
-                crate::kernel::integer_c_value!(term) => Some(term),
-                ProgramValue::Bool(term)
-                | ProgramValue::Float32(term)
-                | ProgramValue::Float64(term) => Some(term),
-                _ => None,
-            }
-        }
         match (left, right) {
             (A::SharedMachine(a), A::SharedMachine(b)) => {
                 a.ty() == b.ty() && self.machine(a.operand_view(), b.operand_view())
@@ -568,6 +594,28 @@ fn numeric_conversion(view: Operand<'_>) -> Option<((ProgramType, ProgramType), 
 mod tests {
     use super::*;
     use crate::kernel::{KernelTermExport, VerificationSession};
+
+    #[test]
+    fn imported_scalar_call_arguments_compare_through_borrowed_carriers() {
+        let _session = VerificationSession::enter();
+        let word = |bits| {
+            A::Value(ProgramValue::Bool(MachineTerm::Constant {
+                format: MachineIntegerType::UInt8,
+                bits,
+            }))
+        };
+        let native = word(2);
+        let imported = crate::kernel::KernelTermImport::default().argument(&native);
+        let same = crate::kernel::KernelTermImport::default().argument(&native);
+        let different = word(3);
+        let retained = CallArgument::Shared(&imported);
+        let compare = |a, b| Comparison::default().call_argument(a, b);
+        assert!(compare(retained, CallArgument::Shared(&same)));
+        assert!(compare(CallArgument::Native(&native), retained));
+        assert!(!compare(retained, CallArgument::Native(&different)));
+        assert!(!imported.has_cached_native_argument());
+        assert!(!same.has_cached_native_argument());
+    }
 
     #[test]
     fn shared_pointer_certification_preserves_complete_metadata_and_bounds_admission() {

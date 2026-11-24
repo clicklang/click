@@ -100,7 +100,6 @@ impl TermRewrite<'_> {
         // Inspect the selected common constructor before the compatibility
         // boundary for typed replacement fields. Symbolic roots have no iota
         // reduction and do not need a native expression tree to say so.
-        let native;
         let common_fields;
         let (algebraic_type, variant, fields) = match scrutinee.node() {
             KernelTermNode::Constructor(constructor) => {
@@ -110,17 +109,6 @@ impl TermRewrite<'_> {
                     &constructor.variant,
                     common_fields.as_slice(),
                 )
-            }
-            KernelTermNode::Legacy(value) => {
-                let PureFunctionArgument::Algebraic(value) = value.value() else {
-                    return None;
-                };
-                native = value;
-                let fields = native.checked_constructor_fields()?;
-                let AlgebraicTermNode::Constructor { variant, .. } = &native.node else {
-                    return None;
-                };
-                (&native.algebraic_type, variant, fields)
             }
             _ => return None,
         };
@@ -287,12 +275,6 @@ impl TermRewrite<'_> {
                         self.visit();
                         !self.checked_work_exhausted()
                     })? {
-                        return Some(false);
-                    }
-                }
-                (KernelTermNode::Legacy(value), _) => {
-                    if !matches!(value.value(), PureFunctionArgument::Algebraic(value) if value == source)
-                    {
                         return Some(false);
                     }
                 }

@@ -3121,11 +3121,13 @@ fn literal_completion_key(outcome: &FunctionOutcome) -> Option<(bool, ProgramVal
                 MachineIntegerType::from_program_type(value.program_type())?
                     .value_from_term(literal.legacy_term()),
             )),
-            KernelTermNode::Legacy(payload) => {
-                let PureFunctionArgument::Value(native) = payload.value() else {
-                    return None;
-                };
-                native_literal_completion_key(exceptional, native)
+            KernelTermNode::ImportedScalar(input)
+                if matches!(input.value(), MachineTerm::Constant { .. }) =>
+            {
+                native_literal_completion_key(exceptional, root.program_value_native_compat()?)
+            }
+            KernelTermNode::NativeDescriptor(_) | KernelTermNode::ObservedArgument(_) => {
+                native_literal_completion_key(exceptional, root.program_value_native_compat()?)
             }
             _ => None,
         };

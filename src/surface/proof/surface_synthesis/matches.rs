@@ -115,12 +115,8 @@ fn shared_declaration_variable(term: &KernelTerm) -> Option<(BindingCarrier, Var
             };
             *variable
         }
-        // Legacy carriers are already stored descriptors; borrow the declaration
-        // reader without exporting a common tree or cloning its payload.
-        N::Legacy(value) => {
-            let crate::kernel::PureFunctionArgument::Value(value) = value.value() else {
-                return None;
-            };
+        N::ImportedScalar(_) | N::NativeDescriptor(_) | N::ObservedArgument(_) => {
+            let value = term.program_value_native_compat()?;
             crate::kernel::proof::term_rewrite::program_declaration_variable(value)?
         }
         _ => return None,

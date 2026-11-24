@@ -16,6 +16,14 @@ pub(super) fn clear() {
 // are numeric observation leaves here, without changing the producer's node
 // or admitting arbitrary legacy payloads into the machine operand API.
 fn machine_payload(term: &KernelTerm) -> Option<&MachineTerm> {
+    if let KernelTermNode::ImportedScalar(input) = term.node() {
+        return match term.ty() {
+            KernelType::Program(ty) if MachineIntegerType::from_program_type(*ty).is_some() => {
+                Some(input.value())
+            }
+            _ => None,
+        };
+    }
     if let Some(PureFunctionArgument::Value(value)) = term.written_argument() {
         return match value {
             ProgramValue::Int8(value)
@@ -61,7 +69,7 @@ pub(in crate::kernel::primitives) fn normalize(root: &KernelTerm) -> KernelTerm 
                 _ => MachineIntegerType::UInt8,
             };
             if !finish
-                && matches!(term.node(), KernelTermNode::Legacy(_) | KernelTermNode::CallArgument(_) | KernelTermNode::MachineObservationInput { .. } | KernelTermNode::WrittenMachine(_))
+                && matches!(term.node(), KernelTermNode::CallArgument(_) | KernelTermNode::ImportedScalar(_) | KernelTermNode::MachineObservationInput { .. } | KernelTermNode::WrittenMachine(_))
                 && machine_payload(&term).is_some()
             {
                 let value = machine_payload(&term).expect("retained machine leaf");
@@ -142,8 +150,8 @@ pub(in crate::kernel::primitives) fn normalize(root: &KernelTerm) -> KernelTerm 
                 }
                 .into_term()
                 .with_machine_observation_type(format),
-                KernelTermNode::Legacy(_)
-                | KernelTermNode::CallArgument(_)
+                KernelTermNode::CallArgument(_)
+                | KernelTermNode::ImportedScalar(_)
                 | KernelTermNode::MachineObservationInput { .. } | KernelTermNode::WrittenMachine(_)
                 | KernelTermNode::Call { .. }
                 | KernelTermNode::IntegerAddress { .. }
@@ -156,7 +164,8 @@ pub(in crate::kernel::primitives) fn normalize(root: &KernelTerm) -> KernelTerm 
                     ));
                     KernelTerm::machine_observation_leaf(format, identity)
                 }
-                KernelTermNode::Legacy(_) | KernelTermNode::CallArgument(_) => {
+                KernelTermNode::ImportedScalar(input) => term.observe_imported_scalar(input),
+                KernelTermNode::NativeDescriptor(_) | KernelTermNode::CallArgument(_) => {
                     KernelTerm::observe_written_argument(&term)
                 }
                 KernelTermNode::Pointer(_)
