@@ -4089,7 +4089,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_float_scale_bound");
         use crate::kernel::proof::arithmetic_special::float_scale_bound_weakening;
-        let Some((plan, factor, literal_on_left)) = float_scale_bound_weakening(source, goal) else {
+        let Some((plan, factor, literal_on_left)) = float_scale_bound_weakening(source, goal)
+        else {
             return Ok(None);
         };
         let source_order = surface_comparison_with_anchored_operands(source_surface);
