@@ -142,6 +142,11 @@ pub enum ProofStep {
         target: ClickProposition,
         premises: Vec<ClickProposition>,
     },
+    CompatibilityFactTransport {
+        source: ClickProposition,
+        target: ClickProposition,
+        premises: Vec<ClickProposition>,
+    },
     /// Substitute consecutive universal binders, preserving the residual body and guards.
     Instantiate {
         quantified: ClickProposition,
@@ -820,6 +825,15 @@ impl ProofStep {
                 target: target.clone(),
                 premises: premises.clone(),
             },
+            ProofTactic::CompatibilityFactTransport {
+                source,
+                target,
+                premises,
+            } => Self::CompatibilityFactTransport {
+                source: source.clone(),
+                target: target.clone(),
+                premises: premises.clone(),
+            },
             ProofTactic::Instantiate {
                 quantified,
                 arguments,
@@ -1012,6 +1026,15 @@ impl ProofStep {
                 target,
                 premises,
             } => ProofTactic::TransportUsing {
+                source: source.clone(),
+                target: target.clone(),
+                premises: premises.clone(),
+            },
+            Self::CompatibilityFactTransport {
+                source,
+                target,
+                premises,
+            } => ProofTactic::CompatibilityFactTransport {
                 source: source.clone(),
                 target: target.clone(),
                 premises: premises.clone(),
@@ -1257,7 +1280,9 @@ pub(super) fn certificate_step_class(step: &ProofStep) -> TacticClass {
         ProofStep::Enumerate => TacticClass::Simple(SimpleTactic::Enumerate),
         ProofStep::Contradiction(_) => TacticClass::Simple(SimpleTactic::Contradiction),
         ProofStep::Rewrite(_) => TacticClass::Simple(SimpleTactic::Rewrite),
-        ProofStep::TransportUsing { .. } => TacticClass::Simple(SimpleTactic::FactTransport),
+        ProofStep::TransportUsing { .. } | ProofStep::CompatibilityFactTransport { .. } => {
+            TacticClass::Simple(SimpleTactic::FactTransport)
+        }
         ProofStep::Instantiate { .. } => TacticClass::Simple(SimpleTactic::Instantiate),
         ProofStep::CloseInvariantsBy(_) => TacticClass::Control(ControlTactic::CloseInvariants),
         ProofStep::StepProved { .. } => TacticClass::Control(ControlTactic::StepProofs),
