@@ -4129,6 +4129,47 @@ fn charon_vec_values_read_as_the_library_vec() {
     }
 }
 
+const STR_VIEWS_SIDECAR: &str = include_str!("fixtures/rust-verification/str-views/strs.click");
+
+// A `&str` is a shared slice of its UTF-8 bytes: `s.len()` and
+// `s.is_empty()` call the library's `str::len` and `str::is_empty`, whose
+// contracts are reported as assumptions. A claim about a length the calls do
+// not give fails.
+#[test]
+fn charon_str_views_read_as_byte_slices() {
+    let p = Project::from_fixture("tests/fixtures/rust-verification/str-views");
+    fs::write(p.root.join("borrow.click"), STR_VIEWS_SIDECAR).unwrap();
+    let prepared = p.prepared().unwrap();
+    ProgramVerificationSession::new_program_prepared(STR_VIEWS_SIDECAR, &prepared)
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    for (before, after, expected) in [
+        (
+            "    ensures result == s.len();",
+            "    ensures result == s.len() + 1;",
+            "str_views::byte_len",
+        ),
+        (
+            "    ensures result == (s.len() == 0u64);",
+            "    ensures result == (s.len() != 0u64);",
+            "str_views::blank",
+        ),
+        (
+            "    ensures result == (a.len() > b.len());",
+            "    ensures result == (a.len() >= b.len());",
+            "str_views::longer",
+        ),
+    ] {
+        assert!(STR_VIEWS_SIDECAR.contains(before), "{before}");
+        let invalid = STR_VIEWS_SIDECAR.replacen(before, after, 1);
+        let error = verify_rust_proof_after(&invalid, &prepared, &format!("fn {expected}"))
+            .expect_err("a claim the string slice program does not meet must fail");
+        assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
+        let rendered = format!("{error:?} {error}");
+        let rendered = click::languages::rust::names::display_rust_names(&rendered);
+        assert!(rendered.contains(expected), "{rendered}");
+    }
+}
+
 const OPTION_TAKE_SIDECAR: &str = include_str!("../design/charon-trial/option-take/take.click");
 
 // `o.take()` moves the option out and leaves `None`, for an option of a box,

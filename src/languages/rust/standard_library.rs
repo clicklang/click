@@ -105,6 +105,35 @@ fn integer_contract(name: &str) -> Option<&'static str> {
     INTEGER_LIBRARY.lines().find(|line| line.starts_with(&head))
 }
 
+/// The Click library file that states the `str` core methods, one
+/// single-line `fn` per method, `str::len`.
+const STR_LIBRARY: &str = include_str!("../../../library/rust/str.interface.click");
+
+/// The `str` core methods [`STR_LIBRARY`] states, with each one's result.
+const STR_METHODS: &[(&str, super::schema::Type)] = &[
+    ("len", super::schema::Type::Usize),
+    ("is_empty", super::schema::Type::Bool),
+];
+
+/// The result type of the `str` core method `method`, when the library
+/// states it.
+pub(super) fn str_method_result(method: &str) -> Option<super::schema::Type> {
+    STR_METHODS
+        .iter()
+        .find(|(name, _)| *name == method)
+        .map(|(_, result)| result.clone())
+}
+
+/// The library contract of the `str` core method whose importer name is
+/// `name`, `str::len`: its `fn` line in [`STR_LIBRARY`].
+fn str_contract(name: &str) -> Option<&'static str> {
+    let (method, _) = STR_METHODS
+        .iter()
+        .find(|(method, _)| super::names::qualified_name(["str", method]) == name)?;
+    let head = format!("fn str::{method}(");
+    STR_LIBRARY.lines().find(|line| line.starts_with(&head))
+}
+
 /// The library generic function the core method `function` is an instance
 /// of, by importer name, with the library file stating it.
 fn library_function(function: &super::schema::Function) -> Option<(String, &'static str)> {
@@ -171,6 +200,7 @@ pub(super) fn contracts(export: &RustExport) -> (String, BTreeSet<String>) {
         }
         // An integer method's contract is its line of the library's.
         let contract = integer_contract(&function.name)
+            .or_else(|| str_contract(&function.name))
             .unwrap_or_else(|| panic!("core method `{specification}` has no library contract"));
         source.push('\n');
         source.push_str(contract);
