@@ -19,9 +19,8 @@ int64 FeeFrac::EvaluateFee<@INSTANCE@>(int32 at_size) const {
 } by {
     have 1 <= this->size by { solve() using { this->size > 0; } }
     have -2147483648 <= to_integer(at_size) by { solve() using { 0 <= to_integer(at_size); } }
-    step(); step(); step(); step();
-    let { result: denominator } = step();
-    step();
+    step_until(call(0).entry);
+    mark denominator;
     let { result: product } = step(FeeFrac::Mul, { });
     have @PRODUCT_BOUND_1@ by {
         rewrite(to_integer(product), to_integer(this->fee) * to_integer(at_size));
@@ -31,23 +30,23 @@ int64 FeeFrac::EvaluateFee<@INSTANCE@>(int32 at_size) const {
         rewrite(to_integer(product), to_integer(this->fee) * to_integer(at_size));
         known();
     }
-    step_until(call(1));
+    step_until(call(1).entry);
     let { result: rounded } = step(FeeFrac::Div, { });
     step_until(function.exit);
     have @DIV_BOUND_1@;
     have @DIV_BOUND_2@;
     have to_integer(result) == to_integer(rounded);
     have to_integer(this->fee) * to_integer(at_size) == to_integer(product);
-    have to_integer(this->size) == to_integer(denominator);
+    have to_integer(this->size) == to_integer(at(denominator, this->size));
     have @CALLER_BOUND_1@ by {
         rewrite(to_integer(result), to_integer(rounded));
-        rewrite(to_integer(this->size), to_integer(denominator));
+        rewrite(to_integer(this->size), to_integer(at(denominator, this->size)));
         rewrite(to_integer(this->fee) * to_integer(at_size), to_integer(product));
         known();
     }
     have @CALLER_BOUND_2@ by {
         rewrite(to_integer(result), to_integer(rounded));
-        rewrite(to_integer(this->size), to_integer(denominator));
+        rewrite(to_integer(this->size), to_integer(at(denominator, this->size)));
         rewrite(to_integer(this->fee) * to_integer(at_size), to_integer(product));
         known();
     }
