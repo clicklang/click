@@ -119,16 +119,17 @@ fn imported_scalar_fold_dependencies_use_the_written_carrier_and_read_point() {
     let _session = crate::kernel::VerificationSession::enter();
     let current = SymbolicMemory::new();
     let address = Address::symbolic(Variable(972020));
-    let later = current
-        .clone()
-        .store(address.clone(), ProgramValue::Int8(MachineTerm::constant(1)));
+    let later = current.clone().store(
+        address.clone(),
+        ProgramValue::Int8(MachineTerm::constant(1)),
+    );
     let read = MachineTerm::read_named(
         ProgramPoint::at(&crate::kernel::intern_memory_ref(&current)),
         Box::new(address.clone()),
         LoadKind::Int8,
     );
-    let root =
-        KernelTermImport::default().argument(&PureFunctionArgument::Value(ProgramValue::Bool(read)));
+    let root = KernelTermImport::default()
+        .argument(&PureFunctionArgument::Value(ProgramValue::Bool(read)));
     assert!(matches!(root.node(), KernelTermNode::ImportedScalar(_)));
     let exports = KernelTermExport::machine_export_count();
     for size in [16, 64, 256] {

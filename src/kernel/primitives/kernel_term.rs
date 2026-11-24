@@ -250,7 +250,7 @@ pub enum KernelTermNode {
     ObservedArgument(KernelObservedArgument),
 }
 
-/// A supplied scalar whose carrier is determined by the root's checked type.
+/// A supplied scalar with its original carrier and producer identity.
 #[derive(Clone, Debug)]
 pub struct KernelImportedScalar {
     carrier: ProgramType,
@@ -1744,20 +1744,6 @@ impl KernelTerm {
         }
     }
 
-    /// Native carriers needed when an exact written call is checked or emitted.
-    pub(in crate::kernel) fn exact_argument_input(&self) -> Option<&PureFunctionArgument> {
-        self.written_argument().or_else(|| {
-            let KernelTermNode::ImportedScalar(input) = self.node() else {
-                return None;
-            };
-            Some(self.0.argument_leaf.get_or_init(|| {
-                Box::new(PureFunctionArgument::Value(
-                    Self::imported_scalar_as_native(input),
-                ))
-            }))
-        })
-    }
-
     fn native_argument_type(argument: &PureFunctionArgument) -> KernelType {
         match argument {
             PureFunctionArgument::Integer(_) => KernelType::Integer,
@@ -1800,6 +1786,9 @@ impl KernelTermImport {
     pub(crate) fn argument(&mut self, argument: &PureFunctionArgument) -> KernelTerm {
         if let Some(root) = self.structural_argument(argument) {
             return root;
+        }
+        if let PureFunctionArgument::Value(ProgramValue::Bool(word)) = argument {
+            return KernelTerm::imported_scalar(ProgramType::Bool, word);
         }
         let descriptor = match argument {
             PureFunctionArgument::Value(ProgramValue::Void | ProgramValue::PointerInteger(_))
@@ -1846,7 +1835,7 @@ impl KernelTermImport {
                     }
                     // Other C-word carriers retain their original width and
                     // bits. Importing an argument must not normalize its truth.
-                    _ => KernelTerm::imported_scalar(ProgramType::Bool, word),
+                    _ => return None,
                 },
                 ProgramValue::Parameter(value) => {
                     KernelTerm::program_parameter(self.algebraic(value))

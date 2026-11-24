@@ -47,7 +47,8 @@ impl KernelTerm {
                 .map(|argument| {
                     if let KernelType::Program(ty) = argument.ty()
                         && let Some(format) = MachineIntegerType::from_program_type(*ty)
-                        && argument.exact_argument_input().is_none()
+                        && !argument.requires_native_argument_input()
+                        && argument.written_argument().is_none()
                     {
                         PureFunctionArgument::SharedMachine(
                             MachineOperandView::Shared(argument).retain(format),
