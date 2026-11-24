@@ -27058,16 +27058,23 @@ fn indexed_read_comparisons_expand_with_preservation() {
             owns p[0..8];
             requires 0 <= i and i < 8 and 0 <= j and j < 8;
             requires i != j;
-            requires p[i] COMPARISON limit;
-            ensures p[i] COMPARISON limit;
+            requires OBSERVATION COMPARISON limit;
+            ensures OBSERVATION COMPARISON limit;
         } by {
             step();
-            have p[i] COMPARISON limit by { solve(); }
+            have OBSERVATION COMPARISON limit by { solve(); }
         }
     "#;
     let sources = [("read_order.c", c_source)];
-    for operator in ["<", "==", "!="] {
-        let source = source.replace("COMPARISON", operator);
+    for (observation, operator) in [
+        ("p[i]", "<"),
+        ("p[i]", "=="),
+        ("p[i]", "!="),
+        ("(p[i] & 2)", "<"),
+    ] {
+        let source = source
+            .replace("OBSERVATION", observation)
+            .replace("COMPARISON", operator);
         let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
         assert!(
             expanded.contains("preserve(memory(p[i]), region(0))"),
