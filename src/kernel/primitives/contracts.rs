@@ -104,6 +104,47 @@ impl ProgramParameter {
 }
 
 impl Global {
+    pub(crate) fn supports_type(program_type: ProgramType) -> bool {
+        matches!(
+            program_type,
+            ProgramType::Bool
+                | ProgramType::Int8
+                | ProgramType::Int16
+                | ProgramType::Int32
+                | ProgramType::UInt8
+                | ProgramType::UInt16
+                | ProgramType::UInt32
+                | ProgramType::Int64
+                | ProgramType::UInt64
+                | ProgramType::Float32
+                | ProgramType::Float64
+                | ProgramType::Int8Pointer
+                | ProgramType::Int16Pointer
+                | ProgramType::UInt16Pointer
+                | ProgramType::Int32Pointer
+                | ProgramType::UInt8Pointer
+                | ProgramType::UInt32Pointer
+                | ProgramType::Int128Pointer
+                | ProgramType::Int64Pointer
+                | ProgramType::UInt128Pointer
+                | ProgramType::UInt64Pointer
+                | ProgramType::Float32Pointer
+                | ProgramType::Float64Pointer
+                | ProgramType::Int8PointerPointer
+                | ProgramType::Int16PointerPointer
+                | ProgramType::UInt16PointerPointer
+                | ProgramType::Int32PointerPointer
+                | ProgramType::UInt8PointerPointer
+                | ProgramType::UInt32PointerPointer
+                | ProgramType::Int128PointerPointer
+                | ProgramType::Int64PointerPointer
+                | ProgramType::UInt128PointerPointer
+                | ProgramType::UInt64PointerPointer
+                | ProgramType::Float32PointerPointer
+                | ProgramType::Float64PointerPointer
+        )
+    }
+
     pub fn new(
         name: impl Into<String>,
         program_type: ProgramType,
@@ -120,44 +161,7 @@ impl Global {
         initial_value: ProgramValue,
     ) -> Self {
         assert!(
-            matches!(
-                program_type,
-                ProgramType::Bool
-                    | ProgramType::Int8
-                    | ProgramType::Int16
-                    | ProgramType::Int32
-                    | ProgramType::UInt8
-                    | ProgramType::UInt16
-                    | ProgramType::UInt32
-                    | ProgramType::Int64
-                    | ProgramType::UInt64
-                    | ProgramType::Float32
-                    | ProgramType::Float64
-                    | ProgramType::Int8Pointer
-                    | ProgramType::Int16Pointer
-                    | ProgramType::UInt16Pointer
-                    | ProgramType::Int32Pointer
-                    | ProgramType::UInt8Pointer
-                    | ProgramType::UInt32Pointer
-                    | ProgramType::Int128Pointer
-                    | ProgramType::Int64Pointer
-                    | ProgramType::UInt128Pointer
-                    | ProgramType::UInt64Pointer
-                    | ProgramType::Float32Pointer
-                    | ProgramType::Float64Pointer
-                    | ProgramType::Int8PointerPointer
-                    | ProgramType::Int16PointerPointer
-                    | ProgramType::UInt16PointerPointer
-                    | ProgramType::Int32PointerPointer
-                    | ProgramType::UInt8PointerPointer
-                    | ProgramType::UInt32PointerPointer
-                    | ProgramType::Int128PointerPointer
-                    | ProgramType::Int64PointerPointer
-                    | ProgramType::UInt128PointerPointer
-                    | ProgramType::UInt64PointerPointer
-                    | ProgramType::Float32PointerPointer
-                    | ProgramType::Float64PointerPointer
-            ),
+            Self::supports_type(program_type),
             "C globals currently support scalar integer, floating-point, and pointer types"
         );
         assert_eq!(

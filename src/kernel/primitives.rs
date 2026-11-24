@@ -315,6 +315,8 @@ pub(crate) enum Producer {
     /// quantifier or `let`, or a constructor field a proof `match` splits on.
     /// The index is how the binder raises back to Surface.
     AlgebraicBinder,
+    /// The arbitrary value stored in a linked, const C library object.
+    CLibraryValue,
 }
 
 // Hash the number before the origin, as before the fields were reordered for

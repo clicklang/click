@@ -13,6 +13,14 @@ and pure functions work as in other Click modules. Any helper theorems still
 have to be proved. A verification sidecar selects program source with
 `verifying` and can import an interface with `import "name.interface.click";`.
 
+A C interface can also declare a read-only scalar or pointer object supplied
+by the library. For example, `int32 *const table;` matches the linked C
+declaration `extern int *const table;` on the supported target. All reads
+of that object share one symbolic value. The pointer qualifier constrains
+the handle, and access to the pointee still requires the ordinary memory
+authority. A pointer's type alone gives no non-null guarantee. The linked
+object is reported as a C library assumption.
+
 ## Principles
 
 1. **Click defines the interface; the implementation is never used.** A

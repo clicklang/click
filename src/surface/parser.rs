@@ -2545,6 +2545,43 @@ impl Parser {
             .is_some_and(|origin| origin.filename.ends_with(".interface.click"))
     }
 
+    fn c_library_value_follows(&self) -> bool {
+        self.in_interface_file()
+            && self.language == SourceLanguage::C
+            && self.tokens[self.position..]
+                .iter()
+                .find(|token| matches!(token, Token::LParen | Token::Semicolon | Token::LBrace))
+                == Some(&Token::Semicolon)
+    }
+
+    fn parse_c_library_value(&mut self) -> Result<(String, CLibraryValue), ClickError> {
+        let previous = std::mem::replace(&mut self.exact_long_rank, true);
+        let ty = self.parse_type();
+        self.exact_long_rank = previous;
+        let ty = ty?;
+        let name = self.expect_c_declaration_ident("library value name")?;
+        self.expect(Token::Semicolon)?;
+        if !ty.constant {
+            return Err(
+                self.error("a C library value declaration requires a const-qualified object")
+            );
+        }
+        if (ty.struct_name.is_some() && !ty.struct_pointer)
+            || ty.reference
+            || !crate::kernel::Global::supports_type(ty.interface_type.to_kernel_type())
+        {
+            return Err(self.error("a C library value must use a supported scalar or pointer type"));
+        }
+        Ok((
+            name,
+            CLibraryValue {
+                interface_type: ty.interface_type,
+                struct_name: ty.struct_name,
+                pointee_constant: ty.pointee_constant,
+            },
+        ))
+    }
+
     fn parse_file_items(
         &mut self,
         imported_callees: &[ImportedCallee<'_>],
@@ -2553,6 +2590,7 @@ impl Parser {
         self.index_algebraic_variant_fields();
         let mut imports = Vec::new();
         let mut verifying_sources = Vec::new();
+        let mut c_library_values = BTreeMap::new();
         let mut c_target_name = None;
         let mut c_mode = None;
         let mut thread_runtime = None;
@@ -2709,6 +2747,11 @@ impl Parser {
                 self.parse_rust_impl_block(&mut function_blocks)?;
             } else if self.verifies_rust() && self.peek_ident() == Some("trait") {
                 self.parse_rust_trait_block(&mut function_blocks)?;
+            } else if self.c_library_value_follows() {
+                let (name, declaration) = self.parse_c_library_value()?;
+                if c_library_values.insert(name.clone(), declaration).is_some() {
+                    return Err(self.error(format!("duplicate C library value `{name}`")));
+                }
             } else {
                 function_blocks.push(self.parse_function_block(self.in_interface_file())?);
             }
@@ -2951,6 +2994,7 @@ impl Parser {
             imports,
             library_imports,
             verifying_sources,
+            c_library_values,
             c_target,
             thread_runtime: thread_runtime.unwrap_or_default(),
             algebraic_type_definitions,
