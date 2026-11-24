@@ -709,7 +709,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let mut scope = attempt::search_scope("direct logical closure");
         let mut budget = attempt::AttemptBudget::unbounded();
         let mut proof = search_input.clone();
-        let mut range_openings = Vec::new();
+        let mut openings = Vec::new();
         let mut closed = 'close: loop {
             if let Some(closed) = Self::try_direct_logical_leaf(&proof, &mut budget)? {
                 break 'close closed;
@@ -805,9 +805,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             };
             match attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Intro))? {
                 Some(introduced) => {
-                    if proof.opens_scoped_range(&introduced) {
-                        range_openings.push((proof, introduced.clone()));
-                    }
+                    openings.push((proof, introduced.clone()));
                     proof = introduced;
                 }
                 None => return Ok(None),
@@ -822,8 +820,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 break 'close closed;
             }
         };
-        for (parent, introduced) in range_openings.into_iter().rev() {
-            closed = parent.finish_generated_range_intro(&introduced, closed)?;
+        for (parent, introduced) in openings.into_iter().rev() {
+            closed = parent.finish_generated_intro(&introduced, closed)?;
         }
         scope.succeed();
         Ok(Some(closed))
@@ -1025,14 +1023,18 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let steps = std::iter::repeat_n(ProofStep::Intro, guards).chain([ProofStep::Instantiate {
             quantified,
             arguments: vec![ContractExpression::ProgramExpression(
-                ProgramExpression::Variable((binder).into()),
+                ProgramExpression::Variable(binder.into()),
             )],
         }]);
         let mut proof = introduced.clone();
-        for step in steps {
+        let mut openings = Vec::new();
+        for (index, step) in steps.enumerate() {
             let Some(next) = attempt::candidate_outcome(proof.driver().apply_step(step))? else {
                 return Ok(None);
             };
+            if index < guards {
+                openings.push((proof, next.clone()));
+            }
             proof = next;
         }
         if !proof.focused_discharged() {
@@ -1046,7 +1048,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if !proof.focused_discharged() {
             return Ok(None);
         }
-        let proof = search_input.finish_generated_range_intro(&introduced, proof)?;
+        for (parent, opening) in openings.into_iter().rev() {
+            proof = parent.finish_generated_intro(&opening, proof)?;
+        }
+        let proof = search_input.finish_generated_intro(&introduced, proof)?;
         scope.succeed();
         Ok(Some(proof))
     }
@@ -1200,19 +1205,26 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(Some(closed));
         }
         if matches!(search_input.goal(), Some(Proposition::Implies(_, _))) {
-            let mut introduced = search_input.clone();
-            while matches!(introduced.goal(), Some(Proposition::Implies(_, _))) {
-                let Some(next) =
-                    attempt::candidate_outcome(introduced.driver().apply_step(ProofStep::Intro))?
+            let mut frontier = search_input.clone();
+            let mut openings = Vec::new();
+            while matches!(frontier.goal(), Some(Proposition::Implies(_, _))) {
+                let Some(introduced) =
+                    attempt::candidate_outcome(frontier.driver().apply_step(ProofStep::Intro))?
                 else {
                     return Ok(None);
                 };
-                introduced = next;
+                openings.push((frontier, introduced.clone()));
+                frontier = introduced;
             }
-            return crate::kernel::search::ProofSearch::try_direct_structural_closure_inner(
-                &(introduced),
-                quantified,
-            );
+            let Some(mut closed) =
+                Self::try_direct_structural_closure_inner(&frontier, quantified)?
+            else {
+                return Ok(None);
+            };
+            for (parent, introduced) in openings.into_iter().rev() {
+                closed = parent.finish_generated_intro(&introduced, closed)?;
+            }
+            return Ok(Some(closed));
         }
         match attempt::candidate_outcome(search_input.driver().apply_step(ProofStep::Intro))? {
             Some(introduced) => {
@@ -1222,7 +1234,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         quantified,
                     )?;
                 closed
-                    .map(|closed| search_input.finish_generated_range_intro(&introduced, closed))
+                    .map(|closed| search_input.finish_generated_intro(&introduced, closed))
                     .transpose()
             }
             None => Ok(None),
@@ -7987,7 +7999,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let mut base = search_input.clone();
         let mut antecedent = surface_antecedent.clone();
         let mut available_surfaces = introduced_surfaces.to_vec();
-        loop {
+        let mut openings = Vec::new();
+        let mut closed = 'intro: loop {
             let Some(mut introduced) =
                 attempt::candidate_outcome(base.driver().apply_step(ProofStep::Intro))?
             else {
@@ -8003,7 +8016,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     &antecedent,
                 )?
             {
-                return Ok(Some(closed));
+                openings.push((base, introduced));
+                break closed;
             }
             // A selected execution path can make the antecedent false through a
             // short derivation rather than an already-indexed exact opposite.
@@ -8022,8 +8036,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         .apply_step(ProofStep::Contradiction(negated_antecedent)),
                 )?
             {
-                return Ok(Some(closed));
+                openings.push((with_opposite, with_antecedent));
+                break closed;
             }
+            openings.push((base, introduced.clone()));
             let mut conjuncts = Vec::new();
             if matches!(&antecedent, ClickProposition::And(_, _)) {
                 collect_surface_conjunct_leaves(&antecedent, &mut conjuncts);
@@ -8038,7 +8054,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 };
                 introduced = extracted;
                 if introduced.is_complete() {
-                    return Ok(Some(introduced));
+                    break 'intro introduced;
                 }
                 // Each conjunct is probed as a curried antecedent would be:
                 // `a and b implies c` closes where `a implies b implies c`
@@ -8049,7 +8065,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         conjunct,
                     )?
                 {
-                    return Ok(Some(closed));
+                    break 'intro closed;
                 }
             }
             available_surfaces.push(antecedent.clone());
@@ -8071,7 +8087,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     introduced = extracted;
                     available_surfaces.push(consequent.as_ref().clone());
                     if introduced.is_complete() {
-                        return Ok(Some(introduced));
+                        break 'intro introduced;
                     }
                     current = consequent;
                 }
@@ -8087,7 +8103,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     conjuncts.iter().cloned(),
                 ) {
                     Ok(Some(transported)) if transported.is_complete() => {
-                        return Ok(Some(transported));
+                        break transported;
                     }
                     Ok(_) => {}
                     Err(_) => check_verification_deadline()?,
@@ -8097,12 +8113,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 &(introduced),
                 &available_surfaces,
             )? {
-                return Ok(Some(split));
+                break split;
             }
             if let Some(closed) =
                 crate::kernel::search::ProofSearch::try_direct_logical_closure(&(introduced))?
             {
-                return Ok(Some(closed));
+                break closed;
             }
             if matches!(introduced.goal(), Some(Proposition::Implies(_, _)))
                 && let Some(next) = introduced
@@ -8113,11 +8129,17 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 antecedent = next;
                 continue;
             }
-            return crate::kernel::search::ProofSearch::try_solve_closure_with_surfaces(
-                &(introduced),
-                &available_surfaces,
-            );
+            let Some(closed) =
+                Self::try_solve_closure_with_surfaces(&introduced, &available_surfaces)?
+            else {
+                return Ok(None);
+            };
+            break closed;
+        };
+        for (parent, introduced) in openings.into_iter().rev() {
+            closed = parent.finish_generated_intro(&introduced, closed)?;
         }
+        Ok(Some(closed))
     }
 
     /// Compare the written descriptors with recorded separation facts. Each
@@ -8834,7 +8856,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     &introduced,
                     introduced_surfaces,
                 )?
-                .map(|closed| search_input.finish_generated_range_intro(&introduced, closed))
+                .map(|closed| search_input.finish_generated_intro(&introduced, closed))
                 .transpose()
             }
             None => Ok(None),

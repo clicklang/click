@@ -2661,8 +2661,9 @@ access in a proof; it is not parsed as the shadowed-binder qualifier.
 **Failure, checking, and tools:**
 
 A refusal names the goal's shape, such as "got a condition fact" or "got a
-conjunction". Click checks the introduction and the proof of its body. Expansion preserves
-the written block and expands any smart steps inside it.
+conjunction". Click checks the introduction and the proof of its body. Expansion preserves a written block and expands any smart steps inside it.
+When search introduces a written binder or premise and finishes its goal,
+expansion can retain that proof as an `intro` block.
 
 **Checked examples:** [`scoped_intro.md`](https://github.com/clicklang/click/blob/master/mdtests/scoped_intro.md), [`copy_n_segment_invariant.md`](https://github.com/clicklang/click/blob/master/mdtests/copy_n_segment_invariant.md), [`quantifier_intro_nested_connectives.md`](https://github.com/clicklang/click/blob/master/mdtests/quantifier_intro_nested_connectives.md), [`integer_forall_intro.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_forall_intro.md), [`an_introduced_variable_hides_a_parameter_of_its_name.md`](https://github.com/clicklang/click/blob/master/mdtests/an_introduced_variable_hides_a_parameter_of_its_name.md)
 
