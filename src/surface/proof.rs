@@ -2576,6 +2576,7 @@ fn collect_conjunctive_loadability_segments(
         | ClickProposition::ResourceViewable { .. }
         | ClickProposition::Contains { .. }
         | ClickProposition::Defined { .. }
+        | ClickProposition::IsA { .. }
         | ClickProposition::At { .. }
         | ClickProposition::Or(..)
         | ClickProposition::Not(..)
@@ -2952,6 +2953,7 @@ fn click_proposition_mentions_defined(proposition: &ClickProposition) -> bool {
         | ClickProposition::ResourceViewable { .. }
         | ClickProposition::Contains { .. }
         | ClickProposition::Loadable { .. }
+        | ClickProposition::IsA { .. }
         | ClickProposition::PredicateCall { .. } => false,
     }
 }

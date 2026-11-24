@@ -537,6 +537,14 @@ impl Printer<'_> {
                         &surface,
                     )));
                 }
+                // Type evidence about a pointer is written `is_a<T>(p)`.
+                if let (Some(spelling), [pointer]) = (
+                    crate::kernel::object_type_predicate_spelling(name),
+                    arguments.as_slice(),
+                ) {
+                    let pointer = self.term(pointer, depth)?;
+                    return Some(atom(format!("is_a<{spelling}>({})", pointer.text)));
+                }
                 if name == &format!("{}1", crate::kernel::SUBOBJECT_COVERS_PREDICATE_PREFIX)
                     && let [origin, start, end] = arguments.as_slice()
                 {

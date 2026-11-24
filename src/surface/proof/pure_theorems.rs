@@ -2999,7 +2999,8 @@ fn click_function_applications_with(
             } => {
                 expression(value, known_facts, applications);
             }
-            ClickProposition::Defined { expression: value } => {
+            ClickProposition::Defined { expression: value }
+            | ClickProposition::IsA { pointer: value, .. } => {
                 expression(value, known_facts, applications)
             }
             ClickProposition::And(left, right)

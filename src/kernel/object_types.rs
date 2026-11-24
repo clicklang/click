@@ -24,8 +24,39 @@ pub(super) fn checked_call_type_fact(
     class: &effective_type::CAccessClass,
 ) -> Proposition {
     Proposition::Predicate {
-        name: format!("object_type[{class}]"),
+        name: object_type_predicate_name(class),
         arguments: vec![Term::ProgramValue((value.clone()).into())],
+    }
+}
+
+/// The predicate name of the fact that the object `p` points to is of
+/// `class`: `object_type[T]` for the C type `T` of `class`, written
+/// `is_a<T>(p)` in Surface.
+pub(crate) fn object_type_predicate_name(class: &effective_type::CAccessClass) -> String {
+    format!("object_type[{}]", object_class_spelling(class))
+}
+
+/// Whether `name` is an [`object_type_predicate_name`].
+pub(crate) fn is_object_type_predicate_name(name: &str) -> bool {
+    object_type_predicate_spelling(name).is_some()
+}
+
+/// The C type an [`object_type_predicate_name`] names.
+pub(crate) fn object_type_predicate_spelling(name: &str) -> Option<&str> {
+    name.strip_prefix("object_type[")?.strip_suffix(']')
+}
+
+/// The C type of an object class: `struct S`, or a pointer to one,
+/// `struct S*`. A class with no C spelling keeps the kernel's.
+pub(crate) fn object_class_spelling(class: &effective_type::CAccessClass) -> String {
+    use effective_type::{CAccessClass, CPointeeBase};
+    match class {
+        CAccessClass::Struct(class) => format!("struct {}", class.tag()),
+        CAccessClass::Pointer {
+            base: CPointeeBase::Struct(class),
+            depth,
+        } => format!("struct {}{}", class.tag(), "*".repeat(usize::from(*depth))),
+        other => other.to_string(),
     }
 }
 
@@ -34,7 +65,7 @@ pub(crate) fn is_checked_call_type_fact(fact: &Proposition) -> bool {
     matches!(
         fact,
         Proposition::Predicate { name, arguments }
-            if arguments.len() == 1 && name.starts_with("object_type[")
+            if arguments.len() == 1 && is_object_type_predicate_name(name)
     )
 }
 

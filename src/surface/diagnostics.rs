@@ -3795,7 +3795,11 @@ pub(in crate::surface) fn describe_consumed_instance_field_read(
                 expressions.push(right);
             }
             ClickProposition::FloatClassification { expression, .. }
-            | ClickProposition::Defined { expression } => expressions.push(expression),
+            | ClickProposition::Defined { expression }
+            | ClickProposition::IsA {
+                pointer: expression,
+                ..
+            } => expressions.push(expression),
             ClickProposition::Not(inner)
             | ClickProposition::ForAll { body: inner, .. }
             | ClickProposition::Exists { body: inner, .. } => pending.push(inner),

@@ -1165,6 +1165,10 @@ fn annotate_surface_at_program_point(
                 expression: expression_at_program_point(expression),
                 classification: *classification,
             },
+            ClickProposition::IsA { class, pointer } => ClickProposition::IsA {
+                class: class.clone(),
+                pointer: expression_at_program_point(pointer),
+            },
             ClickProposition::Defined { .. } => ClickProposition::At {
                 selector: selector.clone(),
                 proposition: Box::new(proposition.clone()),
@@ -1319,6 +1323,7 @@ pub(in crate::surface) fn surface_program_point_selector(
         | ClickProposition::Contains { .. }
         | ClickProposition::Loadable { .. }
         | ClickProposition::Defined { .. } => None,
+        ClickProposition::IsA { pointer, .. } => expression_site(pointer),
     }
 }
 

@@ -1547,6 +1547,19 @@ impl Renderer<'_> {
                     self.depth -= 1;
                     return;
                 }
+                // Type evidence about a pointer is written `is_a<T>(p)`.
+                if let (Some(spelling), [pointer]) = (
+                    crate::kernel::object_type_predicate_spelling(name),
+                    arguments.as_slice(),
+                ) {
+                    self.push("is_a<");
+                    self.push(spelling);
+                    self.push(">(");
+                    self.term(pointer);
+                    self.push(")");
+                    self.depth -= 1;
+                    return;
+                }
                 if name == &format!("{}1", crate::kernel::SUBOBJECT_COVERS_PREDICATE_PREFIX)
                     && let [origin, start, end] = arguments.as_slice()
                 {
