@@ -1134,6 +1134,7 @@ step is still checked.
 | `check_termination_local("f")` | simple | Expansion output | Establish the generated local descent classification. | [Reference](#termination-checks) |
 | `check_termination_component("f", mode)` | simple | Expansion output | Classify a generated recursive component using established premises. | [Reference](#termination-checks) |
 | `check_termination_callbacks()` | simple | Expansion output | Classify callback safety using established strict return premises. | [Reference](#termination-checks) |
+| `close()` | smart | Core | Try the direct goal check, then search if it fails. | [Reference](#closing-a-goal) |
 | `known()` | simple | Expansion output | Close a goal from available facts or goal-local computation. | [Reference](#available-facts) |
 | `normalize()` | simple | Compatibility | Close a goal by evaluation without context. | [Reference](#context-free-normalization) |
 | `normalize() using { P; ... }` | simple | Compatibility | Check normalization against written premises. | [Reference](#normalization-with-selected-premises) |
@@ -1602,6 +1603,23 @@ proof rather than repeating search; expansion emits the named steps or reports
 the rule gap, and profiling reports the restricted site.
 
 **Checked examples:** [`condition_search_explicit_decomposition.md`](https://github.com/clicklang/click/blob/master/mdtests/condition_search_explicit_decomposition.md)
+
+### Closing a goal
+
+**Form:** `close()`
+
+`close()` first runs the same direct check as `known()`. On a hit it
+finishes immediately. On a miss ordinary verification runs the standard
+`solve()` search with its usual budget. Checked-only verification reports
+the direct-check failure at the tactic. Expansion emits the checked steps
+selected by either path.
+
+<!-- verified-example: mdtests/close_tactic.md -->
+```click
+theorem closes_by_search(x: int32) {
+    ensures x == 0 implies x == 0 by close();
+}
+```
 
 ### Available facts
 

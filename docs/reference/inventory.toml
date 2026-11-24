@@ -563,6 +563,10 @@ id = "language.word.cases"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
+id = "language.word.close"
+path = "reference/language/grammar.md#word-index"
+
+[[item]]
 id = "language.word.close_invariants"
 path = "reference/language/grammar.md#word-index"
 
@@ -1310,6 +1314,10 @@ id = "tactic.check_termination_callbacks"
 path = "reference/tactics/index.md#termination-checks"
 
 [[item]]
+id = "tactic.close"
+path = "reference/tactics/index.md#proposition-reasoning"
+
+[[item]]
 id = "tactic.known"
 path = "reference/tactics/index.md#proposition-reasoning"
 
@@ -1518,6 +1526,10 @@ path = "reference/tactics/index.md#termination-checks"
 [[item]]
 id = "tactic-form.check-termination-callbacks"
 path = "reference/tactics/index.md#termination-checks"
+
+[[item]]
+id = "tactic-form.close"
+path = "reference/tactics/index.md#proposition-reasoning"
 
 [[item]]
 id = "tactic-form.known"

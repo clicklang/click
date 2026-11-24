@@ -86,6 +86,9 @@ pub(in crate::surface) fn source_site_kind(tactic: &ProofTactic) -> SourceSiteKi
 /// smart budget and a miss is reported as one. Its source site stays a
 /// control container: expansion selects the nested tactics.
 fn budget_class(tactic: &ProofTactic) -> &'static str {
+    if matches!(tactic, ProofTactic::Close) {
+        return SourceSiteKind::SimpleOperation.profiling_label();
+    }
     if let ProofTactic::Have(_) = tactic
         && source_site_kind(tactic) == SourceSiteKind::ControlContainer
         && ProofCertificate::from_proof_tactics(std::slice::from_ref(tactic)).is_err()
@@ -100,6 +103,7 @@ fn budget_class(tactic: &ProofTactic) -> &'static str {
 pub(super) fn trace_origin(tactic: &ProofTactic) -> crate::surface::proof_trace::TraceOrigin {
     use crate::surface::proof_trace::TraceOrigin;
     match tactic {
+        ProofTactic::Close => TraceOrigin::enter(None),
         ProofTactic::SmartExecute | ProofTactic::ImplicitSolve => {
             TraceOrigin::enter_implicit("implicit tail")
         }
@@ -163,9 +167,13 @@ impl TacticTiming {
     /// charged to a smart budget and profiled as `implicit solve`, not as the
     /// simple tactic's certificate check.
     pub(super) fn implicit_solve() -> Option<Self> {
+        Self::followup_search(crate::instrumentation::IMPLICIT_SOLVE_TACTIC)
+    }
+
+    pub(super) fn followup_search(name: &'static str) -> Option<Self> {
         let enclosing = current_timing_tactic()?;
         crate::instrumentation::enabled().then(|| {
-            let tactic_name = crate::instrumentation::IMPLICIT_SOLVE_TACTIC.to_string();
+            let tactic_name = name.to_string();
             let tactic_class = SourceSiteKind::ExpandableAutomation.profiling_label();
             if crate::instrumentation::starts_enabled() {
                 crate::instrumentation::emit(
