@@ -1,6 +1,5 @@
 //! Smart closure search and linear script interpretation.
 mod address_words;
-mod float_division;
 mod float_intervals;
 mod integer_algebra;
 mod integer_composition;
