@@ -26920,9 +26920,10 @@ fn float_cast_bounds_expand_and_cold_replay() {
                 .unwrap_or_else(|error| panic!("{}", error.report()));
             assert!(!expanded.contains("normalize()"), "{expanded}");
             if *function == "cast_narrowed" {
+                let (cast_proof, _) = expanded.split_once("theorem rounded(").unwrap();
                 assert!(
-                    expanded.contains("click::float_order::float64_narrow_le"),
-                    "{expanded}"
+                    cast_proof.contains("click::float_order::float64_narrow_le"),
+                    "{cast_proof}"
                 );
             }
             crate::surface::check_audit_claim(&claim, true, || {
