@@ -860,6 +860,32 @@ thread_local! {
     static LAST_FAILURE: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
 }
 
+/// Whether a definedness range bound is an established fact. The domain
+/// query states its lower bound as `exact >= MIN`, while a proved bound
+/// written `MIN <= exact` lowers to the reversed comparison; both are the
+/// same fact, so either exact key counts.
+fn range_bound_available(proof: &Proof<'_>, bound: &Proposition) -> bool {
+    let facts = proof.facts();
+    if facts.listed_premise_available(bound, &[], false) {
+        return true;
+    }
+    let reversed = match bound {
+        Proposition::ConditionIs(condition, value) => match condition.native_compat() {
+            ConditionTerm::IntegerGreaterEqual(left, right) => Proposition::condition_is(
+                ConditionTerm::IntegerLessEqual(right.clone(), left.clone()),
+                *value,
+            ),
+            ConditionTerm::IntegerLessEqual(left, right) => Proposition::condition_is(
+                ConditionTerm::IntegerGreaterEqual(right.clone(), left.clone()),
+                *value,
+            ),
+            _ => return false,
+        },
+        _ => return false,
+    };
+    facts.listed_premise_available(&reversed, &[], false)
+}
+
 #[cfg(test)]
 pub(super) fn note_refusal(message: impl Into<String>) {
     let message = message.into();
@@ -1545,7 +1571,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 && query
                     .bounds()
                     .iter()
-                    .all(|bound| prepared.facts().listed_premise_available(bound, &[], false))
+                    .all(|bound| range_bound_available(&prepared, bound))
             {
                 let conjuncts =
                     [left, right].map(|bound| prepared.conjunct_goal_spelling(bound).map(Arc::new));
@@ -1992,6 +2018,27 @@ mod tests {
             assert!(!expanded.contains("normalize("), "{expanded}");
             without_implicit_solve(|| verify_c_sources(&expanded, &[])).unwrap();
         }
+    }
+
+    #[test]
+    fn an_argument_domain_cites_its_established_lower_bound() {
+        // `defined(hi - 1)` asks for `to_integer(hi) - 1 >= -2147483648`;
+        // the composition proved it as `-2147483648 <= ...`. The domain
+        // cites that fact instead of deriving the bound again.
+        let source = "theorem domain(lo: int32, hi: int32) { requires 0 <= lo; requires lo < hi; requires hi <= 1073741823; ensures 0 <= to_integer(hi - 1) by { solve(); } }";
+        let expanded = expand_c_claim_source_by_label(source, &[], "domain.ensures_0")
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+        let (_, domain) = expanded
+            .split_once("have defined((hi - 1)) by {")
+            .unwrap_or_else(|| panic!("{expanded}"));
+        let domain = domain.split("have ").next().unwrap();
+        assert!(domain.contains(">= -2147483648 => {"), "{expanded}");
+        assert!(
+            !expanded.contains("have -2147483648 <= (to_integer(hi) - to_integer(1))"),
+            "{expanded}"
+        );
+        without_implicit_solve(|| verify_c_sources(&expanded, &[]))
+            .unwrap_or_else(|error| panic!("{}\n{expanded}", error.report()));
     }
 
     #[test]
