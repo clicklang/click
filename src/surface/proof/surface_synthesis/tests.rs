@@ -7283,6 +7283,10 @@ fn shared_constructor_fields_preserve_native_spelling_and_refusals() {
         ProgramValue::Bool(word),
         int32(7),
         ProgramValue::UInt32(MachineTerm::uint32_constant(7)),
+        ProgramValue::UInt64(MachineTerm::uint64_constant(0)),
+        ProgramValue::of_bool(ConditionTerm::Constant(true)),
+        ProgramValue::of_bool(ConditionTerm::Constant(false)),
+        ProgramValue::of_bool(ConditionTerm::Variable(variable)),
     ] {
         let mut native =
             KernelMatch::test_scrutinee(vec![crate::kernel::AlgebraicValueType::Program(
@@ -7294,6 +7298,10 @@ fn shared_constructor_fields_preserve_native_spelling_and_refusals() {
         };
         let expected =
             synthesize_surface_algebraic(&native, ParameterBinding::default(), &state, &names);
+        assert!(
+            expected.is_some(),
+            "constructor field needs a Surface spelling"
+        );
         let root = KernelTermImport::default().algebraic(&native);
         let exports = KernelTermExport::algebraic_export_count();
         assert_eq!(

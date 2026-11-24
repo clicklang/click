@@ -31,7 +31,7 @@ validation are in the [migration history][history].
 | Native expression payloads | [`KernelTermNode::Legacy`][kernel-term] retains selected native expression inputs. Residual native observation keys borrow their exact written source or call argument slot. Boolean conditions use typed common nodes and compare retained connectives through their storage keys. Explicit native input, output and hashing still use native views. [Retained fold dependency checking][fold-dependencies] still reads selected native payloads. | Classify each surviving producer and consumer. Replace internal expression payloads with typed common nodes and delete the generic expression bridges as their last callers move. Record any explicit input or output adapters that remain and the exact metadata they preserve. |
 | Pointer and address expression children | [Retained contract displacements][offsets] retain opaque indices through their exact carrier handles. Numeric observations of pointer and array arguments use typed pointer keys. Exact replacement and machine variable substitution traverse retained contract displacements. Scope and fold queries read the same displacement children. Rendering, hashing and ordinary native address descriptors still have native readers. Ownership, aliasing and read-over-write checking consume native address descriptors. | Keep the original index identities, widths, complete pointer metadata and program points. Move expression children and their readers to common operands. Keep address and state descriptors where they represent semantic identity. |
 | Stored values, calls and proposition operands | [Stored values][descriptor-values], [resource fields][resource-fields] and [certification][contract-claims] still expose native output views or exact inputs. Stored algebraic constructors, pointer values, and pairs of retained floating-point arithmetic nodes compare through retained keys. Constant quantity and range-bound checks read retained machine operands. Other native equality, hashing, diagnostics and selected checker paths use the retained argument and machine caches. | Move live internal expression consumers and delete obsolete caches. Preserve fact and certificate identity, exact argument spellings, and supported refusal behavior. |
-| Final common boundary | [Surface raising][raising] reads retained Boolean calls, connectives, and algebraic equality operands directly. Certificate completion classifies retained Boolean conditions without constructing their native connective tree. Selected comparison operands and other family-specific naming and rewrite adapters remain. | Check that supported term operands round-trip through the common representation. Keep introducing names and typed frontend ASTs. Retire duplicate expression conversion paths, then remove this roadmap item after validation. |
+| Final common boundary | [Surface raising][raising] reads retained Boolean calls, connectives, and stored algebraic equality operands directly. Algebraic constructors use the common renderer for typed fields and literals. Certificate completion classifies retained Boolean conditions without constructing their native connective tree. Selected comparison operands and other family-specific naming and rewrite adapters remain. | Check that supported term operands round-trip through the common representation. Keep introducing names and typed frontend ASTs. Retire duplicate expression conversion paths, then remove this roadmap item after validation. |
 
 ## Delivery sequence
 
@@ -43,6 +43,11 @@ validation are in the [migration history][history].
    item.
 
 ## Validation for closure
+
+A rewritten algebraic equality can retain a match on a known constructor.
+Lowering its Surface spelling may select the arm and lose the written match.
+The `selected_both_sides` claim in [the bound-guards fixture][bound-guards]
+exhibits this round-trip gap.
 
 - Check exact term round trips, successful and refused proofs, checked expansion
   and replay, binder scope, historical read identities and branch isolation.
@@ -63,3 +68,4 @@ validation are in the [migration history][history].
 [contract-claims]: ../src/kernel/api/contract_certification/contract_claims.rs
 [raising]: ../src/surface/proof/surface_synthesis.rs
 [principle]: ../docs/internals/raise-lower-principle.md
+[bound-guards]: ../mdtests/algebraic_match_bound_guards.md
