@@ -13,6 +13,7 @@ pub(super) fn link_c_units(
     target: CTarget,
     thread_runtime: crate::languages::c::thread_runtime::CThreadRuntime,
     external_functions: &[(&str, bool)],
+    library_values: &BTreeMap<String, super::super::CLibraryValue>,
     c_sources: &ProgramSourceContext<'_>,
     build_storage: bool,
 ) -> Result<BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>, ClickError> {
@@ -93,6 +94,26 @@ pub(super) fn link_c_units(
     for (source_path, unit) in &units {
         let source_globals = globals_by_source.entry(source_path.clone()).or_default();
         for (name, global) in &unit.globals {
+            if !global.is_file_static()
+                && let Some(value) = library_values.get(name)
+            {
+                if global.is_defined() {
+                    return Err(link_error(format!(
+                        "C library value `{name}` is also defined by a verifying source"
+                    )));
+                }
+                if global.interface_type() != value.interface_type
+                    || global.struct_name() != value.struct_name.as_deref()
+                    || global.pointee_is_constant() != value.pointee_constant
+                    || !global.is_constant()
+                    || global.is_volatile()
+                    || global.pointee_is_volatile()
+                {
+                    return Err(link_error(format!(
+                        "C library value `{name}` does not match the const declaration in `{source_path}`"
+                    )));
+                }
+            }
             match source_globals.get(name) {
                 Some(previous) if previous.interface_type() != global.interface_type() => {
                     return Err(link_error(format!(
@@ -171,10 +192,26 @@ pub(super) fn link_c_units(
             }
         }
     }
+    for (ordinal, (name, declaration)) in library_values.iter().enumerate() {
+        if let Some(global) = globals.get(name)
+            && !global.is_hosted_stdout()
+        {
+            let identity = crate::kernel::Variable::produced(
+                crate::kernel::Producer::CLibraryValue,
+                ordinal as u64,
+            );
+            let value = crate::kernel::symbolic_call_result(
+                declaration.interface_type.to_kernel_type(),
+                identity,
+            );
+            globals.insert(name.clone(), global.clone().with_library_value(value));
+        }
+    }
     if let Some((name, _)) = globals.iter().find(|(name, global)| {
         referenced_external_objects.contains(name.as_str())
             && !global.is_defined()
             && !global.is_hosted_stdout()
+            && !global.is_library_value()
     }) {
         return Err(link_error(format!(
             "global `{name}` is declared `extern` but has no definition"

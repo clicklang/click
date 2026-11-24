@@ -828,6 +828,7 @@ pub struct ClickFile {
     /// their `library/` identities, once each in source order.
     library_imports: Vec<String>,
     verifying_sources: Vec<String>,
+    c_library_values: BTreeMap<String, CLibraryValue>,
     /// The C implementation target this file selects with a `target`
     /// directive. `None` selects the default target.
     c_target: Option<crate::languages::c::target::CTarget>,
@@ -860,6 +861,13 @@ pub struct ClickFile {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+struct CLibraryValue {
+    interface_type: InterfaceType,
+    struct_name: Option<String>,
+    pointee_constant: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ImportDeclaration {
     path: String,
     position: crate::source::SourcePosition,
@@ -874,6 +882,7 @@ enum DeclarationIdentity {
     Theorem(String),
     Contract(String),
     ProgramFunction(String),
+    CLibraryValue(String),
     Tactic(String),
 }
 
@@ -887,6 +896,7 @@ impl std::fmt::Display for DeclarationIdentity {
             Self::Theorem(name) => ("theorem", name),
             Self::Contract(name) => ("contract", name),
             Self::ProgramFunction(name) => ("C function", name),
+            Self::CLibraryValue(name) => ("C library value", name),
             Self::Tactic(name) => ("tactic", name),
         };
         write!(f, "{kind} `{name}`")
