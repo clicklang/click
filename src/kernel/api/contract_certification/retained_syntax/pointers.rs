@@ -52,8 +52,8 @@ impl<'a> Offset<'a> {
             let ty = MachineIntegerType::from_program_type(*ty)?;
             // The native offset exporter preserves opaque index payloads as
             // native operands. Do not grant them shared-root identity here.
-            let operand = if matches!(value.node(), N::Legacy(_)) {
-                Operand::Legacy(value.machine_conversion_leaf()?)
+            let operand = if let Some(native) = value.retained_machine_input() {
+                Operand::Legacy(native)
             } else {
                 Operand::Shared(value)
             };

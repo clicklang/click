@@ -224,11 +224,9 @@ impl KernelFold {
             Some(root) => root.with_machine_observation_type(format),
             // A range endpoint already owns a numeric observation identity.
             // Reimporting an opaque call must not mint a new producer identity.
-            None => KernelTerm::machine_observation_leaf(
-                format,
-                endpoint.value().clone(),
-                endpoint.machine_operand().clone(),
-            ),
+            None => {
+                KernelTerm::machine_observation_leaf(format, endpoint.machine_operand().clone())
+            }
         }
     }
 
@@ -688,6 +686,11 @@ mod producer_tests {
         };
         let endpoint = SharedIntegerRangeEndpoint::intern(call.clone());
         assert!(endpoint.machine_operand().shared_operand().is_none());
+        let input = KernelFold::import_endpoint(MachineIntegerType::UInt64, &endpoint);
+        assert!(std::ptr::eq(
+            input.retained_machine_input().unwrap(),
+            endpoint.value(),
+        ));
         let produce = |end| {
             IntegerTerm::range_fold(
                 IntegerRangeFoldIndex::UInt64 {

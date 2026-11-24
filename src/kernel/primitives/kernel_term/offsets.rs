@@ -206,9 +206,7 @@ impl KernelAddressOffset {
         };
         let format =
             MachineIntegerType::from_program_type(*ty).ok_or("expected machine offset index")?;
-        if let KernelTermNode::Legacy(payload) = value.node()
-            && let Some(native) = payload.machine_operand()
-        {
+        if let Some(native) = value.retained_machine_input() {
             return Ok(SharedMachineIntegerTerm::index(format, native.clone()));
         }
         if let Some(value) = SharedMachineIntegerTerm::from_shared(format, value.clone()) {

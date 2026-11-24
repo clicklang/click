@@ -241,7 +241,7 @@ fn opaque_call_children_borrow_their_producers_exact_argument_slot() {
         let [child] = call.children() else {
             panic!("one exact argument");
         };
-        let KernelTermNode::Legacy(payload) = child.node() else {
+        let KernelTermNode::CallArgument(payload) = child.node() else {
             panic!("opaque argument slot");
         };
         assert!(std::ptr::eq(payload.value(), &first.arguments()[0]));
@@ -258,7 +258,7 @@ fn opaque_call_children_borrow_their_producers_exact_argument_slot() {
     let [child] = other.children() else {
         panic!("one exact argument");
     };
-    let KernelTermNode::Legacy(payload) = child.node() else {
+    let KernelTermNode::CallArgument(payload) = child.node() else {
         panic!("opaque argument slot");
     };
     assert!(std::ptr::eq(payload.value(), &second.arguments()[0]));

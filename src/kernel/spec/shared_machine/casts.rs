@@ -125,7 +125,9 @@ fn cast_root(
     // Only explicit native leaves use the native constructor. Shared prefixes
     // never cross this boundary, including when their leaf is opaque.
     let native = match root.node() {
-        KernelTermNode::Legacy(_) => root.machine_conversion_leaf().cloned(),
+        KernelTermNode::Legacy(_)
+        | KernelTermNode::MachineObservationInput { .. }
+        | KernelTermNode::WrittenMachine(_) => root.machine_conversion_leaf().cloned(),
         KernelTermNode::MachineLiteral(literal) => Some(literal.legacy_term()),
         _ => None,
     };
@@ -184,7 +186,12 @@ fn cast_wide(value: &SpecValue, target: ProgramType) -> Option<KernelTerm> {
     {
         return None;
     }
-    if matches!(root.node(), KernelTermNode::Legacy(_)) {
+    if matches!(
+        root.node(),
+        KernelTermNode::Legacy(_)
+            | KernelTermNode::MachineObservationInput { .. }
+            | KernelTermNode::WrittenMachine(_)
+    ) {
         let converted = crate::kernel::machine_integer::conversion::convert_term(
             source,
             destination,

@@ -42,6 +42,8 @@ fn syntax_atoms(root: &KernelTerm) -> Option<PersistentSet<BitvectorEqualityAtom
                 | KernelTermNode::IntegerToMachine { .. }
                 | KernelTermNode::BoolCast { .. }
                 | KernelTermNode::Legacy(_)
+                | KernelTermNode::MachineObservationInput { .. }
+                | KernelTermNode::WrittenMachine(_)
                 | KernelTermNode::IntegerAddress { .. }
                 | KernelTermNode::Call { .. }
                 | KernelTermNode::Fold(_)

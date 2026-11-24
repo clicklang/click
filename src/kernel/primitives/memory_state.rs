@@ -2325,6 +2325,14 @@ fn held_kernel_term_fingerprint(term: &KernelTerm) -> Option<u64> {
                 held_term_atom(term.machine_read_leaf()?, hash);
                 return Some(());
             }
+            N::WrittenMachine(input) => {
+                held_term_atom(input.value(), hash);
+                return Some(());
+            }
+            N::MachineObservationInput { observation, .. } => {
+                held_term_atom(observation.value(), hash);
+                return Some(());
+            }
             N::Legacy(value) => {
                 let PureFunctionArgument::Value(value) = value.value() else {
                     return None;

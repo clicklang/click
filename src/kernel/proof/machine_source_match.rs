@@ -155,7 +155,10 @@ impl<'a> MachineSourceMatcher<'a> {
                     operand,
                 } => Shape::Cast(*encoding, *source, *destination, self.nodes[&operand.id()]),
                 KernelTermNode::Call { .. } => Shape::Application(term.machine_call_identity()?),
-                KernelTermNode::Legacy(_) | KernelTermNode::BoolCast { .. } => {
+                KernelTermNode::Legacy(_)
+                | KernelTermNode::MachineObservationInput { .. }
+                | KernelTermNode::WrittenMachine(_)
+                | KernelTermNode::BoolCast { .. } => {
                     let value = term
                         .machine_conversion_leaf()
                         .expect("retained native machine leaf");

@@ -1962,6 +1962,8 @@ impl EqualityGraph {
                         }
                         N::IntegerToMachine { .. }
                         | N::Legacy(_)
+                        | N::MachineObservationInput { .. }
+                        | N::WrittenMachine(_)
                         | N::Call { .. }
                         | N::IntegerAddress { .. } => pending.push(Work::Machine(
                             term.machine_conversion_leaf().expect("conversion leaf"),

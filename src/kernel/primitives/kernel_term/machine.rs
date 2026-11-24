@@ -7,37 +7,20 @@ use crate::kernel::{
     uint32_constant, uint64_constant,
 };
 
-impl KernelLegacyTerm {
-    pub(in crate::kernel) fn machine_operand(&self) -> Option<&MachineTerm> {
-        if let LegacyIdentity::ExactIntegerObservation(observation) = &self.identity {
-            return Some(observation.value());
-        }
-        if !matches!(
-            self.identity,
-            LegacyIdentity::Machine(_) | LegacyIdentity::MachineObservation(_)
-        ) {
-            return None;
-        }
-        let PureFunctionArgument::Value(value) = self.value() else {
-            return None;
-        };
-        match value {
-            ProgramValue::Int8(v)
-            | ProgramValue::UInt8(v)
-            | ProgramValue::Int16(v)
-            | ProgramValue::UInt16(v)
-            | ProgramValue::Int32(v)
-            | ProgramValue::UInt32(v)
-            | ProgramValue::Int64(v)
-            | ProgramValue::UInt64(v)
-            | ProgramValue::Int128(v)
-            | ProgramValue::UInt128(v) => Some(v),
-            _ => None,
-        }
+fn retained_machine_input(node: &KernelTermNode) -> Option<&MachineTerm> {
+    match node {
+        KernelTermNode::MachineObservationInput { observation, .. } => Some(observation.value()),
+        KernelTermNode::WrittenMachine(value) => Some(value.value()),
+        _ => None,
     }
 }
 
 impl KernelTerm {
+    /// Borrow a selected operand already owned by its machine input.
+    pub(crate) fn retained_machine_input(&self) -> Option<&MachineTerm> {
+        retained_machine_input(self.node())
+    }
+
     pub(crate) fn machine_if_shared(format: MachineIntegerType, arguments: [Self; 3]) -> Self {
         debug_assert_eq!(arguments[0].ty(), &KernelType::Bool);
         Self::intern(
@@ -95,9 +78,7 @@ impl KernelTerm {
                 )
             }));
         }
-        if let KernelTermNode::Legacy(value) = self.node()
-            && let Some(operand) = value.machine_operand()
-        {
+        if let Some(operand) = self.retained_machine_input() {
             return Some(operand);
         }
         if let KernelTermNode::Call { name, arguments } = self.node()
@@ -375,11 +356,13 @@ pub(super) fn constant_reading(node: &KernelTermNode) -> Option<KernelMachineLit
                     _ => None,
                 });
         }
-        KernelTermNode::Legacy(value) => {
+        KernelTermNode::Legacy(_)
+        | KernelTermNode::MachineObservationInput { .. }
+        | KernelTermNode::WrittenMachine(_) => {
             // Read the selected native leaf once, on introduction. Shared
             // parents reuse this metadata, including a literal-conditioned
             // native `If`, instead of exporting the enclosing DAG to read it.
-            let operand = value.machine_operand()?;
+            let operand = retained_machine_input(node)?;
             return operand
                 .uint64_as_const()
                 .map(KernelMachineLiteral::UInt64)
@@ -651,14 +634,16 @@ impl KernelTermImport {
                         // This is a typed input descriptor, not a boxed value
                         // argument. Keep its existing shared operand and exact
                         // envelope through native field storage/output.
-                        KernelTerm::native_call_argument(application, index, true)
+                        KernelTerm::written_call_argument(application, index)
                     } else {
-                        self.argument(argument)
+                        self.structural_argument(argument).unwrap_or_else(|| {
+                            KernelTerm::written_call_argument(application, index)
+                        })
                     }
                 } else if let Some(root) = application.common_argument(index) {
                     root
                 } else {
-                    KernelTerm::native_call_argument(application, index, true)
+                    KernelTerm::written_call_argument(application, index)
                 }
             })
             .collect();
@@ -897,11 +882,10 @@ impl KernelTermExport {
                 destination,
                 operand,
             } => Old::cast_node(*encoding, *source, *destination, Self::machine(operand)?),
-            Node::Legacy(value) => {
-                if let LegacyIdentity::ExactIntegerObservation(observation) = &value.identity {
-                    return Ok(observation.value().clone());
-                }
-                let PureFunctionArgument::Value(value) = value.value() else {
+            Node::MachineObservationInput { observation, .. } => observation.value().clone(),
+            Node::WrittenMachine(value) => value.value().clone(),
+            Node::Legacy(_) | Node::CallArgument(_) => {
+                let Some(PureFunctionArgument::Value(value)) = term.written_argument() else {
                     return Err("expected a machine value legacy payload");
                 };
                 let (integer_c_value!(bits)) = value else {

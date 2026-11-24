@@ -109,8 +109,8 @@ pub(crate) use kernel_term::{
     SharedPointer,
 };
 pub use kernel_term::{
-    KernelFloatType, KernelIntegerOperator, KernelLegacyTerm, KernelMachineLiteral, KernelTerm,
-    KernelTermNode, KernelType,
+    KernelCallArgument, KernelFloatType, KernelIntegerOperator, KernelLegacyTerm,
+    KernelMachineLiteral, KernelTerm, KernelTermNode, KernelType, KernelWrittenMachine,
 };
 #[allow(unused_imports)]
 pub(crate) use kernel_term::{

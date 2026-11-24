@@ -545,7 +545,7 @@ impl KernelTermImport {
                     if let Some(root) = application.common_argument(index) {
                         root
                     } else {
-                        KernelTerm::native_call_argument(application, index, true)
+                        KernelTerm::written_call_argument(application, index)
                     }
                 })
             })

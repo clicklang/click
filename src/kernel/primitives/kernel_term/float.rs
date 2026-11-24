@@ -73,11 +73,13 @@ impl<'a> FloatOperandView<'a> {
             Self::Native(_, MachineTerm::Constant { format, bits }) => Some((*format, *bits)),
             Self::Shared(root) => match root.node() {
                 KernelTermNode::FloatLiteral { carrier, bits } => Some((*carrier, *bits)),
-                KernelTermNode::Legacy(value) => Self::from_value(match value.value() {
-                    PureFunctionArgument::Value(value) => value,
-                    _ => return None,
-                })?
-                .literal(),
+                KernelTermNode::Legacy(_) | KernelTermNode::CallArgument(_) => {
+                    Self::from_value(match root.written_argument()? {
+                        PureFunctionArgument::Value(value) => value,
+                        _ => return None,
+                    })?
+                    .literal()
+                }
                 _ => None,
             },
             _ => None,
@@ -93,11 +95,13 @@ impl<'a> FloatOperandView<'a> {
             Self::Native(_, MachineTerm::Variable(variable)) => Some(*variable),
             Self::Shared(root) => match root.node() {
                 KernelTermNode::Variable(variable) => Some(*variable),
-                KernelTermNode::Legacy(value) => Self::from_value(match value.value() {
-                    PureFunctionArgument::Value(value) => value,
-                    _ => return None,
-                })?
-                .variable(),
+                KernelTermNode::Legacy(_) | KernelTermNode::CallArgument(_) => {
+                    Self::from_value(match root.written_argument()? {
+                        PureFunctionArgument::Value(value) => value,
+                        _ => return None,
+                    })?
+                    .variable()
+                }
                 _ => None,
             },
             _ => None,
@@ -114,11 +118,13 @@ impl<'a> FloatOperandView<'a> {
                 | KernelTermNode::Variable(_) => {
                     Self::from_value(root.float_native_value()?)?.native_compat()
                 }
-                KernelTermNode::Legacy(value) => Self::from_value(match value.value() {
-                    PureFunctionArgument::Value(value) => value,
-                    _ => return None,
-                })?
-                .native_compat(),
+                KernelTermNode::Legacy(_) | KernelTermNode::CallArgument(_) => {
+                    Self::from_value(match root.written_argument()? {
+                        PureFunctionArgument::Value(value) => value,
+                        _ => return None,
+                    })?
+                    .native_compat()
+                }
                 _ => None,
             },
         }
@@ -302,9 +308,7 @@ impl KernelTerm {
     /// execution handoffs retain the root without requesting this view.
     pub(crate) fn float_native_value(&self) -> Option<&ProgramValue> {
         let format = FloatOperandView::from_shared(self)?.format();
-        if let KernelTermNode::Legacy(legacy) = self.node()
-            && let PureFunctionArgument::Value(value) = legacy.value()
-        {
+        if let Some(PureFunctionArgument::Value(value)) = self.written_argument() {
             return FloatOperandView::from_value(value).map(|_| value);
         }
         let PureFunctionArgument::Value(value) = self

@@ -313,14 +313,14 @@ impl Comparison {
     fn call_argument(&mut self, left: CallArgument<'_>, right: CallArgument<'_>) -> bool {
         use CallArgument::{Native, Shared};
         if let Shared(root) = left
-            && let N::Legacy(value) = root.node()
+            && let Some(value) = root.written_argument()
         {
-            return self.call_argument(Native(value.value()), right);
+            return self.call_argument(Native(value), right);
         }
         if let Shared(root) = right
-            && let N::Legacy(value) = root.node()
+            && let Some(value) = root.written_argument()
         {
-            return self.call_argument(left, Native(value.value()));
+            return self.call_argument(left, Native(value));
         }
         // Only literals and raw C Boolean variables have an admitted word
         // reading here. Other logical roots become native BoolCast syntax,
@@ -732,7 +732,7 @@ mod tests {
             }],
         };
         let index = KernelTerm::retained_native_machine_operand(MachineIntegerType::Int32, &native);
-        assert!(matches!(index.node(), N::Legacy(_)));
+        assert!(matches!(index.node(), N::WrittenMachine(_)));
         let base = SharedPointer::import(&Pointer::new(Address::null(), ProgramType::Int32Pointer));
         let mut value = base.node().clone();
         value.address = SharedAddress::new(

@@ -310,12 +310,20 @@ pub(super) fn common_variables(
                     &mut leaf_variables,
                 );
             }
-            KernelTermNode::Legacy(value) => {
+            KernelTermNode::MachineObservationInput { .. } | KernelTermNode::WrittenMachine(_) => {
+                collect_machine_leaf(
+                    term.retained_machine_input().unwrap(),
+                    mode,
+                    &mut leaf_variables,
+                    &mut SeenTerms::default(),
+                );
+            }
+            KernelTermNode::Legacy(_) | KernelTermNode::CallArgument(_) => {
                 // Each opaque leaf gets its complete intrinsic answer. A seen
                 // set belonging to another leaf would discard shared payload
                 // variables before the enclosing body can filter its binders.
                 collect_argument(
-                    value.value(),
+                    term.written_argument().unwrap(),
                     mode,
                     &mut leaf_variables,
                     &mut SeenTerms::default(),

@@ -32,8 +32,9 @@ impl BooleanStorageKey {
                 KernelTermNode::Variable(v) => {
                     Self(BooleanKeyKind::Word(MachineTerm::Variable(*v)))
                 }
-                KernelTermNode::Legacy(value) => {
-                    let PureFunctionArgument::Value(ProgramValue::Bool(word)) = value.value()
+                KernelTermNode::Legacy(_) | KernelTermNode::CallArgument(_) => {
+                    let Some(PureFunctionArgument::Value(ProgramValue::Bool(word))) =
+                        root.written_argument()
                     else {
                         unreachable!()
                     };

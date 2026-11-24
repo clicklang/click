@@ -16,9 +16,7 @@ pub(super) fn clear() {
 // are numeric observation leaves here, without changing the producer's node
 // or admitting arbitrary legacy payloads into the machine operand API.
 fn machine_payload(term: &KernelTerm) -> Option<&MachineTerm> {
-    if let KernelTermNode::Legacy(value) = term.node()
-        && let PureFunctionArgument::Value(value) = value.value()
-    {
+    if let Some(PureFunctionArgument::Value(value)) = term.written_argument() {
         return match value {
             ProgramValue::Int8(value)
             | ProgramValue::UInt8(value)
@@ -63,7 +61,7 @@ pub(in crate::kernel::primitives) fn normalize(root: &KernelTerm) -> KernelTerm 
                 _ => MachineIntegerType::UInt8,
             };
             if !finish
-                && matches!(term.node(), KernelTermNode::Legacy(_))
+                && matches!(term.node(), KernelTermNode::Legacy(_) | KernelTermNode::CallArgument(_) | KernelTermNode::MachineObservationInput { .. } | KernelTermNode::WrittenMachine(_))
                 && machine_payload(&term).is_some()
             {
                 let value = machine_payload(&term).expect("retained machine leaf");
@@ -145,6 +143,8 @@ pub(in crate::kernel::primitives) fn normalize(root: &KernelTerm) -> KernelTerm 
                 .into_term()
                 .with_machine_observation_type(format),
                 KernelTermNode::Legacy(_)
+                | KernelTermNode::CallArgument(_)
+                | KernelTermNode::MachineObservationInput { .. } | KernelTermNode::WrittenMachine(_)
                 | KernelTermNode::Call { .. }
                 | KernelTermNode::IntegerAddress { .. }
                     if machine_payload(&term).is_some() =>
@@ -154,10 +154,10 @@ pub(in crate::kernel::primitives) fn normalize(root: &KernelTerm) -> KernelTerm 
                         format,
                         value.clone(),
                     ));
-                    KernelTerm::machine_observation_leaf(format, value.clone(), identity)
+                    KernelTerm::machine_observation_leaf(format, identity)
                 }
-                KernelTermNode::Legacy(value) => {
-                    KernelTerm::native_observation_leaf(value.value().clone())
+                KernelTermNode::Legacy(_) | KernelTermNode::CallArgument(_) => {
+                    KernelTerm::native_observation_leaf(term.written_argument().unwrap().clone())
                 }
                 KernelTermNode::Pointer(_)
                 | KernelTermNode::PointerRead { .. }
