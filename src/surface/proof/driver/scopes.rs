@@ -3,6 +3,24 @@ use super::*;
 use crate::surface::proof::driver::ProofDriver;
 
 impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
+    pub(in crate::surface::proof) fn try_preserve_entry_conjunct(
+        &self,
+        conclusion: &ClickProposition,
+        source: ClickProposition,
+    ) -> Result<Option<ProofScope<'a>>, ClickError> {
+        let Some(body) = crate::kernel::search::ProofSearch::try_preserve_entry_conjunct(
+            &self.proof.body,
+            conclusion,
+            source,
+        )?
+        else {
+            return Ok(None);
+        };
+        let mut next = self.proof.clone();
+        next.body = body;
+        Ok(Some(next))
+    }
+
     /// Replay one operation bound inside the selected have body.
     pub(in crate::surface::proof) fn try_float_bound_link(
         &self,

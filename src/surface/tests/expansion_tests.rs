@@ -25826,6 +25826,40 @@ fn explicit_entry_witnesses_for_cstr_calls_expand_without_search() {
 }
 
 #[test]
+fn entry_existential_view_expands_with_preservation() {
+    let sources = [(
+        "entry.c",
+        "int f(unsigned char *p) { int local = 0; return local; }",
+    )];
+    let source = r#"
+        verifying "entry.c";
+
+        predicate good(p: uint8*) {
+            exists (n: uint64) { n == 8u64 and viewable(p[0u64..n]) }
+        }
+
+        int32 f(uint8 *p) {
+            requires good(p);
+            ensures result == 0;
+        } by {
+            step();
+            have exists (n: uint64) { n == 8u64 and viewable(p[0u64..n]) } by {
+                solve();
+            }
+            step();
+        }
+    "#;
+    let expanded = expand_c_claim_source_by_label(source, &sources, "f.contract").unwrap();
+    assert!(expanded.contains("witness(n)"), "{expanded}");
+    assert!(expanded.contains("preserve(memory(p["), "{expanded}");
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim("f.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
+#[test]
 fn nested_resource_scope_closing_obligations_expand_and_replay() {
     let sources = [(
         "set.c",

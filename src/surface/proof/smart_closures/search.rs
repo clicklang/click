@@ -2598,7 +2598,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         crate::kernel::search::ProofSearch::try_solve_closure(&witnessed)
     }
 
-    /// Reuse a witness from a function-entry existential, then transport its
+    /// Reuse a witness from a function-entry existential, then preserve its
     /// leaves through the effect-free prefix. This is an ordinary solve
     /// strategy; it receives no call-site obligation or private premise list.
     pub(in crate::surface::proof) fn try_entry_existential_closure(
@@ -2791,9 +2791,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if proof.focused_discharged() {
             return Ok(Some(proof));
         }
-        // The leaves hold at function entry. A conjunct this frontier does
-        // not state exactly, such as a wide range or a universal over reads,
-        // is carried here by one explicit transport of its entry form.
+        // The leaves hold at function entry. Establish the conjuncts that
+        // still need a proof at this frontier before closing the whole goal.
         let Some(goal) = proof.surface_goal().cloned() else {
             return Ok(None);
         };
@@ -2831,10 +2830,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         )
     }
 
-    /// Proves `conjunct` at this frontier from its function-entry form: a
-    /// plain fact by one `transport`, and a guarded universal by introducing
-    /// its binder and guard, instantiating the entry universal there, and
-    /// transporting that one conclusion. Every step is the checked operation.
+    /// Reuse an entry conjunct with ordinary facts and footprint preservation.
+    /// Specialize a guarded universal before proving its conclusion.
     pub(in crate::surface::proof) fn try_carry_entry_conjunct(
         search_input: &Proof<'a>,
         conjunct: &ClickProposition,
@@ -2848,42 +2845,73 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }),
             proposition: Box::new(proposition.clone()),
         };
-        let transport = |proposition: &ClickProposition| ProofStep::TransportUsing {
-            source: entry(proposition),
-            target: proposition.clone(),
-            premises: vec![entry(proposition)],
-        };
-        let steps = match conjunct {
-            ClickProposition::ForAll { name, body, .. } => {
-                let ClickProposition::Implies(_, consequent) = body.as_ref() else {
-                    return Ok(None);
-                };
-                vec![
-                    ProofStep::IntroBinder(name.clone()),
-                    ProofStep::Intro,
-                    ProofStep::Instantiate {
-                        quantified: entry(conjunct),
-                        arguments: vec![ContractExpression::ProgramExpression(
-                            ProgramExpression::Variable((name.clone()).into()),
-                        )],
-                    },
-                    transport(consequent),
-                ]
-            }
-            _ => vec![transport(conjunct)],
-        };
         let Some(mut scope) =
             attempt::candidate_outcome(search_input.driver().open_have(conjunct.clone()))?
         else {
             return Ok(None);
         };
-        for step in steps {
-            let Some(next) = attempt::candidate_outcome(scope.driver().apply_step(step))? else {
+        let conclusion = if let ClickProposition::ForAll { name, body, .. } = conjunct {
+            let ClickProposition::Implies(_, consequent) = body.as_ref() else {
                 return Ok(None);
             };
-            scope = next;
+            for step in [
+                ProofStep::IntroBinder(name.clone()),
+                ProofStep::Intro,
+                ProofStep::Instantiate {
+                    quantified: entry(conjunct),
+                    arguments: vec![ContractExpression::ProgramExpression(
+                        ProgramExpression::Variable((name.clone()).into()),
+                    )],
+                },
+            ] {
+                let Some(next) = attempt::candidate_outcome(scope.driver().apply_step(step))?
+                else {
+                    return Ok(None);
+                };
+                scope = next;
+            }
+            consequent.as_ref()
+        } else {
+            conjunct
+        };
+        if scope.body().focused_discharged() {
+            return attempt::candidate_outcome(scope.join());
         }
-        attempt::candidate_outcome(scope.join())
+        if let Some(closed) =
+            attempt::candidate_outcome(scope.driver().apply_step(ProofStep::Known))?
+        {
+            return attempt::candidate_outcome(closed.join());
+        }
+        let Some(closed) = scope
+            .driver()
+            .try_preserve_entry_conjunct(conclusion, entry(conclusion))?
+        else {
+            return Ok(None);
+        };
+        attempt::candidate_outcome(closed.join())
+    }
+
+    pub(in crate::surface::proof) fn try_preserve_entry_conjunct(
+        body: &Proof<'a>,
+        conclusion: &ClickProposition,
+        source: ClickProposition,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_preserve_entry_conjunct");
+        if let Some(goal @ Proposition::MemoryLoadable { .. }) = body.goal() {
+            let Some(kernel) = attempt::candidate_outcome(
+                body.lower_cited_surface_proposition(&source, "entry conjunct"),
+            )?
+            else {
+                return Ok(None);
+            };
+            return Ok(Self::try_local_viewability_preservation(
+                body,
+                goal,
+                &[(kernel, source)],
+            ));
+        }
+        Self::try_store_read_rewrite(body, conclusion)
     }
 
     pub(in crate::surface::proof) fn try_solve_closure_strategies(
@@ -13126,10 +13154,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             // explicitly separated transition at a time towards the goal.
             let mut current = search_input.clone();
             let separation_proof =
-                ProofCertificate::from_steps(vec![ProofStep::CompatibilityNormalize(Some(
-                    Vec::new(),
-                ))])
-                .expect("footprint separation uses an ordinary proof step");
+                ProofCertificate::from_steps(vec![ProofStep::NormalizeUsing(Vec::new())])
+                    .expect("footprint separation uses an ordinary proof step");
             for (index, region) in regions.iter().enumerate().rev() {
                 let separation = ClickProposition::Separate {
                     left: ResourceSubject::Footprint(region.clone()),

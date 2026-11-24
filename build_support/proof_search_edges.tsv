@@ -337,7 +337,11 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_arithmetic_wi
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_arithmetic_with_selected_premises	try_equality_by_bounds_early	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_arithmetic_with_selected_premises	try_machine_goal_through_integer	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_arithmetic_with_selected_premises	try_selected_arithmetic	1
-src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_carry_entry_conjunct	driver	2
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_carry_entry_conjunct	driver	4
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_carry_entry_conjunct	try_preserve_entry_conjunct	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_preserve_entry_conjunct	try_local_viewability_preservation	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_preserve_entry_conjunct	try_store_read_rewrite	1
+src/surface/proof/driver/scopes.rs	driver	ProofDriver::try_preserve_entry_conjunct	try_preserve_entry_conjunct	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_cell_frame_transport_closure	try_fixed_state_fact_transport	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_connected_fact_closure	try_connected_equality_chain_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_connected_fact_closure	try_constructor_join_closure	1
