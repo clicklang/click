@@ -699,6 +699,19 @@ fn checked_fold_collectors_bound_mixed_carrier_payloads_and_opaque_states() {
         );
     }
     let fixed_body = Term::Integer(fixed_body.into());
+    let rewrite_fixed_body = |replacement: &IntegerTerm| {
+        with_checked_simple_budget(1_000_000, || {
+            let renamings = BTreeMap::new();
+            let mut rewrite =
+                TermRewrite::for_integer_variables(fixed_source, replacement, false, &renamings);
+            let output = rewrite.term(&fixed_body);
+            (
+                rewrite.unsupported_integer_scope,
+                rewrite.integer_work_exhausted,
+                output,
+            )
+        })
+    };
     let mut state_work = Vec::new();
     for state_size in [0usize, 256] {
         let memory = memory_state_identity(state_size);
@@ -715,23 +728,12 @@ fn checked_fold_collectors_bound_mixed_carrier_payloads_and_opaque_states() {
             crate::kernel::MachineIntegerType::Int32,
             replacement_payload,
         ));
-        let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-            with_checked_simple_budget(1_000_000, || {
-                let renamings = BTreeMap::new();
-                let mut rewrite = TermRewrite::for_integer_variables(
-                    fixed_source,
-                    &replacement,
-                    false,
-                    &renamings,
-                );
-                let output = rewrite.term(&fixed_body);
-                (
-                    rewrite.unsupported_integer_scope,
-                    rewrite.integer_work_exhausted,
-                    output,
-                )
-            })
-        });
+        // Keep both checks in the same selected-expression cache state.
+        // Each rewrite still starts with new lexical collection and scope maps.
+        let prepared = rewrite_fixed_body(&replacement);
+        let (result, work) =
+            crate::instrumentation::measure_deterministic_work(|| rewrite_fixed_body(&replacement));
+        assert_eq!(result, prepared);
         assert!(!result.0 && !result.1);
         assert!(matches!(result.2, Term::Integer(_)));
         state_work.push(work);
