@@ -398,7 +398,7 @@ mod tests {
             let pointer = Address::symbolic(Variable(999978));
             let native = MachineTerm::opaque_conversion(
                 name,
-                MachineTerm::MemoryLoad(point.clone(), Box::new(pointer), format.load_kind()),
+                MachineTerm::read_named(point.clone(), Box::new(pointer), format.load_kind()),
             );
             let root = KernelTermImport::default().machine(MachineIntegerType::Int32, &native);
             let KernelTermNode::FloatConvert { operand, .. } = root.node() else {
@@ -425,7 +425,7 @@ mod tests {
         ] {
             let source = MachineTerm::Float32Binary {
                 operator: crate::kernel::FloatBinaryOperator::Add,
-                left: Box::new(MachineTerm::MemoryLoad(
+                left: Box::new(MachineTerm::read_named(
                     ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                     Box::new(pointer.clone()),
                     LoadKind::Float32,

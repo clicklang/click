@@ -14793,12 +14793,12 @@ mod support_removal_tests {
                 wide_pointer.clone(),
                 ProgramValue::Float64(MachineTerm::uint64_constant(0)),
             );
-        let short_load = MachineTerm::MemoryLoad(
+        let short_load = MachineTerm::read_named(
             ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
             Box::new(short_pointer.clone()),
             crate::kernel::LoadKind::Int16,
         );
-        let wide_load = MachineTerm::MemoryLoad(
+        let wide_load = MachineTerm::read_named(
             ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
             Box::new(wide_pointer.clone()),
             crate::kernel::LoadKind::Float64,
@@ -14836,12 +14836,12 @@ mod support_removal_tests {
             .with_block("mixed-loads", 8)
             .store(pointer.clone(), int16(0));
         let second = first.clone().store(pointer.clone(), int16(1));
-        let first_load = MachineTerm::MemoryLoad(
+        let first_load = MachineTerm::read_named(
             ProgramPoint::at(&(crate::kernel::intern_memory_ref(&first))),
             Box::new(pointer.clone()),
             crate::kernel::LoadKind::Int32,
         );
-        let second_load = MachineTerm::MemoryLoad(
+        let second_load = MachineTerm::read_named(
             ProgramPoint::at(&(crate::kernel::intern_memory_ref(&second))),
             Box::new(pointer),
             crate::kernel::LoadKind::Int32,
@@ -14869,7 +14869,7 @@ mod support_removal_tests {
         let memory = SymbolicMemory::new()
             .with_block("deep-load", 8)
             .store(pointer.clone(), int16(0));
-        let load = MachineTerm::MemoryLoad(
+        let load = MachineTerm::read_named(
             ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
             Box::new(pointer),
             crate::kernel::LoadKind::Int32,

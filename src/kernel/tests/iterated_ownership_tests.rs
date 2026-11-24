@@ -291,7 +291,7 @@ fn indexed_slots_use_the_selected_clause_across_states() {
     let read = |memory: &SymbolicMemory, address: &Address| Address {
         base: AddressBase::ExternalArgument,
         offset: AddressOffset::scaled_int32_node(
-            MachineTerm::MemoryLoad(
+            MachineTerm::read_named(
                 ProgramPoint::at(&(crate::kernel::intern_memory(memory.clone()))),
                 Box::new(address.clone()),
                 LoadKind::of_type(ProgramType::Int32Pointer).unwrap(),

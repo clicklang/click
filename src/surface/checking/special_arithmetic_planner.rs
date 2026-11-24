@@ -963,7 +963,7 @@ fn bounded_term_equal_count(left: &MachineTerm, right: &MachineTerm, count: &mut
             (uint64_constant!(a), uint64_constant!(b)) if constant_u64(*a) == constant_u64(*b) => {}
             (MachineTerm::Variable(a), MachineTerm::Variable(b)) if a == b => {}
             (MachineTerm::MemoryLoad(lm, lp, lk), MachineTerm::MemoryLoad(rm, rp, rk)) => {
-                if lm != rm || lk != rk || !bounded_address_equal(lp, rp) {
+                if lm.point() != rm.point() || lk != rk || !bounded_address_equal(lp, rp) {
                     return false;
                 }
             }

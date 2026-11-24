@@ -3362,7 +3362,7 @@ mod proposition_identity_tests {
             Variable(2_000_000),
             Sort::Algebraic(ty),
             equal(
-                MachineTerm::MemoryLoad(
+                MachineTerm::read_named(
                     crate::kernel::ProgramPoint::of_memory(
                         &SymbolicMemory::new().with_block("alpha-array", 8),
                     ),
@@ -3590,7 +3590,7 @@ mod proposition_identity_tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::MemoryLoad(
+                left: Box::new(MachineTerm::read_named(
                     crate::kernel::ProgramPoint::at(&load_memory),
                     Box::new(load_pointer),
                     crate::kernel::LoadKind::Int32,
@@ -3624,7 +3624,7 @@ mod proposition_identity_tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::MemoryLoad(
+                left: Box::new(MachineTerm::read_named(
                     crate::kernel::ProgramPoint::at(&changed_memory),
                     Box::new(changed_pointer),
                     crate::kernel::LoadKind::Int32,
@@ -4503,7 +4503,7 @@ mod memory_state_alpha_tests {
     fn fold_body(memory: &SharedMemory, item: Variable) -> IntegerTerm {
         IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             MachineIntegerType::Int32,
-            MachineTerm::MemoryLoad(
+            MachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(memory),
                 Box::new(Address {
                     base: "retained_state-alpha".into(),
@@ -4620,7 +4620,7 @@ mod memory_state_alpha_tests {
             Variable(312_001),
             IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                 MachineIntegerType::Int32,
-                MachineTerm::MemoryLoad(
+                MachineTerm::read_named(
                     crate::kernel::ProgramPoint::at(&memory),
                     Box::new(Address {
                         base: "retained_state-alpha".into(),
@@ -4811,7 +4811,7 @@ mod memory_state_alpha_tests {
                 )),
             )
         };
-        let explicit_first: SharedIntegerTerm = fold_with_body(MachineTerm::MemoryLoad(
+        let explicit_first: SharedIntegerTerm = fold_with_body(MachineTerm::read_named(
             crate::kernel::ProgramPoint::at(&first_memory),
             Box::new(first_registered_pointer),
             crate::kernel::LoadKind::Int32,
@@ -4819,7 +4819,7 @@ mod memory_state_alpha_tests {
         .into();
         let registered_first: SharedIntegerTerm =
             fold_with_body(MachineTerm::Variable(first_load)).into();
-        let explicit_nested: SharedIntegerTerm = fold_with_body(MachineTerm::MemoryLoad(
+        let explicit_nested: SharedIntegerTerm = fold_with_body(MachineTerm::read_named(
             crate::kernel::ProgramPoint::at(&nested_memory),
             Box::new(nested_registered_pointer),
             crate::kernel::LoadKind::Int32,
@@ -5102,7 +5102,7 @@ mod memory_state_alpha_tests {
                 Variable(324_101 + index * 2),
                 IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                     MachineIntegerType::Int32,
-                    MachineTerm::MemoryLoad(
+                    MachineTerm::read_named(
                         crate::kernel::ProgramPoint::at(&memory),
                         Box::new(Address {
                             base: block.into(),
@@ -5137,7 +5137,7 @@ mod memory_state_alpha_tests {
                 Variable(325_001 + index * 2),
                 IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                     MachineIntegerType::Int32,
-                    MachineTerm::MemoryLoad(
+                    MachineTerm::read_named(
                         crate::kernel::ProgramPoint::at(&memory),
                         Box::new(Address {
                             base: block.into(),

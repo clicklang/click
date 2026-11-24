@@ -6934,7 +6934,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             };
             let Some(kept) = spell(&Resource::Memory(
                 crate::kernel::MemoryRange::new_with_element_width(
-                    *address,
+                    address.into(),
                     0u32.into(),
                     count.into(),
                     width,
@@ -7421,7 +7421,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         else {
             return Ok(None);
         };
-        if left_pointer != right_pointer || left_kind != right_kind || left_memory == right_memory {
+        if left_pointer.address() != right_pointer.address()
+            || left_kind != right_kind
+            || left_memory.point() == right_memory.point()
+        {
             return Ok(None);
         }
         if matches!(
@@ -7438,9 +7441,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         };
         // The cell as the current state reads it.
         let current = crate::kernel::intern_memory_ref(view.fixed_state.state.memory());
-        let current_side = if right_memory == crate::kernel::ProgramPoint::at(&current) {
+        let current_side = if *right_memory.point() == crate::kernel::ProgramPoint::at(&current) {
             right
-        } else if left_memory == crate::kernel::ProgramPoint::at(&current) {
+        } else if *left_memory.point() == crate::kernel::ProgramPoint::at(&current) {
             left
         } else {
             return Ok(None);

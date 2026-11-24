@@ -574,7 +574,7 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                     MachineTerm::MemoryLoad(_, pointer, kind) => {
                         let _ = write!(identity, "load:{kind:?}(");
                         tasks.push(HavocIdentityTask::Text(")"));
-                        tasks.push(HavocIdentityTask::Pointer(*pointer));
+                        tasks.push(HavocIdentityTask::Pointer(pointer.into()));
                     }
                     MachineTerm::IntegerAddress(pointer, _) => {
                         identity.push_str("address(");

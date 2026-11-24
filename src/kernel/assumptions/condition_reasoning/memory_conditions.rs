@@ -98,7 +98,7 @@ impl PureFactContext {
                     MachineTerm::MemoryLoad(_, left_pointer, left_kind),
                     MachineTerm::MemoryLoad(_, right_pointer, right_kind),
                 ) => {
-                    left_pointer == right_pointer
+                    left_pointer.address() == right_pointer.address()
                         && left_kind == right_kind
                         && crate::kernel::explicit_atomic_equality_from_memory_derivations(
                             left, right, self,
@@ -561,7 +561,7 @@ mod tests {
             );
             (
                 MachineTerm::Variable(variable),
-                MachineTerm::MemoryLoad(
+                MachineTerm::read_named(
                     ProgramPoint::at(&memory),
                     Box::new(pointer),
                     LoadKind::Int32,

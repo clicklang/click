@@ -273,7 +273,7 @@ fn simple_statement_transition_does_not_transport_facts_automatically() {
         base: "arg-memory".into(),
         offset: AddressOffset::Constant(4),
     };
-    let first_value = MachineTerm::MemoryLoad(
+    let first_value = MachineTerm::read_named(
         crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(base_memory.clone()))),
         Box::new(first.clone()),
         crate::kernel::LoadKind::Int32,
@@ -283,7 +283,7 @@ fn simple_statement_transition_does_not_transport_facts_automatically() {
         .store(first.clone(), int32(first_value.clone()))
         .store(
             second.clone(),
-            int32(MachineTerm::MemoryLoad(
+            int32(MachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(
                     &(crate::kernel::intern_memory(base_memory.clone())),
                 ),
@@ -346,7 +346,7 @@ fn simple_statement_transition_does_not_transport_facts_automatically() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::MemoryLoad(
+            left: Box::new(MachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(
                     &(crate::kernel::intern_memory(post_state.memory().clone())),
                 ),

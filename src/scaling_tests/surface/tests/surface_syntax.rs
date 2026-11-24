@@ -188,7 +188,7 @@ fn qualified_storage_source_index_preserves_forks_and_scales() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::MemoryLoad(
+                left: Box::new(MachineTerm::read_named(
                     crate::kernel::ProgramPoint::at(
                         &(crate::kernel::intern_memory(SymbolicMemory::new())),
                     ),

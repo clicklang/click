@@ -2623,7 +2623,10 @@ fn collect_bitvector_integer_variables_seen(
     match term {
         MachineTerm::ThreadHandle(_) => {}
         MachineTerm::Constant { .. } | MachineTerm::Variable(_) => {}
-        MachineTerm::MemoryLoad(_, pointer, _) | MachineTerm::IntegerAddress(pointer, _) => {
+        MachineTerm::MemoryLoad(_, pointer, _) => {
+            collect_pointer_integer_variables(pointer.address(), variables, seen)
+        }
+        MachineTerm::IntegerAddress(pointer, _) => {
             collect_pointer_integer_variables(pointer, variables, seen)
         }
         MachineTerm::IntegerToMachine { value, .. } => {
@@ -3706,7 +3709,10 @@ fn collect_bitvector_capture_variables_seen(
                 }
             }
         }
-        MachineTerm::MemoryLoad(_, pointer, _) | MachineTerm::IntegerAddress(pointer, _) => {
+        MachineTerm::MemoryLoad(_, pointer, _) => {
+            collect_pointer_capture_variables(pointer.address(), variables, integer_seen)
+        }
+        MachineTerm::IntegerAddress(pointer, _) => {
             collect_pointer_capture_variables(pointer, variables, integer_seen)
         }
         MachineTerm::IntegerToMachine { value, .. } => {
@@ -4799,7 +4805,10 @@ fn collect_bitvector_scope_summary(
             }
             summary
         }
-        MachineTerm::MemoryLoad(_, pointer, _) | MachineTerm::IntegerAddress(pointer, _) => {
+        MachineTerm::MemoryLoad(_, pointer, _) => {
+            collect_pointer_scope_summary(pointer.address(), summaries)
+        }
+        MachineTerm::IntegerAddress(pointer, _) => {
             collect_pointer_scope_summary(pointer, summaries)
         }
         MachineTerm::IntegerToMachine { value, .. } => {
@@ -7287,7 +7296,7 @@ mod shared_read_walker_tests {
             )),
             offset: AddressOffset::Constant(0),
         };
-        let native = MachineTerm::MemoryLoad(
+        let native = MachineTerm::read_named(
             ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
             Box::new(pointer),
             LoadKind::Int32,
@@ -7312,7 +7321,7 @@ mod shared_read_walker_tests {
             base: AddressBase::Symbolic(Variable(994100)),
             offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(994101)), 4),
         };
-        let raw = MachineTerm::MemoryLoad(
+        let raw = MachineTerm::read_named(
             ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
             Box::new(pointer),
             LoadKind::Int32,

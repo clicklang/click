@@ -3401,7 +3401,7 @@ fn names_of_one_cell_framed(
     if left_kind != right_kind {
         return false;
     }
-    if left_pointer == right_pointer {
+    if left_pointer.address() == right_pointer.address() {
         return crate::kernel::explicit_atomic_equality_from_memory_derivations(
             &left,
             &right,

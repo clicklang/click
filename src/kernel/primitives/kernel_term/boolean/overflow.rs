@@ -201,7 +201,7 @@ mod tests {
                 let sources = memories.each_ref().map(|memory| ConditionTerm::Overflows {
                     format,
                     op,
-                    left: Box::new(MachineTerm::MemoryLoad(
+                    left: Box::new(MachineTerm::read_named(
                         ProgramPoint::at(memory),
                         Box::new(crate::kernel::SymbolicMemory::global_pointer(
                             "overflow-read",

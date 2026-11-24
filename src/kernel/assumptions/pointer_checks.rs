@@ -285,7 +285,7 @@ mod tests {
             let make = |memory| {
                 let value = SharedMachineIntegerTerm::index(
                     format,
-                    MachineTerm::MemoryLoad(
+                    MachineTerm::read_named(
                         ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                         Box::new(cell.clone()),
                         if matches!(

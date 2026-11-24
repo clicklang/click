@@ -16,7 +16,7 @@ fn unobserved_read_inspection_is_indexed_and_leaves_no_record() {
                 4,
             );
         }
-        let read = MachineTerm::MemoryLoad(
+        let read = MachineTerm::read_named(
             ProgramPoint::at(&memory),
             Box::new(pointer.clone()),
             LoadKind::Int32,

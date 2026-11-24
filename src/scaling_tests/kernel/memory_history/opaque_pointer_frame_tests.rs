@@ -81,7 +81,7 @@ fn bounded_pointer_value_skips_unrelated_facts_cells_and_history() {
                 .store(write_alias, ProgramValue::UInt64(value.clone())),
         );
         let projected = canonical_projected_load_memory(&source, &wide_address);
-        let wide_read = MachineTerm::MemoryLoad(
+        let wide_read = MachineTerm::read_named(
             ProgramPoint::at(&projected),
             Box::new(wide_address),
             LoadKind::Bits64,
@@ -238,7 +238,7 @@ fn sibling_pointer_reads_stop_before_unrelated_shared_history() {
             );
         }
         let legacy = |memory: &SharedMemory| {
-            Address::loaded(&MachineTerm::MemoryLoad(
+            Address::loaded(&MachineTerm::read_named(
                 ProgramPoint::at(memory),
                 Box::new(field.clone()),
                 LoadKind::Int32,
@@ -300,7 +300,7 @@ fn packed_word_transport_visits_only_the_selected_word_and_delta() {
             );
         }
         let before = intern_memory(memory);
-        let bits = MachineTerm::MemoryLoad(
+        let bits = MachineTerm::read_named(
             ProgramPoint::at(&before),
             Box::new(field.clone()),
             LoadKind::Bits64,
@@ -400,7 +400,7 @@ fn converted_narrow_read_value_uses_only_selected_terms_and_cells() {
         }
         let value = MachineTerm::narrow_constant(MachineIntegerType::UInt8, 129);
         memory = memory.store(pointer.clone(), ProgramValue::UInt8(value.clone()));
-        let load = MachineTerm::MemoryLoad(
+        let load = MachineTerm::read_named(
             ProgramPoint::at(&(intern_memory(memory))),
             Box::new(pointer),
             LoadKind::UInt8,

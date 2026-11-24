@@ -228,7 +228,7 @@ mod tests {
             .store(field.clone(), ProgramValue::Int32(MachineTerm::constant(3)));
         let context = PureFactContext::new();
         for wide in [None, Some(false), Some(true)] {
-            let load = MachineTerm::MemoryLoad(
+            let load = MachineTerm::read_named(
                 ProgramPoint::at(&before),
                 Box::new(field.clone()),
                 if wide.is_some() {
@@ -323,7 +323,7 @@ mod tests {
         )
         .with_bounds(Some(SubobjectBounds {
             start: field.clone(),
-            width: MachineTerm::MemoryLoad(
+            width: MachineTerm::read_named(
                 ProgramPoint::at(&before),
                 Box::new(field),
                 LoadKind::Int32,
@@ -347,7 +347,7 @@ mod tests {
             .clone()
             .store(other, ProgramValue::Int32(MachineTerm::constant(3)));
         let loaded = Arc::new(Address::loaded_value(&before, &field));
-        let base = Address::from_integer_address(MachineTerm::MemoryLoad(
+        let base = Address::from_integer_address(MachineTerm::read_named(
             ProgramPoint::at(&before),
             Box::new(field),
             LoadKind::Bits64,
@@ -388,7 +388,7 @@ mod tests {
             .store(other, ProgramValue::Int32(MachineTerm::constant(3)));
         let loaded = Arc::new(Address::loaded_value(&before, &field));
         let source = Pointer::new(
-            Address::from_integer_address(MachineTerm::MemoryLoad(
+            Address::from_integer_address(MachineTerm::read_named(
                 ProgramPoint::at(&before),
                 Box::new(field.clone()),
                 LoadKind::Bits64,

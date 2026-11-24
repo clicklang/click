@@ -571,7 +571,7 @@ mod tests {
             let native = machine_fold(
                 81,
                 82,
-                MachineTerm::MemoryLoad(
+                MachineTerm::read_named(
                     crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory_ref(memory))),
                     Box::new(pointer.clone()),
                     LoadKind::Int32,

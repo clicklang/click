@@ -1513,7 +1513,7 @@ fn indexed_rewrite_does_not_spell_registered_read_definitions() {
         let mut facts = Vec::new();
         let mut reads = Vec::new();
         for index in 0..size {
-            let load = MachineTerm::MemoryLoad(
+            let load = MachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(&memory),
                 Box::new(Address {
                     base: "rewrite_reads".into(),
@@ -1876,7 +1876,7 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
                 Box::new(MachineTerm::constant(7)),
             );
             memory = memory.store(pointer.clone(), ProgramValue::UInt32(stored.clone()));
-            let load = MachineTerm::MemoryLoad(
+            let load = MachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
                 Box::new(pointer),
                 crate::kernel::LoadKind::Int32,
@@ -2486,7 +2486,7 @@ fn fixed_state_goal_opening_ignores_load_equality_buckets() {
     let surfaces = SurfacePropositionMap::default();
     let memory = crate::kernel::intern_memory(crate::kernel::SymbolicMemory::new());
     let read = |index| {
-        MachineTerm::MemoryLoad(
+        MachineTerm::read_named(
             crate::kernel::ProgramPoint::at(&memory),
             Box::new(crate::kernel::Address::symbolic(Variable(index))),
             crate::kernel::LoadKind::Int32,

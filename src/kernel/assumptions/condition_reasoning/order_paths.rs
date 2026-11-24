@@ -4236,7 +4236,7 @@ mod shared_read_order_bridge_tests {
             &separated,
         );
         let read = |memory| {
-            MachineTerm::MemoryLoad(
+            MachineTerm::read_named(
                 ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                 Box::new(pointer.clone()),
                 LoadKind::Int32,

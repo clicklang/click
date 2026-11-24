@@ -374,7 +374,7 @@ fn loads_unchanged(left: &MachineTerm, right: &MachineTerm, assumptions: &PureFa
     // Two spellings of one address: with its inner reads shown unchanged,
     // the right side's load at the left side's address has the right side's
     // value.
-    if left_pointer != right_pointer
+    if left_pointer.address() != right_pointer.address()
         && !pointers_equal_with_load_atoms(left_pointer, right_pointer, &|a, b| {
             loads_unchanged(a, b, assumptions)
         })

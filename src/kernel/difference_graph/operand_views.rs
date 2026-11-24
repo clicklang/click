@@ -930,7 +930,7 @@ mod tests {
                     .clone()
                     .store(address.clone(), ProgramValue::Int32(17u32.into())),
             );
-            let other = MachineTerm::MemoryLoad(
+            let other = MachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(&changed),
                 Box::new(address.clone()),
                 LoadKind::Int32,

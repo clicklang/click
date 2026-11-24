@@ -98,7 +98,7 @@ impl StoreReadKey {
         }
         Some((
             Self {
-                point: point.clone(),
+                point: point.point().clone(),
                 offset: address.offset.clone(),
             },
             address,
@@ -1346,7 +1346,7 @@ mod store_source_tests {
             base: AddressBase::ExternalArgument,
             offset: AddressOffset::Variable(Variable(1)),
         };
-        let read = MachineTerm::MemoryLoad(
+        let read = MachineTerm::read_named(
             ProgramPoint::at(&memory),
             Box::new(address.clone()),
             LoadKind::UInt32,
@@ -1410,7 +1410,7 @@ mod store_source_tests {
         let equation = |point| {
             Arc::new(Proposition::condition_is(
                 ConditionTerm::uint32_equal(
-                    MachineTerm::MemoryLoad(point, Box::new(address.clone()), LoadKind::UInt32),
+                    MachineTerm::read_named(point, Box::new(address.clone()), LoadKind::UInt32),
                     MachineTerm::uint32_constant(7),
                 ),
                 true,

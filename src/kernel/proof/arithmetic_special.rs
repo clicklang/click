@@ -183,10 +183,13 @@ fn bitvector_payload(root: &MachineTerm) -> Option<usize> {
                 payload = payload.checked_add(name.len())?;
                 pending.extend(arguments.iter());
             }
-            MachineTerm::IntegerAddress(pointer, _) | MachineTerm::MemoryLoad(_, pointer, _) => {
+            MachineTerm::IntegerAddress(pointer, _) => {
+                payload = payload.checked_add(pointer_payload(pointer)?)?;
+            }
+            MachineTerm::MemoryLoad(_, pointer, _) => {
                 // A read owns an interned state; only its written address
                 // contributes syntax payload, never the state contents.
-                payload = payload.checked_add(pointer_payload(pointer)?)?;
+                payload = payload.checked_add(pointer_payload(pointer.address())?)?;
             }
             _ => return None,
         }
@@ -448,7 +451,7 @@ fn legacy_bitvector_equal_after_payload_check(left: &MachineTerm, right: &Machin
                 }
             }
             (MachineTerm::MemoryLoad(lm, lp, lk), MachineTerm::MemoryLoad(rm, rp, rk)) => {
-                if lm != rm || lk != rk || !address_equal(lp, rp) {
+                if lm.point() != rm.point() || lk != rk || !address_equal(lp, rp) {
                     return false;
                 }
             }
@@ -4007,7 +4010,7 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let next = pointer(AddressOffset::Constant(0));
         let address = MachineTerm::integer_address(next.clone());
-        let raw = MachineTerm::MemoryLoad(
+        let raw = MachineTerm::read_named(
             crate::kernel::ProgramPoint::at(
                 &(crate::kernel::intern_memory(crate::kernel::SymbolicMemory::new())),
             ),

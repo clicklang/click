@@ -3697,7 +3697,7 @@ mod tests {
         let mut labels = MemoryStateLabels::with_state(ParameterBinding::default(), &after);
         labels.source_state(&before, "pre".into());
         let load = |memory: &SymbolicMemory, kind| {
-            equality(MachineTerm::MemoryLoad(
+            equality(MachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(&(SharedMemory::from(memory.clone()))),
                 Box::new(pointer.clone()),
                 kind,
@@ -3750,7 +3750,7 @@ mod tests {
             ProgramType::Int32Pointer,
         )));
         let load = |memory: &SymbolicMemory| {
-            equality(MachineTerm::MemoryLoad(
+            equality(MachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(&(SharedMemory::from(memory.clone()))),
                 Box::new(heap.clone()),
                 LoadKind::Int32,
@@ -3816,7 +3816,7 @@ mod resource_tests {
         let resource = |memory: &SymbolicMemory| {
             ResourceFact::view_composite(
                 "sampled".into(),
-                vec![ProgramValue::Int32(MachineTerm::MemoryLoad(
+                vec![ProgramValue::Int32(MachineTerm::read_named(
                     crate::kernel::ProgramPoint::at(&(SharedMemory::from(memory.clone()))),
                     Box::new(pointer.clone()),
                     LoadKind::Int32,

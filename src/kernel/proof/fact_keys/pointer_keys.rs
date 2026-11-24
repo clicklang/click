@@ -449,7 +449,7 @@ mod tests {
             SharedPointer::import(&pointer(AddressOffset::Int32Scaled {
                 value: SharedMachineIntegerTerm::index(
                     MachineIntegerType::Int32,
-                    MachineTerm::MemoryLoad(
+                    MachineTerm::read_named(
                         crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                         Box::new(address.clone()),
                         LoadKind::Int32,

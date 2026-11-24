@@ -112,7 +112,7 @@ mod tests {
         let memory = SymbolicMemory::new();
         let source = Variable(55);
         let replacement = Address::symbolic(Variable(56));
-        let read = MachineTerm::MemoryLoad(
+        let read = MachineTerm::read_named(
             ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
             Box::new(Address::symbolic(source)),
             LoadKind::Int32,
@@ -139,7 +139,7 @@ mod tests {
             unreachable!()
         };
         assert_eq!(
-            retained_state,
+            ProgramPoint::from(retained_state),
             ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory)))
         );
         assert_eq!(*pointer, replacement);

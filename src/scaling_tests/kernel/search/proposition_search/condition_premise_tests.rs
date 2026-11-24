@@ -113,7 +113,7 @@ fn state_condition_index_builds_once_and_survives_scalar_updates() {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(term(20_000 + index as u64)),
-                right: Box::new(MachineTerm::MemoryLoad(
+                right: Box::new(MachineTerm::read_named(
                     ProgramPoint::at(&memory),
                     Box::new(Address {
                         base: "other".into(),
@@ -151,7 +151,7 @@ fn state_condition_index_builds_once_and_survives_scalar_updates() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(term(90_000)),
-            right: Box::new(MachineTerm::MemoryLoad(
+            right: Box::new(MachineTerm::read_named(
                 ProgramPoint::at(&memory),
                 Box::new(Address {
                     base: "other".into(),
@@ -319,7 +319,7 @@ fn arithmetic_candidates_omit_registered_read_definitions() {
         let mut context = PureFactContext::new();
         let mut reads = Vec::new();
         for index in 0..size {
-            let read = MachineTerm::MemoryLoad(
+            let read = MachineTerm::read_named(
                 ProgramPoint::at(&memory),
                 Box::new(Address {
                     base: "buffer".into(),

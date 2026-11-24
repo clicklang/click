@@ -705,7 +705,7 @@ fn checked_fold_collectors_bound_mixed_carrier_payloads_and_opaque_states() {
             base: AddressBase::Concrete("checked-fold-opaque".into()),
             offset: AddressOffset::Constant(0),
         };
-        let replacement_payload = MachineTerm::MemoryLoad(
+        let replacement_payload = MachineTerm::read_named(
             ProgramPoint::at(&memory),
             Box::new(pointer),
             crate::kernel::LoadKind::Int32,
@@ -762,7 +762,7 @@ fn checked_fold_collectors_bound_mixed_carrier_payloads_and_opaque_states() {
         }
         let integer_capture = *integer_accumulators.last().unwrap();
         let c_capture = *c_items.last().unwrap();
-        let mut mixed_c_payload = MachineTerm::MemoryLoad(
+        let mut mixed_c_payload = MachineTerm::read_named(
             ProgramPoint::at(&memory),
             Box::new(pointer.clone()),
             crate::kernel::LoadKind::Int32,
@@ -869,7 +869,7 @@ fn checked_fold_collectors_bound_mixed_carrier_payloads_and_opaque_states() {
         }
         let math_capture = *math_accumulators.last().unwrap();
         let c_item_capture = *mixed_c_items.last().unwrap();
-        let mut c_replacement = MachineTerm::MemoryLoad(
+        let mut c_replacement = MachineTerm::read_named(
             ProgramPoint::at(&memory),
             Box::new(pointer),
             crate::kernel::LoadKind::Int32,
@@ -1641,7 +1641,7 @@ fn resource_read_collection_scales_with_selected_arguments() {
         let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let arguments = (0..size)
             .map(|index| {
-                AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::MemoryLoad(
+                AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::read_named(
                     ProgramPoint::at(&memory),
                     Box::new(Address::symbolic(Variable(3_219_100 + index as u64))),
                     LoadKind::Int32,
@@ -1683,7 +1683,7 @@ fn one_proposition_read_comparison_batch_scales_with_selected_reads() {
         let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let reads: Vec<_> = (0..size)
             .map(|index| {
-                MachineTerm::MemoryLoad(
+                MachineTerm::read_named(
                     ProgramPoint::at(&memory),
                     Box::new(Address::symbolic(Variable(4_021_000 + index as u64))),
                     LoadKind::Int32,

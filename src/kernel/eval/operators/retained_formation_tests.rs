@@ -232,7 +232,7 @@ fn coordinate_reconstruction_keeps_the_selected_read_state() {
     let mut results = vec![];
     for memory in [before, after] {
         let memory = crate::kernel::intern_memory(memory);
-        let read = MachineTerm::MemoryLoad(
+        let read = MachineTerm::read_named(
             ProgramPoint::at(&memory),
             Box::new(pointer.clone()),
             LoadKind::Bits64,

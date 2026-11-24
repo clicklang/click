@@ -6036,7 +6036,7 @@ void child_release(struct child* obj) {
         let condition = ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::MemoryLoad(
+            left: Box::new(MachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(&retained_state),
                 Box::new(pointer.clone()),
                 crate::kernel::LoadKind::Int32,
@@ -6991,7 +6991,7 @@ mod declared_scalar_field_observation_tests {
             matches!(value, ProgramValue::Pointer(_)),
             "a pointer field must not be cached as an integer prefix"
         );
-        let expected = Address::loaded(&MachineTerm::MemoryLoad(
+        let expected = Address::loaded(&MachineTerm::read_named(
             crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
             Box::new(base.clone()),
             crate::kernel::LoadKind::Int32,

@@ -2009,10 +2009,14 @@ pub(in crate::kernel) fn abstract_value_source(
         else {
             return None;
         };
-        if *loaded_address != address || source.as_ref().is_some_and(|source| *source != loaded) {
+        if *loaded_address.address() != address
+            || source
+                .as_ref()
+                .is_some_and(|source| source != loaded.point())
+        {
             return None;
         }
-        source = Some(loaded);
+        source = Some(loaded.into());
     }
     source
 }
@@ -3227,7 +3231,7 @@ fn comparison_form_uncached(proposition: &Proposition) -> Option<Proposition> {
             else {
                 return None;
             };
-            Some(((memory.clone(), pointer.as_ref().clone()), *stored))
+            Some(((memory.point().clone(), pointer.address().clone()), *stored))
         })
         .collect::<std::collections::HashMap<_, _>>();
     let replacements = variables
@@ -5669,7 +5673,7 @@ fn record_wide_load_observation(term: &MachineTerm, variable: Variable) {
     let epoch = LOAD_ORIGIN_EPOCH.with(std::cell::Cell::get);
     crate::instrumentation::record_deterministic_work(1);
     let point = if has_selected_read_point(memory) {
-        memory.clone()
+        memory.point().clone()
     } else {
         ProgramPoint::at(memory.shared_memory())
     };
@@ -7893,8 +7897,8 @@ mod tests {
         else {
             panic!("the unresolved distinct load should have a symbolic identity");
         };
-        assert_eq!(*named_memory, ProgramPoint::at(&ancestor));
-        assert_eq!(**named_pointer, read);
+        assert_eq!(*named_memory.point(), ProgramPoint::at(&ancestor));
+        assert_eq!(*named_pointer.address(), read);
 
         // Reuse the same per-load cache deliberately. Its assumption-context
         // key must prevent the distinct answer, and therefore the ancestor
@@ -8158,8 +8162,8 @@ mod tests {
         let produced = &facts[0];
         assert!(produced.generated_load_binding().is_some());
         assert_eq!(produced.generated_load_source_events().len(), 1);
-        // Exercise the raw descriptor form too: structural state equality
-        // can hold across epochs, but it must not carry producer authority.
+        // Exercise the raw descriptor form too: a proposition carried into a
+        // new epoch must not carry producer authority.
         let fact = ExecutionPureFact::certified(Proposition::condition_is(
             ConditionTerm::equal(MachineTerm::Variable(variable), first_load),
             true,
@@ -8168,8 +8172,9 @@ mod tests {
         .with_generated_load_source_event(produced.generated_load_source_events()[0].clone());
 
         // A fresh arena represents a new epoch. Its empty SymbolicMemory is
-        // structurally equal to the first one, but its embedded state
-        // identity is intentionally different.
+        // structurally equal to the first one, but its state identity is
+        // different, and a read is its interned load: the read of the same
+        // cell in the new epoch is another term.
         crate::kernel::primitives::start_fresh_memory_arena();
         let second_memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let second_load = crate::kernel::MachineTerm::read_named(
@@ -8186,7 +8191,7 @@ mod tests {
             },
             true,
         );
-        assert_eq!(fact.proposition(), &replacement);
+        assert_ne!(fact.proposition(), &replacement);
         assert_ne!(
             MemoryStateIdentity::of(first_memory.memory()),
             MemoryStateIdentity::of(second_memory.memory())

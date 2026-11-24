@@ -2767,7 +2767,7 @@ pub(in crate::kernel) fn load_equality_lacks_recorded_evidence(
     };
     // Two reads of one address that differ in kind are two values whatever
     // the history says, so no structural route may call them equal.
-    left_pointer != right_pointer
+    left_pointer.address() != right_pointer.address()
         || left_kind != right_kind
         || loads_lack_recorded_equality(
             left_memory.shared_memory(),
@@ -3568,7 +3568,7 @@ fn unrelated_forgotten_states_do_not_prove_their_loads_equal() {
     );
 
     let load = |memory: &SymbolicMemory| {
-        MachineTerm::MemoryLoad(
+        MachineTerm::read_named(
             ProgramPoint::at(&(crate::kernel::intern_memory_ref(memory))),
             Box::new(pointer.clone()),
             crate::kernel::LoadKind::Int32,
@@ -3585,7 +3585,7 @@ fn unrelated_forgotten_states_do_not_prove_their_loads_equal() {
 fn unrelated_states_do_not_erase_object_or_heap_state_visible_to_the_load() {
     let loads_proven_equal = |left: &SymbolicMemory, right: &SymbolicMemory, pointer: &Address| {
         let load = |memory: &SymbolicMemory| {
-            MachineTerm::MemoryLoad(
+            MachineTerm::read_named(
                 ProgramPoint::at(&(crate::kernel::intern_memory_ref(memory))),
                 Box::new(pointer.clone()),
                 crate::kernel::LoadKind::Int32,
@@ -5296,8 +5296,8 @@ fn materialized_cell_source(cell_pointer: &Address, value: &ProgramValue) -> Opt
     // The cell is the load only when it holds the load of its own kind: a
     // narrower or differently signed read stored in it is another value
     // than a read of the cell returns.
-    (source_pointer.as_ref() == cell_pointer && kind.reads_value(value))
-        .then_some(source.into_shared_memory())
+    (source_pointer.address() == cell_pointer && kind.reads_value(value))
+        .then_some(ProgramPoint::from(source).into_shared_memory())
 }
 
 /// The bounded-alias-only form of
@@ -5673,7 +5673,7 @@ mod retained_endpoint_tests {
         let one = MachineTerm::constant(1);
         let p = Address::symbolic(Variable(993813));
         let before = crate::kernel::intern_memory(SymbolicMemory::new());
-        let load = MachineTerm::MemoryLoad(ProgramPoint::at(&before), Box::new(p), LoadKind::Int32);
+        let load = MachineTerm::read_named(ProgramPoint::at(&before), Box::new(p), LoadKind::Int32);
         let terms = [
             x.clone(),
             y.clone(),

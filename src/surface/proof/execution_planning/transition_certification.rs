@@ -1284,7 +1284,7 @@ mod condition_transition_tests {
             offset: AddressOffset::Constant(0),
         };
         let load = |pointer: Address| {
-            MachineTerm::MemoryLoad(
+            MachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(&memory),
                 Box::new(pointer),
                 crate::kernel::LoadKind::Int32,
