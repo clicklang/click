@@ -158,7 +158,7 @@ theorem certification consumes checks that theorem once. A proved library
 theorem is trusted to the extent that the check of its proof is; a kernel
 standard theorem is trusted to the extent that its builder is.
 
-The library also declares 127 `axiom`s, which are trusted, not proved.
+The library also declares 128 `axiom`s, which are trusted, not proved.
 Seven are the laws of the primitive type `Vec<T>` in
 `library/rust/vec.click`, which relate its bodyless operations `vec::len`,
 `vec::get`, `vec::push` and `vec::set`
@@ -242,6 +242,10 @@ Two narrowing axioms in `library/float_order.click` preserve an ordered
 `double` comparison as a non-strict `float` comparison after rounding both
 operands. The true input comparison excludes NaNs. Rounding preserves
 order for finite values, infinities and signed zeros.
+
+The `int32_to_float32_le` axiom states that rounding signed 32-bit integers
+to float32 preserves non-strict order. Distinct integers can round to the
+same floating-point value.
 
 The rounded product axioms distinguish two positive lower endpoints from
 two finite operand intervals. A positive lower endpoint rules out zero,

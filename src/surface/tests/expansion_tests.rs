@@ -27051,6 +27051,15 @@ fn arithmetic_safety_bounds_expand_to_checked_proofs() {
 #[test]
 fn float_cast_bounds_expand_and_cold_replay() {
     for (fixture, functions) in [
+        (
+            "arithmetic_float_cast_from_integer_bounds",
+            &[
+                "via_double",
+                "unsigned_via_double",
+                "short_via_float",
+                "via_float",
+            ][..],
+        ),
         ("arithmetic_safety_float_widening", &["convert"][..]),
         (
             "arithmetic_safety_float_narrowing_keeps_rounded_bounds",
@@ -27069,6 +27078,11 @@ fn float_cast_bounds_expand_and_cold_replay() {
             let expanded = expand_c_claim_source_by_label(&source, &sources, &claim)
                 .unwrap_or_else(|error| panic!("{}", error.report()));
             assert!(!expanded.contains("normalize()"), "{expanded}");
+            if *function == "via_float" {
+                let (cast_proof, _) = expanded.split_once("theorem rounded_upper(").unwrap();
+                assert!(cast_proof.contains("click::integer::lt_le_predecessor"));
+                assert!(cast_proof.contains("click::float_order::int32_to_float32_le"));
+            }
             if *function == "cast_narrowed" {
                 let (cast_proof, _) = expanded.split_once("theorem rounded(").unwrap();
                 assert!(

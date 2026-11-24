@@ -947,3 +947,6 @@ src/surface/proof/smart_closures/float_intervals.rs	search	ProofSearch::try_floa
 src/surface/proof/smart_closures/float_intervals.rs	search	ProofSearch::try_float_zero_product_bound	driver	1
 src/surface/proof/smart_closures/float_intervals.rs	search	ProofSearch::try_float_square_bound	resolve_float_interval_bound	1
 src/surface/proof/smart_closures/float_intervals.rs	search	ProofSearch::try_float_square_bound	try_apply_float_interval_bound	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_float_bound_link	try_rounded_int32_to_float32_bound	1
+src/surface/proof/smart_closures/float_intervals.rs	search	ProofSearch::try_rounded_int32_to_float32_bound	driver	1
+src/surface/proof/smart_closures/float_intervals.rs	search	ProofSearch::try_rounded_int32_to_float32_bound	try_apply_float_interval_bound	1

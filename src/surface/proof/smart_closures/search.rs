@@ -4249,6 +4249,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         {
             return Ok(Some(closed));
         }
+        if let Some(closed) =
+            Self::try_rounded_int32_to_float32_bound(input, source, goal, source_surface)?
+        {
+            return Ok(Some(closed));
+        }
         Self::try_float_scale_bound(input, source, goal, source_surface)
     }
 

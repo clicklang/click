@@ -35,6 +35,8 @@ and [`arithmetic_expression_float_bound_composition.md`](arithmetic_expression_f
 The narrowing laws `float_order::float64_narrow_le` and
 `float_order::float64_narrow_lt` are exercised in
 [`arithmetic_safety_float_narrowing_keeps_rounded_bounds.md`](arithmetic_safety_float_narrowing_keeps_rounded_bounds.md).
+The rounded cast law `float_order::int32_to_float32_le` is exercised in
+[`arithmetic_float_cast_from_integer_bounds.md`](arithmetic_float_cast_from_integer_bounds.md).
 The product bounds `float_order::float32_positive_product_lower` and
 `float_order::float64_positive_product_lower` are exercised in
 [`arithmetic_expression_float_reciprocal_and_products.md`](arithmetic_expression_float_reciprocal_and_products.md).

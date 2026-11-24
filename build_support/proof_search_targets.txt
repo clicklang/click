@@ -306,3 +306,4 @@ resolve_float_interval_bound
 try_retain_float_interval_fact
 try_float_zero_product_bound
 try_float_square_bound
+try_rounded_int32_to_float32_bound
