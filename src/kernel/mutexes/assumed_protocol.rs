@@ -134,6 +134,9 @@ impl AssumedMutexProtocol {
         output: Option<crate::kernel::InstanceId>,
         budget: &mut crate::kernel::ExecutionBudget,
     ) -> Result<(AssumedMutexTransition, AssumedMutexGuard), MutexTransitionError> {
+        // The point the lock starts from, which names where its acquired
+        // population totals are spelled.
+        let acquired_from = state.program_point().id();
         let borrows = self.borrows(state)?;
         // A hidden or removed guard still pins the scope. Do not decide local
         // heldness by merely searching the visible resource context.
@@ -184,8 +187,29 @@ impl AssumedMutexProtocol {
         state.borrow_ledger = Some(next);
         if let (Some(payload), Some(definition)) = (&payload, definition) {
             state = state
-                .import_acquired_control_authorities(payload, definition, assumptions)
+                .import_acquired_control_authorities(
+                    payload,
+                    definition,
+                    assumptions,
+                    acquired_from,
+                )
                 .map_err(MutexTransitionError::OwnedRefusal)?;
+            // As for a control a call returns: the held control's checked
+            // body permits observing its populations' counts while folded.
+            if definition.contains().iter().any(|spec| {
+                matches!(
+                    spec.term(),
+                    crate::kernel::ResourceTerm::PopulationAuthority { .. }
+                )
+            }) {
+                state = state
+                    .with_checked_current_control_wrapper(
+                        &ResourceFact::own(Resource::Instance(payload.clone())),
+                        definition,
+                        assumptions,
+                    )
+                    .map_err(MutexTransitionError::OwnedRefusal)?;
+            }
         }
         Ok((
             AssumedMutexTransition { state, evidence },

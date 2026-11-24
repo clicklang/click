@@ -6319,7 +6319,7 @@ fn prepare_verified_function_call<'a>(
                 )));
             };
             let entered = entry_events
-                .import_acquired_control_population(description, owned)
+                .import_acquired_control_population(description, owned, None)
                 .and_then(|events| {
                     events.transfer_call_fact(callee_events, caller_events, description, true)
                 })

@@ -1224,6 +1224,13 @@ in checked certificates, so a fact the kernel records about it, such as the
 bound `count >= 1` a consumed member places on it, is cited like a written
 premise
 (`mdtests/a_consumed_member_bound_on_an_entry_count_is_cited.md`).
+A total a mutex lock acquires is written
+`at(statement(i).exit, count(R(p)))` for the lock's statement `i`: the count
+where the lock returns. The lock's returned control holds the population's
+authority, so the count can be read there and while that control stays
+folded (`mdtests/a_lock_exit_reads_its_acquired_total.md`). A state that holds
+no authority over the population, such as the lock's entry, has no readable
+count (`mdtests/a_count_before_the_lock_is_refused.md`).
 Resources may declare `field total: Integer;`: folding checks the resource's
 facts, and `old(model.total)` retains the entry value across updates.
 Checked resource pattern bindings retain each field's declared carrier, name,

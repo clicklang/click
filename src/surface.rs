@@ -4920,6 +4920,31 @@ impl RecordedStates {
         }
     }
 
+    /// Where a population total a lock acquired is spelled: the exit of the
+    /// region whose recorded entry the lock started from, when that exit's
+    /// state still counts exactly that total.
+    pub(in crate::surface) fn acquired_total_point(
+        &self,
+        variable: crate::kernel::Variable,
+        acquired_from: crate::kernel::program_point::ProgramPointId,
+    ) -> Option<ProgramPointSelector> {
+        let ProgramPointSelector::ProgramPoint(ProgramPointRef {
+            region,
+            kind: ProgramPointKind::Entry,
+        }) = self.point_names.get(&acquired_from)?
+        else {
+            return None;
+        };
+        let exit = ProgramPointSelector::ProgramPoint(ProgramPointRef {
+            region: region.clone(),
+            kind: ProgramPointKind::Exit,
+        });
+        let state = self.get(&exit)?;
+        (state.population_count_acquired_point(variable) == Some(acquired_from)
+            && state.population_total_unchanged(variable))
+        .then_some(exit)
+    }
+
     /// The name of the recorded point a path reached, by that point's
     /// identity.
     #[cfg_attr(not(test), allow(dead_code))]

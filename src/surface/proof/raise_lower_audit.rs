@@ -519,6 +519,44 @@ int32 short_sum(int32 seed) {
         );
     }
 
+    #[test]
+    fn a_total_a_lock_acquired_round_trips_at_the_lock_exit() {
+        let fixture = crate::cli::parse_mdtest(
+            std::path::Path::new("authority_mutex_locked_release.md"),
+            include_str!("../../../mdtests/authority_mutex_locked_release.md"),
+        )
+        .unwrap();
+        let sources = fixture
+            .c_sources
+            .iter()
+            .map(|(name, source)| (name.as_str(), source.as_str()))
+            .collect::<Vec<_>>();
+        let lines = capture(|| {
+            crate::surface::verify_c_sources(fixture.click_source.as_deref().unwrap(), &sources)
+                .unwrap();
+        });
+        let counts = lines
+            .iter()
+            .filter(|line| {
+                line.split('\t')
+                    .nth(7)
+                    .is_some_and(|raised| raised.contains("count("))
+            })
+            .collect::<Vec<_>>();
+        assert!(
+            counts.iter().any(|line| {
+                line.starts_with("same\t")
+                    && line.split('\t').nth(7)
+                        == Some("at(statement(0).exit, (count(reference(obj)) as int32)) >= 1")
+            }),
+            "{counts:#?}"
+        );
+        assert!(
+            counts.iter().all(|line| !line.starts_with("unlowered\t")),
+            "{counts:#?}"
+        );
+    }
+
     /// The round trips `fixture` records, as `(outcome, original)` pairs.
     fn round_trips(name: &str, text: &str) -> Vec<(String, String)> {
         let fixture = crate::cli::parse_mdtest(std::path::Path::new(name), text).unwrap();
