@@ -83,6 +83,46 @@ fn narrow_comparison_identity_is_constant_in_operand_size() {
     );
 }
 
+/// An algebraic read's stand-in decodes at its own type
+/// (`LoadKind::Algebraic`), so building one interns the type. A type that is
+/// not a plain rigid name (an instance with arguments, an enum) is found by
+/// its name's candidates, never by scanning every type the process has
+/// interned: the work to find it, and to build the stand-in, is the same
+/// however many other such types are interned.
+#[test]
+fn structural_type_lookup_and_algebraic_stand_in_do_not_scan_registered_types() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let instance = |name: String| AlgebraicType {
+        arguments: vec![AlgebraicValueType::Integer],
+        ..AlgebraicType::parameter(name)
+    };
+    let target = instance("scaling::structural_target".into());
+    let target_name = TypeParameterName::of(&target);
+    let memory = intern_memory(SymbolicMemory::new());
+    let point = ProgramPoint::at(&memory);
+    let pointer = Address::symbolic(Variable(930_100));
+    let mut counts = Vec::new();
+    for size in [16, 256, 4096] {
+        for index in 0..size {
+            TypeParameterName::of(&instance(format!("scaling::structural_{size}_{index}")));
+        }
+        let (stand_in, work) = crate::instrumentation::measure_deterministic_work(|| {
+            assert_eq!(TypeParameterName::of(&target), target_name);
+            assert!(TypeParameterName::carries(&target));
+            AlgebraicTermNode::memory_load_carrier(&point, &pointer, &target)
+        });
+        assert!(matches!(
+            stand_in,
+            MachineTerm::MemoryLoad(_, _, LoadKind::Algebraic(name)) if name == target_name
+        ));
+        counts.push(work);
+    }
+    assert!(
+        counts.iter().all(|&count| count == counts[0]),
+        "work by registered structural types: {counts:?}"
+    );
+}
+
 /// Opaque exception values keep their type at every call/throw boundary.
 /// Both existing and newly admitted rigid names use the name index.
 #[test]

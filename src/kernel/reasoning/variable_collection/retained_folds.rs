@@ -426,12 +426,15 @@ pub(super) fn common_variables(
                 FoldVariableRead::IntegerBinders | FoldVariableRead::MachineBinders => {}
                 FoldVariableRead::ExpressionFree => {
                     let (point, address) = read.parts();
-                    // The native algebraic collector uses the Bits64 read
-                    // kind to follow registered origins for havoc framing.
+                    let KernelType::Algebraic(algebraic_type) = term.ty() else {
+                        unreachable!("an algebraic read has an algebraic type");
+                    };
+                    // The native algebraic collector follows registered
+                    // origins for havoc framing at the read's own decoding.
                     collect_machine_read_variables(
                         point,
                         address.exact_cell_key(),
-                        LoadKind::Bits64,
+                        LoadKind::of_algebraic(algebraic_type),
                         &mut leaf_variables,
                     );
                 }
