@@ -958,6 +958,19 @@ fn cpp_mdtest_audit_inventories_imported_semantics() {
 }
 
 #[test]
+fn cpp_theorem_expansion_uses_imported_record_layouts() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/cpp_class_template_override_calls_its_own_method.md");
+    let arguments = parse_arguments([
+        "--claim".to_string(),
+        "stored_value.ensures_0".to_string(),
+        path.display().to_string(),
+    ])
+    .unwrap();
+    run_audit(arguments).unwrap();
+}
+
+#[test]
 fn branched_expansion_reaches_the_audit_fixed_point() {
     let directory =
         std::env::temp_dir().join(format!("click-audit-branched-paths-{}", std::process::id()));

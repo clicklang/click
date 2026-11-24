@@ -3,6 +3,7 @@ use super::*;
 use crate::languages::PreparedProgram;
 use crate::languages::c::compiler_import::PreparedCImport;
 use crate::languages::c::target::CTarget;
+use crate::languages::interface::RecordLayout;
 use sha2::{Digest, Sha256};
 #[cfg(test)]
 use std::cell::Cell;
@@ -643,9 +644,10 @@ pub(in crate::surface) fn verify_click_theorem_context(
     theorem_name: &str,
 ) -> Result<Vec<VerifiedPureTheorem>, ClickError> {
     let layouts = parse_c_layouts(click_source, sources)?;
+    let struct_layouts = layouts.struct_layouts.clone();
     let file =
         parser::parse_with_interface_catalog(click_source, layouts, sources.library_contracts())?;
-    verify_click_file_theorem_context(file, sources, theorem_name)
+    verify_click_file_theorem_context(file, sources, theorem_name, &struct_layouts)
 }
 
 pub(in crate::surface) fn verify_click_project_theorem_context(
@@ -653,19 +655,25 @@ pub(in crate::surface) fn verify_click_project_theorem_context(
     sources: &ProgramSourceContext<'_>,
     theorem_name: &str,
 ) -> Result<Vec<VerifiedPureTheorem>, ClickError> {
-    let file = resolve_click_project_context(project, sources)?;
+    let _timing = VerificationTimingPhase::new("source resolution");
+    let layouts = parse_click_project_layouts(project, sources)?;
+    let struct_layouts = layouts.struct_layouts.clone();
+    let file =
+        modules::resolve_click_project_with_layouts(project, sources.library_contracts(), layouts)?;
+    drop(_timing);
     if !file.theorem_is_selected(theorem_name) {
         return Err(ClickError::new(format!(
             "theorem `{theorem_name}` is declared by an imported module, not the selected entry module"
         )));
     }
-    verify_click_file_theorem_context(file, sources, theorem_name)
+    verify_click_file_theorem_context(file, sources, theorem_name, &struct_layouts)
 }
 
 fn verify_click_file_theorem_context(
     file: ClickFile,
     sources: &ProgramSourceContext<'_>,
     theorem_name: &str,
+    struct_layouts: &BTreeMap<String, RecordLayout>,
 ) -> Result<Vec<VerifiedPureTheorem>, ClickError> {
     modules::reject_theorem_justification_cycles(&file)?;
     let parsed_sources = parse_verified_sources_context(&file, sources)?;
@@ -687,7 +695,8 @@ fn verify_click_file_theorem_context(
     let spec_definitions =
         SpecDefinitions::new(&predicate_environment, &click_function_environment)
             .with_struct_sizes(&file.struct_sizes);
-    let resource_environment = ResourceEnvironment::new(&resource_definitions);
+    let resource_environment =
+        ResourceEnvironment::with_struct_layouts(&resource_definitions, struct_layouts);
     let external_and_user_function_blocks = combined_external_function_blocks(&file)?;
     let mut function_environment = build_function_environment(
         &parsed_sources,
@@ -1080,6 +1089,14 @@ pub(in crate::surface) fn resolve_click_project_context(
     sources: &ProgramSourceContext<'_>,
 ) -> Result<ClickFile, ClickError> {
     let _timing = VerificationTimingPhase::new("source resolution");
+    let layouts = parse_click_project_layouts(project, sources)?;
+    modules::resolve_click_project_with_layouts(project, sources.library_contracts(), layouts)
+}
+
+fn parse_click_project_layouts(
+    project: &ClickProject,
+    sources: &ProgramSourceContext<'_>,
+) -> Result<parser::ProgramLayouts, ClickError> {
     let click_source = project
         .entry_source()
         .ok_or_else(|| ClickError::new(format!("missing entry module `{}`", project.entry())))?;
@@ -1089,7 +1106,7 @@ pub(in crate::surface) fn resolve_click_project_context(
         super::selected_project_c_target(project)?,
     )?;
     check_verification_deadline()?;
-    modules::resolve_click_project_with_layouts(project, sources.library_contracts(), layouts)
+    Ok(layouts)
 }
 
 /// Verifies exactly the proofs owned by a loaded entry module. Imported
