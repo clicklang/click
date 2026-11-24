@@ -78,7 +78,14 @@ fn shift_definedness_bridges_read_only_the_exact_count_bounds() {
                         !known_bridge_leaf(&different_count, &|p| present.pure_known_available(p))
                     );
                 });
-                assert_eq!(work, *expected_work.get_or_insert(work));
+                let baseline = *expected_work.get_or_insert(work);
+                // Indexed lookups can visit a different number of nodes as
+                // the fact store grows. A scan of either bucket would exceed
+                // this fixed allowance.
+                assert!(
+                    work <= baseline + 16,
+                    "{unsigned:?}, related={related}, facts={size}: {work} > {baseline} + 16"
+                );
             }
         }
     }
