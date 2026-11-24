@@ -292,6 +292,9 @@ pub(in crate::surface::proof) enum RewriteClosers<'p> {
     /// `normalize` and an atomic plan over these premises alone, for
     /// `solve() using`, which reads no ambient fact.
     Listed(&'p [(Proposition, ClickProposition)]),
+    /// A replayable rewrite chain closes with the selected fact or direct
+    /// computation once its rewrites have exposed it.
+    ExactListed(&'p [(Proposition, ClickProposition)]),
 }
 
 /// Whether `kernel` is an equality the `rewrite` step can use.

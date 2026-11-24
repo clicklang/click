@@ -12388,6 +12388,24 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         {
             return Some(closed);
         }
+        // A selected alias or index equality can expose the actual
+        // cited read. Try to retain those substitutions and the
+        // exact closing fact before using compatibility normalization.
+        if let Some(
+            surface @ ClickProposition::Comparison {
+                operator: ComparisonOperator::Equal,
+                ..
+            },
+        ) = proof.surface_goal()
+            && signed_intervals::has_retained_read_source(surface)
+            && let Ok(Some(closed)) = Self::try_premise_equality_chain_closure(
+                &proof,
+                &premise_pairs,
+                RewriteClosers::ExactListed(&premise_pairs),
+            )
+        {
+            return Some(closed);
+        }
         if interval_first
             && let Ok(Some(closed)) = Self::try_signed_interval_using(&proof, surfaces)
         {

@@ -1662,6 +1662,19 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // Inside a `have`, the stated fact is the focused goal; the proof
         // around it is not complete yet.
         let closes = |proof: &Proof<'a>| proof.focused_discharged() || proof.is_complete();
+        if let RewriteClosers::ExactListed(premise_pairs) = closers {
+            let Some(goal) = search_input.goal() else {
+                return Ok(None);
+            };
+            let mirrored = crate::kernel::mirrored_equality(goal);
+            return Ok((crate::surface::planning::solve::computes_with_known(goal)
+                || premise_pairs
+                    .iter()
+                    .any(|(premise, _)| premise == goal || Some(premise) == mirrored.as_ref()))
+            .then(|| search_input.driver().apply_step(ProofStep::Known).ok())
+            .flatten()
+            .filter(closes));
+        }
         if let RewriteClosers::Listed(premise_pairs) = closers {
             if let Ok(closed) =
                 crate::kernel::search::ProofSearch::apply_normalization_closure(search_input, None)

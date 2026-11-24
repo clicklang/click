@@ -10,16 +10,23 @@ fn assert_compatibility_normalization_refusal(error: ClickError) {
 
 #[test]
 fn compatibility_normalization_is_rejected_by_each_expansion_entry_point() {
-    let (source, input) = mdtest_sources("mdtests/restricted_solve_pointer_alias_viewability.md");
-    let sources = crate::cli::source_refs(&input);
-    verify_c_sources(&source, &sources).unwrap();
+    let source = r#"
+        theorem shifted_one(d: uint32) {
+            requires d < 32u32;
+            ensures (1u32 << d) != 0u32 by {
+                solve() using { d < 32u32; };
+            }
+        }
+    "#;
+    let sources = [];
+    verify_c_sources(source, &sources).unwrap();
     let offset = source.find("solve() using").unwrap();
-    let position = expansion::position_at_offset(&source, offset);
-    let claim = "alias_value.contract";
+    let position = expansion::position_at_offset(source, offset);
+    let claim = "shifted_one.ensures_0";
     let errors = [
-        expand_c_claim_source_by_label(&source, &sources, claim).unwrap_err(),
-        expand_c_tactic_source_at(&source, &sources, position.line, position.column).unwrap_err(),
-        expand_c_tactics_source_at(&source, &sources, &[position]).unwrap_err(),
+        expand_c_claim_source_by_label(source, &sources, claim).unwrap_err(),
+        expand_c_tactic_source_at(source, &sources, position.line, position.column).unwrap_err(),
+        expand_c_tactics_source_at(source, &sources, &[position]).unwrap_err(),
     ];
     for error in errors {
         assert_compatibility_normalization_refusal(error);
@@ -33,6 +40,41 @@ fn compatibility_normalization_is_rejected_by_each_expansion_entry_point() {
         1,
         "{expanded}"
     );
+    without_implicit_solve_for_claim(claim, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
+#[test]
+fn operand_bounds_and_unsigned_cast_replay_as_ordinary_proofs() {
+    let (source, input) =
+        mdtest_sources("mdtests/arithmetic_keeps_an_operand_bound_beside_a_one_sided_premise.md");
+    let sources = crate::cli::source_refs(&input);
+    let claim = "next_index.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, claim).unwrap();
+    assert!(expanded.contains("rewrite("), "{expanded}");
+    assert!(!expanded.contains("normalize("), "{expanded}");
+    assert!(!expanded.contains("solve("), "{expanded}");
+    without_implicit_solve_for_claim(claim, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
+#[test]
+fn reassigned_pointer_read_replays_with_a_checked_alias_fact() {
+    let (source, input) =
+        mdtest_sources("mdtests/a_reassigned_alias_of_a_viewed_pointer_reads_its_cell.md");
+    let sources = crate::cli::source_refs(&input);
+    let claim = "read_twice.ensures_0";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, claim).unwrap();
+    assert!(
+        expanded.contains("apply(aliased_cell_read(p, q));"),
+        "{expanded}"
+    );
+    assert!(!expanded.contains("normalize("), "{expanded}");
+    assert!(!expanded.contains("solve("), "{expanded}");
     without_implicit_solve_for_claim(claim, || {
         verify_c_sources(&expanded, &sources).map_err(|error| error.report())
     })
@@ -12540,48 +12582,41 @@ fn restricted_solve_rewrites_pointer_aliases_inside_memory_loads() {
         + 1;
     let sources = [("alias_value.c", c_source)];
 
-    verify_c_sources(click_source, &sources).expect("restricted alias proof should verify");
-    assert_compatibility_normalization_refusal(
-        expand_c_tactic_source_at(click_source, &sources, line, column).unwrap_err(),
-    );
-
-    let written = click_source.replacen("solve() using", "normalize() using", 1);
-    let expanded = expand_c_tactic_source_at(&written, &sources, line, column)
-        .expect("the handwritten alias proof should expand");
-    let expanded_have_start = expanded.find("have alias[index] == value").unwrap();
-    let expanded_have_end = expanded[expanded_have_start..]
-        .find("fold(valued_array")
-        .map(|relative| expanded_have_start + relative)
-        .unwrap();
-    let expanded_have = &expanded[expanded_have_start..expanded_have_end];
-    // Expansion preserves the selected premises in the handwritten alias proof.
-    for selected in [
-        "normalize() using {",
-        "original[0] == value;",
-        "alias == original;",
-        "index == 0;",
+    let expanded = expand_c_tactic_source_at(click_source, &sources, line, column)
+        .expect("the restricted alias proof should expand");
+    let expanded_have = expanded
+        .split_once("have alias[index] == value")
+        .unwrap()
+        .1
+        .split_once("fold(valued_array")
+        .unwrap()
+        .0;
+    for step in [
+        "rewrite(alias, original);",
+        "rewrite(index, 0);",
+        "known();",
     ] {
-        assert!(expanded_have.contains(selected), "{expanded_have}");
+        assert!(expanded_have.contains(step), "{expanded_have}");
     }
-    assert!(!expanded_have.contains("solve() using"), "{expanded_have}");
-    assert!(!expanded_have.contains("derive using"), "{expanded_have}");
-    verify_c_sources(&expanded, &sources).expect("expanded pointer-alias certificate should check");
-    // Normalization may query the maintained graph, so withdraw each
-    // relation from the context as well as its explicit citation.
-    for (clause, premise) in [
-        ("fact data[0] == value;", "original[0] == value;"),
-        ("requires alias == original;", "alias == original;"),
-        ("requires index == 0;", "index == 0;"),
+    assert!(!expanded_have.contains("solve("), "{expanded_have}");
+    assert!(!expanded_have.contains("normalize("), "{expanded_have}");
+    verify_c_sources(&expanded, &sources).unwrap();
+    let (before_using, after_using) = click_source.split_once("solve() using").unwrap();
+    for (premise, clause) in [
+        ("original[0] == value;", "fact data[0] == value;"),
+        ("alias == original;", "requires alias == original;"),
+        ("index == 0;", "requires index == 0;"),
     ] {
-        assert!(expanded.contains(clause));
-        let missing_premise = expanded_have.replacen(premise, "", 1);
-        let incomplete = expanded
-            .replacen(expanded_have, &missing_premise, 1)
-            .replacen(clause, "", 1);
+        let omitted = after_using.replacen(premise, "", 1);
+        assert_ne!(omitted, after_using);
+        let restricted = format!("{before_using}solve() using{omitted}");
         assert!(
-            verify_c_sources(&incomplete, &sources).is_err(),
-            "the read-alias certificate must reject a context without `{clause}`"
+            verify_c_sources(&restricted, &sources).is_err(),
+            "{premise}"
         );
+        let incomplete = expanded.replacen(clause, "", 1);
+        assert_ne!(incomplete, expanded);
+        assert!(verify_c_sources(&incomplete, &sources).is_err(), "{clause}");
     }
 }
 
