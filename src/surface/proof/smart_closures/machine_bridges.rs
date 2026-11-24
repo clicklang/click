@@ -26,7 +26,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         }
         let facts = crate::kernel::proof::PureFactStore::from_ordered(&selected);
         // The mirrored spelling is already an exact indexed lookup in
-        // `known()`. Keep restricted search tied to the selected facts.
+        // `close()`. Keep restricted search tied to the selected facts.
         let mirrored =
             crate::kernel::mirrored_equality(goal).is_some_and(|premise| facts.contains(&premise));
         use crate::kernel::proof::fact_reasoning::{known_bridge_leaf, known_shifted_one};
@@ -1258,7 +1258,7 @@ mod widened_sum_tests {
                 .filter(|p| !p.trim().is_empty())
                 .map(|p| format!("requires {p};"))
                 .collect::<String>();
-            for tactic in [format!("close() using {{ {bounds} }};"), "solve();".into()] {
+            for tactic in [format!("close() using {{ {bounds} }};"), "close();".into()] {
                 let source = format!(
                     "theorem widened({parameters}) {{ {requires} ensures {goal} by {{ {tactic} }} }}"
                 );
@@ -1381,7 +1381,7 @@ mod nested_conditional_tests {
                 .filter(|p| !p.trim().is_empty())
                 .map(|p| format!("requires {p};"))
                 .collect::<String>();
-            for tactic in [format!("close() using {{ {bounds} }};"), "solve();".into()] {
+            for tactic in [format!("close() using {{ {bounds} }};"), "close();".into()] {
                 let source = format!(
                     "theorem nested({parameters}) {{ {requirements} ensures {goal} by {{ {tactic} }} }}"
                 );
@@ -1486,7 +1486,7 @@ fn non_numeric_conditional_arms_expand_without_normalize() {
             .collect::<String>();
         for tactic in [
             format!("close() using {{ {premises} }};"),
-            "solve();".into(),
+            "close();".into(),
         ] {
             let source = format!(
                 "{prelude} theorem selected({parameters}) {{ {requirements} ensures {goal} by {{ {tactic} }} }}"
@@ -1503,7 +1503,7 @@ fn non_numeric_conditional_arms_expand_without_normalize() {
     for claim in [
         "theorem omitted(g: Bool, a: Bool, b: Bool) { requires g == true; ensures (if g { a } else { b }) == a by { close() using {}; } }",
         "theorem omitted(g: Bool, x: int32) { requires g == true; ensures (if g { Choice::Present(x) } else { Choice::Missing }) == Choice::Present(x) by { close() using {}; } }",
-        "theorem wrong(g: Bool, x: int32) { requires g == true; ensures (if g { Choice::Present(x) } else { Choice::Missing }) == Choice::Missing by known(); }",
+        "theorem wrong(g: Bool, x: int32) { requires g == true; ensures (if g { Choice::Present(x) } else { Choice::Missing }) == Choice::Missing by close(); }",
     ] {
         let source = format!("{prelude} {claim}");
         crate::surface::parse(&source).expect("conditional refusal should parse");
