@@ -1085,11 +1085,10 @@ private:
       if (opaque != nullptr && parameter->getName().empty()) {
         const std::string slot = std::to_string(parameter->getFunctionScopeIndex());
         result["declaration_id"] = declaration_id(opaque) + "@argument" + slot;
-        result["name"] = "__click_argument_" + slot;
       } else {
         result["declaration_id"] = declaration_id(parameter);
-        result["name"] = parameter->getNameAsString();
       }
+      result["name"] = parameter->getNameAsString();
       result["span"] = span(parameter->getSourceRange());
       return result;
     };
