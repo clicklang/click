@@ -140,3 +140,75 @@ fn the_pointer_word_bridge_records_its_site_and_is_the_same_read() {
         crate::kernel::legacy_pointer_word_read(&memory, None, &at)
     );
 }
+
+fn load_of(address: &Address) -> crate::kernel::Load {
+    address
+        .as_loaded_value()
+        .unwrap_or_else(|| panic!("a load: {address:?}"))
+        .identity
+}
+
+fn hash_of(load: &crate::kernel::Load) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    load.hash(&mut hasher);
+    hasher.finish()
+}
+
+/// A load first built from a bare memory takes the read site of the first
+/// later construction that has one (`design/loads.md`, step 6), and every
+/// term holding it reports that site. A still later site does not replace
+/// it, and the first point stays as it was built.
+#[test]
+fn a_load_built_without_a_site_takes_a_later_constructions_site() {
+    let _session = VerificationSession::enter();
+    let (symbolic, site) = site();
+    let memory = site.shared_memory().clone();
+    let at = cell(1_207_061);
+    let bare = Address::loaded_value(&memory, &at);
+    assert!(load_of(&bare).read_site().is_none());
+    assert!(!records(&bare, &site));
+
+    let sited = Address::loaded_value_read_at(&memory, Some(&site), &at);
+    assert!(
+        load_of(&sited)
+            .read_site()
+            .is_some_and(|path| path.id() == site.id())
+    );
+    assert!(records(&bare, &site), "the earlier term reports the site");
+    assert!(load_of(&bare).point().read_site().is_none());
+    same_load(&sited, &bare, &site);
+
+    let later = ProgramPoint::starting_at(&symbolic);
+    assert_ne!(later.id(), site.id());
+    let again = Address::loaded_value_read_at(&memory, Some(&later), &at);
+    assert!(records(&again, &site), "the first site is kept");
+}
+
+/// Filling the slot changes no identity: the load built without a site and
+/// the one built with it are one load, with one id and hash, in the same
+/// order against another load before and after.
+#[test]
+fn a_load_given_a_later_site_is_the_same_load() {
+    let _session = VerificationSession::enter();
+    let (_, site) = site();
+    let memory = site.shared_memory().clone();
+    let at = cell(1_207_071);
+    let other = load_of(&Address::loaded_value(&memory, &cell(1_207_072)));
+    let bare = load_of(&Address::loaded_value(&memory, &at));
+    let (id, hash, order) = (bare.id(), hash_of(&bare), bare.cmp(&other));
+
+    let sited = load_of(&Address::loaded_value_read_at(&memory, Some(&site), &at));
+    assert!(bare.read_site().is_some());
+    assert_eq!(sited, bare);
+    assert_eq!(sited.id(), id);
+    assert_eq!(bare.id(), id);
+    assert_eq!(hash_of(&sited), hash);
+    assert_eq!(hash_of(&bare), hash);
+    assert_eq!(sited.cmp(&bare), std::cmp::Ordering::Equal);
+    assert_eq!(sited.cmp(&other), order);
+    assert_eq!(bare.cmp(&other), order);
+    let point = sited.point_at_read_site();
+    assert!(point.read_site().is_some_and(|path| path.id() == site.id()));
+    assert_eq!(&point, bare.point());
+}

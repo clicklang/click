@@ -11,8 +11,9 @@
 //! [`Load::at`] is the only constructor, and [`Load::base`] the only builder
 //! of [`AddressBase::Load`]; `build_support/read_construction.rs` keeps it so.
 
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
+use super::program_point::PathLink;
 use super::{Address, AddressBase, AddressOffset, ProgramPoint};
 
 /// One load: a cell's bytes at a version point, interned by
@@ -34,17 +35,26 @@ struct LoadNode {
     /// question 2): an `Exact` and an `IndexedCell` selection of one point
     /// are one load, as integer reads compare only `read_key()`.
     point: ProgramPoint,
+    /// The read site of a memory-named load whose first point recorded none:
+    /// set once, by the first later construction whose point has one
+    /// (`design/loads.md`, step 6). No part of the load's identity,
+    /// equality, hashing or order, and read by nothing that decides them.
+    read_site: OnceLock<PathLink>,
     cell: Address,
 }
 
 // A load's point holds memory whose cells hold addresses, which can hold
 // loads: the auto-trait check of `Send` and `Sync` through that cycle
-// overflows in downstream crates. Both parts are `Send` and `Sync` (asserted
+// overflows in downstream crates. Each part is `Send` and `Sync` (asserted
 // below without the cycle), so the node is.
 //
-// SAFETY: `LoadNode` owns an id, a `ProgramPoint` and an `Address`, and has
-// no interior mutability of its own; `assert_parts_thread_safe` checks that
-// both parts are `Send + Sync`.
+// SAFETY: `LoadNode` owns an id, a `ProgramPoint`, an `Address` and a
+// `OnceLock<PathLink>`; `assert_parts_thread_safe` checks that each is
+// `Send + Sync`. The read-site slot is the node's one interior mutability,
+// and `OnceLock` synchronizes it: a node shared through its `Arc` (or through
+// an interner state captured and restored on another thread) can be filled
+// by two threads at once, and exactly one `set` wins while the other reads
+// the winner's value. Nothing else in the node changes after construction.
 unsafe impl Send for LoadNode {}
 // SAFETY: as above.
 unsafe impl Sync for LoadNode {}
@@ -54,6 +64,7 @@ fn assert_parts_thread_safe() {
     fn thread_safe<T: Send + Sync>() {}
     thread_safe::<ProgramPoint>();
     thread_safe::<Address>();
+    thread_safe::<OnceLock<PathLink>>();
 }
 
 /// How many slots load identities are hashed into. The capacity below
@@ -76,7 +87,9 @@ thread_local! {
 impl Load {
     /// The load of `cell` at `point`. The one constructor: the identity is
     /// the point's read key and the cell; a later selection with the same
-    /// key returns the load already interned, keeping its first point.
+    /// key returns the load already interned, keeping its first point. A
+    /// later point with a read site gives a load built without one its site
+    /// ([`Load::read_site`]).
     pub(crate) fn at(point: ProgramPoint, cell: &Address) -> Self {
         use std::hash::{Hash, Hasher};
         // Terms of two memory arenas never meet: an arena starts only with a
@@ -108,6 +121,7 @@ impl Load {
                     Some(known)
                         if known.node.point.read_key() == key && known.node.cell == *cell =>
                     {
+                        known.record_read_site(&point);
                         return known.clone();
                     }
                     Some(_) => {
@@ -124,6 +138,7 @@ impl Load {
                                 id: slot,
                                 content,
                                 point,
+                                read_site: OnceLock::new(),
                                 cell: cell.clone(),
                             }),
                         };
@@ -151,9 +166,43 @@ impl Load {
     }
 
     /// The selection the load was first built from. Its read key is the
-    /// load's; its kind (exact, indexed, entry) is whichever came first.
+    /// load's; its kind (exact, indexed, entry) is whichever came first. Its
+    /// read site is that construction's; [`Load::point_at_read_site`] also
+    /// records one a later construction supplied.
     pub(crate) fn point(&self) -> &ProgramPoint {
         &self.node.point
+    }
+
+    /// The point on a path the load was read at: its first point's read site
+    /// ([`ProgramPoint::read_site`]), else the first one a later construction
+    /// of the same load recorded. `None` while every construction was built
+    /// from a bare memory. It is no part of the load's identity.
+    pub(crate) fn read_site(&self) -> Option<&PathLink> {
+        self.node
+            .point
+            .read_site()
+            .or_else(|| self.node.read_site.get())
+    }
+
+    /// [`Load::point`], recording [`Load::read_site`]: the same point in
+    /// equality, hashing and order, for consumers that pass the load's point
+    /// on as a read site.
+    pub(crate) fn point_at_read_site(&self) -> ProgramPoint {
+        self.node.point.clone().with_read_site(self.read_site())
+    }
+
+    /// Fills the read-site slot from `point` when neither the first point nor
+    /// an earlier construction recorded a site: one atomic read on the
+    /// interner's hit path, and the slot is written at most once.
+    fn record_read_site(&self, point: &ProgramPoint) {
+        if let Some(site) = point.read_site()
+            && self.node.read_site.get().is_none()
+            && self.node.point.read_site().is_none()
+        {
+            // A concurrent fill of the same slot is equally a site this load
+            // was read at; either winner is kept.
+            let _ = self.node.read_site.set(site.clone());
+        }
     }
 
     /// The cell whose bytes are loaded.

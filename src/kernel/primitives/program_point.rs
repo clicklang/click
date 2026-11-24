@@ -1587,11 +1587,19 @@ impl ProgramPoint {
     }
 
     /// This point, recording `site`'s read site when it has none of its own.
-    pub(crate) fn with_read_site_of(mut self, site: &ProgramPoint) -> Self {
-        if self.read_site().is_none()
+    pub(crate) fn with_read_site_of(self, site: &ProgramPoint) -> Self {
+        self.with_read_site(site.read_site())
+    }
+
+    /// This point, recording `site` as its read site when it is a legacy
+    /// point with none of its own. The same point in equality, hashing and
+    /// order.
+    pub(crate) fn with_read_site(mut self, site: Option<&PathLink>) -> Self {
+        if let Some(site) = site
+            && self.read_site().is_none()
             && let ReadSelection::Legacy(own) = &mut self.read
         {
-            *own = site.read_site().cloned();
+            *own = Some(site.clone());
         }
         self
     }

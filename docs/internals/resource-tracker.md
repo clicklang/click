@@ -689,7 +689,9 @@ clears the load interner, so such terms never meet in one proof
 Two reads of one cell at one read key are one term whichever selection (exact,
 indexed write, indexed cell) built each, and each keeps its own selection:
 consumers branch on the term's `ReadPoint`, never on `Load::point`, which is the
-first selection of that key. Reads of one cell at two kinds share the load and
+first selection of that key. A memory-named load's read site is the first one
+any construction recorded (`Load::read_site`, a set-once slot that no
+comparison reads). Reads of one cell at two kinds share the load and
 are two terms. `MachineTerm::read_named` is the only builder, through
 `read_operands`; a substitution or rewrite that changes the address builds a
 new read and so interns the load of the new cell

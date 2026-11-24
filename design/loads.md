@@ -572,10 +572,16 @@ is one PR, measured with the gate harnesses, the raise-lower audit and
    `legacy_pointer_word_read(memory, site, cell)`, whose callers the
    ratchet still counts. The site is no part of the load's identity
    (`Load::at` interns by read key and hashes a legacy point by memory), so
-   no term changes (`eval/memory_loads/read_site_tests.rs`); the interner
-   keeps the first point it saw, so a load first built without a site keeps
-   none. Builders with no point leave the load siteless rather than invent
-   one: the frame transports (`transport_framed_*`, the shared pointer
+   no term changes (`eval/memory_loads/read_site_tests.rs`). The interner
+   keeps the first point it saw; a load first built without a site takes
+   the site of the first later construction that has one, in a set-once
+   slot on its node. `Load::read_site` reports it, and
+   `Load::point_at_read_site`, the first point recording it, is the point
+   `Address::as_loaded_value` gives. Nothing compares, hashes or orders the
+   slot, and only the raise-lower audit's reason notes and later read-site
+   records read it, so a site that arrives later changes no decision
+   already made. Builders with no point leave the load siteless rather than
+   invent one: the frame transports (`transport_framed_*`, the shared pointer
    transport), which carry only the post-state memory;
    `canonical_loaded_value`, whose one caller holds an `ExecutionState`
    (asking it for `program_point()` can mint a pending point, which would

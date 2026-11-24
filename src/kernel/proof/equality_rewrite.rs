@@ -874,7 +874,7 @@ fn rewrite_through_loaded_address_base(
             // A rewritten pointer read is made where the read it rewrites was.
             AddressBase::Load(load) => Some((
                 load.point().shared_memory().clone(),
-                Some(load.point().clone()),
+                Some(load.point_at_read_site()),
                 load.cell().clone(),
                 None,
             )),

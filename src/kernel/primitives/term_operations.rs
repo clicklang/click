@@ -5083,7 +5083,7 @@ impl Address {
         Some(LoadedPointerView {
             identity: load.clone(),
             defining_memory: load.point().shared_memory().clone(),
-            point: load.point().clone(),
+            point: load.point_at_read_site(),
             defining_address: load.cell().clone(),
             displacement: self.offset.clone(),
         })
