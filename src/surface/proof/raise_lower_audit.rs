@@ -285,7 +285,7 @@ int32 probe(const struct Input* src, {index_type} n, {index_type} k, struct Opti
         instantiate(at(function.entry, forall (i: {index_type}) {{
             {zero} <= i and i < n implies defined(load<uint8>(src->data + i))
         }}), k);
-        known();
+        close();
     }}
     step();
 }}
@@ -533,7 +533,7 @@ int32 short_sum(int32 seed) {
             theorem nil_has_no_address(target: uint8*) {
                 ensures not list::contains(List<uint64>::Nil, address(target)) by {
                     unfold(list::contains(List<uint64>::Nil, address(target)));
-                    known();
+                    close();
                 }
             }
         "#;
@@ -566,7 +566,7 @@ int32 short_sum(int32 seed) {
             int32 touch(struct node* n) {
                 ensures result == 0;
             } by {
-                have is_null(0) == 1 by { unfold(is_null(0)); known(); }
+                have is_null(0) == 1 by { unfold(is_null(0)); close(); }
                 step_until(function.exit);
             }
         "#;
@@ -709,7 +709,7 @@ int32 f(struct holder* h, uint64 n, uint64 k) {
     step();
     have defined(load<uint8>(statement(0).call(make, 0).result + k)) by {
         instantiate(forall (i: uint64) { 0u64 <= i and i < n implies defined(load<uint8>(statement(0).call(make, 0).result + i)) }, k);
-        known();
+        close();
     }
     step_until(function.exit);
 }
