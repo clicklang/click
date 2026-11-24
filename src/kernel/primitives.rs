@@ -47,7 +47,7 @@ pub(crate) fn predicate_source_name(name: &str) -> Option<&str> {
     }
 }
 
-impl Proposition {
+impl KernelProposition {
     /// Whether this is kernel authority rather than a proof-state fact: a
     /// resource composition, a completed volatile access record, or a
     /// predicate with no Click spelling. The
@@ -109,9 +109,9 @@ pub(crate) use kernel_term::{
     SharedPointer,
 };
 pub use kernel_term::{
-    KernelCallArgument, KernelFloatType, KernelIntegerOperator, KernelLegacyTerm,
-    KernelMachineLiteral, KernelObservedPointer, KernelTerm, KernelTermNode, KernelType,
-    KernelWrittenMachine,
+    KernelCallArgument, KernelFloatType, KernelImportedScalar, KernelIntegerOperator,
+    KernelMachineLiteral, KernelNativeDescriptor, KernelObservedArgument, KernelObservedPointer,
+    KernelTerm, KernelTermNode, KernelType, KernelWrittenMachine,
 };
 #[allow(unused_imports)]
 pub(crate) use kernel_term::{
@@ -315,6 +315,8 @@ pub(crate) enum Producer {
     /// quantifier or `let`, or a constructor field a proof `match` splits on.
     /// The index is how the binder raises back to Surface.
     AlgebraicBinder,
+    /// The arbitrary value stored in a linked, const C library object.
+    CLibraryValue,
 }
 
 // Hash the number before the origin, as before the fields were reordered for
@@ -2987,6 +2989,19 @@ impl Pointer {
         memory: &SharedMemory,
         cell: &Address,
     ) -> Self {
+        Self::from_read_at(pointer, program_type, memory, None, cell)
+    }
+
+    /// [`Self::from_read`] of a read made at `site`, when the caller has one:
+    /// the domain's origin records it as its read site
+    /// (`Address::loaded_value_read_at`). The value is the same.
+    pub(in crate::kernel) fn from_read_at(
+        pointer: Address,
+        program_type: ProgramType,
+        memory: &SharedMemory,
+        site: Option<&ProgramPoint>,
+        cell: &Address,
+    ) -> Self {
         let mut value = Self::new(pointer, program_type);
         if matches!(program_type, ProgramType::FunctionPointer(_))
             || value.address.base.is_function()
@@ -2998,7 +3013,7 @@ impl Pointer {
         // needs explicit evidence, not a search for an older cell version.
         crate::instrumentation::record_deterministic_work(1);
         let source = memory.unchanged_bytes_source();
-        let origin = Arc::new(Address::loaded_value(&source, cell));
+        let origin = Arc::new(Address::loaded_value_read_at(&source, site, cell));
         value.array = ArrayObject::Opaque(Some(origin.clone()));
         value.with_provenance(origin)
     }
@@ -3012,7 +3027,13 @@ impl Pointer {
     ) -> Self {
         if point.read_version_id().is_none() {
             let address = Address::loaded_source_value_at(&point, cell);
-            return Self::from_read(address, program_type, point.shared_memory(), cell);
+            return Self::from_read_at(
+                address,
+                program_type,
+                point.shared_memory(),
+                Some(&point),
+                cell,
+            );
         }
         // One load per cell at one version point, whatever type decodes
         // it: the category and pointee type are the term's.
@@ -14795,7 +14816,7 @@ pub struct VolatileAccess {
 }
 
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd)]
-pub enum Proposition {
+pub enum KernelProposition {
     VolatileAccess(Arc<VolatileAccess>),
     Equal(Term, Term),
     SequenceMembership {
@@ -14910,14 +14931,14 @@ pub enum Proposition {
         allocation_base: Address,
         bytes: AllocationSize,
     },
-    And(Box<Proposition>, Box<Proposition>),
-    Or(Box<Proposition>, Box<Proposition>),
-    Not(Box<Proposition>),
-    Implies(Box<Proposition>, Box<Proposition>),
+    And(Box<KernelProposition>, Box<KernelProposition>),
+    Or(Box<KernelProposition>, Box<KernelProposition>),
+    Not(Box<KernelProposition>),
+    Implies(Box<KernelProposition>, Box<KernelProposition>),
     ForAll {
         var: QuantifierBinder,
         sort: Sort,
-        body: Box<Proposition>,
+        body: Box<KernelProposition>,
         /// The binder's written name, for printing only.
         name: BinderName,
     },
@@ -14925,11 +14946,14 @@ pub enum Proposition {
         name: String,
         var: QuantifierBinder,
         sort: Sort,
-        body: Box<Proposition>,
+        body: Box<KernelProposition>,
     },
 }
 
-impl Proposition {
+/// Compatibility name for [`KernelProposition`].
+pub use self::KernelProposition as Proposition;
+
+impl KernelProposition {
     /// Store an exact native input or an already-retained logical condition.
     pub fn condition_is(condition: impl Into<StoredConditionTerm>, truth: bool) -> Self {
         Self::ConditionIs(condition.into(), truth)
@@ -14968,13 +14992,13 @@ impl Proposition {
     }
 }
 
-impl Clone for Proposition {
+impl Clone for KernelProposition {
     fn clone(&self) -> Self {
         clone_proposition_iteratively(self)
     }
 }
 
-impl Hash for Proposition {
+impl Hash for KernelProposition {
     fn hash<H: Hasher>(&self, state: &mut H) {
         let mut pending = vec![self];
         while let Some(proposition) = pending.pop() {

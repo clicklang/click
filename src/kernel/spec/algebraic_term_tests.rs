@@ -90,16 +90,17 @@ fn logical_enum_read_uses_the_recorded_local_store() {
 }
 
 #[test]
-fn algebraic_case_paths_recognize_a_retained_legacy_constructor() {
-    let value = AlgebraicResult::Shared(KernelTerm::native_observation_leaf(
-        PureFunctionArgument::Algebraic(AlgebraicTerm {
+fn algebraic_case_paths_recognize_a_retained_constructor() {
+    let value = AlgebraicResult::retain_native(
+        AlgebraicTerm {
             algebraic_type: maybe_type(),
             node: AlgebraicTermNode::Constructor {
                 variant: "None".into(),
                 fields: Vec::new(),
             },
-        }),
-    ));
+        },
+        true,
+    );
     let mut execution = ExecutionBudget::new();
     let cases =
         algebraic_case_paths_in(&value, &mut SpecEvaluation::logical(&mut execution)).unwrap();

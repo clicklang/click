@@ -227,6 +227,7 @@ impl Metadata<'_> {
                 callee,
                 arguments,
                 returned_member,
+                reference_load,
                 span,
                 ..
             } => {
@@ -235,6 +236,9 @@ impl Metadata<'_> {
                 if let Some(member) = returned_member {
                     self.value_type(&member.reference_type)?;
                     self.field(&member.field)?;
+                }
+                if let Some(reference_type) = reference_load {
+                    self.value_type(reference_type)?;
                 }
                 span
             }

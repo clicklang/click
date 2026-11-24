@@ -356,9 +356,7 @@ pub(super) fn constant_reading(node: &KernelTermNode) -> Option<KernelMachineLit
                     _ => None,
                 });
         }
-        KernelTermNode::Legacy(_)
-        | KernelTermNode::MachineObservationInput { .. }
-        | KernelTermNode::WrittenMachine(_) => {
+        KernelTermNode::MachineObservationInput { .. } | KernelTermNode::WrittenMachine(_) => {
             // Read the selected native leaf once, on introduction. Shared
             // parents reuse this metadata, including a literal-conditioned
             // native `If`, instead of exporting the enclosing DAG to read it.
@@ -781,10 +779,7 @@ impl KernelTermImport {
             | Old::Float32Binary { .. }
             | Old::Float64Negate(_)
             | Old::Float64Binary { .. } => {
-                return KernelTerm::legacy(PureFunctionArgument::Value(wrap_exact(
-                    result,
-                    term.clone(),
-                )));
+                return KernelTerm::imported_scalar(result.program_type(), term);
             }
         };
         KernelTerm::intern(KernelType::Program(result.program_type()), node)
@@ -884,7 +879,12 @@ impl KernelTermExport {
             } => Old::cast_node(*encoding, *source, *destination, Self::machine(operand)?),
             Node::MachineObservationInput { observation, .. } => observation.value().clone(),
             Node::WrittenMachine(value) => value.value().clone(),
-            Node::Legacy(_) | Node::CallArgument(_) => {
+            Node::ImportedScalar(input)
+                if MachineIntegerType::from_program_type(input.carrier()).is_some() =>
+            {
+                input.value().clone()
+            }
+            Node::ObservedArgument(_) | Node::CallArgument(_) => {
                 let Some(PureFunctionArgument::Value(value)) = term.written_argument() else {
                     return Err("expected a machine value legacy payload");
                 };
@@ -1055,7 +1055,7 @@ mod tests {
             .complete_word(Address::symbolic(Variable(991102)));
         let source = PureFunctionArgument::Value(value);
         let term = KernelTermImport::default().argument(&source);
-        assert!(matches!(term.node(), KernelTermNode::Legacy(_)));
+        assert!(matches!(term.node(), KernelTermNode::NativeDescriptor(_)));
         assert_eq!(KernelTermExport::default().argument(&term).unwrap(), source);
     }
 

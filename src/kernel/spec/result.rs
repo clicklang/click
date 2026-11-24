@@ -568,7 +568,7 @@ pub(super) fn common_call_arguments(arguments: &[SpecCallArgument]) -> Option<Ve
             )) if matches!(term, MachineTerm::IntegerAddress(..)) => None,
             SpecCallArgument::Native(value) => {
                 let root = importer.argument(value);
-                (!matches!(root.node(), KernelTermNode::Legacy(_))).then_some(root)
+                (!root.requires_native_argument_input()).then_some(root)
             }
         })
         .collect()

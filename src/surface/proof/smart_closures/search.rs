@@ -11494,7 +11494,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             assumptions.states_required_goal(&negated)
         };
         let candidates = crate::kernel::search::disjunction_candidates(assumptions)
+            .take_while(|_| !crate::instrumentation::deadline_exceeded_with_work(1))
             .filter(|disjunction| {
+                if crate::kernel::search::word_order_cases_exclude(&goal, disjunction) {
+                    return true;
+                }
                 let disjuncts = flattened_disjuncts(disjunction);
                 disjuncts.iter().any(|disjunct| **disjunct == goal)
                     && disjuncts
@@ -11599,9 +11603,19 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     complete = false;
                     break;
                 };
+                let assumed = if index == 0 { left } else { right };
+                let step = if focused_branch.goal().is_some_and(|goal| {
+                    crate::kernel::proof::arithmetic_special::word_order_excludes_literal(
+                        goal, assumed,
+                    )
+                }) {
+                    ProofStep::NormalizeUsing(vec![assumed_surface.clone()])
+                } else {
+                    ProofStep::Contradiction(assumed_surface.clone())
+                };
                 let selected = focused_branch
                     .driver()
-                    .apply_step(ProofStep::Contradiction(assumed_surface.clone()))
+                    .apply_step(step)
                     .ok()
                     .or_else(|| {
                         crate::kernel::search::ProofSearch::try_solve_closure(&(focused_branch))

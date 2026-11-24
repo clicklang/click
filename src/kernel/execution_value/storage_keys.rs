@@ -32,7 +32,8 @@ impl BooleanStorageKey {
                 KernelTermNode::Variable(v) => {
                     Self(BooleanKeyKind::Word(MachineTerm::Variable(*v)))
                 }
-                KernelTermNode::Legacy(_) | KernelTermNode::CallArgument(_) => {
+                KernelTermNode::ImportedScalar(input) => Self::native(input.value()),
+                KernelTermNode::ObservedArgument(_) | KernelTermNode::CallArgument(_) => {
                     let Some(PureFunctionArgument::Value(ProgramValue::Bool(word))) =
                         root.written_argument()
                     else {

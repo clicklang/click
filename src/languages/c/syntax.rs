@@ -234,6 +234,7 @@ pub struct CGlobal {
     /// never re-evaluates the initializer against its own names.
     resolved_address: Option<crate::kernel::ProgramValue>,
     hosted_stdout: bool,
+    library_value: Option<crate::kernel::ProgramValue>,
     tentative: bool,
     file_static: bool,
     volatile: bool,
@@ -256,6 +257,7 @@ impl CGlobal {
             initializer: None,
             resolved_address: None,
             hosted_stdout: false,
+            library_value: None,
             tentative: false,
             file_static: false,
             volatile: false,
@@ -279,6 +281,7 @@ impl CGlobal {
             initializer: Some(initializer),
             resolved_address: None,
             hosted_stdout: false,
+            library_value: None,
             tentative: false,
             file_static: false,
             volatile: false,
@@ -303,6 +306,7 @@ impl CGlobal {
             initializer: Some(initializer),
             resolved_address: None,
             hosted_stdout: false,
+            library_value: None,
             tentative: false,
             file_static: true,
             volatile: false,
@@ -337,6 +341,15 @@ impl CGlobal {
 
     pub fn is_defined(&self) -> bool {
         self.initializer.is_some()
+    }
+
+    pub(crate) fn with_library_value(mut self, value: crate::kernel::ProgramValue) -> Self {
+        self.library_value = Some(value);
+        self
+    }
+
+    pub(crate) fn is_library_value(&self) -> bool {
+        self.library_value.is_some()
     }
 
     pub(crate) fn is_hosted_stdout(&self) -> bool {
@@ -409,6 +422,9 @@ impl CGlobal {
     }
 
     pub(crate) fn to_kernel_global(&self) -> Option<crate::kernel::Global> {
+        if let Some(value) = &self.library_value {
+            return Some(self.to_kernel_global_with_value(value.clone()));
+        }
         let initializer = self.initializer.as_ref()?;
         let value = match self.interface_type {
             InterfaceType::Float32 => match initializer {
@@ -3526,9 +3542,9 @@ impl ImportedFunction {
         if let Some(value) = &global.resolved_address {
             return Some(global.to_kernel_global_with_value(value.clone()));
         }
-        let initializer = global.initializer()?;
-        if let Some(value) =
-            self.static_address_initializer_value(global.interface_type(), initializer)
+        if let Some(initializer) = global.initializer()
+            && let Some(value) =
+                self.static_address_initializer_value(global.interface_type(), initializer)
         {
             return Some(global.to_kernel_global_with_value(value));
         }

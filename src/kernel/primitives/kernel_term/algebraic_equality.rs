@@ -40,6 +40,14 @@ impl KernelTerm {
             if left == right || !seen.insert((left.id(), right.id())) {
                 continue;
             }
+            if let (KernelTermNode::ImportedScalar(a), KernelTermNode::ImportedScalar(b)) =
+                (left.node(), right.node())
+            {
+                if a.carrier() != b.carrier() || a.value() != b.value() {
+                    return Some(false);
+                }
+                continue;
+            }
             if let (Some(a), Some(b)) = (left.written_argument(), right.written_argument()) {
                 if a != b {
                     return Some(false);
@@ -151,7 +159,11 @@ impl KernelTerm {
                 }
                 // Unmigrated field carriers retain their existing native value
                 // identity, including pointer annotations ignored by equality.
-                _ if left.written_argument().is_some() || right.written_argument().is_some() => {
+                _ if left.requires_native_argument_input()
+                    || right.requires_native_argument_input()
+                    || left.written_argument().is_some()
+                    || right.written_argument().is_some() =>
+                {
                     if export.argument(&left).ok()? != export.argument(&right).ok()? {
                         return Some(false);
                     }

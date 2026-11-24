@@ -425,12 +425,16 @@ pub(crate) fn read_operands(point: ProgramPoint, address: Box<Address>) -> (Read
 /// Both go through this one bridge, so that splitting `Bits64` into signed
 /// and unsigned formats has one place to replace.
 /// `build_support/read_construction.rs` counts its callers.
+///
+/// A caller that knows where the read was made passes that point as `site`;
+/// the read records it (`ProgramPoint::at_read_site`) and is the same term.
 pub(crate) fn legacy_pointer_word_read(
     memory: &crate::kernel::SharedMemory,
+    site: Option<&ProgramPoint>,
     cell: &Address,
 ) -> crate::kernel::MachineTerm {
     crate::kernel::MachineTerm::read_named(
-        ProgramPoint::at(memory),
+        ProgramPoint::at_optional_read_site(memory, site),
         cell.clone(),
         crate::kernel::LoadKind::Bits64,
     )

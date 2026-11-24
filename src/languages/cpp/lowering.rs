@@ -2084,15 +2084,27 @@ impl LoweringContext<'_> {
                 arguments,
                 value_type: result_type,
                 returned_member,
+                reference_load,
                 ..
             } => {
                 let Some(member) = returned_member else {
                     let mut evaluation = self.normalize_scalar(ScalarInput::Call {
                         callee,
                         arguments,
-                        value_type: result_type,
+                        value_type: reference_load.as_deref().unwrap_or(result_type),
                         conversions: &[],
                     })?;
+                    if reference_load.is_some() {
+                        // Read the referent at this operand's evaluation point.
+                        // Later comparisons and branch proofs use the captured
+                        // scalar, including when a succeeding call has its own
+                        // result and program point.
+                        let load = self.lower_typed_load(evaluation.value, value_type)?;
+                        let (capture, value) = self.retain_value(load, value_type);
+                        evaluation.prefix = evaluate_then(evaluation.prefix, capture);
+                        evaluation.value = value;
+                        evaluation.value_type = value_type;
+                    }
                     // Call graph validation requires every observer to be noexcept.
                     evaluation.may_throw = false;
                     return Ok(evaluation);

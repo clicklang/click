@@ -280,6 +280,7 @@ proved. Each family is an assumption in the same sense:
 | --- | --- | --- | --- |
 | Your `extern` contracts | `extern` | Each `extern` block a sidecar declares | Your sidecars |
 | C library | `C library` | `memcpy`, `memcmp`, `memset` and `strlen` meet their contracts | `library/c/string.interface.click` |
+| C library objects | `C library` | A linked library-provided scalar or pointer object has a stable value of its declared type | The C object's declaration in an imported `*.interface.click` |
 | Allocator | `allocator` | `malloc`, `calloc`, `realloc` and `free` behave as the kernel's allocation model: a fresh block or null, released once | Built in, as a language primitive: the C front end and the kernel (`allocation` resource), documented in [heap allocation](../reference/language/c.md#heap-allocation) |
 | Formatted output | `snprintf` | One contract per `snprintf` format a program uses, written from the format ([formatted output](../reference/language/c.md#formatted-output)) | `src/languages/c/formatted_output.rs` |
 | Formatted stream output | `printf` | The `fprintf` transition on the hosted `stdout` stream | `library/c/printf.interface.click` |

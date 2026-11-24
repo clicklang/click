@@ -3642,8 +3642,24 @@ fn program_assumptions_parsed(
                 name: name.to_string(),
             }))
             .collect::<Vec<_>>();
+        for name in file.c_library_values.keys() {
+            if required.iter().any(|callee| {
+                parsed_sources.get(callee).is_some_and(|(_, function)| {
+                    function
+                        .globals()
+                        .get(name)
+                        .is_some_and(syntax::CGlobal::is_library_value)
+                })
+            }) {
+                assumed.push(ModelAssumption {
+                    family: ModelFamily::CLibrary,
+                    name: name.clone(),
+                });
+            }
+        }
         if !assumed.is_empty() {
             assumed.sort();
+            assumed.dedup();
             assumptions.insert(function.signature().name().to_string(), assumed);
         }
     }
@@ -5160,6 +5176,7 @@ pub(in crate::surface) fn parse_verified_sources_context_with_entry(
         file.selected_c_target(),
         file.selected_thread_runtime(),
         &external_functions,
+        &file.c_library_values,
         c_sources,
         build_storage,
     )

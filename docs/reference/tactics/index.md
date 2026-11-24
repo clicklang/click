@@ -1933,6 +1933,8 @@ premises and the equality graph, then applies `normalize()`'s check (see
 For a signed `int32` order goal, the cited comparisons can form a chain in
 list order from the goal's lower endpoint to its upper endpoint. A strict
 goal needs at least one strict link. Replay checks the listed links directly.
+For a machine-integer disequality against a literal, one cited order bound
+can establish that the word excludes the literal.
 
 A true `float` or `double` comparison against a literal can cite one stronger
 bound. Exact widening from `float` to `double` widens the endpoint and preserves
@@ -1963,7 +1965,11 @@ lower bound is zero if that range crosses zero.
 A product's lower bound can instead cite two strictly positive lower
 endpoints. Multiplication by a literal signed zero can cite a finite
 operand or its two finite bounds. `close()` accepts the exact
-`isfinite` premise for the zero product.
+`isfinite` premise for the zero product. Negation and exact widening
+from `float` to `double` preserve finiteness.
+For an integer converted to `float` or `double`, `close()` can check
+the rounded limits of the source type. A tighter bound can cite a constant
+integer endpoint. The check rounds that endpoint at the destination precision.
 `close()` prefers named library laws when they cover the selected bounds.
 For other supported shapes it can still expand to `normalize() using` with
 those premises.
