@@ -166,13 +166,25 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             finite(&d),
         ];
         use FloatBinaryOperator::{Divide, Multiply};
-        if operator == Divide {
+        let advanced = if operator == Divide {
             let zero = literal(plan.format, 0);
-            premises.push(ClickProposition::Or(
+            let sign = ClickProposition::Or(
                 Box::new(less(zero.clone(), b.clone())),
                 Box::new(less(d.clone(), zero)),
-            ));
-        }
+            );
+            // Selected applications cite the disjunction itself. Retain it
+            // even when the two literal comparisons decide its truth.
+            let Some(proof) = attempt::candidate_outcome(input.driver().apply_step(
+                super::super::wide_arithmetic::have(sign.clone(), vec![ProofStep::Known]),
+            ))?
+            else {
+                return Ok(None);
+            };
+            premises.push(sign);
+            Some(proof)
+        } else {
+            None
+        };
         for (left, right) in [(&a, &b), (&a, &d), (&c, &b), (&c, &d)] {
             premises.push(corner_order(operator, &plan, left, right));
         }
@@ -189,7 +201,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         };
         let bound = literal(plan.format, plan.actual_endpoint);
         Self::try_apply_float_interval_bound(
-            input,
+            advanced.as_ref().unwrap_or(input),
             &plan,
             name,
             vec![x, y, a, b, c, d, bound],
