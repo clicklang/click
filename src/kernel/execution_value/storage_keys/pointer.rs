@@ -288,6 +288,17 @@ fn offset_for_root(source: &SharedAddressOffset) -> OffsetKey {
             .clone()
     })
 }
+pub(in crate::kernel) fn compare_offsets(
+    left: &SharedAddressOffset,
+    right: &SharedAddressOffset,
+) -> Ordering {
+    if left == right {
+        Ordering::Equal
+    } else {
+        offset_for_root(left).cmp(&offset_for_root(right))
+    }
+}
+
 pub(in crate::kernel) fn for_root(source: &KernelTerm) -> PointerStorageKey {
     POINTERS.with(|keys| {
         if let Some(key) = keys.borrow().get(&source.id()) {

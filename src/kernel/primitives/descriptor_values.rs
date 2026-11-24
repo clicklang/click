@@ -495,7 +495,40 @@ impl std::hash::Hash for StoredIntegerTerm {
 }
 native_descriptor_identity!(StoredAlgebraicTerm);
 native_descriptor_identity!(StoredConditionTerm);
-native_descriptor_identity!(StoredPointerOffset);
+impl std::fmt::Debug for StoredPointerOffset {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.native_compat().fmt(f)
+    }
+}
+impl PartialEq for StoredPointerOffset {
+    fn eq(&self, other: &Self) -> bool {
+        match (self.root(), other.root()) {
+            (Some(left), Some(right)) => left == right || left.syntax_equal(right),
+            _ => self.native_compat() == other.native_compat(),
+        }
+    }
+}
+impl Eq for StoredPointerOffset {}
+impl PartialOrd for StoredPointerOffset {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for StoredPointerOffset {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        match (self.root(), other.root()) {
+            (Some(left), Some(right)) => {
+                crate::kernel::execution_value::storage_keys::compare_offsets(left, right)
+            }
+            _ => self.native_compat().cmp(other.native_compat()),
+        }
+    }
+}
+impl std::hash::Hash for StoredPointerOffset {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.native_compat().hash(state);
+    }
+}
 
 #[cfg(test)]
 mod protocol_value_tests {
@@ -581,7 +614,15 @@ mod protocol_value_tests {
             index.structural_value()
         ));
         assert_eq!(first, index);
+        let equal = StoredPointerOffset::from(AddressOffset::Int32Scaled {
+            value: SharedMachineIntegerTerm::index(index.ty(), index.structural_value().clone()),
+            byte_width: 4,
+        });
+        assert_ne!(stored.root(), equal.root());
+        assert_eq!(stored, equal);
+        assert_eq!(stored.cmp(&equal), std::cmp::Ordering::Equal);
         assert!(!stored.has_cached_native_offset());
+        assert!(!equal.has_cached_native_offset());
         assert_eq!(stored.native_compat(), &source);
     }
 
