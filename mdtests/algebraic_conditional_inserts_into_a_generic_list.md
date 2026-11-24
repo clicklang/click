@@ -27,7 +27,7 @@ theorem insert_absent<T>(xs: List<T>, x: T) {
     requires not list::contains(xs, x);
     ensures insert(xs, x) == List<T>::Cons(x, xs) by {
         unfold(insert(xs, x));
-        solve() using { not list::contains(xs, x); };
+        close() using { not list::contains(xs, x); };
     }
 }
 
@@ -53,7 +53,7 @@ theorem insert_absent_grows<T>(xs: List<T>, x: T) {
     ensures list::length(insert(xs, x)) == Nat::Succ(list::length(xs)) by {
         have insert(xs, x) == List<T>::Cons(x, xs) by {
             unfold(insert(xs, x));
-            solve() using { not list::contains(xs, x); };
+            close() using { not list::contains(xs, x); };
         }
         rewrite(insert(xs, x), List<T>::Cons(x, xs));
         unfold(list::length(List<T>::Cons(x, xs)));

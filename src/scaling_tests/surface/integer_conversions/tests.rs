@@ -209,7 +209,7 @@ fn opaque_product_arithmetic_scales_with_steps_and_unused_bounds() {
         source.push_str(&format!("ensures {goal} by {{ "));
         for _ in 0..size {
             source.push_str(&format!(
-                "have {goal} by {{ solve() using {{ n == q * d + r; 0 <= r; }} }} "
+                "have {goal} by {{ close() using {{ n == q * d + r; 0 <= r; }} }} "
             ));
         }
         source.push_str("known(); } }");
@@ -382,7 +382,7 @@ fn normalized_opposite_bound_certificates_scale_with_steps_and_unused_facts() {
         }
         source.push_str("ensures x == b by { ");
         for _ in 0..size {
-            source.push_str("have x == b by { solve() using { b <= x; not (b + 1 <= x); } } ");
+            source.push_str("have x == b by { close() using { b <= x; not (b + 1 <= x); } } ");
         }
         source.push_str("known(); } }");
         let (checked, work) =

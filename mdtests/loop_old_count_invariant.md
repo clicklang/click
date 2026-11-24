@@ -52,10 +52,10 @@ int32 loop_old_count_invariant(int32 p[3]) {
                 all {
                     i >= 0 => {
                         have at(region(3).entry, i) >= at(region(3).entry, 0);
-                        solve() using { at(region(3).entry, i) >= at(region(3).entry, 0); at(region(3).entry, i) < at(region(3).entry, 3); };
+                        close() using { at(region(3).entry, i) >= at(region(3).entry, 0); at(region(3).entry, i) < at(region(3).entry, 3); };
                     }
                     i <= 3 => {
-                        solve() using { at(region(3).entry, i) < at(region(3).entry, 3); };
+                        close() using { at(region(3).entry, i) < at(region(3).entry, 3); };
                     }
                 }
             }
@@ -63,7 +63,7 @@ int32 loop_old_count_invariant(int32 p[3]) {
     }
     step();
     have result == 3 by {
-        solve() using {
+        close() using {
             at(loop(0).exit, i) <= at(loop(0).exit, 3);
             not at(loop(0).exit, i) < at(loop(0).exit, 3);
         };

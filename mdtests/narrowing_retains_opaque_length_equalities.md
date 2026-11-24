@@ -30,7 +30,7 @@ theorem narrowed_length_result(n: uint64, result: int32) {
             rewrite(stdio::padded_length(n, 3u64), 3u64);
             known();
         }
-        solve() using {
+        close() using {
             result == (1u64 + stdio::padded_length(n, 3u64)) as int32;
             (1u64 + stdio::padded_length(n, 3u64)) as int32 == 4;
         };
@@ -41,7 +41,7 @@ theorem narrowed_length_result_from_listed_equalities(n: uint64, result: int32) 
     requires stdio::padded_length(n, 3u64) == 3u64;
     requires result == (1u64 + stdio::padded_length(n, 3u64)) as int32;
     ensures result == 4 by {
-        solve() using {
+        close() using {
             result == (1u64 + stdio::padded_length(n, 3u64)) as int32;
             stdio::padded_length(n, 3u64) == 3u64;
         };

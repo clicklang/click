@@ -57,7 +57,7 @@ void spin(struct cell* node, int32 n) {
             match c.model {
                 Sign::Pos(value) => {
                     have Sign::Pos(value) == old(c.model) by {
-                        solve() using { c.model == Sign::Pos(value); c.model == old(c.model); };
+                        close() using { c.model == Sign::Pos(value); c.model == old(c.model); };
                     }
                     unfold(c);
                     step();

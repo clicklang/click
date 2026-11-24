@@ -135,7 +135,7 @@ theorem length_nonnegative<T>(xs: List<T>) {
             List::Cons(value, rest) => {
                 apply(ih(rest));
                 unfold(length(List<T>::Cons(value, rest)));
-                solve() using { length(rest) >= 0; };
+                close() using { length(rest) >= 0; };
             }
         }
     }
@@ -206,7 +206,7 @@ template<class T> bool Stack<T>::pop(T& out) {
         List::Cons(value, tail_items) => {
             unfold(length(List::Cons(value, tail_items)));
             apply(length_nonnegative(tail_items));
-            have to_integer(this->count) >= 1 by solve() using {
+            have to_integer(this->count) >= 1 by close() using {
                 to_integer(this->count) == length(List::Cons(value, tail_items));
                 length(List::Cons(value, tail_items)) == length(tail_items) + 1;
                 length(tail_items) >= 0;
@@ -222,7 +222,7 @@ template<class T> bool Stack<T>::pop(T& out) {
                     let state = fold(nodes<T>(this->head), { items: List<T>::Nil });
                     have to_integer(old(this->count) - 1u64) == to_integer(old(this->count)) - to_integer(1u64);
                     unfold(length(List<T>::Nil));
-                    have to_integer(old(this->count) - 1u64) == 0 by solve() using {
+                    have to_integer(old(this->count) - 1u64) == 0 by close() using {
                         to_integer(old(this->count) - 1u64) == to_integer(old(this->count)) - 1;
                         to_integer(old(this->count)) == length(List::Cons(value, List<T>::Nil));
                         length(List::Cons(value, List<T>::Nil)) == length(List<T>::Nil) + 1;
@@ -234,7 +234,7 @@ template<class T> bool Stack<T>::pop(T& out) {
                     let { tail: next } = unfold(tail);
                     let state = fold(nodes<T>(this->head), { items: List::Cons(next_value, next_items), tail: next });
                     have to_integer(old(this->count) - 1u64) == to_integer(old(this->count)) - to_integer(1u64);
-                    have to_integer(old(this->count) - 1u64) == length(List::Cons(next_value, next_items)) by solve() using {
+                    have to_integer(old(this->count) - 1u64) == length(List::Cons(next_value, next_items)) by close() using {
                         to_integer(old(this->count) - 1u64) == to_integer(old(this->count)) - 1;
                         to_integer(old(this->count)) == length(List::Cons(value, List::Cons(next_value, next_items)));
                         length(List::Cons(value, List::Cons(next_value, next_items))) == length(List::Cons(next_value, next_items)) + 1;
@@ -265,17 +265,17 @@ template<class T> Stack<T>::~Stack() {
                     unfold(length(List::Cons(value, rest)));
                     apply(length_nonnegative(rest));
                     have 0 <= length(tail.items) by solve();
-                    have length(tail.items) < length(List::Cons(value, rest)) by solve() using {
+                    have length(tail.items) < length(List::Cons(value, rest)) by close() using {
                         length(List::Cons(value, rest)) == length(rest) + 1;
                         tail.items == rest;
                     };
                     mark before_node;
                     step();
-                    have separate(region(1).footprint, memory(this->head)) by { solve() using {}; }
+                    have separate(region(1).footprint, memory(this->head)) by { close() using {}; }
                     have this->head == at(before_node, this->head) by {
                         preserve(memory(this->head), region(1));
                     }
-                    have separate(region(1).footprint, memory(this->head->next)) by { solve() using {}; }
+                    have separate(region(1).footprint, memory(this->head->next)) by { close() using {}; }
                     have this->head->next == at(before_node, this->head->next) by {
                         preserve(memory(this->head->next), region(1));
                     }
@@ -287,7 +287,7 @@ template<class T> Stack<T>::~Stack() {
                     mark before_delete;
                     step();
                     have separate(region(3).footprint, memory(this->head)) by {
-                        solve() using { at(region(1).exit, separate(memory(*this->head), memory(this->head))); };
+                        close() using { at(region(1).exit, separate(memory(*this->head), memory(this->head))); };
                     }
                     have this->head == at(before_delete, this->head) by {
                         preserve(memory(this->head), region(3));

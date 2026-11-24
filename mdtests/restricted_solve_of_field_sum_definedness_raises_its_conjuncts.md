@@ -1,4 +1,4 @@
-# `solve() using` proves a field sum's definedness one conjunct at a time
+# `close() using` proves a field sum's definedness one conjunct at a time
 
 `defined(pool->checked_out + 1)` lowers to two conjuncts: the read of
 `pool->checked_out` is defined, and the sum's Integer bounds hold. Restricted
@@ -22,7 +22,7 @@ void bump(struct pool* pool) {
     ensures pool->checked_out == old(pool->checked_out) + 1;
 } by {
     have defined((pool->checked_out + 1)) by {
-        solve() using { at(function.entry, pool->checked_out) < at(function.entry, 2147483647); };
+        close() using { at(function.entry, pool->checked_out) < at(function.entry, 2147483647); };
     }
     step();
     step();

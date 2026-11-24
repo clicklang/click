@@ -84,11 +84,11 @@ int cell_same(struct cell* p, struct cell* q) {
                 true => {
                     step();
                     let c = fold(cell_at(p), { model: old(c.model) });
-                    have address(identity) == address(q) by { rewrite(identity, p); solve() using { address(p) == address(q); }; }
+                    have address(identity) == address(q) by { rewrite(identity, p); close() using { address(p) == address(q); }; }
                     have result == cell_member(old(c.model), q) by {
                         rewrite(old(c.model), CellModel::Present(identity, value));
                         unfold(cell_member(CellModel::Present(identity, value), q));
-                        solve() using { address(identity) == address(q); };
+                        close() using { address(identity) == address(q); };
                     }
                     solve();
                 }
@@ -96,11 +96,11 @@ int cell_same(struct cell* p, struct cell* q) {
             }
             step();
             let c = fold(cell_at(p), { model: old(c.model) });
-            have not(address(identity) == address(q)) by { rewrite(identity, p); solve() using { not(address(p) == address(q)); }; }
+            have not(address(identity) == address(q)) by { rewrite(identity, p); close() using { not(address(p) == address(q)); }; }
             have result == cell_member(old(c.model), q) by {
                 rewrite(old(c.model), CellModel::Present(identity, value));
                 unfold(cell_member(CellModel::Present(identity, value), q));
-                solve() using { not(address(identity) == address(q)); };
+                close() using { not(address(identity) == address(q)); };
             }
             solve();
         },

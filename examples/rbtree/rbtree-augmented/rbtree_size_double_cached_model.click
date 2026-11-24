@@ -23,13 +23,13 @@ theorem sized_double_cached_valid(g: struct rb_node*, p: struct rb_node*, node: 
         }
         have to_integer(pc) == 1 + to_integer(sized_value(far)) + to_integer(sized_value(sized_reparent(ml, p))) by {
             rewrite(sized_value(sized_reparent(ml, p)), sized_value(ml));
-            solve() using { to_integer(pc) == 1 + to_integer(sized_value(far)) + to_integer(sized_value(ml)); };
+            close() using { to_integer(pc) == 1 + to_integer(sized_value(far)) + to_integer(sized_value(ml)); };
         }
         apply(sized_valid_node(p, node, Color::Red, pc, far, sized_reparent(ml, p)));
         unfold(sized_value(SizedTree::Node(p, node, Color::Red, pc, far, sized_reparent(ml, p))));
         have to_integer(gv) == 1 + to_integer(sized_value(SizedTree::Node(p, node, Color::Red, pc, far, sized_reparent(ml, p)))) + to_integer(gc) by {
             rewrite(sized_value(SizedTree::Node(p, node, Color::Red, pc, far, sized_reparent(ml, p))), pc);
-            solve() using {
+            close() using {
                 to_integer(pc) == 1 + to_integer(sized_value(far)) + to_integer(sized_value(ml));
                 to_integer(gc) == 1 + to_integer(sized_value(mr)) + to_integer(sized_value(uncle));
                 to_integer(gv) == 3 + to_integer(sized_value(far)) + to_integer(sized_value(ml)) + to_integer(sized_value(mr)) + to_integer(sized_value(uncle));
@@ -84,13 +84,13 @@ theorem sized_mirrored_double_cached_valid(g: struct rb_node*, p: struct rb_node
         }
         have to_integer(pc) == 1 + to_integer(sized_value(sized_reparent(mr, p))) + to_integer(sized_value(far)) by {
             rewrite(sized_value(sized_reparent(mr, p)), sized_value(mr));
-            solve() using { to_integer(pc) == 1 + to_integer(sized_value(far)) + to_integer(sized_value(mr)); };
+            close() using { to_integer(pc) == 1 + to_integer(sized_value(far)) + to_integer(sized_value(mr)); };
         }
         apply(sized_valid_node(p, node, Color::Red, pc, sized_reparent(mr, p), far));
         unfold(sized_value(SizedTree::Node(p, node, Color::Red, pc, sized_reparent(mr, p), far)));
         have to_integer(gv) == 1 + to_integer(sized_value(SizedTree::Node(p, node, Color::Red, pc, sized_reparent(mr, p), far))) + to_integer(gc) by {
             rewrite(sized_value(SizedTree::Node(p, node, Color::Red, pc, sized_reparent(mr, p), far)), pc);
-            solve() using {
+            close() using {
                 to_integer(pc) == 1 + to_integer(sized_value(far)) + to_integer(sized_value(mr));
                 to_integer(gc) == 1 + to_integer(sized_value(ml)) + to_integer(sized_value(uncle));
                 to_integer(gv) == 3 + to_integer(sized_value(far)) + to_integer(sized_value(ml)) + to_integer(sized_value(mr)) + to_integer(sized_value(uncle));

@@ -49,7 +49,7 @@ int32 drain(int32 n) {
         true => {
             have 0 <= to_integer(n - 1);
             have 1 <= n by {
-                solve() using {
+                close() using {
                     n > 0;
                 };
             }
@@ -64,7 +64,7 @@ int32 drain(int32 n) {
                 unfold(level(n - 1));
                 unfold(level(n));
                 have to_integer(n - 1) == to_integer(n) - to_integer(1);
-                solve() using {
+                close() using {
                     to_integer(n - 1) == to_integer(n) - to_integer(1);
                 };
             }

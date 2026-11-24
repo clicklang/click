@@ -45,7 +45,7 @@ int32 update(int32* p) {
                     }
                     step();
                     have separate(statement(0).statement(0).footprint, memory(p[0])) by {
-                        solve() using { separate(memory(p[1]), memory(p[0])); };
+                        close() using { separate(memory(p[1]), memory(p[0])); };
                     }
                     have p[0] == at(iteration, p[0]) by {
                         preserve(memory(p[0]), statement(0).statement(0));

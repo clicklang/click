@@ -1,7 +1,7 @@
 # A size_t loop stepping by two closes with arithmetic
 
 The loop of `a_size_t_loop_stepping_by_two_closes_with_explicit_steps.md`,
-with each of its two 64-bit facts proved by one `solve() using`.
+with each of its two 64-bit facts proved by one `close() using`.
 
 Arithmetic reads a `uint64` order goal through the exact Integer
 observations of its operands. It carries each listed 64-bit premise to
@@ -39,10 +39,10 @@ uint8 last(const uint8* bytes, uint64 length) {
         invariant i <= length;
         maintain by {
             have to_integer(i + 2u64) <= to_integer(length) by {
-                solve() using { i <= length; to_integer(i + 1u64) < to_integer(length); length <= 2147483647u64; };
+                close() using { i <= length; to_integer(i + 1u64) < to_integer(length); length <= 2147483647u64; };
             }
             have to_integer(length - (i + 2u64)) < to_integer(length - i) by {
-                solve() using { i <= length; to_integer(i + 2u64) <= to_integer(length); length <= 2147483647u64; };
+                close() using { i <= length; to_integer(i + 2u64) <= to_integer(length); length <= 2147483647u64; };
             }
             step(); step();
             solve();

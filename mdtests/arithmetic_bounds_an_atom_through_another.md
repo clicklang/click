@@ -1,4 +1,4 @@
-# `solve() using` bounds an operand through another premise
+# `close() using` bounds an operand through another premise
 
 `0 <= i` and `i < n` keep `n - i` inside `int32`: together they say `n >= 1`.
 The checker used to bound each operand only by premises naming that operand
@@ -22,8 +22,8 @@ int32 gap(int32 n, int32 i) {
     requires i < n;
     ensures result == 0;
 } by {
-    have 1 <= n - i by { solve() using { 0 <= i; i < n; }; }
-    have n - i - 1 < n - i by { solve() using { i >= 0; i < n; }; }
+    have 1 <= n - i by { close() using { 0 <= i; i < n; }; }
+    have n - i - 1 < n - i by { close() using { i >= 0; i < n; }; }
     step();
     solve();
 }

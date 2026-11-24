@@ -1,6 +1,6 @@
-# `solve() using` cites a greater-or-equal premise
+# `close() using` cites a greater-or-equal premise
 
-`solve() using` indexes each cited signed comparison under both spellings, so a
+`close() using` indexes each cited signed comparison under both spellings, so a
 premise written `x >= 0` also closes the goal spelled `0 <= x`. This catches a
 conditional normalizer that drops the mirrored form of a cited `>=` condition.
 
@@ -8,7 +8,7 @@ conditional normalizer that drops the mirrored form of a cited `>=` condition.
 theorem greater_equal_premise_closes_mirrored_goal(x: int32) {
     requires x >= 0;
     ensures 0 <= x by {
-        solve() using { x >= 0; };
+        close() using { x >= 0; };
     }
 }
 ```

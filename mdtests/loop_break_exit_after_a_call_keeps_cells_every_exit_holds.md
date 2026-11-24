@@ -58,7 +58,7 @@ int32 keep(int32* p, int32* q, int32 flag) {
                 step();
                 step();
                 have q[0] == old(q[0]) by {
-                    solve() using {
+                    close() using {
                         old(q[0]) == old(q[0]);
                     };
                 }

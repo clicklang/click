@@ -25,19 +25,19 @@ uint32 contribute_early(struct counter* p) {
 } by {
     with(control(p)) {
         have count(remaining(p)) - 1 >= 1 by {
-            solve() using {
+            close() using {
                 count(remaining(p)) > 1;
                 count(remaining(p)) <= 3;
             };
         }
         have (3 - count(remaining(p))) + 1 == 3 - (count(remaining(p)) - 1) by {
-            solve() using {
+            close() using {
                 count(remaining(p)) > 1;
                 count(remaining(p)) <= 3;
             };
         }
         have count(remaining(p)) - 1 <= 3 by {
-            solve() using { count(remaining(p)) > 1; count(remaining(p)) <= 3; };
+            close() using { count(remaining(p)) > 1; count(remaining(p)) <= 3; };
         }
         unfold(remaining(p));
         step();

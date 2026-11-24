@@ -19,7 +19,7 @@ void copy(unsigned long* slot, int32* p) {
     mark before;
     step();
     have separate(statement(0).region(0).footprint, memory(*slot)) by {
-        solve() using {};
+        close() using {};
     }
     have *(slot as (int32 **)) == at(before, *(slot as (int32 **))) by {
         preserve(memory(*slot), statement(0).region(0));

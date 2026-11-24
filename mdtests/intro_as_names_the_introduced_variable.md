@@ -19,7 +19,7 @@ theorem int32_binder(n: int32) {
 theorem integer_binder() {
     ensures forall (m: Integer) { m + 0 == m } by {
         let value = intro();
-        have value + 0 == value by solve() using {};
+        have value + 0 == value by close() using {};
         known();
     }
 }

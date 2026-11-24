@@ -10,7 +10,7 @@ theorem checked_quotient_lower(n: Integer, d: Integer, bound: Integer) {
     requires 1 <= d;
     requires bound * d <= n;
     ensures bound <= truncating_quotient(n, d) by {
-        solve() using { bound * d <= n; 1 <= d; };
+        close() using { bound * d <= n; 1 <= d; };
     }
 }
 
@@ -19,7 +19,7 @@ theorem checked_quotient_upper(n: Integer, d: Integer, bound: Integer) {
     requires 1 <= d;
     requires n <= bound * d;
     ensures truncating_quotient(n, d) <= bound by {
-        solve() using { n <= bound * d; 1 <= d; };
+        close() using { n <= bound * d; 1 <= d; };
     }
 }
 

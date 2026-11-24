@@ -39,7 +39,7 @@ int32 read_right(int32 value, int32* external) {
     have pair.right == value by solve();
     have separate(memory(pair.left), memory(pair.right)) by known();
     have separate(statement(2).footprint, memory(pair.right)) by {
-        solve() using { separate(memory(pair.left), memory(pair.right)); };
+        close() using { separate(memory(pair.left), memory(pair.right)); };
     }
     have pair.right == at(written, pair.right) by {
         preserve(memory(pair.right), statement(2));

@@ -12,10 +12,10 @@ theorem selected(A: Resource, p: int32*, q: int32*, i: int32, cap: int32) {
             rewrite(q, p);
             known();
         }
-        have i <= 2147483646 by { solve() using { i < cap; }; }
-        have defined(i + 1) by { solve() using { 0 <= i; i <= 2147483646; }; }
-        have i <= ((i + 1) as int32) by { solve() using { 0 <= i; i < cap; }; }
-        have ((i + 1) as int32) <= cap by { solve() using { 0 <= i; i < cap; }; }
+        have i <= 2147483646 by { close() using { i < cap; }; }
+        have defined(i + 1) by { close() using { 0 <= i; i <= 2147483646; }; }
+        have i <= ((i + 1) as int32) by { close() using { 0 <= i; i < cap; }; }
+        have ((i + 1) as int32) <= cap by { close() using { 0 <= i; i < cap; }; }
         have contains(memory(q[0..cap]), memory(q[i..i+1])) by {
             apply(separation::contains_subrange(q, 0, cap, i, i+1));
         }

@@ -8,11 +8,11 @@ theorem false_shift(x: Integer, k: Integer) {
     requires -1 <= x;
     requires 0 <= k;
     ensures truncating_quotient(x + 2 * k, 2) == truncating_quotient(x, 2) + k by {
-        solve() using { -1 <= x; 0 <= k; };
+        close() using { -1 <= x; 0 <= k; };
     }
 }
 ```
 
 ```expect
-fail: solve
+fail: `close() using`
 ```

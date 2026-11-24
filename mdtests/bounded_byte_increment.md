@@ -19,10 +19,10 @@ int64 next(uint8 byte) {
 } by {
     step_until(function.exit);
     have result <= 255i64 by {
-        solve() using { (byte as uint32) <= 255u32; byte < 255; };
+        close() using { (byte as uint32) <= 255u32; byte < 255; };
     }
     have result <= 255i64 by {
-        solve() using { (byte as uint32) <= 255u32; byte < 255; };
+        close() using { (byte as uint32) <= 255u32; byte < 255; };
     }
     solve();
 }

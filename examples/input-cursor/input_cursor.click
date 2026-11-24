@@ -137,7 +137,7 @@ int32 input_cursor_clone(
     mark before_copy;
     step();
     have separate(statement(0).footprint, memory(source->data)) by {
-        solve() using { separate(memory(target->pos), memory(source->data)); };
+        close() using { separate(memory(target->pos), memory(source->data)); };
     }
     have source->data == at(before_copy, source->data) by {
         preserve(memory(source->data), statement(0));
@@ -145,7 +145,7 @@ int32 input_cursor_clone(
     mark after_pos;
     step();
     have separate(statement(1).footprint, memory(source->data)) by {
-        solve() using { separate(memory(target->len), memory(source->data)); };
+        close() using { separate(memory(target->len), memory(source->data)); };
     }
     have source->data == at(before_copy, source->data) by {
         have source->data == at(after_pos, source->data) by {
@@ -157,7 +157,7 @@ int32 input_cursor_clone(
     mark after_len;
     step();
     have separate(statement(2).footprint, memory(source->data)) by {
-        solve() using { separate(memory(target->data), memory(source->data)); };
+        close() using { separate(memory(target->data), memory(source->data)); };
     }
     have source->data == at(before_copy, source->data) by {
         have source->data == at(after_len, source->data) by {
@@ -198,7 +198,7 @@ int32 input_cursor_shared_pipeline(
 } by {
     step_until(statement(4).entry);
     have separate(memory(*right), memory(left->data[0..left->len])) by {
-        solve() using {
+        close() using {
             left->len == length;
             left->data == data;
             separate(memory(*right), memory(data[0..length]));
@@ -206,7 +206,7 @@ int32 input_cursor_shared_pipeline(
     }
     have left->pos == 0;
     have left->pos < left->len by {
-        solve() using {
+        close() using {
             1 <= length;
             left->len == length;
             left->pos == 0;
@@ -217,7 +217,7 @@ int32 input_cursor_shared_pipeline(
     step();
     have left->pos < left->len by { known(); }
     have right->pos < right->len by {
-        solve() using {
+        close() using {
             1 <= length;
             right->len == length;
             right->pos == 0;
@@ -239,7 +239,7 @@ int32 input_cursor_shared_pipeline(
         known();
     }
     have 0 < right->len by {
-        solve() using {
+        close() using {
             right->len == length;
             1 <= length;
         };
@@ -257,7 +257,7 @@ int32 input_cursor_shared_pipeline(
     have right->data == data;
     have right_value == right->data[right->pos];
     have right->data[right->pos] == data[0] by {
-        solve() using {
+        close() using {
             right->pos == 0;
             right->data == data;
         };

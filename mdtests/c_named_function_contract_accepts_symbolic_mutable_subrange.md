@@ -59,7 +59,7 @@ resource slice_suffix(cells: int32*, index: int32, length: int32) {
 
 theorem increment_at_is_slice_step() executes increment_at(int32* cells, int32 index, int32 length) {
     ensures SliceStep(&increment_at) by {
-        have index + 1 <= length by { solve() using { index < length; }; }
+        have index + 1 <= length by { close() using { index < length; }; }
         apply(click::separation::separate_adjacent_ranges(cells, 0, index, index + 1));
         apply(click::separation::separate_adjacent_ranges(cells, index, index + 1, length));
         fold(slice_prefix(cells, index));

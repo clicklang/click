@@ -29,7 +29,7 @@ void claim(int32 *data, int32 *occupied, int32 **kept) {
     mark before;
     step();
     have separate(statement(0).footprint, memory(kept[0])) by {
-        solve() using { separate(memory(occupied[0]), memory(kept[0])); };
+        close() using { separate(memory(occupied[0]), memory(kept[0])); };
     }
     have kept[0] == at(before, kept[0]) by {
         preserve(memory(kept[0]), statement(0));

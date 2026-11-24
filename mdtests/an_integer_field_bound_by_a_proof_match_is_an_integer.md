@@ -40,7 +40,7 @@ void touch(int32 n) {
                 known();
             }
             have wd == 3 by {
-                solve() using { depth(c.model) == wd; depth(c.model) == 3; };
+                close() using { depth(c.model) == wd; depth(c.model) == 3; };
             }
             step();
             step();

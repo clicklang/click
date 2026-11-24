@@ -27,7 +27,7 @@ work expands into simple tactics:
   with the available facts and bounded rules and runs no C. It first checks
   the indexed whole goal; an exact available fact expands to `known()`
   without decomposition or a search for an alternative derivation.
-  `solve() using { P; ... }` closes it from only the listed premises, trying
+  `close() using { P; ... }` closes it from only the listed premises, trying
   arithmetic over them before a final indexed one-theorem search; a miss
   adds arithmetic's reason. Theorem discovery infers arguments from a
   structurally matching conclusion and checks prerequisites against only the

@@ -1799,7 +1799,7 @@ mod tests {
     };
     fn check(parameters: &str, requires: &str, goal: &str) {
         let source = format!(
-            "theorem migrated({parameters}) {{ {requires} ensures {goal} by {{ solve() using {{ {} }}; }} }}",
+            "theorem migrated({parameters}) {{ {requires} ensures {goal} by {{ close() using {{ {} }}; }} }}",
             requires.replace("requires ", "")
         );
         let expanded = expand_c_claim_source_by_label(&source, &[], "migrated.ensures_0")
@@ -1907,14 +1907,14 @@ mod tests {
     #[test]
     fn signed_interval_migration_rejects_missing_evidence_and_undefined_operations() {
         for source in [
-            "theorem rejected(x: int32,y: int32) {requires 0<=x; requires x<=10; requires 0<=y; requires y<=10; ensures defined(x+y) by {solve() using {0<=x;0<=y;};}}",
-            "theorem rejected(x: int32,y: int32) {requires defined(x+y); ensures defined(x+y) by {solve() using {};}}",
-            "theorem rejected(a: int32,b: int32) {requires 0<=a; requires 0<=b; requires defined(a+b); ensures 0<=to_integer(a+b) by {solve() using {0<=a;0<=b;};}}",
-            "theorem rejected(x: int32) {requires x==1; ensures defined(x+1) by {solve() using {x==1;defined(x+2147483647);};}}",
-            "theorem rejected(x: int32,y: int32) {requires x<=y; ensures to_integer(x+1)<=to_integer(y) by {solve() using {x<=y;};}}",
-            "theorem rejected(x: int64) {requires x==9223372036854775807i64; ensures defined(x+1i64) by {solve() using {x==9223372036854775807i64;};}}",
-            "theorem rejected(x: int32) {requires x == -1; ensures defined(x << 1) by {solve() using {x == -1;};}}",
-            "theorem rejected(x: int32) {requires x == -2147483648; ensures defined(x % -1) by {solve() using {x == -2147483648;};}}",
+            "theorem rejected(x: int32,y: int32) {requires 0<=x; requires x<=10; requires 0<=y; requires y<=10; ensures defined(x+y) by {close() using {0<=x;0<=y;};}}",
+            "theorem rejected(x: int32,y: int32) {requires defined(x+y); ensures defined(x+y) by {close() using {};}}",
+            "theorem rejected(a: int32,b: int32) {requires 0<=a; requires 0<=b; requires defined(a+b); ensures 0<=to_integer(a+b) by {close() using {0<=a;0<=b;};}}",
+            "theorem rejected(x: int32) {requires x==1; ensures defined(x+1) by {close() using {x==1;defined(x+2147483647);};}}",
+            "theorem rejected(x: int32,y: int32) {requires x<=y; ensures to_integer(x+1)<=to_integer(y) by {close() using {x<=y;};}}",
+            "theorem rejected(x: int64) {requires x==9223372036854775807i64; ensures defined(x+1i64) by {close() using {x==9223372036854775807i64;};}}",
+            "theorem rejected(x: int32) {requires x == -1; ensures defined(x << 1) by {close() using {x == -1;};}}",
+            "theorem rejected(x: int32) {requires x == -2147483648; ensures defined(x % -1) by {close() using {x == -2147483648;};}}",
         ] {
             crate::surface::parse(source).unwrap();
             assert!(
@@ -2034,7 +2034,7 @@ mod bounded_cast_tests {
             ),
         ] {
             for tactic in [
-                format!("solve() using {{ {lower}; {upper}; }};"),
+                format!("close() using {{ {lower}; {upper}; }};"),
                 "solve();".into(),
             ] {
                 let source = format!(
@@ -2052,8 +2052,8 @@ mod bounded_cast_tests {
         }
 
         for source in [
-            "theorem omitted(x: int64) { requires 1 <= to_integer(x); requires to_integer(x) <= 100; ensures to_integer(x as uint32) == to_integer(x) by { solve() using { to_integer(x) <= 100; }; } }",
-            "theorem wraps(x: uint64) { requires 0u64 <= x; requires x <= 4294967296u64; ensures to_integer(x as uint32) == to_integer(x) by { solve() using { 0u64 <= x; x <= 4294967296u64; }; } }",
+            "theorem omitted(x: int64) { requires 1 <= to_integer(x); requires to_integer(x) <= 100; ensures to_integer(x as uint32) == to_integer(x) by { close() using { to_integer(x) <= 100; }; } }",
+            "theorem wraps(x: uint64) { requires 0u64 <= x; requires x <= 4294967296u64; ensures to_integer(x as uint32) == to_integer(x) by { close() using { 0u64 <= x; x <= 4294967296u64; }; } }",
         ] {
             crate::surface::parse(source).expect("bounded cast refusal should parse");
             assert!(verify_c_sources(source, &[]).is_err(), "{source}");

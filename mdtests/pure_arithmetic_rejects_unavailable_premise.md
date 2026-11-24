@@ -3,7 +3,7 @@
 ```click
 theorem omitted_bound(n: int32) {
     ensures 0 <= n - 2 by {
-        solve() using {
+        close() using {
             1 < n;
         };
     }
@@ -11,5 +11,5 @@ theorem omitted_bound(n: int32) {
 ```
 
 ```expect
-fail: solve() using` premise 0 is not exactly available
+fail: close() using` premise 0 is not exactly available
 ```

@@ -39,7 +39,7 @@ int32 render(char buf[], uint32 n) {
             apply(stdio::decimal_length_2(42u64));
         }
         have result == 2 by {
-            solve() using { result == stdio::decimal_length(n as uint64) as int32; n == 42u32; stdio::decimal_length(42u64) == 2u64; };
+            close() using { result == stdio::decimal_length(n as uint64) as int32; n == 42u32; stdio::decimal_length(42u64) == 2u64; };
         }
     }
     ensures buf[0] == 52 by {
@@ -53,7 +53,7 @@ int32 render(char buf[], uint32 n) {
             rewrite(n as uint64, 42u64);
             apply(stdio::pow10_1());
             apply(stdio::decimal_digit_of_length(42u64, 2u64, 0u64));
-            solve() using {
+            close() using {
                 stdio::decimal_digit(42u64, 0u64) == (48u64 + 42u64 / stdio::pow10(2u64 - 1u64 - 0u64) % 10u64) as uint8;
                 stdio::pow10(1u64) == 10u64;
             };
@@ -84,10 +84,10 @@ int32 fraction(char tmp[], uint32 remainder) {
         have stdio::padded_length(remainder as uint64, 3u64) == 3u64 by {
             rewrite(remainder as uint64, 5u64);
             unfold(stdio::padded_length(5u64, 3u64));
-            solve() using { stdio::decimal_length(5u64) == 1u64; };
+            close() using { stdio::decimal_length(5u64) == 1u64; };
         }
         have result == 4 by {
-            solve() using {
+            close() using {
                 result == (1u64 + stdio::padded_length(remainder as uint64, 3u64)) as int32;
                 stdio::padded_length(remainder as uint64, 3u64) == 3u64;
             };

@@ -557,7 +557,7 @@ mod tests {
                     .map(|p| format!("requires {p};"))
                     .collect::<String>();
                 let source = format!(
-                    "theorem translated(p: {ty}*,i:{index},j:{index}) {{ {requires} ensures (p+i)+j==p+(i+j) by {{solve() using {{{bounds}}};}} }}"
+                    "theorem translated(p: {ty}*,i:{index},j:{index}) {{ {requires} ensures (p+i)+j==p+(i+j) by {{close() using {{{bounds}}};}} }}"
                 );
                 if std::panic::catch_unwind(|| replay(&source)).is_err() {
                     failures.push(source);
@@ -592,7 +592,7 @@ mod tests {
                 .filter(|p| !p.is_empty())
                 .map(|p| format!("requires {p};"))
                 .collect::<String>();
-            for tactic in [format!("solve() using {{{bounds}}};"), "solve();".into()] {
+            for tactic in [format!("close() using {{{bounds}}};"), "solve();".into()] {
                 let source = format!(
                     "theorem translated({parameters}) {{ {requires} ensures {goal} by {{ {tactic} }} }}"
                 );
@@ -608,10 +608,10 @@ mod tests {
     #[ignore = "nightly: pointer translation missing-premise and overflow controls"]
     fn pointer_offsets_do_not_borrow_relations_or_allow_wrapping() {
         for source in [
-            "theorem bad(p:int32*,q:int32*) {requires p==q+3;ensures p+1==q+4 by {solve() using {};}}",
-            "theorem bad(p:int32*,q:int32*) {requires p==q+3;ensures p+1==q+5 by {solve() using {p==q+3;};}}",
-            "theorem bad(p:int32*,i:uint64) {requires i==18446744073709551615u64;ensures (p+i)+1u64==p+(i+1u64) by {solve() using {i==18446744073709551615u64;};}}",
-            "theorem bad(p:int32*,q:int32*) {requires address(p)==address(q);ensures p+1==q+2 by {solve() using {address(p)==address(q);};}}",
+            "theorem bad(p:int32*,q:int32*) {requires p==q+3;ensures p+1==q+4 by {close() using {};}}",
+            "theorem bad(p:int32*,q:int32*) {requires p==q+3;ensures p+1==q+5 by {close() using {p==q+3;};}}",
+            "theorem bad(p:int32*,i:uint64) {requires i==18446744073709551615u64;ensures (p+i)+1u64==p+(i+1u64) by {close() using {i==18446744073709551615u64;};}}",
+            "theorem bad(p:int32*,q:int32*) {requires address(p)==address(q);ensures p+1==q+2 by {close() using {address(p)==address(q);};}}",
         ] {
             crate::surface::parse(source).unwrap();
             assert!(verify_c_sources(source, &[]).is_err(), "{source}");

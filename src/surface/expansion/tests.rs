@@ -2438,7 +2438,7 @@ fn expanded_branch_condition_names_a_field_through_a_loaded_pointer() {
         .expect("the expansion naming the field should verify");
 }
 
-/// `solve() using` on a `uint64` goal expands to the bridge steps it took,
+/// `close() using` on a `uint64` goal expands to the bridge steps it took,
 /// and the expansion verifies with no `solve()` left to plan. A
 /// comparison and its observed reading are one fact, so an order premise is
 /// carried by `known()`; type ranges and each sum's in-range identity use
@@ -2446,7 +2446,7 @@ fn expanded_branch_condition_names_a_field_through_a_loaded_pointer() {
 /// bounds, with no standard-library bridge theorem.
 #[test]
 fn uint64_arithmetic_expands_to_its_integer_bridge_steps() {
-    let source = "theorem step_two(i: uint64, length: uint64) {\n    requires i <= length;\n    requires to_integer(i + 1u64) < to_integer(length);\n    requires length <= 2147483647u64;\n    ensures to_integer(i + 2u64) <= to_integer(length) by {\n        solve() using { i <= length; to_integer(i + 1u64) < to_integer(length); length <= 2147483647u64; }\n    }\n}\n";
+    let source = "theorem step_two(i: uint64, length: uint64) {\n    requires i <= length;\n    requires to_integer(i + 1u64) < to_integer(length);\n    requires length <= 2147483647u64;\n    ensures to_integer(i + 2u64) <= to_integer(length) by {\n        close() using { i <= length; to_integer(i + 1u64) < to_integer(length); length <= 2147483647u64; }\n    }\n}\n";
     let expanded = expand_c_claim_source_by_label(source, &[], "step_two.ensures_0")
         .expect("the uint64 arithmetic proof verifies and expands");
     for step in [
@@ -2456,7 +2456,7 @@ fn uint64_arithmetic_expands_to_its_integer_bridge_steps() {
     ] {
         assert!(expanded.contains(step), "{step}\n{expanded}");
     }
-    assert!(!expanded.contains("solve() using"), "{expanded}");
+    assert!(!expanded.contains("close() using"), "{expanded}");
     verify_c_sources(&expanded, &[]).expect("the expansion verifies");
     // Without the bound on `i`, `i + 1` may wrap, and the step says so.
     let unbounded = source.replace("i <= length; to_integer(i + 1u64)", "to_integer(i + 1u64)");
@@ -2484,13 +2484,13 @@ fn wide_arithmetic_reads_listed_bounds_at_their_named_state() {
         mark before;
         step_until(function.exit);
         have to_integer(result) == to_integer(at(before, n)) - 4 by {{
-            solve() using {{
+            close() using {{
                 at(before, 4 <= n);
                 at(before, n <= 16);
             }}
         }}
         have result <= 12 by {{
-            solve() using {{
+            close() using {{
                 to_integer(at(before, n)) <= 16;
                 to_integer(result) == to_integer(at(before, n)) - 4;
             }}
@@ -2503,7 +2503,7 @@ fn wide_arithmetic_reads_listed_bounds_at_their_named_state() {
         verify_c_sources(&source, &sources).expect("state bounds must verify");
         let expanded = expand_c_claim_source_by_label(&source, &sources, "advance.ensures_0")
             .expect("state bridges must expand");
-        assert!(!expanded.contains("solve() using"), "{expanded}");
+        assert!(!expanded.contains("close() using"), "{expanded}");
         verify_c_sources(&expanded, &sources).expect("state bridges must independently verify");
         let missing_bound = source.replace("to_integer(at(before, n)) <= 16;", "");
         verify_c_sources(&missing_bound, &sources)
@@ -2519,7 +2519,7 @@ fn wide_arithmetic_reads_listed_bounds_at_their_named_state() {
 /// observed.
 #[test]
 fn int64_arithmetic_expands_to_its_integer_bridge_steps() {
-    let source = "theorem step_two(i: int64, length: int64) {\n    requires 0i64 <= i;\n    requires length <= 2147483647i64;\n    requires i <= length;\n    requires to_integer(i + 1i64) < to_integer(length);\n    ensures to_integer(i + 2i64) <= to_integer(length) by {\n        solve() using { 0i64 <= i; i <= length; to_integer(i + 1i64) < to_integer(length); length <= 2147483647i64; }\n    }\n}\n";
+    let source = "theorem step_two(i: int64, length: int64) {\n    requires 0i64 <= i;\n    requires length <= 2147483647i64;\n    requires i <= length;\n    requires to_integer(i + 1i64) < to_integer(length);\n    ensures to_integer(i + 2i64) <= to_integer(length) by {\n        close() using { 0i64 <= i; i <= length; to_integer(i + 1i64) < to_integer(length); length <= 2147483647i64; }\n    }\n}\n";
     let expanded = expand_c_claim_source_by_label(source, &[], "step_two.ensures_0")
         .expect("the int64 arithmetic proof verifies and expands");
     for step in [
@@ -2529,7 +2529,7 @@ fn int64_arithmetic_expands_to_its_integer_bridge_steps() {
     ] {
         assert!(expanded.contains(step), "{step}\n{expanded}");
     }
-    assert!(!expanded.contains("solve() using"), "{expanded}");
+    assert!(!expanded.contains("close() using"), "{expanded}");
     verify_c_sources(&expanded, &[]).expect("the expansion verifies");
     // Without an upper bound on `i`, `i + 1` may overflow above. (A lower
     // bound is not needed: `i`'s own `int64` range keeps `i + 1` above
@@ -3377,7 +3377,7 @@ fn nat_addition_agrees_with_integer_addition_and_rechecks_expansion() {
 fn signed_to_unsigned_interval_comparisons_expand_and_recheck_both_sides() {
     for goal in ["1u32 <= (x as uint32)", "(x as uint32) <= 4u32"] {
         let source = format!(
-            "theorem cast_bound(x: int32) {{ requires 0 < x; requires x <= 4; ensures {goal} by {{ solve() using {{ 0 < x; x <= 4; }} }} }}"
+            "theorem cast_bound(x: int32) {{ requires 0 < x; requires x <= 4; ensures {goal} by {{ close() using {{ 0 < x; x <= 4; }} }} }}"
         );
         verify_c_sources(&source, &[]).unwrap();
         let expanded =
@@ -4059,7 +4059,7 @@ int32 f(int32 x) {
 
 #[test]
 fn common_machine_call_expansion_rechecks_selected_call_premises() {
-    let source = "function f(x: int32) -> int32 { x } theorem client(x: int32) { requires f(x) == 7; requires defined(f(x) + 1); ensures f(x) + 1 == 8 by { solve() using { f(x) == 7; defined(f(x) + 1); } } }";
+    let source = "function f(x: int32) -> int32 { x } theorem client(x: int32) { requires f(x) == 7; requires defined(f(x) + 1); ensures f(x) + 1 == 8 by { close() using { f(x) == 7; defined(f(x) + 1); } } }";
     verify_c_sources(source, &[]).unwrap();
     let expanded = expand_c_claim_source_by_label(source, &[], "client.ensures_0").unwrap();
     verify_c_sources(&expanded, &[]).unwrap();

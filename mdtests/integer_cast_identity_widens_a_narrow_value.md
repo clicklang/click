@@ -1,7 +1,7 @@
 # `integer_cast_identity` widens a narrow value
 
 Arithmetic search expands to ordinary proof steps, with the selected premises
-stated explicitly in `solve() using { ... }`.
+stated explicitly in `close() using { ... }`.
 
 ```c filename=widen_cert.c
 int widen8(signed char x) { return x; }
@@ -17,28 +17,28 @@ int widen8(signed char x) {
     ensures to_integer(result) == to_integer(x);
 } by {
     step_until(function.exit);
-    solve() using { old(x) as int32 >= -128; old(x) as int32 <= 127; };
+    close() using { old(x) as int32 >= -128; old(x) as int32 <= 127; };
 }
 
 long widen8l(signed char x) {
     ensures to_integer(result) == to_integer(x);
 } by {
     step_until(function.exit);
-    solve() using { old(x) as int32 >= -128; old(x) as int32 <= 127; };
+    close() using { old(x) as int32 >= -128; old(x) as int32 <= 127; };
 }
 
 unsigned int widenu8(unsigned char x) {
     ensures to_integer(result) == to_integer(x);
 } by {
     step_until(function.exit);
-    solve() using { old(x) as int32 >= 0; old(x) as int32 <= 255; };
+    close() using { old(x) as int32 >= 0; old(x) as int32 <= 255; };
 }
 
 unsigned long widenu16(unsigned short x) {
     ensures to_integer(result) == to_integer(x);
 } by {
     step_until(function.exit);
-    solve() using { old(x) as int32 >= 0; old(x) as int32 <= 65535; };
+    close() using { old(x) as int32 >= 0; old(x) as int32 <= 65535; };
 }
 ```
 

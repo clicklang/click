@@ -228,7 +228,7 @@ mod tests {
 
     fn replay(parameters: &str, requirements: &str, goal: &str, listed: &str) {
         let source = format!(
-            "theorem specialized({parameters}) {{ {requirements} ensures {goal} by {{ solve() using {{ {listed} }}; }} }}"
+            "theorem specialized({parameters}) {{ {requirements} ensures {goal} by {{ close() using {{ {listed} }}; }} }}"
         );
         let expanded = expand_c_claim_source_by_label(&source, &[], "specialized.ensures_0")
             .unwrap_or_else(|e| panic!("{}\n{source}", e.message()));
@@ -310,7 +310,7 @@ mod tests {
             ),
         ] {
             let source = format!(
-                "theorem tagged(p: int32*, word: uint64) {{ {requirements} ensures {goal} by {{ solve() using {{ {listed} }}; }} }}"
+                "theorem tagged(p: int32*, word: uint64) {{ {requirements} ensures {goal} by {{ close() using {{ {listed} }}; }} }}"
             );
             match expand_c_claim_source_by_label(&source, &[], "tagged.ensures_0") {
                 Ok(expanded) => {
@@ -330,7 +330,7 @@ mod tests {
     #[test]
     fn returning_pointer_alignment_replays_without_normalize() {
         let c = [("bump.c", "int32* bump(int32* p) { return p + 2; }")];
-        let source = "verifying \"bump.c\"; int32* bump(int32* p) { requires viewable(p[0..3]); views p[0..3]; requires aligned(p,8); ensures aligned(result,8) by { step_until(function.exit); solve() using { aligned(p,8); }; } }";
+        let source = "verifying \"bump.c\"; int32* bump(int32* p) { requires viewable(p[0..3]); views p[0..3]; requires aligned(p,8); ensures aligned(result,8) by { step_until(function.exit); close() using { aligned(p,8); }; } }";
         let expanded = expand_c_claim_source_by_label(source, &c, "bump.ensures_0")
             .unwrap_or_else(|e| panic!("{}", e.message()));
         assert!(!expanded.contains("normalize("), "{expanded}");
@@ -352,7 +352,7 @@ mod tests {
             views node->word;
             ensures result == address(next) by {
                 step_until(function.exit);
-                solve() using { node->word == address(next) + 3; aligned(next,8); };
+                close() using { node->word == address(next) + 3; aligned(next,8); };
             }
         }"#;
         let expanded = expand_c_claim_source_by_label(source, &c, "untag.ensures_0")
@@ -387,7 +387,7 @@ mod tests {
             ),
         ] {
             let source = format!(
-                "theorem bad(p: int32*,q: int32*) {{ {requires} ensures {goal} by {{ solve() using {{ {listed} }}; }} }}"
+                "theorem bad(p: int32*,q: int32*) {{ {requires} ensures {goal} by {{ close() using {{ {listed} }}; }} }}"
             );
             assert!(verify_c_sources(&source, &[]).is_err(), "{source}");
         }
@@ -414,7 +414,7 @@ mod tests {
                 let alignment = width * 2;
                 let mask = width - 1;
                 let source = format!(
-                    "theorem offset(p: {ty}*,i: {index}) {{ requires aligned(p,{alignment}); ensures (address(p + i) & {mask}u64) == 0u64 by {{ solve() using {{ aligned(p,{alignment}); }}; }} }}"
+                    "theorem offset(p: {ty}*,i: {index}) {{ requires aligned(p,{alignment}); ensures (address(p + i) & {mask}u64) == 0u64 by {{ close() using {{ aligned(p,{alignment}); }}; }} }}"
                 );
                 let expanded = expand_c_claim_source_by_label(&source, &[], "offset.ensures_0")
                     .unwrap_or_else(|e| panic!("{}\n{source}", e.message()));
@@ -475,7 +475,7 @@ mod tests {
             "theorem bad(a: Integer,b: Integer,f: Integer) { requires a <= b; ensures b*f <= a*f by { normalize() using { a <= b; }; } }",
             "theorem bad(x: Integer,k: Integer) { requires 0 <= k; ensures truncating_quotient(x + 3*k,3) == truncating_quotient(x,3)+k by { normalize() using { 0 <= k; }; } }",
             "theorem bad(a: Integer,b: Integer) { ensures (a+b)*(a-b) == a*a+b*b by { solve(); } }",
-            "theorem bad(p: int32*, q: int32*, r: int32*) { requires p == q; requires q == r; ensures p == r by { solve() using { p == q; }; } }",
+            "theorem bad(p: int32*, q: int32*, r: int32*) { requires p == q; requires q == r; ensures p == r by { close() using { p == q; }; } }",
         ] {
             assert!(verify_c_sources(source, &[]).is_err(), "{source}");
         }

@@ -13,13 +13,13 @@ verifying "normalize_using_decides_an_algebraic_equality_goal.c";
 
 theorem same<T>(xs: List<T>, ys: List<T>) {
     requires xs == ys;
-    ensures xs == ys by { solve() using { xs == ys; }; }
-    ensures ys == xs by { solve() using { xs == ys; }; }
+    ensures xs == ys by { close() using { xs == ys; }; }
+    ensures ys == xs by { close() using { xs == ys; }; }
 }
 
 theorem different<T>(xs: List<T>, ys: List<T>) {
     requires not(xs == ys);
-    ensures not(xs == ys) by { solve() using { not(xs == ys); }; }
+    ensures not(xs == ys) by { close() using { not(xs == ys); }; }
 }
 ```
 

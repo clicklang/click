@@ -20,7 +20,7 @@ void write_first(struct Descriptor *owner) {
     }
     step();
     have separate(statement(0).footprint, memory((&owner->length)[0..1])) by {
-        solve() using { at(statement(0).entry, separate(memory(owner->data[0..1]), memory((&owner->length)[0..1]))); };
+        close() using { at(statement(0).entry, separate(memory(owner->data[0..1]), memory((&owner->length)[0..1]))); };
     }
     have owner->length == old(owner->length) by {
         preserve(memory((&owner->length)[0..1]), statement(0));

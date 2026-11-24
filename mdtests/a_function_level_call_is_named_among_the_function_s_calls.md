@@ -37,8 +37,8 @@ int32 f(int32 a) {
     }
 
     // The first call doubles a value in [0, 100], so b is in [1, 201].
-    have 0 <= to_integer(a) by solve() using { a >= 0; };
-    have to_integer(a) <= 100 by solve() using { a <= 100; };
+    have 0 <= to_integer(a) by close() using { a >= 0; };
+    have to_integer(a) <= 100 by close() using { a <= 100; };
     apply(integer::add_le(0, to_integer(a), 0, to_integer(a)));
     apply(integer::add_le(to_integer(a), 100, to_integer(a), 100));
     have to_integer(first) == to_integer(a) + to_integer(a) by known();

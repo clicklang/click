@@ -115,7 +115,7 @@ struct rb_node* peek(struct rb_node* g, struct rb_node* o) {
                     mark before_store;
                     step();
                     have separate(statement(0).footprint, memory(g->__rb_parent_color)) by {
-                        solve() using { separate(memory(o->__rb_parent_color), memory(g->__rb_parent_color)); };
+                        close() using { separate(memory(o->__rb_parent_color), memory(g->__rb_parent_color)); };
                     }
                     have *((&g->__rb_parent_color) as (int32 **)) == at(before_store, *((&g->__rb_parent_color) as (int32 **))) by {
                         preserve(memory(g->__rb_parent_color), statement(0));
@@ -131,7 +131,7 @@ struct rb_node* peek(struct rb_node* g, struct rb_node* o) {
                     mark before_local;
                     step();
                     have separate(statement(1).region(0).footprint, memory(g->__rb_parent_color)) by {
-                        solve() using {  };
+                        close() using {  };
                     }
                     have *((&g->__rb_parent_color) as (int32 **)) == at(before_local, *((&g->__rb_parent_color) as (int32 **))) by {
                         preserve(memory(g->__rb_parent_color), statement(1).region(0));

@@ -1,4 +1,4 @@
-# `solve() using` adds `0 <= u` to `u <= v`
+# `close() using` adds `0 <= u` to `u <= v`
 
 The plainest transitivity: `0 <= u` and `u <= v` give `0 <= v`. The certificate
 the planner prints for the sum spells it as the two premises added side by
@@ -21,7 +21,7 @@ int32 pass(int32 u, int32 v) {
     requires u <= v;
     ensures result >= 0;
 } by {
-    have 0 <= v by { solve() using { 0 <= u; u <= v; }; }
+    have 0 <= v by { close() using { 0 <= u; u <= v; }; }
     step();
     solve();
 }

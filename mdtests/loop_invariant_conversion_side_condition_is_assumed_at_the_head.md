@@ -38,7 +38,7 @@ int32 walk(int32 n) {
         maintain by {
             step();
             have i <= n;
-            have i < 2147483647 by { solve() using { i <= n; n < 2147483647; }; }
+            have i < 2147483647 by { close() using { i <= n; n < 2147483647; }; }
             have defined(i + 1);
         }
     }

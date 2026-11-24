@@ -117,13 +117,13 @@ void clear_data(struct region* region) {
             }
             step();
             have separate(loop(0).statement(0).footprint, at(opened, memory(arena->data))) by {
-                solve() using { at(opened, separate(memory(arena->data[i]), memory(arena->data))); };
+                close() using { at(opened, separate(memory(arena->data[i]), memory(arena->data))); };
             }
             have separate(loop(0).statement(0).footprint, at(opened, memory(region->arena))) by {
-                solve() using { at(opened, separate(memory(arena->data[i]), memory(region->arena))); };
+                close() using { at(opened, separate(memory(arena->data[i]), memory(region->arena))); };
             }
             have separate(loop(0).statement(0).footprint, at(opened, memory(region->arena->occupied))) by {
-                solve() using { at(opened, separate(memory(arena->data[i]), memory(region->arena->occupied))); };
+                close() using { at(opened, separate(memory(arena->data[i]), memory(region->arena->occupied))); };
             }
             have arena->data == at(opened, arena->data) by {
                 preserve(at(opened, memory(arena->data)), loop(0).statement(0));
@@ -141,7 +141,7 @@ void clear_data(struct region* region) {
             }
             // Select the complete int32 cell, excluding the struct's tail padding.
             have separate(loop(0).statement(0).footprint, at(opened, memory((&arena->capacity)[0..1]))) by {
-                solve() using { at(opened, separate(memory(arena->data[i]), memory((&arena->capacity)[0..1]))); };
+                close() using { at(opened, separate(memory(arena->data[i]), memory((&arena->capacity)[0..1]))); };
             }
             have arena->capacity == at(opened, arena->capacity) by {
                 preserve(at(opened, memory((&arena->capacity)[0..1])), loop(0).statement(0));
@@ -210,23 +210,23 @@ void clear_data(struct region* region) {
             have arena->capacity == at(opened, arena->capacity) by { known(); }
             have 0 <= at(opened, i) by { known(); }
             have at(opened, i) <= 2147483646 by {
-                solve() using { at(opened, i) < at(opened, arena->capacity); };
+                close() using { at(opened, i) < at(opened, arena->capacity); };
             }
             // Relate the machine increment to its exact Integer value.
             have -2147483648 <= to_integer(at(opened, i)) + 1 by {
-                solve() using { 0 <= at(opened, i); };
+                close() using { 0 <= at(opened, i); };
             }
             have to_integer(at(opened, i)) + 1 <= 2147483647 by {
-                solve() using { at(opened, i) <= 2147483646; };
+                close() using { at(opened, i) <= 2147483646; };
             }
             have to_integer(i) == to_integer(at(opened, i)) + 1 by {
-                solve() using {
+                close() using {
                     -2147483648 <= to_integer(at(opened, i)) + 1;
                     to_integer(at(opened, i)) + 1 <= 2147483647;
                 };
             }
             have 0 <= i and i <= arena->capacity by {
-                solve() using {
+                close() using {
                     0 <= at(opened, i);
                     at(opened, i) < at(opened, arena->capacity);
                     arena->capacity == at(opened, arena->capacity);

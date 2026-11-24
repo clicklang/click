@@ -18,7 +18,7 @@ void write_cell(int *p, int *q) {
     }
     have contains(memory(*q), memory(*q)) by { apply(click::separation::contains_refl(memory(*q))); }
     have separate(statement(0).footprint, memory(*q)) by {
-        solve() using { separate(memory(*p), memory(*q)); };
+        close() using { separate(memory(*p), memory(*q)); };
     }
     have separate(statement(0).footprint, memory(*q)) by {
         apply(separation::separate_restrict(statement(0).footprint, memory(*q),

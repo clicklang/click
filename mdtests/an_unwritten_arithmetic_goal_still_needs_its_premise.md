@@ -2,7 +2,7 @@
 
 The companion of `arithmetic_raises_a_goal_an_unfold_left_unwritten.md`
 without the `using` premise relating `chain_size(Chain::Link(at, v, rest))` to
-`chain_size(rest)`. The goal does not hold on its own, so `solve() using {}` refuses
+`chain_size(rest)`. The goal does not hold on its own, so `close() using {}` refuses
 it.
 
 ```c filename=unwritten_goal_unlisted.c
@@ -46,7 +46,7 @@ void f(int32* q) {
             have weight(wrap(at, v, rest)) == chain_size(rest) + 2 by {
                 unfold(wrap(at, v, rest));
                 unfold(weight(Chain::Link(at, v, rest)));
-                solve() using {};
+                close() using {};
             }
             step_until(function.exit);
         },

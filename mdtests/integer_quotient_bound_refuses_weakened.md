@@ -6,11 +6,11 @@ theorem wrong(n: Integer, d: Integer, b: Integer) {
     requires 1 <= d;
     requires (b + -1) * d <= n;
     ensures b <= truncating_quotient(n, d) by {
-        solve() using { (b + -1) * d <= n; 1 <= d; };
+        close() using { (b + -1) * d <= n; 1 <= d; };
     }
 }
 ```
 
 ```expect
-fail: solve
+fail: `close() using`
 ```

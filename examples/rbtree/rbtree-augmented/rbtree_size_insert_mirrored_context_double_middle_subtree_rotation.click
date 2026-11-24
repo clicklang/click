@@ -236,16 +236,16 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     unfold(sized_value(SizedTree::Node(p, g, Color::Red, pv, SizedTree::Node(node, p, Color::Red, nv, SizedTree::Empty, SizedTree::Node(m, node, Color::Black, mv, middle_left, middle_right)), far)));
                     unfold(sized_value(SizedTree::Empty));
                     have to_integer(nv) == 1 + to_integer(sized_value(SizedTree::Node(m, node, Color::Black, mv, middle_left, middle_right))) by {
-                        solve() using { to_integer(nv) == 1 + to_integer(sized_value(SizedTree::Empty)) + to_integer(sized_value(SizedTree::Node(m, node, Color::Black, mv, middle_left, middle_right))); to_integer(sized_value(SizedTree::Empty)) == 0; };
+                        close() using { to_integer(nv) == 1 + to_integer(sized_value(SizedTree::Empty)) + to_integer(sized_value(SizedTree::Node(m, node, Color::Black, mv, middle_left, middle_right))); to_integer(sized_value(SizedTree::Empty)) == 0; };
                     }
                     have to_integer(pv) == 1 + to_integer(nv) + to_integer(sized_value(far)) by {
                         known();
                     }
                     have to_integer(gv) == 1 + to_integer(pv) by {
-                        solve() using { to_integer(gv) == 1 + to_integer(sized_value(SizedTree::Empty)) + to_integer(sized_value(SizedTree::Node(p, g, Color::Red, pv, SizedTree::Node(node, p, Color::Red, nv, SizedTree::Empty, SizedTree::Node(m, node, Color::Black, mv, middle_left, middle_right)), far))); to_integer(sized_value(SizedTree::Node(p, g, Color::Red, pv, SizedTree::Node(node, p, Color::Red, nv, SizedTree::Empty, SizedTree::Node(m, node, Color::Black, mv, middle_left, middle_right)), far))) == to_integer(pv); to_integer(sized_value(SizedTree::Empty)) == 0; };
+                        close() using { to_integer(gv) == 1 + to_integer(sized_value(SizedTree::Empty)) + to_integer(sized_value(SizedTree::Node(p, g, Color::Red, pv, SizedTree::Node(node, p, Color::Red, nv, SizedTree::Empty, SizedTree::Node(m, node, Color::Black, mv, middle_left, middle_right)), far))); to_integer(sized_value(SizedTree::Node(p, g, Color::Red, pv, SizedTree::Node(node, p, Color::Red, nv, SizedTree::Empty, SizedTree::Node(m, node, Color::Black, mv, middle_left, middle_right)), far))) == to_integer(pv); to_integer(sized_value(SizedTree::Empty)) == 0; };
                     }
                     have to_integer(pv) == 2 + to_integer(sized_value(far)) + to_integer(sized_value(SizedTree::Node(m, node, Color::Black, mv, middle_left, middle_right))) by {
-                        solve() using {
+                        close() using {
                             to_integer(pv) == 1 + to_integer(nv) + to_integer(sized_value(far));
                             to_integer(nv) == 1 + to_integer(sized_value(SizedTree::Node(m, node, Color::Black, mv, middle_left, middle_right)));
                         };
@@ -344,7 +344,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         rewrite(sized_right(SizedTree::Node(p, node, Color::Red, pv, SizedTree::Node(m, p, Color::Black, mv, middle_left, middle_right), far)), far);
                         rewrite(sized_left(SizedTree::Node(p, node, Color::Red, pv, SizedTree::Node(m, p, Color::Black, mv, middle_left, middle_right), far)), SizedTree::Node(m, p, Color::Black, mv, middle_left, middle_right));
                         rewrite(sized_value(SizedTree::Empty), 0);
-                        solve() using {
+                        close() using {
                             to_integer(pv) == 2 + to_integer(sized_value(far)) + to_integer(sized_value(SizedTree::Node(m, p, Color::Black, mv, middle_left, middle_right)));
                         };
                     }
@@ -353,14 +353,14 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     have -2147483648 <= to_integer(pv);
                     have to_integer(pv) <= 2147483647;
                     have 0 <= to_integer(sized_value(SizedTree::Node(m, p, Color::Black, mv, middle_left, middle_right))) by {
-                        solve() using {
+                        close() using {
                             0 <= to_integer(sized_value(SizedTree::Node(m, node, Color::Black, mv, middle_left, middle_right)));
                             to_integer(sized_value(SizedTree::Node(m, p, Color::Black, mv, middle_left, middle_right))) == to_integer(mv);
                             to_integer(sized_value(SizedTree::Node(m, node, Color::Black, mv, middle_left, middle_right))) == to_integer(mv);
                         };
                     }
                     have 1 + to_integer(sized_value(SizedTree::Node(m, p, Color::Black, mv, middle_left, middle_right))) + to_integer(sized_value(far)) <= 2147483647 by {
-                        solve() using {
+                        close() using {
                             to_integer(pv) == 2 + to_integer(sized_value(far)) + to_integer(sized_value(SizedTree::Node(m, node, Color::Black, mv, middle_left, middle_right)));
                             to_integer(pv) <= 2147483647;
                             to_integer(sized_value(SizedTree::Node(m, p, Color::Black, mv, middle_left, middle_right))) == to_integer(mv);
@@ -448,7 +448,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         rewrite(sized_left(SizedTree::Node(g, node, Color::Red, gv, SizedTree::Empty, SizedTree::Empty)), SizedTree::Empty);
                         rewrite(sized_value(SizedTree::Node(p, node, Color::Red, pv - 1, SizedTree::Node(m, p, Color::Black, mv, middle_left, middle_right), far)), pv - 1);
                         rewrite(sized_value(SizedTree::Empty), 0);
-                        solve() using {
+                        close() using {
                             to_integer(gv) == 1 + to_integer(pv);
                             to_integer(pv - 1) == to_integer(pv) - to_integer(1);
                         };
@@ -498,7 +498,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         unfold(rb_subtree_size(RbTree::Empty));
                         apply(sized_valid_value_matches_size(far));
                         apply(sized_valid_value_matches_size(SizedTree::Node(m, p, Color::Black, mv, middle_left, middle_right)));
-                        solve() using {
+                        close() using {
                             to_integer(gv) == 1 + to_integer(pv);
                             to_integer(pv) == 2 + to_integer(sized_value(far)) + to_integer(sized_value(SizedTree::Node(m, node, Color::Black, mv, middle_left, middle_right)));
                             to_integer(sized_value(far)) == rb_subtree_size(sized_shape(far));

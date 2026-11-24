@@ -418,10 +418,10 @@ guards. A proof can also use `cases` over the common entry disjunction:
 have 0 < to_integer(a + b) by {
     cases {
         a > 0 => {
-            solve() using { a > 0; b >= 0; a <= 1; b <= 1; };
+            close() using { a > 0; b >= 0; a <= 1; b <= 1; };
         }
         b > 0 => {
-            solve() using { b > 0; a >= 0; a <= 1; b <= 1; };
+            close() using { b > 0; a >= 0; a <= 1; b <= 1; };
         }
     }
 }
@@ -805,7 +805,7 @@ void bump_n(struct cell* p, int32 n) {
 
         initialize by solve();
         maintain by {
-            have c.count == i by { solve() using { c.count == old(c.count) + i; old(c.count) == 0; }; }
+            have c.count == i by { close() using { c.count == old(c.count) + i; old(c.count) == 0; }; }
             unfold(c);
             step();
             step();
@@ -966,7 +966,7 @@ maintain by {
         Maybe::None => { contradiction(c.model == Maybe::None); },
         Maybe::Some(value) => {
             have Maybe::Some(value) == old(c.model) by {
-                solve() using { c.model == Maybe::Some(value); c.model == old(c.model); };
+                close() using { c.model == Maybe::Some(value); c.model == old(c.model); };
             }
             unfold(c);
             step();

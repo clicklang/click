@@ -43,7 +43,7 @@ int classify(int x) {
             step();
             have result == classified(x) by {
                 unfold(classified(x));
-                solve() using { x == 0; };
+                close() using { x == 0; };
             }
             solve();
         }
@@ -52,7 +52,7 @@ int classify(int x) {
     step();
     have result == classified(x) by {
         unfold(classified(x));
-        solve() using { not(x == 0); };
+        close() using { not(x == 0); };
     }
     solve();
 }
@@ -66,7 +66,7 @@ int has_class(int x) {
         true => {
             step();
             have classified(x) != 0 by {
-                solve() using { r != 0; r == classified(x); };
+                close() using { r != 0; r == classified(x); };
             }
             solve();
         }
@@ -74,7 +74,7 @@ int has_class(int x) {
     }
     step();
     have classified(x) == 0 by {
-        solve() using { r == 0; r == classified(x); };
+        close() using { r == 0; r == classified(x); };
     }
     solve();
 }

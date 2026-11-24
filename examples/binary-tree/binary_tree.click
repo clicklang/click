@@ -99,10 +99,10 @@ int32 tree_leaf_pipeline(struct node* node, int32 value) {
     have separate(memory(swapped), memory(node->right)) by { known(); }
     step();
     have separate(statement(8).assignment(swapped, 0).footprint, memory(node->left)) by {
-        solve() using { separate(memory(swapped), memory(node->left)); };
+        close() using { separate(memory(swapped), memory(node->left)); };
     }
     have separate(statement(8).assignment(swapped, 0).footprint, memory(node->right)) by {
-        solve() using { separate(memory(swapped), memory(node->right)); };
+        close() using { separate(memory(swapped), memory(node->right)); };
     }
     have defined(node->left) by {
         preserve(memory(node->left), statement(8).assignment(swapped, 0));

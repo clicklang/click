@@ -190,7 +190,7 @@ struct rb_node* parent_of(struct rb_node* node) {
     unfold(linked(node));
     step_until(function.exit);
     have address(result) == (node->__rb_parent_color & ~3) by {
-        solve() using {
+        close() using {
             aligned(result, 8);
             node->__rb_parent_color == address(result) + (node->__rb_parent_color & 1);
         };
@@ -235,7 +235,7 @@ struct rb_node* red_parent_of(struct rb_node* red) {
     unfold(linked(red));
     step_until(function.exit);
     have address(result) == red->__rb_parent_color by {
-        solve() using {
+        close() using {
             (red->__rb_parent_color & 1) == 0;
             red->__rb_parent_color == address(result) + (red->__rb_parent_color & 1);
         };
@@ -259,10 +259,10 @@ int32 relinked_is_empty(struct rb_node* node, struct rb_node* parent) {
     ensures result == 0;
 } by {
     step();
-    have address(parent) == (node->__rb_parent_color & ~3) by solve() using {
+    have address(parent) == (node->__rb_parent_color & ~3) by close() using {
         aligned(parent, 8);
     };
-    have address(node) == (address(node) & ~3) by solve() using {
+    have address(node) == (address(node) & ~3) by close() using {
         aligned(node, 8);
     };
     have node->__rb_parent_color != address(node) by {

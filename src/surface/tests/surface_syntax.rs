@@ -62,7 +62,7 @@ fn integer_solve_expansion_rechecks_without_smart_search() {
             "x: Integer, y: Integer",
             "requires x <= y; requires y <= x;",
             "x == y",
-            "solve() using { x <= y; y <= x; }",
+            "close() using { x <= y; y <= x; }",
         ),
     ] {
         let source = format!(
@@ -96,7 +96,7 @@ fn integer_alias_certificates_preserve_types_and_linear_source_on_expansion() {
             ));
         }
         source.push_str(&format!(
-            "ensures a{depth} + 1 > a{depth} by {{ solve() using {{}}; }} }}"
+            "ensures a{depth} + 1 > a{depth} by {{ close() using {{}}; }} }}"
         ));
         let verified = verify_click_theorems(&source).unwrap();
         let expanded = verified[0].expanded_proof_source().unwrap();
@@ -105,7 +105,7 @@ fn integer_alias_certificates_preserve_types_and_linear_source_on_expansion() {
             expanded.len() < 400 * (depth + 1),
             "expansion must retain aliases"
         );
-        let rewritten = source.replace("by { solve() using {}; }", &expanded);
+        let rewritten = source.replace("by { close() using {}; }", &expanded);
         assert_ne!(rewritten, source, "the expanded proof must be substituted");
         without_implicit_solve(|| verify_click_theorems(&rewritten))
             .unwrap_or_else(|error| panic!("depth {depth}: {}", error.message()));
@@ -722,7 +722,7 @@ fn parses_expanded_typed_loads_and_old_loadability() {
         int32 example(int32 owner[], int32 data[]) {
             ensures result == 0;
         } by {
-            solve() using {
+            close() using {
                 viewable(old(owner[0..6]));
                 load<int32*>((owner + 2)) == data;
                 separate(
@@ -740,7 +740,7 @@ fn parses_expanded_typed_loads_and_old_loadability() {
         panic!("expected a proof script");
     };
     let ProofTactic::SolveUsing(solve_using) = &tactics[0] else {
-        panic!("expected a solve() using tactic");
+        panic!("expected a close() using tactic");
     };
     let premises = &solve_using.premises;
     assert!(matches!(
@@ -1260,14 +1260,14 @@ fn parses_and_prints_solve_using_premise_lists() {
         theorem arithmetic_forms(n: int32) {
             requires 1 < n;
             ensures 0 <= n - 2 by {
-                have n == n by { solve() using {}; }
-                solve() using {
+                have n == n by { close() using {}; }
+                close() using {
                     1 < n;
                 }
             }
         }
     "#;
-    let file = parse(source).expect("`solve() using` premise lists should parse");
+    let file = parse(source).expect("`close() using` premise lists should parse");
     let SourceProof::Script(tactics) = file.theorem_definitions()[0].ensures()[0].proof() else {
         panic!("expected an explicit theorem proof");
     };
@@ -1287,12 +1287,12 @@ fn parses_and_prints_solve_using_premise_lists() {
     ));
 
     let printed = super::printing::format_partial_tactic_sequence(tactics);
-    assert!(printed.contains("solve() using {};"), "{printed}");
-    assert!(printed.contains("solve() using {"), "{printed}");
+    assert!(printed.contains("close() using {};"), "{printed}");
+    assert!(printed.contains("close() using {"), "{printed}");
     let reparsed = parse(&format!(
         "theorem arithmetic_forms(n: int32) {{ requires 1 < n; ensures 0 <= n - 2 by {{ {printed} }} }}"
     ))
-    .expect("printed `solve() using` premise lists should parse");
+    .expect("printed `close() using` premise lists should parse");
     assert_eq!(
         reparsed.theorem_definitions()[0].ensures()[0].proof(),
         file.theorem_definitions()[0].ensures()[0].proof()
@@ -1307,7 +1307,7 @@ fn signed_compound_expansion_uses_ordinary_operations_and_rejects_false_goal() {
             requires 0 <= n;
             requires n <= 100;
             ensures to_integer(n + 1) <= to_integer(n + 2) by {
-                solve() using {
+                close() using {
                     0 <= n;
                     n <= 100;
                 }
@@ -1320,7 +1320,7 @@ fn signed_compound_expansion_uses_ordinary_operations_and_rejects_false_goal() {
         .expect("compound arithmetic should expand");
 
     let rechecked_source = source.replace(
-        "by {\n                solve() using {\n                    0 <= n;\n                    n <= 100;\n                }\n            }",
+        "by {\n                close() using {\n                    0 <= n;\n                    n <= 100;\n                }\n            }",
         &expanded,
     );
     let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
@@ -1345,14 +1345,14 @@ fn float_reflexive_smart_expansion_replays_as_known() {
         }
         theorem finite_double_reflexive(value: double) {
             requires isfinite(value);
-            ensures not(value < value) by { solve() using { isfinite(value); }; }
+            ensures not(value < value) by { close() using { isfinite(value); }; }
         }
     "#;
     let verified = verify_click_theorems(source).expect("finite float reflexivity should verify");
     let mut rechecked = source.to_owned();
     for (theorem, original) in verified.iter().zip([
         "by { solve(); }",
-        "by { solve() using { isfinite(value); }; }",
+        "by { close() using { isfinite(value); }; }",
     ]) {
         let expanded = theorem
             .expanded_proof_source()
@@ -1371,7 +1371,7 @@ fn float_reflexive_smart_expansion_replays_as_known() {
 
     for source in [
         "theorem missing(x: float) { ensures x == x by known(); }",
-        "theorem omitted(x: double) { requires isfinite(x); ensures x == x by { solve() using {}; } }",
+        "theorem omitted(x: double) { requires isfinite(x); ensures x == x by { close() using {}; } }",
         "theorem other(x: float, y: float) { requires isfinite(y); ensures x == x by known(); }",
         "theorem wrong(x: double) { requires isfinite(x); ensures x < x by known(); }",
     ] {
@@ -1388,7 +1388,7 @@ fn signed_arithmetic_smart_planner_expands_to_ordinary_proof() {
         theorem signed_smart_double(n: int32) {
             requires 0 <= n;
             requires n <= 100;
-            ensures to_integer(n + n) <= 200 by { solve() using { 0 <= n; n <= 100; } }
+            ensures to_integer(n + n) <= 200 by { close() using { 0 <= n; n <= 100; } }
         }
     "#;
     let verified = verify_click_theorems(source).expect("smart signed arithmetic should verify");
@@ -1399,9 +1399,9 @@ fn signed_arithmetic_smart_planner_expands_to_ordinary_proof() {
         !expanded.contains("normalize("),
         "signed interval expansion must use ordinary proof steps: {expanded}"
     );
-    let rechecked = source.replace("by { solve() using { 0 <= n; n <= 100; } }", &expanded);
+    let rechecked = source.replace("by { close() using { 0 <= n; n <= 100; } }", &expanded);
     assert!(
-        !expanded.contains("solve() using"),
+        !expanded.contains("close() using"),
         "expanded proof must retain ordinary checked operations: {expanded}"
     );
     let (rechecked_result, planning) =
@@ -1413,7 +1413,7 @@ fn signed_arithmetic_smart_planner_expands_to_ordinary_proof() {
     assert_eq!(planning, 0, "explicit signed recheck must not plan");
     let tampered = expanded.replace("100", "99");
     assert_ne!(tampered, expanded, "the source bound must remain explicit");
-    let tampered_source = source.replace("by { solve() using { 0 <= n; n <= 100; } }", &tampered);
+    let tampered_source = source.replace("by { close() using { 0 <= n; n <= 100; } }", &tampered);
     verify_click_theorems(&tampered_source)
         .expect_err("an unavailable tightened source bound must be rejected");
 }
@@ -1425,7 +1425,7 @@ fn signed_arithmetic_using_requires_every_needed_exact_premise() {
         theorem signed_missing_explicit_premise(n: int32) {
             requires 0 <= n;
             requires n <= 100;
-            ensures to_integer(n + n) <= 200 by { solve() using { 0 <= n; } }
+            ensures to_integer(n + n) <= 200 by { close() using { 0 <= n; } }
         }
     "#;
     let error = verify_click_theorems(source)
@@ -1443,15 +1443,15 @@ fn integer_arithmetic_uses_checked_unified_certificate_without_replanning() {
     let source = r#"
         theorem integer_smart_bound(x: Integer) {
             requires x == 1;
-            ensures x <= 2 by { solve() using { x == 1; } }
+            ensures x <= 2 by { close() using { x == 1; } }
         }
     "#;
     let verified = verify_click_theorems(source).expect("Integer arithmetic should verify");
     let expanded = verified[0]
         .expanded_proof_source()
         .expect("Integer arithmetic should expand");
-    assert!(!expanded.contains("solve() using"), "{expanded}");
-    let rechecked = source.replace("by { solve() using { x == 1; } }", &expanded);
+    assert!(!expanded.contains("close() using"), "{expanded}");
+    let rechecked = source.replace("by { close() using { x == 1; } }", &expanded);
     let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
         verify_click_theorems(&rechecked)
     });
@@ -1471,7 +1471,7 @@ fn integer_arithmetic_using_proves_a_chain_longer_than_three_premises() {
             requires c <= d;
             requires d <= e;
             ensures a < e by {
-                solve() using { a <= b; b < c; c <= d; d <= e; }
+                close() using { a <= b; b < c; c <= d; d <= e; }
             }
         }
     "#;
@@ -1481,7 +1481,7 @@ fn integer_arithmetic_using_proves_a_chain_longer_than_three_premises() {
         .expect("the chain proof should expand");
     assert!(expanded.contains("click::integer::"), "{expanded}");
     let rechecked = source.replace(
-        "by {\n                solve() using { a <= b; b < c; c <= d; d <= e; }\n            }",
+        "by {\n                close() using { a <= b; b < c; c <= d; d <= e; }\n            }",
         &expanded,
     );
     assert_ne!(rechecked, source);
@@ -1496,7 +1496,7 @@ fn integer_arithmetic_using_rejects_an_unavailable_irrelevant_extra() {
     let source = r#"
         theorem integer_missing_extra(x: Integer) {
             requires x == 1;
-            ensures x <= 2 by { solve() using { x == 1; x == 9; } }
+            ensures x <= 2 by { close() using { x == 1; x == 9; } }
         }
     "#;
     let error = verify_click_theorems(source)
@@ -1518,7 +1518,7 @@ fn signed_arithmetic_smart_planner_preserves_explicit_definedness() {
             requires 0 <= b;
             requires defined(a + b);
             ensures 0 <= to_integer(a + b) by {
-                solve() using {
+                close() using {
                     0 <= a;
                     0 <= b;
                     defined(a + b);
@@ -1533,7 +1533,7 @@ fn signed_arithmetic_smart_planner_preserves_explicit_definedness() {
         .expect("definedness proof should expand");
     assert!(expanded.contains("defined"), "{expanded}");
     let rechecked = source.replace(
-        "by {\n                solve() using {\n                    0 <= a;\n                    0 <= b;\n                    defined(a + b);\n                }\n            }",
+        "by {\n                close() using {\n                    0 <= a;\n                    0 <= b;\n                    defined(a + b);\n                }\n            }",
         &expanded,
     );
     verify_click_theorems(&rechecked).expect("expanded definedness proof should recheck");
@@ -1561,21 +1561,21 @@ fn signed_arithmetic_smart_planner_handles_deep_supported_terms_iteratively() {
             requires 0 <= n;\n\
             requires n <= 100;\n\
             {bindings}\
-            ensures 0 <= a{depth} by {{ solve() using {{ 0 <= n; n <= 100; }} }}\n\
+            ensures 0 <= a{depth} by {{ close() using {{ 0 <= n; n <= 100; }} }}\n\
         }}"
     );
     let verified = verify_click_theorems(&source).expect("deep supported arithmetic should verify");
     let expanded = verified[0]
         .expanded_proof_source()
         .expect("deep arithmetic should expand");
-    let rechecked = source.replace("by { solve() using { 0 <= n; n <= 100; } }", &expanded);
+    let rechecked = source.replace("by { close() using { 0 <= n; n <= 100; } }", &expanded);
     crate::surface::without_implicit_solve(|| verify_click_theorems(&rechecked))
         .expect("deep ordinary expansion should replay without search");
 
     let overflowing = "theorem overflowing_intermediate(n: int32) {
         requires n == 1;
         ensures 0 <= (n + 2147483647) % 2 by {
-            solve() using { n == 1; }
+            close() using { n == 1; }
         }
     }";
     verify_click_theorems(overflowing)
@@ -1829,7 +1829,7 @@ fn verifies_atomic_derivation_from_explicit_premises() {
         theorem derives_nonnegative(x: int32) {
             requires 1 <= x;
             ensures 0 <= x by {
-                solve() using {
+                close() using {
                     1 <= x;
                 }
             }
@@ -1838,7 +1838,7 @@ fn verifies_atomic_derivation_from_explicit_premises() {
         theorem calculates_nonnegative(x: int32) {
             requires 1 <= x;
             ensures 0 <= x by {
-                solve() using {
+                close() using {
                     1 <= x;
                 }
             }
@@ -2192,7 +2192,7 @@ fn proof_source_printing_preserves_long_sum_association_without_nested_prefixes(
             .collect::<Vec<_>>()
             .join(" + ");
         let source = format!(
-            "theorem sum(a: Integer) {{ ensures a == a by {{ have {sum} == {size} * a by {{ solve() using {{}}; }} known(); }} }}"
+            "theorem sum(a: Integer) {{ ensures a == a by {{ have {sum} == {size} * a by {{ close() using {{}}; }} known(); }} }}"
         );
         let file = parse(&source).unwrap();
         let proof = file.theorem_definitions()[0].ensures()[0].proof();
@@ -2775,7 +2775,7 @@ fn restricted_solve_premises_retain_declared_resource_argument_types() {
             ensures result == 0;
         } by {
             have separate(wrapper(owner), memory(owner[0..1])) by {
-                solve() using {
+                close() using {
                     separate(wrapper(owner), memory(owner[0..1]));
                 }
             }
@@ -3658,7 +3658,7 @@ fn a_diverges_function_never_yields_termination_evidence() {
                     initialize by solve();
                     maintain by {
                         have 0 <= to_integer(n - 1) by {
-                            solve() using { n > 0; }
+                            close() using { n > 0; }
                         }
                         step();
                     }

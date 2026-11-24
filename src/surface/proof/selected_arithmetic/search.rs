@@ -862,7 +862,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
 
     /// The same search over equalities a step selected or listed instead
     /// of the goal's connected facts: `solve`'s premises from its
-    /// derivation, or a `solve() using` list. Each equality is used at most
+    /// derivation, or a `close() using` list. Each equality is used at most
     /// once, so the chain is as long as the list allows, and `closers`
     /// says what may close a rewritten goal.
     pub(in crate::surface::proof) fn try_premise_equality_chain_closure(

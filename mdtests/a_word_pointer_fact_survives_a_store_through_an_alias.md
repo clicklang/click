@@ -23,7 +23,7 @@ void update(struct node *g, struct node *p) {
     step();
     have ((g->word & ~3) as (struct node*)) == p by {
         have separate(statement(0).footprint, memory(g->word)) by {
-            solve() using { separate(memory(p->left), memory(g->word)); };
+            close() using { separate(memory(p->left), memory(g->word)); };
         }
         have g->word == at(before, g->word) by {
             preserve(memory(g->word), statement(0));

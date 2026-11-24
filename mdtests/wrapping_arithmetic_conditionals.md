@@ -6,11 +6,11 @@ theorem add_uint32(flag: Bool, x: uint32, z: uint32, y: uint32) {
     ensures flag implies (if flag { x } else { 3u32 }) == (z + 1u32) by {
         intro();
         rewrite(x, z + 1u32);
-        solve() using { flag; };
+        close() using { flag; };
     }
     ensures ((z + 1u32) < y) implies (if (z + 1u32) < y { z } else { 3u32 }) == z by {
         intro();
-        solve() using { (z + 1u32) < y; };
+        close() using { (z + 1u32) < y; };
     }
 }
 theorem add_wraps_uint32() {
@@ -23,11 +23,11 @@ theorem subtract_uint32(flag: Bool, x: uint32, z: uint32, y: uint32) {
     ensures flag implies (if flag { x } else { 3u32 }) == (z - 1u32) by {
         intro();
         rewrite(x, z - 1u32);
-        solve() using { flag; };
+        close() using { flag; };
     }
     ensures ((z - 1u32) < y) implies (if (z - 1u32) < y { z } else { 3u32 }) == z by {
         intro();
-        solve() using { (z - 1u32) < y; };
+        close() using { (z - 1u32) < y; };
     }
 }
 theorem subtract_wraps_uint32() {
@@ -40,11 +40,11 @@ theorem add_uint64(flag: Bool, x: uint64, z: uint64, y: uint64) {
     ensures flag implies (if flag { x } else { 3u64 }) == (z + 1u64) by {
         intro();
         rewrite(x, z + 1u64);
-        solve() using { flag; };
+        close() using { flag; };
     }
     ensures ((z + 1u64) < y) implies (if (z + 1u64) < y { z } else { 3u64 }) == z by {
         intro();
-        solve() using { (z + 1u64) < y; };
+        close() using { (z + 1u64) < y; };
     }
 }
 theorem add_wraps_uint64() {
@@ -57,11 +57,11 @@ theorem subtract_uint64(flag: Bool, x: uint64, z: uint64, y: uint64) {
     ensures flag implies (if flag { x } else { 3u64 }) == (z - 1u64) by {
         intro();
         rewrite(x, z - 1u64);
-        solve() using { flag; };
+        close() using { flag; };
     }
     ensures ((z - 1u64) < y) implies (if (z - 1u64) < y { z } else { 3u64 }) == z by {
         intro();
-        solve() using { (z - 1u64) < y; };
+        close() using { (z - 1u64) < y; };
     }
 }
 theorem subtract_wraps_uint64() {
@@ -74,11 +74,11 @@ theorem multiply_uint32(flag: Bool, x: uint32, z: uint32, y: uint32) {
     ensures flag implies (if flag { x } else { 3u32 }) == (z * 3u32) by {
         intro();
         rewrite(x, z * 3u32);
-        solve() using { flag; };
+        close() using { flag; };
     }
     ensures ((z * 3u32) < y) implies (if (z * 3u32) < y { z } else { 3u32 }) == z by {
         intro();
-        solve() using { (z * 3u32) < y; };
+        close() using { (z * 3u32) < y; };
     }
 }
 theorem multiply_wraps_uint32() {
@@ -91,11 +91,11 @@ theorem multiply_uint64(flag: Bool, x: uint64, z: uint64, y: uint64) {
     ensures flag implies (if flag { x } else { 3u64 }) == (z * 3u64) by {
         intro();
         rewrite(x, z * 3u64);
-        solve() using { flag; };
+        close() using { flag; };
     }
     ensures ((z * 3u64) < y) implies (if (z * 3u64) < y { z } else { 3u64 }) == z by {
         intro();
-        solve() using { (z * 3u64) < y; };
+        close() using { (z * 3u64) < y; };
     }
 }
 theorem multiply_wraps_uint64() {

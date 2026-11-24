@@ -28,9 +28,9 @@ theorem hypothesis_cites_the_range_span(v: int32[], lo: int32, n: int32, hi: int
             known();
         } else {
             have 0 < hi;
-            have 0 <= to_integer(hi - 1) by { solve() using { 0 < hi; }; }
-            have to_integer(hi - 1) < to_integer(hi) by { solve() using { 0 < hi; }; }
-            have to_integer(hi - 1) <= to_integer(n) by { solve() using { 0 < hi; hi <= n; }; }
+            have 0 <= to_integer(hi - 1) by { close() using { 0 < hi; }; }
+            have to_integer(hi - 1) < to_integer(hi) by { close() using { 0 < hi; }; }
+            have to_integer(hi - 1) <= to_integer(n) by { close() using { 0 < hi; hi <= n; }; }
             apply(ih(hi - 1));
             known();
         }

@@ -116,7 +116,7 @@ tactic refold_erase_spine(focus: struct rb_node*, anchor: struct rb_node*) {
             }
             have erase_spine_depth(u.model) < erase_spine_depth(old(c.model)) by {
                 rewrite(u.model, up_model);
-                solve() using { erase_spine_depth(old(c.model)) == erase_spine_depth(up_model) + 1; };
+                close() using { erase_spine_depth(old(c.model)) == erase_spine_depth(up_model) + 1; };
             }
             have plug(Context::Left(identity, grandparent, color, sibling_model, erase_context(up_model)), old(t.model)) == plug(erase_context(up_model), RbTree::Node(identity, grandparent, color, old(t.model), sibling_model)) by {
                 unfold(plug(Context::Left(identity, grandparent, color, sibling_model, erase_context(up_model)), old(t.model)));
@@ -898,7 +898,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                             have aligned(successor, 8) by known();
                                                             have aligned(successor, 8) implies at(after_child_reparent, ((child->__rb_parent_color & ~3) as (struct rb_node *))) == successor by known();
                                                             have at(after_child_reparent, ((child->__rb_parent_color & ~3) as (struct rb_node *))) == successor by {
-                                                                solve() using {
+                                                                close() using {
                                                                     aligned(successor, 8);
                                                                     aligned(successor, 8) implies at(after_child_reparent, ((child->__rb_parent_color & ~3) as (struct rb_node *))) == successor;
                                                                 };
@@ -1022,7 +1022,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                             });
                                                             have aligned(successor, 8) by known();
                                                             have ((tmp->__rb_parent_color & ~3) as (struct rb_node *)) == successor by {
-                                                                solve() using {
+                                                                close() using {
                                                                     aligned(successor, 8);
                                                                     aligned(successor, 8) implies ((tmp->__rb_parent_color & ~3) as (struct rb_node *)) == successor;
                                                                 };
@@ -1750,7 +1750,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                             have aligned(successor, 8) by known();
                                                             have aligned(successor, 8) implies at(after_child_reparent, ((child->__rb_parent_color & ~3) as (struct rb_node *))) == successor by known();
                                                             have at(after_child_reparent, ((child->__rb_parent_color & ~3) as (struct rb_node *))) == successor by {
-                                                                solve() using {
+                                                                close() using {
                                                                     aligned(successor, 8);
                                                                     aligned(successor, 8) implies at(after_child_reparent, ((child->__rb_parent_color & ~3) as (struct rb_node *))) == successor;
                                                                 };
@@ -1875,7 +1875,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                             });
                                                             have aligned(successor, 8) by known();
                                                             have ((tmp->__rb_parent_color & ~3) as (struct rb_node *)) == successor by {
-                                                                solve() using {
+                                                                close() using {
                                                                     aligned(successor, 8);
                                                                     aligned(successor, 8) implies ((tmp->__rb_parent_color & ~3) as (struct rb_node *)) == successor;
                                                                 };
@@ -2086,12 +2086,12 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                                     have child2->__rb_parent_color == (address(parent) | 1) by known();
                                                                     have child2->__rb_parent_color == (address(mp) | 1) by { rewrite(mp, parent); known(); }
                                                                     have aligned(mp, 8);
-                                                                    have ((address(mp) | 1) & 1) == 1 by { solve() using { aligned(mp, 8); }; }
+                                                                    have ((address(mp) | 1) & 1) == 1 by { close() using { aligned(mp, 8); }; }
                                                                     have (child2->__rb_parent_color & 1) == color_bit(Color::Black) by {
                                                                         unfold(color_bit(Color::Black));
                                                                     }
                                                                     have (address(mp) | 1) == address(mp) + ((address(mp) | 1) & 1) by {
-                                                                        solve() using { aligned(mp, 8); };
+                                                                        close() using { aligned(mp, 8); };
                                                                     }
                                                                     have child2->__rb_parent_color == address(mp) + (child2->__rb_parent_color & 1) by {
                                                                         rewrite(child2->__rb_parent_color, (address(mp) | 1)); known();
@@ -2961,7 +2961,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                     let successor_links = fold(erase_saved_children(successor), { left: el_id, right: successor->rb_right });
                                                     have aligned(successor, 8) by known();
                                                     have ((tmp->__rb_parent_color & ~3) as (struct rb_node *)) == successor by {
-                                                        solve() using {
+                                                        close() using {
                                                             aligned(successor, 8);
                                                             aligned(successor, 8) implies ((tmp->__rb_parent_color & ~3) as (struct rb_node *)) == successor;
                                                         };
@@ -3214,7 +3214,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                     let successor_links = fold(erase_saved_children(successor), { left: el_id, right: successor->rb_right });
                                                     have aligned(successor, 8) by known();
                                                     have ((tmp->__rb_parent_color & ~3) as (struct rb_node *)) == successor by {
-                                                        solve() using {
+                                                        close() using {
                                                             aligned(successor, 8);
                                                             aligned(successor, 8) implies ((tmp->__rb_parent_color & ~3) as (struct rb_node *)) == successor;
                                                         };
@@ -3493,7 +3493,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                             let successor_links = fold(erase_saved_children(successor), { left: el_id, right: successor->rb_right });
                                             have aligned(successor, 8) by known();
                                             have ((tmp->__rb_parent_color & ~3) as (struct rb_node *)) == successor by {
-                                                solve() using {
+                                                close() using {
                                                     aligned(successor, 8);
                                                     aligned(successor, 8) implies ((tmp->__rb_parent_color & ~3) as (struct rb_node *)) == successor;
                                                 };

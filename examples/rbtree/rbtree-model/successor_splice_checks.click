@@ -193,7 +193,7 @@ theorem immediate_successor_rejects_zero_height(erased: struct rb_node*,
                 rb_reparent(splice_black_leaf(l, erased), successor), Context::Top));
         unfold(ctx_rb(Context::Right(successor, above, Color::Black,
             rb_reparent(splice_black_leaf(l, erased), successor), Context::Top), Nat::Zero, Color::Black));
-        solve() using {
+        close() using {
             is_rb(rb_reparent(splice_black_leaf(l, erased), successor)) == 1;
             not(black_height(rb_reparent(splice_black_leaf(l, erased), successor)) == Nat::Zero);
         };

@@ -6,7 +6,7 @@ theorem adler_result_widen(word: uint32) {
  ensures to_integer(word as uint64) == to_integer(word) by {
   have 0 <= to_integer(word);
   have to_integer(word) <= 4294967295;
-  solve() using { 0 <= to_integer(word); to_integer(word) <= 4294967295; };
+  close() using { 0 <= to_integer(word); to_integer(word) <= 4294967295; };
  }
 }
 
@@ -30,7 +30,7 @@ theorem adler_c_rust_results(c_bytes: uint8[], rust_bytes: uint8[], length: uint
    known();
   }
   apply(adler_result_widen(rust_result));
-  have to_integer(c_result) == to_integer(rust_result as uint64) by solve() using {
+  have to_integer(c_result) == to_integer(rust_result as uint64) by close() using {
    to_integer(c_result) == adler_spec_checksum_u64(c_bytes, length, initial_a, initial_b);
    to_integer(rust_result) == adler_spec_checksum_u64(rust_bytes, length, initial_a, initial_b);
    adler_spec_checksum_u64(c_bytes, length, initial_a, initial_b) == adler_spec_checksum_u64(rust_bytes, length, initial_a, initial_b);

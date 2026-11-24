@@ -84,7 +84,7 @@ theorem length_nonnegative(xs: List<int32>) {
             List::Cons(value, rest) => {
                 apply(ih(rest));
                 unfold(length(List<int32>::Cons(value, rest)));
-                solve() using { length(rest) >= 0; };
+                close() using { length(rest) >= 0; };
             }
         }
     }
@@ -124,7 +124,7 @@ void Stack<int>::push(int value) {
     let after = fold(nodes(this->head), { items: List::Cons(value, old(before.items)), tail: before });
     unfold(length(List::Cons(value, old(before.items))));
     have to_integer(old(this->count) + 1u64) == to_integer(old(this->count)) + to_integer(1u64);
-    have to_integer(old(this->count) + 1u64) == length(List::Cons(value, old(before.items))) by solve() using {
+    have to_integer(old(this->count) + 1u64) == length(List::Cons(value, old(before.items))) by close() using {
         to_integer(old(this->count) + 1u64) == to_integer(old(this->count)) + to_integer(1u64);
         to_integer(old(this->count)) == length(old(before.items));
         length(List::Cons(value, old(before.items))) == length(old(before.items)) + 1;
@@ -167,7 +167,7 @@ bool Stack<int>::pop(int& out) {
                     let after = fold(nodes(this->head), { items: List<int32>::Nil });
                     unfold(length(List<int32>::Nil));
                     have length(tail_items) == 0 by solve();
-                    have to_integer(old(this->count)) == 1 by solve() using {
+                    have to_integer(old(this->count)) == 1 by close() using {
                         to_integer(old(this->count)) == length(List::Cons(value, tail_items));
                         length(List::Cons(value, tail_items)) == length(tail_items) + 1;
                         length(tail_items) == 0;
@@ -177,12 +177,12 @@ bool Stack<int>::pop(int& out) {
                 List::Cons(next_value, next_items) => {
                     let { tail: next } = unfold(tail);
                     let after = fold(nodes(this->head), { items: List::Cons(next_value, next_items), tail: next });
-                    have to_integer(old(this->count)) == length(tail_items) + 1 by solve() using {
+                    have to_integer(old(this->count)) == length(tail_items) + 1 by close() using {
                         to_integer(old(this->count)) == length(List::Cons(value, tail_items));
                         length(List::Cons(value, tail_items)) == length(tail_items) + 1;
                     };
                     have to_integer(old(this->count) - 1u64) == to_integer(old(this->count)) - to_integer(1u64);
-                    have to_integer(old(this->count) - 1u64) == length(tail_items) by solve() using {
+                    have to_integer(old(this->count) - 1u64) == length(tail_items) by close() using {
                         to_integer(old(this->count) - 1u64) == to_integer(old(this->count)) - to_integer(1u64);
                         to_integer(old(this->count)) == length(tail_items) + 1;
                     };

@@ -97,10 +97,10 @@ theorem sized_flip_depth_nonnegative(chain: SizedFlipChain) {
         match chain {
             SizedFlipChain::Root => { unfold(sized_flip_depth(SizedFlipChain::Root)); known(); },
             SizedFlipChain::Stop(ctx) => { unfold(sized_flip_depth(SizedFlipChain::Stop(ctx))); known(); },
-            SizedFlipChain::LL(p, g, pv, gv, other, uncle, up) => { apply(ih(up)); unfold(sized_flip_depth(SizedFlipChain::LL(p, g, pv, gv, other, uncle, up))); solve() using { 0 <= sized_flip_depth(up); }; },
-            SizedFlipChain::LR(p, g, pv, gv, other, uncle, up) => { apply(ih(up)); unfold(sized_flip_depth(SizedFlipChain::LR(p, g, pv, gv, other, uncle, up))); solve() using { 0 <= sized_flip_depth(up); }; },
-            SizedFlipChain::RL(p, g, pv, gv, other, uncle, up) => { apply(ih(up)); unfold(sized_flip_depth(SizedFlipChain::RL(p, g, pv, gv, other, uncle, up))); solve() using { 0 <= sized_flip_depth(up); }; },
-            SizedFlipChain::RR(p, g, pv, gv, other, uncle, up) => { apply(ih(up)); unfold(sized_flip_depth(SizedFlipChain::RR(p, g, pv, gv, other, uncle, up))); solve() using { 0 <= sized_flip_depth(up); }; },
+            SizedFlipChain::LL(p, g, pv, gv, other, uncle, up) => { apply(ih(up)); unfold(sized_flip_depth(SizedFlipChain::LL(p, g, pv, gv, other, uncle, up))); close() using { 0 <= sized_flip_depth(up); }; },
+            SizedFlipChain::LR(p, g, pv, gv, other, uncle, up) => { apply(ih(up)); unfold(sized_flip_depth(SizedFlipChain::LR(p, g, pv, gv, other, uncle, up))); close() using { 0 <= sized_flip_depth(up); }; },
+            SizedFlipChain::RL(p, g, pv, gv, other, uncle, up) => { apply(ih(up)); unfold(sized_flip_depth(SizedFlipChain::RL(p, g, pv, gv, other, uncle, up))); close() using { 0 <= sized_flip_depth(up); }; },
+            SizedFlipChain::RR(p, g, pv, gv, other, uncle, up) => { apply(ih(up)); unfold(sized_flip_depth(SizedFlipChain::RR(p, g, pv, gv, other, uncle, up))); close() using { 0 <= sized_flip_depth(up); }; },
     }
     }
 }

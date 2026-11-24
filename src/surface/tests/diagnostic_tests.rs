@@ -582,7 +582,7 @@ fn smart_closer_inside_a_have_script_spends_the_smart_budget() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_03")]
 fn wide_arithmetic_unavailable_premise_returns_one_diagnostic() {
-    let source = "theorem bound(x: uint64) { requires x <= 100u64; ensures x <= 1000u64 by { solve() using { x <= 50u64; } } }";
+    let source = "theorem bound(x: uint64) { requires x <= 100u64; ensures x <= 1000u64 by { close() using { x <= 50u64; } } }";
     let error = verify_click_theorems(source).expect_err("an unavailable premise must be refused");
     assert!(
         error.raw_summary().contains("unavailable exact premise"),
@@ -598,13 +598,13 @@ fn wide_arithmetic_unavailable_premise_returns_one_diagnostic() {
     assert!(error.message().contains("goal: x <= 1000u64"), "{error:?}");
 }
 
-/// A tiny budget stops `solve() using` on a wide arithmetic goal before it
+/// A tiny budget stops `close() using` on a wide arithmetic goal before it
 /// finishes. Report one bounded diagnostic, with at most one stage, rather
 /// than panicking while wrapping the nested refusal.
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_03")]
 fn wide_arithmetic_budget_refusal_does_not_panic() {
-    let source = "theorem bound(x: uint64) { requires x <= 100u64; ensures to_integer(x + 1u64 + 1u64) <= to_integer(1000u64) by { solve() using { x <= 100u64; } } }";
+    let source = "theorem bound(x: uint64) { requires x <= 100u64; ensures to_integer(x + 1u64 + 1u64) <= to_integer(1000u64) by { close() using { x <= 100u64; } } }";
     let error = crate::instrumentation::with_tactic_work_limits(
         crate::instrumentation::TacticWorkLimits {
             simple: 1_000,
@@ -2385,7 +2385,7 @@ fn pure_theorem_tactics_emit_claims_and_nested_written_source_paths() {
     let source = r#"theorem nested(x: int32) {
         requires x <= 100;
         ensures x <= 1000 by {
-            have x <= 1000 by { solve() using { x <= 100; } }
+            have x <= 1000 by { close() using { x <= 100; } }
             known();
         }
         ensures x == x by { normalize(); }
@@ -2429,7 +2429,7 @@ fn pure_theorem_arithmetic_obeys_its_tactic_budget() {
     use crate::instrumentation::{
         TacticWorkLimits, VerificationEvent, collect, with_tactic_work_limits,
     };
-    let source = "theorem bound(x: int32) { requires x <= 100; ensures x <= 1000 by { solve() using { x <= 100; } } }";
+    let source = "theorem bound(x: int32) { requires x <= 100; ensures x <= 1000 by { close() using { x <= 100; } } }";
     let (result, events) = collect(|| {
         with_tactic_work_limits(
             TacticWorkLimits {
@@ -2544,7 +2544,7 @@ fn pure_theorem_wide_arithmetic_has_attributed_work_at_growing_sizes() {
     for size in [8, 16, 32] {
         let expression = format!("x{}", " + 1u64".repeat(size));
         let source = format!(
-            "theorem wide(x: uint64) {{ requires x <= 100u64; ensures {expression} <= 1000u64 by {{ solve() using {{ x <= 100u64; }} }} }}"
+            "theorem wide(x: uint64) {{ requires x <= 100u64; ensures {expression} <= 1000u64 by {{ close() using {{ x <= 100u64; }} }} }}"
         );
         let (result, events) = collect(|| verify_click_theorems(&source));
         if let Err(error) = result {
@@ -3319,7 +3319,7 @@ uint64 drain(uint64 len) {
   maintain by {
    step();
    have len == 0u64 by solve();
-   have to_integer(len) == 0 by solve() using { len == 0u64; };
+   have to_integer(len) == 0 by close() using { len == 0u64; };
   }
  }
  step_until(function.exit); solve();

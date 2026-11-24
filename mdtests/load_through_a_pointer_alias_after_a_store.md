@@ -52,7 +52,7 @@ void set_up_word(struct node* c) {
             mark before_store;
             step();
             have separate(statement(2).footprint, memory(c->up)) by {
-                solve() using { separate(memory(p->word), memory(c->up)); };
+                close() using { separate(memory(p->word), memory(c->up)); };
             }
             have c->up == at(before_store, c->up) by {
                 preserve(memory(c->up), statement(2));

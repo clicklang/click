@@ -300,7 +300,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         crate::kernel::search::ProofSearch::try_direct_logical_closure(&(proof))
     }
 
-    /// `solve() using { .. }` on an `int32` or `int64` definedness goal: cite
+    /// `close() using { .. }` on an `int32` or `int64` definedness goal: cite
     /// exactly the listed premises that bound an operand by a constant.
     pub(in crate::surface::proof) fn try_restricted_signed_definedness_closure(
         search_input: &Proof<'a>,

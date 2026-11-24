@@ -11,7 +11,7 @@ theorem pointer_association(base: const uint8*, p: uint64, q: uint64) {
     requires to_integer(p) + to_integer(q) <= 18446744073709551615;
     ensures (base + p) + q == base + (p + q) by {
         apply(integer::uint64_add_to_integer(p, q));
-        solve() using { to_integer(p + q) == to_integer(p) + to_integer(q); };
+        close() using { to_integer(p + q) == to_integer(p) + to_integer(q); };
     }
 }
 fn sum(bytes: &[u8]) -> i32 {

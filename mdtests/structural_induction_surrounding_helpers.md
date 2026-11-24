@@ -21,7 +21,7 @@ theorem surrounding(xs: Chain, n: int32) {
         have before: n >= 0 by known();
         apply(ih(n));
         let ih = induct(xs);
-        have between: n >= 0 by solve() using { before; };
+        have between: n >= 0 by close() using { before; };
         match xs {
             Chain::Nil => { unfold(copy_chain(Chain::Nil)); }
             Chain::Link(tail) => {

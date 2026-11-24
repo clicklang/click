@@ -31,7 +31,7 @@ int32 c(int32 n) {
         rewrite(at(L.entry, x), 0);
         known();
     }
-    have result <= 1 by { solve() using { result - 1 <= 0; }; }
+    have result <= 1 by { close() using { result - 1 <= 0; }; }
     solve();
 }
 ```

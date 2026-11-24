@@ -65,13 +65,13 @@ int32 write_zero(struct buffer* buffer) {
                 intro();
                 intro();
                 have k < 1 by {
-                    solve() using {
+                    close() using {
                         k < end;
                         end == 1;
                     };
                 }
                 have k == 0 by {
-                    solve() using {
+                    close() using {
                         0 <= k;
                         k < 1;
                     };

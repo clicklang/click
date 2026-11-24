@@ -35,7 +35,7 @@ void caller(int32 *v, int32 i, int32 n) {
 } by {
     mark entry;
     have zeros(at(entry, v), 0, i) == zeros(at(entry, v), 0, i) by known();
-    have i <= n by { solve() using { i < n; }; }
+    have i <= n by { close() using { i < n; }; }
     have 0 <= 0 by { known(); }
     have viewable(v[0..n]) by { observe(v[0..n]); known(); }
     have contains(memory(v[0..n]), memory(v[0..i])) by {

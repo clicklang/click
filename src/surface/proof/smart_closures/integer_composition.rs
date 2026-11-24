@@ -1809,7 +1809,7 @@ mod tests {
             theorem composition(xs: List<int32>) {
                 requires weight(xs) >= 0;
                 ensures (let value: Integer = weight(xs) + 1; value) >= 0 by {
-                    solve() using { weight(xs) >= 0; };
+                    close() using { weight(xs) >= 0; };
                 }
             }
         "#;
@@ -1826,7 +1826,7 @@ mod tests {
             $(#[$meta])*
             fn $name() {
                 let source = format!(
-                    "theorem composition({}) {{ {} ensures {} by {{ solve() using {{ {} }}; }} }}",
+                    "theorem composition({}) {{ {} ensures {} by {{ close() using {{ {} }}; }} }}",
                     $parameters,
                     $requirements,
                     $goal,
@@ -2002,7 +2002,7 @@ mod tests {
     #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: two composed branches and replay"]
     fn integer_composition_closes_its_focused_conjunction_branch() {
-        let source = "theorem composition(x: Integer) { requires x <= 3; ensures 2 * x <= 6 and 3 * x <= 9 by { all { 2 * x <= 6 => { solve() using { x <= 3; }; } 3 * x <= 9 => { solve() using { x <= 3; }; } } } }";
+        let source = "theorem composition(x: Integer) { requires x <= 3; ensures 2 * x <= 6 and 3 * x <= 9 by { all { 2 * x <= 6 => { close() using { x <= 3; }; } 3 * x <= 9 => { close() using { x <= 3; }; } } } }";
         let expanded =
             expand_c_claim_source_by_label(source, &[], "composition.ensures_0").unwrap();
         without_implicit_solve(|| verify_c_sources(&expanded, &[])).unwrap();
@@ -2025,8 +2025,8 @@ mod tests {
     #[ignore = "nightly: ordinary expansion and replay take 0.6–0.8s in parallel"]
     fn integer_composition_preserves_original_alias_and_nonlinear_operand_spellings() {
         for source in [
-            "theorem composition(x: Integer, y: Integer) { let z: Integer = x + y; requires z <= 3; ensures 2 * z <= 6 by { solve() using { z <= 3; }; } }",
-            "theorem composition(x: Integer, y: Integer) { requires x * y <= 3; ensures 2 * (x * y) <= 6 by { solve() using { x * y <= 3; }; } }",
+            "theorem composition(x: Integer, y: Integer) { let z: Integer = x + y; requires z <= 3; ensures 2 * z <= 6 by { close() using { z <= 3; }; } }",
+            "theorem composition(x: Integer, y: Integer) { requires x * y <= 3; ensures 2 * (x * y) <= 6 by { close() using { x * y <= 3; }; } }",
         ] {
             let expanded =
                 expand_c_claim_source_by_label(source, &[], "composition.ensures_0").unwrap();
@@ -2061,7 +2061,7 @@ mod tests {
 
     #[test]
     fn integer_composition_does_not_use_an_unlisted_bound() {
-        let source = "theorem composition(x: Integer, y: Integer) { requires x <= 3; requires y <= 4; ensures 2 * x + 3 * y <= 18 by { solve() using { x <= 3; }; } }";
+        let source = "theorem composition(x: Integer, y: Integer) { requires x <= 3; requires y <= 4; ensures 2 * x + 3 * y <= 18 by { close() using { x <= 3; }; } }";
         assert!(verify_c_sources(source, &[]).is_err());
     }
 

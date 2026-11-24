@@ -35,7 +35,7 @@ int32 walk(int32 n) {
         initialize by { solve(); }
         maintain by {
             step();
-            have i <= n by { solve() using { }; }
+            have i <= n by { close() using { }; }
         }
     }
 }

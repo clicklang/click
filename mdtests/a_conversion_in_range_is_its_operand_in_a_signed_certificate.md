@@ -1,7 +1,7 @@
 # A conversion in range is its operand in a signed certificate
 
 Arithmetic search expands to ordinary proof steps, with the selected premises
-stated explicitly in `solve() using { ... }`.
+stated explicitly in `close() using { ... }`.
 
 ```c filename=a_conversion_in_range_is_its_operand_in_a_signed_certificate.c
 int next_byte(int x) { unsigned char y = x + 1; return y; }
@@ -18,7 +18,7 @@ int32 next_byte(int32 x) {
     step();
     step();
     have (result as int32) == ((x + 1) as int32) by {
-        solve() using { at(function.entry, x < 255); at(function.entry, 0 <= x); };
+        close() using { at(function.entry, x < 255); at(function.entry, 0 <= x); };
     }
     known();
 }

@@ -14,7 +14,7 @@ theorem shifted_bound(x: Integer) {
 theorem use_bound(value: Integer) {
     requires 0 <= value;
     ensures 7 <= shifted(value) by {
-        solve() using { 0 <= value; };
+        close() using { 0 <= value; };
     }
 }
 ```

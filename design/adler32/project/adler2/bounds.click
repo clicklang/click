@@ -19,15 +19,15 @@ theorem adler_lane_half_product_5551(n: Integer, divisor: Integer) {
     requires divisor <= 2;
     requires divisor != 0;
     ensures truncating_quotient(n * (n + 1), divisor) <= 15409576 by {
-        have 1 <= n + 1 by solve() using { 0 <= n; };
-        have n + 1 <= 5552 by solve() using { n <= 5551; };
+        have 1 <= n + 1 by close() using { 0 <= n; };
+        have n + 1 <= 5552 by close() using { n <= 5551; };
         have 0 <= n * (n + 1) by {
-            solve() using { 0 <= n; n <= 5551; 1 <= n + 1; n + 1 <= 5552; };
+            close() using { 0 <= n; n <= 5551; 1 <= n + 1; n + 1 <= 5552; };
         }
         have n * (n + 1) <= 30819152 by {
-            solve() using { 0 <= n; n <= 5551; 1 <= n + 1; n + 1 <= 5552; };
+            close() using { 0 <= n; n <= 5551; 1 <= n + 1; n + 1 <= 5552; };
         }
-        solve() using { 0 <= n * (n + 1); n * (n + 1) <= 30819152; 2 <= divisor; divisor <= 2; };
+        close() using { 0 <= n * (n + 1); n * (n + 1) <= 30819152; 2 <= divisor; divisor <= 2; };
     }
 }
 
@@ -45,12 +45,12 @@ theorem adler_lane_ceiling_5551(n: Integer) {
     requires n <= 5551;
     ensures adler_lane_a_ceiling(n) <= 1481025 by {
         unfold(adler_lane_a_ceiling(n));
-        solve() using { n <= 5551; };
+        close() using { n <= 5551; };
     }
     ensures adler_lane_b_ceiling(n) <= 4293208920 by {
         have adler_lane_triangle(n) <= 15409576 by apply(adler_lane_triangle_5551(n));
         unfold(adler_lane_b_ceiling(n));
-        solve() using { n <= 5551; adler_lane_triangle(n) <= 15409576; };
+        close() using { n <= 5551; adler_lane_triangle(n) <= 15409576; };
     }
 }
 
@@ -61,15 +61,15 @@ theorem adler_lane_half_product_5552(n: Integer, divisor: Integer) {
     requires divisor <= 2;
     requires divisor != 0;
     ensures truncating_quotient(n * (n + 1), divisor) <= 15415128 by {
-        have 1 <= n + 1 by solve() using { 0 <= n; };
-        have n + 1 <= 5553 by solve() using { n <= 5552; };
+        have 1 <= n + 1 by close() using { 0 <= n; };
+        have n + 1 <= 5553 by close() using { n <= 5552; };
         have 0 <= n * (n + 1) by {
-            solve() using { 0 <= n; n <= 5552; 1 <= n + 1; n + 1 <= 5553; };
+            close() using { 0 <= n; n <= 5552; 1 <= n + 1; n + 1 <= 5553; };
         }
         have n * (n + 1) <= 30830256 by {
-            solve() using { 0 <= n; n <= 5552; 1 <= n + 1; n + 1 <= 5553; };
+            close() using { 0 <= n; n <= 5552; 1 <= n + 1; n + 1 <= 5553; };
         }
-        solve() using { 0 <= n * (n + 1); n * (n + 1) <= 30830256; 2 <= divisor; divisor <= 2; };
+        close() using { 0 <= n * (n + 1); n * (n + 1) <= 30830256; 2 <= divisor; divisor <= 2; };
     }
 }
 
@@ -87,12 +87,12 @@ theorem adler_lane_ceiling_5552(n: Integer) {
     requires n <= 5552;
     ensures adler_lane_a_ceiling(n) <= 1481280 by {
         unfold(adler_lane_a_ceiling(n));
-        solve() using { n <= 5552; };
+        close() using { n <= 5552; };
     }
     ensures adler_lane_b_ceiling(n) <= 4294690200 by {
         have adler_lane_triangle(n) <= 15415128 by apply(adler_lane_triangle_5552(n));
         unfold(adler_lane_b_ceiling(n));
-        solve() using { n <= 5552; adler_lane_triangle(n) <= 15415128; };
+        close() using { n <= 5552; adler_lane_triangle(n) <= 15415128; };
     }
 }
 
@@ -113,11 +113,11 @@ theorem adler_lane_step_a(n: Integer, a: Integer, byte: Integer) {
     requires a <= adler_lane_a_ceiling(n);
     requires 0 <= byte;
     requires byte <= 255;
-    ensures 0 <= a + byte by solve() using { 0 <= a; 0 <= byte; };
+    ensures 0 <= a + byte by close() using { 0 <= a; 0 <= byte; };
     ensures a + byte <= 1481280 by {
-        have n <= 5551 by solve() using { n < 5552; };
+        have n <= 5551 by close() using { n < 5552; };
         have adler_lane_a_ceiling(n) <= 1481025 by apply(adler_lane_ceiling_5551(n));
-        solve() using { a <= adler_lane_a_ceiling(n); adler_lane_a_ceiling(n) <= 1481025; byte <= 255; };
+        close() using { a <= adler_lane_a_ceiling(n); adler_lane_a_ceiling(n) <= 1481025; byte <= 255; };
     }
 }
 
@@ -130,12 +130,12 @@ theorem adler_lane_step_b(n: Integer, a: Integer, b: Integer, byte: Integer) {
     requires b <= adler_lane_b_ceiling(n);
     requires 0 <= byte;
     requires byte <= 255;
-    ensures 0 <= b + (a + byte) by { solve() using { 0 <= b; 0 <= a; 0 <= byte; }; }
+    ensures 0 <= b + (a + byte) by { close() using { 0 <= b; 0 <= a; 0 <= byte; }; }
     ensures b + (a + byte) <= 4294690200 by {
-        have n <= 5551 by solve() using { n < 5552; };
+        have n <= 5551 by close() using { n < 5552; };
         have adler_lane_b_ceiling(n) <= 4293208920 by apply(adler_lane_ceiling_5551(n));
         have a + byte <= 1481280 by apply(adler_lane_step_a(n, a, byte));
-        solve() using { b <= adler_lane_b_ceiling(n); adler_lane_b_ceiling(n) <= 4293208920; a + byte <= 1481280; };
+        close() using { b <= adler_lane_b_ceiling(n); adler_lane_b_ceiling(n) <= 4293208920; a + byte <= 1481280; };
     }
 }
 
@@ -160,12 +160,12 @@ theorem adler_lane_a_invariant_step(n: Integer, a: Integer, byte: Integer) {
         have adler_lane_a_ceiling(n) == 65520 + 255 * n by {
             unfold(adler_lane_a_ceiling(n)); known();
         }
-        have a <= 65520 + 255 * n by solve() using {
+        have a <= 65520 + 255 * n by close() using {
                 a <= adler_lane_a_ceiling(n);
                 adler_lane_a_ceiling(n) == 65520 + 255 * n;
             };
         unfold(adler_lane_a_ceiling(n + 1));
-        solve() using { a <= 65520 + 255 * n; byte <= 255; };
+        close() using { a <= 65520 + 255 * n; byte <= 255; };
     }
 }
 
@@ -173,19 +173,19 @@ theorem adler_lane_triangle_successor(n: Integer) {
     requires 0 <= n;
     requires n <= 5551;
     ensures adler_lane_triangle(n + 1) == adler_lane_triangle(n) + (n + 1) by {
-        have 1 <= n + 1 by solve() using { 0 <= n; };
-        have n + 1 <= 5552 by solve() using { n <= 5551; };
-        have 0 <= n + 1 by solve() using { 0 <= n; };
+        have 1 <= n + 1 by close() using { 0 <= n; };
+        have n + 1 <= 5552 by close() using { n <= 5551; };
+        have 0 <= n + 1 by close() using { 0 <= n; };
         have 0 <= n * (n + 1) by {
-            solve() using { 0 <= n; n <= 5551; 1 <= n + 1; n + 1 <= 5552; };
+            close() using { 0 <= n; n <= 5551; 1 <= n + 1; n + 1 <= 5552; };
         }
         have (n + 1) * ((n + 1) + 1) == n * (n + 1) + 2 * (n + 1) by {
-            solve() using {  };
+            close() using {  };
         }
         unfold(adler_lane_triangle(n + 1));
         unfold(adler_lane_triangle(n));
         rewrite((n + 1) * ((n + 1) + 1), n * (n + 1) + 2 * (n + 1));
-        solve() using { 0 <= n * (n + 1); 0 <= n + 1; };
+        close() using { 0 <= n * (n + 1); 0 <= n + 1; };
     }
 }
 
@@ -198,7 +198,7 @@ theorem adler_lane_b_ceiling_successor(n: Integer) {
         unfold(adler_lane_b_ceiling(n));
         unfold(adler_lane_a_ceiling(n + 1));
         rewrite(adler_lane_triangle(n + 1), adler_lane_triangle(n) + (n + 1));
-        solve() using {  };
+        close() using {  };
     }
 }
 
@@ -209,11 +209,11 @@ theorem adler_lane_b_invariant_step(n: Integer, a: Integer, b: Integer, byte: In
     requires b <= adler_lane_b_ceiling(n);
     requires byte <= 255;
     ensures b + (a + byte) <= adler_lane_b_ceiling(n + 1) by {
-        have n <= 5551 by solve() using { n < 5552; };
+        have n <= 5551 by close() using { n < 5552; };
         have a + byte <= adler_lane_a_ceiling(n + 1) by apply(adler_lane_a_invariant_step(n, a, byte));
         have adler_lane_b_ceiling(n + 1) == adler_lane_b_ceiling(n) + adler_lane_a_ceiling(n + 1) by apply(adler_lane_b_ceiling_successor(n));
         rewrite(adler_lane_b_ceiling(n + 1), adler_lane_b_ceiling(n) + adler_lane_a_ceiling(n + 1));
-        solve() using {
+        close() using {
             b <= adler_lane_b_ceiling(n);
             a + byte <= adler_lane_a_ceiling(n + 1);
         };
@@ -230,7 +230,7 @@ theorem adler_lane_native_a_sum_fits(n: Integer, a: uint32, byte: uint32) {
     requires to_integer(byte) <= 255;
     ensures to_integer(a) + to_integer(byte) <= 4294967295 by {
         have to_integer(a) + to_integer(byte) <= 1481280 by apply(adler_lane_step_a(n, to_integer(a), to_integer(byte)));
-        solve() using { to_integer(a) + to_integer(byte) <= 1481280; };
+        close() using { to_integer(a) + to_integer(byte) <= 1481280; };
     }
 }
 
@@ -271,7 +271,7 @@ theorem adler_lane_native_b_sum_fits(n: Integer, a: uint32, b: uint32, byte: uin
     ensures to_integer(b) + to_integer(a + byte) <= 4294967295 by {
         have to_integer(a + byte) == to_integer(a) + to_integer(byte) by apply(adler_lane_native_a_step(n, a, byte));
         have to_integer(b) + (to_integer(a) + to_integer(byte)) <= 4294690200 by apply(adler_lane_step_b(n, to_integer(a), to_integer(b), to_integer(byte)));
-        solve() using {
+        close() using {
             to_integer(b) + (to_integer(a) + to_integer(byte)) <= 4294690200;
             to_integer(a + byte) == to_integer(a) + to_integer(byte);
         };

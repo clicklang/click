@@ -5,7 +5,7 @@ const BOUND: &str = "theorem shifted_bound(x: Integer) { requires 0 <= x; ensure
 
 #[test]
 fn single_theorem_discovery_expands_and_rechecks() {
-    let proof = "by { solve() using { 0 <= value; }; }";
+    let proof = "by { close() using { 0 <= value; }; }";
     let source = format!(
         "{SHIFT} theorem too_strong(x: Integer) {{ requires 100 <= x; ensures 7 <= shifted(x) by {{ unfold(shifted(x)); solve(); }} }} {BOUND} theorem test(value: Integer) {{ requires 0 <= value; ensures 7 <= shifted(value) {proof} }}"
     );
@@ -37,12 +37,12 @@ fn single_theorem_discovery_expands_and_rechecks() {
 fn single_theorem_discovery_keeps_unlisted_facts_unavailable() {
     for premises in ["", "1 <= value;"] {
         let source = format!(
-            "{SHIFT} {BOUND} theorem test(value: Integer) {{ requires 0 <= value; requires 1 <= value; ensures 7 <= shifted(value) by {{ solve() using {{ {premises} }}; }} }}"
+            "{SHIFT} {BOUND} theorem test(value: Integer) {{ requires 0 <= value; requires 1 <= value; ensures 7 <= shifted(value) by {{ close() using {{ {premises} }}; }} }}"
         );
         assert!(verify_click_theorems(&source).is_err(), "{source}");
     }
     let source = format!(
-        "{SHIFT} {BOUND} theorem test(value: Integer) {{ requires 0 <= value; ensures 8 <= shifted(value) by {{ solve() using {{ 0 <= value; }}; }} }}"
+        "{SHIFT} {BOUND} theorem test(value: Integer) {{ requires 0 <= value; ensures 8 <= shifted(value) by {{ close() using {{ 0 <= value; }}; }} }}"
     );
     assert!(verify_click_theorems(&source).is_err());
 }
@@ -50,18 +50,18 @@ fn single_theorem_discovery_keeps_unlisted_facts_unavailable() {
 #[test]
 fn single_theorem_discovery_does_not_invent_arguments_or_chain() {
     let hidden = format!(
-        "{SHIFT} theorem hidden(x: Integer, witness: Integer) {{ requires 0 <= witness; requires x == witness; ensures 7 <= shifted(x) by {{ unfold(shifted(x)); solve(); }} }} theorem test(value: Integer) {{ requires 0 <= value; ensures 7 <= shifted(value) by {{ solve() using {{ 0 <= value; }}; }} }}"
+        "{SHIFT} theorem hidden(x: Integer, witness: Integer) {{ requires 0 <= witness; requires x == witness; ensures 7 <= shifted(x) by {{ unfold(shifted(x)); solve(); }} }} theorem test(value: Integer) {{ requires 0 <= value; ensures 7 <= shifted(value) by {{ close() using {{ 0 <= value; }}; }} }}"
     );
     assert!(verify_click_theorems(&hidden).is_err());
     let chain = format!(
-        "{SHIFT} function middle(x: Integer) -> Integer {{ x }} theorem first(x: Integer) {{ requires 0 <= x; ensures 0 <= middle(x) by {{ unfold(middle(x)); solve(); }} }} theorem second(x: Integer) {{ requires 0 <= middle(x); ensures 7 <= shifted(x) by {{ unfold(middle(x)); unfold(shifted(x)); solve(); }} }} theorem test(value: Integer) {{ requires 0 <= value; ensures 7 <= shifted(value) by {{ solve() using {{ 0 <= value; }}; }} }}"
+        "{SHIFT} function middle(x: Integer) -> Integer {{ x }} theorem first(x: Integer) {{ requires 0 <= x; ensures 0 <= middle(x) by {{ unfold(middle(x)); solve(); }} }} theorem second(x: Integer) {{ requires 0 <= middle(x); ensures 7 <= shifted(x) by {{ unfold(middle(x)); unfold(shifted(x)); solve(); }} }} theorem test(value: Integer) {{ requires 0 <= value; ensures 7 <= shifted(value) by {{ close() using {{ 0 <= value; }}; }} }}"
     );
     assert!(verify_click_theorems(&chain).is_err());
 }
 
 #[test]
 fn single_theorem_discovery_finds_generic_library_law() {
-    let proof = "by { solve() using {}; }";
+    let proof = "by { close() using {}; }";
     let source = format!(
         "import click::list; theorem test(xs: List<Integer>, ys: List<Integer>) {{ ensures list::length(list::append(xs, ys)) == nat::add(list::length(xs), list::length(ys)) {proof} }}"
     );
@@ -75,7 +75,7 @@ fn single_theorem_discovery_finds_generic_library_law() {
 
 #[test]
 fn single_theorem_discovery_closes_c_outcome_and_expands() {
-    let proof = "by { step_until(function.exit); solve() using { 0 <= to_integer(x); }; }";
+    let proof = "by { step_until(function.exit); close() using { 0 <= to_integer(x); }; }";
     let source = format!(
         "verifying \"noop.c\"; {SHIFT} {BOUND} void noop(int32 x) {{ requires 0 <= to_integer(x); ensures 7 <= shifted(to_integer(x)); }} {proof}"
     );
@@ -176,7 +176,7 @@ fn equivalent_comparison_spellings_discover_and_expand() {
         ("fixed(x) > 6", "6 < fixed(value)"),
         ("fixed(x) >= 7", "7 <= fixed(value)"),
     ] {
-        let proof = "by { solve() using { 0 <= value; }; }";
+        let proof = "by { close() using { 0 <= value; }; }";
         let source = format!(
             "function fixed(x: Integer) -> Integer {{ 7 }} theorem law(x: Integer) {{ requires 0 <= x; ensures {conclusion} by {{ unfold(fixed(x)); solve(); }} }} theorem test(value: Integer) {{ requires 0 <= value; ensures {goal} {proof} }}"
         );
@@ -187,7 +187,7 @@ fn equivalent_comparison_spellings_discover_and_expand() {
         assert!(!expanded.contains("solve("), "{expanded}");
         verify_click_theorems(&source.replace(proof, &expanded))
             .unwrap_or_else(|e| panic!("{expanded}: {}", e.report()));
-        let missing = source.replace("solve() using { 0 <= value; }", "solve() using {}");
+        let missing = source.replace("close() using { 0 <= value; }", "close() using {}");
         assert!(verify_click_theorems(&missing).is_err(), "{missing}");
     }
 }
@@ -195,7 +195,7 @@ fn equivalent_comparison_spellings_discover_and_expand() {
 #[test]
 fn equality_orientation_is_disambiguated_by_listed_prerequisites() {
     for (function, operator) in [("0", "=="), ("x", "!=")] {
-        let proof = "by { solve() using { a < b; }; }";
+        let proof = "by { close() using { a < b; }; }";
         let source = format!(
             "function image(x: Integer) -> Integer {{ {function} }} theorem law(x: Integer, y: Integer) {{ requires x < y; ensures image(x) {operator} image(y) by {{ unfold(image(x)); unfold(image(y)); solve(); }} }} theorem test(a: Integer, b: Integer) {{ requires a < b; ensures image(b) {operator} image(a) {proof} }}"
         );
@@ -242,7 +242,7 @@ fn mirrored_float_orders_do_not_complement_nan_comparisons() {
         ("float", "float32_from_bits", "0x3f800000"),
         ("double", "float64_from_bits", "0x3ff0000000000000"),
     ] {
-        let proof = "by { solve() using {}; }";
+        let proof = "by { close() using {}; }";
         let source = format!(
             "function fixed(x: {ty}) -> {ty} {{ {bits}({one}) }} theorem law(x: {ty}) {{ ensures fixed(x) > {bits}(0) by {{ unfold(fixed(x)); normalize(); }} }} theorem test(value: {ty}) {{ ensures {bits}(0) < fixed(value) {proof} }}"
         );
@@ -252,7 +252,7 @@ fn mirrored_float_orders_do_not_complement_nan_comparisons() {
         verify_click_theorems(&source.replace(proof, &expanded))
             .unwrap_or_else(|e| panic!("{expanded}: {}", e.report()));
     }
-    let false_goal = "theorem test(x: double, y: double) { requires not (x <= y); ensures y < x by { solve() using { not (x <= y); }; } }";
+    let false_goal = "theorem test(x: double, y: double) { requires not (x <= y); ensures y < x by { close() using { not (x <= y); }; } }";
     assert!(verify_click_theorems(false_goal).is_err());
     let wrong_relation = parser::parse("theorem law(x: Integer, y: Integer) { ensures x < y; } theorem target(a: Integer, b: Integer) { ensures b >= a; }").unwrap();
     let Ensure::Proposition(goal) = wrong_relation.theorem_definitions()[1].ensures()[0].ensure()
@@ -269,7 +269,7 @@ fn mirrored_float_orders_do_not_complement_nan_comparisons() {
 #[test]
 fn discovery_failures_explain_missing_listed_prerequisites() {
     let source = format!(
-        "{SHIFT} {BOUND} theorem test(value: Integer) {{ requires 0 <= value; ensures 7 <= shifted(value) by {{ solve() using {{}}; }} }}"
+        "{SHIFT} {BOUND} theorem test(value: Integer) {{ requires 0 <= value; ensures 7 <= shifted(value) by {{ close() using {{}}; }} }}"
     );
     let error = verify_click_theorems(&source).unwrap_err();
     let report = error.report().to_string();
@@ -284,7 +284,7 @@ fn discovery_failures_explain_missing_listed_prerequisites() {
     assert!(!report.contains("[NoMatch]"), "{report}");
 
     let source = format!(
-        "verifying \"noop.c\"; {SHIFT} {BOUND} void noop(int32 x) {{ requires 0 <= to_integer(x); ensures 7 <= shifted(to_integer(x)); }} by {{ step_until(function.exit); solve() using {{}}; }}"
+        "verifying \"noop.c\"; {SHIFT} {BOUND} void noop(int32 x) {{ requires 0 <= to_integer(x); ensures 7 <= shifted(to_integer(x)); }} by {{ step_until(function.exit); close() using {{}}; }}"
     );
     let report = verify_c_sources(&source, &[("noop.c", "void noop(int32 x) {}")])
         .unwrap_err()
@@ -304,7 +304,7 @@ fn discovery_failures_explain_missing_listed_prerequisites() {
 #[test]
 fn discovery_failures_identify_undetermined_arguments() {
     let source = format!(
-        "{SHIFT} theorem hidden(x: Integer, witness: Integer) {{ requires 0 <= witness; requires x == witness; ensures 7 <= shifted(x) by {{ unfold(shifted(x)); solve(); }} }} theorem test(value: Integer) {{ requires 0 <= value; ensures 7 <= shifted(value) by {{ solve() using {{ 0 <= value; }}; }} }}"
+        "{SHIFT} theorem hidden(x: Integer, witness: Integer) {{ requires 0 <= witness; requires x == witness; ensures 7 <= shifted(x) by {{ unfold(shifted(x)); solve(); }} }} theorem test(value: Integer) {{ requires 0 <= value; ensures 7 <= shifted(value) by {{ close() using {{ 0 <= value; }}; }} }}"
     );
     let report = verify_click_theorems(&source)
         .unwrap_err()
@@ -327,7 +327,7 @@ fn discovery_failures_report_structural_misses_without_claiming_nonexistence() {
     // Both an empty bucket and a candidate whose constant does not match.
     for library in ["", BOUND] {
         let source = format!(
-            "{SHIFT} {library} theorem test(value: Integer) {{ requires 1 <= value; ensures 8 <= shifted(value) by {{ solve() using {{ 1 <= value; }}; }} }}"
+            "{SHIFT} {library} theorem test(value: Integer) {{ requires 1 <= value; ensures 8 <= shifted(value) by {{ close() using {{ 1 <= value; }}; }} }}"
         );
         let report = verify_click_theorems(&source)
             .unwrap_err()

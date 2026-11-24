@@ -3,7 +3,7 @@
 `last` walks a byte range two at a time with a `long` index. Its measure,
 `length - i`, is an exact Integer difference. It owes nonnegativity and
 strict descent at the back edge. The native 64-bit counter bounds are
-proved by `solve() using`; they justify the increment's Integer identity.
+proved by `close() using`; they justify the increment's Integer identity.
 
 `an_int64_measure_that_may_be_negative_is_refused.md` retains the refusal
 when the last step can take the measure below zero.
@@ -37,22 +37,22 @@ uint8 last(const uint8* bytes, int64 length) {
         invariant i <= 2147483647i64;
         maintain by {
             have to_integer(i + 2i64) <= to_integer(length) by {
-                solve() using { 0i64 <= i; i <= length; to_integer(i + 1i64) < to_integer(length); length <= 2147483647i64; };
+                close() using { 0i64 <= i; i <= length; to_integer(i + 1i64) < to_integer(length); length <= 2147483647i64; };
             }
             have to_integer(length - (i + 2i64)) < to_integer(length - i) by {
-                solve() using { 0i64 <= i; i <= length; to_integer(i + 2i64) <= to_integer(length); length <= 2147483647i64; };
+                close() using { 0i64 <= i; i <= length; to_integer(i + 2i64) <= to_integer(length); length <= 2147483647i64; };
             }
             have to_integer(0i64) <= to_integer(i + 2i64) by {
-                solve() using { 0i64 <= i; i <= length; length <= 2147483647i64; };
+                close() using { 0i64 <= i; i <= length; length <= 2147483647i64; };
             }
             have to_integer(i + 2i64) <= to_integer(2147483647i64) by {
-                solve() using { to_integer(i + 2i64) <= to_integer(length); length <= 2147483647i64; 0i64 <= i; i <= length; };
+                close() using { to_integer(i + 2i64) <= to_integer(length); length <= 2147483647i64; 0i64 <= i; i <= length; };
             }
             have to_integer(0i64) <= to_integer(length - (i + 2i64)) by {
-                solve() using { to_integer(i + 2i64) <= to_integer(length); length <= 2147483647i64; 0i64 <= i; i <= length; };
+                close() using { to_integer(i + 2i64) <= to_integer(length); length <= 2147483647i64; 0i64 <= i; i <= length; };
             }
             have to_integer(0i64) <= to_integer(i + 1i64) by {
-                solve() using { 0i64 <= i; i <= length; length <= 2147483647i64; };
+                close() using { 0i64 <= i; i <= length; length <= 2147483647i64; };
             }
             step(); step();
             solve();

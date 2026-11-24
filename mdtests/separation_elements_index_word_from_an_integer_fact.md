@@ -44,7 +44,7 @@ int32 read_first(int32 m) {
             apply(separation::separate_elements(q, m - 1, 0));
         }
         have separate(statement(3).footprint, memory(q[0])) by {
-            solve() using { separate(memory(q[m - 1]), memory(q[0])); };
+            close() using { separate(memory(q[m - 1]), memory(q[0])); };
         }
         have q[0] == at(before_store, q[0]) by {
             preserve(memory(q[0]), statement(3));

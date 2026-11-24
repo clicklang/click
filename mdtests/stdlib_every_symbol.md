@@ -1143,7 +1143,7 @@ theorem use_format_signed_length(v: int32) {
     ensures stdio::signed_length(v) == stdio::decimal_length(stdio::magnitude(v)) by {
         have not (v < 0) by { known(); }
         have (if v < 0 { 1u64 + stdio::decimal_length(stdio::magnitude(v)) } else { stdio::decimal_length(stdio::magnitude(v)) }) == stdio::decimal_length(stdio::magnitude(v)) by {
-            solve() using { not (v < 0); };
+            close() using { not (v < 0); };
         }
         unfold(stdio::signed_length(v));
         solve();

@@ -8,7 +8,7 @@ the three in one step, rewriting along the chain.
 The links are `have`s written inside the scope `intro` opened. A `have`
 there used to leave no spelling for its fact, so the equality-rewrite search
 found the three candidates but could cite none of them, and every link needed
-its own two-premise `solve() using { .. }`. A scope's `have` is now spelled for
+its own two-premise `close() using { .. }`. A scope's `have` is now spelled for
 the premise lookups later steps of the same scope make, as one at an outcome
 or an execution frontier already was. The expansion is the three `rewrite`s
 and `normalize()`, and it re-verifies. The chain's work is linear in its

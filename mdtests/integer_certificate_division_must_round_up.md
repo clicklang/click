@@ -7,11 +7,11 @@
 theorem over_rounded(x: Integer) {
     requires 2 * x <= 5;
     ensures x <= 1 by {
-        solve() using { 2 * x <= 5; };
+        close() using { 2 * x <= 5; };
     }
 }
 ```
 
 ```expect
-fail: solve
+fail: `close() using`
 ```

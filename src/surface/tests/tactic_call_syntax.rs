@@ -65,7 +65,7 @@ fn nested_single_tactic_calls_keep_their_checked_scopes() {
             have first: x == 7;
             have second: x == 7 by { solve(); }
             have x == 7 by known();
-            solve() using { first; second; };
+            close() using { first; second; };
         }
     }",
     )
@@ -85,7 +85,7 @@ fn canonical_using_calls_wrap_long_premises_and_keep_their_terminator() {
     let head = format!(
         "theorem equal({left}: Integer, {right}: Integer) {{ requires {left} == {right}; ensures {left} == {right}"
     );
-    let source = format!("{head} by {{ solve() using {{ {left} == {right}; }} }} }}");
+    let source = format!("{head} by {{ close() using {{ {left} == {right}; }} }} }}");
     verify_click_theorems(&source).unwrap();
     let parsed = parser::parse(&source).unwrap();
     let proof = parsed.theorem_definitions()[0].ensures()[0].proof();
@@ -146,9 +146,8 @@ fn binary_splits_use_their_own_join_interface_syntax() {
     }
 }
 
-/// `assumption`, `auto`, `arithmetic` and `execute_until` are removed spellings:
-/// in each place a tactic or a one-tactic proof stands, the parser refuses
-/// them and names what replaced them.
+/// The parser names the replacement for a removed spelling in scripts and
+/// one-tactic proofs.
 #[test]
 fn removed_tactic_spellings_name_their_replacement() {
     for (proof, replacement) in [
@@ -160,10 +159,15 @@ fn removed_tactic_spellings_name_their_replacement() {
             "by { have x == 7 by auto(); known(); }",
             "the omitted proof",
         ),
-        ("by arithmetic();", "`solve() using {}`"),
+        ("by arithmetic();", "`close() using {}`"),
         (
             "by { arithmetic() using { x == 7; }; }",
-            "`solve() using { ... }`",
+            "`close() using { ... }`",
+        ),
+        ("by solve() using { x == 7; };", "`close() using { ... }`"),
+        (
+            "by { solve() using { x == 7; } }",
+            "`close() using { ... }`",
         ),
         ("by { execute_until(function.exit); }", "`step_until`"),
     ] {

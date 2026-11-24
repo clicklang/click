@@ -15,8 +15,8 @@ theorem equality(x: Integer) {
 
 theorem test(value: Integer) {
     requires 0 <= value;
-    ensures 7 <= fixed(value) by { solve() using { 0 <= value; }; }
-    ensures 7 == fixed(value) by { solve() using { 0 <= value; }; }
+    ensures 7 <= fixed(value) by { close() using { 0 <= value; }; }
+    ensures 7 == fixed(value) by { close() using { 0 <= value; }; }
 }
 ```
 

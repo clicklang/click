@@ -86,43 +86,43 @@ void checkout(struct pool* pool, struct payload* p) {
             known();
         }
         have defined((pool->checked_out + 1)) by {
-            solve() using { at(function.entry, pool->checked_out) < at(function.entry, 2147483647); };
+            close() using { at(function.entry, pool->checked_out) < at(function.entry, 2147483647); };
         }
         unfold(slot(pool));
         step();
         fold(item(pool, p));
         have to_integer(pool->capacity) == (to_integer(pool->checked_out) + to_integer(count(slot(pool)))) by {
             have -2147483648 <= (to_integer(old(pool->checked_out)) + 1) by {
-                solve() using { 0 <= to_integer(old(pool->checked_out)); };
+                close() using { 0 <= to_integer(old(pool->checked_out)); };
             }
             have (to_integer(old(pool->checked_out)) + 1) <= 2147483647 by {
-                solve() using { to_integer(old(pool->checked_out)) < 2147483647; };
+                close() using { to_integer(old(pool->checked_out)) < 2147483647; };
             }
             have to_integer(pool->checked_out) == (to_integer(old(pool->checked_out)) + 1) by {
-                solve() using { -2147483648 <= (to_integer(old(pool->checked_out)) + 1); (to_integer(old(pool->checked_out)) + 1) <= 2147483647; };
+                close() using { -2147483648 <= (to_integer(old(pool->checked_out)) + 1); (to_integer(old(pool->checked_out)) + 1) <= 2147483647; };
             }
             have -2147483648 <= (to_integer(old(count(slot(pool)))) - 1) by {
-                solve() using { 1 <= to_integer(old(count(slot(pool)))); };
+                close() using { 1 <= to_integer(old(count(slot(pool)))); };
             }
             have (to_integer(old(count(slot(pool)))) - 1) <= 2147483647 by {
-                solve() using {  };
+                close() using {  };
             }
             have to_integer(count(slot(pool))) == (to_integer(old(count(slot(pool)))) - 1) by {
-                solve() using { -2147483648 <= (to_integer(old(count(slot(pool)))) - 1); (to_integer(old(count(slot(pool)))) - 1) <= 2147483647; };
+                close() using { -2147483648 <= (to_integer(old(count(slot(pool)))) - 1); (to_integer(old(count(slot(pool)))) - 1) <= 2147483647; };
             }
             have to_integer(pool->capacity) <= (to_integer(pool->checked_out) + to_integer(count(slot(pool)))) by {
-                solve() using { at(function.entry, to_integer(pool->capacity)) == at(function.entry,
+                close() using { at(function.entry, to_integer(pool->capacity)) == at(function.entry,
                         (to_integer(pool->checked_out) + to_integer(count(slot(pool))))); to_integer(pool->checked_out) == (to_integer(old(pool->checked_out))
                         + 1); to_integer(count(slot(pool))) == (to_integer(old(count(slot(pool))))
                         - 1); };
             }
             have (to_integer(pool->checked_out) + to_integer(count(slot(pool)))) <= to_integer(pool->capacity) by {
-                solve() using { at(function.entry, to_integer(pool->capacity)) == at(function.entry,
+                close() using { at(function.entry, to_integer(pool->capacity)) == at(function.entry,
                         (to_integer(pool->checked_out) + to_integer(count(slot(pool))))); to_integer(pool->checked_out) == (to_integer(old(pool->checked_out))
                         + 1); to_integer(count(slot(pool))) == (to_integer(old(count(slot(pool))))
                         - 1); };
             }
-            solve() using { to_integer(pool->capacity) <= (to_integer(pool->checked_out) +
+            close() using { to_integer(pool->capacity) <= (to_integer(pool->checked_out) +
                     to_integer(count(slot(pool)))); (to_integer(pool->checked_out) + to_integer(count(slot(pool)))) <=
                     to_integer(pool->capacity); };
         }
@@ -131,32 +131,32 @@ void checkout(struct pool* pool, struct payload* p) {
     known();
     have to_integer(count(slot(pool))) == (to_integer(old(count(slot(pool)))) - 1) by {
         have -2147483648 <= (to_integer(old(count(slot(pool)))) - 1) by {
-            solve() using { 1 <= to_integer(old(count(slot(pool)))); };
+            close() using { 1 <= to_integer(old(count(slot(pool)))); };
         }
         have (to_integer(old(count(slot(pool)))) - 1) <= 2147483647 by {
-            solve() using {  };
+            close() using {  };
         }
         have to_integer(count(slot(pool))) == (to_integer(old(count(slot(pool)))) - 1) by {
-            solve() using { -2147483648 <= (to_integer(old(count(slot(pool)))) - 1); (to_integer(old(count(slot(pool)))) - 1) <= 2147483647; };
+            close() using { -2147483648 <= (to_integer(old(count(slot(pool)))) - 1); (to_integer(old(count(slot(pool)))) - 1) <= 2147483647; };
         }
         known();
     }
     have to_integer(count(item(pool, _))) == (to_integer(old(count(item(pool, _)))) + 1) by {
         have to_integer(count(item(pool, _))) <= (to_integer(old(count(item(pool, _)))) + 1) by {
-            solve() using { at(function.entry, to_integer(pool->capacity)) == at(function.entry,
+            close() using { at(function.entry, to_integer(pool->capacity)) == at(function.entry,
                     (to_integer(pool->checked_out) + to_integer(count(slot(pool))))); at(function.entry, to_integer(pool->capacity)) == at(function.entry,
                     (to_integer((pool->checked_out + 1)) + to_integer((old(count(slot(pool))) -
                     1)))); to_integer(count(slot(pool))) == (to_integer(old(count(slot(pool)))) - 1); to_integer(old(pool->checked_out)) == to_integer(old(count(item(pool,
                     _)))); to_integer(pool->checked_out) == to_integer(count(item(pool, _))); to_integer(pool->checked_out) == to_integer(old(pool->checked_out) + 1); };
         }
         have (to_integer(old(count(item(pool, _)))) + 1) <= to_integer(count(item(pool, _))) by {
-            solve() using { at(function.entry, to_integer(pool->capacity)) == at(function.entry,
+            close() using { at(function.entry, to_integer(pool->capacity)) == at(function.entry,
                     (to_integer(pool->checked_out) + to_integer(count(slot(pool))))); at(function.entry, to_integer(pool->capacity)) == at(function.entry,
                     (to_integer((pool->checked_out + 1)) + to_integer((old(count(slot(pool))) -
                     1)))); to_integer(count(slot(pool))) == (to_integer(old(count(slot(pool)))) - 1); to_integer(old(pool->checked_out)) == to_integer(old(count(item(pool,
                     _)))); to_integer(pool->checked_out) == to_integer(count(item(pool, _))); to_integer(pool->checked_out) == to_integer(old(pool->checked_out) + 1); };
         }
-        solve() using { to_integer(count(item(pool, _))) <= (to_integer(old(count(item(pool, _)))) +
+        close() using { to_integer(count(item(pool, _))) <= (to_integer(old(count(item(pool, _)))) +
                 1); (to_integer(old(count(item(pool, _)))) + 1) <= to_integer(count(item(pool,
                 _))); };
     }
@@ -194,10 +194,10 @@ void give_back(struct pool* pool, struct payload* p) {
         }
         have defined((count(slot(pool)) + 1)) by {
             have (to_integer(count(slot(pool))) + to_integer(1)) >= -2147483648 by {
-                solve() using { 0 <= to_integer(count(slot(pool))); };
+                close() using { 0 <= to_integer(count(slot(pool))); };
             }
             have (to_integer(count(slot(pool))) + to_integer(1)) <= 2147483647 by {
-                solve() using { at(function.entry, to_integer(pool->capacity)) == at(function.entry,
+                close() using { at(function.entry, to_integer(pool->capacity)) == at(function.entry,
                         (to_integer(pool->checked_out) + to_integer(count(slot(pool))))); 1 <= to_integer(pool->checked_out); };
             }
             known();
@@ -208,7 +208,7 @@ void give_back(struct pool* pool, struct payload* p) {
         mark before_decrement;
         step();
         have separate(statement(0).footprint, memory(p->value)) by {
-            solve() using { separate(memory(p->value), memory(pool->checked_out)); };
+            close() using { separate(memory(p->value), memory(pool->checked_out)); };
         }
         have p->value == at(before_decrement, p->value) by {
             preserve(memory(p->value), statement(0));
@@ -218,43 +218,43 @@ void give_back(struct pool* pool, struct payload* p) {
         }
         fold(slot(pool));
         have 0 <= pool->checked_out by {
-            solve() using { at(function.entry, 1) <= at(function.entry, pool->checked_out); };
+            close() using { at(function.entry, 1) <= at(function.entry, pool->checked_out); };
         }
         have to_integer(pool->checked_out) == to_integer(count(item(pool, _))) by {
             known();
         }
         have to_integer(pool->capacity) == (to_integer(pool->checked_out) + to_integer(count(slot(pool)))) by {
             have -2147483648 <= (to_integer(old(pool->checked_out)) - 1) by {
-                solve() using { 0 <= to_integer(old(pool->checked_out)); };
+                close() using { 0 <= to_integer(old(pool->checked_out)); };
             }
             have (to_integer(old(pool->checked_out)) - 1) <= 2147483647 by {
-                solve() using {  };
+                close() using {  };
             }
             have to_integer(pool->checked_out) == (to_integer(old(pool->checked_out)) - 1) by {
-                solve() using { -2147483648 <= (to_integer(old(pool->checked_out)) - 1); (to_integer(old(pool->checked_out)) - 1) <= 2147483647; };
+                close() using { -2147483648 <= (to_integer(old(pool->checked_out)) - 1); (to_integer(old(pool->checked_out)) - 1) <= 2147483647; };
             }
             have -2147483648 <= (to_integer(old(count(slot(pool)))) + 1) by {
-                solve() using { 0 <= to_integer(old(count(slot(pool)))); };
+                close() using { 0 <= to_integer(old(count(slot(pool)))); };
             }
             have (to_integer(old(count(slot(pool)))) + 1) <= 2147483647 by {
-                solve() using { to_integer((to_integer(old(count(slot(pool)))) + 1)) <= 2147483647; };
+                close() using { to_integer((to_integer(old(count(slot(pool)))) + 1)) <= 2147483647; };
             }
             have to_integer(count(slot(pool))) == (to_integer(old(count(slot(pool)))) + 1) by {
-                solve() using { -2147483648 <= (to_integer(old(count(slot(pool)))) + 1); (to_integer(old(count(slot(pool)))) + 1) <= 2147483647; };
+                close() using { -2147483648 <= (to_integer(old(count(slot(pool)))) + 1); (to_integer(old(count(slot(pool)))) + 1) <= 2147483647; };
             }
             have to_integer(pool->capacity) <= (to_integer(pool->checked_out) + to_integer(count(slot(pool)))) by {
-                solve() using { at(function.entry, to_integer(pool->capacity)) == at(function.entry,
+                close() using { at(function.entry, to_integer(pool->capacity)) == at(function.entry,
                         (to_integer(pool->checked_out) + to_integer(count(slot(pool))))); to_integer(pool->checked_out) == (to_integer(old(pool->checked_out))
                         - 1); to_integer(count(slot(pool))) == (to_integer(old(count(slot(pool))))
                         + 1); };
             }
             have (to_integer(pool->checked_out) + to_integer(count(slot(pool)))) <= to_integer(pool->capacity) by {
-                solve() using { at(function.entry, to_integer(pool->capacity)) == at(function.entry,
+                close() using { at(function.entry, to_integer(pool->capacity)) == at(function.entry,
                         (to_integer(pool->checked_out) + to_integer(count(slot(pool))))); to_integer(pool->checked_out) == (to_integer(old(pool->checked_out))
                         - 1); to_integer(count(slot(pool))) == (to_integer(old(count(slot(pool))))
                         + 1); };
             }
-            solve() using { to_integer(pool->capacity) <= (to_integer(pool->checked_out) +
+            close() using { to_integer(pool->capacity) <= (to_integer(pool->checked_out) +
                     to_integer(count(slot(pool)))); (to_integer(pool->checked_out) + to_integer(count(slot(pool)))) <=
                     to_integer(pool->capacity); };
         }
@@ -265,32 +265,32 @@ void give_back(struct pool* pool, struct payload* p) {
     unfold(valid_pool(pool));
     have to_integer(count(slot(pool))) == (to_integer(old(count(slot(pool)))) + 1) by {
         have -2147483648 <= (to_integer(old(count(slot(pool)))) + 1) by {
-            solve() using { 0 <= to_integer(old(count(slot(pool)))); };
+            close() using { 0 <= to_integer(old(count(slot(pool)))); };
         }
         have (to_integer(old(count(slot(pool)))) + 1) <= 2147483647 by {
-            solve() using { to_integer((to_integer(old(count(slot(pool)))) + 1)) <= 2147483647; };
+            close() using { to_integer((to_integer(old(count(slot(pool)))) + 1)) <= 2147483647; };
         }
         have to_integer(count(slot(pool))) == (to_integer(old(count(slot(pool)))) + 1) by {
-            solve() using { -2147483648 <= (to_integer(old(count(slot(pool)))) + 1); (to_integer(old(count(slot(pool)))) + 1) <= 2147483647; };
+            close() using { -2147483648 <= (to_integer(old(count(slot(pool)))) + 1); (to_integer(old(count(slot(pool)))) + 1) <= 2147483647; };
         }
         known();
     }
     have to_integer(count(item(pool, _))) == (to_integer(old(count(item(pool, _)))) - 1) by {
         have to_integer(count(item(pool, _))) <= (to_integer(old(count(item(pool, _)))) - 1) by {
-            solve() using { at(function.entry, to_integer(pool->capacity)) == at(function.entry,
+            close() using { at(function.entry, to_integer(pool->capacity)) == at(function.entry,
                     (to_integer(pool->checked_out) + to_integer(count(slot(pool))))); at(function.entry, to_integer(pool->capacity)) == at(function.entry,
                     (to_integer((pool->checked_out - 1)) + to_integer((old(count(slot(pool))) +
                     1)))); to_integer(count(slot(pool))) == (to_integer(old(count(slot(pool)))) + 1); to_integer(old(pool->checked_out)) == to_integer(old(count(item(pool,
                     _)))); to_integer(pool->checked_out) == to_integer(count(item(pool, _))); to_integer(pool->checked_out) == to_integer(old(pool->checked_out) - 1); };
         }
         have (to_integer(old(count(item(pool, _)))) - 1) <= to_integer(count(item(pool, _))) by {
-            solve() using { at(function.entry, to_integer(pool->capacity)) == at(function.entry,
+            close() using { at(function.entry, to_integer(pool->capacity)) == at(function.entry,
                     (to_integer(pool->checked_out) + to_integer(count(slot(pool))))); at(function.entry, to_integer(pool->capacity)) == at(function.entry,
                     (to_integer((pool->checked_out - 1)) + to_integer((old(count(slot(pool))) +
                     1)))); to_integer(count(slot(pool))) == (to_integer(old(count(slot(pool)))) + 1); to_integer(old(pool->checked_out)) == to_integer(old(count(item(pool,
                     _)))); to_integer(pool->checked_out) == to_integer(count(item(pool, _))); to_integer(pool->checked_out) == to_integer(old(pool->checked_out) - 1); };
         }
-        solve() using { to_integer(count(item(pool, _))) <= (to_integer(old(count(item(pool, _)))) -
+        close() using { to_integer(count(item(pool, _))) <= (to_integer(old(count(item(pool, _)))) -
                 1); (to_integer(old(count(item(pool, _)))) - 1) <= to_integer(count(item(pool,
                 _))); };
     }
@@ -299,10 +299,10 @@ void give_back(struct pool* pool, struct payload* p) {
     }
     have defined((pool->checked_out + count(slot(pool)))) by {
         have (to_integer(pool->checked_out) + to_integer(count(slot(pool)))) >= -2147483648 by {
-            solve() using { 0 <= to_integer(pool->checked_out); to_integer(count(slot(pool))) == to_integer(old(count(slot(pool)))) + 1; to_integer(old(count(slot(pool)))) + 1 >= -2147483648; };
+            close() using { 0 <= to_integer(pool->checked_out); to_integer(count(slot(pool))) == to_integer(old(count(slot(pool)))) + 1; to_integer(old(count(slot(pool)))) + 1 >= -2147483648; };
         }
         have (to_integer(pool->checked_out) + to_integer(count(slot(pool)))) <= 2147483647 by {
-            solve() using { at(function.entry, to_integer(pool->capacity)) == at(function.entry,
+            close() using { at(function.entry, to_integer(pool->capacity)) == at(function.entry,
                     (to_integer((pool->checked_out - 1)) + to_integer((old(count(slot(pool))) +
                     1)))); to_integer(pool->checked_out) == to_integer(old(pool->checked_out) - 1); };
         }
@@ -344,10 +344,10 @@ void pipeline(struct pool* pool, struct payload* first, struct payload* second) 
     }
     have defined((count(item(pool, _)) + 1)) by {
         have (to_integer(count(item(pool, _))) + to_integer(1)) >= -2147483648 by {
-            solve() using { 0 <= to_integer(count(item(pool, _))); };
+            close() using { 0 <= to_integer(count(item(pool, _))); };
         }
         have (to_integer(count(item(pool, _))) + to_integer(1)) <= 2147483647 by {
-            solve() using { to_integer(count(item(pool, _))) == 0; };
+            close() using { to_integer(count(item(pool, _))) == 0; };
         }
         known();
     }
@@ -357,10 +357,10 @@ void pipeline(struct pool* pool, struct payload* first, struct payload* second) 
     }
     have defined((count(item(pool, _)) + 1)) by {
         have (to_integer(count(item(pool, _))) + to_integer(1)) >= -2147483648 by {
-            solve() using { to_integer(count(item(pool, _))) == 1; };
+            close() using { to_integer(count(item(pool, _))) == 1; };
         }
         have (to_integer(count(item(pool, _))) + to_integer(1)) <= 2147483647 by {
-            solve() using { to_integer(count(item(pool, _))) == 1; };
+            close() using { to_integer(count(item(pool, _))) == 1; };
         }
         known();
     }

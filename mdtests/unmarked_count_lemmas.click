@@ -16,18 +16,18 @@ theorem unmarked_nonnegative(v: int32[], lo: int32, n: int32, hi: int32) {
             unfold(unmarked(v, lo, hi));
             solve();
         } else {
-            have 0 <= to_integer(hi - 1) by { solve() using { 0 <= lo; lo < hi; }; }
-            have to_integer(hi - 1) < to_integer(hi) by { solve() using { 0 <= lo; lo < hi; }; }
-            have to_integer(hi - 1) <= to_integer(n) by { solve() using { 0 <= lo; lo < hi; hi <= n; }; }
+            have 0 <= to_integer(hi - 1) by { close() using { 0 <= lo; lo < hi; }; }
+            have to_integer(hi - 1) < to_integer(hi) by { close() using { 0 <= lo; lo < hi; }; }
+            have to_integer(hi - 1) <= to_integer(n) by { close() using { 0 <= lo; lo < hi; hi <= n; }; }
             apply(ih(hi - 1));
-            have to_integer(lo) <= to_integer(hi - 1) by { solve() using { 0 <= lo; lo < hi; }; }
-            have to_integer(hi - 1) < 2147483647 by { solve() using { 0 <= lo; lo < hi; }; }
+            have to_integer(lo) <= to_integer(hi - 1) by { close() using { 0 <= lo; lo < hi; }; }
+            have to_integer(hi - 1) < 2147483647 by { close() using { 0 <= lo; lo < hi; }; }
             unfold(unmarked(v, lo, hi));
             have 0 <= (if v[hi - 1] == 0 { 1 } else { 0 });
             have to_integer(0) <= to_integer((if v[hi - 1] == 0 { 1 } else { 0 }));
             have 0 <= unmarked(v, lo, hi - 1)
                 + to_integer(if v[hi - 1] == 0 { 1 } else { 0 }) by {
-                solve() using {
+                close() using {
                     0 <= unmarked(v, lo, hi - 1);
                     to_integer(0) <= to_integer(if v[hi - 1] == 0 { 1 } else { 0 });
                 };
@@ -62,12 +62,12 @@ theorem unmarked_frame(
             unfold(unmarked(b, lo, hi));
             solve();
         } else {
-            have 0 <= to_integer(hi - 1) by { solve() using { 0 <= lo; lo < hi; }; }
-            have to_integer(hi - 1) < to_integer(hi) by { solve() using { 0 <= lo; lo < hi; }; }
-            have to_integer(lo) <= to_integer(hi - 1) by { solve() using { 0 <= lo; lo < hi; }; }
-            have to_integer(hi - 1) <= to_integer(m) by { solve() using { 0 <= lo; lo < hi; hi <= m; }; }
-            have to_integer(hi - 1) < to_integer(m) by { solve() using { 0 <= lo; lo < hi; hi <= m; }; }
-            have to_integer(hi - 1) < 2147483647 by { solve() using { 0 <= lo; lo < hi; }; }
+            have 0 <= to_integer(hi - 1) by { close() using { 0 <= lo; lo < hi; }; }
+            have to_integer(hi - 1) < to_integer(hi) by { close() using { 0 <= lo; lo < hi; }; }
+            have to_integer(lo) <= to_integer(hi - 1) by { close() using { 0 <= lo; lo < hi; }; }
+            have to_integer(hi - 1) <= to_integer(m) by { close() using { 0 <= lo; lo < hi; hi <= m; }; }
+            have to_integer(hi - 1) < to_integer(m) by { close() using { 0 <= lo; lo < hi; hi <= m; }; }
+            have to_integer(hi - 1) < 2147483647 by { close() using { 0 <= lo; lo < hi; }; }
             apply(ih(hi - 1));
             have a[hi - 1] == b[hi - 1] by {
                 have lo <= (hi - 1) and (hi - 1) < m;
@@ -80,13 +80,13 @@ theorem unmarked_frame(
             unfold(unmarked(b, lo, hi));
             have to_integer(if a[hi - 1] == 0 { 1 } else { 0 })
                 == to_integer(if b[hi - 1] == 0 { 1 } else { 0 }) by {
-                solve() using { a[hi - 1] == b[hi - 1]; };
+                close() using { a[hi - 1] == b[hi - 1]; };
             }
             have unmarked(a, lo, hi - 1)
                 + to_integer(if a[hi - 1] == 0 { 1 } else { 0 })
                 == unmarked(b, lo, hi - 1)
                     + to_integer(if b[hi - 1] == 0 { 1 } else { 0 }) by {
-                solve() using {
+                close() using {
                     unmarked(a, lo, hi - 1) == unmarked(b, lo, hi - 1);
                     to_integer(if a[hi - 1] == 0 { 1 } else { 0 })
                         == to_integer(if b[hi - 1] == 0 { 1 } else { 0 });
@@ -124,24 +124,24 @@ theorem unmarked_point_update(
     ensures unmarked(b, lo, hi) == unmarked(a, lo, hi) - 1 by {
         let ih = induct(hi);
         if hi <= lo {
-            have j < lo by { solve() using { j < hi; hi <= lo; }; }
+            have j < lo by { close() using { j < hi; hi <= lo; }; }
             contradiction(lo <= j);
         } else {
-            have 0 <= to_integer(hi - 1) by { solve() using { 0 <= lo; lo < hi; }; }
-            have to_integer(hi - 1) < to_integer(hi) by { solve() using { 0 <= lo; lo < hi; }; }
-            have to_integer(lo) <= to_integer(hi - 1) by { solve() using { 0 <= lo; lo < hi; }; }
-            have to_integer(hi - 1) <= to_integer(n) by { solve() using { 0 <= lo; lo < hi; hi <= n; }; }
-            have to_integer(hi - 1) < to_integer(n) by { solve() using { 0 <= lo; lo < hi; hi <= n; }; }
-            have to_integer(hi - 1) < 2147483647 by { solve() using { 0 <= lo; lo < hi; }; }
-            have to_integer(j) <= to_integer(hi - 1) by { solve() using { 0 <= lo; lo < hi; j < hi; }; }
+            have 0 <= to_integer(hi - 1) by { close() using { 0 <= lo; lo < hi; }; }
+            have to_integer(hi - 1) < to_integer(hi) by { close() using { 0 <= lo; lo < hi; }; }
+            have to_integer(lo) <= to_integer(hi - 1) by { close() using { 0 <= lo; lo < hi; }; }
+            have to_integer(hi - 1) <= to_integer(n) by { close() using { 0 <= lo; lo < hi; hi <= n; }; }
+            have to_integer(hi - 1) < to_integer(n) by { close() using { 0 <= lo; lo < hi; hi <= n; }; }
+            have to_integer(hi - 1) < 2147483647 by { close() using { 0 <= lo; lo < hi; }; }
+            have to_integer(j) <= to_integer(hi - 1) by { close() using { 0 <= lo; lo < hi; j < hi; }; }
             if to_integer(j) == to_integer(hi - 1) {
-                have j <= n by { solve() using { j < hi; hi <= n; }; }
+                have j <= n by { close() using { j < hi; hi <= n; }; }
                 have to_integer(hi - 1) <= to_integer(j) by {
-                    solve() using { 0 <= lo; lo < hi; to_integer(j) == to_integer(hi - 1); };
+                    close() using { 0 <= lo; lo < hi; to_integer(j) == to_integer(hi - 1); };
                 }
                 apply(unmarked_frame(a, b, lo, n, j, hi - 1));
-                have a[hi - 1] == 0 by { solve() using { a[j] == 0; to_integer(j) == to_integer(hi - 1); }; }
-                have b[hi - 1] != 0 by { solve() using { b[j] != 0; to_integer(j) == to_integer(hi - 1); }; }
+                have a[hi - 1] == 0 by { close() using { a[j] == 0; to_integer(j) == to_integer(hi - 1); }; }
+                have b[hi - 1] != 0 by { close() using { b[j] != 0; to_integer(j) == to_integer(hi - 1); }; }
                 unfold(unmarked(a, lo, hi));
                 unfold(unmarked(b, lo, hi));
                 have (if a[hi - 1] == 0 { 1 } else { 0 }) == 1 by {
@@ -151,16 +151,16 @@ theorem unmarked_point_update(
                     known();
                 }
                 have to_integer(if a[hi - 1] == 0 { 1 } else { 0 }) == 1 by {
-                    solve() using { (if a[hi - 1] == 0 { 1 } else { 0 }) == 1; };
+                    close() using { (if a[hi - 1] == 0 { 1 } else { 0 }) == 1; };
                 }
                 have to_integer(if b[hi - 1] == 0 { 1 } else { 0 }) == 0 by {
-                    solve() using { (if b[hi - 1] == 0 { 1 } else { 0 }) == 0; };
+                    close() using { (if b[hi - 1] == 0 { 1 } else { 0 }) == 0; };
                 }
                 have unmarked(b, lo, hi - 1)
                     + to_integer(if b[hi - 1] == 0 { 1 } else { 0 })
                     == unmarked(a, lo, hi - 1)
                         + to_integer(if a[hi - 1] == 0 { 1 } else { 0 }) - 1 by {
-                    solve() using {
+                    close() using {
                         unmarked(a, lo, hi - 1) == unmarked(b, lo, hi - 1);
                         to_integer(if a[hi - 1] == 0 { 1 } else { 0 }) == 1;
                         to_integer(if b[hi - 1] == 0 { 1 } else { 0 }) == 0;
@@ -184,13 +184,13 @@ theorem unmarked_point_update(
                 unfold(unmarked(b, lo, hi));
                 have to_integer(if a[hi - 1] == 0 { 1 } else { 0 })
                     == to_integer(if b[hi - 1] == 0 { 1 } else { 0 }) by {
-                    solve() using { a[hi - 1] == b[hi - 1]; };
+                    close() using { a[hi - 1] == b[hi - 1]; };
                 }
                 have unmarked(b, lo, hi - 1)
                     + to_integer(if b[hi - 1] == 0 { 1 } else { 0 })
                     == unmarked(a, lo, hi - 1)
                         + to_integer(if a[hi - 1] == 0 { 1 } else { 0 }) - 1 by {
-                    solve() using {
+                    close() using {
                         unmarked(b, lo, hi - 1) == unmarked(a, lo, hi - 1) - 1;
                         to_integer(if a[hi - 1] == 0 { 1 } else { 0 })
                             == to_integer(if b[hi - 1] == 0 { 1 } else { 0 });

@@ -67,19 +67,19 @@ int32 through_parameter(int32* a, int32 u) {
 } by {
     step(); step();
     have a[0] == 5 by { known(); }
-    have u != 0 by { solve() using { 1 <= u; }; }
+    have u != 0 by { close() using { 1 <= u; }; }
     have separate(memory(a[u]), memory(a[0])) by {
         apply(separation::separate_elements(a, u, 0));
     }
     mark before;
     step();
     have separate(statement(2).footprint, memory(a[0])) by {
-        solve() using { separate(memory(a[u]), memory(a[0])); };
+        close() using { separate(memory(a[u]), memory(a[0])); };
     }
     have a[0] == at(before, a[0]) by {
         preserve(memory(a[0]), statement(2));
     }
-    have a[0] == 5 by { solve() using { a[0] == at(before, a[0]); at(before, a[0]) == 5; }; }
+    have a[0] == 5 by { close() using { a[0] == at(before, a[0]); at(before, a[0]) == 5; }; }
     step();
 }
 ```

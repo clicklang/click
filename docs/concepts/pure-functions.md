@@ -222,7 +222,7 @@ theorem countdown_is_zero(n: int32) {
         let ih = induct(n);
         if n <= 0 {
             unfold(countdown(n));
-            solve() using { n <= 0; };
+            close() using { n <= 0; };
         } else {
             have 0 <= to_integer(n - 1);
             have to_integer(n - 1) < to_integer(n);
@@ -236,7 +236,7 @@ theorem countdown_is_zero(n: int32) {
 ```
 
 Pure conditional expressions remain symbolic during lowering, even when a
-branch condition is available. Here `solve() using { n <= 0; }` proves
+branch condition is available. Here `close() using { n <= 0; }` proves
 the base case from the branch condition. The two `have`s state the hypothesis's
 obligations at `n - 1` before `apply(ih(n - 1))` looks them up. They compare
 `to_integer(n - 1)`, the `int32` value the hypothesis is instantiated at, not

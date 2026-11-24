@@ -23,11 +23,11 @@ fn adler_resumed::resumed(bytes: &[u8], split: usize) -> u32 {
  have to_integer(load<uint16>(state + 2u64)) == old(adler_spec_b_u64(bytes, split, 1, 0)) by { rewrite(1, at(initial_seed, to_integer((load<uint16>(state) as u32)))); rewrite(0, at(initial_seed, to_integer((load<uint16>(state + 2u64) as u32)))); known(); }
  apply(adler_u16_observation(load<uint16>(state)));
  apply(adler_u16_observation(load<uint16>(state + 2u64)));
- have to_integer((load<uint16>(state) as u32)) == old(adler_spec_a_u64(bytes, split, 1)) by solve() using { to_integer((load<uint16>(state) as u32)) == to_integer(load<uint16>(state)); to_integer(load<uint16>(state)) == old(adler_spec_a_u64(bytes, split, 1)); };
- have to_integer((load<uint16>(state + 2u64) as u32)) == old(adler_spec_b_u64(bytes, split, 1, 0)) by solve() using { to_integer((load<uint16>(state + 2u64) as u32)) == to_integer(load<uint16>(state + 2u64)); to_integer(load<uint16>(state + 2u64)) == old(adler_spec_b_u64(bytes, split, 1, 0)); };
- have to_integer((load<uint16>(state) as u32)) <= to_integer(65535u32) by solve() using { to_integer((load<uint16>(state) as u32)) <= to_integer(65520u32); };
+ have to_integer((load<uint16>(state) as u32)) == old(adler_spec_a_u64(bytes, split, 1)) by close() using { to_integer((load<uint16>(state) as u32)) == to_integer(load<uint16>(state)); to_integer(load<uint16>(state)) == old(adler_spec_a_u64(bytes, split, 1)); };
+ have to_integer((load<uint16>(state + 2u64) as u32)) == old(adler_spec_b_u64(bytes, split, 1, 0)) by close() using { to_integer((load<uint16>(state + 2u64) as u32)) == to_integer(load<uint16>(state + 2u64)); to_integer(load<uint16>(state + 2u64)) == old(adler_spec_b_u64(bytes, split, 1, 0)); };
+ have to_integer((load<uint16>(state) as u32)) <= to_integer(65535u32) by close() using { to_integer((load<uint16>(state) as u32)) <= to_integer(65520u32); };
  apply(integer::uint32_to_integer_less_equal_implies_less_equal((load<uint16>(state) as u32), 65535u32));
- have to_integer((load<uint16>(state + 2u64) as u32)) <= to_integer(65535u32) by solve() using { to_integer((load<uint16>(state + 2u64) as u32)) <= to_integer(65520u32); };
+ have to_integer((load<uint16>(state + 2u64) as u32)) <= to_integer(65535u32) by close() using { to_integer((load<uint16>(state + 2u64) as u32)) <= to_integer(65520u32); };
  apply(integer::uint32_to_integer_less_equal_implies_less_equal((load<uint16>(state + 2u64) as u32), 65535u32));
  mark saved_state;
  apply(integer::uint32_unpack_uint16_low((load<uint16>(state) as u32), (load<uint16>(state + 2u64) as u32)));
@@ -72,7 +72,7 @@ fn adler_resumed::resumed(bytes: &[u8], split: usize) -> u32 {
  }
  // Compose the two updates over the uint64 specification at the split.
  apply(integer::uint64_subtract_to_integer(bytes.len(), split));
- have to_integer(split) + to_integer(bytes.len() - split) <= 18446744073709551615 by solve() using {
+ have to_integer(split) + to_integer(bytes.len() - split) <= 18446744073709551615 by close() using {
   to_integer(bytes.len() - split) == to_integer(bytes.len()) - to_integer(split);
   to_integer(bytes.len()) <= 18446744073709551615;
  };
@@ -104,7 +104,7 @@ fn adler_resumed::resumed(bytes: &[u8], split: usize) -> u32 {
   normalize();
  }
  step();
- have to_integer(statement(6).call(0).result) == old(adler_spec_checksum_u64(bytes, bytes.len(), 1, 0)) by solve() using {
+ have to_integer(statement(6).call(0).result) == old(adler_spec_checksum_u64(bytes, bytes.len(), 1, 0)) by close() using {
   to_integer(statement(6).call(0).result) == 65536 * to_integer(load<uint16>(state + 2u64)) + to_integer(load<uint16>(state));
   65536 * to_integer(load<uint16>(state + 2u64)) + to_integer(load<uint16>(state)) == old(adler_spec_checksum_u64(bytes, bytes.len(), 1, 0));
  };

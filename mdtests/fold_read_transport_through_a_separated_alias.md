@@ -52,7 +52,7 @@ void mark_other(int32 *a, int32 *b, int32 j, int32 n) {
                 apply(click::separation::separate_restrict(memory(b[j]), memory(a[0..n]), memory(b[j]), memory(a[k])));
             }
             have separate(statement(0).footprint, memory(a[k])) by {
-                solve() using { separate(memory(b[j]), memory(a[k])); };
+                close() using { separate(memory(b[j]), memory(a[k])); };
             }
             preserve(memory(a[k]), statement(0));
         }

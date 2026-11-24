@@ -8,35 +8,35 @@ sides of the sign bit.
 theorem lane_ceiling(lane: uint32) {
     requires lane <= 65520u32;
     ensures lane <= 1073741823u32 by {
-        solve() using { lane <= 65520u32; };
+        close() using { lane <= 65520u32; };
     }
 }
 
 theorem crossing_sign_bit(lane: uint32) {
     requires lane <= 2147483647u32;
     ensures lane <= 2147483648u32 by {
-        solve() using { lane <= 2147483647u32; };
+        close() using { lane <= 2147483647u32; };
     }
 }
 
 theorem high_unsigned_ceiling(lane: uint32) {
     requires lane <= 2147483648u32;
     ensures lane <= 4294967294u32 by {
-        solve() using { lane <= 2147483648u32; };
+        close() using { lane <= 2147483648u32; };
     }
 }
 
 theorem high_unsigned_floor(lane: uint32) {
     requires 4294967294u32 <= lane;
     ensures 2147483648u32 <= lane by {
-        solve() using { 4294967294u32 <= lane; };
+        close() using { 4294967294u32 <= lane; };
     }
 }
 
 theorem crossing_sign_bit_floor(lane: uint32) {
     requires 2147483648u32 <= lane;
     ensures 2147483647u32 <= lane by {
-        solve() using { 2147483648u32 <= lane; };
+        close() using { 2147483648u32 <= lane; };
     }
 }
 ```

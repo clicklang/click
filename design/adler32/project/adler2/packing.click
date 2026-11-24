@@ -8,7 +8,7 @@ theorem adler_u16_observation(value: uint16) {
   // The promoted word and the narrow field retain the same checked carrier.
   // Prove its range as a word before observing it as a narrow field.
   have to_integer(value) == to_integer(value as uint32) by {
-  solve() using { 0 <= to_integer(value as uint32); to_integer(value as uint32) <= 65535; };
+  close() using { 0 <= to_integer(value as uint32); to_integer(value as uint32) <= 65535; };
   }
   rewrite(to_integer(value), to_integer(value as uint32));
   normalize();
@@ -22,7 +22,7 @@ theorem adler_pack_fields(a: uint16, b: uint16) {
   apply(integer::uint32_pack_uint16_high_first_to_integer(a as uint32, b as uint32));
   apply(adler_u16_observation(a));
   apply(adler_u16_observation(b));
-  solve() using {
+  close() using {
    to_integer((b as uint32 << 16) | a as uint32) == to_integer(a as uint32) + 65536 * to_integer(b as uint32);
    to_integer(a as uint32) == to_integer(a);
    to_integer(b as uint32) == to_integer(b);
@@ -39,7 +39,7 @@ theorem adler_pack_fields_spec(a: uint16, b: uint16, bytes: uint8[], length: int
  ensures to_integer((b as uint32 << 16) | a as uint32) == adler_spec_checksum(bytes, length, a0, b0) by {
   apply(adler_pack_fields(a, b));
   unfold(adler_spec_checksum(bytes, length, a0, b0));
-  solve() using {
+  close() using {
    to_integer((b as uint32 << 16) | a as uint32) == 65536 * to_integer(b) + to_integer(a);
    to_integer(a) == adler_spec_a(bytes, length, a0);
    to_integer(b) == adler_spec_b(bytes, length, a0, b0);

@@ -39,7 +39,7 @@ void stamp(struct node* p) {
                     unfold(c);
                     have at(packed, c.model) == Model::At(first) by known();
                     have (match at(packed, c.model) { Model::At(original) => original }) == first by {
-                        solve() using {};
+                        close() using {};
                     }
                     have second == first by known();
                     step();

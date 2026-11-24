@@ -764,7 +764,7 @@ fn removed_tactic_refusal(name: &str) -> Option<&'static str> {
             "`auto()` is removed: a `by auto();` proof is the omitted proof, so delete it, and a written `auto();` is `solve();`"
         }
         "arithmetic" => {
-            "`arithmetic()` is now `solve() using { ... }`, which closes the goal from only the listed premises; `arithmetic()` with no list is `solve() using {}`"
+            "`arithmetic()` is now `close() using { ... }`, which closes the goal from only the listed premises; `arithmetic()` with no list is `close() using {}`"
         }
         "execute_until" => "`execute_until` is now `step_until`",
         "execute" => {
@@ -12150,6 +12150,11 @@ impl Parser {
             }
             "close" => {
                 self.expect_empty_tactic_args(&name)?;
+                if self.peek_ident() == Some("using") {
+                    let premises = self.parse_exact_premises()?;
+                    self.skip_redundant_semicolon();
+                    return Ok(ProofTactic::SolveUsing(ProofSolveUsing { premises }));
+                }
                 ProofTactic::Close
             }
             "known" => {
@@ -12260,9 +12265,9 @@ impl Parser {
             "solve" => {
                 self.expect_empty_tactic_args(&name)?;
                 if self.peek_ident() == Some("using") {
-                    let premises = self.parse_exact_premises()?;
-                    self.skip_redundant_semicolon();
-                    return Ok(ProofTactic::SolveUsing(ProofSolveUsing { premises }));
+                    return Err(self.error(
+                        "write `close() using { ... }` for a selected-premise proof",
+                    ));
                 }
                 ProofTactic::Solve
             }
@@ -19777,7 +19782,7 @@ mod tactic_classification_tests {
         ),
         ("instantiate", "instantiate(F, 1);"),
         ("solve", "solve();"),
-        ("solve-using", "solve() using { x == 1; };"),
+        ("close-using", "close() using { x == 1; };"),
         ("check-termination-local", "check_termination_local(\"f\");"),
         (
             "check-termination-component",

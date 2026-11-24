@@ -365,12 +365,12 @@ theorem ctx_depth_is_nonnegative(ctx: Context) {
             Context::Left(identity, grandparent, color, sibling_model, up_model) => {
                 apply(ih(up_model));
                 unfold(ctx_depth(Context::Left(identity, grandparent, color, sibling_model, up_model)));
-                solve() using { 0 <= ctx_depth(up_model); };
+                close() using { 0 <= ctx_depth(up_model); };
             }
             Context::Right(identity, grandparent, color, sibling_model, up_model) => {
                 apply(ih(up_model));
                 unfold(ctx_depth(Context::Right(identity, grandparent, color, sibling_model, up_model)));
-                solve() using { 0 <= ctx_depth(up_model); };
+                close() using { 0 <= ctx_depth(up_model); };
             }
         }
     }
@@ -1112,7 +1112,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     have tmp->rb_left == sx->rb_left by { rewrite(tmp, sx); known(); }
                                                                     have tmp->rb_right == sx->rb_right by { rewrite(tmp, sx); known(); }
                                                                     have aligned(gparent, 8) by { rewrite(gparent, uid); known(); }
-                                                                    have (address(gparent) | 1) == address(gparent) + 1 by { solve() using { aligned(gparent, 8); }; }
+                                                                    have (address(gparent) | 1) == address(gparent) + 1 by { close() using { aligned(gparent, 8); }; }
                                                                 let sn = fold(rb_at(tmp), { model: RbTree::Node(sx, gparent, scol, sl, sr), left: sl_at, right: sr_at });
                                                                 have sn.model == rb_reparent(csib, gparent) by {
                                                                     rewrite(rb_reparent(csib, gparent), RbTree::Node(sx, gparent, scol, sl, sr));
@@ -1160,7 +1160,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                             have gparent->__rb_parent_color == address(cid) by { rewrite(cid, parent); known(); }
                                                             have (gparent->__rb_parent_color & 1) == 0 by {
                                                                 rewrite(gparent->__rb_parent_color, address(cid));
-                                                                solve() using { aligned(cid, 8); };
+                                                                close() using { aligned(cid, 8); };
                                                             }
                                                             have gparent->__rb_parent_color == address(cid) + (gparent->__rb_parent_color & 1) by { rewrite((gparent->__rb_parent_color & 1), 0); known(); }
                                                             have ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == cid by { rewrite(cid, parent); known(); }
@@ -1290,7 +1290,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                             unfold(flip_tmp_rb_right);
                                                                             have aligned(gparent, 8) by { rewrite(gparent, uid); known(); }
                                                                             have (address(gparent) | 1) == address(gparent) + 1 by {
-                                                                                solve() using { aligned(gparent, 8); };
+                                                                                close() using { aligned(gparent, 8); };
                                                                             }
                                                                         let un = fold(rb_at(tmp), { model: RbTree::Node(unid, gparent, Color::Black, unl, unr), left: ul, right: ur });
                                                                             step();
@@ -1326,7 +1326,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                             have gparent->__rb_parent_color == address(ugp) by known();
                                                                             have (gparent->__rb_parent_color & 1) == 0 by {
                                                                                 rewrite(gparent->__rb_parent_color, address(ugp));
-                                                                                solve() using { aligned(ugp, 8); };
+                                                                                close() using { aligned(ugp, 8); };
                                                                             }
                                                                             have gparent->__rb_parent_color == address(ugp) + (gparent->__rb_parent_color & 1) by known();
                                                                         let gn = fold(rb_at(gparent), { model: RbTree::Node(gparent, ugp, Color::Red, RbTree::Node(cid, gparent, Color::Black, RbTree::Node(nid, nparent, ncolor, nleft, nright), csib), RbTree::Node(unid, gparent, Color::Black, unl, unr)), left: pn, right: un });
@@ -1900,7 +1900,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     have gparent->__rb_parent_color == address(nid) by { rewrite(nid, parent); known(); }
                                                                     have (gparent->__rb_parent_color & 1) == 0 by {
                                                                         rewrite(gparent->__rb_parent_color, address(nid));
-                                                                        solve() using { aligned(nid, 8); };
+                                                                        close() using { aligned(nid, 8); };
                                                                     }
                                                                     have gparent->__rb_parent_color == address(nid) + (gparent->__rb_parent_color & 1) by { rewrite((gparent->__rb_parent_color & 1), 0); known(); }
                                                                     have ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == nid by { rewrite(nid, parent); known(); }
@@ -2048,7 +2048,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                             unfold(flip_tmp_rb_right);
                                                                             have aligned(gparent, 8) by { rewrite(gparent, uid); known(); }
                                                                             have (address(gparent) | 1) == address(gparent) + 1 by {
-                                                                                solve() using { aligned(gparent, 8); };
+                                                                                close() using { aligned(gparent, 8); };
                                                                             }
                                                                         let un = fold(rb_at(tmp), { model: RbTree::Node(unid, gparent, Color::Black, unl, unr), left: ul, right: ur });
                                                                             step();
@@ -2084,7 +2084,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                             have gparent->__rb_parent_color == address(ugp) by known();
                                                                             have (gparent->__rb_parent_color & 1) == 0 by {
                                                                                 rewrite(gparent->__rb_parent_color, address(ugp));
-                                                                                solve() using { aligned(ugp, 8); };
+                                                                                close() using { aligned(ugp, 8); };
                                                                             }
                                                                             have gparent->__rb_parent_color == address(ugp) + (gparent->__rb_parent_color & 1) by known();
                                                                         let gn = fold(rb_at(gparent), { model: RbTree::Node(gparent, ugp, Color::Red, RbTree::Node(unid, gparent, Color::Black, unl, unr), RbTree::Node(cid, gparent, Color::Black, RbTree::Node(nid, nparent, ncolor, nleft, nright), csib)), left: un, right: pn });
@@ -2803,7 +2803,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     have gparent->__rb_parent_color == address(nid) by { rewrite(nid, parent); known(); }
                                                                     have (gparent->__rb_parent_color & 1) == 0 by {
                                                                         rewrite(gparent->__rb_parent_color, address(nid));
-                                                                        solve() using { aligned(nid, 8); };
+                                                                        close() using { aligned(nid, 8); };
                                                                     }
                                                                     have gparent->__rb_parent_color == address(nid) + (gparent->__rb_parent_color & 1) by { rewrite((gparent->__rb_parent_color & 1), 0); known(); }
                                                                     have ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == nid by { rewrite(nid, parent); known(); }
@@ -2952,7 +2952,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                             unfold(flip_tmp_rb_right);
                                                                             have aligned(gparent, 8) by { rewrite(gparent, uid); known(); }
                                                                             have (address(gparent) | 1) == address(gparent) + 1 by {
-                                                                                solve() using { aligned(gparent, 8); };
+                                                                                close() using { aligned(gparent, 8); };
                                                                             }
                                                                         let un = fold(rb_at(tmp), { model: RbTree::Node(unid, gparent, Color::Black, unl, unr), left: ul, right: ur });
                                                                             step();
@@ -2988,7 +2988,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                             have gparent->__rb_parent_color == address(ugp) by known();
                                                                             have (gparent->__rb_parent_color & 1) == 0 by {
                                                                                 rewrite(gparent->__rb_parent_color, address(ugp));
-                                                                                solve() using { aligned(ugp, 8); };
+                                                                                close() using { aligned(ugp, 8); };
                                                                             }
                                                                             have gparent->__rb_parent_color == address(ugp) + (gparent->__rb_parent_color & 1) by known();
                                                                         let gn = fold(rb_at(gparent), { model: RbTree::Node(gparent, ugp, Color::Red, RbTree::Node(cid, gparent, Color::Black, csib, RbTree::Node(nid, nparent, ncolor, nleft, nright)), RbTree::Node(unid, gparent, Color::Black, unl, unr)), left: pn, right: un });
@@ -3321,7 +3321,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     have tmp->rb_left == sx->rb_left by { rewrite(tmp, sx); known(); }
                                                                     have tmp->rb_right == sx->rb_right by { rewrite(tmp, sx); known(); }
                                                                     have aligned(gparent, 8) by { rewrite(gparent, uid); known(); }
-                                                                    have (address(gparent) | 1) == address(gparent) + 1 by { solve() using { aligned(gparent, 8); }; }
+                                                                    have (address(gparent) | 1) == address(gparent) + 1 by { close() using { aligned(gparent, 8); }; }
                                                                 let sn = fold(rb_at(tmp), { model: RbTree::Node(sx, gparent, scol, sl, sr), left: sl_at, right: sr_at });
                                                                 have sn.model == rb_reparent(csib, gparent) by {
                                                                     rewrite(rb_reparent(csib, gparent), RbTree::Node(sx, gparent, scol, sl, sr));
@@ -3369,7 +3369,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                             have gparent->__rb_parent_color == address(cid) by { rewrite(cid, parent); known(); }
                                                             have (gparent->__rb_parent_color & 1) == 0 by {
                                                                 rewrite(gparent->__rb_parent_color, address(cid));
-                                                                solve() using { aligned(cid, 8); };
+                                                                close() using { aligned(cid, 8); };
                                                             }
                                                             have gparent->__rb_parent_color == address(cid) + (gparent->__rb_parent_color & 1) by { rewrite((gparent->__rb_parent_color & 1), 0); known(); }
                                                             have ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == cid by { rewrite(cid, parent); known(); }
@@ -3506,7 +3506,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                             unfold(flip_tmp_rb_right);
                                                                             have aligned(gparent, 8) by { rewrite(gparent, uid); known(); }
                                                                             have (address(gparent) | 1) == address(gparent) + 1 by {
-                                                                                solve() using { aligned(gparent, 8); };
+                                                                                close() using { aligned(gparent, 8); };
                                                                             }
                                                                         let un = fold(rb_at(tmp), { model: RbTree::Node(unid, gparent, Color::Black, unl, unr), left: ul, right: ur });
                                                                             step();
@@ -3542,7 +3542,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                             have gparent->__rb_parent_color == address(ugp) by known();
                                                                             have (gparent->__rb_parent_color & 1) == 0 by {
                                                                                 rewrite(gparent->__rb_parent_color, address(ugp));
-                                                                                solve() using { aligned(ugp, 8); };
+                                                                                close() using { aligned(ugp, 8); };
                                                                             }
                                                                             have gparent->__rb_parent_color == address(ugp) + (gparent->__rb_parent_color & 1) by known();
                                                                         let gn = fold(rb_at(gparent), { model: RbTree::Node(gparent, ugp, Color::Red, RbTree::Node(unid, gparent, Color::Black, unl, unr), RbTree::Node(cid, gparent, Color::Black, csib, RbTree::Node(nid, nparent, ncolor, nleft, nright))), left: un, right: pn });

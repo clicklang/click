@@ -463,7 +463,7 @@ restricts the additional conditions used for reduction. All cited premises must 
 supported. Other ambient facts, quantified bodies, and cross-state frame
 search remain outside this operation. Expansion retains the simple step and
 rechecks it in the same proof context, without an explanation API or a
-per-tactic graph rebuild. Restricted `solve() using` planning checks a
+per-tactic graph rebuild. Restricted `close() using` planning checks a
 normalization candidate against only its selected context before emitting the
 simple step; omitted ambient equalities do not participate in that search.
 Explicit pointer-offset equalities also enter the
@@ -661,7 +661,7 @@ memory arithmetic and framing rules remain in the resolver.
 The simple pointer-equality decision uses typed graph queries only; it does
 not scan ambient condition facts or walk an alias component. Overflow-guarded translation such as
 `p == arr + i` after incrementing `p` and `i` instead uses an explicit
-`solve() using` proof with the entry pointer relation and strict index
+`close() using` proof with the entry pointer relation and strict index
 bound. A displaced cross-block query uses an exact translated offset edge
 only for a representable constant base displacement. Symbolic displacements
 can remain unknown until a checked proof supplies the translated equality.

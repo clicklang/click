@@ -290,7 +290,7 @@ pub(in crate::surface::proof) enum RewriteClosers<'p> {
     /// would select the same premises and search them again.
     Selected,
     /// `normalize` and an atomic plan over these premises alone, for
-    /// `solve() using`, which reads no ambient fact.
+    /// `close() using`, which reads no ambient fact.
     Listed(&'p [(Proposition, ClickProposition)]),
     /// A replayable rewrite chain closes with the selected fact or direct
     /// computation once its rewrites have exposed it.
@@ -703,7 +703,7 @@ theorem narrowed_length_result(n: uint64, result: int32) {
     requires stdio::padded_length(n, 3u64) == 3u64;
     requires result == (1u64 + stdio::padded_length(n, 3u64)) as int32;
     ensures result == 4 by {
-        solve() using {
+        close() using {
             result == (1u64 + stdio::padded_length(n, 3u64)) as int32;
             stdio::padded_length(n, 3u64) == 3u64;
         };
@@ -713,9 +713,14 @@ theorem narrowed_length_result(n: uint64, result: int32) {
         crate::surface::verify_click_theorems(source).unwrap();
         let line = source
             .lines()
-            .position(|line| line.contains("solve()"))
+            .position(|line| line.contains("close() using"))
             .unwrap();
-        let column = source.lines().nth(line).unwrap().find("solve()").unwrap();
+        let column = source
+            .lines()
+            .nth(line)
+            .unwrap()
+            .find("close() using")
+            .unwrap();
         let expanded =
             crate::surface::expand_c_tactic_source_at(source, &[], line + 1, column + 1).unwrap();
         assert!(expanded.contains("rewrite("), "{expanded}");
@@ -733,7 +738,7 @@ theorem narrowed_length_result(n: uint64, result: int32) {
 theorem identity(x: {ty}) {{
     requires {bound};
     ensures to_integer({operation}) == to_integer(x) {op} 1 by {{
-        solve() using {{ {bound}; }};
+        close() using {{ {bound}; }};
     }}
 }}
 "#
@@ -741,9 +746,14 @@ theorem identity(x: {ty}) {{
         crate::surface::verify_click_theorems(&source).unwrap();
         let line = source
             .lines()
-            .position(|line| line.contains("solve()"))
+            .position(|line| line.contains("close() using"))
             .unwrap();
-        let column = source.lines().nth(line).unwrap().find("solve()").unwrap();
+        let column = source
+            .lines()
+            .nth(line)
+            .unwrap()
+            .find("close() using")
+            .unwrap();
         let expanded =
             crate::surface::expand_c_tactic_source_at(&source, &[], line + 1, column + 1).unwrap();
         assert!(!expanded.contains("normalize("), "{expanded}");

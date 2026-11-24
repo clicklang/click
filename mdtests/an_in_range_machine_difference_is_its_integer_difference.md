@@ -18,7 +18,7 @@ uint32 decrement(uint32 x) {
     step_until(function.exit);
     have 0 <= to_integer(old(x)) - 1;
     have to_integer(old(x)) - 1 <= 4294967295;
-    solve() using { 0 <= to_integer(old(x)) - 1; to_integer(old(x)) - 1 <= 4294967295; };
+    close() using { 0 <= to_integer(old(x)) - 1; to_integer(old(x)) - 1 <= 4294967295; };
 }
 ```
 

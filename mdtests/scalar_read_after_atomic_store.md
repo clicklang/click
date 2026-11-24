@@ -46,7 +46,7 @@ int32 later(int32 u) {
                 apply(separation::separate_elements(a, u, 0));
             }
             have separate(statement(4).footprint, memory(a[0])) by {
-                solve() using { separate(memory(a[u]), memory(a[0])); };
+                close() using { separate(memory(a[u]), memory(a[0])); };
             }
             have a[0] == at(before_store, a[0]) by {
                 preserve(memory(a[0]), statement(4));

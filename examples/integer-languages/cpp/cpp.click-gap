@@ -31,7 +31,7 @@ int8 narrow_i8(int32 x) {
         have -128 <= to_integer(x);
         have to_integer(x) <= 127;
         have to_integer(result) == to_integer(x) by {
-            solve() using { -128 <= to_integer(x); to_integer(x) <= 127; };
+            close() using { -128 <= to_integer(x); to_integer(x) <= 127; };
         };
         solve();
     } else {

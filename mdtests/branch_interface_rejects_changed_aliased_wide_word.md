@@ -116,7 +116,7 @@ void inspect(struct node* parent) {
                     have sibling == model;
                     have far == far_identity;
                     have far->tag == (address(sibling) | 1);
-                    have far_identity->tag == (address(model) | 1) by { solve() using { far->tag == (address(sibling) | 1); far == far_identity; sibling == model; }; }
+                    have far_identity->tag == (address(model) | 1) by { close() using { far->tag == (address(sibling) | 1); far == far_identity; sibling == model; }; }
                     mark before_update;
                     match lm ensuring {
                         owns after: leaf_at(child);

@@ -51,7 +51,7 @@ void rotate_child_link(struct rb_node* gparent, struct rb_node* tmp) {
             let { child: c } = unfold(s);
             unfold(c);
             have separate(memory(gparent->rb_left), memory(parent->rb_right));
-            have gparent->rb_left == parent by { solve() using { parent == gparent->rb_left; }; }
+            have gparent->rb_left == parent by { close() using { parent == gparent->rb_left; }; }
             have separate(memory(gparent->rb_left), memory(gparent->rb_left->rb_right)) by {
                 rewrite(gparent->rb_left, parent);
                 known();
@@ -62,7 +62,7 @@ void rotate_child_link(struct rb_node* gparent, struct rb_node* tmp) {
             mark after_store;
             have gparent->rb_left == at(before_store, gparent->rb_left) by {
                 have separate(loop(0).statement(0).footprint, memory(gparent->rb_left)) by {
-                    solve() using {
+                    close() using {
                         at(before_store, separate(memory(gparent->rb_left), memory(gparent->rb_left->rb_right)));
                     };
                 }
@@ -74,7 +74,7 @@ void rotate_child_link(struct rb_node* gparent, struct rb_node* tmp) {
                 known();
             }
             have separate(loop(0).statement(0).footprint, memory(gparent->rb_left)) by {
-                solve() using { at(before_store, separate(memory(gparent->rb_left), memory(gparent->rb_left->rb_right))); };
+                close() using { at(before_store, separate(memory(gparent->rb_left), memory(gparent->rb_left->rb_right))); };
             }
             have defined(gparent->rb_left) by {
                 preserve(memory(gparent->rb_left), loop(0).statement(0));

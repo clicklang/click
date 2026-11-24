@@ -24,7 +24,7 @@ void insert::rb_set_parent_color(struct rb_node* rb, struct rb_node* p, int32 co
             step();
             have rb->__rb_parent_color == address(p) + 1 by {
                 rewrite(color, 1);
-                solve() using { aligned(p, 8); };
+                close() using { aligned(p, 8); };
             }
             have (address(p) & 7u64) == 0u64 by known();
             apply(click::integer::uint64_mask_subset(address(p), 7u64, 3u64));

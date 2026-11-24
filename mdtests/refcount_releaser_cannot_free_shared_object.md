@@ -59,7 +59,7 @@ void object_release(struct object *obj) {
     have 1 <= refs;
     have to_integer(1) <= to_integer(refs);
     have to_integer(refs) + to_integer(slack) == 3;
-    have to_integer(slack) <= to_integer(2) by solve() using {
+    have to_integer(slack) <= to_integer(2) by close() using {
         to_integer(refs) + to_integer(slack) == 3;
         to_integer(1) <= to_integer(refs);
     };
@@ -68,7 +68,7 @@ void object_release(struct object *obj) {
     have defined(slack + 1);
     have to_integer(refs - 1) == to_integer(refs) - to_integer(1);
     have to_integer(slack + 1) == to_integer(slack) + to_integer(1);
-    have to_integer(refs - 1) + to_integer(slack + 1) == 3 by solve() using {
+    have to_integer(refs - 1) + to_integer(slack + 1) == 3 by close() using {
         to_integer(refs - 1) == to_integer(refs) - to_integer(1);
         to_integer(slack + 1) == to_integer(slack) + to_integer(1);
         to_integer(refs) + to_integer(slack) == 3;

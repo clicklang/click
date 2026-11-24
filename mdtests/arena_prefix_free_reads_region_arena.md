@@ -82,7 +82,7 @@ void arena_release(struct region* region) {
     mark before_store;
     step();
     have separate(statement(0).footprint, memory(region->arena)) by {
-        solve() using { };
+        close() using { };
     }
     have at(statement(0).exit, defined(region->arena)) by {
         preserve(memory(region->arena), statement(0));
@@ -92,7 +92,7 @@ void arena_release(struct region* region) {
     }
     have separate(memory((&arena)[0..1]), memory(region->arena->data));
     have separate(statement(0).footprint, memory(region->arena->data)) by {
-        solve() using { separate(memory((&arena)[0..1]), memory(region->arena->data)); };
+        close() using { separate(memory((&arena)[0..1]), memory(region->arena->data)); };
     }
     have region->arena->data == at(before_store, region->arena->data) by {
         preserve(memory(region->arena->data), statement(0));
@@ -100,7 +100,7 @@ void arena_release(struct region* region) {
     mark after_declare;
     step();
     have separate(statement(1).footprint, memory(region->arena)) by {
-        solve() using { };
+        close() using { };
     }
     have at(statement(1).exit, defined(region->arena)) by {
         preserve(memory(region->arena), statement(1));
@@ -110,7 +110,7 @@ void arena_release(struct region* region) {
     }
     have separate(memory((&arena)[0..1]), memory(region->arena->data));
     have separate(statement(1).footprint, memory(region->arena->data)) by {
-        solve() using { separate(memory((&arena)[0..1]), memory(region->arena->data)); };
+        close() using { separate(memory((&arena)[0..1]), memory(region->arena->data)); };
     }
     have region->arena->data == at(after_declare, region->arena->data) by {
         preserve(memory(region->arena->data), statement(1));
@@ -129,7 +129,7 @@ void arena_release(struct region* region) {
     have separate(memory(arena->live_regions), memory(region->arena));
     step();
     have separate(statement(2).footprint, memory(region->arena)) by {
-        solve() using { separate(memory(arena->live_regions), memory(region->arena)); };
+        close() using { separate(memory(arena->live_regions), memory(region->arena)); };
     }
     have at(statement(2).exit, defined(region->arena)) by {
         preserve(memory(region->arena), statement(2));
@@ -138,7 +138,7 @@ void arena_release(struct region* region) {
         preserve(memory(region->arena), statement(2));
     }
     have separate(statement(2).footprint, memory(at(after_assignment, &region->arena->data)[0])) by {
-        solve() using {
+        close() using {
             separate(memory(at(after_assignment, &arena->live_regions)[0]), memory(at(after_assignment, &region->arena->data)[0]));
         };
     }

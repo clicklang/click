@@ -37,7 +37,7 @@ void cut(uint8* s, uint64 n) {
         intro();
         intro();
         have k == 0u64 by {
-            solve() using {
+            close() using {
                 k < 1u64;
             };
         }

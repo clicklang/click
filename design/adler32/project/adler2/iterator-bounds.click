@@ -22,12 +22,12 @@ theorem adler_lane_iterator_consumed_bounds(total: int32, remaining: int32) {
     requires total <= 22208;
     ensures 0 <= to_integer(total) - to_integer(remaining) by {
         have to_integer(remaining) <= to_integer(total) by apply(adler_lane_iterator_observations(total, remaining));
-        solve() using { to_integer(remaining) <= to_integer(total); };
+        close() using { to_integer(remaining) <= to_integer(total); };
     }
     ensures to_integer(total) - to_integer(remaining) <= 22208 by {
         have 0 <= to_integer(remaining) by apply(adler_lane_iterator_observations(total, remaining));
         have to_integer(total) <= 22208 by apply(adler_lane_iterator_observations(total, remaining));
-        solve() using { 0 <= to_integer(remaining); to_integer(total) <= 22208; };
+        close() using { 0 <= to_integer(remaining); to_integer(total) <= 22208; };
     }
 }
 
@@ -38,10 +38,10 @@ theorem adler_lane_iterator_count_bounds(consumed: Integer, divisor: Integer) {
     requires divisor <= 4;
     requires divisor != 0;
     ensures 0 <= truncating_quotient(consumed, divisor) by {
-        solve() using { 0 <= consumed; consumed <= 22208; 4 <= divisor; divisor <= 4; };
+        close() using { 0 <= consumed; consumed <= 22208; 4 <= divisor; divisor <= 4; };
     }
     ensures truncating_quotient(consumed, divisor) <= 5552 by {
-        solve() using { 0 <= consumed; consumed <= 22208; 4 <= divisor; divisor <= 4; };
+        close() using { 0 <= consumed; consumed <= 22208; 4 <= divisor; divisor <= 4; };
     }
 }
 
@@ -65,7 +65,7 @@ theorem adler_lane_iterator_index_bounds(total: int32, remaining: int32) {
 
 theorem adler_lane_iterator_initial(total: int32) {
     ensures adler_lane_vectors_consumed(total, total) == 0 by {
-        have to_integer(total) - to_integer(total) == 0 by solve() using {};
+        have to_integer(total) - to_integer(total) == 0 by close() using {};
         unfold(adler_lane_vectors_consumed(total, total));
         rewrite(to_integer(total) - to_integer(total), 0); known();
     }
@@ -76,8 +76,8 @@ theorem adler_lane_iterator_next_defined(total: int32, remaining: int32) {
     requires remaining <= total;
     requires total <= 22208;
     ensures defined(remaining - 4) by {
-        have remaining <= 22208 by solve() using { remaining <= total; total <= 22208; };
-        solve() using { 4 <= remaining; remaining <= 22208; };
+        have remaining <= 22208 by close() using { remaining <= total; total <= 22208; };
+        close() using { 4 <= remaining; remaining <= 22208; };
     }
 }
 
@@ -88,7 +88,7 @@ theorem adler_lane_iterator_count_before_next(consumed: Integer, divisor: Intege
     requires divisor <= 4;
     requires divisor != 0;
     ensures truncating_quotient(consumed, divisor) <= 5551 by {
-        solve() using { 0 <= consumed; consumed <= 22204; 4 <= divisor; divisor <= 4; };
+        close() using { 0 <= consumed; consumed <= 22204; 4 <= divisor; divisor <= 4; };
     }
 }
 
@@ -101,7 +101,7 @@ theorem adler_lane_iterator_index_before_next(total: int32, remaining: int32) {
         have 0 <= to_integer(total) - to_integer(remaining) by apply(adler_lane_iterator_consumed_bounds(total, remaining));
         have 4 <= to_integer(remaining);
         have to_integer(total) <= 22208 by apply(adler_lane_iterator_observations(total, remaining));
-        have to_integer(total) - to_integer(remaining) <= 22204 by solve() using { 4 <= to_integer(remaining); to_integer(total) <= 22208; };
+        have to_integer(total) - to_integer(remaining) <= 22204 by close() using { 4 <= to_integer(remaining); to_integer(total) <= 22208; };
         unfold(adler_lane_vectors_consumed(total, remaining));
         apply(adler_lane_iterator_count_before_next(to_integer(total) - to_integer(remaining), 4));
     }
@@ -111,7 +111,7 @@ theorem adler_lane_iterator_quotient_shift(consumed: Integer, increment: Integer
     requires 0 <= consumed;
     requires 0 <= increment;
     ensures truncating_quotient(consumed + 4 * increment, 4) == truncating_quotient(consumed, 4) + increment by {
-        solve() using { 0 <= consumed; 0 <= increment; };
+        close() using { 0 <= consumed; 0 <= increment; };
     }
 }
 
@@ -123,7 +123,7 @@ theorem adler_lane_iterator_successor(total: int32, remaining: int32) {
     ensures adler_lane_vectors_consumed(total, remaining - 4) == adler_lane_vectors_consumed(total, remaining) + 1 by {
         have to_integer(remaining - 4) == to_integer(remaining) - 4;
         have 0 <= to_integer(total) - to_integer(remaining) by apply(adler_lane_iterator_consumed_bounds(total, remaining));
-        have to_integer(total) - (to_integer(remaining) - 4) == (to_integer(total) - to_integer(remaining)) + 4 * 1 by solve() using {};
+        have to_integer(total) - (to_integer(remaining) - 4) == (to_integer(total) - to_integer(remaining)) + 4 * 1 by close() using {};
         unfold(adler_lane_vectors_consumed(total, remaining - 4));
         unfold(adler_lane_vectors_consumed(total, remaining));
         rewrite(to_integer(remaining - 4), to_integer(remaining) - 4);
@@ -147,25 +147,25 @@ theorem adler_lane_iterator_native_step(total: int32, remaining: int32, a: uint3
     ensures to_integer((a as int64 + byte as int64)) <= to_integer(4294967295i64) by {
         have 0 <= adler_lane_vectors_consumed(total, remaining) by apply(adler_lane_iterator_index_bounds(total, remaining));
         have adler_lane_vectors_consumed(total, remaining) <= 5551 by apply(adler_lane_iterator_index_before_next(total, remaining));
-        have adler_lane_vectors_consumed(total, remaining) < 5552 by solve() using { adler_lane_vectors_consumed(total, remaining) <= 5551; };
+        have adler_lane_vectors_consumed(total, remaining) < 5552 by close() using { adler_lane_vectors_consumed(total, remaining) <= 5551; };
         apply(adler_lane_native_a_step(adler_lane_vectors_consumed(total, remaining), a, byte));
     }
     ensures to_integer((b as int64 + (a + byte) as int64)) <= to_integer(4294967295i64) by {
         have 0 <= adler_lane_vectors_consumed(total, remaining) by apply(adler_lane_iterator_index_bounds(total, remaining));
         have adler_lane_vectors_consumed(total, remaining) <= 5551 by apply(adler_lane_iterator_index_before_next(total, remaining));
-        have adler_lane_vectors_consumed(total, remaining) < 5552 by solve() using { adler_lane_vectors_consumed(total, remaining) <= 5551; };
+        have adler_lane_vectors_consumed(total, remaining) < 5552 by close() using { adler_lane_vectors_consumed(total, remaining) <= 5551; };
         apply(adler_lane_native_b_step(adler_lane_vectors_consumed(total, remaining), a, b, byte));
     }
     ensures to_integer(a + byte) <= adler_lane_a_ceiling(adler_lane_vectors_consumed(total, remaining) + 1) by {
         have 0 <= adler_lane_vectors_consumed(total, remaining) by apply(adler_lane_iterator_index_bounds(total, remaining));
         have adler_lane_vectors_consumed(total, remaining) <= 5551 by apply(adler_lane_iterator_index_before_next(total, remaining));
-        have adler_lane_vectors_consumed(total, remaining) < 5552 by solve() using { adler_lane_vectors_consumed(total, remaining) <= 5551; };
+        have adler_lane_vectors_consumed(total, remaining) < 5552 by close() using { adler_lane_vectors_consumed(total, remaining) <= 5551; };
         apply(adler_lane_native_a_step(adler_lane_vectors_consumed(total, remaining), a, byte));
     }
     ensures to_integer(b + (a + byte)) <= adler_lane_b_ceiling(adler_lane_vectors_consumed(total, remaining) + 1) by {
         have 0 <= adler_lane_vectors_consumed(total, remaining) by apply(adler_lane_iterator_index_bounds(total, remaining));
         have adler_lane_vectors_consumed(total, remaining) <= 5551 by apply(adler_lane_iterator_index_before_next(total, remaining));
-        have adler_lane_vectors_consumed(total, remaining) < 5552 by solve() using { adler_lane_vectors_consumed(total, remaining) <= 5551; };
+        have adler_lane_vectors_consumed(total, remaining) < 5552 by close() using { adler_lane_vectors_consumed(total, remaining) <= 5551; };
         apply(adler_lane_native_b_step(adler_lane_vectors_consumed(total, remaining), a, b, byte));
     }
 }
@@ -259,13 +259,13 @@ theorem adler_lane_iterator_add_contracts(total: int32, remaining: int32, a: uin
     ensures to_integer(a) + to_integer(byte) <= 4294967295 by {
         have 0 <= adler_lane_vectors_consumed(total, remaining) by apply(adler_lane_iterator_index_bounds(total, remaining));
         have adler_lane_vectors_consumed(total, remaining) <= 5551 by apply(adler_lane_iterator_index_before_next(total, remaining));
-        have adler_lane_vectors_consumed(total, remaining) < 5552 by solve() using { adler_lane_vectors_consumed(total, remaining) <= 5551; };
+        have adler_lane_vectors_consumed(total, remaining) < 5552 by close() using { adler_lane_vectors_consumed(total, remaining) <= 5551; };
         apply(adler_lane_native_a_sum_fits(adler_lane_vectors_consumed(total, remaining), a, byte));
     }
     ensures to_integer(b) + to_integer(a + byte) <= 4294967295 by {
         have 0 <= adler_lane_vectors_consumed(total, remaining) by apply(adler_lane_iterator_index_bounds(total, remaining));
         have adler_lane_vectors_consumed(total, remaining) <= 5551 by apply(adler_lane_iterator_index_before_next(total, remaining));
-        have adler_lane_vectors_consumed(total, remaining) < 5552 by solve() using { adler_lane_vectors_consumed(total, remaining) <= 5551; };
+        have adler_lane_vectors_consumed(total, remaining) < 5552 by close() using { adler_lane_vectors_consumed(total, remaining) <= 5551; };
         apply(adler_lane_native_b_sum_fits(adler_lane_vectors_consumed(total, remaining), a, b, byte));
     }
 }

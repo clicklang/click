@@ -534,7 +534,7 @@ int32 box_pipeline(struct box* owner, int32 data[], int32 value) {
     .expect("an explicit call-entry state should check with an owned resource");
 }
 
-/// A `solve() using` premise that equates one expression across two call
+/// A `close() using` premise that equates one expression across two call
 /// transitions (`owner->data == at(region(2).entry, owner->data)`) names
 /// one unwritten cell twice: terms are canonical at creation, so both sides
 /// are the same load variable and the premise is reflexive. The expansion
@@ -621,7 +621,7 @@ int32 box_pipeline(struct box* owner, int32 data[]) {
     step();
     step();
     have owner->data == data by {
-        solve() using {
+        close() using {
             owner->data == at(region(3).entry, owner->data);
             at(region(3).entry, owner->data) == at(region(2).entry, owner->data);
             at(region(2).entry, owner->data) == data;
@@ -1449,7 +1449,7 @@ int32 drain(int32 n) {
         initialize by solve();
         maintain by {
             have 0 <= to_integer(n - 1) by {
-                solve() using { n > 0; }
+                close() using { n > 0; }
             }
             step();
             step();

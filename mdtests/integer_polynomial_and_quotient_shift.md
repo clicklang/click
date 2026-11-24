@@ -9,7 +9,7 @@ numerator need not be even. `rewrite` composes the two checked identities.
 ```click
 theorem polynomial_successor(n: Integer) {
     ensures (n + 1) * (n + 2) == n * (n + 1) + 2 * (n + 1) by {
-        solve() using {  };
+        close() using {  };
     }
 }
 
@@ -17,7 +17,7 @@ theorem quotient_increment(x: Integer, k: Integer) {
     requires 0 <= x;
     requires 0 <= k;
     ensures truncating_quotient(x + 3 * k, 3) == truncating_quotient(x, 3) + k by {
-        solve() using { 0 <= x; 0 <= k; };
+        close() using { 0 <= x; 0 <= k; };
     }
 }
 

@@ -1,4 +1,4 @@
-# `solve() using` adds a `>`-spelled premise
+# `close() using` adds a `>`-spelled premise
 
 `a > 0` and `b >= 0` give `0 < a + b`. The printed certificate renders the sum
 by adding the two premises side by side, but only `>=` was rewritten into the
@@ -23,7 +23,7 @@ int32 sharpen(int32 a, int32 b) {
     requires b <= 1;
     ensures result == 0;
 } by {
-    have 0 < a + b by { solve() using { a > 0; b >= 0; a <= 1; b <= 1; }; }
+    have 0 < a + b by { close() using { a > 0; b >= 0; a <= 1; b <= 1; }; }
     step();
     solve();
 }

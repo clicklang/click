@@ -5019,7 +5019,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // A Special fact such as `aligned(p + i, 8)` is not generally a
         // solve-derivation: the kernel's pointer rule consumes a matching
         // alignment/relation fact directly. Use the selected pairs when
-        // `solve() using` supplied them; otherwise recover only typed Special
+        // `close() using` supplied them; otherwise recover only typed Special
         // candidates from the recorded Surface map for generic `solve()`.
         if let Some(surface_goal) = search_input.surface_goal()
             && let Some(goal) = search_input.goal()
@@ -10799,7 +10799,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             .iter()
             .filter_map(|surface| {
                 let kernel = search_input
-                    .lower_cited_surface_proposition(surface, "`solve() using` premise")
+                    .lower_cited_surface_proposition(surface, "`close() using` premise")
                     .ok()?;
                 search_input
                     .facts()
@@ -12123,7 +12123,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         Ok(extracted.then_some(proof))
     }
 
-    /// Searches from exactly the Surface premises named by `solve() using`.
+    /// Searches from exactly the Surface premises named by `close() using`.
     /// This query cannot add facts or close the goal: it returns only the
     /// descendant obtained by checking the typed atomic decision through the
     /// ordinary Proof transitions.
@@ -12134,7 +12134,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_restricted_solve_closure");
         if crate::surface::proof::implicit_solve_scope::checked_only() {
-            crate::instrumentation::replay_forbids_discovery("solve() using");
+            crate::instrumentation::replay_forbids_discovery("close() using");
             return None;
         }
         if let Some(closed) =

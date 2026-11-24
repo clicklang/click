@@ -10,7 +10,7 @@ theorem bare_solve_steps(x: int32) {
         solve();
     }
     ensures 0 <= x by {
-        have 0 <= x by { solve() using { 0 <= x; }; }
+        have 0 <= x by { close() using { 0 <= x; }; }
         solve();
     }
 }

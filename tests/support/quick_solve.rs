@@ -29,13 +29,22 @@ pub fn check_quick_solve_with_limit(
     // Program closing profiles its generated termination proof as a solve
     // even when the fixture has no written solve at that source.
     let mut solves = samples.iter().filter(|sample| {
-        sample.tactic.tactic_name == "solve" && sample.tactic.claim != "program.termination"
+        sample.tactic.claim != "program.termination"
+            && matches!(
+                (
+                    sample.tactic.tactic_name.as_str(),
+                    sample.tactic.class.as_str()
+                ),
+                ("solve" | "close", "smart")
+            )
     });
     let Some(solve) = solves.next() else {
-        return Err("Quick Solve Test must reach one explicit `solve()`".into());
+        return Err("Quick Solve Test must reach one explicit `solve()` or `close() using`".into());
     };
     if solves.next().is_some() {
-        return Err("Quick Solve Test ran more than one explicit `solve()`".into());
+        return Err(
+            "Quick Solve Test ran more than one explicit `solve()` or `close() using`".into(),
+        );
     }
     let work = solve.inclusive_work;
     if let Some(limit) = work_limit

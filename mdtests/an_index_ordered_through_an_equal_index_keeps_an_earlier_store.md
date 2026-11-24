@@ -35,7 +35,7 @@ void through_equal(int32 *a, int32 n, int32 i, int32 j, int32 m) {
     owns a[0..n];
     ensures a[i] == 1;
 } by {
-    have i < j by { solve() using { i == m; m < j; }; }
+    have i < j by { close() using { i == m; m < j; }; }
     step();
     step();
 }
@@ -48,7 +48,7 @@ void through_reversed_equal(int32 *a, int32 n, int32 i, int32 j, int32 m) {
     owns a[0..n];
     ensures a[i] == 1;
 } by {
-    have i < j by { solve() using { m == i; m < j; }; }
+    have i < j by { close() using { m == i; m < j; }; }
     step();
     step();
 }
@@ -60,7 +60,7 @@ void through_constant(int32 *a, int32 n, int32 i, int32 j) {
     owns a[0..n];
     ensures a[i] == 1;
 } by {
-    have i < j by { solve() using { i == 2; 3 <= j; }; }
+    have i < j by { close() using { i == 2; 3 <= j; }; }
     step();
     step();
 }

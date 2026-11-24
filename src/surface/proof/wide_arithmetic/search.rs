@@ -71,7 +71,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             .iter()
             .find_map(|premise| {
                 search_input
-                    .lower_cited_surface_proposition(premise, "`solve() using` premise")
+                    .lower_cited_surface_proposition(premise, "`close() using` premise")
                     .ok()
                     .as_ref()
                     .and_then(Carrier::of)
@@ -167,7 +167,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let literal = |text: &str| ContractExpression::IntegerLiteral(text.to_string());
         for premise in surface_premises {
             let kernel = search_input
-                .lower_cited_surface_proposition(premise, "`solve() using` premise")
+                .lower_cited_surface_proposition(premise, "`close() using` premise")
                 .map_err(|error| {
                     Some(format!(
                         "the premise `{}` could not be read: {}",

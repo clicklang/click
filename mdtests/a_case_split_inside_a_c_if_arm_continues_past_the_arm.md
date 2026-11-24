@@ -60,7 +60,7 @@ int32 read_back(int32 u, int32 c) {
                 apply(separation::separate_elements(loc, u, 0));
             }
             have separate(statement(4).footprint, memory(loc[0])) by {
-                solve() using { separate(memory(loc[u]), memory(loc[0])); };
+                close() using { separate(memory(loc[u]), memory(loc[0])); };
             }
             have loc[0] == at(before_store, loc[0]) by {
                 preserve(memory(loc[0]), statement(4));

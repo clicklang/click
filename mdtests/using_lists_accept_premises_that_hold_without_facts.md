@@ -4,7 +4,7 @@ A listed premise that lowers to the ground constant it asserts (`0 <= 0`), or
 to a comparison of a term with itself (`n <= n`), holds with no fact behind
 it. The listed-premise check every `using` list shares accepts both, so
 the same premise is accepted by `apply ... using`,
-`solve() using` alike, and a proof does not
+`close() using` alike, and a proof does not
 need a `have 0 <= 0` or `have n <= n` first.
 
 Ordinary `unfold` likewise discharges reflexive range guards without a
@@ -64,7 +64,7 @@ theorem last_cell(a: int32[], n: int32) {
 theorem listed_arithmetic(n: int32) {
     requires 0 <= n;
     ensures 0 <= n by {
-        solve() using { 0 <= n; n <= n; 0 <= 0; };
+        close() using { 0 <= n; n <= n; 0 <= 0; };
     }
 }
 

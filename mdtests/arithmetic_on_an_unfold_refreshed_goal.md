@@ -7,7 +7,7 @@ replaced `f(args)` by. A later tactic that dispatches on the written goal --
 arithmetic over the `Integer` linear fragment among them -- therefore reads
 the claim this step left open, not the one the reader wrote before it.
 
-Without the written form, the identical `solve() using` that proves this
+Without the written form, the identical `close() using` that proves this
 claim as a `have` was refused with the signed-int32 planner's precondition,
 because the `Integer` route is reached from the written goal.
 
@@ -24,10 +24,10 @@ theorem refreshed_goal(lo: int32, hi: int32) {
     requires to_integer(lo) <= to_integer(hi - 1);
     ensures total(lo, hi) == total(lo, hi - 1) + to_integer(hi - 1) by {
         have to_integer(hi - 1) < 2147483647 by {
-            solve() using { 0 <= lo; lo < hi; hi < 2147483647; };
+            close() using { 0 <= lo; lo < hi; hi < 2147483647; };
         }
         unfold(total(lo, hi));
-        solve() using { to_integer(lo) <= to_integer(hi - 1); };
+        close() using { to_integer(lo) <= to_integer(hi - 1); };
     }
 }
 ```

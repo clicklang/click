@@ -57,10 +57,10 @@ theorem increment_is_positive_step() {
         unfold(PositiveStep(&increment));
         intro();
         have -100 <= to_integer(input) by {
-            solve() using { 0 <= input; };
+            close() using { 0 <= input; };
         }
         have input <= 1000 by {
-            solve() using { input <= 100; };
+            close() using { input <= 100; };
         }
         all {
             -100 <= to_integer(input) => { known(); }
@@ -76,7 +76,7 @@ theorem increment_is_positive_step() {
             ) => {
                 intro();
                 have 0 < result by {
-                    solve() using { 0 <= input; input < result; };
+                    close() using { 0 <= input; input < result; };
                 }
                 known();
             }

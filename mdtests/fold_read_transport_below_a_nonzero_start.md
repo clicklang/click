@@ -38,7 +38,7 @@ void mark_below(int32 *v, int32 lo, int32 hi, int32 j, int32 n) {
                 apply(click::separation::separate_elements(v, j, k));
             }
             have separate(statement(0).footprint, memory(v[k])) by {
-                solve() using { separate(memory(v[j]), memory(v[k])); };
+                close() using { separate(memory(v[j]), memory(v[k])); };
             }
             preserve(memory(v[k]), statement(0));
         }

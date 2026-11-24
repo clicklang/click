@@ -136,12 +136,12 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
                 have 0 <= k;
                 have k < capacity;
                 have i < k by { known(); }
-                have i != k by { solve() using { i < k; }; }
+                have i != k by { close() using { i < k; }; }
                 have separate(memory(occupied[i]), memory(occupied[k])) by {
                     apply(click::separation::separate_elements(occupied, i, k));
                 }
                 have separate(loop(0).statement(0).footprint, memory(occupied[k])) by {
-                    solve() using { separate(memory(occupied[i]), memory(occupied[k])); };
+                    close() using { separate(memory(occupied[i]), memory(occupied[k])); };
                 }
                 have at(loop(0).statement(0).exit, occupied[k]) == at(opened, occupied[k]) by {
                     preserve(memory(occupied[k]), loop(0).statement(0));
@@ -159,7 +159,7 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
                     apply(click::separation::separate_restrict(memory(data[0..capacity]), memory(occupied[0..capacity]), memory(data[i]), memory(occupied[k])));
                 }
                 have separate(loop(0).statement(1).footprint, memory(occupied[k])) by {
-                    solve() using { separate(memory(data[i]), memory(occupied[k])); };
+                    close() using { separate(memory(data[i]), memory(occupied[k])); };
                 }
                 have occupied[k] == at(loop(0).statement(1).entry, occupied[k]) by {
                     preserve(memory(occupied[k]), loop(0).statement(1));
@@ -171,14 +171,14 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
                 next: at(opened, i) + 1
             });
             have 0 <= to_integer(end - at(region(3).entry, i) - 1) by {
-                solve() using {
+                close() using {
                     at(region(3).entry, i) < end;
                     0 <= at(region(3).entry, i);
                     end <= capacity;
                 };
             }
             have to_integer(end - at(region(3).entry, i) - 1) < to_integer(end - at(region(3).entry, i)) by {
-                solve() using {
+                close() using {
                     at(region(3).entry, i) < end;
                     0 <= at(region(3).entry, i);
                     end <= capacity;

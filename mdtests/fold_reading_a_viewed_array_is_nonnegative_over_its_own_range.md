@@ -45,7 +45,7 @@ theorem unmarked_nonnegative(v: int32[], lo: int32, hi: int32) {
             apply(ih(hi - 1));
             unfold(unmarked(v, lo, hi));
             have 0 <= (if v[hi - 1] == 0 { 1 } else { 0 });
-            solve() using { 0 <= unmarked(v, lo, hi - 1); to_integer(0) <= to_integer(if v[hi - 1] == 0 { 1 } else { 0 }); };
+            close() using { 0 <= unmarked(v, lo, hi - 1); to_integer(0) <= to_integer(if v[hi - 1] == 0 { 1 } else { 0 }); };
         }
     }
 }

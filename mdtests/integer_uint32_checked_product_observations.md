@@ -28,7 +28,7 @@ theorem known_zero_factor(a: uint32, b: uint32) {
         rewrite(to_integer(a * b), to_integer(a) * to_integer(b));
         have to_integer(b) == 0;
         rewrite(to_integer(b), 0);
-        solve() using {};
+        close() using {};
     }
 }
 
@@ -43,13 +43,13 @@ theorem reduced_lane_ceiling(lane: uint32) {
     requires lane <= 65520u32;
     ensures to_integer(lane * 4u32) <= 262080 by {
         have lane <= 4294967295u32 / 4u32 by {
-            solve() using { lane <= 65520u32; };
+            close() using { lane <= 65520u32; };
         }
         have 4u32 == 0u32 or lane <= 4294967295u32 / 4u32 by {
             known();
         }
         apply(integer::uint32_multiply_to_integer(lane, 4u32));
-        solve() using {
+        close() using {
             to_integer(lane * 4u32) == to_integer(lane) * 4;
             to_integer(lane) <= 65520;
         };

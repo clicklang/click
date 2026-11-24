@@ -9,8 +9,8 @@ theorem last_element_separate(field: uint64*, data: int32*, n: int32) {
     requires n <= 1073741823;
     requires separate(memory(*field), memory(data[0..n]));
     ensures separate(memory(*field), memory(data[n - 1])) by {
-        have 0 <= n - 1 by { solve() using { 1 <= n; n <= 1073741823; }; }
-        have n - 1 < n by { solve() using { 1 <= n; n <= 1073741823; }; }
+        have 0 <= n - 1 by { close() using { 1 <= n; n <= 1073741823; }; }
+        have n - 1 < n by { close() using { 1 <= n; n <= 1073741823; }; }
         have separate(memory(*field), memory(data[n - 1])) by known();
         known();
     }

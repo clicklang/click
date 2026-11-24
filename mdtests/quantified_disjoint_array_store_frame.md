@@ -51,7 +51,7 @@ void mark(int32 *next, int32 *visited, int32 n, int32 j) {
             apply(click::separation::separate_restrict(memory(visited[j]), memory(next[0..n]), memory(visited[j]), memory(next[k])));
         }
         have separate(statement(0).footprint, memory(next[k])) by {
-            solve() using { separate(memory(visited[j]), memory(next[k])); };
+            close() using { separate(memory(visited[j]), memory(next[k])); };
         }
         have next[k] == at(entry, next[k]) by {
             preserve(memory(next[k]), statement(0));

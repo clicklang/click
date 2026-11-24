@@ -104,12 +104,12 @@ theorem sized_context_depth_nonnegative(ctx: SizedContext) {
             SizedContext::Left(node, parent, color, value, sibling, up) => {
                 apply(ih(up));
                 unfold(sized_context_depth(SizedContext::Left(node, parent, color, value, sibling, up)));
-                solve() using { 0 <= sized_context_depth(up); };
+                close() using { 0 <= sized_context_depth(up); };
             },
             SizedContext::Right(node, parent, color, value, sibling, up) => {
                 apply(ih(up));
                 unfold(sized_context_depth(SizedContext::Right(node, parent, color, value, sibling, up)));
-                solve() using { 0 <= sized_context_depth(up); };
+                close() using { 0 <= sized_context_depth(up); };
             },
         }
     }
@@ -176,7 +176,7 @@ theorem sized_context_early_stop(ctx: SizedContext, sub: SizedTree, previous: in
                 have sized_counts_valid(SizedTree::Node(node, parent, color, value, sub, sibling)) == 1 by {
                     unfold(sized_counts_valid(SizedTree::Node(node, parent, color, value, sub, sibling)));
                     rewrite(sized_value(sub), previous);
-                    solve() using {
+                    close() using {
                         to_integer(value) == 1 + to_integer(previous) + to_integer(sized_value(sibling));
                         sized_counts_valid(sub) == 1;
                         sized_counts_valid(sibling) == 1;
@@ -204,7 +204,7 @@ theorem sized_context_early_stop(ctx: SizedContext, sub: SizedTree, previous: in
                 have sized_counts_valid(SizedTree::Node(node, parent, color, value, sibling, sub)) == 1 by {
                     unfold(sized_counts_valid(SizedTree::Node(node, parent, color, value, sibling, sub)));
                     rewrite(sized_value(sub), previous);
-                    solve() using {
+                    close() using {
                         to_integer(value) == 1 + to_integer(sized_value(sibling)) + to_integer(previous);
                         sized_counts_valid(sub) == 1;
                         sized_counts_valid(sibling) == 1;
@@ -236,11 +236,11 @@ theorem sized_plug_contains_focus(ctx: SizedContext, sub: SizedTree) {
                 have rb_subtree_size(sized_shape(sub)) <= rb_subtree_size(sized_shape(SizedTree::Node(node, parent, color, value, sub, sibling))) by {
                     unfold(sized_shape(SizedTree::Node(node, parent, color, value, sub, sibling)));
                     unfold(rb_subtree_size(RbTree::Node(node, parent, color, sized_shape(sub), sized_shape(sibling))));
-                    solve() using { rb_subtree_size(sized_shape(sibling)) >= 0; };
+                    close() using { rb_subtree_size(sized_shape(sibling)) >= 0; };
                 }
                 apply(ih(up, SizedTree::Node(node, parent, color, value, sub, sibling)));
                 have rb_subtree_size(sized_shape(sub)) <= rb_subtree_size(sized_shape(sized_plug(up, SizedTree::Node(node, parent, color, value, sub, sibling)))) by {
-                    solve() using {
+                    close() using {
                         rb_subtree_size(sized_shape(sub)) <= rb_subtree_size(sized_shape(SizedTree::Node(node, parent, color, value, sub, sibling)));
                         rb_subtree_size(sized_shape(SizedTree::Node(node, parent, color, value, sub, sibling))) <= rb_subtree_size(sized_shape(sized_plug(up, SizedTree::Node(node, parent, color, value, sub, sibling))));
                     };
@@ -253,11 +253,11 @@ theorem sized_plug_contains_focus(ctx: SizedContext, sub: SizedTree) {
                 have rb_subtree_size(sized_shape(sub)) <= rb_subtree_size(sized_shape(SizedTree::Node(node, parent, color, value, sibling, sub))) by {
                     unfold(sized_shape(SizedTree::Node(node, parent, color, value, sibling, sub)));
                     unfold(rb_subtree_size(RbTree::Node(node, parent, color, sized_shape(sibling), sized_shape(sub))));
-                    solve() using { rb_subtree_size(sized_shape(sibling)) >= 0; };
+                    close() using { rb_subtree_size(sized_shape(sibling)) >= 0; };
                 }
                 apply(ih(up, SizedTree::Node(node, parent, color, value, sibling, sub)));
                 have rb_subtree_size(sized_shape(sub)) <= rb_subtree_size(sized_shape(sized_plug(up, SizedTree::Node(node, parent, color, value, sibling, sub)))) by {
-                    solve() using {
+                    close() using {
                         rb_subtree_size(sized_shape(sub)) <= rb_subtree_size(sized_shape(SizedTree::Node(node, parent, color, value, sibling, sub)));
                         rb_subtree_size(sized_shape(SizedTree::Node(node, parent, color, value, sibling, sub))) <= rb_subtree_size(sized_shape(sized_plug(up, SizedTree::Node(node, parent, color, value, sibling, sub))));
                     };

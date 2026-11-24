@@ -24,7 +24,7 @@ theorem match_in_have(n: int32, c: Choice) {
         let ih = induct(n);
         if n <= 0 {
             unfold(cd(n));
-            solve() using { n <= 0; };
+            close() using { n <= 0; };
         } else {
             have 0 <= to_integer(n - 1);
             have to_integer(n - 1) < to_integer(n);
@@ -47,7 +47,7 @@ theorem have_in_match(n: int32, c: Choice) {
         let ih = induct(n);
         if n <= 0 {
             unfold(cd(n));
-            solve() using { n <= 0; };
+            close() using { n <= 0; };
         } else {
             have 0 <= to_integer(n - 1);
             have to_integer(n - 1) < to_integer(n);

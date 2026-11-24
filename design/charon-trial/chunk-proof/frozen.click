@@ -50,7 +50,7 @@ fn cover(bytes: &[u8]) -> usize {
             have 4 <= chunks_remaining by { solve(); }
             mark iteration;
             have ((((bytes.len() - bytes.len() % 4u64) as uint32) as int32) - chunks_remaining) + 4 <= ((bytes.len() as uint32) as int32) by {
-                solve() using {
+                close() using {
                     4 <= chunks_remaining;
                     chunks_remaining <= (((bytes.len() - bytes.len() % 4u64) as uint32) as int32);
                     ((((bytes.len() - bytes.len() % 4u64) as uint32) as int32)) <= ((bytes.len() as uint32) as int32);
@@ -74,10 +74,10 @@ fn cover(bytes: &[u8]) -> usize {
                 rewrite((at(iteration, chunks_remaining) - 4) % 4, at(iteration, chunks_remaining % 4)); solve();
             }
             have 0 <= chunks_remaining by {
-                solve() using { chunks_remaining == at(iteration, chunks_remaining) - 4; at(iteration, 4 <= chunks_remaining); }
+                close() using { chunks_remaining == at(iteration, chunks_remaining) - 4; at(iteration, 4 <= chunks_remaining); }
             }
             have chunks_remaining <= (((bytes.len() - bytes.len() % 4u64) as uint32) as int32) by {
-                solve() using {
+                close() using {
                     chunks_remaining == at(iteration, chunks_remaining) - 4;
                     at(iteration, 4 <= chunks_remaining);
                     at(iteration, chunks_remaining <= (((bytes.len() - bytes.len() % 4u64) as uint32) as int32));
@@ -87,7 +87,7 @@ fn cover(bytes: &[u8]) -> usize {
             }
             have chunks_cursor == at(iteration, chunks_cursor) + 4 by { solve(); }
             have ((((bytes.len() - bytes.len() % 4u64) as uint32) as int32) - chunks_remaining) == at(iteration, (((bytes.len() - bytes.len() % 4u64) as uint32) as int32) - chunks_remaining) + 4 by {
-                solve() using {
+                close() using {
                     chunks_remaining == at(iteration, chunks_remaining) - 4;
                     at(iteration, 4 <= chunks_remaining);
                     at(iteration, chunks_remaining <= (((bytes.len() - bytes.len() % 4u64) as uint32) as int32));
@@ -96,7 +96,7 @@ fn cover(bytes: &[u8]) -> usize {
                 }
             }
             have at(iteration, chunks_cursor) + 4 == bytes + (at(iteration, (((bytes.len() - bytes.len() % 4u64) as uint32) as int32) - chunks_remaining) + 4) by {
-                solve() using {
+                close() using {
                     at(iteration, chunks_cursor == bytes + ((((bytes.len() - bytes.len() % 4u64) as uint32) as int32) - chunks_remaining));
                     at(iteration, 0 <= ((((bytes.len() - bytes.len() % 4u64) as uint32) as int32) - chunks_remaining));
                     at(iteration, ((((bytes.len() - bytes.len() % 4u64) as uint32) as int32) - chunks_remaining) <= 1000);
@@ -116,7 +116,7 @@ fn cover(bytes: &[u8]) -> usize {
         cases {
             not (0 < chunks_remaining) => {
                 have chunks_remaining <= 0 by { solve(); }
-                solve() using { chunks_remaining <= 0; }
+                close() using { chunks_remaining <= 0; }
             }
             not (4 <= chunks_remaining) => { solve(); }
         }

@@ -23,7 +23,7 @@ void put(int32* p, int32* q) {
     step();
     have p[0] == 9 by {
         have p[0] == 9 by {
-            solve() using {
+            close() using {
                 old(p[0]) == 9;
             };
         }

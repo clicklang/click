@@ -28,14 +28,14 @@ uint32 contribute_early(struct counter* p) {
 } by {
     with(control(p)) {
         have count(remaining(p)) - 1 >= 1 by {
-            solve() using {
+            close() using {
                 count(remaining(p)) > 1;
                 count(remaining(p)) <= 3;
             };
         }
         have to_integer(p->value + 1u32) == 3 - to_integer(count(remaining(p)) - 1);
         have count(remaining(p)) - 1 <= 3 by {
-            solve() using { count(remaining(p)) > 1; count(remaining(p)) <= 3; };
+            close() using { count(remaining(p)) > 1; count(remaining(p)) <= 3; };
         }
         unfold(remaining(p));
         step();

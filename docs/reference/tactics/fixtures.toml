@@ -223,9 +223,9 @@ path = "mdtests/solve_closes_one_goal.md"
 needle = "solve();"
 
 [[form]]
-id = "solve-using"
+id = "close-using"
 path = "mdtests/solve_closes_one_goal.md"
-needle = "solve() using {"
+needle = "close() using {"
 
 [[form]]
 id = "release-view"

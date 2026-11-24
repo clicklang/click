@@ -6786,8 +6786,8 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
         class: "smart",
     },
     PublicTacticForm {
-        id: "solve-using",
-        syntax: "solve() using",
+        id: "close-using",
+        syntax: "close() using",
         class: "smart",
     },
     PublicTacticForm {

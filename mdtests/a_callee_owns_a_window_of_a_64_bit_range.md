@@ -37,7 +37,7 @@ void write(uint8* bytes, uint64 length, uint64 index) {
     step();
     // State the native endpoint bound used by indexed range composition.
     have ((index + 4u64) as uint64) <= length by {
-        solve() using { index <= length; to_integer(4u64) <= to_integer(length - index); };
+        close() using { index <= length; to_integer(4u64) <= to_integer(length - index); };
     }
 }
 void set_tail(uint8* bytes, uint64 i, uint64 length) {

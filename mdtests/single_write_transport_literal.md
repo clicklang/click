@@ -13,7 +13,7 @@ void keep(uint8* p, uint8* q) {
 } by {
     step();
     have separate(statement(0).footprint, memory(*q)) by {
-        solve() using { separate(memory(*p), memory(*q)); };
+        close() using { separate(memory(*p), memory(*q)); };
     }
     have 1 == at(statement(0).entry, 1) by {
         known();

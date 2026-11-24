@@ -63,7 +63,7 @@ void set_end(int32 *v, int32 i, int32 n) {
 } by {
     mark entry;
     have viewable(v[0..n]) by { observe(v[0..n]); known(); }
-    have i <= n by { solve() using { i < n; }; }
+    have i <= n by { close() using { i < n; }; }
     have contains(memory(v[0..n]), memory(v[0..i])) by {
         apply(click::separation::contains_subrange(v, 0, n, 0, i));
     }
@@ -73,12 +73,12 @@ void set_end(int32 *v, int32 i, int32 n) {
     step();
     have forall (k: int32) { 0 <= k and k < i implies v[k] == at(entry, v[k]) } by {
         intro(); intro();
-        have i != k by { solve() using { k < i; }; }
+        have i != k by { close() using { k < i; }; }
         have separate(memory(v[i]), memory(v[k])) by {
             apply(click::separation::separate_elements(v, i, k));
         }
         have separate(statement(0).footprint, memory(v[k])) by {
-            solve() using { separate(memory(v[i]), memory(v[k])); };
+            close() using { separate(memory(v[i]), memory(v[k])); };
         }
         preserve(memory(v[k]), statement(0));
     }
@@ -86,7 +86,7 @@ void set_end(int32 *v, int32 i, int32 n) {
     have viewable(v[0..i]) by {
         apply(click::separation::viewable_restrict(memory(v[0..n]), memory(v[0..i])));
     }
-    have i <= 1073741823 by { solve() using { i < n; n <= 1073741823; }; }
+    have i <= 1073741823 by { close() using { i < n; n <= 1073741823; }; }
     apply(same_through(v, at(entry, v), 0, i, i));
 }
 ```

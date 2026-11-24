@@ -4,7 +4,7 @@ An explicit invariant can relate a pointer local that is advanced by the loop
 to the current array index.
 
 The preservation proof names the entry pointer relation and strict index
-bound in `solve() using`. The bound excludes index overflow; the checked
+bound in `close() using`. The bound excludes index overflow; the checked
 step compares exact byte advances, not wrapped int32 offsets. The kernel's
 ordinary pointer-equality query need not search ambient facts to find them.
 
@@ -45,7 +45,7 @@ int32 last_element(int32 arr[], int32 n, int32 cap) {
             step();
             step();
             have p == arr + i by {
-                solve() using {
+                close() using {
                     at(region(5).entry, p) == at(region(5).entry, arr + i);
                     at(region(5).entry, i) < at(region(5).entry, n);
                 };

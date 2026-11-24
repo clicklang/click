@@ -41,10 +41,10 @@ int32 enters_either_way(int32 a, int32 b) {
             have 0 < a + b by {
                 cases {
                     a > 0 => {
-                        solve() using { a > 0; b >= 0; a <= 1; b <= 1; };
+                        close() using { a > 0; b >= 0; a <= 1; b <= 1; };
                     }
                     b > 0 => {
-                        solve() using { b > 0; a >= 0; a <= 1; b <= 1; };
+                        close() using { b > 0; a >= 0; a <= 1; b <= 1; };
                     }
                 }
             }

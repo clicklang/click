@@ -17,7 +17,7 @@ void caller(struct box *q) {
     mark before;
     step();
     have separate(statement(0).footprint, memory(q->data)) by {
-        solve() using { separate(memory(q->tag), memory(q->data)); };
+        close() using { separate(memory(q->tag), memory(q->data)); };
     }
     have q->data == at(before, q->data) by {
         preserve(memory(q->data), statement(0));

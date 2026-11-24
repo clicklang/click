@@ -88,7 +88,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         Ok(None)
     }
 
-    /// The `solve() using { .. }` form: a listed guarded equality whose guard
+    /// The `close() using { .. }` form: a listed guarded equality whose guard
     /// the list does not state.
     pub(in crate::surface::proof) fn try_restricted_guarded_consequent(
         search_input: &Proof<'a>,

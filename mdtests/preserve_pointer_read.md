@@ -31,7 +31,7 @@ void copy_pos(struct cursor *target, struct cursor *source) {
     step() by { known(); }
     mark after;
     have separate(statement(0).footprint, memory(source->data)) by {
-        solve() using { separate(memory(target->pos), memory(source->data)); };
+        close() using { separate(memory(target->pos), memory(source->data)); };
     }
     have source->data == at(before, source->data) by {
         preserve(memory(source->data), statement(0));
@@ -39,7 +39,7 @@ void copy_pos(struct cursor *target, struct cursor *source) {
     step() by { known(); }
     mark final;
     have separate(statement(1).footprint, memory(source->data)) by {
-        solve() using { separate(memory(target->pos), memory(source->data)); };
+        close() using { separate(memory(target->pos), memory(source->data)); };
     }
     have source->data == at(before, source->data) by {
         have source->data == at(after, source->data) by {

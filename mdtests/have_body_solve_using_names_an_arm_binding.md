@@ -1,4 +1,4 @@
-# A `solve() using` premise inside a `have` body names an arm binding
+# A `close() using` premise inside a `have` body names an arm binding
 
 The uniform-scoping slices resolve a proof `match` arm's bindings the way a
 `have` goal resolves them: in theorem arguments and `apply ... using` premises,
@@ -9,7 +9,7 @@ in `instantiate`, in `have`
 and in the `initialize` and `maintain` bodies of that loop
 ([`loop_phase_body_reads_arm_bindings.md`](loop_phase_body_reads_arm_bindings.md)).
 
-One site was missed: the premises of a `solve() using { ... }` or a
+One site was missed: the premises of a `close() using { ... }` or a
 `normalize() using { ... }` written inside a `have` body that the smart planner
 discharges. The goal of that `have` was materialized against the enclosing
 proof's lexical bindings before planning, but the body's premises were lowered
@@ -21,7 +21,7 @@ certificate records and expansion prints, and `click audit` agrees with
 `click verify` at every site here.
 
 `peek` proves two `have`s in the arm, each citing the unfolded body fact that
-names the arm's colour: one closed by `solve() using`, one by `normalize()
+names the arm's colour: one closed by `close() using`, one by `normalize()
 using`. `spin` puts the same `have` inside the `maintain` body of a loop
 written in the arm, where the phase planner lowers it from a fresh root
 carrying the arm's scope.
@@ -90,10 +90,10 @@ unsigned long peek(struct node* p) {
         Tree::Node(id, color, left_model) => {
             let { left: l } = unfold(t);
             have color_bit(color) == (p->word & 1) by {
-                solve() using { (p->word & 1) == color_bit(color); };
+                close() using { (p->word & 1) == color_bit(color); };
             }
             have (p->word & 1) == color_bit(color) by {
-                solve() using { (p->word & 1) == color_bit(color); };
+                close() using { (p->word & 1) == color_bit(color); };
             }
             step();
             let t = fold(tree_at(p), {
@@ -125,7 +125,7 @@ unsigned long spin(struct node* p, int n) {
                 initialize by solve();
                 maintain by {
                     have color_bit(color) == color_bit(color) by {
-                        solve() using { t.model == Tree::Node(id, color, left_model); };
+                        close() using { t.model == Tree::Node(id, color, left_model); };
                     }
                     step();
                 }

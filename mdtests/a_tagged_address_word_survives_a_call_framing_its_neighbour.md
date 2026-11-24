@@ -58,7 +58,7 @@ void tag_then_count(struct node *p) {
                     unfold(c);
                     step();
                     have identity->tag == (address(identity) | 1) by {
-                        solve() using { p->tag == (address(p) | 1); p == identity; };
+                        close() using { p->tag == (address(p) | 1); p == identity; };
                     }
                     have separate(memory(p->count), memory(p->tag)) by { solve(); }
                     have contains(memory(p->tag), memory(p->tag)) by { apply(click::separation::contains_refl(memory(p->tag))); }

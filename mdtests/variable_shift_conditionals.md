@@ -8,7 +8,7 @@ theorem right_int32(flag: Bool, x: int32, z: int32, w: int32) {
     ensures flag implies (if flag { x } else { 3 }) == (z >> w) by {
         intro();
         rewrite(x, z >> w);
-        solve() using { flag; };
+        close() using { flag; };
     }
 }
 
@@ -18,7 +18,7 @@ theorem right_uint32(flag: Bool, x: uint32, z: uint32, w: uint32) {
     ensures flag implies (if flag { x } else { 3u32 }) == (z >> w) by {
         intro();
         rewrite(x, z >> w);
-        solve() using { flag; };
+        close() using { flag; };
     }
 }
 
@@ -28,7 +28,7 @@ theorem left_uint32(flag: Bool, x: uint32, z: uint32, w: uint32) {
     ensures flag implies (if flag { x } else { 3u32 }) == (z << w) by {
         intro();
         rewrite(x, z << w);
-        solve() using { flag; };
+        close() using { flag; };
     }
 }
 
@@ -39,7 +39,7 @@ theorem right_int64(flag: Bool, x: int64, z: int64, w: int64) {
     ensures flag implies (if flag { x } else { 3i64 }) == (z >> w) by {
         intro();
         rewrite(x, z >> w);
-        solve() using { flag; };
+        close() using { flag; };
     }
 }
 
@@ -49,7 +49,7 @@ theorem right_uint64(flag: Bool, x: uint64, z: uint64, w: uint64) {
     ensures flag implies (if flag { x } else { 3u64 }) == (z >> w) by {
         intro();
         rewrite(x, z >> w);
-        solve() using { flag; };
+        close() using { flag; };
     }
 }
 
@@ -59,7 +59,7 @@ theorem left_uint64(flag: Bool, x: uint64, z: uint64, w: uint64) {
     ensures flag implies (if flag { x } else { 3u64 }) == (z << w) by {
         intro();
         rewrite(x, z << w);
-        solve() using { flag; };
+        close() using { flag; };
     }
 }
 ```

@@ -45,7 +45,7 @@ int32 stuck_phase(int32 n) {
                 step();
                 step();
                 step();
-                have i >= 0 by { solve() using { 0 <= i; }; }
+                have i >= 0 by { close() using { 0 <= i; }; }
                 solve();
             }
         }

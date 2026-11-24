@@ -22,7 +22,7 @@ int32 distance(uint64 n, int32 remaining) {
 } by {
     step();
     have to_integer((n as uint32 as int32 - remaining - 1)) < to_integer(n as uint32 as int32) by {
-        solve() using {
+        close() using {
             at(region(0).entry, 0 < remaining);
             at(region(0).entry, remaining <= n as uint32 as int32);
             0 <= n as uint32 as int32;
@@ -30,7 +30,7 @@ int32 distance(uint64 n, int32 remaining) {
         };
     }
     have 1000 >= to_integer((n as uint32 as int32 - remaining - 1)) by {
-        solve() using {
+        close() using {
             at(region(0).entry, 0 < remaining);
             at(region(0).entry, remaining <= n as uint32 as int32);
             0 <= n as uint32 as int32; 1000 >= n as uint32 as int32;

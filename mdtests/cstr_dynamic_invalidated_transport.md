@@ -32,7 +32,7 @@ uint64 read_terminator(uint8 bytes[], uint64 known_len) {
     } by {
         intro(); intro();
         have to_integer(k) < to_integer(known_len + 1u64) by {
-            solve() using {
+            close() using {
                 to_integer(k) < to_integer(known_len) + 1;
                 known_len < 18446744073709551615u64;
             };

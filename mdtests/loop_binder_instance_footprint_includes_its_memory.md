@@ -97,7 +97,7 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
                         known();
                     }
                     have 0 <= k by solve();
-                    have k != at(opened, i) by { solve() using { k < at(opened, i); }; }
+                    have k != at(opened, i) by { close() using { k < at(opened, i); }; }
                     have at(opened, separate(memory(occupied[i]), memory(occupied[k]))) by {
                         apply(click::separation::separate_elements(occupied, at(opened, i), k));
                     }
@@ -129,14 +129,14 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
                 next: at(opened, i) + 1
             });
             have 0 <= to_integer(end - at(opened, i) - 1) by {
-                solve() using {
+                close() using {
                     at(opened, i) < end;
                     0 <= at(opened, i);
                     end <= capacity;
                 };
             }
             have to_integer(end - at(opened, i) - 1) < to_integer(end - at(opened, i)) by {
-                solve() using {
+                close() using {
                     at(opened, i) < end;
                     0 <= at(opened, i);
                     end <= capacity;

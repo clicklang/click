@@ -43,7 +43,7 @@ struct node* list_prepend(int32 value, struct node* tail) {
         have result->word == address(tail) by known();
         have (result->word & 1) == 0u64 by {
             rewrite(result->word, address(tail));
-            solve() using { aligned(tail, 8); };
+            close() using { aligned(tail, 8); };
         }
         have result->word == address(tail) + (result->word & 1) by {
             rewrite((result->word & 1), 0u64);
@@ -52,7 +52,7 @@ struct node* list_prepend(int32 value, struct node* tail) {
         }
         have ((result->word & ~1) as (struct node *)) == tail by {
             rewrite(result->word, address(tail));
-            solve() using { aligned(tail, 8); };
+            close() using { aligned(tail, 8); };
         }
         fold(marked_list(result));
     }
@@ -86,7 +86,7 @@ struct node* list_next(struct node* node) {
     observe(marked_list(node));
     step_until(function.exit);
     have address(result) == (node->word & ~1) by {
-        solve() using {
+        close() using {
             aligned(result, 8);
             node->word == address(result) + (node->word & 1);
         }

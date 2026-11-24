@@ -37,7 +37,7 @@ theorem length_nonnegative(xs: List<int32>) {
             List::Cons(value, rest) => {
                 apply(ih(rest));
                 unfold(length(List<int32>::Cons(value, rest)));
-                solve() using { length(rest) >= 0; };
+                close() using { length(rest) >= 0; };
             }
         }
     }
@@ -77,7 +77,7 @@ void Stack<int>::push(int value) {
     let after = fold(nodes(this->head), { items: List::Cons(value, old(before.items)), tail: before });
     unfold(length(List::Cons(value, old(before.items))));
     have to_integer(old(this->count) + 1u64) == to_integer(old(this->count)) + to_integer(1u64);
-    have to_integer(old(this->count) + 1u64) == length(List::Cons(value, old(before.items))) by solve() using {
+    have to_integer(old(this->count) + 1u64) == length(List::Cons(value, old(before.items))) by close() using {
         to_integer(old(this->count) + 1u64) == to_integer(old(this->count)) + to_integer(1u64);
         to_integer(old(this->count)) == length(old(before.items));
         length(List::Cons(value, old(before.items))) == length(old(before.items)) + 1;
@@ -120,7 +120,7 @@ bool Stack<int>::pop(int& out) {
                     let after = fold(nodes(this->head), { items: List<int32>::Nil });
                     unfold(length(List<int32>::Nil));
                     have length(tail_items) == 0 by solve();
-                    have to_integer(old(this->count)) == 1 by solve() using {
+                    have to_integer(old(this->count)) == 1 by close() using {
                         to_integer(old(this->count)) == length(List::Cons(value, tail_items));
                         length(List::Cons(value, tail_items)) == length(tail_items) + 1;
                         length(tail_items) == 0;
@@ -130,12 +130,12 @@ bool Stack<int>::pop(int& out) {
                 List::Cons(next_value, next_items) => {
                     let { tail: next } = unfold(tail);
                     let after = fold(nodes(this->head), { items: List::Cons(next_value, next_items), tail: next });
-                    have to_integer(old(this->count)) == length(tail_items) + 1 by solve() using {
+                    have to_integer(old(this->count)) == length(tail_items) + 1 by close() using {
                         to_integer(old(this->count)) == length(List::Cons(value, tail_items));
                         length(List::Cons(value, tail_items)) == length(tail_items) + 1;
                     };
                     have to_integer(old(this->count) - 1u64) == to_integer(old(this->count)) - to_integer(1u64);
-                    have to_integer(old(this->count) - 1u64) == length(tail_items) by solve() using {
+                    have to_integer(old(this->count) - 1u64) == length(tail_items) by close() using {
                         to_integer(old(this->count) - 1u64) == to_integer(old(this->count)) - to_integer(1u64);
                         to_integer(old(this->count)) == length(tail_items) + 1;
                     };
@@ -169,17 +169,17 @@ Stack<int>::~Stack() {
                     unfold(length(List::Cons(value, rest)));
                     apply(length_nonnegative(rest));
                     have 0 <= length(tail.items) by solve();
-                    have length(tail.items) < length(List::Cons(value, rest)) by solve() using {
+                    have length(tail.items) < length(List::Cons(value, rest)) by close() using {
                         length(List::Cons(value, rest)) == length(rest) + 1;
                         tail.items == rest;
                     };
                     mark before_node;
                     step();
-                    have separate(region(1).footprint, memory(this->head)) by { solve() using {}; }
+                    have separate(region(1).footprint, memory(this->head)) by { close() using {}; }
                     have this->head == at(before_node, this->head) by {
                         preserve(memory(this->head), region(1));
                     }
-                    have separate(region(1).footprint, memory(this->head->next)) by { solve() using {}; }
+                    have separate(region(1).footprint, memory(this->head->next)) by { close() using {}; }
                     have this->head->next == at(before_node, this->head->next) by {
                         preserve(memory(this->head->next), region(1));
                     }
@@ -191,7 +191,7 @@ Stack<int>::~Stack() {
                     mark before_delete;
                     step();
                     have separate(region(3).footprint, memory(this->head)) by {
-                        solve() using { at(region(1).exit, separate(memory(*this->head), memory(this->head))); };
+                        close() using { at(region(1).exit, separate(memory(*this->head), memory(this->head))); };
                     }
                     have this->head == at(before_delete, this->head) by {
                         preserve(memory(this->head), region(3));
@@ -212,7 +212,7 @@ int round_trip(int x) {
     step_until(region(3).entry);
     let empty = fold(nodes(stack.head), { items: List<int32>::Nil });
     unfold(length(List<int32>::Nil));
-    have length(List<int32>::Nil) < 1000000 by solve() using { length(List<int32>::Nil) == 0; };
+    have length(List<int32>::Nil) < 1000000 by close() using { length(List<int32>::Nil) == 0; };
     let { after: pushed } = step(__cpp_q_X10_537461636b3c696e743e_I4_push, { before: empty }) {
         requires length(empty.items) < 1000000 by solve();
         requires to_integer(stack.count) == length(empty.items) by solve();
@@ -235,10 +235,10 @@ unsigned long pushed_size(int x) {
     step_until(region(2).entry);
     let empty = fold(nodes(stack.head), { items: List<int32>::Nil });
     unfold(length(List<int32>::Nil));
-    have length(List<int32>::Nil) < 1000000 by solve() using { length(List<int32>::Nil) == 0; };
+    have length(List<int32>::Nil) < 1000000 by close() using { length(List<int32>::Nil) == 0; };
     step_until(region(3).entry);
     unfold(length(List<int32>::Cons(x, List<int32>::Nil)));
-    have length(List<int32>::Cons(x, List<int32>::Nil)) < 1000000 by solve() using {
+    have length(List<int32>::Cons(x, List<int32>::Nil)) < 1000000 by close() using {
         length(List<int32>::Cons(x, List<int32>::Nil)) == length(List<int32>::Nil) + 1;
         length(List<int32>::Nil) == 0;
     };
@@ -253,19 +253,19 @@ unsigned long pushed_size(int x) {
         requires aligned(&stack, 8) by solve();
     }
     step();
-    have separate(region(15).footprint, memory(stack.head)) by { solve() using {}; }
+    have separate(region(15).footprint, memory(stack.head)) by { close() using {}; }
     have stack.head == at(region(15).entry, stack.head) by {
         preserve(memory(stack.head), region(15));
     }
     step();
-    have separate(region(16).footprint, memory(stack.head)) by { solve() using {}; }
+    have separate(region(16).footprint, memory(stack.head)) by { close() using {}; }
     have stack.head == at(region(16).entry, stack.head) by {
         preserve(memory(stack.head), region(16));
     }
     step(__cpp_q_X10_537461636b3c696e743e_X6_7e537461636b, { list: pushed });
     step_until(function.exit);
     unfold(length(List<int32>::Cons(x, List<int32>::Cons(x, List<int32>::Nil))));
-    have length(List<int32>::Cons(x, List<int32>::Cons(x, List<int32>::Nil))) == 2 by solve() using {
+    have length(List<int32>::Cons(x, List<int32>::Cons(x, List<int32>::Nil))) == 2 by close() using {
         length(List<int32>::Cons(x, List<int32>::Cons(x, List<int32>::Nil))) == length(List<int32>::Cons(x, List<int32>::Nil)) + 1;
         length(List<int32>::Cons(x, List<int32>::Nil)) == length(List<int32>::Nil) + 1;
         length(List<int32>::Nil) == 0;

@@ -28,7 +28,7 @@ void dispose_beside(int32* data, int32 n, int32* r) {
     unfold(cell(data, n));
     step() by { known(); }
     have separate(statement(0).footprint, memory(r[0])) by {
-        solve() using {
+        close() using {
             separate(memory((data as (uint8*))[0..(n * 4)]), memory(r[0..1]));
         };
     }

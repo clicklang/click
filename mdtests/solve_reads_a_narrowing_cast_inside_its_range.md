@@ -1,4 +1,4 @@
-# The implicit closer and `solve() using` read a narrowing cast inside its range
+# The implicit closer and `close() using` read a narrowing cast inside its range
 
 `sf_cap = size` in Linux's `string_get_size` narrows a `u64` to a `u32`. With
 `1u64 <= size` and `size < 1000u64`, the cast keeps the value, so
@@ -12,7 +12,7 @@ destination's range by the solver, the identity by `integer_cast_identity`,
 and then the goal. `narrow_unsigned` needs it for both bounds, and
 `narrow_signed` for an `int` from a `long`.
 
-`solve() using` plans the identity itself from two listed bounds on the
+`close() using` plans the identity itself from two listed bounds on the
 operand, as written or as filed natively (`to_integer(x) <= 4294967295` is
 filed as `x <= 4294967295u64`): `narrow_by_arithmetic`.
 
@@ -60,7 +60,7 @@ uint32 narrow_by_arithmetic(uint64 x) {
     have 0 <= to_integer(x);
     have to_integer(x) <= 4294967295;
     have to_integer(x as uint32) == to_integer(x) by {
-        solve() using { 0 <= to_integer(x); to_integer(x) <= 4294967295; }
+        close() using { 0 <= to_integer(x); to_integer(x) <= 4294967295; }
     }
     have 1u32 <= y;
 }

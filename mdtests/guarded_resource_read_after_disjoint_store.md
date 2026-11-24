@@ -37,7 +37,7 @@ int32 f(struct cell* root) {
     step_until(function.exit);
     have (root->base.left as (void *) as (struct cell *))->value == at(before_store, (root->base.left as (void *) as (struct cell *))->value) by {
         have ((root->base.left as (void *)) as (struct cell *))->value == at(before_store, ((root->base.left as (void *)) as (struct cell *))->value) by {
-            solve() using {
+            close() using {
                 at(before_store, ((root->base.left as (void *)) as (struct cell *))->value) ==
                     at(before_store, ((root->base.left as (void *)) as (struct cell *))->value);
             };

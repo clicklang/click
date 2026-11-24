@@ -645,10 +645,10 @@ theorem aligned_parent_word_from_bit(p: void*, bit: int32) {
     requires bit <= 1;
     ensures (address(p) | bit) == address(p) + bit by {
         if bit == 0 { rewrite(bit, 0); known(); } else {
-            have 1 <= bit by { solve() using { 0 <= bit; not(bit == 0); }; }
-            have bit == 1 by { solve() using { 1 <= bit; bit <= 1; }; }
+            have 1 <= bit by { close() using { 0 <= bit; not(bit == 0); }; }
+            have bit == 1 by { close() using { 1 <= bit; bit <= 1; }; }
             rewrite(bit, 1);
-            solve() using { aligned(p, 8); };
+            close() using { aligned(p, 8); };
         }
     }
 }
@@ -719,7 +719,7 @@ struct rb_root* root, int32 color) {
             have ctx_parent_word(d.model, old->__rb_parent_color) == 1;
             have (old->__rb_parent_color & ~3) == address(id) by {
                 if old->__rb_parent_color == address(id) {
-                    solve() using { old->__rb_parent_color == address(id); aligned(id, 8); };
+                    close() using { old->__rb_parent_color == address(id); aligned(id, 8); };
                 } else {
                     have old->__rb_parent_color == address(id) + 1 by {
                         if old->__rb_parent_color == address(id) + 1 { known(); } else {
@@ -734,7 +734,7 @@ struct rb_root* root, int32 color) {
                             contradiction(ctx_parent_word(d.model, old->__rb_parent_color) == 1);
                         }
                     }
-                    solve() using { old->__rb_parent_color == address(id) + 1; aligned(id, 8); };
+                    close() using { old->__rb_parent_color == address(id) + 1; aligned(id, 8); };
                 }
             }
             step(); step(); step();
@@ -768,7 +768,7 @@ struct rb_root* root, int32 color) {
             have ctx_parent_word(d.model, old->__rb_parent_color) == 1;
             have (old->__rb_parent_color & ~3) == address(id) by {
                 if old->__rb_parent_color == address(id) {
-                    solve() using { old->__rb_parent_color == address(id); aligned(id, 8); };
+                    close() using { old->__rb_parent_color == address(id); aligned(id, 8); };
                 } else {
                     have old->__rb_parent_color == address(id) + 1 by {
                         if old->__rb_parent_color == address(id) + 1 { known(); } else {
@@ -783,7 +783,7 @@ struct rb_root* root, int32 color) {
                             contradiction(ctx_parent_word(d.model, old->__rb_parent_color) == 1);
                         }
                     }
-                    solve() using { old->__rb_parent_color == address(id) + 1; aligned(id, 8); };
+                    close() using { old->__rb_parent_color == address(id) + 1; aligned(id, 8); };
                 }
             }
             step(); step(); step();
@@ -837,7 +837,7 @@ theorem aligned_parent_color_word(p: void*, color: Color) {
             Color::Red => { rewrite(color, Color::Red); unfold(color_bit(Color::Red)); solve(); },
             Color::Black => {
                 rewrite(color, Color::Black); unfold(color_bit(Color::Black));
-                solve() using { aligned(p, 8); };
+                close() using { aligned(p, 8); };
             },
         }
     }
@@ -850,7 +850,7 @@ theorem aligned_parent_color_bit(p: void*, color: Color) {
             Color::Red => {
                 rewrite(color, Color::Red); unfold(color_bit(Color::Red));
                 have aligned(p, 2) by {
-                    solve() using { aligned(p, 8); };
+                    close() using { aligned(p, 8); };
                 }
                 known();
             },
@@ -867,7 +867,7 @@ theorem aligned_parent_black_tag(p: void*) {
     requires aligned(p, 8);
     ensures integer::uint64_wrapping_add(address(p), 1u64) == address(p) + 1 by {
         unfold(integer::uint64_wrapping_add(address(p), 1u64));
-        solve() using { aligned(p, 8); };
+        close() using { aligned(p, 8); };
     }
 }
 
@@ -924,10 +924,10 @@ void rb_set_parent_color(struct rb_node* rb, struct rb_node* p, int32 color) {
     ensures ((rb->__rb_parent_color & ~3) as (struct rb_node *)) == p;
 } by {
     have aligned(p, 2) by {
-        solve() using { aligned(p, 8); };
+        close() using { aligned(p, 8); };
     }
     have aligned(p, 4) by {
-        solve() using { aligned(p, 8); };
+        close() using { aligned(p, 8); };
     }
     step();
     have rb->__rb_parent_color == (address(p) | color) by known();
@@ -1482,7 +1482,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                             have id->rb_left == sid by known();
                                             have id->rb_right == node by known();
                                             have sid->__rb_parent_color == address(id) by { rewrite(id, parent); solve(); }
-                                            have (sid->__rb_parent_color & 1) == 0 by { rewrite(sid->__rb_parent_color, address(id)); solve() using { aligned(id, 8); }; }
+                                            have (sid->__rb_parent_color & 1) == 0 by { rewrite(sid->__rb_parent_color, address(id)); close() using { aligned(id, 8); }; }
                                             have (sid->__rb_parent_color & 1) == color_bit(Color::Red) by { unfold(color_bit(Color::Red)); known(); }
                                             have sid->__rb_parent_color == address(id) + (sid->__rb_parent_color & 1) by { rewrite((sid->__rb_parent_color & 1), 0); rewrite(sid->__rb_parent_color, address(id)); known(); }
                                             let sn = fold(rb_at(sid), { model: RbTree::Node(sid, id, Color::Red, srm, slm), right: ls, left: rs });
@@ -1538,14 +1538,14 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                     have parent->__rb_parent_color == address(above) + 1 by {
                                                         rewrite(parent->__rb_parent_color, integer::uint64_wrapping_add(address(above), 1u64)); known();
                                                     }
-                                                    have (parent->__rb_parent_color & 1) == 1 by { rewrite(parent->__rb_parent_color, address(above) + 1); solve() using { aligned(above, 8); }; }
+                                                    have (parent->__rb_parent_color & 1) == 1 by { rewrite(parent->__rb_parent_color, address(above) + 1); close() using { aligned(above, 8); }; }
                                                     have (parent->__rb_parent_color & 1) == color_bit(Color::Black) by { unfold(color_bit(Color::Black)); known(); }
                                                     have parent->__rb_parent_color == address(above) + (parent->__rb_parent_color & 1) by { rewrite((parent->__rb_parent_color & 1), 1); known(); }
                                                     have id->__rb_parent_color == address(above) + 1 by {
                                                         rewrite(id->__rb_parent_color, parent->__rb_parent_color); known();
                                                     }
                                                     have ((address(above) + 1) & ~3) == address(above) by {
-                                                        solve() using { aligned(above, 8); };
+                                                        close() using { aligned(above, 8); };
                                                     }
                                                     have (id->__rb_parent_color & ~3) == address(above) by {
                                                         rewrite(id->__rb_parent_color, address(above) + 1); known();
@@ -1846,8 +1846,8 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                             have ((parent->__rb_parent_color & ~3) as (struct rb_node *)) == above by known();
 
                                                             have tmp1->__rb_parent_color == (address(sibling) | 1) by known();
-                                                            have cid->__rb_parent_color == (address(sid) | 1) by { solve() using { tmp1->__rb_parent_color == (address(sibling) | 1); tmp1 == cid; sibling == sid; }; }
-                                                            have cid->__rb_parent_color == address(sid) + 1 by { rewrite(cid->__rb_parent_color, (address(sid) | 1)); solve() using { aligned(sid, 8); }; }
+                                                            have cid->__rb_parent_color == (address(sid) | 1) by { close() using { tmp1->__rb_parent_color == (address(sibling) | 1); tmp1 == cid; sibling == sid; }; }
+                                                            have cid->__rb_parent_color == address(sid) + 1 by { rewrite(cid->__rb_parent_color, (address(sid) | 1)); close() using { aligned(sid, 8); }; }
                                                             have (cid->__rb_parent_color & 1) == 1 by {
                                                                 rewrite(cid->__rb_parent_color, (address(sid) | 1)); normalize();
                                                             }
@@ -1898,7 +1898,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                         rewrite((parent->__rb_parent_color & 1), color_bit(pc)); known();
                                                     }
                                                     have tmp1->__rb_parent_color == (address(sibling) | 1) by known();
-                                                    have sid->__rb_parent_color == (address(iid) | 1) by { solve() using { tmp1->__rb_parent_color == (address(sibling) | 1); tmp1 == sid; sibling == iid; }; }
+                                                    have sid->__rb_parent_color == (address(iid) | 1) by { close() using { tmp1->__rb_parent_color == (address(sibling) | 1); tmp1 == sid; sibling == iid; }; }
                                                     have parent->__rb_parent_color == at(inner_inputs, parent->__rb_parent_color) by {
                                                         rewrite(parent->__rb_parent_color, address(above) + color_bit(pc));
                                                         rewrite(at(inner_inputs, parent->__rb_parent_color), address(above) + color_bit(pc)); known();
@@ -1909,10 +1909,10 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                     have iid->rb_right == parent by { known(); }
                                                     have sibling->rb_left == tmp1;
                                                     have iid->rb_left == sid by { known(); }
-                                                    have id->rb_right == node by { solve() using { parent->rb_right == node; parent == id; }; }
+                                                    have id->rb_right == node by { close() using { parent->rb_right == node; parent == id; }; }
                                                     have aligned(iid, 8) by known();
                                                     have sid->__rb_parent_color == address(iid) + 1 by {
-                                                        rewrite(sid->__rb_parent_color, (address(iid) | 1)); solve() using { aligned(iid, 8); };
+                                                        rewrite(sid->__rb_parent_color, (address(iid) | 1)); close() using { aligned(iid, 8); };
                                                     }
                                                     have (sid->__rb_parent_color & 1) == 1 by {
                                                         rewrite(sid->__rb_parent_color, (address(iid) | 1)); normalize();
@@ -1967,7 +1967,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                             have ((parent->__rb_parent_color & ~3) as (struct rb_node *)) == above by known();
 
                                                             have ((tmp2->__rb_parent_color & ~3) as (struct rb_node *)) == parent by {
-                                                                solve() using { aligned(parent, 8); aligned(parent, 8) implies ((tmp2->__rb_parent_color & ~3) as (struct rb_node *)) == parent; };
+                                                                close() using { aligned(parent, 8); aligned(parent, 8) implies ((tmp2->__rb_parent_color & ~3) as (struct rb_node *)) == parent; };
                                                             }
                                                             have tmp2->__rb_parent_color == (color_bit(nc) | address(parent)) by { rewrite(tmp2->__rb_parent_color, ((at(near_tag, tmp2->__rb_parent_color) & 1) | address(parent))); rewrite((at(near_tag, tmp2->__rb_parent_color) & 1), color_bit(nc)); known(); }
                                                             apply(aligned_parent_color_word(parent, nc));
@@ -1976,7 +1976,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                             }
                                                             have (tmp2->__rb_parent_color & 1) == color_bit(nc) by {
                                                                 rewrite(tmp2->__rb_parent_color, address(parent) + color_bit(nc));
-                                                                if color_bit(nc) == 0 { rewrite(color_bit(nc), 0); solve() using { aligned(parent, 8); }; } else { apply(color_bit_nonzero_is_one(nc)); rewrite(color_bit(nc), 1); solve() using { aligned(parent, 8); }; }
+                                                                if color_bit(nc) == 0 { rewrite(color_bit(nc), 0); close() using { aligned(parent, 8); }; } else { apply(color_bit_nonzero_is_one(nc)); rewrite(color_bit(nc), 1); close() using { aligned(parent, 8); }; }
                                                             }
                                                             have tmp2->__rb_parent_color == address(parent) + (tmp2->__rb_parent_color & 1) by { rewrite((tmp2->__rb_parent_color & 1), color_bit(nc)); known(); }
                                                             let near = fold(rb_at(tmp2), { model: RbTree::Node(nid, parent, nc, nlm, nrm), left: nl, right: nr });
@@ -2030,7 +2030,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                     }
                                                     have iid->__rb_parent_color == address(above) + (iid->__rb_parent_color & 1) by { rewrite((iid->__rb_parent_color & 1), color_bit(pc)); known(); }
                                                     have parent->__rb_parent_color == address(iid) + 1;
-                                                    have (parent->__rb_parent_color & 1) == 1 by { rewrite(parent->__rb_parent_color, address(iid) + 1); solve() using { aligned(iid, 8); }; }
+                                                    have (parent->__rb_parent_color & 1) == 1 by { rewrite(parent->__rb_parent_color, address(iid) + 1); close() using { aligned(iid, 8); }; }
                                                     have parent->__rb_parent_color == address(iid) + (parent->__rb_parent_color & 1) by { rewrite((parent->__rb_parent_color & 1), 1); known(); }
                                                     have (parent->__rb_parent_color & 1) == color_bit(Color::Black) by { unfold(color_bit(Color::Black)); known(); }
                                                     have iid->rb_right == parent by known();
@@ -2121,7 +2121,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                 step(); // Attach the parent under the sibling.
                                                 step(); // Reparent and blacken the far child.
                                                 have tmp1->__rb_parent_color == (address(sibling) | 1) by known();
-                                                have rid->__rb_parent_color == (address(sid) | 1) by { solve() using { tmp1->__rb_parent_color == (address(sibling) | 1); tmp1 == rid; sibling == sid; }; }
+                                                have rid->__rb_parent_color == (address(sid) | 1) by { close() using { tmp1->__rb_parent_color == (address(sibling) | 1); tmp1 == rid; sibling == sid; }; }
                                                 have aligned(sid, 8) by known();
                                                 apply(aligned_parent_word_from_bit(sid, 1));
                                                 have rid->__rb_parent_color == address(sid) + 1 by {
@@ -2160,7 +2160,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                         step(); // Select the nonempty near-child parent update.
                                                         step(rb_set_parent);
                                                         have ((tmp2->__rb_parent_color & ~3) as (struct rb_node *)) == parent by {
-                                                            solve() using { aligned(parent, 8); aligned(parent, 8) implies ((tmp2->__rb_parent_color & ~3) as (struct rb_node *)) == parent; };
+                                                            close() using { aligned(parent, 8); aligned(parent, 8) implies ((tmp2->__rb_parent_color & ~3) as (struct rb_node *)) == parent; };
                                                         }
                                                         have tmp2->__rb_parent_color == (color_bit(nc) | address(parent));
                                                         have tmp2->__rb_parent_color == address(parent) + color_bit(nc) by {
@@ -2206,7 +2206,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                 }
                                                 have sid->__rb_parent_color == address(above) + (sid->__rb_parent_color & 1);
                                                 have parent->__rb_parent_color == address(sid) + 1;
-                                                have (parent->__rb_parent_color & 1) == 1 by { rewrite(parent->__rb_parent_color, address(sid) + 1); solve() using { aligned(sid, 8); }; }
+                                                have (parent->__rb_parent_color & 1) == 1 by { rewrite(parent->__rb_parent_color, address(sid) + 1); close() using { aligned(sid, 8); }; }
                                                 have parent->__rb_parent_color == address(sid) + (parent->__rb_parent_color & 1);
                                                 have (parent->__rb_parent_color & 1) == color_bit(Color::Black) by { unfold(color_bit(Color::Black)); known(); }
                                                 have sid->rb_right == parent by known();
@@ -2376,8 +2376,8 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                             }
                                             have tmp1 == zid by { solve(); }
                                             have tmp1->__rb_parent_color == (address(parent) | 1) by { known(); }
-                                            have zid->__rb_parent_color == (address(id) | 1) by { solve() using { tmp1->__rb_parent_color == (address(parent) | 1); tmp1 == zid; parent == id; }; }
-                                            have zid->__rb_parent_color == address(id) + 1 by { rewrite(zid->__rb_parent_color, (address(id) | 1)); solve() using { aligned(id, 8); }; }
+                                            have zid->__rb_parent_color == (address(id) | 1) by { close() using { tmp1->__rb_parent_color == (address(parent) | 1); tmp1 == zid; parent == id; }; }
+                                            have zid->__rb_parent_color == address(id) + 1 by { rewrite(zid->__rb_parent_color, (address(id) | 1)); close() using { aligned(id, 8); }; }
                                             have (zid->__rb_parent_color & 1) == 1 by { rewrite(zid->__rb_parent_color, (address(id) | 1)); normalize(); }
                                             have (zid->__rb_parent_color & 1) == color_bit(Color::Black) by { unfold(color_bit(Color::Black)); known(); }
                                             have zid->__rb_parent_color == address(id) + (zid->__rb_parent_color & 1) by { normalize() using { zid->__rb_parent_color == address(id) + 1; (zid->__rb_parent_color & 1) == 1; }; }
@@ -2434,12 +2434,12 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                             have sid->__rb_parent_color == sibling->__rb_parent_color by { normalize() using { sibling == sid; parent == id; }; }
                                             have sid->__rb_parent_color == at(red_rotation, parent->__rb_parent_color) by { rewrite(sid->__rb_parent_color, sibling->__rb_parent_color); known(); }
                                             have sid->__rb_parent_color == address(above) + 1 by { rewrite(sid->__rb_parent_color, at(red_rotation, parent->__rb_parent_color)); known(); }
-                                            have (sid->__rb_parent_color & 1) == 1 by { rewrite(sid->__rb_parent_color, address(above) + 1); solve() using { aligned(above, 8); }; }
+                                            have (sid->__rb_parent_color & 1) == 1 by { rewrite(sid->__rb_parent_color, address(above) + 1); close() using { aligned(above, 8); }; }
                                             have (sid->__rb_parent_color & 1) == color_bit(Color::Black) by { unfold(color_bit(Color::Black)); known(); }
                                             have sid->__rb_parent_color == address(above) + (sid->__rb_parent_color & 1) by { rewrite((sid->__rb_parent_color & 1), 1); known(); }
                                             have parent->__rb_parent_color == address(sibling) by { solve(); }
                                             have parent->__rb_parent_color == address(sid) by { rewrite(sid, sibling); normalize() using { parent->__rb_parent_color == address(sibling); }; }
-                                            have (parent->__rb_parent_color & 1) == 0 by { rewrite(parent->__rb_parent_color, address(sid)); solve() using { aligned(sid, 8); }; }
+                                            have (parent->__rb_parent_color & 1) == 0 by { rewrite(parent->__rb_parent_color, address(sid)); close() using { aligned(sid, 8); }; }
                                             have (parent->__rb_parent_color & 1) == color_bit(Color::Red) by { unfold(color_bit(Color::Red)); known(); }
                                             have parent->__rb_parent_color == address(sid) + (parent->__rb_parent_color & 1) by { rewrite((parent->__rb_parent_color & 1), 0); known(); }
                                             have sid->rb_right == parent by { known(); }
@@ -2570,7 +2570,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                         preserve(memory(sibling->rb_right), statement(1).statement(1).statement(14).statement(1).statement(0));
                                                     }
                                                     have zid->__rb_parent_color == address(id) by { rewrite(id, parent); solve(); }
-                                                    have (zid->__rb_parent_color & 1) == 0 by { rewrite(zid->__rb_parent_color, address(id)); solve() using { aligned(id, 8); }; }
+                                                    have (zid->__rb_parent_color & 1) == 0 by { rewrite(zid->__rb_parent_color, address(id)); close() using { aligned(id, 8); }; }
                                                     have (zid->__rb_parent_color & 1) == color_bit(Color::Red) by { unfold(color_bit(Color::Red)); known(); }
                                                     have zid->__rb_parent_color == address(id) + (zid->__rb_parent_color & 1) by { rewrite((zid->__rb_parent_color & 1), 0); rewrite(zid->__rb_parent_color, address(id)); known(); }
                                                     let sn = fold(rb_at(sibling), { model: RbTree::Node(zid, id, Color::Red, zlm, zrm), right: ls, left: rs });
@@ -2578,7 +2578,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                     have rb_parent_is(sn.model, id) == 1 by { rewrite(sn.model, RbTree::Node(zid, id, Color::Red, zlm, zrm)); unfold(rb_parent_is(RbTree::Node(zid, id, Color::Red, zlm, zrm), id)); normalize(); }
                                                     unfold(rb_red_parent_tag(parent, sid));
                                                     have parent->__rb_parent_color == address(sid) by { known(); }
-                                                    have (parent->__rb_parent_color & 1) == 0 by { rewrite(parent->__rb_parent_color, address(sid)); solve() using { aligned(sid, 8); }; }
+                                                    have (parent->__rb_parent_color & 1) == 0 by { rewrite(parent->__rb_parent_color, address(sid)); close() using { aligned(sid, 8); }; }
                                                     mark red_flip;
                                                     have at(red_flip, parent->__rb_parent_color) == address(sid) by known();
                                                     have separate(memory(parent->__rb_parent_color), memory(parent->rb_left)) by known();
@@ -2610,11 +2610,11 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                     have parent->__rb_parent_color == address(sid) + 1 by {
                                                         rewrite(parent->__rb_parent_color, integer::uint64_wrapping_add(address(sid), 1u64)); known();
                                                     }
-                                                    have (parent->__rb_parent_color & 1) == 1 by { rewrite(parent->__rb_parent_color, address(sid) + 1); solve() using { aligned(sid, 8); }; }
+                                                    have (parent->__rb_parent_color & 1) == 1 by { rewrite(parent->__rb_parent_color, address(sid) + 1); close() using { aligned(sid, 8); }; }
                                                     have (parent->__rb_parent_color & 1) == color_bit(Color::Black) by { unfold(color_bit(Color::Black)); known(); }
                                                     have parent->__rb_parent_color == address(sid) + (parent->__rb_parent_color & 1) by { rewrite((parent->__rb_parent_color & 1), 1); known(); }
                                                     have ((address(sid) + 1) & ~3) == address(sid) by {
-                                                        solve() using { aligned(sid, 8); };
+                                                        close() using { aligned(sid, 8); };
                                                     }
                                                     have (parent->__rb_parent_color & ~3) == address(sid) by {
                                                         rewrite(parent->__rb_parent_color, address(sid) + 1); known();
@@ -2795,8 +2795,8 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                                     have ((parent->__rb_parent_color & ~3) as (struct rb_node *)) == sid by known();
 
                                                                     have tmp1->__rb_parent_color == (address(sibling) | 1) by known();
-                                                                    have cid->__rb_parent_color == (address(zid) | 1) by { solve() using { tmp1->__rb_parent_color == (address(sibling) | 1); tmp1 == cid; sibling == zid; }; }
-                                                                    have cid->__rb_parent_color == address(zid) + 1 by { rewrite(cid->__rb_parent_color, (address(zid) | 1)); solve() using { aligned(zid, 8); }; }
+                                                                    have cid->__rb_parent_color == (address(zid) | 1) by { close() using { tmp1->__rb_parent_color == (address(sibling) | 1); tmp1 == cid; sibling == zid; }; }
+                                                                    have cid->__rb_parent_color == address(zid) + 1 by { rewrite(cid->__rb_parent_color, (address(zid) | 1)); close() using { aligned(zid, 8); }; }
                                                                     have (cid->__rb_parent_color & 1) == 1 by {
                                                                         rewrite(cid->__rb_parent_color, (address(zid) | 1)); normalize();
                                                                     }
@@ -2848,7 +2848,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                                 rewrite((parent->__rb_parent_color & 1), color_bit(Color::Red)); known();
                                                             }
                                                             have zid->__rb_parent_color == (address(sibling) | 1) by known();
-                                                            have zid->__rb_parent_color == (address(iid) | 1) by { solve() using { zid->__rb_parent_color == (address(sibling) | 1); tmp1 == zid; sibling == iid; }; }
+                                                            have zid->__rb_parent_color == (address(iid) | 1) by { close() using { zid->__rb_parent_color == (address(sibling) | 1); tmp1 == zid; sibling == iid; }; }
                                                             have parent->__rb_parent_color == at(inner_inputs, parent->__rb_parent_color) by {
                                                                 rewrite(parent->__rb_parent_color, address(sid) + color_bit(Color::Red));
                                                                 rewrite(at(inner_inputs, parent->__rb_parent_color), address(sid) + color_bit(Color::Red));
@@ -2860,10 +2860,10 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                             have iid->rb_right == parent by { known(); }
                                                             have iid->rb_left == tmp1;
                                                             have iid->rb_left == zid by { known(); }
-                                                            have id->rb_right == node by { solve() using { parent->rb_right == node; parent == id; }; }
+                                                            have id->rb_right == node by { close() using { parent->rb_right == node; parent == id; }; }
                                                             have aligned(iid, 8) by known();
                                                             have zid->__rb_parent_color == address(iid) + 1 by {
-                                                                rewrite(zid->__rb_parent_color, (address(iid) | 1)); solve() using { aligned(iid, 8); };
+                                                                rewrite(zid->__rb_parent_color, (address(iid) | 1)); close() using { aligned(iid, 8); };
                                                             }
                                                             have (zid->__rb_parent_color & 1) == 1 by {
                                                                 rewrite(zid->__rb_parent_color, (address(iid) | 1)); normalize();
@@ -2918,7 +2918,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                                     have ((parent->__rb_parent_color & ~3) as (struct rb_node *)) == sid by known();
 
                                                                     have ((tmp2->__rb_parent_color & ~3) as (struct rb_node *)) == parent by {
-                                                                        solve() using { aligned(parent, 8); aligned(parent, 8) implies ((tmp2->__rb_parent_color & ~3) as (struct rb_node *)) == parent; };
+                                                                        close() using { aligned(parent, 8); aligned(parent, 8) implies ((tmp2->__rb_parent_color & ~3) as (struct rb_node *)) == parent; };
                                                                     }
                                                                     have tmp2->__rb_parent_color == (color_bit(nc) | address(parent)) by { rewrite(tmp2->__rb_parent_color, ((at(near_tag, tmp2->__rb_parent_color) & 1) | address(parent))); rewrite((at(near_tag, tmp2->__rb_parent_color) & 1), color_bit(nc)); known(); }
                                                                     apply(aligned_parent_color_word(parent, nc));
@@ -2927,7 +2927,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                                     }
                                                                     have (tmp2->__rb_parent_color & 1) == color_bit(nc) by {
                                                                         rewrite(tmp2->__rb_parent_color, address(parent) + color_bit(nc));
-                                                                        if color_bit(nc) == 0 { rewrite(color_bit(nc), 0); solve() using { aligned(parent, 8); }; } else { apply(color_bit_nonzero_is_one(nc)); rewrite(color_bit(nc), 1); solve() using { aligned(parent, 8); }; }
+                                                                        if color_bit(nc) == 0 { rewrite(color_bit(nc), 0); close() using { aligned(parent, 8); }; } else { apply(color_bit_nonzero_is_one(nc)); rewrite(color_bit(nc), 1); close() using { aligned(parent, 8); }; }
                                                                     }
                                                                     have tmp2->__rb_parent_color == address(parent) + (tmp2->__rb_parent_color & 1) by { rewrite((tmp2->__rb_parent_color & 1), color_bit(nc)); known(); }
                                                                     let near = fold(rb_at(tmp2), { model: RbTree::Node(nid, parent, nc, nlm, nrm), left: nl, right: nr });
@@ -2981,7 +2981,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                             }
                                                             have iid->__rb_parent_color == address(sid) + (iid->__rb_parent_color & 1) by { rewrite((iid->__rb_parent_color & 1), color_bit(Color::Red)); known(); }
                                                             have parent->__rb_parent_color == address(iid) + 1;
-                                                            have (parent->__rb_parent_color & 1) == 1 by { rewrite(parent->__rb_parent_color, address(iid) + 1); solve() using { aligned(iid, 8); }; }
+                                                            have (parent->__rb_parent_color & 1) == 1 by { rewrite(parent->__rb_parent_color, address(iid) + 1); close() using { aligned(iid, 8); }; }
                                                             have parent->__rb_parent_color == address(iid) + (parent->__rb_parent_color & 1) by { rewrite((parent->__rb_parent_color & 1), 1); known(); }
                                                             have (parent->__rb_parent_color & 1) == color_bit(Color::Black) by { unfold(color_bit(Color::Black)); known(); }
                                                             have iid->rb_right == parent by known();
@@ -3062,7 +3062,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                         step(); // Attach the parent under the sibling.
                                                         step(); // Reparent and blacken the far child.
                                                         have tmp1->__rb_parent_color == (address(sibling) | 1) by known();
-                                                        have rid->__rb_parent_color == (address(zid) | 1) by { solve() using { tmp1->__rb_parent_color == (address(sibling) | 1); tmp1 == rid; sibling == zid; }; }
+                                                        have rid->__rb_parent_color == (address(zid) | 1) by { close() using { tmp1->__rb_parent_color == (address(sibling) | 1); tmp1 == rid; sibling == zid; }; }
                                                         have aligned(zid, 8) by known();
                                                         apply(aligned_parent_word_from_bit(zid, 1));
                                                         have rid->__rb_parent_color == address(zid) + 1 by {
@@ -3101,7 +3101,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                                 step(); // Select the nonempty near-child parent update.
                                                                 step(rb_set_parent);
                                                                 have ((tmp2->__rb_parent_color & ~3) as (struct rb_node *)) == parent by {
-                                                                    solve() using { aligned(parent, 8); aligned(parent, 8) implies ((tmp2->__rb_parent_color & ~3) as (struct rb_node *)) == parent; };
+                                                                    close() using { aligned(parent, 8); aligned(parent, 8) implies ((tmp2->__rb_parent_color & ~3) as (struct rb_node *)) == parent; };
                                                                 }
                                                                 have tmp2->__rb_parent_color == (color_bit(nc) | address(parent));
                                                                 have tmp2->__rb_parent_color == address(parent) + color_bit(nc) by {
@@ -3147,7 +3147,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                         }
                                                         have at(direct_inputs, sibling)->__rb_parent_color == address(sid) + (at(direct_inputs, sibling)->__rb_parent_color & 1);
                                                         have parent->__rb_parent_color == address(zid) + 1;
-                                                        have (parent->__rb_parent_color & 1) == 1 by { rewrite(parent->__rb_parent_color, address(zid) + 1); solve() using { aligned(zid, 8); }; }
+                                                        have (parent->__rb_parent_color & 1) == 1 by { rewrite(parent->__rb_parent_color, address(zid) + 1); close() using { aligned(zid, 8); }; }
                                                         have parent->__rb_parent_color == address(zid) + (parent->__rb_parent_color & 1);
                                                         have (parent->__rb_parent_color & 1) == color_bit(Color::Black) by { unfold(color_bit(Color::Black)); known(); }
                                                         have at(direct_inputs, sibling)->rb_right == parent by known();
@@ -3349,7 +3349,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                             have id->rb_right == sid by known();
                                             have id->rb_left == node by known();
                                             have sid->__rb_parent_color == address(id) by { rewrite(id, parent); solve(); }
-                                            have (sid->__rb_parent_color & 1) == 0 by { rewrite(sid->__rb_parent_color, address(id)); solve() using { aligned(id, 8); }; }
+                                            have (sid->__rb_parent_color & 1) == 0 by { rewrite(sid->__rb_parent_color, address(id)); close() using { aligned(id, 8); }; }
                                             have (sid->__rb_parent_color & 1) == color_bit(Color::Red) by { unfold(color_bit(Color::Red)); known(); }
                                             have sid->__rb_parent_color == address(id) + (sid->__rb_parent_color & 1) by { rewrite((sid->__rb_parent_color & 1), 0); rewrite(sid->__rb_parent_color, address(id)); known(); }
                                             let sn = fold(rb_at(sid), { model: RbTree::Node(sid, id, Color::Red, slm, srm), left: ls, right: rs });
@@ -3405,14 +3405,14 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                     have parent->__rb_parent_color == address(above) + 1 by {
                                                         rewrite(parent->__rb_parent_color, integer::uint64_wrapping_add(address(above), 1u64)); known();
                                                     }
-                                                    have (parent->__rb_parent_color & 1) == 1 by { rewrite(parent->__rb_parent_color, address(above) + 1); solve() using { aligned(above, 8); }; }
+                                                    have (parent->__rb_parent_color & 1) == 1 by { rewrite(parent->__rb_parent_color, address(above) + 1); close() using { aligned(above, 8); }; }
                                                     have (parent->__rb_parent_color & 1) == color_bit(Color::Black) by { unfold(color_bit(Color::Black)); known(); }
                                                     have parent->__rb_parent_color == address(above) + (parent->__rb_parent_color & 1) by { rewrite((parent->__rb_parent_color & 1), 1); known(); }
                                                     have id->__rb_parent_color == address(above) + 1 by {
                                                         rewrite(id->__rb_parent_color, parent->__rb_parent_color); known();
                                                     }
                                                     have ((address(above) + 1) & ~3) == address(above) by {
-                                                        solve() using { aligned(above, 8); };
+                                                        close() using { aligned(above, 8); };
                                                     }
                                                     have (id->__rb_parent_color & ~3) == address(above) by {
                                                         rewrite(id->__rb_parent_color, address(above) + 1); known();
@@ -3715,8 +3715,8 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                             have ((parent->__rb_parent_color & ~3) as (struct rb_node *)) == above by known();
 
                                                             have tmp1->__rb_parent_color == (address(sibling) | 1) by known();
-                                                            have cid->__rb_parent_color == (address(sid) | 1) by { solve() using { tmp1->__rb_parent_color == (address(sibling) | 1); tmp1 == cid; sibling == sid; }; }
-                                                            have cid->__rb_parent_color == address(sid) + 1 by { rewrite(cid->__rb_parent_color, (address(sid) | 1)); solve() using { aligned(sid, 8); }; }
+                                                            have cid->__rb_parent_color == (address(sid) | 1) by { close() using { tmp1->__rb_parent_color == (address(sibling) | 1); tmp1 == cid; sibling == sid; }; }
+                                                            have cid->__rb_parent_color == address(sid) + 1 by { rewrite(cid->__rb_parent_color, (address(sid) | 1)); close() using { aligned(sid, 8); }; }
                                                             have (cid->__rb_parent_color & 1) == 1 by {
                                                                 rewrite(cid->__rb_parent_color, (address(sid) | 1)); normalize();
                                                             }
@@ -3767,7 +3767,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                         rewrite((parent->__rb_parent_color & 1), color_bit(pc)); known();
                                                     }
                                                     have tmp1->__rb_parent_color == (address(sibling) | 1) by known();
-                                                    have sid->__rb_parent_color == (address(iid) | 1) by { solve() using { tmp1->__rb_parent_color == (address(sibling) | 1); tmp1 == sid; sibling == iid; }; }
+                                                    have sid->__rb_parent_color == (address(iid) | 1) by { close() using { tmp1->__rb_parent_color == (address(sibling) | 1); tmp1 == sid; sibling == iid; }; }
                                                     have parent->__rb_parent_color == at(inner_inputs, parent->__rb_parent_color) by {
                                                         rewrite(parent->__rb_parent_color, address(above) + color_bit(pc));
                                                         rewrite(at(inner_inputs, parent->__rb_parent_color), address(above) + color_bit(pc)); known();
@@ -3778,10 +3778,10 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                     have iid->rb_left == parent by { known(); }
                                                     have sibling->rb_right == tmp1;
                                                     have iid->rb_right == sid by { known(); }
-                                                    have id->rb_left == node by { solve() using { parent->rb_left == node; parent == id; }; }
+                                                    have id->rb_left == node by { close() using { parent->rb_left == node; parent == id; }; }
                                                     have aligned(iid, 8) by known();
                                                     have sid->__rb_parent_color == address(iid) + 1 by {
-                                                        rewrite(sid->__rb_parent_color, (address(iid) | 1)); solve() using { aligned(iid, 8); };
+                                                        rewrite(sid->__rb_parent_color, (address(iid) | 1)); close() using { aligned(iid, 8); };
                                                     }
                                                     have (sid->__rb_parent_color & 1) == 1 by {
                                                         rewrite(sid->__rb_parent_color, (address(iid) | 1)); normalize();
@@ -3836,7 +3836,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                             have ((parent->__rb_parent_color & ~3) as (struct rb_node *)) == above by known();
 
                                                             have ((tmp2->__rb_parent_color & ~3) as (struct rb_node *)) == parent by {
-                                                                solve() using { aligned(parent, 8); aligned(parent, 8) implies ((tmp2->__rb_parent_color & ~3) as (struct rb_node *)) == parent; };
+                                                                close() using { aligned(parent, 8); aligned(parent, 8) implies ((tmp2->__rb_parent_color & ~3) as (struct rb_node *)) == parent; };
                                                             }
                                                             have tmp2->__rb_parent_color == (color_bit(nc) | address(parent)) by { rewrite(tmp2->__rb_parent_color, ((at(near_tag, tmp2->__rb_parent_color) & 1) | address(parent))); rewrite((at(near_tag, tmp2->__rb_parent_color) & 1), color_bit(nc)); known(); }
                                                             apply(aligned_parent_color_word(parent, nc));
@@ -3845,7 +3845,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                             }
                                                             have (tmp2->__rb_parent_color & 1) == color_bit(nc) by {
                                                                 rewrite(tmp2->__rb_parent_color, address(parent) + color_bit(nc));
-                                                                if color_bit(nc) == 0 { rewrite(color_bit(nc), 0); solve() using { aligned(parent, 8); }; } else { apply(color_bit_nonzero_is_one(nc)); rewrite(color_bit(nc), 1); solve() using { aligned(parent, 8); }; }
+                                                                if color_bit(nc) == 0 { rewrite(color_bit(nc), 0); close() using { aligned(parent, 8); }; } else { apply(color_bit_nonzero_is_one(nc)); rewrite(color_bit(nc), 1); close() using { aligned(parent, 8); }; }
                                                             }
                                                             have tmp2->__rb_parent_color == address(parent) + (tmp2->__rb_parent_color & 1) by { rewrite((tmp2->__rb_parent_color & 1), color_bit(nc)); known(); }
                                                             let near = fold(rb_at(tmp2), { model: RbTree::Node(nid, parent, nc, nlm, nrm), right: nr, left: nl });
@@ -3899,7 +3899,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                     }
                                                     have iid->__rb_parent_color == address(above) + (iid->__rb_parent_color & 1) by { rewrite((iid->__rb_parent_color & 1), color_bit(pc)); known(); }
                                                     have parent->__rb_parent_color == address(iid) + 1;
-                                                    have (parent->__rb_parent_color & 1) == 1 by { rewrite(parent->__rb_parent_color, address(iid) + 1); solve() using { aligned(iid, 8); }; }
+                                                    have (parent->__rb_parent_color & 1) == 1 by { rewrite(parent->__rb_parent_color, address(iid) + 1); close() using { aligned(iid, 8); }; }
                                                     have parent->__rb_parent_color == address(iid) + (parent->__rb_parent_color & 1) by { rewrite((parent->__rb_parent_color & 1), 1); known(); }
                                                     have (parent->__rb_parent_color & 1) == color_bit(Color::Black) by { unfold(color_bit(Color::Black)); known(); }
                                                     have iid->rb_left == parent by known();
@@ -3990,7 +3990,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                 step(); // Attach the parent under the sibling.
                                                 step(); // Reparent and blacken the far child.
                                                 have tmp1->__rb_parent_color == (address(sibling) | 1) by known();
-                                                have rid->__rb_parent_color == (address(sid) | 1) by { solve() using { tmp1->__rb_parent_color == (address(sibling) | 1); tmp1 == rid; sibling == sid; }; }
+                                                have rid->__rb_parent_color == (address(sid) | 1) by { close() using { tmp1->__rb_parent_color == (address(sibling) | 1); tmp1 == rid; sibling == sid; }; }
                                                 have aligned(sid, 8) by known();
                                                 apply(aligned_parent_word_from_bit(sid, 1));
                                                 have rid->__rb_parent_color == address(sid) + 1 by {
@@ -4029,7 +4029,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                         step(); // Select the nonempty near-child parent update.
                                                         step(rb_set_parent);
                                                         have ((tmp2->__rb_parent_color & ~3) as (struct rb_node *)) == parent by {
-                                                            solve() using { aligned(parent, 8); aligned(parent, 8) implies ((tmp2->__rb_parent_color & ~3) as (struct rb_node *)) == parent; };
+                                                            close() using { aligned(parent, 8); aligned(parent, 8) implies ((tmp2->__rb_parent_color & ~3) as (struct rb_node *)) == parent; };
                                                         }
                                                         have tmp2->__rb_parent_color == (color_bit(nc) | address(parent));
                                                         have tmp2->__rb_parent_color == address(parent) + color_bit(nc) by {
@@ -4075,7 +4075,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                 }
                                                 have sid->__rb_parent_color == address(above) + (sid->__rb_parent_color & 1);
                                                 have parent->__rb_parent_color == address(sid) + 1;
-                                                have (parent->__rb_parent_color & 1) == 1 by { rewrite(parent->__rb_parent_color, address(sid) + 1); solve() using { aligned(sid, 8); }; }
+                                                have (parent->__rb_parent_color & 1) == 1 by { rewrite(parent->__rb_parent_color, address(sid) + 1); close() using { aligned(sid, 8); }; }
                                                 have parent->__rb_parent_color == address(sid) + (parent->__rb_parent_color & 1);
                                                 have (parent->__rb_parent_color & 1) == color_bit(Color::Black) by { unfold(color_bit(Color::Black)); known(); }
                                                 have sid->rb_left == parent by known();
@@ -4244,8 +4244,8 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                             }
                                             have tmp1 == zid by { solve(); }
                                             have tmp1->__rb_parent_color == (address(parent) | 1) by { known(); }
-                                            have zid->__rb_parent_color == (address(id) | 1) by { solve() using { tmp1->__rb_parent_color == (address(parent) | 1); tmp1 == zid; parent == id; }; }
-                                            have zid->__rb_parent_color == address(id) + 1 by { rewrite(zid->__rb_parent_color, (address(id) | 1)); solve() using { aligned(id, 8); }; }
+                                            have zid->__rb_parent_color == (address(id) | 1) by { close() using { tmp1->__rb_parent_color == (address(parent) | 1); tmp1 == zid; parent == id; }; }
+                                            have zid->__rb_parent_color == address(id) + 1 by { rewrite(zid->__rb_parent_color, (address(id) | 1)); close() using { aligned(id, 8); }; }
                                             have (zid->__rb_parent_color & 1) == 1 by { rewrite(zid->__rb_parent_color, (address(id) | 1)); normalize(); }
                                             have (zid->__rb_parent_color & 1) == color_bit(Color::Black) by { unfold(color_bit(Color::Black)); known(); }
                                             have zid->__rb_parent_color == address(id) + (zid->__rb_parent_color & 1) by { normalize() using { zid->__rb_parent_color == address(id) + 1; (zid->__rb_parent_color & 1) == 1; }; }
@@ -4302,12 +4302,12 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                             have sid->__rb_parent_color == sibling->__rb_parent_color by { normalize() using { sibling == sid; parent == id; }; }
                                             have sid->__rb_parent_color == at(red_rotation, parent->__rb_parent_color) by { rewrite(sid->__rb_parent_color, sibling->__rb_parent_color); known(); }
                                             have sid->__rb_parent_color == address(above) + 1 by { rewrite(sid->__rb_parent_color, at(red_rotation, parent->__rb_parent_color)); known(); }
-                                            have (sid->__rb_parent_color & 1) == 1 by { rewrite(sid->__rb_parent_color, address(above) + 1); solve() using { aligned(above, 8); }; }
+                                            have (sid->__rb_parent_color & 1) == 1 by { rewrite(sid->__rb_parent_color, address(above) + 1); close() using { aligned(above, 8); }; }
                                             have (sid->__rb_parent_color & 1) == color_bit(Color::Black) by { unfold(color_bit(Color::Black)); known(); }
                                             have sid->__rb_parent_color == address(above) + (sid->__rb_parent_color & 1) by { rewrite((sid->__rb_parent_color & 1), 1); known(); }
                                             have parent->__rb_parent_color == address(sibling) by { solve(); }
                                             have parent->__rb_parent_color == address(sid) by { rewrite(sid, sibling); normalize() using { parent->__rb_parent_color == address(sibling); }; }
-                                            have (parent->__rb_parent_color & 1) == 0 by { rewrite(parent->__rb_parent_color, address(sid)); solve() using { aligned(sid, 8); }; }
+                                            have (parent->__rb_parent_color & 1) == 0 by { rewrite(parent->__rb_parent_color, address(sid)); close() using { aligned(sid, 8); }; }
                                             have (parent->__rb_parent_color & 1) == color_bit(Color::Red) by { unfold(color_bit(Color::Red)); known(); }
                                             have parent->__rb_parent_color == address(sid) + (parent->__rb_parent_color & 1) by { rewrite((parent->__rb_parent_color & 1), 0); known(); }
                                             have sid->rb_left == parent by { known(); }
@@ -4437,7 +4437,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                         preserve(memory(sibling->rb_left), statement(1).statement(1).statement(2).statement(1).statement(0));
                                                     }
                                                     have zid->__rb_parent_color == address(id) by { rewrite(id, parent); solve(); }
-                                                    have (zid->__rb_parent_color & 1) == 0 by { rewrite(zid->__rb_parent_color, address(id)); solve() using { aligned(id, 8); }; }
+                                                    have (zid->__rb_parent_color & 1) == 0 by { rewrite(zid->__rb_parent_color, address(id)); close() using { aligned(id, 8); }; }
                                                     have (zid->__rb_parent_color & 1) == color_bit(Color::Red) by { unfold(color_bit(Color::Red)); known(); }
                                                     have zid->__rb_parent_color == address(id) + (zid->__rb_parent_color & 1) by { rewrite((zid->__rb_parent_color & 1), 0); rewrite(zid->__rb_parent_color, address(id)); known(); }
                                                     let sn = fold(rb_at(sibling), { model: RbTree::Node(zid, id, Color::Red, zlm, zrm), left: ls, right: rs });
@@ -4445,7 +4445,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                     have rb_parent_is(sn.model, id) == 1 by { rewrite(sn.model, RbTree::Node(zid, id, Color::Red, zlm, zrm)); unfold(rb_parent_is(RbTree::Node(zid, id, Color::Red, zlm, zrm), id)); normalize(); }
                                                     unfold(rb_red_parent_tag(parent, sid));
                                                     have parent->__rb_parent_color == address(sid) by { known(); }
-                                                    have (parent->__rb_parent_color & 1) == 0 by { rewrite(parent->__rb_parent_color, address(sid)); solve() using { aligned(sid, 8); }; }
+                                                    have (parent->__rb_parent_color & 1) == 0 by { rewrite(parent->__rb_parent_color, address(sid)); close() using { aligned(sid, 8); }; }
                                                     mark red_flip;
                                                     have at(red_flip, parent->__rb_parent_color) == address(sid) by known();
                                                     have separate(memory(parent->__rb_parent_color), memory(parent->rb_right)) by known();
@@ -4477,11 +4477,11 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                     have parent->__rb_parent_color == address(sid) + 1 by {
                                                         rewrite(parent->__rb_parent_color, integer::uint64_wrapping_add(address(sid), 1u64)); known();
                                                     }
-                                                    have (parent->__rb_parent_color & 1) == 1 by { rewrite(parent->__rb_parent_color, address(sid) + 1); solve() using { aligned(sid, 8); }; }
+                                                    have (parent->__rb_parent_color & 1) == 1 by { rewrite(parent->__rb_parent_color, address(sid) + 1); close() using { aligned(sid, 8); }; }
                                                     have (parent->__rb_parent_color & 1) == color_bit(Color::Black) by { unfold(color_bit(Color::Black)); known(); }
                                                     have parent->__rb_parent_color == address(sid) + (parent->__rb_parent_color & 1) by { rewrite((parent->__rb_parent_color & 1), 1); known(); }
                                                     have ((address(sid) + 1) & ~3) == address(sid) by {
-                                                        solve() using { aligned(sid, 8); };
+                                                        close() using { aligned(sid, 8); };
                                                     }
                                                     have (parent->__rb_parent_color & ~3) == address(sid) by {
                                                         rewrite(parent->__rb_parent_color, address(sid) + 1); known();
@@ -4662,8 +4662,8 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                                     have ((parent->__rb_parent_color & ~3) as (struct rb_node *)) == sid by known();
 
                                                                     have tmp1->__rb_parent_color == (address(sibling) | 1) by known();
-                                                                    have cid->__rb_parent_color == (address(zid) | 1) by { solve() using { tmp1->__rb_parent_color == (address(sibling) | 1); tmp1 == cid; sibling == zid; }; }
-                                                                    have cid->__rb_parent_color == address(zid) + 1 by { rewrite(cid->__rb_parent_color, (address(zid) | 1)); solve() using { aligned(zid, 8); }; }
+                                                                    have cid->__rb_parent_color == (address(zid) | 1) by { close() using { tmp1->__rb_parent_color == (address(sibling) | 1); tmp1 == cid; sibling == zid; }; }
+                                                                    have cid->__rb_parent_color == address(zid) + 1 by { rewrite(cid->__rb_parent_color, (address(zid) | 1)); close() using { aligned(zid, 8); }; }
                                                                     have (cid->__rb_parent_color & 1) == 1 by {
                                                                         rewrite(cid->__rb_parent_color, (address(zid) | 1)); normalize();
                                                                     }
@@ -4715,7 +4715,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                                 rewrite((parent->__rb_parent_color & 1), color_bit(Color::Red)); known();
                                                             }
                                                             have zid->__rb_parent_color == (address(sibling) | 1) by known();
-                                                            have zid->__rb_parent_color == (address(iid) | 1) by { solve() using { zid->__rb_parent_color == (address(sibling) | 1); tmp1 == zid; sibling == iid; }; }
+                                                            have zid->__rb_parent_color == (address(iid) | 1) by { close() using { zid->__rb_parent_color == (address(sibling) | 1); tmp1 == zid; sibling == iid; }; }
                                                             have parent->__rb_parent_color == at(inner_inputs, parent->__rb_parent_color) by {
                                                                 rewrite(parent->__rb_parent_color, address(sid) + color_bit(Color::Red));
                                                                 rewrite(at(inner_inputs, parent->__rb_parent_color), address(sid) + color_bit(Color::Red));
@@ -4727,10 +4727,10 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                             have iid->rb_left == parent by { known(); }
                                                             have iid->rb_right == tmp1;
                                                             have iid->rb_right == zid by { known(); }
-                                                            have id->rb_left == node by { solve() using { parent->rb_left == node; parent == id; }; }
+                                                            have id->rb_left == node by { close() using { parent->rb_left == node; parent == id; }; }
                                                             have aligned(iid, 8) by known();
                                                             have zid->__rb_parent_color == address(iid) + 1 by {
-                                                                rewrite(zid->__rb_parent_color, (address(iid) | 1)); solve() using { aligned(iid, 8); };
+                                                                rewrite(zid->__rb_parent_color, (address(iid) | 1)); close() using { aligned(iid, 8); };
                                                             }
                                                             have (zid->__rb_parent_color & 1) == 1 by {
                                                                 rewrite(zid->__rb_parent_color, (address(iid) | 1)); normalize();
@@ -4785,7 +4785,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                                     have ((parent->__rb_parent_color & ~3) as (struct rb_node *)) == sid by known();
 
                                                                     have ((tmp2->__rb_parent_color & ~3) as (struct rb_node *)) == parent by {
-                                                                        solve() using { aligned(parent, 8); aligned(parent, 8) implies ((tmp2->__rb_parent_color & ~3) as (struct rb_node *)) == parent; };
+                                                                        close() using { aligned(parent, 8); aligned(parent, 8) implies ((tmp2->__rb_parent_color & ~3) as (struct rb_node *)) == parent; };
                                                                     }
                                                                     have tmp2->__rb_parent_color == (color_bit(nc) | address(parent)) by { rewrite(tmp2->__rb_parent_color, ((at(near_tag, tmp2->__rb_parent_color) & 1) | address(parent))); rewrite((at(near_tag, tmp2->__rb_parent_color) & 1), color_bit(nc)); known(); }
                                                                     apply(aligned_parent_color_word(parent, nc));
@@ -4794,7 +4794,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                                     }
                                                                     have (tmp2->__rb_parent_color & 1) == color_bit(nc) by {
                                                                         rewrite(tmp2->__rb_parent_color, address(parent) + color_bit(nc));
-                                                                        if color_bit(nc) == 0 { rewrite(color_bit(nc), 0); solve() using { aligned(parent, 8); }; } else { apply(color_bit_nonzero_is_one(nc)); rewrite(color_bit(nc), 1); solve() using { aligned(parent, 8); }; }
+                                                                        if color_bit(nc) == 0 { rewrite(color_bit(nc), 0); close() using { aligned(parent, 8); }; } else { apply(color_bit_nonzero_is_one(nc)); rewrite(color_bit(nc), 1); close() using { aligned(parent, 8); }; }
                                                                     }
                                                                     have tmp2->__rb_parent_color == address(parent) + (tmp2->__rb_parent_color & 1) by { rewrite((tmp2->__rb_parent_color & 1), color_bit(nc)); known(); }
                                                                     let near = fold(rb_at(tmp2), { model: RbTree::Node(nid, parent, nc, nlm, nrm), right: nr, left: nl });
@@ -4848,7 +4848,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                             }
                                                             have iid->__rb_parent_color == address(sid) + (iid->__rb_parent_color & 1) by { rewrite((iid->__rb_parent_color & 1), color_bit(Color::Red)); known(); }
                                                             have parent->__rb_parent_color == address(iid) + 1;
-                                                            have (parent->__rb_parent_color & 1) == 1 by { rewrite(parent->__rb_parent_color, address(iid) + 1); solve() using { aligned(iid, 8); }; }
+                                                            have (parent->__rb_parent_color & 1) == 1 by { rewrite(parent->__rb_parent_color, address(iid) + 1); close() using { aligned(iid, 8); }; }
                                                             have parent->__rb_parent_color == address(iid) + (parent->__rb_parent_color & 1) by { rewrite((parent->__rb_parent_color & 1), 1); known(); }
                                                             have (parent->__rb_parent_color & 1) == color_bit(Color::Black) by { unfold(color_bit(Color::Black)); known(); }
                                                             have iid->rb_left == parent by known();
@@ -4929,7 +4929,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                         step(); // Attach the parent under the sibling.
                                                         step(); // Reparent and blacken the far child.
                                                         have tmp1->__rb_parent_color == (address(sibling) | 1) by known();
-                                                        have rid->__rb_parent_color == (address(zid) | 1) by { solve() using { tmp1->__rb_parent_color == (address(sibling) | 1); tmp1 == rid; sibling == zid; }; }
+                                                        have rid->__rb_parent_color == (address(zid) | 1) by { close() using { tmp1->__rb_parent_color == (address(sibling) | 1); tmp1 == rid; sibling == zid; }; }
                                                         have aligned(zid, 8) by known();
                                                         apply(aligned_parent_word_from_bit(zid, 1));
                                                         have rid->__rb_parent_color == address(zid) + 1 by {
@@ -4968,7 +4968,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                                 step(); // Select the nonempty near-child parent update.
                                                                 step(rb_set_parent);
                                                                 have ((tmp2->__rb_parent_color & ~3) as (struct rb_node *)) == parent by {
-                                                                    solve() using { aligned(parent, 8); aligned(parent, 8) implies ((tmp2->__rb_parent_color & ~3) as (struct rb_node *)) == parent; };
+                                                                    close() using { aligned(parent, 8); aligned(parent, 8) implies ((tmp2->__rb_parent_color & ~3) as (struct rb_node *)) == parent; };
                                                                 }
                                                                 have tmp2->__rb_parent_color == (color_bit(nc) | address(parent));
                                                                 have tmp2->__rb_parent_color == address(parent) + color_bit(nc) by {
@@ -5014,7 +5014,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                         }
                                                         have at(direct_inputs, sibling)->__rb_parent_color == address(sid) + (at(direct_inputs, sibling)->__rb_parent_color & 1);
                                                         have parent->__rb_parent_color == address(zid) + 1;
-                                                        have (parent->__rb_parent_color & 1) == 1 by { rewrite(parent->__rb_parent_color, address(zid) + 1); solve() using { aligned(zid, 8); }; }
+                                                        have (parent->__rb_parent_color & 1) == 1 by { rewrite(parent->__rb_parent_color, address(zid) + 1); close() using { aligned(zid, 8); }; }
                                                         have parent->__rb_parent_color == address(zid) + (parent->__rb_parent_color & 1);
                                                         have (parent->__rb_parent_color & 1) == color_bit(Color::Black) by { unfold(color_bit(Color::Black)); known(); }
                                                         have at(direct_inputs, sibling)->rb_left == parent by known();

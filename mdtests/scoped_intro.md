@@ -19,7 +19,7 @@ theorem scoped_implication() {
     ensures forall (written: Integer) { 1 <= written implies 0 < written } by {
         intro(k) {
             intro() {
-                solve() using { 1 <= k; };
+                close() using { 1 <= k; };
             }
         }
     }
@@ -43,7 +43,7 @@ theorem nested_scoped_ranges(end: uint64) {
         intro() {
             intro() {
                 intro() {
-                    solve() using { j < i; i < end; };
+                    close() using { j < i; i < end; };
                 }
             }
         }

@@ -1,7 +1,7 @@
 # `int64` definedness from the operands' bounds is an explicit step
 
 Arithmetic search expands to ordinary proof steps, with the selected premises
-stated explicitly in `solve() using { ... }`.
+stated explicitly in `close() using { ... }`.
 
 ```c filename=int64_defined_from_bounds.c
 long sum(long a, long b) {
@@ -34,7 +34,7 @@ int64 sum(int64 a, int64 b) {
     ensures to_integer(result) == to_integer(a + b);
 } by {
     have defined(a + b) by {
-        solve() using { a < 100; b == 1; };
+        close() using { a < 100; b == 1; };
     }
 }
 
@@ -45,7 +45,7 @@ int64 difference(int64 a, int64 b) {
     ensures to_integer(result) == to_integer(a - b);
 } by {
     have defined(a - b) by {
-        solve() using { -5 <= a; 0 <= b; not (b > 7); };
+        close() using { -5 <= a; 0 <= b; not (b > 7); };
     }
 }
 
@@ -65,7 +65,7 @@ int64 sum_by_listed_solve(int64 a, int64 b) {
     ensures to_integer(result) == to_integer(a + b);
 } by {
     have defined(a + b) by {
-        solve() using {
+        close() using {
             a < 100;
             b == 1;
         };
@@ -77,7 +77,7 @@ int64 mixed(uint32 tag, int64 b) {
     ensures to_integer(result) == to_integer(tag + b);
 } by {
     have defined(tag + b) by {
-        solve() using { b < 100; };
+        close() using { b < 100; };
     }
 }
 ```

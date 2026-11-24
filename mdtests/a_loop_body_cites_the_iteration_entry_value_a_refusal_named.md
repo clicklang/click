@@ -31,7 +31,7 @@ int32 walk(int32 n) {
         initialize by { solve(); }
         maintain by {
             step();
-            have i <= n by { solve() using { at(region(3).entry, i) < n; }; }
+            have i <= n by { close() using { at(region(3).entry, i) < n; }; }
         }
     }
 }

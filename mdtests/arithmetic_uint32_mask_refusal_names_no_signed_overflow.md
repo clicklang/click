@@ -8,7 +8,7 @@ does not follow: the mask may be `1u32`.
 theorem masked(units: uint32) {
     requires (units & 1u32) <= 1u32;
     ensures (units & 1u32) < 1u32 by {
-        solve() using { (units & 1u32) <= 1u32; };
+        close() using { (units & 1u32) <= 1u32; };
     }
 }
 ```

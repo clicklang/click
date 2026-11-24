@@ -36,10 +36,10 @@ void mark_other(int32 a[], int32 b[], int32 n, int32 j) {
         unfold(icount(a, 0, 0));
         known();
     }
-    have to_integer(a[0]) == 5 by { solve() using { a[0] == 5; }; }
+    have to_integer(a[0]) == 5 by { close() using { a[0] == 5; }; }
     have icount(a, 0, 1) == 5 by {
         unfold(icount(a, 0, 1));
-        solve() using { icount(a, 0, 0) == 0; to_integer(a[0]) == 5; };
+        close() using { icount(a, 0, 0) == 0; to_integer(a[0]) == 5; };
     }
     have contains(memory(b[0..n]), memory(b[j])) by {
         apply(click::separation::contains_element(b, 0, n, j));

@@ -1,7 +1,7 @@
 # An `int64` guarded postcondition closes from its operands' bounds
 
 Arithmetic search expands to ordinary proof steps, with the selected premises
-stated explicitly in `solve() using { ... }`.
+stated explicitly in `close() using { ... }`.
 
 The expansion proves `defined((old(st.total) + at(region(2).exit, got)))`
 from the two operand bounds, `old(st.total) < 100` and

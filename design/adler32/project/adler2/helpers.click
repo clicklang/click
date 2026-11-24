@@ -7,7 +7,7 @@ theorem adler_helper_byte_observation(value: uint8) {
  ensures to_integer((value as u32)) == to_integer((value as i32)) by {
   have 0 <= (value as i32);
   have (value as i32) <= 255;
-  solve() using { 0 <= to_integer((value as i32)); to_integer((value as i32)) <= 255; };
+  close() using { 0 <= to_integer((value as i32)); to_integer((value as i32)) <= 255; };
  }
 }
 
@@ -64,7 +64,7 @@ impl adler2::algo::U32X4 {
         have 255u32 >= result.0[3];
         have to_integer(result.0[3]) >= 0;
         have 255 >= to_integer(result.0[3]);
-        solve() using {
+        close() using {
             result.0[0] == old((bytes[0] as u32));
             to_integer(result.0[0]) == old(to_integer((bytes[0] as i32)));
             255u32 >= result.0[0];
@@ -109,10 +109,10 @@ impl AddAssign<adler2::algo::U32X4> for adler2::algo::U32X4 {
         ensures to_integer(self.0[3]) == to_integer(old(self.0[3])) + to_integer(other.0[3]);
         ensures 0 <= to_integer(self.0[3]);
     } by {
-        have self.0[0] <= 4294967295u32 - other.0[0] by { solve() using { to_integer(self.0[0]) + to_integer(other.0[0]) <= 4294967295; }; }
-        have self.0[1] <= 4294967295u32 - other.0[1] by { solve() using { to_integer(self.0[1]) + to_integer(other.0[1]) <= 4294967295; }; }
-        have self.0[2] <= 4294967295u32 - other.0[2] by { solve() using { to_integer(self.0[2]) + to_integer(other.0[2]) <= 4294967295; }; }
-        have self.0[3] <= 4294967295u32 - other.0[3] by { solve() using { to_integer(self.0[3]) + to_integer(other.0[3]) <= 4294967295; }; }
+        have self.0[0] <= 4294967295u32 - other.0[0] by { close() using { to_integer(self.0[0]) + to_integer(other.0[0]) <= 4294967295; }; }
+        have self.0[1] <= 4294967295u32 - other.0[1] by { close() using { to_integer(self.0[1]) + to_integer(other.0[1]) <= 4294967295; }; }
+        have self.0[2] <= 4294967295u32 - other.0[2] by { close() using { to_integer(self.0[2]) + to_integer(other.0[2]) <= 4294967295; }; }
+        have self.0[3] <= 4294967295u32 - other.0[3] by { close() using { to_integer(self.0[3]) + to_integer(other.0[3]) <= 4294967295; }; }
     }
 }
 
@@ -288,10 +288,10 @@ impl adler2::Adler32 {
      have b_vec.0[1] == 0u32;
      have b_vec.0[2] == 0u32;
      have b_vec.0[3] == 0u32;
-     have b_vec.0[0] <= 1073741823u32 by solve() using { b_vec.0[0] == 0u32; };
-     have b_vec.0[1] <= 1073741823u32 by solve() using { b_vec.0[1] == 0u32; };
-     have b_vec.0[2] <= 1073741823u32 by solve() using { b_vec.0[2] == 0u32; };
-     have b_vec.0[3] <= 1073741823u32 by solve() using { b_vec.0[3] == 0u32; };
+     have b_vec.0[0] <= 1073741823u32 by close() using { b_vec.0[0] == 0u32; };
+     have b_vec.0[1] <= 1073741823u32 by close() using { b_vec.0[1] == 0u32; };
+     have b_vec.0[2] <= 1073741823u32 by close() using { b_vec.0[2] == 0u32; };
+     have b_vec.0[3] <= 1073741823u32 by close() using { b_vec.0[3] == 0u32; };
      // The three corrections add MOD, twice MOD, and three times MOD.
      step_until(statement(16).entry);
      have b_vec.0[0] == 0u32;

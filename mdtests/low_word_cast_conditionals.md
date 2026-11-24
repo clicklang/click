@@ -6,12 +6,12 @@ theorem low_word_casts_keep_their_destination(flag: Bool, w: uint64) {
     ensures flag implies (if flag { w as int32 } else { 3 }) == -1 by {
         intro();
         rewrite(w, 8589934591u64);
-        solve() using { flag; };
+        close() using { flag; };
     }
     ensures (not flag) implies (if flag { 3u32 } else { w as uint32 }) == 4294967295u32 by {
         intro();
         rewrite(w, 8589934591u64);
-        solve() using { not flag; };
+        close() using { not flag; };
     }
 }
 ```

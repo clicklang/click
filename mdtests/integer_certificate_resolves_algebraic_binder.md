@@ -11,7 +11,7 @@ theorem local_count_arithmetic() {
         to_integer(count_value(count)) + 1 == 4
     } by {
         intro(); intro();
-        solve() using { to_integer(count_value(count)) == 3; };
+        close() using { to_integer(count_value(count)) == 3; };
     }
 }
 ```

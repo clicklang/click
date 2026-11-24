@@ -1719,7 +1719,7 @@ function count(model: Count) -> int32 { match model { Count::At(value) => value,
 theorem count_less(value: int32, model: Count) {
     requires to_integer(count(model)) == to_integer(value) - 1;
     ensures to_integer(count(model)) < to_integer(value) by {
-        solve() using { to_integer(count(model)) == to_integer(value) - 1; };
+        close() using { to_integer(count(model)) == to_integer(value) - 1; };
     }
 }
 
@@ -1777,7 +1777,7 @@ theorem nested_count(value: int32) {
                 }}
                 theorem known_count(model: Count) {{
                     requires to_integer(count_value(model)) == 0;
-                    ensures to_integer(count_value(model)) <= 0 by {{ solve() using {{ to_integer(count_value(model)) == 0; }}; }}
+                    ensures to_integer(count_value(model)) <= 0 by {{ close() using {{ to_integer(count_value(model)) == 0; }}; }}
                 }}
                 theorem guarded(x: int32, y: int32) {{
                     requires defined(x + y);

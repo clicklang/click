@@ -2652,16 +2652,16 @@ fn explicit_pointer_translation_checks_only_named_premises() {
             requires p == arr + i;
             requires i < n;
             ensures p + 1 == arr + (i + 1) by {
-                solve() using { p == arr + i; i < n; }
+                close() using { p == arr + i; i < n; }
             }
         }
     "#;
     verify_c_sources(source, &[]).unwrap_or_else(|e| panic!("{}", e.message()));
     for omitted in [
-        "solve() using { p == arr + i; }",
-        "solve() using { i < n; }",
+        "close() using { p == arr + i; }",
+        "close() using { i < n; }",
     ] {
-        let missing = source.replace("solve() using { p == arr + i; i < n; }", omitted);
+        let missing = source.replace("close() using { p == arr + i; i < n; }", omitted);
         assert!(
             verify_c_sources(&missing, &[]).is_err(),
             "unnamed ambient premises must not be used"

@@ -2429,7 +2429,7 @@ int32 keep(int32 x, int32 y) {
     ensures weakened: -1 <= to_integer(x) + to_integer(y) by {
         step_until(function.exit);
         have -1 <= to_integer(x) + to_integer(y) by {
-            solve() using {
+            close() using {
                 0 <= to_integer(x) + to_integer(y);
             }
         }
@@ -2456,7 +2456,7 @@ theorem integer_affine_two_premise_constant_weakening(x: Integer, y: Integer) {
     requires 0 <= x;
     requires 0 <= y;
     ensures -1 <= x + y by {
-        solve() using {
+        close() using {
             0 <= x;
             0 <= y;
         }
@@ -2486,7 +2486,7 @@ int32 fixed_c_params(int32 i, int32 total, int32 value) {
     ensures bounded: -2147483648 <= to_integer(total) + to_integer(value) by {
         step_until(function.exit);
         have -2147483648 <= to_integer(total) + to_integer(value) by {
-            solve() using {
+            close() using {
                 -1000 * to_integer(i) - 1000 <= to_integer(total) + to_integer(value);
                 to_integer(i) <= 1000;
             }

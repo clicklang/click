@@ -18,18 +18,18 @@ uint64 remainder(uint64 length, uint64 mid) {
     ensures to_integer(result) == to_integer(length - mid);
 } by {
     have to_integer(0u64) < to_integer(length - mid) by {
-        have to_integer(mid) < to_integer(length) by solve() using { mid < length; };
-        have to_integer(mid) <= to_integer(length) by solve() using { to_integer(mid) < to_integer(length); };
+        have to_integer(mid) < to_integer(length) by close() using { mid < length; };
+        have to_integer(mid) <= to_integer(length) by close() using { to_integer(mid) < to_integer(length); };
         apply(integer::uint64_subtract_to_integer(length, mid));
         rewrite(to_integer(length - mid), to_integer(length) - to_integer(mid));
-        solve() using { to_integer(mid) < to_integer(length); };
+        close() using { to_integer(mid) < to_integer(length); };
     }
     have to_integer(length - mid) <= to_integer(length) by {
-        have to_integer(mid) <= to_integer(length) by solve() using { mid <= length; };
+        have to_integer(mid) <= to_integer(length) by close() using { mid <= length; };
         apply(integer::uint64_subtract_to_integer(length, mid));
         rewrite(to_integer(length - mid), to_integer(length) - to_integer(mid));
         have 0 <= to_integer(mid) by known();
-        solve() using { 0 <= to_integer(mid); };
+        close() using { 0 <= to_integer(mid); };
     }
 }
 ```

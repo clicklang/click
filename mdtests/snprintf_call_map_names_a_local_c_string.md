@@ -36,7 +36,7 @@ int32 f(char buf[], int32 len) {
 } by {
     have 0 <= len and len <= 2147483647 by solve();
     have to_integer(len as uint64) == to_integer(len) by {
-        solve() using { 0 <= to_integer(len); to_integer(len) <= 2147483647; };
+        close() using { 0 <= to_integer(len); to_integer(len) <= 2147483647; };
     }
     step();
     step();
@@ -49,7 +49,7 @@ int32 f(char buf[], int32 len) {
         solve();
     }
     have result == 1 by {
-        solve() using { result == stdio::decimal_length(7u64) as int32; stdio::decimal_length(7u64) == 1u64; };
+        close() using { result == stdio::decimal_length(7u64) as int32; stdio::decimal_length(7u64) == 1u64; };
     }
 }
 ```

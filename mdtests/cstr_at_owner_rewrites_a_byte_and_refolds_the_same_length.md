@@ -34,7 +34,7 @@ void poke(uint8* s, uint64 n) {
                 apply(click::separation::separate_elements(s, k, 0u64));
             }
             have separate(statement(0).footprint, memory(s[k])) by {
-                solve() using { separate(memory(s[k]), memory(s[0u64])); };
+                close() using { separate(memory(s[k]), memory(s[0u64])); };
             }
             have s[k] == old(s[k]) by {
                 preserve(memory(s[k]), statement(0));
@@ -43,12 +43,12 @@ void poke(uint8* s, uint64 n) {
             known();
         }
     }
-    have n != 0u64 by { solve() using { 0u64 < n; }; }
+    have n != 0u64 by { close() using { 0u64 < n; }; }
     have separate(memory(s[n]), memory(s[0u64])) by {
         apply(click::separation::separate_elements(s, n, 0u64));
     }
     have separate(statement(0).footprint, memory(s[n])) by {
-        solve() using { separate(memory(s[n]), memory(s[0u64])); };
+        close() using { separate(memory(s[n]), memory(s[0u64])); };
     }
     have s[n] == old(s[n]) by {
         preserve(memory(s[n]), statement(0));
@@ -66,7 +66,7 @@ void poke(uint8* s, uint64 n) {
                 apply(click::separation::separate_elements(s, k, 0u64));
             }
             have separate(statement(0).footprint, memory(s[k])) by {
-                solve() using { separate(memory(s[k]), memory(s[0u64])); };
+                close() using { separate(memory(s[k]), memory(s[0u64])); };
             }
             preserve(memory(s[k]), statement(0));
         }

@@ -116,7 +116,7 @@ theorem length_nonnegative<T>(xs: List<T>) {
             List::Cons(value, rest) => {
                 apply(ih(rest));
                 unfold(length(List<T>::Cons(value, rest)));
-                solve() using { length(rest) >= 0; };
+                close() using { length(rest) >= 0; };
             }
         }
     }
@@ -155,7 +155,7 @@ template<class T> void Stack<T>::push(T value) {
     let after = fold(nodes<T>(this->head), { items: List::Cons(value, old(before.items)), tail: before });
     unfold(length(List<T>::Cons(value, old(before.items))));
     have to_integer(old(this->count) + 1u64) == to_integer(old(this->count)) + to_integer(1u64);
-    have to_integer(old(this->count) + 1u64) == length(List::Cons(value, old(before.items))) by solve() using {
+    have to_integer(old(this->count) + 1u64) == length(List::Cons(value, old(before.items))) by close() using {
         to_integer(old(this->count) + 1u64) == to_integer(old(this->count)) + to_integer(1u64);
         to_integer(old(this->count)) == length(old(before.items));
         length(List::Cons(value, old(before.items))) == length(old(before.items)) + 1;
@@ -197,7 +197,7 @@ template<class T> bool Stack<T>::pop(T& out) {
                     let after = fold(nodes<T>(this->head), { items: List<T>::Nil });
                     unfold(length(List<T>::Nil));
                     have length(tail_items) == 0 by solve();
-                    have to_integer(old(this->count)) == 1 by solve() using {
+                    have to_integer(old(this->count)) == 1 by close() using {
                         to_integer(old(this->count)) == length(List::Cons(value, tail_items));
                         length(List::Cons(value, tail_items)) == length(tail_items) + 1;
                         length(tail_items) == 0;
@@ -207,16 +207,16 @@ template<class T> bool Stack<T>::pop(T& out) {
                 List::Cons(next_value, next_items) => {
                     let { tail: next } = unfold(tail);
                     let after = fold(nodes<T>(this->head), { items: List::Cons(next_value, next_items), tail: next });
-                    have to_integer(old(this->count)) == length(tail_items) + 1 by solve() using {
+                    have to_integer(old(this->count)) == length(tail_items) + 1 by close() using {
                         to_integer(old(this->count)) == length(List::Cons(value, tail_items));
                         length(List::Cons(value, tail_items)) == length(tail_items) + 1;
                     };
-                    have to_integer(1u64) <= to_integer(old(this->count)) by solve() using {
+                    have to_integer(1u64) <= to_integer(old(this->count)) by close() using {
                         to_integer(old(this->count)) == length(tail_items) + 1;
                         length(tail_items) >= 0;
                     };
                     have to_integer(old(this->count) - 1u64) == to_integer(old(this->count)) - to_integer(1u64);
-                    have to_integer(old(this->count) - 1u64) == length(tail_items) by solve() using {
+                    have to_integer(old(this->count) - 1u64) == length(tail_items) by close() using {
                         to_integer(old(this->count) - 1u64) == to_integer(old(this->count)) - to_integer(1u64);
                         to_integer(old(this->count)) == length(tail_items) + 1;
                     };
@@ -245,7 +245,7 @@ template<class T> Stack<T>::~Stack() {
                     unfold(length(List::Cons(value, rest)));
                     apply(length_nonnegative(rest));
                     have 0 <= length(tail.items) by solve();
-                    have length(tail.items) < length(List::Cons(value, rest)) by solve() using {
+                    have length(tail.items) < length(List::Cons(value, rest)) by close() using {
                         length(List::Cons(value, rest)) == length(rest) + 1;
                         tail.items == rest;
                     };
@@ -338,7 +338,7 @@ int through(int x) {
     step_until(region(2).entry);
     let state = fold(nodes<int>(stack.head), { items: List<int32>::Nil });
     unfold(length(List<int32>::Nil));
-    have length(List<int32>::Nil) < 1000000 by solve() using { length(List<int32>::Nil) == 0; };
+    have length(List<int32>::Nil) < 1000000 by close() using { length(List<int32>::Nil) == 0; };
     step_until(region(5).entry);
     // Name the object state produced when the stack is lent as a container.
     let { object_resource(): packed } = step(Stack__int__click_pack__Container__int, { state: state });

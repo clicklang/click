@@ -1,6 +1,6 @@
-# `solve() using` before the function exit names itself in the decline
+# `close() using` before the function exit names itself in the decline
 
-`solve() using` closes a focused proposition goal. Between execution steps
+`close() using` closes a focused proposition goal. Between execution steps
 there is no such goal, only the execution, so the refusal names the tactic and
 where the frontier stands, and says to step to the function exit first. A
 `have ... by { ... }` also has a goal for it.
@@ -17,10 +17,10 @@ int32 bump(int32 n) {
     requires n <= 100;
     ensures result <= 101;
 } by {
-    solve() using { 0 <= n; n <= 100; };
+    close() using { 0 <= n; n <= 100; };
 }
 ```
 
 ```expect
-fail: `solve` works on the outcome claims at function exit and does not execute
+fail: `close` works on the outcome claims at function exit and does not execute
 ```

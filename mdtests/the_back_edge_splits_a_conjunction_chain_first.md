@@ -49,14 +49,14 @@ int32 count_up(int32 n) {
             step();
             step();
             have 0 <= n - at(iteration, i) - 1 by {
-                solve() using {
+                close() using {
                     0 <= at(iteration, i);
                     at(iteration, i) < at(iteration, n);
                     0 <= n;
                 };
             }
             have n - at(iteration, i) - 1 < n - at(iteration, i) by {
-                solve() using {
+                close() using {
                     0 <= at(iteration, i);
                     at(iteration, i) < at(iteration, n);
                     0 <= n;

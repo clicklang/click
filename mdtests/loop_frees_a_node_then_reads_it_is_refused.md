@@ -42,7 +42,7 @@ theorem links_len_is_nonnegative(m: Links) {
             Links::Cons(rest) => {
                 apply(ih(rest));
                 unfold(links_len(Links::Cons(rest)));
-                solve() using { 0 <= links_len(rest); };
+                close() using { 0 <= links_len(rest); };
             }
         }
     }
@@ -81,7 +81,7 @@ void release(struct node* p) {
                         known();
                     }
                     have links_len(rest_model) < links_len(x.model) by {
-                        solve() using { links_len(x.model) == links_len(rest_model) + 1; };
+                        close() using { links_len(x.model) == links_len(rest_model) + 1; };
                     }
                     let { rest: r } = unfold(x);
                     have 0 <= links_len(r.model) by {

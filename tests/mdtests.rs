@@ -810,9 +810,17 @@ fn quick_solve_caps_inclusive_work() {
     termination.tactic.claim = "program.termination".into();
     termination.inclusive_work = 100;
     samples.push(termination);
-    quick_solve::check_quick_solve_with_limit(&samples, &Ok(()), Some(10)).unwrap();
-    let error = quick_solve::check_quick_solve_with_limit(&samples, &Ok(()), Some(9)).unwrap_err();
-    assert!(error.contains("10 deterministic work units (limit 9)"));
+    let mut direct_close = samples[0].clone();
+    direct_close.tactic.tactic_name = "close".into();
+    direct_close.tactic.class = "simple".into();
+    samples.push(direct_close);
+    for tactic_name in ["solve", "close"] {
+        samples[0].tactic.tactic_name = tactic_name.into();
+        quick_solve::check_quick_solve_with_limit(&samples, &Ok(()), Some(10)).unwrap();
+        let error =
+            quick_solve::check_quick_solve_with_limit(&samples, &Ok(()), Some(9)).unwrap_err();
+        assert!(error.contains("10 deterministic work units (limit 9)"));
+    }
 }
 
 fn check_expectation(

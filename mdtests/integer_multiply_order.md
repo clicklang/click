@@ -12,7 +12,7 @@ theorem checked_integer_multiply_order_nonnegative(a: Integer, b: Integer, facto
     requires a <= b;
     requires 0 <= factor;
     ensures a * factor <= b * factor by {
-        solve() using { a <= b; 0 <= factor; };
+        close() using { a <= b; 0 <= factor; };
     }
 }
 
@@ -20,7 +20,7 @@ theorem checked_integer_multiply_order_nonpositive(a: Integer, b: Integer, facto
     requires a <= b;
     requires factor <= 0;
     ensures b * factor <= a * factor by {
-        solve() using { a <= b; factor <= 0; };
+        close() using { a <= b; factor <= 0; };
     }
 }
 
@@ -34,16 +34,16 @@ theorem checked_integer_scaled_product_bounds(value: Integer, amount: Integer, s
     ensures lower * size <= value * amount by {
         apply(integer::multiply_order_nonnegative(lower, value, amount));
         have lower * size <= lower * amount by {
-            solve() using { amount <= size; lower <= 0; };
+            close() using { amount <= size; lower <= 0; };
         }
-        solve() using { lower * size <= lower * amount; lower * amount <= value * amount; };
+        close() using { lower * size <= lower * amount; lower * amount <= value * amount; };
     }
     ensures value * amount <= upper * size by {
         apply(integer::multiply_order_nonnegative(value, upper, amount));
         have upper * amount <= upper * size by {
-            solve() using { amount <= size; 0 <= upper; };
+            close() using { amount <= size; 0 <= upper; };
         }
-        solve() using { value * amount <= upper * amount; upper * amount <= upper * size; };
+        close() using { value * amount <= upper * amount; upper * amount <= upper * size; };
     }
 }
 

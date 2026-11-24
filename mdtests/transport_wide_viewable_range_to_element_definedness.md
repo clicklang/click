@@ -23,7 +23,7 @@ uint64 f(uint8 bytes[], uint64 n) {
         have forall (k: uint64) { to_integer(k) < to_integer(n + 1u64) implies defined(bytes[k]) } by {
             intro();
             intro();
-            solve() using {
+            close() using {
                 to_integer(k) < to_integer(n + 1u64);
                 at(function.entry, viewable(bytes[0..n + 1u64]));
             };

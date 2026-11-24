@@ -7098,7 +7098,7 @@ fn rust_u16_arithmetic_checks_its_own_width() {
     let sidecar = "verifying \"borrow.rs\";
         fn add(x: u16) -> u16 { requires x <= 65534; ensures result as u32 == x as u32 + 1u32; }
         fn sub(x: u16) -> u16 { requires 1 <= x; ensures result as u32 == x as u32 - 1u32; }
-        fn mul(x: u16) -> u16 { requires x <= 21845; ensures result as u32 == x as u32 * 3u32; } by { have 0 <= (x as i32) * 3 by { solve() using { 0 <= x; x <= 21845; } } have (x as i32) * 3 <= 65535 by { solve() using { 0 <= x; x <= 21845; } } step_until(function.exit); solve(); }
+        fn mul(x: u16) -> u16 { requires x <= 21845; ensures result as u32 == x as u32 * 3u32; } by { have 0 <= (x as i32) * 3 by { close() using { 0 <= x; x <= 21845; } } have (x as i32) * 3 <= 65535 by { close() using { 0 <= x; x <= 21845; } } step_until(function.exit); solve(); }
         fn div(x: u16, d: u16) -> u16 { requires 0 < d; ensures result as u32 == x as u32 / d as u32; }
         fn rem(x: u16, d: u16) -> u16 { requires 0 < d; ensures result as u32 == x as u32 % d as u32; }";
     ProgramVerificationSession::new_program_prepared(sidecar, &prepared).unwrap();

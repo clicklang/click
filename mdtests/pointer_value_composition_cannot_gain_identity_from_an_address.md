@@ -12,10 +12,10 @@ void compose(const uint8* base, const uint8* middle, const uint8* end) {
  ensures end == base + 5u64;
 } by {
  step_until(function.exit);
- solve() using { end == middle + 3u64; address(middle) == address(base + 2u64); };
+ close() using { end == middle + 3u64; address(middle) == address(base + 2u64); };
 }
 ```
 
 ```expect
-fail: checked outcome `solve() using` search did not retain a complete proof
+fail: checked outcome `close() using` search did not retain a complete proof
 ```

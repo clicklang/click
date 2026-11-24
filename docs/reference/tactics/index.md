@@ -3,11 +3,11 @@
 This page is the reference inventory of the tactics in Click's specification
 language. A tactic is either **smart**, **simple**, or **control**:
 
-- Smart tactics search. The written one is `solve()`, with its `using` form
-  and `step_until`, which steps to a target and proves what each step needs;
-  the rest are the implicit closer that ends every proof, including each loop
-  `maintain` script at its back edge, and finishes a `step()` or `fold`, and
-  the elided forms whose search fills one argument a simple form writes:
+- Smart tactics search. Written forms include `solve()`, `close()`,
+  `close() using`, and `step_until`, which steps to a target and proves what
+  each step needs. Smart tactics also include the implicit closer, which
+  ends proofs including loop `maintain` scripts and finishes a `step()` or
+  `fold`, and forms whose search fills an elided argument:
   `apply(fact)`, `apply(ih(m))`, and a bare `transport(P, Q)`. They
   are the tactics that `click profile` may recommend expanding. The parser
   refuses the removed forms `auto()`, `arithmetic()`,
@@ -54,8 +54,8 @@ remains supported.
 - `loop { ... }`: prove a C loop from its invariants, which the back edge
   closes member by member with `solve()`. See [Execution](#execution) and
   [Resources and transport](#resources-and-transport).
-- `solve()`: close the first open goal, and `solve() using { ... }` from only
-  the listed premises. See [Automation and search](#automation-and-search)
+- `close()`: close the first open goal. Use `close() using { ... }` to
+  close it from the listed premises. See [Automation and search](#automation-and-search)
   for the different proof-clause forms and their defaults.
 - `have P by ...`: prove an intermediate fact and add it to the context. See
   [Proposition reasoning](#proposition-reasoning).
@@ -98,7 +98,7 @@ when the default misses or when a proof must not search.
   so that the
   implicit closer closes the goal, is the default, and `solve()` closes the
   first open goal where a script continues after it. Write
-  `solve() using { ... }` for a goal that follows from named facts, an
+  `close() using { ... }` for a goal that follows from named facts, an
   integer bound or equality among them: it tries arithmetic over the listed
   premises last. `known()`
   (the goal is an available fact) and `normalize()` (the goal is true by
@@ -336,7 +336,7 @@ Condition-premise search is one such heuristic: it tries individual ambient
 condition facts and pairs until it finds sufficient explicit premises or reaches
 the active smart-tactic deadline. It does not discard facts after an arbitrary
 context prefix. A normal miss reports the summarized target and recommends
-smaller execution steps or exact premises; `solve() using { ... }` constrains
+smaller execution steps or exact premises; `close() using { ... }` constrains
 pure search to named facts, while a shorter run of `step();` lines isolates
 the one execution transition that fails.
 
@@ -638,7 +638,7 @@ When execution reaches function exit, the path's open goals are the
 contract's claims in the order the contract writes them: every `ensures`, and
 every `owns` and `produces` clause, whose goal is that the path still holds the
 instance. `views` and `consumes` clauses make no claim. A closer (`known`,
-`normalize`, `all`, `solve`, `solve() using`) acts on the first
+`normalize`, `all`, `solve`, `close() using`) acts on the first
 open goal, and a refusal names that goal; it does not look further down the
 list for a claim it could close
 (`mdtests/a_closer_after_execution_acts_on_the_first_open_claim.md`,
@@ -663,7 +663,7 @@ continue that proof using the path's current state and resources, so a later
 opened only by `witness` must close the goal with the chosen witness.
 
 A written closer that closes no goal it acts on is refused, `solve` and
-`solve() using` included; only the implicit closer at the end of the script
+`close() using` included; only the implicit closer at the end of the script
 leaves an open claim to the report that names it
 (`mdtests/a_written_solve_that_closes_nothing_is_refused.md`).
 
@@ -1130,7 +1130,7 @@ step is still checked.
 | `all { P => { ... } Q => { ... } }` | control | Expansion output | Prove each conjunct. | [Reference](#conjunctions) |
 | `outcomes { returned => { ... } threw => { ... } }` | control | Specialized | Prove each returned or exceptional outcome. | [Reference](#execution-outcomes) |
 | `solve()` | smart | Core | Close one goal from available facts and bounded rules. | [Reference](#simplification) |
-| `solve() using { P; ... }` | smart | Specialized | Close one goal from written premises only. | [Reference](#simplification-with-selected-premises) |
+| `close() using { P; ... }` | smart | Specialized | Close one goal from written premises only. | [Reference](#simplification-with-selected-premises) |
 | `check_termination_local("f")` | simple | Expansion output | Establish the generated local descent classification. | [Reference](#termination-checks) |
 | `check_termination_component("f", mode)` | simple | Expansion output | Classify a generated recursive component using established premises. | [Reference](#termination-checks) |
 | `check_termination_callbacks()` | simple | Expansion output | Classify callback safety using established strict return premises. | [Reference](#termination-checks) |
@@ -1264,7 +1264,7 @@ only expandable-automation sites.
 
 Explicit full-width unsigned bounds can also normalize pointer offsets.
 For a native uint64 `index <= 2147483647u64`, `pointer + index` and
-`pointer + index as int32` denote the same address. `solve() using { ... }` checks
+`pointer + index as int32` denote the same address. `close() using { ... }` checks
 that the cited native bound is available and preserves the pointer stride.
 A bound on the low word or a signed comparison cannot establish this unsigned
 projection, and integer address equality grants no permission to access the backing
@@ -1285,7 +1285,7 @@ expanded proof retains the relevant viewability and order facts through
 explicit transports, rewrites, intermediate facts, or named theorem applications. A
 context-free-looking result such as a normalized equality is not emitted as
 bare `normalize()` if checking still needs those premises to interpret an
-indexed load. A `solve() using` equality may be selected through a bounded chain
+indexed load. A `close() using` equality may be selected through a bounded chain
 of exact equality facts whose intermediate load variables are kernel-internal
 names for the same user-level loads. When frame evidence is needed to relate an
 earlier load origin to the current one, the expanded proof first establishes the
@@ -1362,7 +1362,7 @@ postconditions on those variables do not exhaust the arithmetic premise limit.
 
 An equality of two `uint32`, `int64` or `uint64` values closes from the two
 opposite order facts on its operands, `a <= b` and `b <= a` in any form
-(`a >= b`, `not (a < b)`), looked up exactly and cited by one `solve()
+(`a >= b`, `not (a < b)`), looked up exactly and cited by one `close()
 using` step
 ([`solve_closes_an_equality_from_opposite_bounds_at_every_width.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_closes_an_equality_from_opposite_bounds_at_every_width.md)).
 An unsigned `x == 0` needs only `x <= 0`, since no unsigned value is below zero.
@@ -1513,7 +1513,10 @@ search plus leaves.
 
 ### Simplification with selected premises
 
-**Form:** `solve() using { P; ... }`
+**Form:** `close() using { P; ... }`
+
+The former spelling `solve() using { ... }` is refused with a diagnostic
+naming `close() using`.
 
 **Specialized.** Write it when `solve` picks the wrong premises or searches too
 long, to restrict it to the named facts. On a proposition goal, including a
@@ -1533,12 +1536,12 @@ the range proofs and a `known()` identity step. An
 unsigned operation is used this way only when those bounds prove it does not wrap.
 
 Available verified theorems are reasoning rules, not extra hypotheses. If the
-existing strategies miss, restricted solve searches for one theorem application
+existing strategies miss, `close() using` searches for one theorem application
 whose conclusion structurally matches the goal. Every value argument must be
 determined by that conclusion; generic type arguments are inferred by ordinary
 application checking. The solver checks the instantiated requirements and argument guards against
 the listed facts before choosing the application.
-An unconditional theorem can therefore close `solve() using {}`.
+An unconditional theorem can therefore close `close() using {}`.
 
 Conclusion matching treats reversed `==` and `!=` operands and mirrored
 orders (`a > b` / `b < a`, `a >= b` / `b <= a`) as the same comparison.
@@ -1565,8 +1568,8 @@ theorem equality(x: Integer) {
 
 theorem test(value: Integer) {
     requires 0 <= value;
-    ensures 7 <= fixed(value) by { solve() using { 0 <= value; }; }
-    ensures 7 == fixed(value) by { solve() using { 0 <= value; }; }
+    ensures 7 <= fixed(value) by { close() using { 0 <= value; }; }
+    ensures 7 == fixed(value) by { close() using { 0 <= value; }; }
 }
 ```
 
@@ -1591,7 +1594,7 @@ theorem shifted_bound(x: Integer) {
 theorem use_bound(value: Integer) {
     requires 0 <= value;
     ensures 7 <= shifted(value) by {
-        solve() using { 0 <= value; };
+        close() using { 0 <= value; };
     }
 }
 ```
@@ -1820,7 +1823,7 @@ already held as a fact retains its existing exact-lookup behavior.
   with `apply(fact)`.
 - A reordered disjunction fact (`y > 0 or x < y` from `x < y or y > 0`):
   `have y > 0 or x < y;`, which expands to `cases`, then `known()`.
-- A weaker or derived bound, such as `x <= y` from `x < y`: `solve()
+- A weaker or derived bound, such as `x <= y` from `x < y`: `close()
   using { x < y; }`.
 - An implication or quantifier whose body is only equivalent to a fact, such
   as `y > x implies 0 < y` from `x < y implies y > 0`: `intro()`, then close
@@ -1918,7 +1921,7 @@ or definedness facts.
 - Distributing a symbolic product, such as `(x + y) * z == x * z + y * z`;
   an order claim between C machine sums, such as `x + 1 > x`; or an `Integer` order claim whose terms
   do not cancel, such as `to_integer(x) < to_integer(x) + to_integer(y)`: use
-  `solve() using { ... }` or an ordinary arithmetic proof.
+  `close() using { ... }` or an ordinary arithmetic proof.
 
 **Failure, checking, and tools:**
 
@@ -2007,7 +2010,7 @@ none selects premises or expands a polynomial.
 
 For a reflexive `float` or `double` comparison, `solve` expands to
 `known()` when the exact `isfinite(x)` fact is available for the common
-operand. Restricted `solve() using` must select that fact. For example,
+operand. Restricted `close() using` must select that fact. For example,
 `isfinite(x)` establishes `x == x`, `x <= x` and `not(x < x)`. An ordered
 bound on an exact float widening or sign negation also closes with
 `known()` from the corresponding input comparison at the same endpoint.
@@ -2089,7 +2092,7 @@ cited premise is accepted:
   ([`normalize_using_decides_conditions_without_substituting.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_decides_conditions_without_substituting.md)).
 - A goal between two symbolic terms that follows from a cited premise without
   being one of its forms, such as `x <= y` from `x < y`:
-  `solve() using`.
+  `close() using`.
 - An unlisted ambient order condition, or an ambient `Integer` or algebraic
   equality: cite it.
 - A top-level conjunction, disjunction, or implication remaining after
@@ -2139,11 +2142,11 @@ follows the selected expression and premises.
 
 ### Arithmetic search
 
-**Form:** `solve() using {}`. The parser refuses the removed form
-`arithmetic()` and names `solve() using {}`.
+**Form:** `close() using {}`. The parser refuses the removed form
+`arithmetic()` and names `close() using {}`.
 
 **Specialized.** Write it only for a bound that follows from the goal's own
-terms, such as `(x & 255) <= 255`; it reads no fact. `solve() using {}` tries
+terms, such as `(x & 255) <= 255`; it reads no fact. `close() using {}` tries
 the engine this section describes after its other closers, over no premises.
 The engine plans a bounded proof of the current comparison or equality over
 signed `int32` values or mathematical `Integer` expressions. Signed interval
@@ -2179,11 +2182,11 @@ plan. All supported arithmetic families expand to ordinary proof steps.
 
 ### Arithmetic with selected premises
 
-**Form:** `solve() using { P; ... }`. The parser refuses the removed form
-`arithmetic() using { P; ... }` and names `solve() using { P; ... }`.
+**Form:** `close() using { P; ... }`. The parser refuses the removed form
+`arithmetic() using { P; ... }` and names `close() using { P; ... }`.
 
 **Specialized.** Write it when `solve` misses an integer bound or equality,
-listing the premises the bound follows from. `solve() using` tries the
+listing the premises the bound follows from. `close() using` tries the
 engine this section describes last, and a miss adds the engine's reason
 (`mdtests/a_solve_using_miss_reports_arithmetic_s_reason.md`). The engine
 plans and checks a bounded
@@ -2476,7 +2479,7 @@ not detached and evaluated. Multiple conditionals are reduced in source order,
 with at most 64 rewrites and 4096 visited source nodes under the solve deadline.
 Binders and historical point expressions keep their scope and are not traversed.
 Arithmetic after selection uses ordinary emitters. Omitted guards remain
-unavailable to restricted solve, even when present in the ambient context.
+unavailable to `close() using`, even when present in the ambient context.
 See [`nested_conditional_explicit_arm_equations.md`](https://github.com/clicklang/click/blob/master/mdtests/nested_conditional_explicit_arm_equations.md).
 Boolean and constructor-valued conditionals use the same arm equations.
 For example, from `flag == true`, `known()` proves
@@ -2596,7 +2599,7 @@ fact. Write `rewrite(x, y)`; the old `rewrite(x == y)` form is refused.
 **Outside it**, with what to write instead:
 
 - A proposition that is not an equality (`x != y`, `x <= y`): there is no
-  substitution by order; use `solve() using` or `normalize() using`.
+  substitution by order; use `close() using` or `normalize() using`.
 - An equality available only as an implication's consequent: establish it
   with `have` or `apply(fact)` first.
 - A goal without an occurrence of `L`, including a different association or
@@ -2664,7 +2667,7 @@ access in a proof; it is not parsed as the shadowed-binder qualifier.
 - A conjunction: `all`. A disjunction: prove one disjunct with `have` and
   close with `known()`.
 - An existential, including `(lo..hi).any(...)`: `witness`.
-- A comparison or other leaf: `normalize`, `solve() using`, `known`, or
+- A comparison or other leaf: `normalize`, `close() using`, `known`, or
   another closer.
 
 **Failure, checking, and tools:**
@@ -2800,10 +2803,10 @@ and context-free checks.
 
 - A merely contradictory pair that is not a negation, such as `x < 0` beside
   `x >= 1`, or `x == 3` beside `x == 0`: first derive the negation with
-  `have x >= 0 by solve() using { x >= 1; };`, or close with
-  `solve() using { ... }`.
+  `have x >= 0 by close() using { x >= 1; };`, or close with
+  `close() using { ... }`.
 - A `not P` that needs scaling or overflow reasoning, such as `2 * x == x + x`
-  or `x + 1 > x` at a C width: `solve() using { ... }`.
+  or `x + 1 > x` at a C width: `close() using { ... }`.
 
 **Failure, checking, and tools:**
 
@@ -2988,7 +2991,7 @@ names are in scope, and:
 
 The refreshed goal can also come out further simplified, as the lowering of
 the rewritten goal does: `n + k - k` over `int32` reduced to `n` in one probe.
-That is not guaranteed; follow with `normalize()` or `solve() using { ... }` when the
+That is not guaranteed; follow with `normalize()` or `close() using { ... }` when the
 goal needs it.
 
 **Failure, checking, and tools:**
@@ -3497,7 +3500,7 @@ Expansion retains the `let` and its source proposition.
 
 ## Integer multiplication order and division intervals
 
-`solve() using { a <= b; 0 <= k; }` proves `a * k <= b * k` by
+`close() using { a <= b; 0 <= k; }` proves `a * k <= b * k` by
 explicit application of `integer::multiply_order_nonnegative`. A nonpositive
 factor reverses the order and uses `integer::multiply_order_nonpositive`.
 Commuted operands name their commutativity equations separately. The library
@@ -3522,7 +3525,7 @@ interval route. Native machine definedness remains a separate obligation.
 
 ## Exact integer product bounds
 
-Use `solve() using { L <= x; x <= U; M <= y; y <= N; }` to prove
+Use `close() using { L <= x; x <= U; M <= y; y <= N; }` to prove
 an exact bound on the mathematical product `x * y`. Each interval endpoint
 and the result bound must be constant, with ordered interval endpoints.
 Expansion writes four numerical corner checks with `known()`, followed by

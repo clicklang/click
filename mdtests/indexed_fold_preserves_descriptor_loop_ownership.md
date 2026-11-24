@@ -29,10 +29,10 @@ theorem selected_array_cell(whole: Resource, kept: Resource, p: int32*, len: int
     requires 0 <= i;
     requires i < len;
     ensures separate(kept, memory(p[i])) by {
-        have i <= 2147483646 by { solve() using { i < len; }; }
-        have defined(i + 1) by { solve() using { 0 <= i; i <= 2147483646; }; }
-        have i <= ((i + 1) as int32) by { solve() using { 0 <= i; i < len; }; }
-        have ((i + 1) as int32) <= len by { solve() using { 0 <= i; i < len; }; }
+        have i <= 2147483646 by { close() using { i < len; }; }
+        have defined(i + 1) by { close() using { 0 <= i; i <= 2147483646; }; }
+        have i <= ((i + 1) as int32) by { close() using { 0 <= i; i < len; }; }
+        have ((i + 1) as int32) <= len by { close() using { 0 <= i; i < len; }; }
         have contains(memory(p[0..len]), memory(p[i..i + 1])) by {
             apply(separation::contains_subrange(p, 0, len, i, i + 1));
         }
@@ -41,7 +41,7 @@ theorem selected_array_cell(whole: Resource, kept: Resource, p: int32*, len: int
         }
         have contains(kept, kept) by { apply(click::separation::contains_refl(kept)); }
         have contains(memory(p[i..i + 1]), memory(p[i])) by {
-            have i < ((i + 1) as int32) by solve() using { i <= 2147483646; };
+            have i < ((i + 1) as int32) by close() using { i <= 2147483646; };
             apply(separation::contains_element(p, i, i + 1, i));
         }
         apply(separation::separate_restrict(kept, memory(p[i..i + 1]), kept, memory(p[i])));
@@ -213,7 +213,7 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                         known();
                     }
                     have 0 <= k;
-                    have at(opened, i) != k by { solve() using { k < at(opened, i); }; }
+                    have at(opened, i) != k by { close() using { k < at(opened, i); }; }
                     have at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))) by {
                         apply(separation::separate_elements(at(opened, arena->occupied), at(opened, i), k));
                     }
@@ -224,7 +224,7 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                         preserve(at(opened, memory(arena->occupied[k])), loop(0).statement(0));
                     }
                     have separate(loop(0).statement(1).footprint, memory(arena->occupied[k])) by {
-                        solve() using {};
+                        close() using {};
                     }
                     have arena->occupied[k] == at(loop(0).statement(1).entry, arena->occupied[k]) by {
                         preserve(memory(arena->occupied[k]), loop(0).statement(1));
@@ -258,7 +258,7 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                     known();
                 }
                 have k < at(opened, i);
-                have at(opened, i) != k by { solve() using { k < at(opened, i); }; }
+                have at(opened, i) != k by { close() using { k < at(opened, i); }; }
                 have at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))) by {
                     apply(separation::separate_elements(at(opened, arena->occupied), at(opened, i), k));
                 }
@@ -269,7 +269,7 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                     preserve(at(opened, memory(arena->occupied[k])), loop(0).statement(0));
                 }
                 have separate(loop(0).statement(1).footprint, memory(arena->occupied[k])) by {
-                    solve() using {};
+                    close() using {};
                 }
                 have arena->occupied[k] == at(loop(0).statement(1).entry, arena->occupied[k]) by {
                     preserve(memory(arena->occupied[k]), loop(0).statement(1));
@@ -299,7 +299,7 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                 have at(opened, i) < k;
                 have at(opened, i) <= k;
                 have 0 <= k;
-                have at(opened, i) != k by { solve() using { at(opened, i) < k; }; }
+                have at(opened, i) != k by { close() using { at(opened, i) < k; }; }
                 have at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))) by {
                     apply(separation::separate_elements(at(opened, arena->occupied), at(opened, i), k));
                 }
@@ -310,7 +310,7 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                     preserve(at(opened, memory(arena->occupied[k])), loop(0).statement(0));
                 }
                 have separate(loop(0).statement(1).footprint, memory(arena->occupied[k])) by {
-                    solve() using {};
+                    close() using {};
                 }
                 have arena->occupied[k] == at(loop(0).statement(1).entry, arena->occupied[k]) by {
                     preserve(memory(arena->occupied[k]), loop(0).statement(1));

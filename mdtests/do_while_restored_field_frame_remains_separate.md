@@ -88,7 +88,7 @@ void walk(struct Node* p, int32* marker) {
             mark before_store;
             step();
             have separate(statement(2).footprint, memory(marker[0])) by {
-                solve() using { at(before_store, separate(memory(q->next), memory(marker[0]))); };
+                close() using { at(before_store, separate(memory(q->next), memory(marker[0]))); };
             }
             have marker[0] == at(before_store, marker[0]) by {
                 preserve(memory(marker[0]), statement(2));

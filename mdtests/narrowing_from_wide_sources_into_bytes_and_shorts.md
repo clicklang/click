@@ -56,7 +56,7 @@ signed char sbyte_from_long(long value) {
     ensures to_integer(result) == to_integer(value);
 } by {
     step_until(function.exit);
-    solve() using { -128 <= to_integer(old(value)); to_integer(old(value)) <= 127; };
+    close() using { -128 <= to_integer(old(value)); to_integer(old(value)) <= 127; };
 }
 unsigned char byte_from_ulong(unsigned long value) {
     requires value <= 255u64;
@@ -65,7 +65,7 @@ unsigned char byte_from_ulong(unsigned long value) {
     ensures to_integer(result) == to_integer(value);
 } by {
     step_until(function.exit);
-    solve() using { 0 <= to_integer(old(value)); to_integer(old(value)) <= 255; };
+    close() using { 0 <= to_integer(old(value)); to_integer(old(value)) <= 255; };
 }
 short short_from_long(long value) {
     requires value >= -32768;
@@ -75,7 +75,7 @@ short short_from_long(long value) {
     ensures to_integer(result) == to_integer(value);
 } by {
     step_until(function.exit);
-    solve() using { -32768 <= to_integer(old(value)); to_integer(old(value)) <= 32767; };
+    close() using { -32768 <= to_integer(old(value)); to_integer(old(value)) <= 32767; };
 }
 unsigned short ushort_from_ulong(unsigned long value) {
     requires value <= 65535u64;
@@ -84,7 +84,7 @@ unsigned short ushort_from_ulong(unsigned long value) {
     ensures to_integer(result) == to_integer(value);
 } by {
     step_until(function.exit);
-    solve() using { 0 <= to_integer(old(value)); to_integer(old(value)) <= 65535; };
+    close() using { 0 <= to_integer(old(value)); to_integer(old(value)) <= 65535; };
 }
 ```
 

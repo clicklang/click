@@ -29,7 +29,7 @@ void caller(int32* state) {
 } by {
     step(increment, { first: c });
     have at(function.entry, c.revision) == 1 by {
-        solve() using { c.revision == 1; };
+        close() using { c.revision == 1; };
     }
 }
 ```

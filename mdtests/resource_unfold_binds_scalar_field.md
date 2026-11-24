@@ -99,14 +99,14 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
             have 0 <= i and i <= p;
             have 0 <= p by known();
             have 0 <= to_integer(0 - at(iteration, i) + p - 1) by {
-                solve() using {
+                close() using {
                     0 <= at(iteration, i);
                     at(iteration, i) < p;
                     0 <= p;
                 };
             }
             have to_integer(0 - at(iteration, i) + p - 1) < to_integer(0 - at(iteration, i) + p) by {
-                solve() using {
+                close() using {
                     0 <= at(iteration, i);
                     at(iteration, i) < p;
                     0 <= p;
@@ -158,7 +158,7 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
                 apply(click::separation::separate_elements(occupied, i, k));
             }
             have separate(statement(3).footprint, memory(occupied[k])) by {
-                solve() using { separate(memory(occupied[i]), memory(occupied[k])); };
+                close() using { separate(memory(occupied[i]), memory(occupied[k])); };
             }
             have occupied[k] == at(before_store, occupied[k]) by {
                 preserve(memory(occupied[k]), statement(3));
@@ -199,7 +199,7 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
             apply(click::separation::separate_elements(occupied, i, k));
         }
         have separate(statement(3).footprint, memory(occupied[k])) by {
-            solve() using { separate(memory(occupied[i]), memory(occupied[k])); };
+            close() using { separate(memory(occupied[i]), memory(occupied[k])); };
         }
         have occupied[k] == at(before_store, occupied[k]) by {
             preserve(memory(occupied[k]), statement(3));

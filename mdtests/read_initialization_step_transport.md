@@ -18,7 +18,7 @@ void change(int32* p, int32* q) {
     mark before;
     step();
     have separate(statement(0).footprint, memory(*p)) by {
-        solve() using { separate(memory(*p), memory(*q)); };
+        close() using { separate(memory(*p), memory(*q)); };
     }
     have defined(*p) by {
         preserve(memory(*p), statement(0));

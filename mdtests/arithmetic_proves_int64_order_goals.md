@@ -1,6 +1,6 @@
 # arithmetic proves int64 order goals
 
-`solve() using` reads a signed 64-bit order goal as it reads an
+`close() using` reads a signed 64-bit order goal as it reads an
 unsigned one, through the exact Integer observations of its operands
 (`mdtests/a_size_t_loop_stepping_by_two_closes_with_arithmetic.md`). The
 difference is what a sum owes. An unsigned sum wraps, so it is observed
@@ -22,7 +22,7 @@ theorem step_two(i: int64, length: int64) {
     requires i + 1i64 < length;
     requires length <= 2147483647i64;
     ensures i + 2i64 <= length by {
-        solve() using { 0i64 <= i; i <= length; i + 1i64 < length; length <= 2147483647i64; };
+        close() using { 0i64 <= i; i <= length; i + 1i64 < length; length <= 2147483647i64; };
     }
 }
 
@@ -30,7 +30,7 @@ theorem chain(i: int64, n: int64, length: int64) {
     requires i < n;
     requires n <= length;
     ensures i < length by {
-        solve() using { i < n; n <= length; };
+        close() using { i < n; n <= length; };
     }
 }
 
@@ -39,7 +39,7 @@ theorem difference(i: int64, length: int64) {
     requires i <= length;
     requires length <= 1000i64;
     ensures length - i <= 1000i64 by {
-        solve() using { 0i64 <= i; i <= length; length <= 1000i64; };
+        close() using { 0i64 <= i; i <= length; length <= 1000i64; };
     }
 }
 ```

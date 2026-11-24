@@ -531,7 +531,7 @@ selected source; it does not scan other ranges in the block.
 
 See [the native prefix fixtures](https://github.com/clicklang/click/blob/master/mdtests/native_view_prefix_narrowing.md)
 and [native byte-window fixtures](https://github.com/clicklang/click/blob/master/mdtests/native_view_window.md)
-for explicit proofs with `solve() using { ... }`.
+for explicit proofs with `close() using { ... }`.
 
 Symbolic memory access usually needs:
 

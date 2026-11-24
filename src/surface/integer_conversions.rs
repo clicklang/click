@@ -242,7 +242,7 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
                     let source=format!("theorem interval(n: Integer, d: Integer) {{
                         requires {ln} <= n; requires n <= {un}; requires {ld} <= d; requires d <= {ud}; requires d != 0;
                         let value: Integer = {op}(n, d);
-                        ensures {goal} by {{ solve() using {{ {ln} <= n; n <= {un}; {ld} <= d; d <= {ud}; }}; }}
+                        ensures {goal} by {{ close() using {{ {ln} <= n; n <= {un}; {ld} <= d; d <= {ud}; }}; }}
                     }}");
                     verify_c_sources(&source, &[])
                         .unwrap_or_else(|error| panic!("{source}\n{}", error.message()));
@@ -276,7 +276,7 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
                 let source = format!(
                     "theorem order(a: Integer, b: Integer, k: Integer) {{
                     requires a <= b; requires {sign};
-                    ensures {goal} by {{ solve() using {{ a <= b; {sign}; }}; }}
+                    ensures {goal} by {{ close() using {{ a <= b; {sign}; }}; }}
                 }}"
                 );
                 verify_c_sources(&source, &[]).unwrap();
@@ -356,7 +356,7 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
                     requires {lo_x} <= x; requires x <= {hi_x};
                     requires {lo_y} <= y; requires y <= {hi_y};
                     {binding}
-                    ensures {goal} by {{ solve() using {{ {premises} }}; }}
+                    ensures {goal} by {{ close() using {{ {premises} }}; }}
                 }}"
                 );
                 verify_c_sources(&source, &[]).unwrap();
@@ -381,7 +381,7 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
         let source = "theorem bound(x: Integer, y: Integer) {
             requires -2 <= x; requires x <= 3; requires -4 <= y; requires y <= 5;
             ensures x * y <= 15 by {
-                solve() using { -2 <= x; x <= 3; -4 <= y; y <= 5; };
+                close() using { -2 <= x; x <= 3; -4 <= y; y <= 5; };
             }
         }";
         verify_c_sources(source, &[]).unwrap();
@@ -447,7 +447,7 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
 
     #[test]
     fn selected_integer_sum_expands_to_an_ordinary_law_application() {
-        let source = "theorem sum(a: Integer, b: Integer, c: Integer, d: Integer) { requires a <= b; requires c <= d; ensures a + c <= b + d by { solve() using { a <= b; c <= d; }; } }";
+        let source = "theorem sum(a: Integer, b: Integer, c: Integer, d: Integer) { requires a <= b; requires c <= d; ensures a + c <= b + d by { close() using { a <= b; c <= d; }; } }";
         let expanded = expand_c_claim_source_by_label(source, &[], "sum.ensures_0").unwrap();
         assert!(expanded.contains("integer::add_le"), "{expanded}");
         assert!(!expanded.contains("solve("), "{expanded}");
@@ -1892,7 +1892,7 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
             ("requires b <= x; requires x < b + 1;", "x == b"),
         ] {
             let source = format!(
-                "theorem pinned(x: Integer, b: Integer) {{ {bounds} ensures {goal} by {{ solve() using {{ {}; }} }} }}",
+                "theorem pinned(x: Integer, b: Integer) {{ {bounds} ensures {goal} by {{ close() using {{ {}; }} }} }}",
                 bounds.replace("requires ", "").trim_end_matches(';')
             );
             verify_c_sources(&source, &[]).unwrap_or_else(|error| panic!("{}", error.message()));
@@ -2015,7 +2015,7 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
                 let lo = format!("{min} <= {exact}");
                 let hi = format!("{exact} <= {max}");
                 let source = format!(
-                    "theorem bridge(x: {ty}, y: {ty}) {{ requires {lo}; requires {hi}; ensures to_integer(x {op} y) == {exact} by {{ solve() using {{ {lo}; {hi}; }}; }} }}"
+                    "theorem bridge(x: {ty}, y: {ty}) {{ requires {lo}; requires {hi}; ensures to_integer(x {op} y) == {exact} by {{ close() using {{ {lo}; {hi}; }}; }} }}"
                 );
                 replay(&source);
                 for missing in [&lo, &hi] {
@@ -2053,38 +2053,38 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
             ("uint128", "0", "340282366920938463463374607431768211455"),
         ] {
             replay(&format!(
-                "theorem bridge(z: Integer) {{ requires {min} <= z; requires z <= {max}; ensures to_integer(to_{ty}(z)) == z by {{ solve() using {{ {min} <= z; z <= {max}; }}; }} }}"
+                "theorem bridge(z: Integer) {{ requires {min} <= z; requires z <= {max}; ensures to_integer(to_{ty}(z)) == z by {{ close() using {{ {min} <= z; z <= {max}; }}; }} }}"
             ));
         }
         for source in [
-            "theorem bridge(x: int32) { requires 0 <= x; requires x <= 255; ensures to_integer(x as uint8) == to_integer(x) by { solve() using { 0 <= x; x <= 255; }; } }",
-            "theorem bridge(x: uint64) { requires x <= 4294967295u64; ensures to_integer(x as uint32) == to_integer(x) by { solve() using { x <= 4294967295u64; }; } }",
-            "theorem bridge(x: int32) { requires 0 <= x; requires x <= 100; ensures to_integer(x << 2) <= 400 by { solve() using { 0 <= x; x <= 100; }; } }",
-            "theorem bridge(x: int32) { requires 3 <= x; requires x <= 100; ensures 12 <= to_integer(x << 2) by { solve() using { 3 <= x; x <= 100; }; } }",
-            "theorem bridge(x: int32) { requires -100 <= x; requires x <= 101; ensures to_integer(x >> 2) <= 25 by { solve() using { -100 <= x; x <= 101; }; } }",
-            "theorem bridge(x: int32) { requires -101 <= x; requires x <= 100; ensures -26 <= to_integer(x >> 2) by { solve() using { -101 <= x; x <= 100; }; } }",
-            "theorem bridge(x: uint64) { requires x <= 100u64; ensures to_integer(x << 2u64) <= 400 by { solve() using { x <= 100u64; }; } }",
-            "theorem bridge(x: uint64) { requires x <= 101u64; ensures to_integer(x >> 2u64) <= 25 by { solve() using { x <= 101u64; }; } }",
+            "theorem bridge(x: int32) { requires 0 <= x; requires x <= 255; ensures to_integer(x as uint8) == to_integer(x) by { close() using { 0 <= x; x <= 255; }; } }",
+            "theorem bridge(x: uint64) { requires x <= 4294967295u64; ensures to_integer(x as uint32) == to_integer(x) by { close() using { x <= 4294967295u64; }; } }",
+            "theorem bridge(x: int32) { requires 0 <= x; requires x <= 100; ensures to_integer(x << 2) <= 400 by { close() using { 0 <= x; x <= 100; }; } }",
+            "theorem bridge(x: int32) { requires 3 <= x; requires x <= 100; ensures 12 <= to_integer(x << 2) by { close() using { 3 <= x; x <= 100; }; } }",
+            "theorem bridge(x: int32) { requires -100 <= x; requires x <= 101; ensures to_integer(x >> 2) <= 25 by { close() using { -100 <= x; x <= 101; }; } }",
+            "theorem bridge(x: int32) { requires -101 <= x; requires x <= 100; ensures -26 <= to_integer(x >> 2) by { close() using { -101 <= x; x <= 100; }; } }",
+            "theorem bridge(x: uint64) { requires x <= 100u64; ensures to_integer(x << 2u64) <= 400 by { close() using { x <= 100u64; }; } }",
+            "theorem bridge(x: uint64) { requires x <= 101u64; ensures to_integer(x >> 2u64) <= 25 by { close() using { x <= 101u64; }; } }",
             "theorem bridge(x: int32) { ensures (x & 255) <= 255 by solve(); }",
-            "theorem bridge(x: int32) { requires 0 <= x; requires x <= 100; ensures (x & 255) <= 100 by { solve() using { 0 <= x; x <= 100; }; } }",
-            "theorem bridge(x: int32) { requires 0 <= x; ensures (x & 255) <= x by { solve() using { 0 <= x; }; } }",
-            "theorem bridge(x: uint64) { requires x <= 100u64; ensures (x & 255u64) <= 100u64 by { solve() using { x <= 100u64; }; } }",
-            "theorem bridge(x: Integer, y: Integer) { requires x < y; ensures (if x < y { x } else { y }) == x by { solve() using { x < y; }; } }",
-            "theorem bridge(x: Integer, y: Integer) { requires x < y; requires x <= 100; ensures (if x < y { x + 1 } else { y }) <= 101 by { solve() using { x < y; x <= 100; }; } }",
-            "theorem bridge(x: int32, y: int32) { requires x < y; ensures (if x < y { x } else { y }) == x by { solve() using { x < y; }; } }",
-            "theorem bridge(x: Integer, y: Integer) { requires not x < y; ensures (if x < y { x } else { y }) == y by { solve() using { not x < y; }; } }",
+            "theorem bridge(x: int32) { requires 0 <= x; requires x <= 100; ensures (x & 255) <= 100 by { close() using { 0 <= x; x <= 100; }; } }",
+            "theorem bridge(x: int32) { requires 0 <= x; ensures (x & 255) <= x by { close() using { 0 <= x; }; } }",
+            "theorem bridge(x: uint64) { requires x <= 100u64; ensures (x & 255u64) <= 100u64 by { close() using { x <= 100u64; }; } }",
+            "theorem bridge(x: Integer, y: Integer) { requires x < y; ensures (if x < y { x } else { y }) == x by { close() using { x < y; }; } }",
+            "theorem bridge(x: Integer, y: Integer) { requires x < y; requires x <= 100; ensures (if x < y { x + 1 } else { y }) <= 101 by { close() using { x < y; x <= 100; }; } }",
+            "theorem bridge(x: int32, y: int32) { requires x < y; ensures (if x < y { x } else { y }) == x by { close() using { x < y; }; } }",
+            "theorem bridge(x: Integer, y: Integer) { requires not x < y; ensures (if x < y { x } else { y }) == y by { close() using { not x < y; }; } }",
             "theorem bridge(x: int32) { ensures to_integer(255 & x) <= 255 by solve(); }",
-            "theorem bridge(x: uint64) { requires x <= 100u64; ensures to_integer(x << 0) <= 100 by { solve() using { x <= 100u64; }; } }",
-            "theorem bridge(x: uint64) { requires x <= 1u64; ensures to_integer(x << 63) <= 9223372036854775808 by { solve() using { x <= 1u64; }; } }",
-            "theorem bridge(x: uint64) { requires x <= 18446744073709551615u64; ensures to_integer(x >> 63) <= 1 by { solve() using { x <= 18446744073709551615u64; }; } }",
+            "theorem bridge(x: uint64) { requires x <= 100u64; ensures to_integer(x << 0) <= 100 by { close() using { x <= 100u64; }; } }",
+            "theorem bridge(x: uint64) { requires x <= 1u64; ensures to_integer(x << 63) <= 9223372036854775808 by { close() using { x <= 1u64; }; } }",
+            "theorem bridge(x: uint64) { requires x <= 18446744073709551615u64; ensures to_integer(x >> 63) <= 1 by { close() using { x <= 18446744073709551615u64; }; } }",
         ] {
             replay(source);
         }
         for source in [
-            "theorem bridge(x: int32) { requires 0 <= x; requires x <= 100; ensures to_integer(x << 2) <= 399 by { solve() using { 0 <= x; x <= 100; }; } }",
-            "theorem bridge(x: int32) { requires -101 <= x; requires x <= 100; ensures -25 <= to_integer(x >> 2) by { solve() using { -101 <= x; x <= 100; }; } }",
-            "theorem bridge(x: int32) { requires x <= 100; ensures (x & 255) <= 100 by { solve() using { x <= 100; }; } }",
-            "theorem bridge(x: Integer, y: Integer) { requires x < y; ensures (if x < y { x } else { y }) == x by { solve() using { }; } }",
+            "theorem bridge(x: int32) { requires 0 <= x; requires x <= 100; ensures to_integer(x << 2) <= 399 by { close() using { 0 <= x; x <= 100; }; } }",
+            "theorem bridge(x: int32) { requires -101 <= x; requires x <= 100; ensures -25 <= to_integer(x >> 2) by { close() using { -101 <= x; x <= 100; }; } }",
+            "theorem bridge(x: int32) { requires x <= 100; ensures (x & 255) <= 100 by { close() using { x <= 100; }; } }",
+            "theorem bridge(x: Integer, y: Integer) { requires x < y; ensures (if x < y { x } else { y }) == x by { close() using { }; } }",
         ] {
             assert!(verify_c_sources(source, &[]).is_err(), "{source}");
         }

@@ -8,7 +8,7 @@ theorem law(x: Integer, y: Integer) {
 }
 theorem test(a: Integer, b: Integer) {
     requires a < b;
-    ensures image(b) == image(a) and b > a by { solve() using { a < b; }; }
+    ensures image(b) == image(a) and b > a by { close() using { a < b; }; }
 }
 ```
 ```expect

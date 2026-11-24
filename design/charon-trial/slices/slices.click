@@ -55,8 +55,8 @@ fn guarded_read(value: &mut i32, bytes: &[u8], index: usize) -> u32 {
     ensures value[0] == old(value[0]);
 } by {
     step_until(function.exit);
-    have index <= 2147483647u64 by { solve() using { index < bytes.len(); bytes.len() <= 2147483647u64; }; }
-    have 0 <= index as uint32 as int32 by { solve() using { index <= 2147483647u64; }; }
-    have (index as uint32 as int32) < bytes.len() as uint32 as int32 by { solve() using { index < bytes.len(); bytes.len() <= 2147483647u64; }; }
+    have index <= 2147483647u64 by { close() using { index < bytes.len(); bytes.len() <= 2147483647u64; }; }
+    have 0 <= index as uint32 as int32 by { close() using { index <= 2147483647u64; }; }
+    have (index as uint32 as int32) < bytes.len() as uint32 as int32 by { close() using { index < bytes.len(); bytes.len() <= 2147483647u64; }; }
     solve();
 }

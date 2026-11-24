@@ -15,7 +15,7 @@ applies simple tactics and certificates. Every proof pays its cost on every
 step, and nothing can remove that cost later.
 
 The **slow part** searches. It is the smart tactics, whose kinds in
-`SmartTacticKind` are `Solve` (written `solve()` and `solve() using`),
+`SmartTacticKind` are `Solve` (written `solve()` and `close() using`),
 `Arithmetic` (the arithmetic engine alone, whose written form
 `arithmetic() using` the parser now refuses), and `Execute` (`step_until`, and
 the stepping and splitting of the implicit tail that ends every proof script);
@@ -464,7 +464,7 @@ expansion writes.
 Automatic store byte-gap eligibility reads an exact stated endpoint order;
 it does not follow recorded order chains or invoke general condition decision.
 For an order that follows transitively, write the endpoint bound before the
-store (for example `have i < j by solve() using { i < middle; middle < j; };`).
+store (for example `have i < j by close() using { i < middle; middle < j; };`).
 That search expands into explicit proof steps. The checking boundary rejects
 order-walk helpers in `one_element_gap_separates_bytes`; deterministic tests
 hold the store fixed while increasing both successful and missing order chains.

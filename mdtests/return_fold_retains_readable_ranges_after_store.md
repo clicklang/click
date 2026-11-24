@@ -123,12 +123,12 @@ void arena_write(struct region* region, int32 index, int32 value) {
     let { live: n, capacity: c } = unfold(st);
     let { start: s, end: e } = unfold(r);
     have defined(s + index) by {
-        solve() using {
+        close() using {
             defined(s + index) and to_integer(s + index) < to_integer(e);
         };
     }
     have to_integer(s + index) < to_integer(e) by {
-        solve() using {
+        close() using {
             defined(s + index) and to_integer(s + index) < to_integer(e);
         };
     }
@@ -171,28 +171,28 @@ void arena_write(struct region* region, int32 index, int32 value) {
     }
     mark w;
     step();
-    have separate(statement(0).footprint, memory(region->arena)) by { solve() using {}; }
+    have separate(statement(0).footprint, memory(region->arena)) by { close() using {}; }
     have region->arena == at(statement(0).entry, region->arena) by {
         preserve(memory(region->arena), statement(0));
     }
-    have separate(statement(0).footprint, memory(region->arena->data)) by { solve() using {}; }
+    have separate(statement(0).footprint, memory(region->arena->data)) by { close() using {}; }
     have region->arena->data == at(statement(0).entry, region->arena->data) by {
         preserve(memory(region->arena->data), statement(0));
     }
-    have separate(statement(0).footprint, memory(region->arena->occupied)) by { solve() using {}; }
+    have separate(statement(0).footprint, memory(region->arena->occupied)) by { close() using {}; }
     have region->arena->occupied == at(statement(0).entry, region->arena->occupied) by {
         preserve(memory(region->arena->occupied), statement(0));
     }
     step();
-    have separate(statement(1).footprint, memory(region->arena)) by { solve() using {}; }
+    have separate(statement(1).footprint, memory(region->arena)) by { close() using {}; }
     have region->arena == at(statement(1).entry, region->arena) by {
         preserve(memory(region->arena), statement(1));
     }
-    have separate(statement(1).footprint, memory(region->arena->data)) by { solve() using {}; }
+    have separate(statement(1).footprint, memory(region->arena->data)) by { close() using {}; }
     have region->arena->data == at(statement(1).entry, region->arena->data) by {
         preserve(memory(region->arena->data), statement(1));
     }
-    have separate(statement(1).footprint, memory(region->arena->occupied)) by { solve() using {}; }
+    have separate(statement(1).footprint, memory(region->arena->occupied)) by { close() using {}; }
     have region->arena->occupied == at(statement(1).entry, region->arena->occupied) by {
         preserve(memory(region->arena->occupied), statement(1));
     }
@@ -203,20 +203,20 @@ void arena_write(struct region* region, int32 index, int32 value) {
     have at(before_access, separate(memory(region->arena->data[region->start + index]), memory(region->arena->capacity)));
     step();
     have separate(statement(2).footprint, memory(region->arena->capacity)) by {
-        solve() using { at(before_access, separate(memory(region->arena->data[region->start + index]), memory(region->arena->capacity))); };
+        close() using { at(before_access, separate(memory(region->arena->data[region->start + index]), memory(region->arena->capacity))); };
     }
     have region->arena->capacity == at(before_access, region->arena->capacity) by {
         preserve(memory(region->arena->capacity), statement(2));
     }
-    have separate(statement(2).footprint, memory(region->arena)) by { solve() using { at(before_access, separate(memory(region->arena->data[region->start + index]), memory(region->arena))); }; }
+    have separate(statement(2).footprint, memory(region->arena)) by { close() using { at(before_access, separate(memory(region->arena->data[region->start + index]), memory(region->arena))); }; }
     have region->arena == at(before_access, region->arena) by {
         preserve(memory(region->arena), statement(2));
     }
-    have separate(statement(2).footprint, memory(region->arena->data)) by { solve() using { at(before_access, separate(memory(region->arena->data[region->start + index]), memory(region->arena->data))); }; }
+    have separate(statement(2).footprint, memory(region->arena->data)) by { close() using { at(before_access, separate(memory(region->arena->data[region->start + index]), memory(region->arena->data))); }; }
     have region->arena->data == at(before_access, region->arena->data) by {
         preserve(memory(region->arena->data), statement(2));
     }
-    have separate(statement(2).footprint, memory(region->arena->occupied)) by { solve() using { at(before_access, separate(memory(region->arena->data[region->start + index]), memory(region->arena->occupied))); }; }
+    have separate(statement(2).footprint, memory(region->arena->occupied)) by { close() using { at(before_access, separate(memory(region->arena->data[region->start + index]), memory(region->arena->occupied))); }; }
     have region->arena->occupied == at(before_access, region->arena->occupied) by {
         preserve(memory(region->arena->occupied), statement(2));
     }
@@ -254,15 +254,15 @@ void arena_write(struct region* region, int32 index, int32 value) {
                 memory(region->arena->occupied[k])
             ));
         }
-        have separate(statement(0).footprint, memory(region->arena->occupied[k])) by { solve() using {}; }
+        have separate(statement(0).footprint, memory(region->arena->occupied[k])) by { close() using {}; }
         have at(statement(0).exit, region->arena->occupied[k]) == at(statement(0).entry, region->arena->occupied[k]) by {
             preserve(memory(region->arena->occupied[k]), statement(0));
         }
-        have separate(statement(1).footprint, memory(region->arena->occupied[k])) by { solve() using {}; }
+        have separate(statement(1).footprint, memory(region->arena->occupied[k])) by { close() using {}; }
         have at(statement(1).exit, region->arena->occupied[k]) == at(statement(1).entry, region->arena->occupied[k]) by {
             preserve(memory(region->arena->occupied[k]), statement(1));
         }
-        have separate(statement(2).footprint, memory(region->arena->occupied[k])) by { solve() using { separate(memory(at(before_access, region->arena->data)[at(before_access, region->start + index)]), memory(region->arena->occupied[k])); }; }
+        have separate(statement(2).footprint, memory(region->arena->occupied[k])) by { close() using { separate(memory(at(before_access, region->arena->data)[at(before_access, region->start + index)]), memory(region->arena->occupied[k])); }; }
         have at(statement(2).exit, region->arena->occupied[k]) == at(statement(2).entry, region->arena->occupied[k]) by {
             preserve(memory(region->arena->occupied[k]), statement(2));
         }

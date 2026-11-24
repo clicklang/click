@@ -1,7 +1,7 @@
-# Alignment closes by `solve() using` its selected premises
+# Alignment closes by `close() using` its selected premises
 
 Arithmetic search expands to ordinary proof steps, with the selected premises
-stated explicitly in `solve() using { ... }`.
+stated explicitly in `close() using { ... }`.
 
 ```c filename=aligned_explicit_arithmetic.c
 int32 aligned_explicit_arithmetic(uint8* p) {
@@ -18,7 +18,7 @@ int32 aligned_explicit_arithmetic(uint8* p) {
 } by {
     step_until(function.exit);
     have aligned(p + 24, 8) by {
-        solve() using { aligned(p, 16); };
+        close() using { aligned(p, 16); };
     }
     solve();
 }

@@ -53,7 +53,7 @@ void join(int32* data, int32 cap) {
         known();
     }
     have h <= cap by {
-        solve() using {
+        close() using {
             h == t;
             t <= cap;
         };

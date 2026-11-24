@@ -84,7 +84,7 @@ theorem rb_blacken_reparent_is_rb_root(tree: RbTree, parent: struct rb_node*) {
         rewrite(is_rb(rb_reparent(rb_recolor(tree, Color::Black), parent)), is_rb(rb_recolor(tree,
             Color::Black)));
         rewrite(rb_root_black(rb_reparent(rb_recolor(tree, Color::Black), parent)), rb_root_black(rb_recolor(tree, Color::Black)));
-        solve() using {
+        close() using {
             is_rb(rb_recolor(tree, Color::Black)) == 1;
             rb_root_black(rb_recolor(tree, Color::Black)) == 1;
         };

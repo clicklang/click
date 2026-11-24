@@ -1,7 +1,7 @@
 # `int64_defined` refuses bounds that leave room for overflow
 
 Arithmetic search expands to ordinary proof steps, with the selected premises
-stated explicitly in `solve() using { ... }`.
+stated explicitly in `close() using { ... }`.
 
 ```c filename=int64_defined_bounds_do_not_exclude_overflow.c
 long sum(long a, long b) {
@@ -17,11 +17,11 @@ int64 sum(int64 a, int64 b) {
     ensures result == a + b;
 } by {
     have defined(a + b) by {
-        solve() using { a < 100; };
+        close() using { a < 100; };
     }
 }
 ```
 
 ```expect
-fail: solve
+fail: `close() using`
 ```

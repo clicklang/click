@@ -1,7 +1,7 @@
-# A tag equality closes by `solve() using` its selected premises
+# A tag equality closes by `close() using` its selected premises
 
 Arithmetic search expands to ordinary proof steps, with the selected premises
-stated explicitly in `solve() using { ... }`.
+stated explicitly in `close() using { ... }`.
 
 ```c filename=tagged_pointer_explicit_arithmetic.c
 struct node {
@@ -24,7 +24,7 @@ unsigned long set_black(unsigned long word, struct node* next) {
 } by {
     step_until(function.exit);
     have result == address(next) + 3 by {
-        solve() using { word == address(next) + 1; aligned(next, 8); };
+        close() using { word == address(next) + 1; aligned(next, 8); };
     }
     solve();
 }

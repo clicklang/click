@@ -39,10 +39,10 @@ void checkout(struct pool* pool, struct payload* p) {
         have 1 <= to_integer(count(slot(pool))) by { known(); }
         have defined(pool->checked_out);
         have to_integer(pool->checked_out) + 1 <= 2147483647 by {
-            solve() using { to_integer(pool->checked_out) < 2147483647; };
+            close() using { to_integer(pool->checked_out) < 2147483647; };
         }
         have to_integer(pool->checked_out) + 1 >= -2147483648 by {
-            solve() using { 0 <= to_integer(pool->checked_out); };
+            close() using { 0 <= to_integer(pool->checked_out); };
         }
         have defined(pool->checked_out + 1) by { known(); }
         step();
@@ -53,7 +53,7 @@ void checkout(struct pool* pool, struct payload* p) {
             known();
         }
         have to_integer(pool->checked_out) == to_integer(old(pool->checked_out)) + 1 by {
-            solve() using {
+            close() using {
                 to_integer(old(pool->checked_out)) + 1 <= 2147483647;
                 to_integer(old(pool->checked_out)) + 1 >= -2147483648;
             };
@@ -64,7 +64,7 @@ void checkout(struct pool* pool, struct payload* p) {
             rewrite(to_integer(old(pool->capacity)),
                 to_integer(old(pool->checked_out)) + to_integer(old(count(slot(pool)))));
             rewrite(to_integer(pool->checked_out), to_integer(old(pool->checked_out)) + 1);
-            solve() using { 1 <= to_integer(old(count(slot(pool)))); };
+            close() using { 1 <= to_integer(old(count(slot(pool)))); };
         }
     }
 }
