@@ -28,9 +28,7 @@ impl<'a> Scope<'a> {
 
     pub(super) fn bind_field(&mut self, name: &BindingName, value: &AlgebraicFieldResult) {
         match value {
-            AlgebraicFieldResult::Shared(root)
-                if matches!(root.node(), KernelTermNode::Legacy(_)) =>
-            {
+            AlgebraicFieldResult::Shared(root) if root.requires_native_argument_input() => {
                 self.bind_native_field(name, &value.clone().into_native());
             }
             AlgebraicFieldResult::Shared(root) if root.ty() != &KernelType::Integer => {

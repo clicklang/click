@@ -4772,6 +4772,26 @@ fn raise_kernel_term_dispatch(
                 bound_variables,
             )?
         }
+        Node::ImportedScalar(input) => match term.ty() {
+            KernelType::Program(ProgramType::Bool) => synthesize_surface_bool(
+                &ConditionTerm::truth_of_bool_word(input.value()),
+                parameter_binding,
+                state,
+                bound_variables,
+            )?,
+            KernelType::Program(ty)
+                if MachineIntegerType::from_program_type(*ty)
+                    .is_some_and(|format| format.format().bits() >= 32) =>
+            {
+                synthesize_surface_bitvector(
+                    input.value(),
+                    parameter_binding,
+                    state,
+                    bound_variables,
+                )?
+            }
+            _ => return None,
+        },
         Node::ObservedPointer(value) => recurse(value.source())?,
         Node::CallArgument(argument) => synthesize_legacy_call_argument(
             argument.value(),
@@ -4779,22 +4799,12 @@ fn raise_kernel_term_dispatch(
             state,
             bound_variables,
         )?,
-        Node::Legacy(legacy) => match legacy.value() {
-            crate::kernel::PureFunctionArgument::Integer(value) => {
-                let mut import = crate::kernel::KernelTermImport::default();
-                if let Some(matched) =
-                    crate::kernel::KernelMatch::import_integer(&mut import, value)
-                {
-                    matches::raise_match(&matched, parameter_binding, state, bound_variables)?
-                } else {
-                    let fold = crate::kernel::KernelFold::import_integer(&mut import, value)?;
-                    folds::raise_fold(&fold, parameter_binding, state, bound_variables)?
-                }
-            }
-            value => {
-                synthesize_legacy_call_argument(value, parameter_binding, state, bound_variables)?
-            }
-        },
+        Node::NativeDescriptor(_) | Node::ObservedArgument(_) => synthesize_legacy_call_argument(
+            term.written_argument()?,
+            parameter_binding,
+            state,
+            bound_variables,
+        )?,
         Node::FloatCompare { .. }
         | Node::FloatClassify { .. }
         | Node::FloatConvert { .. }

@@ -275,9 +275,9 @@ impl SharedPureApplication {
                 .arguments()
                 .iter()
                 .map(|argument| {
-                    import.structural_argument(argument).filter(|root| {
-                        !matches!(root.node(), crate::kernel::KernelTermNode::Legacy(_))
-                    })
+                    import
+                        .structural_argument(argument)
+                        .filter(|root| !root.requires_native_argument_input())
                 })
                 .collect();
             *cached = Some(PreparedApplicationArguments {
@@ -1281,11 +1281,6 @@ pub struct SharedIntegerTerm(KernelTerm);
 impl SharedIntegerTerm {
     pub(in crate::kernel) fn from_root(root: KernelTerm) -> Self {
         debug_assert_eq!(root.ty(), &KernelType::Integer);
-        if let KernelTermNode::Legacy(value) = root.node()
-            && let PureFunctionArgument::Integer(value) = value.value()
-        {
-            return value.clone();
-        }
         Self(root)
     }
 

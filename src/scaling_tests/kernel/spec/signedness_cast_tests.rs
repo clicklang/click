@@ -65,7 +65,7 @@ fn opaque_signedness_cast_chains_keep_shared_parents() {
                         unsigned.program_type(),
                     )
                     .unwrap();
-                    assert!(!matches!(root.node(), KernelTermNode::Legacy(_)));
+                    assert!(!root.requires_native_argument_input());
                     root = shared_machine::cast_signedness(
                         &SpecValue::Shared(root),
                         signed.program_type(),

@@ -84,7 +84,7 @@ mod tests {
             LoadKind::Int32,
         );
         let root = KernelTermImport::default().float(KernelFloatType::Float32, &mismatch);
-        assert!(matches!(root.node(), KernelTermNode::Legacy(_)));
+        assert!(matches!(root.node(), KernelTermNode::ImportedScalar(_)));
         assert_eq!(
             KernelTermExport::float(&root).unwrap(),
             ProgramValue::Float32(mismatch)

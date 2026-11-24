@@ -710,7 +710,7 @@ mod tests {
             LoadKind::Int32,
         );
         let term = KernelTermImport::default().machine(MachineIntegerType::Int32, &native);
-        assert!(matches!(term.node(), KernelTermNode::Legacy(_)));
+        assert!(matches!(term.node(), KernelTermNode::ImportedScalar(_)));
         assert_eq!(KernelTermExport::machine(&term).unwrap(), native);
     }
 }

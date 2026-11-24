@@ -90,7 +90,7 @@ pub(super) fn fingerprint(root: FloatOperandView<'_>, policy: OperandFingerprint
                 let scalar = if let MachineOperandView::Shared(root) = operand
                     && matches!(
                         root.node(),
-                        KernelTermNode::Legacy(_)
+                        KernelTermNode::ImportedScalar(_)
                             | KernelTermNode::MachineObservationInput { .. }
                             | KernelTermNode::WrittenMachine(_)
                     ) {
@@ -247,7 +247,7 @@ pub(super) fn collect_load_keys(root: &KernelTerm, keys: &mut BTreeSet<(AddressB
             | KernelTermNode::FloatCall(_)
             | KernelTermNode::Match(_)
             | KernelTermNode::IntegerToMachine { .. } => {}
-            KernelTermNode::Legacy(_)
+            KernelTermNode::ImportedScalar(_)
             | KernelTermNode::MachineObservationInput { .. }
             | KernelTermNode::WrittenMachine(_) => {
                 let native = legacy_numeric(root);
@@ -259,30 +259,10 @@ pub(super) fn collect_load_keys(root: &KernelTerm, keys: &mut BTreeSet<(AddressB
 }
 
 fn legacy_numeric(root: &KernelTerm) -> &MachineTerm {
-    if let Some(input) = root.retained_machine_input() {
-        return input;
+    if let KernelTermNode::ImportedScalar(input) = root.node() {
+        return input.value();
     }
-    let KernelTermNode::Legacy(value) = root.node() else {
-        unreachable!("numeric legacy operand");
-    };
-    let PureFunctionArgument::Value(value) = value.value() else {
-        unreachable!("numeric operand");
-    };
-    match value {
-        ProgramValue::Int8(value)
-        | ProgramValue::UInt8(value)
-        | ProgramValue::Int16(value)
-        | ProgramValue::UInt16(value)
-        | ProgramValue::Int32(value)
-        | ProgramValue::UInt32(value)
-        | ProgramValue::Int64(value)
-        | ProgramValue::UInt64(value)
-        | ProgramValue::Int128(value)
-        | ProgramValue::UInt128(value)
-        | ProgramValue::Float32(value)
-        | ProgramValue::Float64(value) => value,
-        _ => unreachable!("numeric operand"),
-    }
+    root.retained_machine_input().expect("numeric input")
 }
 
 #[cfg(test)]

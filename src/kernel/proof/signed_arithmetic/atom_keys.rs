@@ -154,9 +154,7 @@ fn shape(term: &KernelTerm, reading: Reading) -> Option<(Head, Vec<(&KernelTerm,
     use KernelTermNode as N;
     let child = |value| vec![(value, reading)];
     match term.node() {
-        N::Legacy(_) | N::MachineObservationInput { .. } | N::WrittenMachine(_)
-            if reading == Reading::Signed =>
-        {
+        N::MachineObservationInput { .. } | N::WrittenMachine(_) if reading == Reading::Signed => {
             let value = canonical_term_budgeted(term.machine_conversion_leaf()?)?;
             Some((
                 Head::Opaque(SignedArithmeticAtom::from_term(&value)?),
@@ -369,8 +367,7 @@ pub(super) fn canonical_arithmetic(root: &KernelTerm) -> Option<KernelTerm> {
                         crate::kernel::MachineOperandView::Legacy(&canonical),
                     )
                 }
-                KernelTermNode::Legacy(_)
-                | KernelTermNode::MachineObservationInput { .. }
+                KernelTermNode::MachineObservationInput { .. }
                 | KernelTermNode::WrittenMachine(_)
                 | KernelTermNode::Variable(_)
                 | KernelTermNode::MachineLiteral(_) => term.clone(),

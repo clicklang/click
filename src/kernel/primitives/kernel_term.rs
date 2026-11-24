@@ -1,5 +1,5 @@
-//! Shared typed expression nodes. Arithmetic and calls migrate first; the
-//! explicitly named Legacy leaf is a lossless boundary for unmigrated sorts.
+//! Shared typed expression nodes. Typed input leaves preserve exact written
+//! inputs at the native API boundary.
 //! No constructor consults facts, evaluates arithmetic, or unfolds a call.
 use super::integer::{IntegerIdentity, IntegerRangeIdentity, IntegerShallowKey};
 use super::*;
@@ -207,6 +207,8 @@ pub enum KernelTermNode {
     },
     /// An explicitly supplied machine expression outside the structural fragment.
     WrittenMachine(KernelWrittenMachine),
+    /// An exact scalar input outside its checked structural fragment.
+    ImportedScalar(KernelImportedScalar),
     /// An already retained observation whose written carrier has no shared root.
     /// Numeric arguments use the observation identity directly. An exact
     /// Integer producer keeps its own spelling when read as a machine operand.
@@ -242,8 +244,119 @@ pub enum KernelTermNode {
     },
     /// An exact foreign argument carried by its producer's call descriptor.
     CallArgument(KernelCallArgument),
-    /// Temporary adapter, not a second spelling or equality interpretation.
-    Legacy(KernelLegacyTerm),
+    /// An exact C record or a descriptor refused by the structural importer.
+    NativeDescriptor(KernelNativeDescriptor),
+    /// Semantic identity of a selected exact call or descriptor input.
+    ObservedArgument(KernelObservedArgument),
+}
+
+/// A supplied scalar whose carrier is determined by the root's checked type.
+#[derive(Clone, Debug)]
+pub struct KernelImportedScalar {
+    carrier: ProgramType,
+    source: ImportedScalarSource,
+}
+
+#[derive(Clone, Debug)]
+enum ImportedScalarSource {
+    Exact(Arc<MachineTerm>),
+    Observed(Arc<MachineTerm>),
+    Call {
+        argument: KernelCallArgument,
+        observed: bool,
+    },
+}
+
+impl KernelImportedScalar {
+    pub(crate) fn carrier(&self) -> ProgramType {
+        self.carrier
+    }
+
+    pub(crate) fn value(&self) -> &MachineTerm {
+        match &self.source {
+            ImportedScalarSource::Exact(value) | ImportedScalarSource::Observed(value) => value,
+            ImportedScalarSource::Call { argument, .. } => {
+                Self::call_input(argument).expect("scalar call argument").1
+            }
+        }
+    }
+
+    fn call_input(argument: &KernelCallArgument) -> Option<(ProgramType, &MachineTerm)> {
+        let PureFunctionArgument::Value(value) = argument.value() else {
+            return None;
+        };
+        let word = match value {
+            integer_c_value!(word)
+            | ProgramValue::Bool(word)
+            | ProgramValue::Float32(word)
+            | ProgramValue::Float64(word) => word,
+            _ => return None,
+        };
+        Some((value.program_type(), word))
+    }
+
+    fn is_exact(&self) -> bool {
+        matches!(
+            self.source,
+            ImportedScalarSource::Exact(_)
+                | ImportedScalarSource::Call {
+                    observed: false,
+                    ..
+                }
+        )
+    }
+}
+
+impl PartialEq for KernelImportedScalar {
+    fn eq(&self, other: &Self) -> bool {
+        if self.carrier != other.carrier {
+            return false;
+        }
+        match (&self.source, &other.source) {
+            (ImportedScalarSource::Exact(a), ImportedScalarSource::Exact(b)) => Arc::ptr_eq(a, b),
+            (
+                ImportedScalarSource::Call {
+                    argument: a,
+                    observed: false,
+                },
+                ImportedScalarSource::Call {
+                    argument: b,
+                    observed: false,
+                },
+            ) => a == b,
+            _ if !self.is_exact() && !other.is_exact() => self.value() == other.value(),
+            _ => false,
+        }
+    }
+}
+impl Eq for KernelImportedScalar {}
+impl Hash for KernelImportedScalar {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.carrier.hash(state);
+        self.is_exact().hash(state);
+        match &self.source {
+            ImportedScalarSource::Exact(value) => Arc::as_ptr(value).hash(state),
+            ImportedScalarSource::Call {
+                argument,
+                observed: false,
+            } => argument.hash(state),
+            _ => hash_written_observation(self.value(), state),
+        }
+    }
+}
+
+fn hash_written_observation(value: &impl Hash, state: &mut impl Hasher) {
+    struct Charged<'a, H>(&'a mut H);
+    impl<H: Hasher> Hasher for Charged<'_, H> {
+        fn finish(&self) -> u64 {
+            self.0.finish()
+        }
+        fn write(&mut self, bytes: &[u8]) {
+            crate::instrumentation::record_deterministic_work(bytes.len().div_ceil(8));
+            self.0.write(bytes);
+        }
+    }
+    value.hash(&mut Charged(state));
 }
 
 /// Exact native input to the typed machine operand API. Retagging and
@@ -270,6 +383,21 @@ enum WrittenMachineIdentity {
 }
 
 impl KernelWrittenMachine {
+    fn expression(format: MachineIntegerType, value: &MachineTerm) -> Self {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let identity = NEXT
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
+            .expect("written machine leaf identity exhausted");
+        Self {
+            format,
+            source: WrittenMachineSource::Expression {
+                identity,
+                value: Arc::new(value.clone()),
+            },
+        }
+    }
+
     fn identity(&self) -> WrittenMachineIdentity {
         match &self.source {
             WrittenMachineSource::Expression { identity, .. } => {
@@ -333,62 +461,40 @@ impl Hash for KernelCallArgument {
     }
 }
 
-/// An exact unmigrated payload, with identity supplied by its producer.
-/// C pointer equality intentionally omits auxiliary qualifiers/evidence, so
-/// it cannot be used to select which legacy payload a bridge returns.
+/// Opaque descriptors whose native envelopes carry identity or refusal data.
 #[derive(Clone, Debug)]
-pub struct KernelLegacyTerm(LegacyPayload);
+pub struct KernelNativeDescriptor(Arc<PureFunctionArgument>);
 
-#[derive(Clone, Debug)]
-enum LegacyPayload {
-    Written {
-        id: u64,
-        value: Arc<PureFunctionArgument>,
-    },
-    Observation(KernelTerm),
-}
-
-impl PartialEq for KernelLegacyTerm {
+impl PartialEq for KernelNativeDescriptor {
     fn eq(&self, other: &Self) -> bool {
-        match (&self.0, &other.0) {
-            (LegacyPayload::Written { id: a, .. }, LegacyPayload::Written { id: b, .. }) => a == b,
-            (LegacyPayload::Observation(_), LegacyPayload::Observation(_)) => {
-                self.value() == other.value()
-            }
-            _ => false,
-        }
+        Arc::ptr_eq(&self.0, &other.0)
     }
 }
-impl Eq for KernelLegacyTerm {}
-impl Hash for KernelLegacyTerm {
+impl Eq for KernelNativeDescriptor {}
+impl Hash for KernelNativeDescriptor {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        match &self.0 {
-            LegacyPayload::Observation(_) => {
-                // Charge the written descriptor read for observation identity.
-                struct Charged<'a, H>(&'a mut H);
-                impl<H: Hasher> Hasher for Charged<'_, H> {
-                    fn finish(&self) -> u64 {
-                        self.0.finish()
-                    }
-                    fn write(&mut self, bytes: &[u8]) {
-                        crate::instrumentation::record_deterministic_work(bytes.len().div_ceil(8));
-                        self.0.write(bytes);
-                    }
-                }
-                (0u8, self.value()).hash(&mut Charged(state));
-            }
-            LegacyPayload::Written { id, .. } => (1u8, id).hash(state),
-        }
+        Arc::as_ptr(&self.0).hash(state);
     }
 }
-impl KernelLegacyTerm {
+
+#[derive(Clone, Debug)]
+pub struct KernelObservedArgument(KernelTerm);
+impl KernelObservedArgument {
     pub fn value(&self) -> &PureFunctionArgument {
-        match &self.0 {
-            LegacyPayload::Written { value, .. } => value,
-            LegacyPayload::Observation(source) => source
-                .written_argument()
-                .expect("numeric observation of a written argument"),
-        }
+        self.0
+            .written_argument()
+            .expect("observation of an exact argument")
+    }
+}
+impl PartialEq for KernelObservedArgument {
+    fn eq(&self, other: &Self) -> bool {
+        self.value() == other.value()
+    }
+}
+impl Eq for KernelObservedArgument {}
+impl Hash for KernelObservedArgument {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        hash_written_observation(self.value(), state);
     }
 }
 
@@ -543,7 +649,8 @@ impl NodeKey {
             | KernelTermNode::FloatRead(_) => true,
             KernelTermNode::MachineObservationInput { exact, .. } => *exact,
             KernelTermNode::WrittenMachine(_) | KernelTermNode::CallArgument(_) => true,
-            KernelTermNode::Legacy(value) => matches!(value.0, LegacyPayload::Written { .. }),
+            KernelTermNode::ImportedScalar(input) => input.is_exact(),
+            KernelTermNode::NativeDescriptor(_) => true,
             KernelTermNode::Call { .. } if matches!(ty, KernelType::Program(ty) if MachineIntegerType::from_program_type(ty).is_some()) => {
                 true
             }
@@ -798,7 +905,7 @@ impl NodeKey {
 
 /// Immutable typed term. Identity is structural, never an equality-class id.
 /// Migrated children are handles, so hashing and comparing an arithmetic or
-/// call node do not walk its DAG. Legacy payload costs remain explicit input.
+/// call node do not walk its DAG. Exact payload costs remain explicit input.
 #[derive(Clone)]
 pub struct KernelTerm(Arc<TermData>);
 
@@ -917,6 +1024,7 @@ impl KernelTerm {
                         observation,
                         ..
                     } => machine::wrap_exact(*format, observation.value().clone()),
+                    KernelTermNode::ImportedScalar(input) => Self::imported_scalar_as_native(input),
                     KernelTermNode::WrittenMachine(input) => {
                         machine::wrap_exact(input.format(), input.value().clone())
                     }
@@ -936,11 +1044,6 @@ impl KernelTerm {
     pub(crate) fn integer_native_compat(&self) -> Option<&IntegerTerm> {
         if self.ty() != &KernelType::Integer {
             return None;
-        }
-        if let KernelTermNode::Legacy(legacy) = self.node()
-            && let PureFunctionArgument::Integer(value) = legacy.value()
-        {
-            return Some(value);
         }
         Some(self.0.integer_output.get_or_init(|| {
             Box::new(
@@ -1088,11 +1191,6 @@ impl KernelTerm {
         if self.ty() != &KernelType::Integer {
             return None;
         }
-        if let KernelTermNode::Legacy(leaf) = self.node()
-            && let PureFunctionArgument::Integer(value) = leaf.value()
-        {
-            return value.root().integer_exact_key();
-        }
         Some(self.mixed_integer_identity().key.clone())
     }
 
@@ -1102,11 +1200,6 @@ impl KernelTerm {
         }
         if self.ty() != &KernelType::Integer {
             return None;
-        }
-        if let KernelTermNode::Legacy(leaf) = self.node()
-            && let PureFunctionArgument::Integer(value) = leaf.value()
-        {
-            return Some(value.id());
         }
         Some(self.mixed_integer_identity().id)
     }
@@ -1135,7 +1228,6 @@ impl KernelTerm {
             if root.ty() != &KernelType::Integer
                 || root.is_mathematical_integer()
                 || root.0.integer_identity.get().is_some()
-                || matches!(root.node(), KernelTermNode::Legacy(_))
             {
                 continue;
             }
@@ -1394,20 +1486,6 @@ impl KernelTerm {
     pub(crate) fn checked_call(ty: KernelType, name: String, arguments: Vec<Self>) -> Self {
         Self::intern(ty, KernelTermNode::Call { name, arguments })
     }
-    fn legacy(argument: PureFunctionArgument) -> Self {
-        use std::sync::atomic::{AtomicU64, Ordering};
-        static NEXT: AtomicU64 = AtomicU64::new(0);
-        let id = NEXT
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
-            .expect("legacy term identity exhausted");
-        Self::intern(
-            Self::native_argument_type(&argument),
-            KernelTermNode::Legacy(KernelLegacyTerm(LegacyPayload::Written {
-                id,
-                value: Arc::new(argument),
-            })),
-        )
-    }
     /// Retain an already-native opaque machine operand at a shared parent.
     /// The identity belongs to its explicit typed input, never to an export of
     /// a shared tree.
@@ -1481,20 +1559,9 @@ impl KernelTerm {
                 // Native equality can ignore object-class evidence and
                 // state authority. Preserve this exact producer payload;
                 // checking may relate it to another leaf separately.
-                use std::sync::atomic::{AtomicU64, Ordering};
-                static NEXT: AtomicU64 = AtomicU64::new(0);
-                let id = NEXT
-                    .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
-                    .expect("retained machine leaf identity exhausted");
                 Self::intern(
                     KernelType::Program(format.program_type()),
-                    KernelTermNode::WrittenMachine(KernelWrittenMachine {
-                        format,
-                        source: WrittenMachineSource::Expression {
-                            identity: id,
-                            value: Arc::new(value.clone()),
-                        },
-                    }),
+                    KernelTermNode::WrittenMachine(KernelWrittenMachine::expression(format, value)),
                 )
             })
     }
@@ -1537,8 +1604,7 @@ impl KernelTerm {
     ) -> Self {
         if matches!(
             self.node(),
-            KernelTermNode::Legacy(_)
-                | KernelTermNode::MachineObservationInput { .. }
+            KernelTermNode::MachineObservationInput { .. }
                 | KernelTermNode::WrittenMachine(_)
                 | KernelTermNode::Call { .. }
                 | KernelTermNode::IntegerAddress { .. }
@@ -1588,22 +1654,79 @@ impl KernelTerm {
         debug_assert!(source.written_argument().is_some());
         Self::intern(
             source.ty().clone(),
-            KernelTermNode::Legacy(KernelLegacyTerm(LegacyPayload::Observation(source.clone()))),
+            KernelTermNode::ObservedArgument(KernelObservedArgument(source.clone())),
         )
     }
 
-    #[cfg(test)]
-    pub(crate) fn native_observation_leaf(argument: PureFunctionArgument) -> Self {
-        Self::observe_written_argument(&Self::legacy(argument))
+    fn written_call_argument(application: &SharedPureApplication, index: usize) -> Self {
+        let slot = KernelCallArgument {
+            application: application.clone(),
+            index,
+        };
+        let ty = Self::native_argument_type(slot.value());
+        let node = if let Some((carrier, _)) = KernelImportedScalar::call_input(&slot) {
+            KernelTermNode::ImportedScalar(KernelImportedScalar {
+                carrier,
+                source: ImportedScalarSource::Call {
+                    argument: slot,
+                    observed: false,
+                },
+            })
+        } else {
+            KernelTermNode::CallArgument(slot)
+        };
+        Self::intern(ty, node)
     }
 
-    fn written_call_argument(application: &SharedPureApplication, index: usize) -> Self {
+    fn imported_scalar(ty: ProgramType, value: &MachineTerm) -> Self {
         Self::intern(
-            Self::native_argument_type(&application.arguments()[index]),
-            KernelTermNode::CallArgument(KernelCallArgument {
-                application: application.clone(),
-                index,
+            KernelType::Program(ty),
+            KernelTermNode::ImportedScalar(KernelImportedScalar {
+                carrier: ty,
+                source: ImportedScalarSource::Exact(Arc::new(value.clone())),
             }),
+        )
+    }
+
+    pub(super) fn observe_imported_scalar(&self, input: &KernelImportedScalar) -> Self {
+        let source = match &input.source {
+            ImportedScalarSource::Exact(value) => ImportedScalarSource::Observed(value.clone()),
+            ImportedScalarSource::Call {
+                argument,
+                observed: false,
+            } => ImportedScalarSource::Call {
+                argument: argument.clone(),
+                observed: true,
+            },
+            _ => return self.clone(),
+        };
+        Self::intern(
+            self.ty().clone(),
+            KernelTermNode::ImportedScalar(KernelImportedScalar {
+                carrier: input.carrier,
+                source,
+            }),
+        )
+    }
+
+    fn imported_scalar_as_native(input: &KernelImportedScalar) -> ProgramValue {
+        let term = input.value().clone();
+        if let Some(format) = MachineIntegerType::from_program_type(input.carrier) {
+            machine::wrap_exact(format, term)
+        } else if let Some(format) = KernelFloatType::from_program_type(input.carrier) {
+            format.value(term)
+        } else {
+            debug_assert_eq!(input.carrier, ProgramType::Bool);
+            ProgramValue::Bool(term)
+        }
+    }
+
+    pub(crate) fn requires_native_argument_input(&self) -> bool {
+        matches!(
+            self.node(),
+            KernelTermNode::NativeDescriptor(_)
+                | KernelTermNode::ObservedArgument(_)
+                | KernelTermNode::ImportedScalar(_)
         )
     }
 
@@ -1611,9 +1734,28 @@ impl KernelTerm {
     pub(crate) fn written_argument(&self) -> Option<&PureFunctionArgument> {
         match self.node() {
             KernelTermNode::CallArgument(argument) => Some(argument.value()),
-            KernelTermNode::Legacy(argument) => Some(argument.value()),
+            KernelTermNode::ImportedScalar(KernelImportedScalar {
+                source: ImportedScalarSource::Call { argument, .. },
+                ..
+            }) => Some(argument.value()),
+            KernelTermNode::ObservedArgument(argument) => Some(argument.value()),
+            KernelTermNode::NativeDescriptor(descriptor) => Some(&descriptor.0),
             _ => None,
         }
+    }
+
+    /// Native carriers needed when an exact written call is checked or emitted.
+    pub(in crate::kernel) fn exact_argument_input(&self) -> Option<&PureFunctionArgument> {
+        self.written_argument().or_else(|| {
+            let KernelTermNode::ImportedScalar(input) = self.node() else {
+                return None;
+            };
+            Some(self.0.argument_leaf.get_or_init(|| {
+                Box::new(PureFunctionArgument::Value(
+                    Self::imported_scalar_as_native(input),
+                ))
+            }))
+        })
     }
 
     fn native_argument_type(argument: &PureFunctionArgument) -> KernelType {
@@ -1652,12 +1794,22 @@ impl KernelTermImport {
         }
     }
 
-    /// Every argument family is explicit here. Native fallbacks preserve C
-    /// carrier records and out-of-domain inputs; migrated expressions expose
-    /// their children through the common nodes.
+    /// Every supported expression imports through its own shape. Opaque
+    /// descriptor input retains the exact C record or the invalid array
+    /// descriptor for compatibility with the existing refusal route.
     pub(crate) fn argument(&mut self, argument: &PureFunctionArgument) -> KernelTerm {
-        self.structural_argument(argument)
-            .unwrap_or_else(|| KernelTerm::legacy(argument.clone()))
+        if let Some(root) = self.structural_argument(argument) {
+            return root;
+        }
+        let descriptor = match argument {
+            PureFunctionArgument::Value(ProgramValue::Void | ProgramValue::PointerInteger(_))
+            | PureFunctionArgument::ArrayRef { .. } => argument.clone(),
+            _ => unreachable!("supported expression did not import"),
+        };
+        KernelTerm::intern(
+            KernelTerm::native_argument_type(argument),
+            KernelTermNode::NativeDescriptor(KernelNativeDescriptor(Arc::new(descriptor))),
+        )
     }
 
     pub(super) fn structural_argument(
@@ -1694,7 +1846,7 @@ impl KernelTermImport {
                     }
                     // Other C-word carriers retain their original width and
                     // bits. Importing an argument must not normalize its truth.
-                    _ => return None,
+                    _ => KernelTerm::imported_scalar(ProgramType::Bool, word),
                 },
                 ProgramValue::Parameter(value) => {
                     KernelTerm::program_parameter(self.algebraic(value))
@@ -2003,9 +2155,10 @@ mod tests {
         assert_eq!(observation.id(), shared.id());
         assert_eq!(observation.value(), &cast);
         assert!(observation.value_reading().is_some());
-        let opaque = KernelTerm::legacy(PureFunctionArgument::Value(ProgramValue::Int32(
-            MachineTerm::Variable(Variable(87654327)),
-        )));
+        let opaque = KernelTerm::imported_scalar(
+            format.program_type(),
+            &MachineTerm::Variable(Variable(87654327)),
+        );
         let parent =
             KernelTerm::arithmetic_binary(format, MachineBinaryOp::Add, [opaque.clone(), opaque])
                 .unwrap();
@@ -2218,8 +2371,13 @@ impl KernelTermExport {
         if let KernelTermNode::ObservedPointer(value) = term.node() {
             return self.argument(value.source());
         }
-        if let KernelTermNode::CallArgument(argument) = term.node() {
-            return Ok(argument.value().clone());
+        if let Some(argument) = term.written_argument() {
+            return Ok(argument.clone());
+        }
+        if let KernelTermNode::ImportedScalar(input) = term.node() {
+            return Ok(PureFunctionArgument::Value(
+                KernelTerm::imported_scalar_as_native(input),
+            ));
         }
         if FloatOperandView::from_shared(term).is_some() {
             return Self::float(term).map(PureFunctionArgument::Value);
@@ -2268,7 +2426,6 @@ impl KernelTermExport {
         }
         if let KernelType::Program(program_type) = term.ty()
             && let Some(format) = MachineIntegerType::from_program_type(*program_type)
-            && !matches!(term.node(), KernelTermNode::Legacy(_))
         {
             // Export the explicit boxed output once. Caching and then cloning
             // every intermediate boxed subtree would make a chain quadratic.
@@ -2312,7 +2469,6 @@ impl KernelTermExport {
             KernelTermNode::ProgramParameter { operand } => PureFunctionArgument::Value(
                 ProgramValue::Parameter(Box::new(self.algebraic(operand)?)),
             ),
-            KernelTermNode::Legacy(value) => value.value().clone(),
             _ => return Err("kernel term sort has not migrated to the checker bridge"),
         };
         self.values.insert(term.clone(), value.clone());

@@ -323,12 +323,12 @@ impl Comparison {
             return self.call_argument(left, Shared(value.source()));
         }
         if let Shared(root) = left
-            && let Some(value) = root.written_argument()
+            && let Some(value) = root.exact_argument_input()
         {
             return self.call_argument(Native(value), right);
         }
         if let Shared(root) = right
-            && let Some(value) = root.written_argument()
+            && let Some(value) = root.exact_argument_input()
         {
             return self.call_argument(left, Native(value));
         }

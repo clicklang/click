@@ -273,8 +273,7 @@ impl TermRewrite<'_> {
                     )
                 }
                 KernelTermNode::MachineLiteral(_) => term.clone(),
-                KernelTermNode::Legacy(_)
-                | KernelTermNode::MachineObservationInput { .. }
+                KernelTermNode::MachineObservationInput { .. }
                 | KernelTermNode::WrittenMachine(_)
                 | KernelTermNode::Call { .. }
                 | KernelTermNode::IntegerAddress { .. } => {

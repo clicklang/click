@@ -6778,7 +6778,6 @@ impl<'a> TermRewrite<'a> {
                 }
                 KernelTermNode::IntegerToMachine { .. }
                 | KernelTermNode::BoolCast { .. }
-                | KernelTermNode::Legacy(_)
                 | KernelTermNode::MachineObservationInput { .. }
                 | KernelTermNode::WrittenMachine(_)
                 | KernelTermNode::Call { .. }

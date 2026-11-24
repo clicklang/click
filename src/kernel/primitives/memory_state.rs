@@ -2333,14 +2333,10 @@ fn held_kernel_term_fingerprint(term: &KernelTerm) -> Option<u64> {
                 held_term_atom(observation.value(), hash);
                 return Some(());
             }
-            N::Legacy(value) => {
-                let PureFunctionArgument::Value(value) = value.value() else {
-                    return None;
-                };
-                let (integer_c_value!(value)) = value else {
-                    return None;
-                };
-                held_term_atom(value, hash);
+            N::ImportedScalar(input)
+                if MachineIntegerType::from_program_type(input.carrier()).is_some() =>
+            {
+                held_term_atom(input.value(), hash);
                 return Some(());
             }
             _ => return None,

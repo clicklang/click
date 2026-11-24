@@ -2507,10 +2507,10 @@ pub(super) fn evaluate_program_enum_field_paths(
             } else if let Some(field) = constructor.field(variant, index) {
                 if field.ty() == &KernelType::Integer {
                     ExpressionOutcome::RuntimeError(RuntimeError::TypeMismatch)
-                } else if let KernelTermNode::Legacy(value) = field.node() {
-                    let PureFunctionArgument::Value(value) = value.value() else {
-                        unreachable!("program enum field");
-                    };
+                } else if field.requires_native_argument_input() {
+                    let value = field
+                        .program_value_native_compat()
+                        .expect("program enum field");
                     ExpressionOutcome::Value(
                         crate::kernel::execution_value::ExecutionValue::retain_native(
                             value.clone(),

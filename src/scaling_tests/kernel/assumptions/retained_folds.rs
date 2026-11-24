@@ -113,3 +113,44 @@ fn nested_machine_fold_dependencies_share_initial_and_body_subgraphs() {
         assert!(work <= 150 * size + 100, "size={size}, work={work}");
     }
 }
+
+#[test]
+fn imported_scalar_fold_dependencies_use_the_written_carrier_and_read_point() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let current = SymbolicMemory::new();
+    let address = Address::symbolic(Variable(972020));
+    let later = current
+        .clone()
+        .store(address.clone(), ProgramValue::Int8(MachineTerm::constant(1)));
+    let read = MachineTerm::read_named(
+        ProgramPoint::at(&crate::kernel::intern_memory_ref(&current)),
+        Box::new(address.clone()),
+        LoadKind::Int8,
+    );
+    let root =
+        KernelTermImport::default().argument(&PureFunctionArgument::Value(ProgramValue::Bool(read)));
+    assert!(matches!(root.node(), KernelTermNode::ImportedScalar(_)));
+    let exports = KernelTermExport::machine_export_count();
+    for size in [16, 64, 256] {
+        for memory in [&current, &later] {
+            let mut loads = Vec::new();
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                collect_common_memory_loads(
+                    vec![(&root, Some(8)); size],
+                    memory,
+                    &mut loads,
+                    &mut BTreeSet::new(),
+                )
+            });
+            result.unwrap();
+            assert!(work <= size + 64, "size={size}, work={work}");
+            if std::ptr::eq(memory, &current) {
+                assert_eq!(loads, vec![(address.clone(), 1)]);
+            } else {
+                assert!(loads.is_empty());
+            }
+        }
+    }
+    assert_eq!(KernelTermExport::machine_export_count(), exports);
+    assert!(!root.has_cached_native_argument());
+}
