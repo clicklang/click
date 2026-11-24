@@ -51,7 +51,7 @@ reproduced. To move a file off `unsound`, the reproduction must stop
 verifying. Narrowing the documented claim does not count. Re-check the label
 whenever the file's reproduction or scope changes.
 
-## P1: before launch (4)
+## P1: before launch (5)
 
 The launch strategy is to complete P1, deliver the minimum viable rbtree
 (MVR), and launch publicly with rbtree as the key demo. MVR is the smallest
@@ -109,6 +109,7 @@ P2.
 Program import and execution:
 
 - [Rust support on both launch hosts and for crates with dependencies](rust-support.md)
+- [A Rust language baseline that ordinary small crates meet](rust-language-baseline.md)
 
 The generic stack is complete: a recursive `Stack<T>` with `push`, `pop` and
 `size`, verified once for every type and imported unchanged, in Rust
