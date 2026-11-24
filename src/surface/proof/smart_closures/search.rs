@@ -74,10 +74,11 @@ fn observed_reordered_indicator_sum(surface: &ClickProposition) -> Option<ClickP
     let uncast = |expression: &ContractExpression| match expression {
         ContractExpression::CUnary {
             operand,
-            lowered: ProgramExpression::Cast {
-                target_type: crate::kernel::ProgramType::Int32,
-                ..
-            },
+            lowered:
+                ProgramExpression::Cast {
+                    target_type: crate::kernel::ProgramType::Int32,
+                    ..
+                },
         } => Some(operand.clone()),
         _ => None,
     };
@@ -3396,13 +3397,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         };
         let observed_closure = if let Some(observed) = observed
-            && let Some(established) = attempt::candidate_outcome(
-                scope.driver().apply_step(super::super::wide_arithmetic::have(
-                    observed,
-                    vec![ProofStep::Known],
-                )),
-            )?
-        {
+            && let Some(established) = attempt::candidate_outcome(scope.driver().apply_step(
+                super::super::wide_arithmetic::have(observed, vec![ProofStep::Known]),
+            ))? {
             attempt::candidate_outcome(established.driver().apply_step(ProofStep::Known))?
         } else {
             None
