@@ -120,6 +120,15 @@ pub(super) fn collect_common_memory_loads(
                     return Err("opaque fold operand may hide a current memory load".into());
                 }
             },
+            KernelTermNode::ObservedPointer(value) => {
+                let Some(pointer) = value.source().pointer_payload() else {
+                    return Err("opaque fold operand may hide a current memory load".into());
+                };
+                push_offset_memory_loads(
+                    std::iter::once(&pointer.node().address.node().offset),
+                    &mut pending,
+                )?;
+            }
             KernelTermNode::MachineObservation { format, operand } => {
                 pending.push((operand, Some(format.format().byte_width())));
             }

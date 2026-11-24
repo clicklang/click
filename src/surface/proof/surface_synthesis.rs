@@ -3824,6 +3824,9 @@ fn raise_call_argument(
 ) -> Option<SurfaceTerm> {
     use crate::kernel::KernelTermNode as Node;
     match term.node() {
+        Node::ObservedPointer(value) => {
+            raise_call_argument(value.source(), parameter_binding, state, bound_variables)
+        }
         // A pointer a proof name holds is spelled by that name; any other
         // pointer argument is spelled as the pointer itself.
         Node::Pointer(value)
@@ -4701,6 +4704,7 @@ fn raise_kernel_term_dispatch(
                 bound_variables,
             )?
         }
+        Node::ObservedPointer(value) => recurse(value.source())?,
         Node::CallArgument(argument) => synthesize_legacy_call_argument(
             argument.value(),
             parameter_binding,
