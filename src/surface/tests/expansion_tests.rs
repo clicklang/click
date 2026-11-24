@@ -16326,7 +16326,7 @@ fn outcome_predicate_unfold_evidence_survives_nested_have_expansion() {
     )
     .expect("expand each outcome proof after the branch join");
     assert!(
-        expanded.contains("unfold(click::permutation::"),
+        expanded.contains("unfold(permutation::permutation("),
         "{expanded}"
     );
     assert!(expanded.contains("intro();"), "{expanded}");
