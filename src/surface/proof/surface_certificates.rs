@@ -390,13 +390,24 @@ pub(super) fn plan_explicit_forall_instantiation(
     None
 }
 
+pub(super) struct UniversalConclusionPlan {
+    pub(super) tactics: Vec<ProofTactic>,
+    pub(super) conclusion: Option<SelectedConclusion>,
+}
+
+pub(super) struct SelectedConclusion {
+    pub(super) source: ClickProposition,
+    pub(super) target: ClickProposition,
+    pub(super) premises: Vec<ClickProposition>,
+}
+
 pub(super) fn plan_explicit_forall_instantiation_transport(
     goal: &Proposition,
     surface_goal: &ClickProposition,
     premise_pairs: &[(Proposition, ClickProposition)],
     extra_arguments: &[(MachineTerm, ContractExpression)],
     conclusion_gate: &dyn Fn(&Proposition) -> bool,
-) -> Option<Vec<ProofTactic>> {
+) -> Option<UniversalConclusionPlan> {
     for (index, (kernel, surface)) in premise_pairs.iter().enumerate() {
         let Proposition::ForAll { sort, .. } = kernel else {
             continue;
@@ -446,8 +457,8 @@ pub(super) fn plan_explicit_forall_instantiation_transport(
 
 /// Plans an explicit certificate for a universal goal: introduce the binder
 /// (and implication antecedent), then specialize one listed universal premise
-/// at the introduced binder. Instantiation adds the specialized fact; an
-/// optional transport adds its target, and `known` closes the exact goal.
+/// at the introduced binder. Instantiation adds the specialized fact.
+/// Search can then prove an ordinary conclusion from the selected instance.
 /// The instantiated guards discharge from the introduced antecedent plus the
 /// remaining listed premises.
 #[allow(clippy::too_many_arguments)]
@@ -461,7 +472,7 @@ fn plan_explicit_universal_conclusion_discharge(
     discharge_kernels: &[Proposition],
     using_surfaces: &[ClickProposition],
     conclusion_gate: Option<&dyn Fn(&Proposition) -> bool>,
-) -> Option<Vec<ProofTactic>> {
+) -> Option<UniversalConclusionPlan> {
     let Proposition::ForAll {
         var: premise_var,
         sort: Sort::ProgramInt32,
@@ -486,11 +497,8 @@ fn plan_explicit_universal_conclusion_discharge(
     {
         return None;
     }
-    // A residual form difference (for example a loop counter the listed
-    // order facts pin to a constant) crosses through an explicit transport
-    // from the instantiated conclusion instead. The transported closure is
-    // validated by the caller's immediate certificate validation, so no weaker
-    // equivalence pre-check runs here.
+    // Retain the instantiated conclusion's spelling when the goal needs
+    // a rewrite or arithmetic proof after instantiation.
     let transport_closure = if closes_by_known {
         None
     } else {
@@ -541,50 +549,18 @@ fn plan_explicit_universal_conclusion_discharge(
         quantified: premise_surface.clone(),
         arguments: vec![argument_expression.clone()],
     });
-    if let Some((source, target)) = transport_closure {
-        if let Some((historical, current)) = comparison_state_expression_pair(&source, &target) {
-            let reflexive = ClickProposition::Comparison {
-                left: historical.clone(),
-                operator: ComparisonOperator::Equal,
-                right: historical.clone(),
-            };
-            let forward = ClickProposition::Comparison {
-                left: historical.clone(),
-                operator: ComparisonOperator::Equal,
-                right: current.clone(),
-            };
-            let reverse = ClickProposition::Comparison {
-                left: current,
-                operator: ComparisonOperator::Equal,
-                right: historical,
-            };
-            let mut bridge_premises = vec![reflexive.clone()];
-            bridge_premises.extend(using_surfaces.iter().cloned());
-            tactics.push(ProofTactic::Have(ProofHave {
-                proposition: forward.clone(),
-                proof: SourceProof::Script(vec![ProofTactic::TransportUsing {
-                    source: reflexive,
-                    target: forward.clone(),
-                    premises: bridge_premises,
-                }]),
-            }));
-            tactics.push(ProofTactic::Have(ProofHave {
-                proposition: reverse.clone(),
-                proof: SourceProof::Script(vec![ProofTactic::Rewrite(forward), ProofTactic::Known]),
-            }));
-            tactics.push(ProofTactic::Rewrite(reverse));
-        } else {
-            let mut transport_premises = vec![source.clone()];
-            transport_premises.extend(using_surfaces.iter().cloned());
-            tactics.push(ProofTactic::TransportUsing {
-                source,
-                target,
-                premises: transport_premises,
-            });
-        }
+    let conclusion = transport_closure.map(|(source, target)| SelectedConclusion {
+        source,
+        target,
+        premises: using_surfaces.to_vec(),
+    });
+    if conclusion.is_none() {
+        tactics.push(ProofTactic::Known);
     }
-    tactics.push(ProofTactic::Known);
-    Some(tactics)
+    Some(UniversalConclusionPlan {
+        tactics,
+        conclusion,
+    })
 }
 
 /// Finds the comparison operand written as the same expression at a named
@@ -633,7 +609,7 @@ pub(super) fn plan_explicit_forall_goal_from_premises(
     goal: &Proposition,
     surface_goal: &ClickProposition,
     premise_pairs: &[(Proposition, ClickProposition)],
-) -> Option<Vec<ProofTactic>> {
+) -> Option<UniversalConclusionPlan> {
     let Proposition::ForAll {
         var: goal_var,
         sort: sort @ Sort::ProgramInt32,
@@ -681,7 +657,7 @@ pub(super) fn plan_explicit_forall_goal_from_premises(
             discharge_kernels.push(other_kernel.clone());
             using_surfaces.push(other_surface.clone());
         }
-        let Some(mut body_tactics) = plan_explicit_universal_conclusion_discharge(
+        let Some(mut plan) = plan_explicit_universal_conclusion_discharge(
             kernel,
             surface,
             MachineTerm::Variable(goal_witness),
@@ -700,8 +676,9 @@ pub(super) fn plan_explicit_forall_goal_from_premises(
         if antecedent.is_some() {
             tactics.push(ProofTactic::Intro);
         }
-        tactics.append(&mut body_tactics);
-        return Some(tactics);
+        tactics.append(&mut plan.tactics);
+        plan.tactics = tactics;
+        return Some(plan);
     }
     None
 }
@@ -1133,7 +1110,7 @@ fn read_preservation_steps(
 }
 
 /// Read bridges selected by the written comparison only.
-fn comparison_preservation_reads(
+pub(super) fn comparison_preservation_reads(
     source: &ClickProposition,
     target: &ClickProposition,
 ) -> Option<Vec<(ContractExpression, ContractExpression)>> {

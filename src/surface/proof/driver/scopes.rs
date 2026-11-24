@@ -3,6 +3,26 @@ use super::*;
 use crate::surface::proof::driver::ProofDriver;
 
 impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
+    pub(in crate::surface::proof) fn try_ordinary_fact_transport(
+        &self,
+        source: &ClickProposition,
+        target: &ClickProposition,
+        premises: &[ClickProposition],
+    ) -> Result<Option<ProofScope<'a>>, ClickError> {
+        let Some(body) = crate::kernel::search::ProofSearch::try_ordinary_fact_transport(
+            &self.proof.body,
+            source,
+            target,
+            premises,
+        )?
+        else {
+            return Ok(None);
+        };
+        let mut next = self.proof.clone();
+        next.body = body;
+        Ok(Some(next))
+    }
+
     pub(in crate::surface::proof) fn try_preserve_selected_fact(
         &self,
         conclusion: &ClickProposition,

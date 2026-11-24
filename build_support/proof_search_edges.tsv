@@ -208,9 +208,9 @@ src/surface/proof/proof_object/execution_joins/search.rs	search	ProofSearch::try
 src/surface/proof/proof_object/execution_statements/search.rs	search	ProofSearch::apply_planned_fact_transport	apply_planned_fact_transport_inner	1
 src/surface/proof/proof_object/execution_statements/search.rs	search	ProofSearch::apply_planned_fact_transport_inner	apply_planned_outcome_fact_transport	1
 src/surface/proof/proof_object/execution_statements/search.rs	search	ProofSearch::apply_planned_fact_transport_inner	derive_proposition	1
-src/surface/proof/proof_object/execution_statements/search.rs	search	ProofSearch::apply_planned_fact_transport_inner	driver	1
+src/surface/proof/proof_object/execution_statements/search.rs	search	ProofSearch::apply_planned_fact_transport_inner	try_ordinary_fact_transport	1
 src/surface/proof/proof_object/execution_statements/search.rs	search	ProofSearch::apply_planned_outcome_fact_transport	derive_proposition	1
-src/surface/proof/proof_object/execution_statements/search.rs	search	ProofSearch::apply_planned_outcome_fact_transport	driver	1
+src/surface/proof/proof_object/execution_statements/search.rs	search	ProofSearch::apply_planned_outcome_fact_transport	try_ordinary_fact_transport	1
 src/surface/proof/proof_object/fixed_state_steps.rs	operation	Proof::apply_pure_transport_using	derive_atomic_proposition	1
 src/surface/proof/proof_object/resource_steps/search.rs	search	ProofSearch::try_open_for_missing_resource	driver	1
 src/surface/proof/proof_object/step_application.rs	presentation	Proof::record_raise_lower_census	resolve_solve_premises	1
@@ -481,7 +481,6 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_disj
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_entry_existential_closure	driver	2
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_entry_existential_closure	try_carry_entry_conjunct	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_entry_existential_closure	try_solve_closure_with_surfaces	1
-src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_forall_goal	driver	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_forall_instantiation	derive_solve_atomic_proposition	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_pointer_inequality_rewrite	driver	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_pointer_inequality_rewrite	try_direct_logical_closure	1
@@ -611,7 +610,6 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_upper_bound_s
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_zero_witness_closure	driver	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_zero_witness_closure	try_solve_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::with_goal_operation_identities	prove_operation_identities	1
-src/surface/proof/smart_execution/search.rs	search	ProofSearch::fact_transport_candidate_search	driver	2
 src/surface/proof/smart_execution/search.rs	search	ProofSearch::try_execute_to_back_edge_descendant	driver	1
 src/surface/proof/smart_execution/search.rs	search	ProofSearch::try_execute_to_back_edge_descendant	try_smart_statement_step	1
 src/surface/proof/smart_execution/search.rs	search	ProofSearch::try_execute_to_exit	try_execute_to_exit_descendant	1
@@ -646,9 +644,17 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_view
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_viewability_containment	try_preserve_selected_fact	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_after_direct_with_surfaces_and_function_unfold	try_ordinary_viewability_restriction_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_forall_goal	try_universal_steps_with_arithmetic	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_preserve_selected_fact	try_indexed_read_preservation	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_universal_steps_with_arithmetic	driver	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_universal_steps_with_arithmetic	try_ordinary_fact_transport	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_ordinary_fact_transport	driver	11
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_ordinary_fact_transport	try_ordinary_fact_transport	1
+src/surface/proof/driver/scopes.rs	driver	ProofDriver::try_ordinary_fact_transport	try_ordinary_fact_transport	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_ordinary_fact_transport	try_indexed_read_preservation	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_ordinary_fact_transport	try_arithmetic_with_selected_premises	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_ordinary_fact_transport	try_preserve_selected_fact	1
+src/surface/proof/smart_execution/search.rs	search	ProofSearch::fact_transport_candidate_search	try_ordinary_fact_transport	2
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_forall_instantiation	try_universal_steps_with_arithmetic	1
-src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_universal_steps_with_arithmetic	driver	4
-src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_universal_steps_with_arithmetic	try_arithmetic_with_selected_premises	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::check_typed_atomic_solve_candidate	try_ordinary_viewability_restriction_closure	1
 src/surface/proof/smart_execution/search.rs	search	ProofSearch::fact_transport_candidate_search	try_history_indexed_equalities	1
 src/surface/proof/smart_execution/history_equalities.rs	search	ProofSearch::try_history_indexed_equalities	driver	3

@@ -17369,9 +17369,13 @@ fn outcome_solve_preserves_viewability_after_a_call() {
     let verified = verify_c_sources(click_source, &sources);
     verified.expect("the call-preserved viewability should verify");
 
-    assert_compatibility_normalization_refusal(
-        expand_function_proof_source(click_source, &sources, "use_summary").unwrap_err(),
-    );
+    let expanded = expand_function_proof_source(click_source, &sources, "use_summary")
+        .expect("viewability preservation should expand into a checked proof");
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim("use_summary.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
 }
 
 #[test]
@@ -25843,7 +25847,7 @@ fn field_viewability_expands_with_containment() {
             step();
         }
     "#;
-    for tactic in ["solve();", "close() using { viewable(p[0..1]); };"] {
+    for tactic in ["close();", "close() using { viewable(p[0..1]); };"] {
         let source = source.replace("CLOSE_VIEW", tactic);
         let expanded = expand_c_claim_source_by_label(&source, &sources, "f.contract").unwrap();
         assert!(
@@ -25861,7 +25865,7 @@ fn field_viewability_expands_with_containment() {
         .unwrap();
     }
 
-    let source = source.replace("CLOSE_VIEW", "solve();").replace(
+    let source = source.replace("CLOSE_VIEW", "close();").replace(
         "            have viewable(p->second)",
         "            step();\n            have viewable(p->second)",
     );
@@ -25894,7 +25898,7 @@ fn aliased_element_viewability_expands_with_containment() {
             requires 0 <= i and i < 8;
             ensures true;
         } by {
-            have viewable(q[i]) by { solve(); }
+            have viewable(q[i]) by { close(); }
             step();
         }
     "#;
@@ -25934,7 +25938,7 @@ fn entry_existential_view_expands_with_preservation() {
         } by {
             step();
             have exists (n: uint64) { n == 8u64 and viewable(p[0u64..n]) } by {
-                solve();
+                close();
             }
             step();
         }
@@ -27381,7 +27385,7 @@ fn indexed_signed_left_shift_definedness_expands_with_preservation() {
             ensures (p[i] << 1) < limit;
         } by {
             step();
-            have (p[i] << 1) < limit by { solve(); }
+            have (p[i] << 1) < limit by { close(); }
         }
     "#;
     let expanded = expand_c_claim_source_by_label(source, &sources, "keep.contract").unwrap();
@@ -27413,7 +27417,7 @@ fn indexed_equality_with_a_historical_read_expands_with_preservation() {
             ensures true;
         } by {
             step();
-            have p[i] == SAVED by { solve(); }
+            have p[i] == SAVED by { close(); }
         }
     "#;
     for saved in ["old(p[i])", "at(function.entry, p[i])"] {

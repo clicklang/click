@@ -239,9 +239,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// Searches explicit premise forms for one fixed-state fact transport.
     ///
     /// Every candidate is checked by applying the corresponding proof step
-    /// to this immutable root. Failed descendants are discarded; the
-    /// returned `Proof` is the already-checked, deletion-minimized success,
-    /// so callers never reconstruct or check the selected certificate.
+    /// to this immutable root. Failed descendants are discarded. Return
+    /// the checked successor so callers reuse its ordinary proof.
     pub(in crate::surface::proof) fn try_fixed_state_fact_transport(
         search_input: &Proof<'a>,
         source: &ClickProposition,
@@ -293,10 +292,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     }
 
     /// Tries the bounded source-local form of mid-execution fact transport on
-    /// this immutable execution Proof. The smart operation checks the empty
-    /// candidate and the source's own explicit form; it never scans the
-    /// ambient fact set. Richer premise discovery remains unavailable until
-    /// it has a relevance index rather than an environment-wide scan.
+    /// this immutable execution Proof. The smart operation checks ordinary
+    /// proof steps for the selected source and target.
     pub(in crate::surface::proof) fn try_execution_fact_transport(
         search_input: &Proof<'a>,
         source: &ClickProposition,
@@ -357,7 +354,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             std::iter::once(source.clone()),
         ) {
             Ok(Ok(proof)) => Ok(Ok(proof)),
-            Ok(Err(refusal)) if !crate::instrumentation::deadline_exceeded() => Ok(Err(refusal)),
+            Ok(Err(_)) if !crate::instrumentation::deadline_exceeded() => {
+                // Keep the written bare tactic's source-only refusal for
+                // diagnostics. Only the ordinary search above can admit a fact.
+                let refusal = search_input.source_only_transport_refusal(source, target);
+                Ok(Err(refusal))
+            }
             Ok(Err(refusal)) => {
                 // A budget stop is a failure of this written operation, not
                 // an abandoned candidate. Retain the checked predecessor.
@@ -400,9 +402,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         )
     }
 
-    /// The candidate search behind [`Self::try_fact_transport_from_candidates`].
-    /// A refusal is the last candidate's refusal, if any candidate was checked;
-    /// the outer error is a stopped search.
+    /// Try progressively more of the supplied premises with ordinary proof
+    /// steps.
     pub(in crate::surface::proof) fn fact_transport_candidate_search(
         search_input: &Proof<'a>,
         source: &ClickProposition,
@@ -414,20 +415,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if crate::instrumentation::replay_forbids_discovery("fact transport search") {
             return Err(search_input.step_error("fact transport discovery needs explicit premises"));
         }
-        // A known source and target need only an ordinary lookup. Construct
-        // that proof directly, before any history or legacy premise planning.
-        let source_fact =
-            search_input.lower_surface_proposition_direct(source, "known transport source")?;
-        if search_input.facts().pure_known_available(&source_fact) {
-            match search_input
-                .driver()
-                .apply_ordinary_transport_steps(target, vec![ProofStep::Known])
-            {
-                Ok(proof) => return Ok(Ok(proof)),
-                Err(error) if crate::instrumentation::deadline_exceeded() => return Err(error),
-                Err(_) => {}
-            }
-        }
         if let Some(proof) =
             Self::try_recorded_footprint_preservation(search_input, source, target)?
         {
@@ -436,61 +423,24 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if let Some(proof) = Self::try_history_indexed_equalities(search_input, source, target)? {
             return Ok(Ok(proof));
         }
-        let apply = |premises: Vec<ClickProposition>| {
-            search_input.driver().apply_step(ProofStep::TransportUsing {
-                source: source.clone(),
-                target: target.clone(),
-                premises,
-            })
-        };
         let mut selected = Vec::new();
-        let mut last_error = None;
-        let mut selected_proof = match apply(Vec::new()) {
-            Ok(proof) => Some(proof),
-            Err(error) => {
-                last_error = Some(error);
-                check_verification_deadline()?;
-                None
-            }
-        };
-        if selected_proof.is_none() {
-            for candidate in candidates {
-                check_verification_deadline()?;
-                if selected.contains(&candidate) {
-                    continue;
-                }
-                selected.push(candidate);
-                match apply(selected.clone()) {
-                    Ok(proof) => {
-                        selected_proof = Some(proof);
-                        break;
-                    }
-                    Err(error) => {
-                        last_error = Some(error);
-                        check_verification_deadline()?;
-                    }
-                }
-            }
+        if let Some(proof) =
+            Self::try_ordinary_fact_transport(search_input, source, target, &selected)?
+        {
+            return Ok(Ok(proof));
         }
-        let Some(mut selected_proof) = selected_proof else {
-            return Ok(Err(last_error));
-        };
-        let mut index = 0;
-        while index < selected.len() {
+        for candidate in candidates {
             check_verification_deadline()?;
-            let mut reduced = selected.clone();
-            reduced.remove(index);
-            match apply(reduced.clone()) {
-                Ok(proof) => {
-                    selected = reduced;
-                    selected_proof = proof;
-                }
-                Err(_) => {
-                    check_verification_deadline()?;
-                    index += 1;
-                }
+            if selected.contains(&candidate) {
+                continue;
+            }
+            selected.push(candidate);
+            if let Some(proof) =
+                Self::try_ordinary_fact_transport(search_input, source, target, &selected)?
+            {
+                return Ok(Ok(proof));
             }
         }
-        Ok(Ok(selected_proof))
+        Ok(Err(None))
     }
 }
