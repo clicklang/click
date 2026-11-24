@@ -2407,19 +2407,26 @@ fn verify_program_in_context(
         let mut theorem_certification_facts = BTreeMap::<String, Vec<Proposition>>::new();
         let mut theorem_certification_authorities =
             BTreeMap::<String, Vec<KernelVerifiedPureTheorem>>::new();
-        record_theorem_certification_authority(
-            &verified_theorems,
-            &mut theorem_certification_facts,
-            &mut theorem_certification_authorities,
-        );
-        record_assumed_theorem_certification_authority(
-            assumed_theorem_certification_authorities(
-                &unselected_theorem_definitions,
-                spec_definitions,
-            )?,
-            &mut theorem_certification_facts,
-            &mut theorem_certification_authorities,
-        );
+        // Theorem-only verification uses the theorem environment above and
+        // needs no program-body certification assumptions.
+        if selected_functions
+            .as_ref()
+            .is_none_or(|selected| !selected.is_empty())
+        {
+            record_theorem_certification_authority(
+                &verified_theorems,
+                &mut theorem_certification_facts,
+                &mut theorem_certification_authorities,
+            );
+            record_assumed_theorem_certification_authority(
+                assumed_theorem_certification_authorities(
+                    &unselected_theorem_definitions,
+                    spec_definitions,
+                )?,
+                &mut theorem_certification_facts,
+                &mut theorem_certification_authorities,
+            );
+        }
         let theorem_environment =
             TheoremEnvironment::with_standard_library(file.theorem_definitions())?
                 .with_discovery_library(&file)?;
