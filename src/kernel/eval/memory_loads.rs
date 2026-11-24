@@ -3395,15 +3395,15 @@ fn indexed_pointer_read_value(
     address: &Address,
     category: Option<PointerLoadCategory>,
 ) -> Option<Pointer> {
-    let version;
-    let point = if point.is_exact_read() {
-        crate::instrumentation::record_deterministic_work(1);
-        version = point.indexed_pointer_version(address, category)?;
-        &version
-    } else {
-        point
-    };
-    let ProgramValue::Pointer(stored) = point.indexed_stored_value()?.native() else {
+    // The answer depends only on the load's version point, never on which
+    // selection kind (exact, indexed write, indexed cell, entry, call output)
+    // built the load first: a version-named load asks the index at its
+    // point. An indexed write finds its own write there; an entry or a call
+    // output finds no store. A memory-named load has no index to ask.
+    point.read_version_id()?;
+    crate::instrumentation::record_deterministic_work(1);
+    let version = point.indexed_pointer_version(address, category)?;
+    let ProgramValue::Pointer(stored) = version.indexed_stored_value()?.native() else {
         return None;
     };
     decodes_as(stored, category).then(|| stored.clone())
@@ -8600,6 +8600,53 @@ mod tests {
             .assume_condition(ConditionTerm::address_equal(a.clone(), b.clone()), true);
         assert!(reconstructed.pointers_known_equal(&x, &y));
         assert_eq!(reconstructed.pure_facts().len(), 1);
+    }
+
+    /// One cell's load answers its store the same way whichever selection
+    /// of its version point built it first: the stored pointer is asked of
+    /// the point's index, not read off the first selection's kind.
+    #[test]
+    fn a_loads_stored_pointer_does_not_depend_on_which_selection_built_it() {
+        let slot = SymbolicMemory::local_pointer("selection_order_slot");
+        let address = Address::symbolic(Variable(210_290));
+        let value_type = ProgramType::Int32Pointer;
+        let stored_pointer = |exact_first: bool| {
+            let _session = crate::kernel::VerificationSession::enter();
+            let initial = ExecutionState::new()
+                .with_memory(SymbolicMemory::new().with_block(slot.base.clone(), 8));
+            let stored = initial.clone().with_memory(initial.memory().clone().store(
+                slot.clone(),
+                ProgramValue::typed_pointer(address.clone(), value_type),
+            ));
+            // The memory no longer shows the cell, so only the index answers.
+            let forgotten =
+                stored
+                    .clone()
+                    .with_memory(stored.memory().without_possible_aliasing_cells(
+                        &slot,
+                        8,
+                        &PureFactContext::new(),
+                    ));
+            assert!(forgotten.memory().known_value(&slot).is_none());
+            let point = forgotten.program_point();
+            let exact = point.clone().for_exact_read();
+            let indexed = point.for_indexed_cell_read();
+            assert_eq!(exact.read_key(), indexed.read_key());
+            let (first, second) = if exact_first {
+                (exact, indexed)
+            } else {
+                (indexed, exact)
+            };
+            let load = Load::at(first, &slot);
+            assert_eq!(
+                Load::at(second, &slot),
+                load,
+                "one point and cell, one load"
+            );
+            loaded_pointer_stored_address(&load, PointerLoadCategory::of_type(value_type))
+        };
+        assert_eq!(stored_pointer(true), Some(address.clone()));
+        assert_eq!(stored_pointer(false), Some(address));
     }
 
     #[test]

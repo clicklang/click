@@ -4997,19 +4997,28 @@ impl Address {
         crate::kernel::Load::at(ProgramPoint::at(memory), address).address()
     }
 
-    /// [`Self::loaded_value`] of `point`'s memory, keeping the caller's place
-    /// on its path. The selection stays legacy, so the load's identity, the
+    /// [`Self::loaded_value`] of `point`'s memory, recording `point` as the
+    /// read site (`ProgramPoint::at_read_site`). The selection is legacy and
+    /// the point has no path of its own, so the load's identity, the
     /// memory's read key, is the one `loaded_value` gives
     /// (`design/point-named-reads.md`, stage 1: a point everywhere).
     pub(crate) fn loaded_value_at(point: &ProgramPoint, address: &Address) -> Self {
-        crate::kernel::Load::at(point.clone().for_legacy_read(), address).address()
+        Self::loaded_memory_value_at(point.shared_memory(), point, address)
     }
 
     /// [`Self::loaded_value_at`] of the unchanged-bytes source of `point`'s
-    /// memory, the state a memory-named read is keyed by, at `point`'s place.
+    /// memory, the state a memory-named read is keyed by, read at `point`.
     pub(crate) fn loaded_source_value_at(point: &ProgramPoint, address: &Address) -> Self {
         let source = point.shared_memory().unchanged_bytes_source();
-        Self::loaded_value_at(&point.with_renamed_memory(source), address)
+        Self::loaded_memory_value_at(&source, point, address)
+    }
+
+    fn loaded_memory_value_at(
+        memory: &SharedMemory,
+        site: &ProgramPoint,
+        address: &Address,
+    ) -> Self {
+        crate::kernel::Load::at(ProgramPoint::at_read_site(memory, site), address).address()
     }
 
     /// The read of the pointer cell at `address` in `memory`, identified by
