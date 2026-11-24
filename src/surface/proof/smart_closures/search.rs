@@ -6748,6 +6748,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                             Some(expression)
                         }
                         ContractExpression::BitwiseAnd(left, right)
+                        | ContractExpression::BitwiseOr(left, right)
                             if matches!(
                                 operand_against_literal(left, right),
                                 Some(ContractExpression::Index(..))
