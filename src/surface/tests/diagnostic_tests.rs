@@ -3252,6 +3252,55 @@ fn loop_have_budget_refusal_retains_checked_store_trace() {
 }
 
 #[test]
+fn loop_certification_refusal_retains_the_loop_frontier_trace() {
+    // The `loop` tactic certifies its phases and transitions inside one
+    // checked operation. A refusal there, here the loop head's write
+    // separation, keeps the proof state at the loop for `--trace-proof`.
+    let c = "typedef struct { const unsigned char *content; unsigned long length; unsigned long offset; } buf;\n\
+        void skip(buf * const b) {\n\
+            while (b->offset < b->length && b->content[b->offset] <= 32) { b->offset++; }\n\
+        }\n";
+    let source = r#"verifying "f.c";
+        void skip(buf * const b) {
+            owns b->offset;
+            views b->content;
+            views b->length;
+            let content = b->content;
+            let length = b->length;
+            requires b != 0;
+            requires content != 0;
+            requires b->offset <= length;
+            views content[0..length];
+            ensures b->offset <= length;
+        } by {
+            step_until(loop(0).entry);
+            loop {
+                decreases b->length - b->offset;
+                invariant b->offset <= b->length;
+                maintain by {
+                    step();
+                    have b->offset <= b->length by { solve(); }
+                }
+            }
+        }
+    "#;
+    with_proof_trace("skip", || {
+        let error = verify_c_sources(source, &[("f.c", c)])
+            .expect_err("the loop head needs its write separation");
+        assert!(
+            error.message().contains("loop head write separation"),
+            "{}",
+            error.message()
+        );
+        let trace = error
+            .trace_context_report()
+            .expect("the loop refusal keeps its checked path");
+        assert!(trace.contains("proof refusal"), "{trace}");
+        assert!(trace.contains("loop head write separation"), "{trace}");
+    });
+}
+
+#[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_17")]
 fn ordinary_concise_diagnostics_bound_late_requirement_context() {
     let error = ClickError::new("required fact unavailable")
