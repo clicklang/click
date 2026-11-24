@@ -3739,13 +3739,23 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         } else {
             ProofStep::Known
         };
-        let Some(proof) = attempt::candidate_outcome(input.driver().apply_step(
-            super::super::wide_arithmetic::have(intermediate.clone(), vec![step]),
-        ))?
+        let Some(scope) =
+            attempt::candidate_outcome(input.driver().open_have(intermediate.clone()))?
         else {
             return Ok(None);
         };
-        Self::try_float_bound_weakening(&proof, &plan, intermediate)
+        let Some(mut proof) = attempt::candidate_outcome(scope.driver().apply_step(step))? else {
+            return Ok(None);
+        };
+        if !proof.is_complete() {
+            let Some(closed) =
+                attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Known))?
+            else {
+                return Ok(None);
+            };
+            proof = closed;
+        }
+        Self::try_float_bound_weakening(&proof.join()?, &plan, intermediate)
     }
 
     fn try_exact_float_bound_transfer(
