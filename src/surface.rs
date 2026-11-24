@@ -2376,7 +2376,7 @@ pub enum ResourceSubject {
         source: Box<ResourceSubject>,
     },
     Memory(ContractSegment),
-    /// A saved pointer base with bounds evaluated in the surrounding state.
+    /// A pointer range whose base or bounds may use proof expressions.
     SavedMemory {
         base: ContractExpression,
         start: ContractExpression,

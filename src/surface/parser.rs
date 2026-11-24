@@ -8131,13 +8131,29 @@ impl Parser {
                 Ok(segment) => ResourceSubject::Memory(segment),
                 Err(error) => {
                     self.position = start;
-                    let Ok(base) = self.parse_contract_primary() else {
-                        return Err(error);
-                    };
-                    if !Self::is_allocation_address(&base) {
-                        return Err(error);
+                    match self.parse_contract_primary() {
+                        Ok(base) if Self::is_allocation_address(&base) => {
+                            self.parse_saved_memory_range(base)?
+                        }
+                        _ => {
+                            self.position = start;
+                            // A pointer can be current even when its subscript
+                            // is a proof expression such as `old(i)`.
+                            match self.parse_contract_postfix() {
+                                Ok(ContractExpression::Index(base, index))
+                                    if contract_expression_as_program_expression(&index)
+                                        .is_none() =>
+                                {
+                                    ResourceSubject::SavedMemory {
+                                        base: *base,
+                                        start: *index,
+                                        end: None,
+                                    }
+                                }
+                                _ => return Err(error),
+                            }
+                        }
                     }
-                    self.parse_saved_memory_range(base)?
                 }
             };
             self.expect(Token::RParen)?;
