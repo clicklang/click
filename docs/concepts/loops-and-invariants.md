@@ -261,7 +261,7 @@ loop {
 
 `initialize` is a pure proof of all invariants at the actual loop entry. Its
 script may use exactly `unfold(predicate(args))`, `apply(theorem(args))`, `have`,
-`close()`, `normalize()`, `rewrite(...)`, `close()`, `all`, `cases`, and
+`close()`, `normalize()`, `rewrite(...)`, `all`, `cases`, and
 proof-level `if`;
 anything else is rejected with `` `initialize` is a pure proof and cannot use
 `<tactic>` ``. `maintain` assumes all invariants and the loop condition,
@@ -312,7 +312,7 @@ read as three parts, in this order:
 - one `have` per declared invariant, in declaration order, naming the
   invariant exactly as the `loop` head writes it. Such a `have` is that
   invariant's own proof, and no other invariant reads it.
-- an optional trailing `close()` or `close()`.
+- an optional trailing `close()`.
 
 A script that does not name the invariants individually — `initialize by
 close();`, or a helper prefix followed by `close()` — is one shared proof: every

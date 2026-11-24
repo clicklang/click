@@ -2744,7 +2744,7 @@ fn execution_theorem_expansion_preserves_imported_tactic_interfaces() {
         position.column,
     )
     .expect("theorem-only expansion retains imported tactic interfaces");
-    assert!(!expanded[expanded.find("theorem zero_contract").unwrap()..].contains("close();"));
+    assert!(!expanded[expanded.find("theorem zero_contract").unwrap()..].contains("solve();"));
     verify_c_project(&project(&expanded), &c_sources).expect("the expansion checks directly");
     let local = source.replace(
         "import \"execution_theorem_imported_tactic_helpers.click\";",
@@ -3201,7 +3201,7 @@ fn repeated_loop_guard_closer_expands_at_original_execution_leaves() {
     let position = expansion::position_at_offset(source, source.rfind("close();").unwrap());
     let expanded =
         expand_c_tactic_source_at(source, &sources, position.line, position.column).unwrap();
-    assert!(!expanded.contains("close();"), "{expanded}");
+    assert!(!expanded.contains("solve();"), "{expanded}");
     assert!(
         expanded.contains("have 0 == 0 by { normalize(); }"),
         "the unselected suffix stays written"
@@ -3370,7 +3370,7 @@ fn reordered_cstr_requirement_expands_without_planning_and_reverifies() {
         "the expansion should keep the reordered string clause: {expanded_source}"
     );
     assert!(!expanded_source.contains("step_until(function.exit);"));
-    assert!(!expanded_source.contains("close();"));
+    assert!(!expanded_source.contains("solve();"));
     verify_c_sources(&expanded_source, &sources)
         .expect("the ordinary expanded source-identity proof should independently reverify");
 }
@@ -4038,7 +4038,7 @@ theorem bounded(flag: Bool, a: Integer, b: Integer) {
     let expanded = expand_c_claim_source_by_label(source, &[], "bounded.ensures_0").unwrap();
     assert!(expanded.contains("if flag {"), "{expanded}");
     assert!(!expanded.contains("normalize()"), "{expanded}");
-    assert!(!expanded.contains("close()"), "{expanded}");
+    assert!(!expanded.contains("solve()"), "{expanded}");
     without_implicit_solve(|| verify_c_sources(&expanded, &[])).unwrap();
     let missing = source.replace("0 <= a; 0 <= b; };", "0 <= a; };");
     assert!(verify_c_sources(&missing, &[]).is_err());
@@ -4070,7 +4070,7 @@ fn proof_cases_after_c_branch_expand_and_reverify() {
     );
     let caller = &expanded[expanded.find("int use_pick").expect("caller proof")..];
     assert!(!caller.contains("execute()"), "{expanded}");
-    assert!(!caller.contains("close()"), "{expanded}");
+    assert!(!caller.contains("solve()"), "{expanded}");
     if let Err(error) = verify_c_sources(&expanded, &c_sources) {
         panic!(
             "the expanded caller proof should re-verify: {}\n{expanded}",
@@ -4114,7 +4114,7 @@ fn guarded_quantified_postcondition_expands_and_reverifies() {
         let claim = &claim[claim.find("} by {").expect("claim proof body")..];
         let claim = &claim[..claim[1..].find("\n}").expect("claim end")];
         assert!(!claim.contains("execute()"), "{expanded}");
-        assert!(!claim.contains("close()"), "{expanded}");
+        assert!(!claim.contains("solve()"), "{expanded}");
         assert!(
             claim.contains("have result == 1 implies forall (k: int32)"),
             "{expanded}"
@@ -4150,7 +4150,7 @@ fn guarded_postcondition_consequent_expands_and_reverifies() {
         let claim = &claim[claim.find("} by {").expect("claim proof body")..];
         let claim = &claim[..claim[1..].find("\n}").expect("claim end")];
         assert!(!claim.contains("execute()"), "{expanded}");
-        assert!(!claim.contains("close()"), "{expanded}");
+        assert!(!claim.contains("solve()"), "{expanded}");
         if let Err(error) = verify_c_sources(&expanded, &c_sources) {
             panic!(
                 "the expanded `{function}` should re-verify: {}\n{expanded}",
@@ -4196,7 +4196,7 @@ fn scope_equality_chain_and_loaded_pointer_rewrite_expand_and_reverify() {
             .expect("claim proof")..];
         let claim = &claim[claim.find("} by {").expect("claim proof body")..];
         let claim = &claim[..claim[1..].find("\n}").expect("claim end")];
-        assert!(!claim.contains("close()"), "{expanded}");
+        assert!(!claim.contains("solve()"), "{expanded}");
         assert!(
             claim.contains(expected) || claim.contains("close();"),
             "{expanded}"
@@ -4268,7 +4268,7 @@ fn int64_guarded_postcondition_expands_to_int64_defined_and_reverifies() {
     let claim = &claim[claim.find("} by {").expect("claim proof body")..];
     let claim = &claim[..claim[1..].find("\n}").expect("claim end")];
     assert!(!claim.contains("execute()"), "{expanded}");
-    assert!(!claim.contains("close()"), "{expanded}");
+    assert!(!claim.contains("solve()"), "{expanded}");
     assert!(
         claim.contains(
             "have result == 1 implies to_integer(st.total) == to_integer((old(st.total) + 1))"
@@ -4300,7 +4300,7 @@ fn int32_guarded_postcondition_expands_to_int32_defined_and_reverifies() {
     let claim = &claim[claim.find("} by {").expect("claim proof body")..];
     let claim = &claim[..claim[1..].find("\n}").expect("claim end")];
     assert!(!claim.contains("execute()"), "{expanded}");
-    assert!(!claim.contains("close()"), "{expanded}");
+    assert!(!claim.contains("solve()"), "{expanded}");
     if let Err(error) = verify_c_sources(&expanded, &c_sources) {
         panic!(
             "the expanded `caller` should re-verify: {}\n{expanded}",
@@ -4328,7 +4328,7 @@ fn branch_continuation_match_expands_and_reverifies() {
             .unwrap_or_else(|error| panic!("`{relative}` should expand: {}", error.message()));
         let claim = &expanded[expanded.find("int32 f(").expect("claim proof")..];
         assert!(!claim.contains("execute()"), "{expanded}");
-        assert!(!claim.contains("close()"), "{expanded}");
+        assert!(!claim.contains("solve()"), "{expanded}");
         if let Err(error) = verify_c_sources(&expanded, &c_sources) {
             panic!(
                 "the expanded `{relative}` should re-verify: {}\n{expanded}",
@@ -5673,7 +5673,7 @@ theorem reflexive_implication(x: int32) {
     let expanded = expand_c_tactic_source_at(source, &[], position.line, position.column).unwrap();
     assert!(expanded.contains("intro();"), "{expanded}");
     assert!(expanded.contains("close();"), "{expanded}");
-    assert!(!expanded.contains("close();"), "{expanded}");
+    assert!(!expanded.contains("solve();"), "{expanded}");
     verify_c_sources(&expanded, &[])
         .expect("expanded implication introduction should independently recheck");
     let missing_intro = expanded.replacen("intro();", "", 1);
@@ -6334,7 +6334,7 @@ fn whole_claim_expansion_keeps_a_proof_if_after_execution() {
         .unwrap()..];
     let proof = &function[..function.find("\n}\n").unwrap()];
     assert!(proof.contains("if result <= 0 {"), "{proof}");
-    assert!(!proof.contains("close();"), "{proof}");
+    assert!(!proof.contains("solve();"), "{proof}");
     verify_c_sources(&expanded, &sources)
         .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
 }
@@ -6484,7 +6484,7 @@ theorem choose_reflexive_arm() {{
         let expanded =
             expand_c_tactic_source_at(&source, &[], position.line, position.column).unwrap();
         assert!(expanded.contains("close();"), "{expanded}");
-        assert!(!expanded.contains("close();"), "{expanded}");
+        assert!(!expanded.contains("solve();"), "{expanded}");
         without_implicit_solve(|| verify_c_sources(&expanded, &[]))
             .expect("the computed disjunction should recheck without implicit solving");
         let false_goal = expanded.replace("1 == 1", "1 == 2");
@@ -7471,7 +7471,7 @@ fn selected_post_execution_solve_waits_for_its_surface_closer() {
     let expanded =
         expand_c_tactic_source_at(click_source, &[("identity.c", c_source)], line, column)
             .expect("selected post-execution solve should expand after finalization");
-    assert!(!expanded.contains("close();"), "{expanded}");
+    assert!(!expanded.contains("solve();"), "{expanded}");
     assert!(
         expanded.contains("close();") || expanded.contains("normalize();"),
         "{expanded}"
@@ -7802,7 +7802,7 @@ fn post_execution_smart_have_applies_a_theorem_to_result_through_proof() {
         expanded_have.contains("apply(int32_reflexive(result));"),
         "{expanded_have}"
     );
-    assert!(!expanded_have.contains("close();"), "{expanded_have}");
+    assert!(!expanded_have.contains("solve();"), "{expanded_have}");
     verify_c_sources(&expanded, &[("identity.c", c_source)])
         .expect("the expanded result-aware theorem application should independently verify");
 }
@@ -8149,7 +8149,7 @@ fn post_execution_solve_builds_disjunction_cases_on_proof() {
         position.column,
     )
     .expect("the checked case split should expand");
-    assert!(!expanded.contains("close();"), "{expanded}");
+    assert!(!expanded.contains("solve();"), "{expanded}");
     assert!(
         expanded.contains("at(function.entry, x == 0) => {")
             && expanded.contains("at(function.entry, x == 1) => {"),
@@ -8299,7 +8299,7 @@ fn post_execution_solve_builds_recursive_conjunction_on_proof() {
         position.column,
     )
     .expect("the retained conjunction should expand");
-    assert!(!expanded.contains("close();"), "{expanded}");
+    assert!(!expanded.contains("solve();"), "{expanded}");
     assert!(expanded.contains("all {"), "{expanded}");
     verify_c_sources(&expanded, &[("first.c", c_source)])
         .expect("the retained conjunction should verify independently");
@@ -8731,7 +8731,7 @@ fn source_expansion_preserves_proof_marks() {
     )
     .expect("the smart tactic after a mark should expand");
     assert!(expanded.contains("mark before_increment;"));
-    assert!(!expanded.contains("close();"));
+    assert!(!expanded.contains("solve();"));
     verify_c_sources(&expanded, &[("increment.c", c_source)])
         .expect("the expansion should check through the named state");
 }
@@ -9166,7 +9166,7 @@ fn selected_pure_case_split_solve_expands_by_removal() {
 
     let expanded = expand_c_tactic_source_at(click_source, &[("branch.c", c_source)], line, column)
         .expect("a pure case-split solve should expand");
-    assert!(!expanded.contains("close()"), "{expanded}");
+    assert!(!expanded.contains("solve()"), "{expanded}");
     assert_eq!(expanded.matches("branch {").count(), 1, "{expanded}");
     assert_eq!(expanded.matches("normalize();").count(), 2, "{expanded}");
     without_implicit_solve(|| verify_c_sources(&expanded, &[("branch.c", c_source)]))
@@ -9278,7 +9278,7 @@ fn source_expander_lowers_smart_solve_inside_have() {
             .find("step_until(function.exit)")
             .expect("expanded proof should retain its suffix")];
     assert!(expanded_have.contains("close();"), "{expanded_have}");
-    assert!(!expanded_have.contains("close();"), "{expanded_have}");
+    assert!(!expanded_have.contains("solve();"), "{expanded_have}");
     verify_c_sources(&expanded, &[("identity.c", c_source)])
         .expect("the expanded smart have should check");
 }
@@ -10004,7 +10004,7 @@ fn uint64_bit_test_inequality_expands_to_rewrite_and_known() {
         "{expanded}"
     );
     assert!(expanded.contains("close();"), "{expanded}");
-    assert!(!expanded.contains("close();"), "{expanded}");
+    assert!(!expanded.contains("solve();"), "{expanded}");
     verify_click_theorems(&expanded)
         .expect("the explicit uint64 inequality certificate should independently reverify");
 }
@@ -10075,7 +10075,7 @@ fn pure_rewrite_retains_a_structural_surface_successor_for_solve() {
         .expect("the retained rewrite successor should expand");
     assert_eq!(expanded.matches("rewrite(").count(), 3, "{expanded}");
     assert!(expanded.contains("all {"), "{expanded}");
-    assert!(!expanded.contains("close();"), "{expanded}");
+    assert!(!expanded.contains("solve();"), "{expanded}");
     verify_click_theorems(&expanded)
         .expect("the expanded rewrite and structural child proofs should verify independently");
 }
@@ -10458,7 +10458,7 @@ fn restricted_solve_expands_nonstrict_unequal_order() {
         (expanded.contains("click::integer::") || expanded.contains("normalize")),
         "{expanded}"
     );
-    assert!(!expanded.contains("close()"), "{expanded}");
+    assert!(!expanded.contains("solve()"), "{expanded}");
     verify_click_theorems(&expanded).expect("nonstrict unequal certificate should check");
 }
 
@@ -10923,7 +10923,7 @@ fn pure_solve_retains_one_selected_equality_rewrite_before_known() {
         .expect("the retained equality-refinement path should expand");
     assert!(expanded.contains("rewrite(value, 1);"), "{expanded}");
     assert!(expanded.contains("close();"), "{expanded}");
-    assert!(!expanded.contains("close();"), "{expanded}");
+    assert!(!expanded.contains("solve();"), "{expanded}");
     verify_click_theorems(&expanded).expect("the expanded rewrite path should check");
 }
 
@@ -11277,7 +11277,7 @@ fn solve_expands_increment_definedness_to_ordinary_arithmetic() {
     let expanded = expand_c_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("increment-definedness solve should expand");
     assert!(expanded.contains("value < 2147483647;"), "{expanded}");
-    assert!(!expanded.contains("close();"), "{expanded}");
+    assert!(!expanded.contains("solve();"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded increment-definedness proof should check");
 }
@@ -11411,7 +11411,7 @@ fn restricted_solve_expands_named_successor_order() {
     )
     .expect("named successor order should expand to explicit arithmetic");
     assert!(!expanded.contains("normalize()"), "{expanded}");
-    assert!(!expanded.contains("close()"), "{expanded}");
+    assert!(!expanded.contains("solve()"), "{expanded}");
     verify_c_sources(&expanded, &[("named_successor.c", c_source)])
         .expect("named successor certificate should check");
 }
@@ -11486,7 +11486,7 @@ fn restricted_solve_certifies_unchanged_prefix_after_indexed_store() {
         "{expanded}"
     );
     assert!(expanded.contains("k < old(owner->len)"), "{expanded}");
-    assert!(!expanded.contains("close();"), "{expanded}");
+    assert!(!expanded.contains("solve();"), "{expanded}");
     without_implicit_solve_for_claim("vector_push.contract", || {
         verify_c_sources(&expanded, &[("vector_push.c", c_source)]).map_err(|error| error.report())
     })
@@ -12001,7 +12001,7 @@ fn smart_solve_transcribes_a_three_edge_bitvector_equality_path() {
         + 1;
     let expanded = expand_c_tactic_source_at(click_source, &[], line, column)
         .expect("the retained three-edge equality path should expand");
-    assert!(!expanded.contains("close();"), "{expanded}");
+    assert!(!expanded.contains("solve();"), "{expanded}");
     assert!(expanded.contains("close();"), "{expanded}");
     verify_click_theorems(&expanded).expect("the transcribed equality path should check");
 }
@@ -12104,7 +12104,7 @@ fn outcome_solve_consumes_its_recorded_bitvector_equality_path() {
         position.column,
     )
     .expect("the retained outcome equality path should expand");
-    assert!(!expanded.contains("close();"), "{expanded}");
+    assert!(!expanded.contains("solve();"), "{expanded}");
     assert!(expanded.contains("close();"), "{expanded}");
     verify_c_sources(&expanded, &[("choose_first.c", c_source)])
         .expect("the transcribed outcome equality path should check");
@@ -12148,7 +12148,7 @@ fn outcome_solve_closes_its_recorded_order_path_by_arithmetic() {
         "{expanded}"
     );
     assert!(!expanded.contains("normalize()"), "{expanded}");
-    assert!(!expanded.contains("close();"), "{expanded}");
+    assert!(!expanded.contains("solve();"), "{expanded}");
     verify_c_sources(&expanded, &[("validate_chain.c", c_source)])
         .expect("the transcribed outcome theorem path should check");
 }
@@ -12886,7 +12886,7 @@ fn fixed_state_have_mixed_linear_smart_script_continues_on_checked_successors() 
         expanded_have.contains("have first == second by {"),
         "{expanded_have}"
     );
-    assert!(!expanded_have.contains("close();"), "{expanded_have}");
+    assert!(!expanded_have.contains("solve();"), "{expanded_have}");
     verify_c_sources(&expanded, &[("choose.c", c_source)])
         .expect("the serialized retained proof should independently reverify");
 }
@@ -16139,7 +16139,7 @@ fn outcome_solve_with_no_open_claims_is_an_empty_proof_transition() {
         .split("void release")
         .nth(1)
         .expect("expanded release proof should exist");
-    assert!(!release_proof.contains("close();"), "{expanded}");
+    assert!(!release_proof.contains("solve();"), "{expanded}");
     verify_c_sources(&expanded, &sources)
         .expect("the expansion without the empty solve should check");
 }
@@ -18102,7 +18102,7 @@ fn source_expander_lowers_smart_solve_after_unfold_inside_have() {
         "{expanded_have}"
     );
     assert!(expanded_have.contains("close();"), "{expanded_have}");
-    assert!(!expanded_have.contains("close();"), "{expanded_have}");
+    assert!(!expanded_have.contains("solve();"), "{expanded_have}");
     verify_c_sources(&expanded, &[("identity.c", c_source)])
         .expect("the expanded unfolded smart have should check");
 }
@@ -18332,7 +18332,7 @@ fn smart_have_uses_transport_planned_at_the_mutation_boundary() {
             .expect("expanded proof should retain its suffix")];
     assert!(expanded_have.contains("close();"), "{expanded_have}");
     assert!(!expanded_have.contains("transport("), "{expanded_have}");
-    assert!(!expanded_have.contains("close();"), "{expanded_have}");
+    assert!(!expanded_have.contains("solve();"), "{expanded_have}");
     verify_c_sources(&expanded, &[("transport.c", c_source)])
         .expect("the expansion should check using the transport planned by the prior statement");
 }
@@ -19201,7 +19201,7 @@ fn pure_pointer_add_zero_solve_expands_to_a_checked_certificate() {
     let expanded = expand_c_tactic_source_at(click_source, &[], line, column)
         .expect("the pointer-offset identity solve should have an explicit certificate");
     assert!(expanded.contains("close();"), "{expanded}");
-    assert!(!expanded.contains("close()"), "{expanded}");
+    assert!(!expanded.contains("solve()"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded pointer identity proof should check");
 }
 
@@ -19236,7 +19236,7 @@ fn pure_branching_disjunction_solve_expands_to_left_right() {
         .expect("the branching disjunction proof should have an explicit certificate");
     assert!(expanded.contains("close();"), "{expanded}");
     assert!(expanded.contains("close();"), "{expanded}");
-    assert!(!expanded.contains("close()"), "{expanded}");
+    assert!(!expanded.contains("solve()"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded branching disjunction proof should check");
 }
 
@@ -19269,7 +19269,7 @@ fn pure_folded_constant_successor_solve_expands_to_successor_bound() {
     let expanded = expand_c_tactic_source_at(click_source, &[], line, column)
         .expect("the folded constant successor solve should have an explicit certificate");
     assert!(expanded.contains("click::integer::"), "{expanded}");
-    assert!(!expanded.contains("close()"), "{expanded}");
+    assert!(!expanded.contains("solve()"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded constant successor proof should check");
 }
 
@@ -19378,7 +19378,7 @@ fn outcome_predecessor_bound_solve_expands_to_arithmetic_steps() {
     .expect("the predecessor bound solve should expand to the named rule");
     assert!(expanded.contains("all {"), "{expanded}");
     assert!(expanded.contains("click::integer::"), "{expanded}");
-    assert!(!expanded.contains("close()"), "{expanded}");
+    assert!(!expanded.contains("solve()"), "{expanded}");
     verify_c_sources(&expanded, &[("drop_one.c", c_source)]).unwrap_or_else(|error| {
         panic!(
             "the expanded predecessor bound certificate should check: {}\n{expanded}",
@@ -20325,7 +20325,7 @@ fn a_smart_loop_preserve_phase_tactic_expands_and_reverifies() {
         let source = LOOP_INITIALIZE_SMART_HAVE_CLICK.replace("maintain by close();", phase);
         let offset = source.find(phase).expect("the proof contains the phase");
         let position =
-            expansion::position_at_offset(&source, offset + phase.find("solve").unwrap());
+            expansion::position_at_offset(&source, offset + phase.find("close").unwrap());
         let expanded = expand_c_tactic_source_at(&source, &sources, position.line, position.column)
             .expect("a smart `maintain` phase should expand");
         assert!(
@@ -20489,7 +20489,7 @@ fn local_job_views_expand_and_reverify_without_ownership_annotations() {
             .expect("local borrow and lifetime certificates should expand");
     }
     assert!(!click.contains("step_until(function.exit);"), "{click}");
-    assert!(!click.contains("close();"), "{click}");
+    assert!(!click.contains("solve();"), "{click}");
     verify_c_sources(&click, &sources).expect("expanded local job must independently reverify");
 }
 
@@ -20580,7 +20580,7 @@ fn an_unfold_bound_scalar_field_expands_and_reverifies() {
         "the expansion should keep the field binding: {expanded}"
     );
     assert!(
-        !expanded.contains("close();"),
+        !expanded.contains("solve();"),
         "every smart site should be replaced: {expanded}"
     );
     verify_c_sources(&expanded, &sources)
@@ -20673,7 +20673,7 @@ fn a_decided_branch_in_a_loop_body_expands_and_reverifies() {
         "the decided branch should be printed as its checked split: {expanded}"
     );
     assert!(
-        !expanded.contains("close();"),
+        !expanded.contains("solve();"),
         "every smart site should be replaced: {expanded}"
     );
     assert!(
@@ -20882,7 +20882,7 @@ fn expand_iterated_ownership_claim(fixture: &str, claim: &str, kept: &[&str]) {
         );
     }
     assert!(
-        !expanded.contains("close();"),
+        !expanded.contains("solve();"),
         "every smart site should be replaced: {expanded}"
     );
     verify_c_sources(&expanded, &sources)
@@ -24854,7 +24854,7 @@ fn scoped_conversion_requirements_expand_before_the_have() {
     let expanded = expand_c_claim_source_by_label(source, &[], "scoped_conversion.ensures_0")
         .expect("the requirement proof is retained");
     assert!(expanded.matches("have ").count() > 1, "{expanded}");
-    assert!(!expanded.contains("close();"), "{expanded}");
+    assert!(!expanded.contains("solve();"), "{expanded}");
     crate::surface::proof::without_implicit_solve(|| verify_click_theorems(&expanded))
         .expect("the expanded scoped requirement checks with implicit search disabled");
 }
@@ -24892,7 +24892,7 @@ fn theorem_entry_type_bounds_discharge_without_search() {
     let expanded = expand_c_claim_source_by_label(source, &[], "entry_conversion.ensures_0")
         .expect("entry conversion expands without redundant requirement proofs");
     assert!(!expanded.contains("have "), "{expanded}");
-    assert!(!expanded.contains("close();"), "{expanded}");
+    assert!(!expanded.contains("solve();"), "{expanded}");
     without_implicit_solve(|| verify_click_theorems(&expanded))
         .expect("expanded entry requirements check without search");
     let unsafe_source = source.replace("k: uint8", "k: int32");
@@ -25834,7 +25834,7 @@ fn solve_exact_goal_expands_to_known_in_pure_and_outcome_scopes() {
         assert!(
             !expanded.contains("normalize()")
                 && !expanded.contains("have ")
-                && !expanded.contains("close()"),
+                && !expanded.contains("solve()"),
             "{expanded}"
         );
         without_implicit_solve(|| verify_click_theorems(&expanded)).unwrap();
@@ -25851,7 +25851,7 @@ fn solve_exact_goal_expands_to_known_in_pure_and_outcome_scopes() {
             expand_c_claim_source_by_label(&source, &sources, "known.ensures_0").unwrap();
         assert!(expanded.contains("close();"), "{expanded}");
         assert!(
-            !expanded.contains("normalize()") && !expanded.contains("close()"),
+            !expanded.contains("normalize()") && !expanded.contains("solve()"),
             "{expanded}"
         );
         // Outcome expansion opens the contract claim with `have`; the

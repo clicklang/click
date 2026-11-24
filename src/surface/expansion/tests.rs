@@ -694,7 +694,7 @@ theorem shadowed_twice(x: int32) {
     let position = position_at_offset(source, source.find("close();").unwrap());
     let expanded = expand_c_tactic_source_at(source, &[], position.line, position.column)
         .expect("selected smart tactic should expand");
-    assert!(!expanded.contains("close();"), "{expanded}");
+    assert!(!expanded.contains("solve();"), "{expanded}");
     assert!(expanded.contains("close();"), "{expanded}");
     assert!(expanded.contains("outer.outer.x"), "{expanded}");
     verify_c_sources(&expanded, &[]).expect("expanded proof must reverify");
@@ -727,7 +727,7 @@ fn tactic_line_disambiguation_uses_columns_only_for_shared_lines() {
 
     let nested = "theorem t(n: int32) { ensures true by {\n    have n <= n by { close(); }\n} }\n";
     let have = position_at_offset(nested, nested.find("have").unwrap());
-    let solve = position_at_offset(nested, nested.find("solve").unwrap());
+    let solve = position_at_offset(nested, nested.find("close").unwrap());
     assert!(!multiple(nested, &have));
     assert!(multiple(nested, &solve));
 }
@@ -1151,13 +1151,13 @@ theorem reflexive(xs: TestList<int32>) {
             SmartTacticSourceSite {
                 claim_label: "reflexive.ensures_0".to_string(),
                 source_index: 2,
-                tactic_name: "solve".to_string(),
+                tactic_name: "close".to_string(),
                 position: position_at_offset(click_source, click_source.find("close();").unwrap()),
             },
             SmartTacticSourceSite {
                 claim_label: "reflexive.ensures_0".to_string(),
                 source_index: 3,
-                tactic_name: "solve".to_string(),
+                tactic_name: "close".to_string(),
                 position: position_at_offset(click_source, click_source.rfind("close();").unwrap()),
             },
         ]
@@ -2087,7 +2087,7 @@ int32 inspect(int32 p[1], int32 x) {
     )
     .expect("grouped solve should capture every newly closed claim");
 
-    assert!(!expanded.contains("close();"), "{expanded}");
+    assert!(!expanded.contains("solve();"), "{expanded}");
     verify_c_sources(&expanded, &sources)
         .expect("the grouped transition certificate should re-verify");
 }
@@ -2126,7 +2126,7 @@ int32 increment_and_return_old(int32 p[1]) {
     )
     .expect("grouped solve should capture frame-dependent claims");
 
-    assert!(!expanded.contains("close();"), "{expanded}");
+    assert!(!expanded.contains("solve();"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_c_sources(&expanded, &sources)
         .expect("the grouped frame transition certificate should re-verify");
@@ -2252,7 +2252,7 @@ int32 contains(uint8 p[], int32 n) {
     }
 }"#;
     let offset = click_source
-        .rfind("solve")
+        .rfind("close")
         .expect("solve should be present");
     let position = position_at_offset(click_source, offset);
     let expanded = expand_c_tactic_source_at(
@@ -2732,10 +2732,10 @@ int32 nested(int32 x) {
         }
     }
 }"#;
-    let needle = "step();\n                step();\n                step();\n                solve";
+    let needle = "step();\n                step();\n                step();\n                close";
     let offset = click_source
         .find(needle)
-        .map(|start| start + needle.rfind("solve").unwrap())
+        .map(|start| start + needle.rfind("close").unwrap())
         .expect("inner else solve should be present");
     let position = position_at_offset(click_source, offset);
     let (verified, original_flat_units) =
@@ -2836,7 +2836,7 @@ int32 identity(int32 x) {
     ensures result == x by { step_until(function.exit); close(); }
 }
 "#;
-    let smart_position = position_at_offset(smart, smart.find("solve").unwrap());
+    let smart_position = position_at_offset(smart, smart.find("close").unwrap());
     let smart_expanded = expand_c_tactic_source_at(
         smart,
         &[("identity.c", c_source)],
@@ -2845,7 +2845,7 @@ int32 identity(int32 x) {
     )
     .expect("single smart proof should expand as a whole proof");
     assert!(smart_expanded.contains("step_until(function.exit);"));
-    assert!(!smart_expanded.contains("close();"));
+    assert!(!smart_expanded.contains("solve();"));
     verify_c_sources(&smart_expanded, &[("identity.c", c_source)]).unwrap();
 
     let implicit = r#"verifying "identity.c";
@@ -3093,7 +3093,7 @@ theorem set_one_is_make_positive() {
         .expect("expanded source should retain the theorem")..];
     assert!(theorem.contains("intro();"), "{theorem}");
     assert!(!theorem.contains("extract("), "{theorem}");
-    assert!(!theorem.contains("close();"), "{theorem}");
+    assert!(!theorem.contains("solve();"), "{theorem}");
     verify_c_sources(&expanded, &sources)
         .expect("expanded contract-refinement theorem should re-verify with its C target");
 }
@@ -3124,7 +3124,7 @@ fn pure_mixed_linear_smart_script_expands_the_retained_proof_object_path() {
     assert!(selected.contains("apply(required(x));"), "{selected}");
     assert!(selected.contains("have x >= 0 by {"), "{selected}");
     assert!(selected.contains("close();"), "{selected}");
-    assert!(!selected.contains("close();"), "{selected}");
+    assert!(!selected.contains("solve();"), "{selected}");
     verify_click_theorems(&expanded)
         .expect("the serialized pure theorem certificate should independently reverify");
 }
@@ -3169,7 +3169,7 @@ fn pure_branch_local_apply_expands_the_retained_proof_object_paths() {
         selected.contains("apply(inequality_case(x));"),
         "{selected}"
     );
-    assert!(!selected.contains("close();"), "{selected}");
+    assert!(!selected.contains("solve();"), "{selected}");
     verify_click_theorems(&expanded)
         .expect("the serialized branch-local certificates should independently reverify");
 }
@@ -3221,7 +3221,7 @@ fn pure_nested_have_branch_apply_expands_the_retained_proof_object_scope() {
             && selected.contains("apply(inequality_case_nested(x));"),
         "{selected}"
     );
-    assert!(!selected.contains("close();"), "{selected}");
+    assert!(!selected.contains("solve();"), "{selected}");
     verify_click_theorems(&expanded)
         .expect("the serialized nested pure branch should independently reverify");
 }
@@ -3277,7 +3277,7 @@ theorem ordinary(x: int32) {
     let sites = c_smart_tactic_source_sites(source, &[]).unwrap();
     assert_eq!(sites.len(), 1);
     assert_eq!(sites[0].claim_label, "ordinary.ensures_0");
-    assert_eq!(sites[0].tactic_name, "solve");
+    assert_eq!(sites[0].tactic_name, "close");
     assert!(
         verify_click_theorems(&source.replace("ensures left == right", "ensures left != right"))
             .is_err(),
@@ -3297,7 +3297,7 @@ theorem int32_le_antisymmetric() {
     let sites = c_smart_tactic_source_sites(source, &[]).unwrap();
     assert_eq!(sites.len(), 1);
     assert_eq!(sites[0].claim_label, "int32_le_antisymmetric.ensures_0");
-    assert_eq!(sites[0].tactic_name, "solve");
+    assert_eq!(sites[0].tactic_name, "close");
 }
 
 #[test]
@@ -3420,7 +3420,7 @@ theorem pick_nonzero(r: int32) {
         .collect::<Vec<_>>();
     assert_eq!(
         indexes,
-        vec![(1, "have"), (2, "have"), (3, "solve")],
+        vec![(1, "have"), (2, "have"), (3, "close")],
         "{sites:?}"
     );
     let final_solve = "close();\n    }\n}";
@@ -3465,7 +3465,7 @@ int32 client(int32 x) {
         .collect::<Vec<_>>();
     assert_eq!(
         indexes,
-        vec![(2, "solve"), (3, "solve"), (4, "solve")],
+        vec![(2, "close"), (3, "close"), (4, "close")],
         "{sites:?}"
     );
     for (index, needle) in [
@@ -3495,7 +3495,7 @@ fn load_equality_chain_across_a_call_expands_and_replays() {
     let sources = crate::cli::source_refs(&fixture.c_sources);
     let expanded = expand_c_claim_source_by_label(source, &sources, "caller.contract")
         .unwrap_or_else(|error| panic!("{}", error.message()));
-    assert!(!expanded.contains("close();"), "{expanded}");
+    assert!(!expanded.contains("solve();"), "{expanded}");
     crate::surface::check_audit_claim("caller.contract", true, || {
         verify_c_sources(&expanded, &sources).map_err(|error| error.report())
     })
@@ -3617,7 +3617,7 @@ fn trace_source_index_preserves_nested_locations_and_containment() {
     // A `branch` shares its line only with its own arms' tactics, which are
     // inside it, so the line names it alone.
     let branch = position_at_offset(source, source.find("branch").unwrap());
-    let branch_else = position_at_offset(source, source.rfind("solve").unwrap());
+    let branch_else = position_at_offset(source, source.rfind("close").unwrap());
     let last = position_at_offset(source, source.rfind("normalize").unwrap());
     assert!(!index.line_has_multiple_starts(&branch).unwrap());
     assert!(!index.line_has_multiple_starts(&last).unwrap());
@@ -4195,7 +4195,7 @@ fn solve_expands_disjunction_projection_to_cases_without_extract() {
     let expanded = expand_pure_theorem_source(source, &[], "demo", 0).unwrap();
     assert!(expanded.contains("cases {"), "{expanded}");
     assert!(!expanded.contains("extract("), "{expanded}");
-    assert!(!expanded.contains("close()"), "{expanded}");
+    assert!(!expanded.contains("solve()"), "{expanded}");
     without_implicit_solve(|| verify_click_theorems(&expanded)).unwrap();
     let invalid = expanded.replace("x > 0 and y == 3", "x < 0 and y == 3");
     assert!(without_implicit_solve(|| verify_click_theorems(&invalid)).is_err());
@@ -4215,7 +4215,7 @@ fn solve_expands_propagated_partial_implication_to_known() {
     let expanded = expand_pure_theorem_source(source, &[], "demo", 0).unwrap();
     assert!(expanded.contains("close()"), "{expanded}");
     assert!(!expanded.contains("extract("), "{expanded}");
-    assert!(!expanded.contains("close()"), "{expanded}");
+    assert!(!expanded.contains("solve()"), "{expanded}");
     without_implicit_solve(|| verify_click_theorems(&expanded)).unwrap();
     let missing = expanded.replace("requires x > 0;", "");
     assert!(without_implicit_solve(|| verify_click_theorems(&missing)).is_err());

@@ -460,7 +460,7 @@ fn smart_ranking_closure_expands_to_explicit_bundle_members() {
         .expect("the expansion spells the preservation proof");
     let closer = &expanded[closer..];
     assert!(
-        !closer.contains("close_invariants") && !closer.contains("close();"),
+        !closer.contains("close_invariants") && !closer.contains("solve();"),
         "the expanded closer must contain no smart leaf: {expanded}"
     );
     assert!(
@@ -965,7 +965,7 @@ fn observed_member_closure_expands_to_direct_assumptions() {
     verify_c_sources(click, &sources).unwrap_or_else(|error| panic!("{}", error.message()));
     let expanded = expand_function_proof_source(click, &sources, "count_run")
         .unwrap_or_else(|error| panic!("{}", error.message()));
-    assert!(!expanded.contains("close();"), "{expanded}");
+    assert!(!expanded.contains("solve();"), "{expanded}");
     assert!(expanded.contains("close();"), "{expanded}");
     without_implicit_solve(|| verify_c_sources(&expanded, &sources))
         .unwrap_or_else(|error| panic!("{}", error.message()));
@@ -1953,7 +1953,7 @@ fn frontier_local_loop_expands_an_explicit_nested_tactic_at_its_own_location() {
         })
         .collect::<Vec<_>>();
     assert_eq!(matching_inventory.len(), 1, "{inventory:?}");
-    assert_eq!(matching_inventory[0].tactic_name, "solve");
+    assert_eq!(matching_inventory[0].tactic_name, "close");
 
     let expanded = expand_c_tactic_source_at(
         click_source,

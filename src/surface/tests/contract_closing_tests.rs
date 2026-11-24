@@ -41,7 +41,7 @@ fn implicit_contract_closing_expands_into_explicit_steps() {
     let source = proof("close();");
     verify_c_sources(&source, C).unwrap();
     let expanded = expand_function_proof_source(&source, C, "value").unwrap();
-    assert!(!expanded.contains("close();"), "{expanded}");
+    assert!(!expanded.contains("solve();"), "{expanded}");
     without_implicit_solve(|| verify_c_sources(&expanded, C))
         .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
 }

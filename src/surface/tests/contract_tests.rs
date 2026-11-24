@@ -1354,7 +1354,7 @@ fn grouped_flat_function_proof_stays_on_one_proof_through_claim_acceptance() {
         !expanded.contains("step_until(function.exit);"),
         "{expanded}"
     );
-    assert!(!expanded.contains("close();"), "{expanded}");
+    assert!(!expanded.contains("solve();"), "{expanded}");
     verify_c_sources(&expanded, &[("identity.c", c_source)])
         .expect("the grouped rewrite should verify normally");
 
@@ -1412,7 +1412,7 @@ fn grouped_n_way_function_outcomes_stay_on_one_proof() {
         !expanded.contains("step_until(function.exit);"),
         "{expanded}"
     );
-    assert!(!expanded.contains("close();"), "{expanded}");
+    assert!(!expanded.contains("solve();"), "{expanded}");
     verify_c_sources(&expanded, &[("classify.c", c_source)])
         .expect("the expanded grouped N-way proof should verify normally");
 }
@@ -1508,7 +1508,7 @@ fn grouped_calls_keep_contract_transitions_on_proof() {
         !caller_expansion.contains("step_until(function.exit);"),
         "{expanded}"
     );
-    assert!(!caller_expansion.contains("close();"), "{expanded}");
+    assert!(!caller_expansion.contains("solve();"), "{expanded}");
     assert!(caller_expansion.contains("step();"), "{expanded}");
     verify_c_sources(&expanded, sources)
         .expect("the rewritten grouped call proof should verify normally");
@@ -1659,7 +1659,7 @@ fn grouped_opaque_calls_keep_declared_composite_resources_on_proof() {
         !caller_expansion.contains("step_until(function.exit);"),
         "{expanded}"
     );
-    assert!(!caller_expansion.contains("close();"), "{expanded}");
+    assert!(!caller_expansion.contains("solve();"), "{expanded}");
     assert_eq!(
         caller_expansion.matches("step();").count(),
         6,
@@ -1756,7 +1756,7 @@ fn grouped_mutable_composite_calls_keep_open_scopes_on_proof() {
         !caller_expansion.contains("step_until(function.exit);"),
         "{expanded}"
     );
-    assert!(!caller_expansion.contains("close();"), "{expanded}");
+    assert!(!caller_expansion.contains("solve();"), "{expanded}");
     verify_c_sources(&expanded, sources)
         .expect("the rewritten scoped composite-call proof should verify normally");
 
@@ -1848,7 +1848,7 @@ fn grouped_mutable_composite_calls_continue_on_proof_after_preparatory_scope() {
         !caller_expansion.contains("step_until(function.exit);"),
         "{expanded}"
     );
-    assert!(!caller_expansion.contains("close();"), "{expanded}");
+    assert!(!caller_expansion.contains("solve();"), "{expanded}");
     assert!(caller_expansion.contains("with(wrapped_cell(cell))"));
     verify_c_sources(&expanded, sources)
         .unwrap_or_else(|error| panic!("TEMP {error:?}\n{expanded}"));
@@ -1918,7 +1918,7 @@ fn grouped_sequential_top_level_scopes_stay_on_one_proof() {
         !caller_expansion.contains("step_until(function.exit);"),
         "{expanded}"
     );
-    assert!(!caller_expansion.contains("close();"), "{expanded}");
+    assert!(!caller_expansion.contains("solve();"), "{expanded}");
     verify_c_sources(&expanded, sources)
         .expect("the rewritten sequential-scope proof should verify normally");
 
@@ -1984,7 +1984,7 @@ fn grouped_predicate_contracts_stay_on_one_proof() {
         !expanded.contains("step_until(function.exit);"),
         "{expanded}"
     );
-    assert!(!expanded.contains("close();"), "{expanded}");
+    assert!(!expanded.contains("solve();"), "{expanded}");
     verify_c_sources(&expanded, sources)
         .expect("the rewritten predicate proof should verify normally");
 
@@ -2324,7 +2324,7 @@ fn flat_function_expansion_rewrites_and_rejects_tampering() {
         !expanded.contains("step_until(function.exit);"),
         "{expanded}"
     );
-    assert!(!expanded.contains("close();"), "{expanded}");
+    assert!(!expanded.contains("solve();"), "{expanded}");
     verify_c_sources(&expanded, &[("identity.c", c_source)])
         .expect("the rewritten source should verify normally");
 

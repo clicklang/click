@@ -960,7 +960,7 @@ fn rbtree_erase_general_explicit_closers_preserve_ownership() {
         .filter(|(_, line)| line.trim() == "close();")
         .last()
         .unwrap();
-    let column = text.find("solve").unwrap() + 1;
+    let column = text.find("close").unwrap() + 1;
     limits::spawn(
         "general unlink closer expansion",
         "click-general-erase-expansion".into(),

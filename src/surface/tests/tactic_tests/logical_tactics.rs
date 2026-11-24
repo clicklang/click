@@ -434,13 +434,13 @@ fn parses_local_have_proof_tactic() {
         ProofTactic::Have(ProofHave {
             proof: SourceProof::Script(script),
             ..
-        }) if script.as_slice() == [ProofTactic::Solve]
+        }) if script.as_slice() == [ProofTactic::Close]
     ));
     assert_eq!(
         &tactics[1..],
         &[
             ProofTactic::ExecuteUntil(ExecutionPoint::FUNCTION_EXIT),
-            ProofTactic::Solve
+            ProofTactic::Close
         ]
     );
 }
@@ -594,8 +594,8 @@ fn parses_proof_if_tactic() {
             then_tactics,
             else_tactics,
             ..
-        }) if then_tactics == &[ProofTactic::ExecuteUntil(ExecutionPoint::FUNCTION_EXIT), ProofTactic::Solve]
-            && else_tactics == &[ProofTactic::ExecuteUntil(ExecutionPoint::FUNCTION_EXIT), ProofTactic::Solve]
+        }) if then_tactics == &[ProofTactic::ExecuteUntil(ExecutionPoint::FUNCTION_EXIT), ProofTactic::Close]
+            && else_tactics == &[ProofTactic::ExecuteUntil(ExecutionPoint::FUNCTION_EXIT), ProofTactic::Close]
     ));
 }
 
@@ -623,7 +623,7 @@ fn parses_existential_proof_tactics() {
             Box::new(current_int(1)),
         )))
     );
-    assert!(matches!(tactics[3], ProofTactic::Solve));
+    assert!(matches!(tactics[3], ProofTactic::Close));
 }
 
 #[test]
@@ -670,7 +670,7 @@ fn parses_solve_tactic() {
     let ensure = &file.function_blocks()[0].ensures()[0];
 
     assert!(
-        matches!(ensure.proof(), SourceProof::Script(tactics) if matches!(tactics.as_slice(), [ProofTactic::Solve]))
+        matches!(ensure.proof(), SourceProof::Script(tactics) if matches!(tactics.as_slice(), [ProofTactic::Close]))
     );
 }
 
@@ -1152,7 +1152,7 @@ fn unfolds_predicate_requirement_to_prove_consequence() {
                         ProgramExpression::Variable("p".into())
                     )]
                 }),
-                ProofTactic::Solve,
+                ProofTactic::Close,
             ]
             .as_slice()
         )
@@ -1379,7 +1379,7 @@ fn mid_execution_witness_solve_have_expands_to_a_simple_certificate() {
     assert!(
         !body
             .iter()
-            .any(|tactic| matches!(tactic, ProofTactic::Solve)),
+            .any(|tactic| matches!(tactic, ProofTactic::Close)),
         "the expanded have body should replace its smart solve: {body:?}"
     );
     assert!(
@@ -1578,7 +1578,7 @@ fn fixed_state_witness_retains_a_structural_surface_goal_for_solve() {
             .expect("expansion should retain the proof suffix")];
     assert!(expanded_have.contains("witness(x)"), "{expanded_have}");
     assert!(expanded_have.contains("close();"), "{expanded_have}");
-    assert!(!expanded_have.contains("close();"), "{expanded_have}");
+    assert!(!expanded_have.contains("solve();"), "{expanded_have}");
     verify_c_sources(&expanded, &[("witness_pair.c", c_source)])
         .expect("the expanded witness and structural proof should verify independently");
 }
@@ -3030,7 +3030,7 @@ fn three_arm_cases_verifies_and_expands() {
     for arm in ["x == 1 => {", "x == 2 => {", "x == 3 => {"] {
         assert!(expanded.contains(arm), "{expanded}");
     }
-    assert!(!expanded.contains("close();"), "{expanded}");
+    assert!(!expanded.contains("solve();"), "{expanded}");
     verify_c_sources(&expanded, &[])
         .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
 }
@@ -3077,8 +3077,8 @@ fn parses_outcomes_arms_in_either_order() {
             payload_bindings: _,
             returned_tactics,
             threw_tactics,
-        }) if returned_tactics == &[ProofTactic::ExecuteUntil(ExecutionPoint::FUNCTION_EXIT), ProofTactic::Solve]
-            && threw_tactics == &[ProofTactic::Solve]
+        }) if returned_tactics == &[ProofTactic::ExecuteUntil(ExecutionPoint::FUNCTION_EXIT), ProofTactic::Close]
+            && threw_tactics == &[ProofTactic::Close]
     ));
 
     let duplicate = FILL3_CLICK.replace(
@@ -3661,7 +3661,7 @@ fn check_trivial_disjuncts_expand_and_replay(goals: &[&str]) {
         );
         let expanded = expand_c_tactic_source_at(&source, &[], position.line, position.column)
             .expect("the direct disjunct has an explicit proof");
-        assert!(!expanded.contains("close();"), "{expanded}");
+        assert!(!expanded.contains("solve();"), "{expanded}");
         crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &[]))
             .expect("the disjunct certificate cold-replays");
     }

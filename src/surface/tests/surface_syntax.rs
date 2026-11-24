@@ -1100,7 +1100,7 @@ fn parses_and_prints_pure_induction_tactics() {
         &reparsed[1],
         ProofTactic::ApplyInduction { hypothesis, .. } if hypothesis == "ih"
     ));
-    assert!(matches!(&reparsed[2], ProofTactic::Known));
+    assert!(matches!(&reparsed[2], ProofTactic::Close));
 
     let source = r#"
         spec enum Nodes { End, Next(Nodes) }
@@ -3249,7 +3249,7 @@ fn parses_block_by_clause() {
 
     assert_eq!(
         ensure.proof().tactics(),
-        Some([ProofTactic::Solve].as_slice())
+        Some([ProofTactic::Close].as_slice())
     );
 }
 

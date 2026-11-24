@@ -797,7 +797,7 @@ int32 example() {
     let expanded =
         expand_c_tactic_source_at(click_source, &sources, position.line, position.column)
             .expect("redundant trailing solve should expand away");
-    assert!(!expanded.contains("close();"));
+    assert!(!expanded.contains("solve();"));
 
     let source = AuditSource {
         container_source: expanded.clone(),

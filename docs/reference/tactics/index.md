@@ -629,8 +629,8 @@ branch the facts do not decide it names the split to write
 When execution reaches function exit, the path's open goals are the
 contract's claims in the order the contract writes them: every `ensures`, and
 every `owns` and `produces` clause, whose goal is that the path still holds the
-instance. `views` and `consumes` clauses make no claim. A closer (`known`,
-`normalize`, `all`, `solve`, `close() using`) acts on the first
+instance. `views` and `consumes` clauses make no claim. A closer (`close()`,
+`normalize`, `all`, `close() using`) acts on the first
 open goal, and a refusal names that goal; it does not look further down the
 list for a claim it could close
 (`mdtests/a_closer_after_execution_acts_on_the_first_open_claim.md`,
@@ -1411,7 +1411,7 @@ constant `if` guards select, with the next call's constant arguments
 evaluated; a guard may compare a string literal's byte at a constant index,
 which is a constant since the literal is read-only. `solve` proves one
 `have` for the call's value, and inside it one `have` per level, `call ==
-arm`, by `unfold` and `close()` (or `close()` for a `Bool` level). Only the
+arm`, by `unfold` and `close()`. Only the
 value joins the proof, so the work grows linearly with the depth, at most
 1024 levels. A call a fact names inside `at(point, ...)`, as a postcondition
 names it at the call's entry, is evaluated at that point, with

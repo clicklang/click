@@ -186,7 +186,7 @@ fn conditional_quotient_claim_keeps_its_domain_in_expansion() {
         position.column,
     )
     .expect("the completed quotient claim expands");
-    assert!(!expanded.contains("close()"), "{expanded}");
+    assert!(!expanded.contains("solve()"), "{expanded}");
     verify_c_sources(&expanded, &sources).expect("the explicit claim verifies independently");
     let missing_domain = CONDITIONAL_QUOTIENT_CLAIM.replace("requires d > 0;", "");
     assert!(verify_c_sources(&missing_domain, &sources).is_err());

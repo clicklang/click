@@ -1296,7 +1296,7 @@ int32 bad(int32 x) {
             assert!(expanded.starts_with(&click_source[..offset]), "{expanded}");
             assert!(expanded.ends_with(suffix), "{expanded}");
             let replacement = &expanded[offset..expanded.len() - suffix.len()];
-            assert!(!replacement.contains("close()"), "{expanded}");
+            assert!(!replacement.contains("solve()"), "{expanded}");
             assert_ne!(expanded, click_source);
         };
         let expanded = run_location(&click_path, "7").unwrap();
@@ -1353,7 +1353,7 @@ int32 identity(int32 x) {
 
         assert_ne!(expanded, click_source);
         assert!(!expanded.contains("step_until(function.exit);"));
-        assert!(!expanded.contains("close();"));
+        assert!(!expanded.contains("solve();"));
         fs::remove_dir_all(directory).unwrap();
     }
 
@@ -1382,7 +1382,7 @@ int32 identity(int32 x) {
         let expanded = run(&arguments).expect("pure theorem claims should expand by label");
 
         assert_ne!(expanded, click_source);
-        assert!(!expanded.contains("close();"));
+        assert!(!expanded.contains("solve();"));
         let by_location = Selection::Claim(format!("{}:2:5", arguments.click_path.display()));
         let selection = expand_selection(
             None,
@@ -1568,7 +1568,7 @@ theorem fallback(x: int32) {
         assert!(expanded.contains("ensures x == 0 by close();"));
         let fallback = expanded.split("theorem fallback").nth(1).unwrap();
         assert!(fallback.contains("intro();") && fallback.contains("close();"));
-        assert!(!fallback.contains("close();"));
+        assert!(!fallback.contains("known();") && !fallback.contains("solve();"));
         verify_expansion(None, source, &expanded, &inputs, claim, true).unwrap();
         // If a step goes missing, ordinary verification can still recover
         // at the new spelling. The whole-claim replay must refuse it.

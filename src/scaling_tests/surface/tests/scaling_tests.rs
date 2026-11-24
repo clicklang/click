@@ -340,7 +340,7 @@ int32 probe(int32* p) {{
             let expanded =
                 expand_c_tactic_source_at(&source, &sources, position.line, position.column)
                     .expect("the selected constructor guard expands");
-            assert!(!expanded.contains("close();"), "{expanded}");
+            assert!(!expanded.contains("solve();"), "{expanded}");
             crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &sources))
                 .expect("the explicit guard refutation cold-replays");
             // The opposite guard holds for this nonempty constructor, while
@@ -4160,7 +4160,7 @@ fn expanded_roundtrip_sample(unrelated: usize, extra_copies: usize) -> (usize, S
                         )
                     });
             assert!(!expanded.contains("execute()"), "{expanded}");
-            assert!(!expanded.contains("close()"), "{expanded}");
+            assert!(!expanded.contains("solve()"), "{expanded}");
             let (verified, sample) =
                 scaling_sample(unrelated, || verify_c_sources(&expanded, &sources));
             verified.unwrap_or_else(|error| {
@@ -7855,7 +7855,7 @@ fn atomic_retained_evidence_expands_without_unrelated_conditions() {
             let expanded = expanded
                 .unwrap_or_else(|error| panic!("{name}/{size} expansion: {}", error.message()));
             let body = &expanded[expanded.find("by {").unwrap()..];
-            assert!(!body.contains("close();"), "{body}");
+            assert!(!body.contains("solve();"), "{body}");
             for index in 0..size {
                 assert!(
                     !body.contains(&format!("u{index}")) && !body.contains(&format!("x{index}")),

@@ -741,7 +741,9 @@ fn run_mdtest(path: &Path) -> Result<(), String> {
     if mdtest.checked_only {
         let result = timed_mdtest_phase(path, "verify", || {
             click::surface::without_proof_search(|| {
-                verify().map_err(|error| click::surface::display_source_names(error.message()))
+                verify().map_err(|error| {
+                    click::surface::display_source_names(error.message()).into_owned()
+                })
             })
         });
         return check_rendered_expectation(path, expectation, result);
@@ -850,7 +852,7 @@ fn check_expectation(
                     path.display()
                 ));
             }
-            Err(click::surface::display_source_names(error.message()))
+            Err(click::surface::display_source_names(error.message()).into_owned())
         }
     };
     check_rendered_expectation(path, expectation, result)
