@@ -655,10 +655,7 @@ int32 shadowed_c(int32 x) {
     let expanded =
         expand_c_tactic_source_at(click_source, &sources, position.line, position.column)
             .expect("selected smart tactic should expand");
-    assert!(
-        expanded.contains("have outer.x == 0 by {"),
-        "{expanded}"
-    );
+    assert!(expanded.contains("have outer.x == 0 by {"), "{expanded}");
     assert!(expanded.contains("outer.x"), "{expanded}");
     verify_c_sources(&expanded, &sources).expect("expanded C proof must reverify");
 
