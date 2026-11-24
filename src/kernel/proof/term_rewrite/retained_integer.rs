@@ -100,7 +100,6 @@ impl TermRewrite<'_> {
         Some(())
     }
 
-    #[allow(dead_code)] // Term dispatch activation follows its remaining node families.
     pub(in crate::kernel) fn shared_integer_operand(
         &mut self,
         root: &KernelTerm,

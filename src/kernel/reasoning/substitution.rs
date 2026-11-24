@@ -21,6 +21,8 @@ trait VariableSubstitution {
     fn from(&self) -> Variable;
     fn bitvector(&self, term: &MachineTerm) -> MachineTerm;
     fn integer(&self, term: &IntegerTerm) -> IntegerTerm;
+    fn stored_integer_root(&self, root: KernelTerm) -> KernelTerm;
+
     fn pointer(&self, pointer: &Address) -> Address;
     /// The address of a local's storage slot.
     fn local_slot(&self, pointer: &Address) -> Address;
@@ -102,6 +104,24 @@ impl VariableSubstitution for BitvectorSubstitution<'_> {
     fn integer(&self, term: &IntegerTerm) -> IntegerTerm {
         substitute_bitvector_variable_in_integer(term, self.from, self.to)
     }
+    fn stored_integer_root(&self, root: KernelTerm) -> KernelTerm {
+        if root.is_mathematical_integer() {
+            return root;
+        }
+        if root.is_integer_observation_arithmetic() {
+            let source = MachineTerm::Variable(self.from);
+            let mut rewrite =
+                crate::kernel::proof::term_rewrite::TermRewrite::for_bits_checked(&source, self.to);
+            let result = rewrite.shared_integer_operand(&root);
+            integer_substitution_refusal(rewrite.refusal())
+                .unwrap_or_else(|error| panic!("integer substitution refused: {error}"));
+            if let Some(result) = result {
+                return result;
+            }
+        }
+        let value = self.integer(root.integer_native_compat().expect("Integer field"));
+        KernelTermImport::for_exact_field_inputs().integer(&value.into())
+    }
     fn pointer(&self, pointer: &Address) -> Address {
         substitute_bitvector_variable_in_pointer(pointer, self.from, self.to)
     }
@@ -173,6 +193,9 @@ impl VariableSubstitution for PointerSubstitution<'_> {
     }
     fn integer(&self, term: &IntegerTerm) -> IntegerTerm {
         term.clone()
+    }
+    fn stored_integer_root(&self, root: KernelTerm) -> KernelTerm {
+        root
     }
     fn pointer(&self, pointer: &Address) -> Address {
         substitute_pointer_variable_in_pointer(pointer, self.from, self.to)
@@ -772,14 +795,8 @@ fn walk_resource<S: VariableSubstitution + ?Sized>(resource: &Resource, s: &S) -
                         StoredResourceField::Program(value) => {
                             StoredResourceField::from_program(s.stored_program_value(value.value()))
                         }
-                        StoredResourceField::Integer(root) if root.is_mathematical_integer() => {
-                            // This substitution maps a machine or pointer carrier.
-                            StoredResourceField::Integer(root)
-                        }
                         StoredResourceField::Integer(root) => {
-                            StoredResourceField::from_minted(AlgebraicValue::Integer(
-                                s.integer(root.integer_native_compat().expect("Integer field")),
-                            ))
+                            StoredResourceField::Integer(s.stored_integer_root(root))
                         }
                         StoredResourceField::Algebraic(root) => {
                             let value = root.algebraic_native_term().expect("algebraic field");
@@ -9840,6 +9857,10 @@ mod integer_range_fold_substitution_tests {
 mod resource_reference_substitution_tests {
     use super::*;
     use crate::kernel::{ResourceFieldSchema, ResourceFieldType, ResourceReference};
+
+    mod scaling_tests {
+        include!("../../scaling_tests/kernel/reasoning/substitution/resource_fields.rs");
+    }
 
     fn reference_resource() -> Resource {
         let schema = ResourceFieldSchema::new(vec![(

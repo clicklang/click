@@ -1457,6 +1457,18 @@ fn alpha_machine_key<const ALLOW_LOADS: bool>(
                             next_binder,
                         )?
                     }
+                    V::Shared(root)
+                        if let N::IntegerToMachine {
+                            destination,
+                            operand,
+                        } = root.node() =>
+                    {
+                        alpha_work_checkpoint(bindings, 1)?;
+                        AlphaBitvectorKey::IntegerToMachine(
+                            *destination,
+                            fold_keys::integer_operand_key(operand, bindings, next_binder)?,
+                        )
+                    }
                     V::Shared(root) if root.machine_conversion_leaf().is_some() => {
                         alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(
                             root.machine_conversion_leaf().expect("conversion leaf"),
@@ -1866,7 +1878,14 @@ fn alpha_integer_node(
         }
         IntegerTerm::Machine(value) => AlphaIntegerNode::Machine(
             value.ty(),
-            alpha_machine_key::<false>(value.operand_view(), bindings, next_binder)?,
+            alpha_machine_key::<false>(
+                value.shared_operand().map_or_else(
+                    || value.operand_view(),
+                    crate::kernel::MachineOperandView::Shared,
+                ),
+                bindings,
+                next_binder,
+            )?,
         ),
         IntegerTerm::Negate(value) => AlphaIntegerNode::Negate(alpha_integer_node(
             value,
@@ -3756,11 +3775,19 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
                             )?,
                         ),
                         Term::Integer(value) => {
-                            AlphaPredicateArgumentKey::Integer(alpha_integer_key_with_bindings(
-                                value.native_compat(),
-                                bindings,
-                                next_binder,
-                            )?)
+                            let key = if let Some(root) = value.root()
+                                && (root.is_mathematical_integer()
+                                    || root.is_integer_observation_arithmetic())
+                            {
+                                fold_keys::integer_operand_key(root, bindings, next_binder)?
+                            } else {
+                                alpha_integer_key_with_bindings(
+                                    value.native_compat(),
+                                    bindings,
+                                    next_binder,
+                                )?
+                            };
+                            AlphaPredicateArgumentKey::Integer(key)
                         }
                         Term::Algebraic(value) => AlphaPredicateArgumentKey::Algebraic(
                             alpha_algebraic_key_with_bindings::<ALLOW_LOADS>(
