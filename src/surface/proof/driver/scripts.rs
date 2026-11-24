@@ -611,14 +611,14 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     .map_or("an earlier tactic".to_string(), |closer| {
                         format!("`{}`", tactic_name(closer))
                     });
-                // `close() using` is refused here where a bare `solve()`
+                // `close() using` is refused here where a bare `close()`
                 // is not, so it is named by its whole spelling.
                 let name = match tactic {
                     ProofTactic::SolveUsing(_) => "close() using",
                     tactic => tactic_name(tactic),
                 };
                 return Err(proof.step_error(format!(
-                    "`{name}` follows a goal-closing tactic: {closer} already closed this goal, so only `known()`, `close()`, a bare `solve()`, or `normalize()` may follow it",
+                    "`{name}` follows a goal-closing tactic: {closer} already closed this goal, so only `close()`, `close()`, a bare `close()`, or `normalize()` may follow it",
                 )));
             }
             // A step that adds a fact can close the goal before a written

@@ -81,7 +81,7 @@ pub(in crate::surface) fn source_site_kind(tactic: &ProofTactic) -> SourceSiteKi
 }
 
 /// The work budget `tactic`'s timing charges. A `have` whose proof still
-/// searches, `have P by { solve(); }`, owns that search when its body is not
+/// searches, `have P by { close(); }`, owns that search when its body is not
 /// timed tactic by tactic, as inside another `have`'s script, so it spends a
 /// smart budget and a miss is reported as one. Its source site stays a
 /// control container: expansion selects the nested tactics.

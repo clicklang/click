@@ -142,7 +142,7 @@ Write `preserve(B, region);` under a read-equality goal.
 It establishes the after-to-before read equality. The execution-produced
 footprint includes writes, call effects and allocation release. Establish its
 separation with explicitly supplied evidence. When a checked call publishes
-`contains(R, region.footprint)`, select it with `known()` and apply the
+`contains(R, region.footprint)`, select it with `close()` and apply the
 named `separation::separate_restrict` law; `contains_refl` supplies reflexivity and
 `separate_star` combines separation of several input resources. This route
 does not unfold recursive resources or normalize a footprint. The older
@@ -401,7 +401,7 @@ help: to prove the goal explicitly, step to this statement and prove it there wi
 ```
 
 The implicit tail runs the `return` and closes the claim. The proof verifies:
-`success`. Had `have to_integer(w * h) <= 1000000 by solve();` been refused, it would be the new goal, to split further, for example through
+`success`. Had `have to_integer(w * h) <= 1000000 by close();` been refused, it would be the new goal, to split further, for example through
 `w * h <= 1000 * h`.
 
 ## Reading trace output
@@ -509,7 +509,7 @@ under the memory-history check). A proof `if` is recorded at its own line, so
 A step that a search produced says which one. A step that smart work checked
 ends its header with ``(from `implicit tail`)`` or the like, naming its
 origin: `implicit tail` for the steps the implicit tail took and for its
-closer, `solve` for a written `solve()`, and
+closer, `solve` for a written `close()`, and
 `implicit closer` for an obligation a `step()` or `fold` left open. A step
 whose arguments a search chose can have a `chosen:` line with the tactic
 written out as `click expand` writes it:

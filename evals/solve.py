@@ -12,7 +12,7 @@ block. Each site is measured twice, in a scratch copy of the project:
 - deletable: with the whole statement deleted, the proof unit that contained
   it still verifies. The proof's own automation (implicit and written `solve`,
   and the steps after it) finds the fact, and no later step names it.
-- by solve(): with its justification replaced by `by solve();`, the proof unit
+- by close(): with its justification replaced by `by close();`, the proof unit
   still verifies. `solve` proves the fact where it is stated, whether or not
   later steps cite it.
 

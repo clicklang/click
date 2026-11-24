@@ -38,7 +38,7 @@ fn fixed_state_solve_closes_from_false_without_leaking_into_other_contracts() {
             ensures result == 0;
         } by {
             step_until(function.exit);
-            solve();
+            close();
         }
     "#;
     verify_c_sources(source, &[("f.c", c_source)])
@@ -72,7 +72,7 @@ fn solve_rewrites_constructor_equality_before_disequality() {
             theorem constructor_disequality(value: Mark) {
                 requires value == Mark::Set;
                 ensures value != Mark::Clear by {
-                    solve();
+                    close();
                 }
             }
         "#;
@@ -107,7 +107,7 @@ fn solve_orients_pure_function_equality_inside_constructor_goal() {
                 requires shape_left(value) == middle;
                 ensures Shape::Node(shape_left(value), Shape::Empty) ==
                     Shape::Node(middle, Shape::Empty) by {
-                    solve();
+                    close();
                 }
             }
         "#;
@@ -141,7 +141,7 @@ fn explicit_nonnegative_add_definedness_certifies_the_whole_contract() {
             } by {
                 have defined(value + amount);
                 step();
-                solve();
+                close();
             }
         "#;
 
@@ -182,7 +182,7 @@ fn apply_using_checks_only_with_its_explicit_premises() {
             theorem increment_is_defined(x: int32) {
                 requires x < 2147483647;
                 ensures defined(x + 1) by {
-                    solve();
+                    close();
                 }
             }
 
@@ -192,7 +192,7 @@ fn apply_using_checks_only_with_its_explicit_premises() {
             } by {
                 apply(increment_is_defined(x));
                 step();
-                solve();
+                close();
             }
         "#;
 
@@ -227,7 +227,7 @@ fn apply_using_uses_ambient_loadability_only_to_lower_explicit_premises() {
             theorem preserve_equal(x: int32, y: int32) {
                 requires x == y;
                 ensures x == y by {
-                    solve();
+                    close();
                 }
             }
 
@@ -235,10 +235,10 @@ fn apply_using_uses_ambient_loadability_only_to_lower_explicit_premises() {
                 views data[0..1];
                 ensures result == data[0];
             } by {
-                have data[0] == data[0] by solve();
+                have data[0] == data[0] by close();
                 step();
                 apply(preserve_equal(data[0], data[0]));
-                solve();
+                close();
             }
         "#;
 
@@ -261,7 +261,7 @@ fn source_expander_makes_theorem_application_premises_explicit() {
             theorem increment_is_defined(x: int32) {
                 requires x < 2147483647;
                 ensures defined(x + 1) by {
-                    solve();
+                    close();
                 }
             }
 
@@ -271,7 +271,7 @@ fn source_expander_makes_theorem_application_premises_explicit() {
             } by {
                 apply(increment_is_defined(x));
                 step();
-                solve();
+                close();
             }
         "#;
 
@@ -349,7 +349,7 @@ fn failed_fixed_state_normalize_does_not_dump_internal_memory() {
             have result == 1 by {
                 normalize();
             }
-            known();
+            close();
         }
     "#;
 
@@ -396,7 +396,7 @@ fn known_computes_leaves_and_uses_exact_propagation() {
     verify_c_sources(click_source, &[("keep.c", c_source)])
         .expect("explicit extraction and normalization should verify");
 
-    let implicit_extract = click_source.replace("apply(x == 0 implies y == 0);", "known();");
+    let implicit_extract = click_source.replace("apply(x == 0 implies y == 0);", "close();");
     verify_c_sources(&implicit_extract, &[("keep.c", c_source)])
         .expect("known sees the exactly propagated consequence");
     let missing_guard = implicit_extract.replace("requires x == 0;", "");
@@ -410,7 +410,7 @@ fn known_computes_leaves_and_uses_exact_propagation() {
         error.message()
     );
 
-    let computed = click_source.replacen("normalize();", "known();", 1);
+    let computed = click_source.replacen("normalize();", "close();", 1);
     verify_c_sources(&computed, &[("keep.c", c_source)])
         .expect("known should close a computational leaf after explicit proof steps");
 }
@@ -420,7 +420,7 @@ fn known_computes_leaves_and_uses_exact_propagation() {
 fn parses_local_have_proof_tactic() {
     let source = FILL3_CLICK.replace(
         "== 2;",
-        "== 2 by { have n < 2147483647 by solve(); step_until(function.exit); solve(); }",
+        "== 2 by { have n < 2147483647 by close(); step_until(function.exit); close(); }",
     );
     let file = parse(&source).expect("local have tactic should parse");
     let tactics = file.function_blocks()[0].ensures()[0]
@@ -428,7 +428,7 @@ fn parses_local_have_proof_tactic() {
         .tactics()
         .expect("expected tactics");
 
-    // `have P by solve();` is the one-step script `have P by { solve(); }`.
+    // `have P by close();` is the one-step script `have P by { close(); }`.
     assert!(matches!(
         &tactics[0],
         ProofTactic::Have(ProofHave {
@@ -518,7 +518,7 @@ fn capture_avoiding_contract_lets_preserve_written_proof_names_and_expansion() {
             let saved: Integer = x;
             ensures exists (x: Integer) { saved == x } by {
                 witness(x);
-                known();
+                close();
             }
         }
 
@@ -529,8 +529,8 @@ fn capture_avoiding_contract_lets_preserve_written_proof_names_and_expansion() {
             } by {
                 witness(x);
                 intro();
-                have x == x by { known(); }
-                known();
+                have x == x by { close(); }
+                close();
             }
         }
     "#;
@@ -563,10 +563,10 @@ fn fixed_state_proof_intro_places_forall_binder_in_surface_scope() {
                 } by {
                     intro();
                     intro();
-                    have k == k by known();
-                    known();
+                    have k == k by close();
+                    close();
                 }
-                known();
+                close();
             }
         }
     "#;
@@ -580,7 +580,7 @@ fn fixed_state_proof_intro_places_forall_binder_in_surface_scope() {
 fn parses_proof_if_tactic() {
     let source = FILL3_CLICK.replace(
         "== 2;",
-        "== 2 by { if n <= 0 { step_until(function.exit); solve(); } else { step_until(function.exit); solve(); } }",
+        "== 2 by { if n <= 0 { step_until(function.exit); close(); } else { step_until(function.exit); close(); } }",
     );
     let file = parse(&source).expect("proof if should parse");
     let tactics = file.function_blocks()[0].ensures()[0]
@@ -604,7 +604,7 @@ fn parses_proof_if_tactic() {
 fn parses_existential_proof_tactics() {
     let source = FILL3_CLICK.replace(
         "== 2;",
-        "== 2 by { step_until(function.exit); let k = obtain(exists (k: int32) { k == k }); witness(k + 1); solve(); }",
+        "== 2 by { step_until(function.exit); let k = obtain(exists (k: int32) { k == k }); witness(k + 1); close(); }",
     );
     let file = parse(&source).expect("existential explicit proof script should parse");
     let ensure = &file.function_blocks()[0].ensures()[0];
@@ -665,7 +665,7 @@ fn parses_unnamed_ensure_clause() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_04")]
 fn parses_solve_tactic() {
-    let source = FILL3_CLICK.replace("== 2;", "== 2 by solve();");
+    let source = FILL3_CLICK.replace("== 2;", "== 2 by close();");
     let file = parse(&source).expect("sidecar should parse");
     let ensure = &file.function_blocks()[0].ensures()[0];
 
@@ -1132,7 +1132,7 @@ fn unfolds_predicate_requirement_to_prove_consequence() {
                 ensures consequence: p[0] <= p[1] by {
                     step_until(function.exit);
                     unfold(sorted_pair(p));
-                    solve();
+                    close();
                 }
             }
         "#;
@@ -1225,7 +1225,7 @@ fn unfolds_general_sorted_predicate() {
                 ensures still_sorted: sorted(p, n) by {
                     step_until(function.exit);
                     unfold(sorted(p, n));
-                    solve();
+                    close();
                 }
             }
         "#;
@@ -1288,7 +1288,7 @@ fn verifies_click_proposition_logic() {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_09")]
 fn single_solve_call_and_block_have_the_same_frontier_semantics() {
     let c_source = "int32 identity(int32 x) { return x; }";
-    let solve_errors = ["by solve();", "by { solve(); }"].map(|proof| {
+    let solve_errors = ["by close();", "by { close(); }"].map(|proof| {
         let source = format!(
             "verifying \"identity.c\"; int32 identity(int32 x) {{ ensures result == x {proof} }}"
         );
@@ -1351,10 +1351,10 @@ fn mid_execution_witness_solve_have_expands_to_a_simple_certificate() {
             } by {
                 have exists (j: int32) { j == x } by {
                     witness(x);
-                    solve();
+                    close();
                 }
                 step_until(function.exit);
-                solve();
+                close();
             }
         "#;
 
@@ -1427,10 +1427,10 @@ fn mid_execution_choose_witness_solve_retains_the_checked_proof_path() {
                 have exists (j: int32) { j == x } by {
                     let k = obtain(exists (k: int32) { k == x });
                     witness(k);
-                    solve();
+                    close();
                 }
                 step_until(function.exit);
-                solve();
+                close();
             }
         "#;
 
@@ -1512,7 +1512,7 @@ fn explicit_mid_execution_witness_certificate_checks_and_expands() {
                     normalize();
                 }
                 step_until(function.exit);
-                solve();
+                close();
             }
         "#;
 
@@ -1549,10 +1549,10 @@ fn fixed_state_witness_retains_a_structural_surface_goal_for_solve() {
             } by {
                 have exists (j: int32) { j == 0 and y == 0 } by {
                     witness(x);
-                    solve();
+                    close();
                 }
                 step_until(function.exit);
-                solve();
+                close();
             }
         "#;
 
@@ -1577,8 +1577,8 @@ fn fixed_state_witness_retains_a_structural_surface_goal_for_solve() {
             .find("step_until(function.exit);")
             .expect("expansion should retain the proof suffix")];
     assert!(expanded_have.contains("witness(x)"), "{expanded_have}");
-    assert!(expanded_have.contains("known();"), "{expanded_have}");
-    assert!(!expanded_have.contains("solve();"), "{expanded_have}");
+    assert!(expanded_have.contains("close();"), "{expanded_have}");
+    assert!(!expanded_have.contains("close();"), "{expanded_have}");
     verify_c_sources(&expanded, &[("witness_pair.c", c_source)])
         .expect("the expanded witness and structural proof should verify independently");
 }
@@ -1602,13 +1602,13 @@ fn mid_execution_proof_if_have_expands_to_a_simple_certificate() {
                     step();
                     have y <= 0 or y > 0 by {
                         if y <= 0 {
-                            solve();
+                            close();
                         } else {
-                            solve();
+                            close();
                         }
                     }
                     step();
-                    solve();
+                    close();
                 }
             }
         "#;
@@ -1659,9 +1659,9 @@ fn outcome_instantiate_uses_the_checked_proof_path() {
                 instantiate(forall (k: int32) {
                     0 <= k and k < 3 implies k <= value
                 }, 2);
-                known();
+                close();
             }
-            known();
+            close();
         }
     "#;
 
@@ -1693,9 +1693,9 @@ fn instantiate_does_not_discharge_guards_from_ambient_facts() {
                 instantiate(forall (k: int32) {
                     0 <= k and k < n implies k <= value
                 }, 2);
-                known();
+                close();
             }
-            known();
+            close();
         }
     "#;
 
@@ -1753,15 +1753,15 @@ fn cases_eliminates_a_disjunctive_premise() {
                 cases {
                     x == 1 => {
                         rewrite(x, 1);
-                        known();
+                        close();
                     }
                     x == 2 => {
                         rewrite(x, 2);
-                        known();
+                        close();
                     }
                 }
             }
-            solve();
+            close();
         }
     "#;
 
@@ -1797,7 +1797,7 @@ fn cases_refuses_alternatives_that_do_not_cover_the_premise() {
                     }
                 }
             }
-            solve();
+            close();
         }
     "#;
 
@@ -1842,7 +1842,7 @@ fn cases_checks_each_branch_under_exactly_its_own_disjunct() {
                     }
                 }
             }
-            solve();
+            close();
         }
     "#;
 
@@ -1867,10 +1867,10 @@ fn pure_cases_certificate_uses_checked_proof_branches() {
             ensures x <= 0 or x > 0 by {
                 cases {
                     x <= 0 => {
-                        known();
+                        close();
                     }
                     x > 0 => {
-                        known();
+                        close();
                     }
                 }
             }
@@ -1888,9 +1888,9 @@ fn pure_if_certificate_uses_checked_proof_branches() {
         theorem equality_excluded_middle(x: int32) {
             ensures x == 0 or not (x == 0) by {
                 if x == 0 {
-                    known();
+                    close();
                 } else {
-                    known();
+                    close();
                 }
             }
         }
@@ -1909,9 +1909,9 @@ fn pure_have_certificate_uses_checked_proof_scope() {
 
             ensures x == 0 by {
                 have x == 0 by {
-                    known();
+                    close();
                 }
-                known();
+                close();
             }
         }
     "#;
@@ -1931,7 +1931,7 @@ fn pure_unfold_then_solve_retains_the_checked_proof_path() {
         theorem unfold_reflexive(x: int32) {
             ensures reflexive(x) by {
                 unfold(reflexive(x));
-                solve();
+                close();
             }
         }
     "#;
@@ -1947,7 +1947,7 @@ fn smart_pure_have_theorem_search_retains_the_checked_scope_body_directly() {
         theorem restate_zero(x: int32) {
             requires x == 0;
             ensures x == 0 by {
-                known();
+                close();
             }
         }
 
@@ -1957,9 +1957,9 @@ fn smart_pure_have_theorem_search_retains_the_checked_scope_body_directly() {
             ensures x == 0 by {
                 have x == 0 by {
                     apply(restate_zero(x));
-                    solve();
+                    close();
                 }
-                known();
+                close();
             }
         }
     "#;
@@ -2005,7 +2005,7 @@ fn smart_fixed_state_nested_have_theorem_search_retains_checked_scopes() {
         theorem restate_zero(x: int32) {
             requires x == 0;
             ensures x == 0 by {
-                known();
+                close();
             }
         }
 
@@ -2018,12 +2018,12 @@ fn smart_fixed_state_nested_have_theorem_search_retains_checked_scopes() {
             have x == 0 by {
                 have x == 0 by {
                     apply(restate_zero(x));
-                    solve();
+                    close();
                 }
-                known();
+                close();
             }
             step_until(function.exit);
-            solve();
+            close();
         }
     "#;
 
@@ -2078,37 +2078,37 @@ fn leading_logical_have_decomposition_stays_on_one_proof() {
             ensures result == x;
         } by {
             have x == 0 by {
-                known();
+                close();
             }
             have y == 0 by {
-                known();
+                close();
             }
             have x == 0 and y == 0 by {
-                known();
+                close();
             }
             have x == 0 implies x == 0 by {
                 intro();
-                known();
+                close();
             }
             have x <= 0 or x > 0 by {
                 cases {
                     x <= 0 => {
-                        known();
+                        close();
                     }
                     x > 0 => {
-                        known();
+                        close();
                     }
                 }
             }
             have x == 0 or not (x == 0) by {
                 if x == 0 {
-                    known();
+                    close();
                 } else {
-                    known();
+                    close();
                 }
             }
             step_until(function.exit);
-            solve();
+            close();
         }
     "#;
 
@@ -2163,34 +2163,34 @@ fn leading_universal_have_scopes_stay_on_one_proof() {
                 instantiate(forall (k: int32) {
                     0 <= k and k < 2 implies k <= x
                 }, 1);
-                known();
+                close();
             }
             have forall (k: int32) {
                 0 <= k and k < 2 implies x <= 5
             } by {
                 have 0 <= 0 and 0 < 2 implies x <= 5 by {
                     intro();
-                    known();
+                    close();
                 }
                 have 0 <= 1 and 1 < 2 implies x <= 5 by {
                     intro();
-                    known();
+                    close();
                 }
                 enumerate();
             }
             have (0..2).all(|k| { x <= 5 }) by {
                 have 0 <= 0 and 0 < 2 implies x <= 5 by {
                     intro();
-                    known();
+                    close();
                 }
                 have 0 <= 1 and 1 < 2 implies x <= 5 by {
                     intro();
-                    known();
+                    close();
                 }
                 enumerate();
             }
             step_until(function.exit);
-            solve();
+            close();
         }
     "#;
 
@@ -2252,7 +2252,7 @@ fn grouped_top_level_existential_operations_verify_without_fallback() {
                 } by {
                     step_until(function.exit);
                     witness(result);
-                    solve();
+                    close();
                 }
             "#,
         ),
@@ -2267,7 +2267,7 @@ fn grouped_top_level_existential_operations_verify_without_fallback() {
                 } by {
                     let k = obtain(exists (k: int32) { k == x });
                     step_until(function.exit);
-                    solve();
+                    close();
                 }
             "#,
         ),
@@ -2287,14 +2287,14 @@ fn smart_pure_if_retains_checked_arm_proofs_directly() {
         theorem equality_case(x: int32) {
             requires x == 0;
             ensures x == 0 or not (x == 0) by {
-                known();
+                close();
             }
         }
 
         theorem inequality_case(x: int32) {
             requires not (x == 0);
             ensures x == 0 or not (x == 0) by {
-                known();
+                close();
             }
         }
 
@@ -2302,10 +2302,10 @@ fn smart_pure_if_retains_checked_arm_proofs_directly() {
             ensures x == 0 or not (x == 0) by {
                 if x == 0 {
                     apply(equality_case(x));
-                    solve();
+                    close();
                 } else {
                     apply(inequality_case(x));
-                    solve();
+                    close();
                 }
             }
         }
@@ -2325,10 +2325,10 @@ fn smart_pure_cases_retains_checked_arm_proofs_directly() {
             ensures x <= 0 or x > 0 by {
                 cases {
                     x <= 0 => {
-                        solve();
+                        close();
                     }
                     x > 0 => {
-                        solve();
+                        close();
                     }
                 }
             }
@@ -2358,14 +2358,14 @@ fn fixed_state_have_cases_certificate_uses_checked_proof_branches() {
             have x <= 0 or x > 0 by {
                 cases {
                     x <= 0 => {
-                        known();
+                        close();
                     }
                     x > 0 => {
-                        known();
+                        close();
                     }
                 }
             }
-            known();
+            close();
         }
     "#;
 
@@ -2385,14 +2385,14 @@ fn smart_fixed_state_have_if_retains_checked_arm_proofs_directly() {
         theorem equality_case(x: int32) {
             requires x == 0;
             ensures x == 0 or not (x == 0) by {
-                known();
+                close();
             }
         }
 
         theorem inequality_case(x: int32) {
             requires not (x == 0);
             ensures x == 0 or not (x == 0) by {
-                known();
+                close();
             }
         }
 
@@ -2405,13 +2405,13 @@ fn smart_fixed_state_have_if_retains_checked_arm_proofs_directly() {
             have x == 0 or not (x == 0) by {
                 if x == 0 {
                     apply(equality_case(x));
-                    solve();
+                    close();
                 } else {
                     apply(inequality_case(x));
-                    solve();
+                    close();
                 }
             }
-            known();
+            close();
         }
     "#;
 
@@ -2457,7 +2457,7 @@ fn leading_universal_contradiction_scope_stays_on_proof() {
                 contradiction(x == 0);
             }
             step_until(function.exit);
-            solve();
+            close();
         }
     "#;
 
@@ -2485,11 +2485,11 @@ fn enumerate_closes_a_constant_bounded_universal_goal() {
         } by {
             step_until(function.exit);
             have forall (k: int32) { 0 <= k and k < 2 implies x <= 5 } by {
-                have 0 <= 0 and 0 < 2 implies x <= 5 by { intro(); known(); }
-                have 0 <= 1 and 1 < 2 implies x <= 5 by { intro(); known(); }
+                have 0 <= 0 and 0 < 2 implies x <= 5 by { intro(); close(); }
+                have 0 <= 1 and 1 < 2 implies x <= 5 by { intro(); close(); }
                 enumerate();
             }
-            known();
+            close();
         }
     "#;
 
@@ -2517,10 +2517,10 @@ fn enumerate_requires_each_in_range_instance_as_an_available_fact() {
         } by {
             step_until(function.exit);
             have forall (k: int32) { 0 <= k and k < 2 implies k <= x } by {
-                have 0 <= 1 and 1 < 2 implies 1 <= x by { intro(); known(); }
+                have 0 <= 1 and 1 < 2 implies 1 <= x by { intro(); close(); }
                 enumerate();
             }
-            known();
+            close();
         }
     "#;
 
@@ -2556,7 +2556,7 @@ fn enumerate_requires_a_constant_bounded_universal_goal() {
             have forall (k: int32) { 0 <= k and k < x implies x <= 5 } by {
                 enumerate();
             }
-            known();
+            close();
         }
     "#;
 
@@ -2601,20 +2601,20 @@ fn disjunctive_premise_solve_expands_to_a_replayable_certificate() {
                     true => {
                         step();
                         have selected == left or selected == right by {
-                            have selected == left by { known(); }
-                            known();
+                            have selected == left by { close(); }
+                            close();
                         }
                     }
                     false => {
                         step();
                         have selected == left or selected == right by {
-                            have selected == right by { known(); }
-                            known();
+                            have selected == right by { close(); }
+                            close();
                         }
                     }
                 }
                 step();
-                solve();
+                close();
             }
         }
     "#;
@@ -2690,7 +2690,7 @@ fn pure_rewrite_rejects_an_int32_equality_that_is_not_available() {
 
             ensures base + offset == target by {
                 rewrite(offset, 1);
-                known();
+                close();
             }
         }
     "#;
@@ -2713,9 +2713,9 @@ fn branching_pure_disjunction_lowers_to_left_right_certificate() {
         theorem int32_sign_split(x: int32) {
             ensures x <= 0 or x > 0 by {
                 if x <= 0 {
-                    solve();
+                    close();
                 } else {
-                    solve();
+                    close();
                 }
             }
         }
@@ -2735,9 +2735,9 @@ fn known_rejects_a_disjunction_neither_side_of_which_is_a_fact() {
         theorem neither_side_is_a_fact(x: int32) {
             ensures x <= 0 or x > 5 by {
                 if x <= 3 {
-                    known();
+                    close();
                 } else {
-                    known();
+                    close();
                 }
             }
         }
@@ -2761,7 +2761,7 @@ fn smart_nonstrict_then_strict_transitivity_closes_a_pure_goal() {
             requires x < y;
 
             ensures 0 < y by {
-                solve();
+                close();
             }
         }
     "#;
@@ -2790,7 +2790,7 @@ fn apply_le_lt_transitive_requires_its_nonstrict_leg_listed() {
 
             ensures 0 < y by {
                 apply(less_equal_less_than_transitive(0, x, y));
-                known();
+                close();
             }
         }
     "#;
@@ -2816,7 +2816,7 @@ fn smart_rewrite_folds_substituted_constants_to_a_strict_constant_bound() {
             requires 2 <= bound;
 
             ensures x + 1 < bound by {
-                solve();
+                close();
             }
         }
     "#;
@@ -2844,7 +2844,7 @@ fn apply_lt_le_transitive_rejects_a_false_constant_leg() {
 
             ensures 2 < bound by {
                 apply(less_than_less_equal_transitive(2, 2, bound));
-                known();
+                close();
             }
         }
     "#;
@@ -2919,7 +2919,7 @@ fn outcome_predecessor_upper_bound_writes_a_rewritten_nonnegative_leg() {
         } by {
             unfold(ordered_pair(pair));
             step_until(function.exit);
-            solve();
+            close();
         }
     "#;
 
@@ -2951,7 +2951,7 @@ fn apply_predecessor_upper_bound_requires_its_nonnegative_leg_listed() {
 
             ensures value - 1 <= bound by {
                 apply(nonnegative_predecessor_upper_bound(value, bound));
-                known();
+                close();
             }
         }
     "#;
@@ -2983,7 +2983,7 @@ fn apply_predecessor_upper_bound_rejects_a_false_nonnegative_leg() {
 
             ensures -1 - 1 <= bound by {
                 apply(nonnegative_predecessor_upper_bound(-1, bound));
-                known();
+                close();
             }
         }
     "#;
@@ -3007,7 +3007,7 @@ theorem three_way(x: int32) {
                 normalize();
             }
             x == 2 => {
-                solve();
+                close();
             }
             x == 3 => {
                 rewrite(x, 3);
@@ -3030,7 +3030,7 @@ fn three_arm_cases_verifies_and_expands() {
     for arm in ["x == 1 => {", "x == 2 => {", "x == 3 => {"] {
         assert!(expanded.contains(arm), "{expanded}");
     }
-    assert!(!expanded.contains("solve();"), "{expanded}");
+    assert!(!expanded.contains("close();"), "{expanded}");
     verify_c_sources(&expanded, &[])
         .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
 }
@@ -3064,7 +3064,7 @@ fn reordered_cases_check_bodies_under_their_written_assumptions() {
 fn parses_outcomes_arms_in_either_order() {
     let source = FILL3_CLICK.replace(
         "== 2;",
-        "== 2 by { outcomes { threw => { solve(); } returned => { step_until(function.exit); solve(); } } }",
+        "== 2 by { outcomes { threw => { close(); } returned => { step_until(function.exit); close(); } } }",
     );
     let file = parse(&source).expect("outcomes arms in either order should parse");
     let tactics = file.function_blocks()[0].ensures()[0]
@@ -3083,7 +3083,7 @@ fn parses_outcomes_arms_in_either_order() {
 
     let duplicate = FILL3_CLICK.replace(
         "== 2;",
-        "== 2 by { outcomes { returned => { solve(); } returned => { solve(); } } }",
+        "== 2 by { outcomes { returned => { close(); } returned => { close(); } } }",
     );
     let error = parse(&duplicate).expect_err("an arm written twice is refused");
     assert!(
@@ -3103,13 +3103,13 @@ fn pure_machine_witness_instantiates_supported_c_binders() {
             requires 0 <= n and n <= 100;
             ensures exists (a: int32, b: int32) { a + b == n and 0 <= a and 0 <= b } by {
                 witness(n, 0);
-                solve();
+                close();
             }
         }
         theorem pointer_witness(p: int32*) {
             ensures exists (q: int32*) { q == p } by {
                 witness(p);
-                solve();
+                close();
             }
         }
     "#;
@@ -3134,7 +3134,7 @@ fn positional_witnesses_preserve_mixed_types_and_cold_replay() {
             theorem positional(n: int32, m: Integer, p: int32*) {{
                 ensures answer: exists (first: int32, second: Integer, third: int32*) {{
                     first == n and second == m and third == p
-                }} by {{ {proof} solve(); }}
+                }} by {{ {proof} close(); }}
             }}
         "#
         );
@@ -3169,7 +3169,7 @@ fn positional_witnesses_preserve_mixed_types_and_cold_replay() {
         let declarations = order.map(|index| bindings[index].0).join(", ");
         let arguments = order.map(|index| bindings[index].1).join(", ");
         let source = format!(
-            "spec enum Flag {{ Set }} theorem ordered() {{ ensures answer: exists ({declarations}) {{ i == 3 and m == 4 and f == Flag::Set }} by {{ witness({arguments}); solve(); }} }}"
+            "spec enum Flag {{ Set }} theorem ordered() {{ ensures answer: exists ({declarations}) {{ i == 3 and m == 4 and f == Flag::Set }} by {{ witness({arguments}); close(); }} }}"
         );
         verify_c_sources(&source, &[])
             .expect("each positional value keeps its declared binder type");
@@ -3178,9 +3178,9 @@ fn positional_witnesses_preserve_mixed_types_and_cold_replay() {
             .expect("mixed binder orders cold-replay without search");
     }
     for source in [
-        "spec enum Flag { Set } theorem bad() { ensures exists (i: Integer, f: Flag) { i == 3 and f == Flag::Set } by { witness(Flag::Set, 3); solve(); } }",
-        "theorem bad() { ensures exists (x: int32) { x == 3 } by { witness(3, 4); solve(); } }",
-        "theorem bad() { ensures exists (x: Integer, y: Integer) { x == 3 and y == 4 } by { witness(4, 3); solve(); } }",
+        "spec enum Flag { Set } theorem bad() { ensures exists (i: Integer, f: Flag) { i == 3 and f == Flag::Set } by { witness(Flag::Set, 3); close(); } }",
+        "theorem bad() { ensures exists (x: int32) { x == 3 } by { witness(3, 4); close(); } }",
+        "theorem bad() { ensures exists (x: Integer, y: Integer) { x == 3 and y == 4 } by { witness(4, 3); close(); } }",
     ] {
         assert!(verify_c_sources(source, &[]).is_err(), "{source}");
     }
@@ -3191,27 +3191,27 @@ fn positional_witnesses_preserve_mixed_types_and_cold_replay() {
 fn pure_machine_witness_rejects_wrong_types_with_binder_and_types() {
     for (source, expected, actual) in [
         (
-            r#"spec enum Flag { Clear } theorem bad(n: Flag) { ensures exists (x: int32) { x == 0 } by { witness(n); solve(); } }"#,
+            r#"spec enum Flag { Clear } theorem bad(n: Flag) { ensures exists (x: int32) { x == 0 } by { witness(n); close(); } }"#,
             "int32",
             "Flag",
         ),
         (
-            r#"theorem bad(n: Integer) { ensures exists (x: int32) { x == 0 } by { witness(n); solve(); } }"#,
+            r#"theorem bad(n: Integer) { ensures exists (x: int32) { x == 0 } by { witness(n); close(); } }"#,
             "int32",
             "Integer",
         ),
         (
-            r#"theorem bad(p: int32*) { ensures exists (x: int32) { x == 0 } by { witness(p); solve(); } }"#,
+            r#"theorem bad(p: int32*) { ensures exists (x: int32) { x == 0 } by { witness(p); close(); } }"#,
             "int32",
             "int32*",
         ),
         (
-            r#"theorem bad(n: int32) { ensures exists (x: int32*) { x == x } by { witness(n); solve(); } }"#,
+            r#"theorem bad(n: int32) { ensures exists (x: int32*) { x == x } by { witness(n); close(); } }"#,
             "int32*",
             "int32",
         ),
         (
-            r#"theorem bad(p: int64*) { ensures exists (x: int32*) { x == x } by { witness(p); solve(); } }"#,
+            r#"theorem bad(p: int64*) { ensures exists (x: int32*) { x == x } by { witness(p); close(); } }"#,
             "int32*",
             "int64*",
         ),
@@ -3235,15 +3235,15 @@ fn pure_machine_witness_preserves_lexical_bindings_and_pointer_types() {
         "int32**",
     ] {
         let source = format!(
-            "theorem retain(p: {pointer_type}) {{ let saved = p; ensures exists (p: {pointer_type}) {{ p == saved }} by {{ witness(p); solve(); }} }}"
+            "theorem retain(p: {pointer_type}) {{ let saved = p; ensures exists (p: {pointer_type}) {{ p == saved }} by {{ witness(p); close(); }} }}"
         );
         verify_c_sources(&source, &[])
             .unwrap_or_else(|error| panic!("{pointer_type}: {}", error.message()));
     }
-    let source = "theorem retain(n: int32) { let saved = n; ensures exists (n: int32) { n == saved } by { witness(n); solve(); } }";
+    let source = "theorem retain(n: int32) { let saved = n; ensures exists (n: int32) { n == saved } by { witness(n); close(); } }";
     verify_c_sources(source, &[])
         .expect("a witness keeps its lexical alias despite binder shadowing");
-    let position = expansion::position_at_offset(source, source.find("solve();").unwrap());
+    let position = expansion::position_at_offset(source, source.find("close();").unwrap());
     let expanded = expand_c_tactic_source_at(source, &[], position.line, position.column)
         .expect("the proof after a pure machine witness expands");
     verify_c_sources(&expanded, &[]).expect("the expanded witness proof re-verifies");
@@ -3256,18 +3256,18 @@ fn pure_machine_witness_preserves_binder_widths() {
         "int8", "int16", "int32", "uint8", "uint16", "uint32", "int64", "uint64",
     ] {
         let source = format!(
-            "theorem retain(n: {scalar_type}) {{ ensures exists (x: {scalar_type}) {{ x == n }} by {{ witness(n); solve(); }} }}"
+            "theorem retain(n: {scalar_type}) {{ ensures exists (x: {scalar_type}) {{ x == n }} by {{ witness(n); close(); }} }}"
         );
         verify_c_sources(&source, &[])
             .unwrap_or_else(|error| panic!("{scalar_type}: {}", error.message()));
         // Type bounds are supplied by the typed binder's introduction;
         // only the written forall needs an intro, at every machine width.
         let source = format!(
-            "theorem retain(n: {scalar_type}) {{ ensures forall (x: {scalar_type}) {{ exists (y: {scalar_type}) {{ y == x }} }} by {{ intro(); witness(x); solve(); }} }}"
+            "theorem retain(n: {scalar_type}) {{ ensures forall (x: {scalar_type}) {{ exists (y: {scalar_type}) {{ y == x }} }} by {{ intro(); witness(x); close(); }} }}"
         );
         verify_c_sources(&source, &[])
             .unwrap_or_else(|error| panic!("{scalar_type} universal: {}", error.message()));
-        let position = expansion::position_at_offset(&source, source.find("solve();").unwrap());
+        let position = expansion::position_at_offset(&source, source.find("close();").unwrap());
         let expanded = expand_c_tactic_source_at(&source, &[], position.line, position.column)
             .expect("typed witness proof expands");
         verify_c_sources(&expanded, &[]).expect("expanded typed witness proof re-verifies");
@@ -3284,7 +3284,7 @@ fn pure_machine_witness_rejects_different_widths_and_signedness() {
         ("int64", "uint64"),
     ] {
         let source = format!(
-            "theorem bad(n: {witness}) {{ ensures exists (x: {binder}) {{ x == x }} by {{ witness(n); solve(); }} }}"
+            "theorem bad(n: {witness}) {{ ensures exists (x: {binder}) {{ x == x }} by {{ witness(n); close(); }} }}"
         );
         let error =
             verify_c_sources(&source, &[]).expect_err("witness must have the exact binder type");
@@ -3314,7 +3314,7 @@ fn pure_witness_captures_declaration_aliases_and_reverifies_expansion() {
                 let again{annotation} = saved;
                 ensures exists (p: {ty}) {{ p == saved }} by {{
                     witness(again);
-                    solve();
+                    close();
                 }}
             }}
             theorem captured(p: {ty}) {{
@@ -3322,7 +3322,7 @@ fn pure_witness_captures_declaration_aliases_and_reverifies_expansion() {
                 ensures forall (p: {ty}) {{ exists (q: {ty}) {{ q == saved }} }} by {{
                     intro();
                     witness(saved);
-                    solve();
+                    close();
                 }}
             }}
             theorem shadow_alias(p: {ty}) {{
@@ -3330,7 +3330,7 @@ fn pure_witness_captures_declaration_aliases_and_reverifies_expansion() {
                 ensures forall (saved: {ty}) {{ exists (q: {ty}) {{ q == saved }} }} by {{
                     intro();
                     witness(saved);
-                    solve();
+                    close();
                 }}
             }}
             theorem nested(p: {ty}) {{
@@ -3338,7 +3338,7 @@ fn pure_witness_captures_declaration_aliases_and_reverifies_expansion() {
                 ensures forall (p: {ty}) {{ exists (saved: {ty}) {{ saved == p }} }} by {{
                     intro();
                     witness(p);
-                    solve();
+                    close();
                 }}
             }}
         "#
@@ -3387,19 +3387,19 @@ fn pure_witness_declaration_aliases_keep_literal_types_and_source_scope() {
         theorem literals() {
             let machine = 0;
             let integer: Integer = 0;
-            ensures exists (n: int32) { n == 0 } by { witness(machine); solve(); }
-            ensures exists (n: Integer) { n == 0 } by { witness(integer); solve(); }
+            ensures exists (n: int32) { n == 0 } by { witness(machine); close(); }
+            ensures exists (n: Integer) { n == 0 } by { witness(integer); close(); }
         }
         spec enum Flag { Clear }
         theorem algebraic(p: Flag) {
             let saved = p;
-            ensures exists (q: Flag) { q == saved } by { witness(saved); solve(); }
+            ensures exists (q: Flag) { q == saved } by { witness(saved); close(); }
         }
     "#;
     verify_c_sources(source, &[]).expect("aliases retain their C, Integer and algebraic types");
     let later = r#"
         theorem later(p: int32) {
-            ensures exists (q: int32) { q == p } by { witness(saved); solve(); }
+            ensures exists (q: int32) { q == p } by { witness(saved); close(); }
             let saved = p;
         }
     "#;
@@ -3429,13 +3429,13 @@ const TERMINAL_BINDINGS_CLICK: &str = r#"
                 have positive == n;
                 step_until(function.exit);
                 have result == positive;
-                solve();
+                close();
             } else {
                 let { result: negative } = step(identity);
                 have negative == n;
                 step_until(function.exit);
                 have result == negative;
-                solve();
+                close();
             }
         }
     "#;
@@ -3482,8 +3482,8 @@ fn terminal_if_tactics_keep_claim_local_existential_witnesses() {
             "requires exists (k: int32) { k == n }; ensures exists (j: int32) { j == result };",
         )
         .replace(
-            "solve();\n            }",
-            "let w = obtain(exists (w: int32) { w == n }); witness(w); solve();\n            }",
+            "close();\n            }",
+            "let w = obtain(exists (w: int32) { w == n }); witness(w); close();\n            }",
         );
     verify_c_sources(&existential, &sources)
         .expect("post-execution existence proofs retain their own obtained witnesses");
@@ -3653,15 +3653,15 @@ fn solve_nested_trivial_disjuncts_expand_and_replay() {
 
 fn check_trivial_disjuncts_expand_and_replay(goals: &[&str]) {
     for goal in goals {
-        let source = format!("theorem trivial(n: uint64) {{ ensures {goal} by solve(); }}");
+        let source = format!("theorem trivial(n: uint64) {{ ensures {goal} by close(); }}");
         // Selected expansion verifies the source before producing its certificate.
         let position = crate::surface::expansion::position_at_offset(
             &source,
-            source.find("solve();").unwrap(),
+            source.find("close();").unwrap(),
         );
         let expanded = expand_c_tactic_source_at(&source, &[], position.line, position.column)
             .expect("the direct disjunct has an explicit proof");
-        assert!(!expanded.contains("solve();"), "{expanded}");
+        assert!(!expanded.contains("close();"), "{expanded}");
         crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &[]))
             .expect("the disjunct certificate cold-replays");
     }
@@ -3674,7 +3674,7 @@ fn solve_trivial_disjuncts_reject_false_goals() {
         "n == 1u64 or false",
         "(n == 1u64 implies false) or n == 2u64",
     ] {
-        let source = format!("theorem invalid(n: uint64) {{ ensures {goal} by solve(); }}");
+        let source = format!("theorem invalid(n: uint64) {{ ensures {goal} by close(); }}");
         verify_c_sources(&source, &[]).expect_err("neither disjunct holds for every n");
     }
 }
@@ -3685,11 +3685,11 @@ fn local_predicate_unfold_opens_only_the_selected_application() {
         predicate positive(x: int32) { x > 0 }
         theorem selected() {
             requires positive(1);
-            ensures 1 > 0 by { unfold(positive(1)); known(); }
+            ensures 1 > 0 by { unfold(positive(1)); close(); }
         }
         theorem goal(x: int32) {
             requires x > 0;
-            ensures positive(x) by { unfold(positive(x)); known(); }
+            ensures positive(x) by { unfold(positive(x)); close(); }
         }
     "#;
     without_implicit_solve(|| verify_click_theorems(source)).unwrap();
@@ -3698,8 +3698,8 @@ fn local_predicate_unfold_opens_only_the_selected_application() {
         theorem later() {
             ensures true by {
                 unfold(positive(1));
-                have positive(2) by { known(); }
-                known();
+                have positive(2) by { close(); }
+                close();
             }
         }
     "#;
@@ -3716,7 +3716,7 @@ fn local_predicate_unfold_is_one_layer_and_keeps_other_applications_opaque() {
             ensures x > 0 by {
                 unfold((wrapped(x)));
                 unfold(positive(x));
-                known();
+                close();
             }
         }
     "#;
@@ -3736,7 +3736,7 @@ fn local_predicate_unfold_accepts_an_explicit_quantified_target() {
             requires forall (x: int32) { x > 0 };
             ensures forall (x: int32) { positive(x) } by {
                 unfold(forall (x: int32) { positive(x) });
-                known();
+                close();
             }
         }
     "#;
@@ -3753,7 +3753,7 @@ fn local_predicate_unfold_selects_an_explicit_snapshot_and_expands() {
             ensures x > 0 by {
                 step_until(function.exit);
                 unfold(at(function.entry, positive(x)));
-                known();
+                close();
             }
         }
     "#;
@@ -3782,7 +3782,7 @@ fn local_predicate_unfold_keeps_heap_snapshots_distinct() {
                 step_until(function.exit);
                 unfold(at(function.entry, zero(p)));
                 unfold(zero(p));
-                known();
+                close();
             }
         }
     "#;
@@ -3802,15 +3802,15 @@ fn local_predicate_unfold_preserves_proposition_values() {
             requires x > 0;
             ensures prop { positive(x) and x == x } by {
                 unfold(positive(x));
-                known();
+                close();
             }
             ensures prop { positive(x) and x == x } by {
                 unfold(prop { positive(x) and x == x });
-                known();
+                close();
             }
             ensures prop { prop { positive(x) } and true } by {
                 unfold(positive(x));
-                known();
+                close();
             }
         }
     "#;
@@ -3869,7 +3869,7 @@ fn apply_fact_is_available_at_execution_frontiers_and_outcomes() {
     "#;
     for application in [
         "apply(x > 0 implies x != 0); step();",
-        "have h: x > 0 implies x != 0 by known(); apply(h); step();",
+        "have h: x > 0 implies x != 0 by close(); apply(h); step();",
         "have x > 0; apply(x > 0 implies x != 0); step();",
         "step(); apply(x > 0 implies x != 0);",
         "step(); have x > 0; apply(x > 0 implies x != 0);",

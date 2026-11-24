@@ -331,7 +331,7 @@ A derived signed range for a native `uint32` value retains the conversion
 that conversion and lower to a different term. When the unsigned operand was
 already converted from an `int32` source, the range instead names that signed
 source. Admission and decision use the same structural rule; this does not
-change lowering or erase conversions elsewhere. The simple `known()` proofs
+change lowering or erase conversions elsewhere. The simple `close()` proofs
 in [the checked range fixture](https://github.com/clicklang/click/blob/master/mdtests/unsigned_small_bound_signed_facts_round_trip.md)
 exercise the exact derived facts.
 
@@ -677,7 +677,7 @@ Equality, disequality, and standalone order comparisons over a pure `int32`
 match with literal arms or direct `int32` payload selections keep the machine
 comparison and scoped match. Exact rewriting preserves the match.
 Normalization checks the selected constructor arm using the comparison's
-original machine format, and `known()` can use an available comparison
+original machine format, and `close()` can use an available comparison
 of the selected values.
 A rewrite that introduces an outer Boolean negation retains lowering's truth
 polarity: a false claim of `not p` is stored as a true claim of `p`. This does
@@ -759,7 +759,7 @@ forgetting alone preserves the version because it changes knowledge, not the
 object's initialization or lifetime. This identity is for definedness facts,
 not general state equality or permission to access memory.
 `mdtests/local_array_quantified_definedness_survives_disjoint_store.md` covers
-`known()` after a store to an unrelated local.
+`close()` after a store to an unrelated local.
 
 A scalar read handle retains its structural descriptor (memory version,
 address, and read kind) in the load registry. A generated read-definition fact

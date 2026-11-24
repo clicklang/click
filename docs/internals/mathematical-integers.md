@@ -89,7 +89,7 @@ holds exactly when the native comparison `x OP y` or `x OP c` does
 states such a fact in one form, the native comparison
 (`structural_native_comparison_of_integer_observation`, applied when a contract lowers;
 `canonical_observation_form` on every kernel-built verification condition and
-on a `rewrite` result). Written either way it is the same fact: `known()` closes
+on a `rewrite` result). Written either way it is the same fact: `close()` closes
 `to_integer(i) < to_integer(n)` from `i < n`, and a dropped `requires right !=
 0u32;` beside `requires to_integer(right) != 0;` changes nothing. The order and
 equality bridge theorems below therefore restate a fact rather than derive one.
@@ -1073,9 +1073,9 @@ observation. The `integer::int64_add_to_integer` and corresponding subtraction
 laws expose this fact through ordinary application. The argument's native
 definedness is a separate premise, not a consequence of merely observing it.
 
-`known()` checks a written operation's observation identity using the exact
+`close()` checks a written operation's observation identity using the exact
 lower and upper bounds for its mathematical result. Planning proves those
-bounds first, then emits `known()`. The check reads the operator and its two
+bounds first, then emits `close()`. The check reads the operator and its two
 operands; it does not resolve a read or walk memory history. It does not infer machine safety
 from a later desired equality.
 
@@ -1087,8 +1087,8 @@ result is in the unsigned range. The ordinary `integer::uint64_add_to_integer`,
 `integer::uint64_subtract_to_integer`, and multiplication laws require that
 evidence. A subtraction therefore needs its operands in the appropriate order.
 
-Type-range facts are explicit premise-free `known()` leaves. A selected
-operation identity uses `known()` and reads its exact range pair. Guarded native division and
+Type-range facts are explicit premise-free `close()` leaves. A selected
+operation identity uses `close()` and reads its exact range pair. Guarded native division and
 remainder retain their nonzero-divisor obligations; a value-preserving
 narrowing retains its destination bounds. These facts do not make all native
 arithmetic exact.
@@ -1122,7 +1122,7 @@ premise controls.
 
 A native integral conversion preserves numeric value when its source lies
 in the destination range. After the explicit destination-range bounds are
-proved, `known()` checks the matching written observation identity using
+proved, `close()` checks the matching written observation identity using
 those exact bound keys. The authored `normalize() using` form remains supported. A
 widening may need only its intrinsic source range; a narrowing needs the
 actual destination range. Signedness and conversion encoding remain part of
@@ -1209,7 +1209,7 @@ theorem integer_product_congruence(a: Integer, b: Integer, d: Integer) {
     requires a == b;
     ensures a * d + a == b * d + b by {
         rewrite(a, b);
-        solve();
+        close();
     }
 }
 ```
@@ -1414,17 +1414,17 @@ presentation supplies no premise or memory authority.
 ## Machine observation expansion leaves
 
 Selected machine-to-Integer bridges expand to ordinary `have`, `apply(...)`,
-`rewrite`, and `known()` steps. Type ranges, exact in-range operation/cast
+`rewrite`, and `close()` steps. Type ranges, exact in-range operation/cast
 identities, literal shift bounds, nonnegative literal masks, and root
 conditional-arm equations do not need normalization leaves in their supported
 fragment. Left shifts prove both their native domain and exact product range;
 right shifts state the quotient sandwich and apply `integer::round_down_le`.
-Numeric threshold evaluation is a separate `known()` equation followed by a
+Numeric threshold evaluation is a separate `close()` equation followed by a
 rewrite. Conditional guards and operation bounds remain explicit, including
-during replay with implicit solving disabled. This does not broaden `known()`
+during replay with implicit solving disabled. This does not broaden `close()`
 to interval search, general coefficient normalization, or memory resolution.
 
 An observation recovered from a retained read can still need the existing
 read-over-write adapter. Its planner keeps the selected normalizer for that
-case; `known()` does not resolve the read. Those observations remain part of
+case; `close()` does not resolve the read. Those observations remain part of
 the separate memory-transport migration.

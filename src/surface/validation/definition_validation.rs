@@ -3633,7 +3633,7 @@ mod contract_name_tests {
             ("ensures result == one;", "one"),
             ("ensures forall (k: int32) { k == absent };", "absent"),
         ] {
-            let source = format!("int32 f(int32 x) {{ {clause} }} by {{ known(); }}");
+            let source = format!("int32 f(int32 x) {{ {clause} }} by {{ close(); }}");
             let file = crate::surface::parser::parse_file_items(&source).unwrap();
             let error = validate_click_definitions(&file).unwrap_err();
             assert!(
@@ -3660,7 +3660,7 @@ mod contract_name_tests {
             ("requires flag == false; ensures result == x;", true),
             ("ensures result == 1 or flag != true;", true),
         ] {
-            let source = format!("int32 f(int32 x, bool flag) {{ {clause} }} by {{ known(); }}");
+            let source = format!("int32 f(int32 x, bool flag) {{ {clause} }} by {{ close(); }}");
             let file = crate::surface::parser::parse_file_items(&source).unwrap();
             let result = validate_click_definitions(&file);
             if accepted {
@@ -3683,7 +3683,7 @@ mod contract_name_tests {
 
     #[test]
     fn a_c_parameter_spelled_true_keeps_its_c_meaning() {
-        let source = "int32 f(int32 true) { ensures result == true + 1; } by { known(); }";
+        let source = "int32 f(int32 true) { ensures result == true + 1; } by { close(); }";
         let file = crate::surface::parser::parse_file_items(source).unwrap();
         validate_click_definitions(&file).unwrap();
     }
@@ -3696,7 +3696,7 @@ int32 f(int32 x) {
     let saved = x;
     requires forall (k: int32) { k == k };
     ensures forall (x: int32) { saved == saved and x == x };
-} by { known(); }
+} by { close(); }
 "#,
         )
         .unwrap();

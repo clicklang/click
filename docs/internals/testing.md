@@ -1610,7 +1610,7 @@ fail: expected diagnostic substring
 
 ### Writing quick solve tests
 
-A Quick Solve Test isolates one small inference that `solve()` or
+A Quick Solve Test isolates one small inference that `close()` or
 `close() using` should find or promptly refuse. Add `quick-solve` to the opening
 `click` fence and use a normal `expect` block. Write the essential premises and
 one explicit closer that the verifier reaches exactly once. Keep any C setup
@@ -1618,7 +1618,7 @@ to the operation needed to establish the premises. Name the file for the rule
 it exercises so related tests and near misses are easy to find.
 
 Write the closer as a step in a tactic script. Click profiles the short form
-`have P by solve()` under `have`, so it does not supply a solve sample.
+`have P by close()` under `have`, so it does not supply a solve sample.
 
 The mdtest gate checks the ordinary proof verdict and a shared limit of
 50,000 deterministic work units for the written closer, including tactics

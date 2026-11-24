@@ -1,6 +1,6 @@
 ---
 name: proof-repair
-description: Repair a failed Click proof from its goal and trace. Use whenever `click verify` refuses a proof, or an omitted proof, `solve()`, `step()`, or `step_until(...)` does not prove what you expected, before changing the proof, the contract, the C, or the verifier.
+description: Repair a failed Click proof from its goal and trace. Use whenever `click verify` refuses a proof, or an omitted proof, `close()`, `step()`, or `step_until(...)` does not prove what you expected, before changing the proof, the contract, the C, or the verifier.
 ---
 
 # Repairing a failed proof
@@ -169,7 +169,7 @@ retain a deterministic scaling reproduction instead of calling the cost fixed.
 To split a link a smart tactic proved part of, read its trace. A step marked
 ``(from `implicit tail`)``, ``(from `step_until`)``, ``(from `solve`)`` or
 ``(from `implicit closer`)`` is one that smart work took (the implicit tail's
-execution or its closer, a written `step_until`, a written `solve()`, or the
+execution or its closer, a written `step_until`, a written `close()`, or the
 closer of a step's requirement), and a `chosen:` line is the written form of an argument its
 search chose. Writing those steps and forms out turns the searched part of
 the link into simple tactics, so the remaining gap is the link to split.

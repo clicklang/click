@@ -2059,7 +2059,7 @@ extern int32 first(int32 count, ...args) {
 At the call `first(2, a, b)`, with `int a` and `unsigned int b`, `args` is
 `List::Cons(VarArg::Int(a), List::Cons(VarArg::UInt(b), List::Nil))`. A
 precondition over the list is proved like any other; one that evaluates a
-`match` over the list is proved with `solve()` in a `have` before the step,
+`match` over the list is proved with `close()` in a `have` before the step,
 or with `unfold` when the function is recursive
 (`mdtests/a_variadic_contract_reads_its_variable_arguments.md`). A call
 whose list breaks the precondition is refused with the list spelled out
@@ -2268,14 +2268,14 @@ function: `requires Adds(f, { amount: k });`. A call through `f` then binds
 with `amount` fixed to `3`. An unknown, missing, or repeated name is refused.
 A refinement theorem may conclude a contract with value parameters, fixing
 them as an attachment does: `ensures Adds(&add3, { amount: 3 }) by {
-unfold(Adds(&add3, { amount: 3 })); solve(); }`, whose `unfold(Adds(&add3, { amount: 3 }))` opens the obligation with
+unfold(Adds(&add3, { amount: 3 })); close(); }`, whose `unfold(Adds(&add3, { amount: 3 }))` opens the obligation with
 `amount` bound to `3`. An abstract refinement fixes the values of both its
 source fact and its conclusion, `requires Adds(f, { amount: 3 }); ensures
 Shifts(f, { offset: 3 })`. See
 `mdtests/named_contract_value_parameter_refinement_theorem.md` and
 `mdtests/named_contract_value_parameter_contract_refinement_theorem.md`. An
 execution theorem fixes them the same way, `theorem t() executes add3(int32
-x) { ensures Adds(&add3, { amount: 3 }) by { step(); solve(); } }` or, from a
+x) { ensures Adds(&add3, { amount: 3 }) by { step(); close(); } }` or, from a
 source fact, `requires Adds(f, { amount: 3 }); ensures Shifts(f, { offset: 3
 })`: its one checked call is proved with the target's value parameters at
 the conclusion's values
@@ -2316,7 +2316,7 @@ the complete modeled function-pointer signature.
 For a callback read through an initialized constant table, a checked equality
 such as `cb == &table` and permission to read the slot establish its target.
 After applying the target's
-contract theorem, `have Invoke(cb->call) by { known(); }` records that
+contract theorem, `have Invoke(cb->call) by { close(); }` records that
 contract for the read pointer. The captured state and complete callback
 signature must match.
 

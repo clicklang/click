@@ -19,7 +19,7 @@ int32 pointer_existential_deref_requires_loadable(int32* p) {
         step_until(function.exit);
         let q = obtain(exists (q: int32*) { q == 0 });
         witness(q);
-        solve();
+        close();
     }
 }
 ```

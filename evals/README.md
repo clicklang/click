@@ -20,7 +20,7 @@ find on its own. Each `have` in the corpus is a site, measured twice in a
 scratch copy of the project, verifying only the proof unit that contained
 it; `examples/` is never modified.
 
-- `by_solve`: the `have`'s justification is replaced by `by solve();`. This
+- `by_solve`: the `have`'s justification is replaced by `by close();`. This
   measures `solve` itself: a site that holds is a hand-written proof `solve`
   can replace.
 - `deletable`: the whole statement is deleted. A site that holds is a fact

@@ -22,8 +22,8 @@ fn product_identity_planning_ignores_unrelated_facts() {
 {unrelated}    requires to_integer(a) * to_integer(b) <= 65535;
     let r: uint16 = a * b;
     ensures to_integer(r) == to_integer(a) * to_integer(b) by {{
-        have to_integer(r) == to_integer(a) * to_integer(b) by solve();
-        known();
+        have to_integer(r) == to_integer(a) * to_integer(b) by close();
+        close();
     }}
 }}
 "

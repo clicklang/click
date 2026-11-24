@@ -131,7 +131,7 @@ pub fn click_source_is_declaration_module(source: &str) -> bool {
     parser::declares_only_definitions(source)
 }
 use parser::ContractLetBinding;
-pub use printing::{format_proof_certificate, format_proof_tactics, with_expansion_close_output};
+pub use printing::{format_proof_certificate, format_proof_tactics};
 use proof::*;
 pub(crate) use pure_fact_list::PureFactList;
 use source_registry::*;
@@ -6347,7 +6347,7 @@ pub enum ProofTactic {
     },
     Solve,
     /// The driver schedules ordinary `solve` for every remaining claim.
-    /// This has no written spelling; explicit `solve()` selects one goal.
+    /// This has no written spelling; explicit `close()` selects one goal.
     ImplicitSolve,
     SolveUsing(ProofSolveUsing),
 
@@ -6478,7 +6478,7 @@ pub enum SmartSite {
     /// A simple tactic whose argument a lookup fills.
     Elided(ElidedArgument),
     /// Bare `close_invariants()`: a fixed expansion into
-    /// `close_invariants() by { ... }` with `solve()` on each member.
+    /// `close_invariants() by { ... }` with `close()` on each member.
     CloseInvariants,
     /// What an omitted proof and the end of a script mean: execute the C
     /// that remains and `solve` each open goal.
@@ -6716,11 +6716,6 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
         class: "smart",
     },
     PublicTacticForm {
-        id: "known",
-        syntax: "known()",
-        class: "simple",
-    },
-    PublicTacticForm {
         id: "normalize",
         syntax: "normalize()",
         class: "simple",
@@ -6779,11 +6774,6 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
         id: "instantiate",
         syntax: "instantiate(F, value, ...)",
         class: "simple",
-    },
-    PublicTacticForm {
-        id: "solve",
-        syntax: "solve()",
-        class: "smart",
     },
     PublicTacticForm {
         id: "close-using",
@@ -6984,7 +6974,7 @@ impl ProofTactic {
 }
 
 impl SmartTactic {
-    /// Distinguish omitted-proof attribution from a written `solve()` site.
+    /// Distinguish omitted-proof attribution from a written `close()` site.
     pub fn site(self) -> SmartSite {
         match self {
             Self::ImplicitTail => SmartSite::Implicit,
@@ -11284,7 +11274,7 @@ impl ClickError {
                     context.push(legend);
                 }
             }
-            if self.failed_tactic == Some("known()")
+            if self.failed_tactic == Some("close()")
                 && let Some(Proposition::Exists { .. }) = state.kernel_goal()
             {
                 context.push(

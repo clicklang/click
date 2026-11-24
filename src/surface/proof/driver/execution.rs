@@ -1368,7 +1368,7 @@ fn advance_checked_linear_continuation<'a>(
         return decline();
     };
     for (offset, indexed) in tactics.iter().enumerate() {
-        // A written `solve();` at a live frontier first executes the C that
+        // A written `close();` at a live frontier first executes the C that
         // remains, as the implicit tail does, then closes the open goals at
         // function exit like the `solve` an omitted proof stands for.
         if matches!(indexed.tactic, ProofTactic::ImplicitSolve) && !proof.is_at_function_exit() {
@@ -5821,7 +5821,7 @@ mod tests {
             ));
             steps(&mut proof, indent + 4, index + 2);
             proof.push_str(&format!(
-                "{:w$}solve();\n{:indent$}}} else {{\n",
+                "{:w$}close();\n{:indent$}}} else {{\n",
                 "",
                 "",
                 w = indent + 4
@@ -5830,7 +5830,7 @@ mod tests {
                 steps(&mut proof, indent + 4, 4);
             } else {
                 steps(&mut proof, indent + 4, count + 3);
-                proof.push_str(&format!("{:w$}solve();\n", "", w = indent + 4));
+                proof.push_str(&format!("{:w$}close();\n", "", w = indent + 4));
             }
             statement += index + 5;
         }

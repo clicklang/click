@@ -515,7 +515,7 @@ driver: `have`, logical steps, `known`, and `solve` have their normal meanings.
 Omitting the block invokes ordinary bounded `solve` on the same root. Its
 termination strategy plans the generated dependencies and emits checked
 `check_termination_local("f")`, `check_termination_component("f", strict|normal)`,
-and `check_termination_callbacks()` steps, followed by `known()`. Local descent
+and `check_termination_callbacks()` steps, followed by `close()`. Local descent
 uses the same primitives as the standalone termination API; its result is
 retained as a fact and reused by strict and normal dependency steps. The
 intermediate facts are written `termination_local("f")`, `termination_strict("f")`,
@@ -673,10 +673,10 @@ Independent conditional execution artifacts have no opened-entry authority and
 retain their separate entry preparation and rule-packaging APIs.
 
 Closing goal state is fixed-size and shared proof forks retain independent
-updates. An explicit `known()` discharges the selected closing goal using
-its retained outcome, receipts and body effects. Written `solve()` selects the
+updates. An explicit `close()` discharges the selected closing goal using
+its retained outcome, receipts and body effects. Written `close()` selects the
 same operation; the implicit solver schedules it for each omitted closing proof.
-Expansion records one `known()` per completed goal, so rechecking requires
+Expansion records one `close()` per completed goal, so rechecking requires
 no implicit proof of these obligations. A checked resource transition retains
 resource/lifetime evidence without silently closing either goal. Explicit
 resource changes reopen the affected goals. Packaging an exit completion reads
@@ -909,7 +909,7 @@ Three standing rules keep the boundary where the 2026-09 cleanup left it.
   emits the proposition as an obligation. One that must choose among
   candidates the kernel itself enumerates lowers the choice as a finite
   disjunction so the proof proves one disjunct, closes it with
-  `known()`, and expansion prints it; open
+  `close()`, and expansion prints it; open
   choices use the existing `instantiate`, `witness`, `obtain`, `rewrite`,
   and `transport` syntax.
 - **Retained evidence names premises, never a context.** A derivation leaf

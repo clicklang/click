@@ -26,7 +26,7 @@ including a syntactically common block and symbolic reflexive comparisons.
 A pointer read from memory (`AddressBase::Load`) names an unknown address, so equal
 displacements in its block are symbolic reflexive comparisons as well; unequal
 constant displacements still fold to false. Other constant comparisons fold. Keeping symbolic comparisons preserves the
-fact lookup used by explicit `known()` after resolving a stored pointer;
+fact lookup used by explicit `close()` after resolving a stored pointer;
 reflexivity remains available to normalization and equality closure.
 When registering a same-block comparison, the graph identifies its condition
 node with the comparison of the two offsets. This is a definitional view of
@@ -821,7 +821,7 @@ for doing so. Global load naming remains independent of contextual equality.
 Checked transport conclusions enter the ordinary int32 equality interface.
 For example, after a store to `p[k]`, explicit transport can use `i != k` to
 prove that `p[i]` equals its entry value. Rewriting the current index with
-`i == j` lets `known()` close the corresponding goal for `p[j]`.
+`i == j` lets `close()` close the corresponding goal for `p[j]`.
 [The executable composition example](https://github.com/clicklang/click/blob/master/mdtests/transported_int32_load_congruence.md)
 shows the separation, transport, and rewrite steps. Regression tests remove either
 premise or the bridge, reject an overlapping store, recheck expansion, and
@@ -1918,7 +1918,7 @@ pair key, since separating different objects does not distinguish their
 numerical offsets. Both indexes retain the exact source proposition and track
 its insertion and restriction. Empty or unresolved
 ranges add no anchor evidence. C condition decisions and proof-side known-fact
-lookup (including `known()`) share this indexed rule. The latter also
+lookup (including `close()`) share this indexed rule. The latter also
 handles negated pointer equality and retains the exact separation premise;
 it performs no owned-composition scan, alias search, or unfolding.
 

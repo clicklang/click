@@ -74,10 +74,10 @@ needs no final closer. Where work follows at function exit, step there with
 `step_until(function.exit);`, and where paths need different work, write
 `branch` at the C `if`, or a proof `if` before the C, with each arm stepping
 to exit. For a one-tactic
-proof, use `by T(args);`, such as `by known();`, or `by solve();` for a
+proof, use `by T(args);`, such as `by close();`, or `by close();` for a
 claim with no C left, such as a `have` or a pure theorem. Braces
 are optional around that single tactic. Use `by { ... }` for a sequence of
-tactics. Call-style tactics always take parentheses, including `solve()`.
+tactics. Call-style tactics always take parentheses, including `close()`.
 Write `solve`, `close() using`, and `step_until`; the parser refuses the
 removed names `assumption`, `auto`, `arithmetic`, `execute`, and
 `execute_until`. Structural forms such as `if`, `match`, and `have` retain their

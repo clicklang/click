@@ -86,8 +86,8 @@ A proof is at one point at a time. Once a script reaches function exit
 on its path, with `step_until(function.exit)` or inside one arm of a proof
 `if`, the tactics that follow act on that path. Its open goals are the
 contract's claims in contract order, resource claims included. `fold`,
-`apply`, and `have` transform the current path. A closer such as `solve()`,
-`known()`, `normalize() using` or `close() using` acts on the first open
+`apply`, and `have` transform the current path. A closer such as `close()`,
+`close()`, `normalize() using` or `close() using` acts on the first open
 goal, the last two from exactly their listed premises when the explicit closer
 is preferable to search, and the implicit tail closes every goal still open.
 A later fact or fold does not retroactively affect an earlier closing step.
@@ -98,13 +98,13 @@ A one-tactic proof needs no braces:
 
 <!-- verified-example: mdtests/algebraic_maybe.md -->
 ```click
-by solve();
+by close();
 ```
 
-`by solve();` means the same as `by { solve(); }`. `solve()` closes the first
+`by close();` means the same as `by { close(); }`. `close()` closes the first
 open goal at the current frontier and runs no C; the implicit tail then runs
 any C that is left and closes the rest. On a `have` or a pure theorem's
-`ensures`, `by solve();` restates what the omitted proof does. On a C
+`ensures`, `by close();` restates what the omitted proof does. On a C
 function's `ensures` it is refused, because execution has not reached function
 exit there; omit the proof instead. See the
 [proof tactics reference](../reference/tactics/index.md).
@@ -168,8 +168,8 @@ expansion output.
   invariant, and resource clauses construct the kernel rule; it never seeks to a
   numbered source loop.
 - The back edge of a `maintain by { ... }` script closes each member of the
-  loop's invariant bundle with `solve()`, as a function's exit closes each
-  `ensures`; prove a member `solve()` misses with `have` before the back edge.
+  loop's invariant bundle with `close()`, as a function's exit closes each
+  `ensures`; prove a member `close()` misses with `have` before the back edge.
   The retired `close_invariants` tactic is rejected.
 - `unfold(predicate(args));`: open one selected application in the current
   facts and goal.
@@ -214,7 +214,7 @@ expansion output.
   names for multiple witnesses. Use `have` first if the existential needs a proof.
 - `witness(expression);`: prove the current existential goal by substituting
   the given int32 expression for binder `k`.
-- `known();`: close a goal already present as the same semantic fact; it
+- `close();`: close a goal already present as the same semantic fact; it
   does not normalize or transport a new fact.
 - `normalize();`: close a pure goal by context-free computation.
 - `rewrite(from, to);`: rewrite the current proposition once using an exact
@@ -239,7 +239,7 @@ expansion output.
   `not P` or the exact opposite polarity of the same lowered C condition. They are
   accepted only while a pure goal is active, typically inside `have ... by` or
   a theorem proof.
-- `solve();`: close the first open goal by smart contextual simplification.
+- `close();`: close the first open goal by smart contextual simplification.
   It runs no C.
 
 An opaque predicate does not expose the memory footprint needed for framing.
@@ -322,9 +322,9 @@ For example, pure case analysis needs no C execution:
 theorem int32_sign_split(x: int32) {
     ensures x <= 0 or x > 0 by {
         if x <= 0 {
-            solve();
+            close();
         } else {
-            solve();
+            close();
         }
     }
 }

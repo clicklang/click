@@ -28,7 +28,7 @@ int32 f(int32 p[2], int32 i) {
 } by {
     step_until(function.exit);
     unfold(allpos(p, i));
-    solve();
+    close();
 }
 ```
 

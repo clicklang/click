@@ -220,14 +220,14 @@ not evidence that Click verifies the unchanged source form.
 ### 3. replace broad search with explicit proof steps
 
 Smart tactics are bounded, incomplete heuristics. A prompt and actionable
-failure from `solve()`, the implicit tail that ends every script, or another
+failure from `close()`, the implicit tail that ends every script, or another
 smart search does not establish an engine bug. Split the task into smaller searches or use
 simple tactics with explicit premises. A refusal that says "this is a search
 miss" comes from an elided form, such as `apply(theorem(args))` or a bare
 `transport(P, Q)`, whose lookup found no fact for its argument: state the
 named fact with `have` first, or write the `using` form.
 
-When `solve()` needs to reconstruct a premise at an earlier point, its
+When `close()` needs to reconstruct a premise at an earlier point, its
 automatic fallback probes at most 256 statement-entry points nearest the
 current anchor. A premise that does not raise at the anchor therefore cannot
 trigger a scan of the whole execution history. Name a relevant older point with
@@ -236,7 +236,7 @@ misses. Each candidate still has to lower to the exact retained kernel fact.
 The automatic atomic fallback also declines components with more than 64
 premises before rendering them; it first tries the derivation's recorded path.
 This limit does not restrict an explicit `using` list. A refused written view
-`solve()` retains the failing construction stage, including the actual selected
+`close()` retains the failing construction stage, including the actual selected
 premise count when it exceeds this limit, in the ordinary error and trace.
 The native kernel view query and source-certificate construction are distinct:
 a positive kernel query can still lack a printable checked proof. Do not infer
@@ -366,7 +366,7 @@ Use the narrowest description supported by the evidence:
   the profile/expand/audit workflow violates its guarantees.
 
 When evidence is incomplete, say what is known instead of guessing a label.
-For example: "smart `solve()` failed; explicit resource transport has not yet
+For example: "smart `close()` failed; explicit resource transport has not yet
 been attempted." The next experiment should be the smallest one that
 distinguishes the remaining categories.
 
@@ -388,6 +388,6 @@ worktree. If reduction changes the source pattern that caused the failure, it
 is not yet an adequate regression.
 
 An explicit `apply(...)` inside `with(...)` reports an unavailable theorem
-premise through the same checker used outside the scope. A `have f by solve()`
+premise through the same checker used outside the scope. A `have f by close()`
 that cannot establish its fact reports `Requires f`; neither refusal means
 that resource scopes themselves are unsupported.

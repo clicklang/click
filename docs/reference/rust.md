@@ -373,8 +373,8 @@ fn increment_first(bytes: &mut [u8]) {
 fn empty(bytes: &[u8]) -> bool {
     ensures result == (bytes.len() == 0);
 } by {
-    if bytes.len() == 0 { step_until(function.exit); solve(); }
-    else { step_until(function.exit); solve(); }
+    if bytes.len() == 0 { step_until(function.exit); close(); }
+    else { step_until(function.exit); close(); }
 }
 ```
 
@@ -423,9 +423,9 @@ theorem literal_forms(word: u16, index: usize, signed_word: i32) {
     requires word == 0xff_ff;
     requires index == 0b1_010;
     requires signed_word == -0x8000_0000;
-    ensures word == 65_535u16 by { known(); }
-    ensures index == 0o12usize by { known(); }
-    ensures signed_word == -2_147_483_648i32 by { known(); }
+    ensures word == 65_535u16 by { close(); }
+    ensures index == 0o12usize by { close(); }
+    ensures signed_word == -2_147_483_648i32 by { close(); }
 }
 ```
 
@@ -576,7 +576,7 @@ contract, which Click checks at the call from `twice`'s own contract. When
 the two contracts agree only by a proof, a refinement theorem shows it,
 naming the crate function as a value by its path, as Rust passes it:
 `theorem twice_is_doubling() { ensures Doubling(function_pointers::twice) by
-{ unfold(Doubling(function_pointers::twice)); solve(); } }`, and the caller's proof applies it,
+{ unfold(Doubling(function_pointers::twice)); close(); } }`, and the caller's proof applies it,
 `apply(twice_is_doubling());`. The diagnostic that refuses the call suggests
 that theorem. The importer reads Charon's `CastKind::FnPtr` of a
 crate function item and its `FnOperand::Dynamic` call through a local, and
@@ -980,7 +980,7 @@ sidecar can selectively import the helper with
 [Panics](#panics). The library
 function is opaque until `unfold` gives its definition, so a claim that needs
 the value, `result <= a`, unfolds it, and a proof of one arm states the value
-there: `have u32::min(a, b) == a by { unfold(u32::min(a, b)); solve(); }`.
+there: `have u32::min(a, b) == a by { unfold(u32::min(a, b)); close(); }`.
 Each contract is an assumption, listed in [trust](../concepts/trust.md); each
 library function is checked at the edge of its type in
 `mdtests/stdlib_every_symbol.md`.
@@ -1623,7 +1623,7 @@ fn count(n: u32) -> u32 {
         }
     }
     step_until(function.exit);
-    solve();
+    close();
 }
 ```
 

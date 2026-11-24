@@ -21,7 +21,7 @@ uint64 read_terminator(uint8 bytes[], uint64 known_len) {
         unfold(click::c::string::readable_len(bytes, known_len));
         step_until(region(1).entry);
         have viewable(bytes[0..known_len + 1u64]) by {
-            known();
+            close();
         }
     }
 }

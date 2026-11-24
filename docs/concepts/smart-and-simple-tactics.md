@@ -53,7 +53,7 @@ work expands into simple tactics:
   `apply(theorem(args))` left open, and is reported as `implicit closer`
   there. An expanded theorem application keeps any needed antecedent proof
   in a preceding `have` and checks the resulting facts directly.
-- At a loop back edge, the closure of the invariant bundle runs `solve()` on
+- At a loop back edge, the closure of the invariant bundle runs `close()` on
   each member and expands to one `have <member> by { ... }` per member not
   already a fact.
 - The searches behind elided arguments, below.

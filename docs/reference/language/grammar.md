@@ -31,7 +31,7 @@ locations and other explicitly documented string positions. The
 [byte string syntax](#byte-string-literals) is available in specifications.
 
 Call-style proof tactics require parentheses, including the no-argument
-call `solve()`. A single tactic call can follow `by` directly; braces enclose
+call `close()`. A single tactic call can follow `by` directly; braces enclose
 a sequence and may also enclose one call. An omitted proof runs the whole
 proof by automation.
 
@@ -153,9 +153,10 @@ documentation inventory keep the following accepted words synchronized.
 | `witness`, `obtain` | Existential introduction and elimination. `let` binds what an operation produces. |
 | `close`, `known`, `normalize`, `intro`, `enumerate`, `contradiction` | Explicit proposition tactics. |
 | `sorry` | Dev-only proof hole `sorry()`. It parses only under `click verify --allow-sorry`; see [Dev-only proof hole](../cli/verify.md#dev-only-proof-hole). A user-defined tactic may not take the name. |
-| `assumption`, `auto`, `arithmetic`, `execute`, `execute_until` | Removed tactic names. The parser refuses each with a diagnostic that names its replacement: `known()` for `assumption()`; the omitted proof for `by auto();` and `solve();` for a written `auto();`; `close() using { ... }` for `arithmetic() using { ... }` and `close() using {}` for bare `arithmetic()`; the implicit tail, or `step_until(function.exit)` to work at function exit, for `execute()`; and `step_until` for `execute_until`. |
-| `close_invariants` | Retired loop tactic, still reserved. The parser rejects it with `` `close_invariants` is retired ``; a loop's back edge now closes each bundle member with `solve()`, helped by `have` facts proved before it. |
-| `split`, `left`, `right` | Retired tactic names. Unless a user-defined tactic has the name, the parser rejects each with a diagnostic that names `known()`. |
+| `known`, `solve`, `assumption` | Retired tactic names. Write `close()` or `close() using { ... }` with selected premises. |
+| `auto`, `arithmetic`, `execute`, `execute_until` | Removed tactic names. The parser refuses each with a diagnostic that names its replacement: the omitted proof for `by auto();` and `close();` for a written `auto();`; `close() using { ... }` for `arithmetic() using { ... }` and `close() using {}` for bare `arithmetic()`; the implicit tail, or `step_until(function.exit)` to work at function exit, for `execute()`; and `step_until` for `execute_until`. |
+| `close_invariants` | Retired loop tactic, still reserved. The parser rejects it with `` `close_invariants` is retired ``; a loop's back edge now closes each bundle member with `close()`, helped by `have` facts proved before it. |
+| `split`, `left`, `right` | Retired tactic names. Unless a user-defined tactic has the name, the parser rejects each with a diagnostic that names `close()`. |
 | `preserve` | Preserve a selected read or its definedness across an explicitly separated region footprint. |
 | `rewrite`, `transport`, `instantiate`, `solve`, `induct` | Equality, transport, quantifier, closing, and induction tactics. |
 | `as`, `else`, `ensuring`, `then` | Names and branches inside structural proof forms. `as` also writes numeric and pointer casts (including `as float` and `as double`) and introduces the target contract's proof instances on an `executes` conclusion. |
@@ -477,7 +478,7 @@ function singleton(x: int32) -> List<int32> {
 theorem append_nothing(xs: List<int32>) {
     ensures list::append(List::Nil, xs) == xs by {
         unfold(list::append(List::Nil, xs));
-        known();
+        close();
     }
 }
 ```
@@ -488,7 +489,7 @@ a contradiction. Equality of every corresponding field proves equality of
 two applications of one constructor (congruence), and an exact equality of
 such applications exposes equality only at the same field position
 (injectivity). `solve` can select these rules, expanding congruence to explicit
-`rewrite` steps and injectivity to checked `have ... by known();` steps.
+`rewrite` steps and injectivity to checked `have ... by close();` steps.
 
 Pattern arms must name every variant exactly once, use the declared field
 arity, and keep field bindings local to the arm. Generic arguments and fields
@@ -831,7 +832,7 @@ A C `branch` has labeled arms in a block:
 Its optional join interface precedes that block:
 `branch ensuring { ... } { true => { ... } false => { ... } }`.
 
-A proof is omitted, written as a single tactic call such as `by solve();`, or
+A proof is omitted, written as a single tactic call such as `by close();`, or
 written as a `by { ... }` block of tactic statements. Tactic
 arguments use the expression and proposition forms documented for that tactic. The exhaustive surface-syntax inventory is in
 [Tactics](../tactics/index.md).

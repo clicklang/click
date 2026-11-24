@@ -508,7 +508,7 @@ grandparent frame; the uncle's arms split. The `expect` line is the
 frontier report at statement 23 (`tmp = parent->rb_right`, red uncle
 skipped): "still ahead on this path: the body's end and 1 `break`. Already
 complete: 2 at a `break`". Remaining: the two recolour `continue`s, the two
-rotation `break`s, the body's end, the post-loop `solve()`, and
+rotation `break`s, the body's end, the post-loop `close()`, and
 `rb_insert_color`. The focused imported-frontier regression currently reaches
 the expected diagnostic in about 1.3s on a warm debug build; that timing is
 supporting evidence, not a new gate, and E1 still owns the per-frame proof
@@ -864,7 +864,7 @@ blocks C3; each is a candidate package when it starts to.
   regression and its required set-bit premise.
 - **Pure-proof limits:** `normalize()` and `normalize() using` do not
   close pointer-equality transitivity or symmetry inside a pure theorem
-  (`solve()` does; `rewrite(a, b); normalize();` substitutes a pointer
+  (`close()` does; `rewrite(a, b); normalize();` substitutes a pointer
   equality into a constructor argument while `normalize() using` does
   not); a raw `if parent == p` as a pure function's outermost test unfolds
   to one opaque bitvector operation, so predicate tests are written `if
@@ -1063,7 +1063,7 @@ consistency, through `ctx_insert_root_exit` and
 `ctx_insert_black_parent_exit` (the root `break` refutes a framed context by
 unfolding it for `identity != 0`). All 99 exits state them identically, so
 they survive the exit join as ordinary facts, and the post-loop proof folds
-the loop's two binders into the result and closes with `step(); solve();`.
+the loop's two binders into the result and closes with `step(); close();`.
 No kernel change was needed for the proof.
 
 The contract changed. It produced `ctx_at(root->rb_node, root)` and
@@ -1687,7 +1687,7 @@ callback and whole-context restoration.
 the outer parent from separated owned words in either ancestor orientation,
 while preserving the incoming-link model. The sized parent-update helper now
 calls it internally and no longer requires callers to supply this disequality.
-C comparisons and `known()` share the indexed nonempty separation rule;
+C comparisons and `close()` share the indexed nonempty separation rule;
 full non-root insertion still needs callback composition and context restoration.
 
 
@@ -1738,7 +1738,7 @@ and context-depth termination are preserved without changing the Linux C.
 Both sidecars now also accept an arbitrary owned other child of the parent and
 arbitrary owned children of the red uncle. Parent and grandparent cache values
 remain symbolic. The three count obligations in each orientation close with
-`known()` through the shared Integer/model equality classes, without
+`close()` through the shared Integer/model equality classes, without
 explicit alias rewrites. Each sidecar verifies all three insertion claims.
 Repeated color-flip propagation through a red outer ancestor and writable erase
 integration remain unfinished.

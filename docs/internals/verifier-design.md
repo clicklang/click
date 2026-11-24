@@ -15,7 +15,7 @@ applies simple tactics and certificates. Every proof pays its cost on every
 step, and nothing can remove that cost later.
 
 The **slow part** searches. It is the smart tactics, whose kinds in
-`SmartTacticKind` are `Solve` (written `solve()` and `close() using`),
+`SmartTacticKind` are `Solve` (written `close()` and `close() using`),
 `Arithmetic` (the arithmetic engine alone, whose written form
 `arithmetic() using` the parser now refuses), and `Execute` (`step_until`, and
 the stepping and splitting of the implicit tail that ends every proof script);
