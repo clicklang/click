@@ -59,6 +59,11 @@ pub(super) const COMPATIBILITY_NORMALIZATION: &str = "<verification-only normali
 pub(super) const UNRAISED_CONJUNCT: &str = "<unraised conjunct>";
 
 pub(in crate::surface) fn source_click_proposition(proposition: &ClickProposition) -> String {
+    with_lexical_binder_names(|| identity_click_proposition(proposition))
+}
+
+/// Internal comparison spelling that preserves generated binder identities.
+pub(in crate::surface) fn identity_click_proposition(proposition: &ClickProposition) -> String {
     let _null_literals = NullLiteralSourceScope::enter();
     print_proposition(proposition, PropositionSpelling::Source)
 }
@@ -656,12 +661,128 @@ pub fn format_proof_tactics(tactics: &[ProofTactic]) -> Result<String, Certifica
     Ok(format_proof_certificate(&certificate))
 }
 
+#[derive(Default)]
+struct CertificateBinderNames {
+    reserved: BTreeSet<String>,
+    names: BTreeMap<crate::kernel::GeneratedBinderId, std::rc::Rc<str>>,
+    next: usize,
+}
+
+impl CertificateBinderNames {
+    fn reserve_source(&mut self, source: &str) {
+        for word in source.split(|ch: char| !ch.is_ascii_alphanumeric() && ch != '_') {
+            if word.starts_with(|ch: char| ch.is_ascii_alphabetic() || ch == '_') {
+                self.reserved.insert(word.to_owned());
+            }
+        }
+    }
+
+    fn assign(&mut self, id: crate::kernel::GeneratedBinderId) {
+        if self.names.contains_key(&id) {
+            return;
+        }
+        loop {
+            self.next += 1;
+            let candidate = if self.next == 1 {
+                "x".to_string()
+            } else {
+                format!("x{}", self.next)
+            };
+            if self.reserved.insert(candidate.clone()) {
+                self.names.insert(id, candidate.into());
+                return;
+            }
+        }
+    }
+}
+
+type SharedCertificateBinderNames = std::rc::Rc<std::cell::RefCell<CertificateBinderNames>>;
+
+thread_local! {
+    static CERTIFICATE_BINDER_NAMES: std::cell::RefCell<Option<SharedCertificateBinderNames>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Share spellings between edits of one source and reserve surrounding
+/// specification names and the program names its parser protects.
+pub(super) struct CertificateBinderScope(Option<SharedCertificateBinderNames>);
+
+impl CertificateBinderScope {
+    pub(super) fn enter<'a>(
+        source: &str,
+        blocks: impl IntoIterator<Item = &'a FunctionBlock>,
+    ) -> Self {
+        let mut names = CertificateBinderNames::default();
+        names.reserve_source(source);
+        for block in blocks {
+            names
+                .reserved
+                .extend(block.program_object_names.iter().cloned());
+            names.reserved.extend(
+                block
+                    .signature()
+                    .parameters()
+                    .iter()
+                    .map(|parameter| parameter.name().to_owned()),
+            );
+        }
+        Self(
+            CERTIFICATE_BINDER_NAMES
+                .with(|slot| slot.replace(Some(std::rc::Rc::new(std::cell::RefCell::new(names))))),
+        )
+    }
+}
+
+impl Drop for CertificateBinderScope {
+    fn drop(&mut self) {
+        CERTIFICATE_BINDER_NAMES.with(|slot| slot.replace(self.0.take()));
+    }
+}
+
+fn with_lexical_binder_names(render: impl Fn() -> String) -> String {
+    use crate::kernel::GeneratedBinderSpellingScope;
+    if GeneratedBinderSpellingScope::is_active() {
+        return render();
+    }
+    let encountered = std::rc::Rc::new(std::cell::RefCell::new((BTreeSet::new(), Vec::new())));
+    let observed = encountered.clone();
+    let draft = {
+        let _spelling = GeneratedBinderSpellingScope::enter(move |id| {
+            let mut observed = observed.borrow_mut();
+            if observed.0.insert(id) {
+                observed.1.push(id);
+            }
+            None
+        });
+        render()
+    };
+    let encountered = encountered.borrow();
+    if encountered.1.is_empty() {
+        return draft;
+    }
+    let names = CERTIFICATE_BINDER_NAMES
+        .with(|slot| slot.borrow().clone())
+        .unwrap_or_default();
+    {
+        let mut names = names.borrow_mut();
+        names.reserve_source(&draft);
+        for &id in &encountered.1 {
+            names.assign(id);
+        }
+    }
+    let _spelling =
+        GeneratedBinderSpellingScope::enter(move |id| names.borrow().names.get(&id).cloned());
+    render()
+}
+
 pub(super) fn format_partial_tactic_sequence(tactics: &[ProofTactic]) -> String {
-    let _null_literals = NullLiteralSourceScope::enter();
-    let mut output = String::new();
-    write_tactics(&mut output, tactics, 0);
-    output.pop();
-    output
+    with_lexical_binder_names(|| {
+        let _null_literals = NullLiteralSourceScope::enter();
+        let mut output = String::new();
+        write_tactics(&mut output, tactics, 0);
+        output.pop();
+        output
+    })
 }
 
 pub fn format_proof_certificate(certificate: &ProofCertificate) -> String {
@@ -671,11 +792,13 @@ pub fn format_proof_certificate(certificate: &ProofCertificate) -> String {
 /// A whole proof block holding `tactics`, as [`format_proof_certificate`]
 /// writes a certificate's.
 pub(in crate::surface) fn format_proof_block(tactics: &[ProofTactic]) -> String {
-    let _null_literals = NullLiteralSourceScope::enter();
-    let mut output = String::from("by {\n");
-    write_tactics(&mut output, tactics, 1);
-    output.push('}');
-    output
+    with_lexical_binder_names(|| {
+        let _null_literals = NullLiteralSourceScope::enter();
+        let mut output = String::from("by {\n");
+        write_tactics(&mut output, tactics, 1);
+        output.push('}');
+        output
+    })
 }
 
 /// The assertions of a join's `ensuring` block, one per line.

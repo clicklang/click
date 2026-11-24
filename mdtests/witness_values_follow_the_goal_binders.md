@@ -20,8 +20,8 @@ theorem partial() {
     }
 }
 theorem generated_binders() {
-    ensures exists (binder(71): Integer, binder(72): Integer) {
-        binder(71) == 3 and binder(72) == 4
+    ensures exists (first: Integer, second: Integer) {
+        first == 3 and second == 4
     } by {
         witness(3, 4);
         solve();

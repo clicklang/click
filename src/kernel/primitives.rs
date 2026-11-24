@@ -14,6 +14,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::{Arc, OnceLock};
 
 mod bindings;
+pub(crate) use bindings::GeneratedBinderSpellingScope;
 pub use bindings::{
     BindingDeclaration, BindingName, GeneratedBinderId, LocalBindingId, LocalFunctionId,
     LocalStorageInstance, SliceLengthBinding, StaticBindingId, StaticBindingMetadata,

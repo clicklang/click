@@ -1008,7 +1008,7 @@ impl LoopRuleEnvironment {
 /// holds its typed identity (raised by the checker) or its name (parsed from
 /// a proof), so conditions that differ only that way are one condition.
 fn branch_condition_spelling(condition: &ClickProposition) -> String {
-    crate::surface::printing::source_click_proposition(condition)
+    crate::surface::printing::identity_click_proposition(condition)
 }
 
 /// Whether two branch conditions are the same Click condition; see
