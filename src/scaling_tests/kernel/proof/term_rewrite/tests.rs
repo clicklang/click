@@ -698,6 +698,7 @@ fn checked_fold_collectors_bound_mixed_carrier_payloads_and_opaque_states() {
             fixed_item,
         );
     }
+    let fixed_body = Term::Integer(fixed_body.into());
     let mut state_work = Vec::new();
     for state_size in [0usize, 256] {
         let memory = memory_state_identity(state_size);
@@ -723,7 +724,7 @@ fn checked_fold_collectors_bound_mixed_carrier_payloads_and_opaque_states() {
                     false,
                     &renamings,
                 );
-                let output = rewrite.term(&Term::Integer(fixed_body.clone().into()));
+                let output = rewrite.term(&fixed_body);
                 (
                     rewrite.unsupported_integer_scope,
                     rewrite.integer_work_exhausted,

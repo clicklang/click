@@ -339,7 +339,11 @@ mod storage_tests {
             } else {
                 AlgebraicResult::from(source).into_kernel()
             };
-            assert!(weak.upgrade().is_some_and(|root| !root.has_cached_native_argument()), "as_field={as_field}");
+            assert!(
+                weak.upgrade()
+                    .is_some_and(|root| !root.has_cached_native_argument()),
+                "as_field={as_field}"
+            );
             let KernelTermNode::Constructor(constructor) = root.node() else {
                 panic!("common constructor")
             };

@@ -1036,10 +1036,9 @@ impl SharedMachineIntegerTerm {
     }
 
     pub(crate) fn literal_conversion_value(&self) -> Option<MachineIntegerConstant> {
-        // The Integer interner asks for this summary while holding its lock.
-        // Building a native conversion leaf can export and intern its Integer
-        // operand, reentering that lock. This check only needs the written
-        // destination and the operand's literal node.
+        // This check only needs the written destination and the literal
+        // operand. A native conversion output would materialize an
+        // unnecessary compatibility view.
         let operand = self
             .shared_operand()
             .map(MachineOperandView::Shared)

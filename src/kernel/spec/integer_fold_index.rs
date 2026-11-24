@@ -144,7 +144,8 @@ mod tests {
             evaluation.with_retained_integer_bindings(&[Some(variable)], &fields, |evaluation| {
                 drop(source);
                 assert!(
-                    weak.upgrade().is_some_and(|root| !root.has_cached_native_argument()),
+                    weak.upgrade()
+                        .is_some_and(|root| !root.has_cached_native_argument()),
                     "a retained binding must not export native children"
                 );
                 assert_eq!(

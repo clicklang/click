@@ -4,6 +4,14 @@
 
 use super::*;
 
+fn add_unrelated_constants(context: &mut IntegerAffineCollectionContext, count: u64) {
+    context.constants.extend((0..count).map(|index| {
+        let root =
+            KernelTerm::variable(crate::kernel::KernelType::Integer, Variable(92_000 + index));
+        (root.id(), None)
+    }));
+}
+
 #[test]
 fn nonlinear_integer_atoms_do_not_traverse_their_operand_dags() {
     let mut shared_work = Vec::new();
@@ -209,9 +217,7 @@ fn affine_claims_read_retained_fold_operands_without_export() {
         disequality_samples.push(work);
         let works = [0, 16, 64, 256].map(|unrelated| {
             let mut context = IntegerAffineCollectionContext::default();
-            context
-                .constants
-                .extend((0..unrelated).map(|id| (id, None)));
+            add_unrelated_constants(&mut context, unrelated);
             let exports = KernelTermExport::integer_export_count();
             let (claims, work) = crate::instrumentation::measure_deterministic_work(|| {
                 integer_affine_claims_with_context(&equal, &mut context)
@@ -316,9 +322,7 @@ fn shared_additive_fold_claims_stay_retained() {
         assert_eq!(KernelTermExport::integer_export_count(), exports);
         let works = [0, 16, 64, 256].map(|unrelated| {
             let mut context = IntegerAffineCollectionContext::default();
-            context
-                .constants
-                .extend((0..unrelated).map(|id| (id, None)));
+            add_unrelated_constants(&mut context, unrelated);
             let exports = KernelTermExport::integer_export_count();
             let (claim, work) = crate::instrumentation::measure_deterministic_work(|| {
                 integer_affine_claim_with_context(&equal, &mut context).unwrap()
@@ -389,9 +393,7 @@ fn literal_scaled_fold_claims_stay_retained() {
 
         let works = [0, 16, 64, 256].map(|unrelated| {
             let mut context = IntegerAffineCollectionContext::default();
-            context
-                .constants
-                .extend((0..unrelated).map(|id| (id, None)));
+            add_unrelated_constants(&mut context, unrelated);
             let exports = KernelTermExport::integer_export_count();
             let (claim, work) = crate::instrumentation::measure_deterministic_work(|| {
                 integer_affine_claim_with_context(&equal, &mut context).unwrap()
