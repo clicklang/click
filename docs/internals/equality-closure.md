@@ -1933,7 +1933,7 @@ and an overlapping numeric address relation rejects the frame.
 
 Opening an active selected resource body retains the nominal pointer domains of
 its logical calls and algebraic constructor fields as explicit
-`object_type[CLASS](pointer)` facts. These facts
+`object_type[T](pointer)` facts, written `is_a<T>(pointer)` in Surface. These facts
 use the existing supported pointer-type buckets and their ordinary scope
 rules. They are produced along the selected lowering path, rather
 than recovered from annotations in opaque interned call arguments. An inactive

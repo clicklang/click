@@ -326,6 +326,10 @@ fn collect_signed_surface_proposition_terms<'a>(
                 collect_signed_surface_terms(right, terms);
             }
             ClickProposition::Defined { expression }
+            | ClickProposition::IsA {
+                pointer: expression,
+                ..
+            }
             | ClickProposition::FloatClassification { expression, .. } => {
                 collect_signed_surface_terms(expression, terms)
             }

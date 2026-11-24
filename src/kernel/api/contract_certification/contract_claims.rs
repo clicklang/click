@@ -1,5 +1,5 @@
 use super::*;
-use crate::kernel::{CompareRelation, MachineIntegerType};
+use crate::kernel::{BooleanOperandView, CompareRelation, KernelTermNode, MachineIntegerType};
 
 mod publication;
 pub(crate) use publication::PublishedFunctionOutcome;
@@ -2912,12 +2912,85 @@ fn exceptional_goals_at_entry(
 /// Whether a lowered ensure folded to a constant truth: the kernel's own
 /// evaluation at the outcome decided it, so it needs no completion.
 fn lowered_goal_is_constant_true(proposition: &Proposition) -> bool {
-    let constant_true = |proposition: &Proposition| matches!(&completion_key(proposition), condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Constant(true), _))));
+    let constant_true =
+        |proposition: &Proposition| completion_truth(&completion_key(proposition)) == Some(true);
     // Evaluation includes the read-over-write authority: a read of a
     // stored cell is the value stored there.
     constant_true(proposition)
         || crate::kernel::eval::comparison_form(proposition)
             .is_some_and(|resolved| constant_true(&resolved))
+}
+
+fn completion_truth(proposition: &Proposition) -> Option<bool> {
+    let Proposition::ConditionIs(condition, value) = proposition else {
+        return None;
+    };
+    Some(condition.operand_view().constant()? == *value)
+}
+
+fn reflexive_completion_condition(condition: BooleanOperandView<'_>) -> bool {
+    let condition = match condition {
+        BooleanOperandView::Shared(root) => root
+            .cached_condition_output()
+            .map_or(condition, BooleanOperandView::Native),
+        BooleanOperandView::Native(_) => condition,
+    };
+    if let Some((
+        MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+        CompareRelation::Equal,
+        [left, right],
+    )) = condition.comparison()
+    {
+        use crate::kernel::MachineOperandView;
+        return match (left, right) {
+            (MachineOperandView::Legacy(left), MachineOperandView::Legacy(right)) => left == right,
+            (MachineOperandView::Shared(left), MachineOperandView::Shared(right)) => {
+                let plain_word = |root: &crate::kernel::KernelTerm| {
+                    root.is_shared_machine_operand()
+                        && !root.has_opaque_observation_boundary()
+                        && !root.has_machine_conversions()
+                        && !root.has_machine_control_terms()
+                };
+                if left == right {
+                    true
+                } else if plain_word(left) && plain_word(right) {
+                    crate::kernel::machine_operand_syntax_cmp(
+                        MachineOperandView::Shared(left),
+                        MachineOperandView::Shared(right),
+                    )
+                    .is_eq()
+                } else {
+                    // Compare the selected written operands where the native
+                    // carrier still owns part of their identity.
+                    use crate::kernel::KernelTermExport;
+                    KernelTermExport::machine(left).expect("comparison operand")
+                        == KernelTermExport::machine(right).expect("comparison operand")
+                }
+            }
+            _ => unreachable!("a comparison has one operand representation"),
+        };
+    }
+    match condition {
+        BooleanOperandView::Shared(root) => match root.node() {
+            KernelTermNode::AddressEqual {
+                arguments: [left, right],
+            } => left.syntax_equal(right),
+            KernelTermNode::PointerEqual(pair) => {
+                let [left, right] = pair.arguments();
+                left.condition_syntax_equal(right)
+            }
+            KernelTermNode::AddressOffsetEqual {
+                arguments: [left, right],
+            } => left.syntax_equal(right),
+            _ => false,
+        },
+        BooleanOperandView::Native(condition) => match condition {
+            ConditionTerm::AddressEqual(left, right) => left == right,
+            ConditionTerm::PointerEqual(left, right) => left == right,
+            ConditionTerm::AddressOffsetEqual(left, right) => left == right,
+            _ => false,
+        },
+    }
 }
 
 /// The form in which a completed proposition is matched against a lowered
@@ -2929,36 +3002,12 @@ pub(crate) fn completion_key(proposition: &Proposition) -> Proposition {
     fn truth(value: bool) -> Proposition {
         Proposition::condition_is(ConditionTerm::Constant(value), true)
     }
-    fn as_truth(proposition: &Proposition) -> Option<bool> {
-        match proposition {
-            condition_source_0 @ Proposition::ConditionIs(_, value)
-                if let Some((ConditionTerm::Constant(constant), _)) =
-                    condition_source_0.condition_native() =>
-            {
-                Some(constant == value)
-            }
-            _ => None,
-        }
-    }
-    fn reflexive(condition: &ConditionTerm) -> bool {
-        match condition {
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                relation: CompareRelation::Equal,
-                left,
-                right,
-            } => left == right,
-            ConditionTerm::AddressEqual(left, right) => left == right,
-            ConditionTerm::PointerEqual(left, right) => left == right,
-            ConditionTerm::AddressOffsetEqual(left, right) => left == right,
-            _ => false,
-        }
-    }
     match proposition {
         Proposition::ConditionIs(condition, value) => {
-            if let ConditionTerm::Constant(constant) = condition.native_compat() {
-                truth(constant == value)
-            } else if reflexive(condition.native_compat()) {
+            let condition = condition.operand_view();
+            if let Some(constant) = condition.constant() {
+                truth(constant == *value)
+            } else if reflexive_completion_condition(condition) {
                 truth(*value)
             } else {
                 proposition.clone()
@@ -2980,7 +3029,7 @@ pub(crate) fn completion_key(proposition: &Proposition) -> Proposition {
         }
         Proposition::Not(body) => {
             let body = completion_key(body);
-            match (as_truth(&body), body) {
+            match (completion_truth(&body), body) {
                 (Some(value), _) => truth(!value),
                 (None, Proposition::ConditionIs(condition, value)) => {
                     Proposition::condition_is(condition, !value)
@@ -2990,7 +3039,7 @@ pub(crate) fn completion_key(proposition: &Proposition) -> Proposition {
         }
         Proposition::And(left, right) => {
             let (left, right) = (completion_key(left), completion_key(right));
-            match (as_truth(&left), as_truth(&right)) {
+            match (completion_truth(&left), completion_truth(&right)) {
                 (Some(false), _) | (_, Some(false)) => truth(false),
                 (Some(true), _) => right,
                 (_, Some(true)) => left,
@@ -2999,7 +3048,7 @@ pub(crate) fn completion_key(proposition: &Proposition) -> Proposition {
         }
         Proposition::Or(left, right) => {
             let (left, right) = (completion_key(left), completion_key(right));
-            match (as_truth(&left), as_truth(&right)) {
+            match (completion_truth(&left), completion_truth(&right)) {
                 (Some(true), _) | (_, Some(true)) => truth(true),
                 (Some(false), _) => right,
                 (_, Some(false)) => left,
@@ -3008,7 +3057,7 @@ pub(crate) fn completion_key(proposition: &Proposition) -> Proposition {
         }
         Proposition::Implies(premise, body) => {
             let (premise, body) = (completion_key(premise), completion_key(body));
-            match (as_truth(&premise), as_truth(&body)) {
+            match (completion_truth(&premise), completion_truth(&body)) {
                 (Some(true), _) => body,
                 (Some(false), _) | (_, Some(true)) => truth(true),
                 _ => Proposition::Implies(Box::new(premise), Box::new(body)),
@@ -3018,7 +3067,7 @@ pub(crate) fn completion_key(proposition: &Proposition) -> Proposition {
         // binder ranges over is inhabited.
         Proposition::ForAll { body, .. } => {
             let body = completion_key(body);
-            if as_truth(&body).is_some() {
+            if completion_truth(&body).is_some() {
                 return body;
             }
             let mut forall = proposition.clone();
@@ -3029,7 +3078,7 @@ pub(crate) fn completion_key(proposition: &Proposition) -> Proposition {
         }
         Proposition::Exists { body, .. } => {
             let body = completion_key(body);
-            if as_truth(&body).is_some() {
+            if completion_truth(&body).is_some() {
                 return body;
             }
             let mut exists = proposition.clone();
@@ -3940,6 +3989,72 @@ mod retained_contract_input_tests {
         use super::*;
         include!(
             "../../../scaling_tests/kernel/api/contract_certification/contract_claims/retained_inputs.rs"
+        );
+    }
+}
+
+#[cfg(test)]
+mod completion_operand_tests {
+    use super::*;
+    use crate::kernel::{Address, KernelTerm, KernelTermImport, StoredConditionTerm, Variable};
+
+    #[test]
+    fn completion_uses_retained_condition_identity() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let address = Address::symbolic(Variable(100_295));
+        let variable = MachineTerm::Variable(Variable(100_296));
+        let other_variable = MachineTerm::Variable(Variable(100_297));
+        let compare = |format, right| ConditionTerm::Compare {
+            format,
+            relation: CompareRelation::Equal,
+            left: Box::new(variable.clone()),
+            right: Box::new(right),
+        };
+        let cases = [
+            (ConditionTerm::Constant(false), Some(false)),
+            (
+                compare(MachineIntegerType::Int32, variable.clone()),
+                Some(true),
+            ),
+            (compare(MachineIntegerType::UInt32, other_variable), None),
+            (compare(MachineIntegerType::Int64, variable.clone()), None),
+            (
+                ConditionTerm::AddressEqual(Box::new(address.clone()), Box::new(address)),
+                Some(true),
+            ),
+        ];
+        for (condition, expected) in cases {
+            let root = KernelTermImport::default().condition(&condition);
+            for polarity in [false, true] {
+                let retained = Proposition::ConditionIs(
+                    StoredConditionTerm::from_root(root.clone()).unwrap(),
+                    polarity,
+                );
+                let native = Proposition::ConditionIs(condition.clone().into(), polarity);
+                let key = completion_key(&retained);
+                assert_eq!(
+                    completion_truth(&key),
+                    expected.map(|value| value == polarity)
+                );
+                if expected.is_none() {
+                    let Proposition::ConditionIs(result, _) = key else {
+                        panic!("the unresolved comparison stays a condition");
+                    };
+                    assert_eq!(result.root(), Some(&root));
+                }
+                assert!(!root.has_cached_native_argument());
+                assert_eq!(
+                    completion_truth(&completion_key(&native)),
+                    expected.map(|value| value == polarity)
+                );
+            }
+        }
+    }
+
+    mod scaling_tests {
+        use super::*;
+        include!(
+            "../../../scaling_tests/kernel/api/contract_certification/contract_claims/completion_operands.rs"
         );
     }
 }

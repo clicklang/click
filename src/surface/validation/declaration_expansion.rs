@@ -3004,6 +3004,10 @@ fn expand_declared_resource_proposition_one(
         ClickProposition::Defined { expression } => Ok(ClickProposition::Defined {
             expression: expand_declared_resource_expression(expression, resource_definitions)?,
         }),
+        ClickProposition::IsA { class, pointer } => Ok(ClickProposition::IsA {
+            class: class.clone(),
+            pointer: expand_declared_resource_expression(pointer, resource_definitions)?,
+        }),
         ClickProposition::Separate { left, right } => Ok(ClickProposition::Separate {
             left: expand_declared_resource_subject(left, resource_definitions)?,
             right: expand_declared_resource_subject(right, resource_definitions)?,

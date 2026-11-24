@@ -990,7 +990,11 @@ pub(in crate::surface) fn walk_written_expressions_in_proposition(
             walk_written_expressions(right, visit);
         }
         ClickProposition::FloatClassification { expression, .. }
-        | ClickProposition::Defined { expression } => walk_written_expressions(expression, visit),
+        | ClickProposition::Defined { expression }
+        | ClickProposition::IsA {
+            pointer: expression,
+            ..
+        } => walk_written_expressions(expression, visit),
         ClickProposition::At { proposition, .. }
         | ClickProposition::Not(proposition)
         | ClickProposition::ForAll {

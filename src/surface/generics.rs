@@ -1534,6 +1534,10 @@ fn instantiate_proposition(
         ClickProposition::Defined { expression: value } => ClickProposition::Defined {
             expression: expression(value)?,
         },
+        ClickProposition::IsA { class, pointer } => ClickProposition::IsA {
+            class: class.clone(),
+            pointer: expression(pointer)?,
+        },
         ClickProposition::At {
             selector,
             proposition,

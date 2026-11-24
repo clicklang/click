@@ -913,7 +913,8 @@ fn surface_predicate_call_name(proposition: &ClickProposition) -> Option<&str> {
         | ClickProposition::ResourceViewable { .. }
         | ClickProposition::Contains { .. }
         | ClickProposition::Loadable { .. }
-        | ClickProposition::Defined { .. } => None,
+        | ClickProposition::Defined { .. }
+        | ClickProposition::IsA { .. } => None,
     }
 }
 

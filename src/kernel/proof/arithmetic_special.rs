@@ -3101,67 +3101,107 @@ pub(crate) fn computed_shift_divisor_bound(goal: &Proposition) -> Option<Proposi
     })
 }
 
-/// The two written spellings of the sign premise for a signed word OR.
-pub(in crate::kernel) fn signed_or_sign_premises(
+/// Test only the root operands and their named word comparisons. OR is
+/// nonzero when either operand is nonzero. OR and XOR have clear sign bits
+/// when both input sign bits are clear.
+pub(in crate::kernel) fn bitwise_divisor_excludes(
     format: MachineIntegerType,
     divisor: crate::kernel::MachineOperandView<'_>,
-) -> Option<[Proposition; 2]> {
+    minus_one: bool,
+    mut holds: impl FnMut(ConditionTerm, bool) -> bool,
+) -> bool {
     use crate::kernel::MachineOperandView as View;
     use crate::kernel::machine_integer::comparison::condition_for_operand_views;
-    let (operation_format, MachineBinaryOp::BitwiseOr, [left, right]) = divisor.binary()? else {
-        return None;
+    use CompareRelation as R;
+    let Some((operation_format, operator, operands)) = divisor.binary() else {
+        return false;
     };
     if operation_format != format
-        || !matches!(
-            format,
-            MachineIntegerType::Int32 | MachineIntegerType::Int64
-        )
+        || if minus_one {
+            !format.format().is_signed()
+                || !matches!(
+                    operator,
+                    MachineBinaryOp::BitwiseOr | MachineBinaryOp::BitwiseXor
+                )
+        } else {
+            operator != MachineBinaryOp::BitwiseOr
+        }
     {
-        return None;
+        return false;
     }
-    let zero = crate::kernel::machine_integer::range::constant_word(format, &0.into())?;
-    let operand = [(left, right), (right, left)]
-        .into_iter()
-        .find_map(|(operand, literal)| {
-            format
-                .constant_from_term(&literal.literal()?)?
-                .to_i128()
-                .filter(|value| *value >= 0)
-                .map(|_| operand)
-        })?;
     crate::instrumentation::record_deterministic_work(1);
-    Some(
-        [
-            (CompareRelation::GreaterEqual, true),
-            (CompareRelation::LessThan, false),
-        ]
-        .map(|(relation, truth)| {
-            Proposition::condition_is(
-                condition_for_operand_views(format, relation, [operand, View::Legacy(&zero)]),
+    let constant = |operand: View<'_>| format.constant_from_term(&operand.literal()?);
+    if !minus_one
+        && operands
+            .iter()
+            .any(|&operand| constant(operand).is_some_and(|value| value.bits() != 0))
+    {
+        return true;
+    }
+    let Some(zero) = crate::kernel::machine_integer::range::constant_word(format, &0.into()) else {
+        return false;
+    };
+    let one = crate::kernel::machine_integer::range::constant_word(format, &1.into())
+        .expect("word can hold one");
+    let sufficient = |operand: View<'_>| {
+        if let Some(value) = constant(operand) {
+            return if minus_one {
+                value.to_integer() >= 0.into()
+            } else {
+                value.bits() != 0
+            };
+        }
+        let mut test = |relation, literal, truth| {
+            holds(
+                condition_for_operand_views(format, relation, [operand, View::Legacy(literal)]),
                 truth,
             )
-        }),
-    )
+        };
+        if minus_one {
+            test(R::GreaterEqual, &zero, true)
+                || test(R::LessThan, &zero, false)
+                || test(R::GreaterThan, &zero, true)
+                || test(R::GreaterEqual, &one, true)
+        } else {
+            test(R::Equal, &zero, false)
+                || test(R::GreaterThan, &zero, true)
+                || test(R::GreaterEqual, &one, true)
+                || test(R::LessThan, &zero, true)
+        }
+    };
+    if minus_one {
+        operands.into_iter().all(sufficient)
+    } else {
+        operands.into_iter().any(sufficient)
+    }
 }
 
-pub(super) fn signed_or_excludes_minus_one(goal: &Proposition) -> Option<[Proposition; 2]> {
+pub(super) fn bitwise_division_disequality(
+    goal: &Proposition,
+    mut holds: impl FnMut(ConditionTerm, bool) -> bool,
+) -> bool {
     use crate::kernel::machine_integer::comparison::structural_boolean_comparison_view;
     let Proposition::ConditionIs(condition, truth) = goal else {
-        return None;
+        return false;
     };
-    let view = structural_boolean_comparison_view(condition.operand_view())?;
+    let Some(view) = structural_boolean_comparison_view(condition.operand_view()) else {
+        return false;
+    };
     if view.relation != CompareRelation::Equal || *truth != view.negated {
-        return None;
+        return false;
     }
     let [left, right] = view.operands.each_ref().map(|term| term.operand_view());
     [(left, right), (right, left)]
         .into_iter()
-        .find_map(|(word, literal)| {
-            let literal = view.format.constant_from_term(&literal.literal()?)?;
-            if literal.to_i128()? != -1 {
-                return None;
+        .any(|(word, literal)| {
+            let value = literal
+                .literal()
+                .and_then(|term| view.format.constant_from_term(&term));
+            match value.and_then(|value| value.to_i128()) {
+                Some(0) => bitwise_divisor_excludes(view.format, word, false, &mut holds),
+                Some(-1) => bitwise_divisor_excludes(view.format, word, true, &mut holds),
+                _ => false,
             }
-            signed_or_sign_premises(view.format, word)
         })
 }
 
@@ -3876,22 +3916,70 @@ pub(super) fn float_zero_product_premise(goal: &Proposition) -> Option<Propositi
     if !float_endpoint_establishes(&bound, 0, false) {
         return None;
     }
-    let operand = match operand {
+    finite_float_requirement(bound.format, retained_float(operand))
+}
+
+fn retained_float(operand: FloatOperandView<'_>) -> crate::kernel::KernelTerm {
+    match operand {
         FloatOperandView::Native(format, term) => {
             crate::kernel::KernelTermImport::default().float(format, term)
         }
         FloatOperandView::Shared(term) => term.clone(),
-    };
-    let condition = crate::kernel::KernelTerm::float_classify(
-        bound.format,
-        FloatClassification::Finite,
-        operand,
-    )
-    .ok()?;
+    }
+}
+
+fn finite_float_requirement(
+    format: KernelFloatType,
+    operand: crate::kernel::KernelTerm,
+) -> Option<Proposition> {
+    let condition =
+        crate::kernel::KernelTerm::float_classify(format, FloatClassification::Finite, operand)
+            .ok()?;
     Some(Proposition::condition_is(
         crate::kernel::StoredConditionTerm::from_root(condition)?,
         true,
     ))
+}
+
+/// Finite self-subtraction gives zero. Finite, nonzero self-division gives
+/// one, including when the shared operand is subnormal.
+pub(super) fn float_self_operation_bounds(
+    goal: &Proposition,
+) -> Option<(Proposition, Option<Proposition>)> {
+    use crate::kernel::FloatBinaryOperator::{Divide, Subtract};
+    let bound = float_bound(goal)?;
+    let (operator, [left, right]) = bound.operand.binary()?;
+    let endpoint = match (operator, bound.format) {
+        (Subtract, _) => 0,
+        (Divide, KernelFloatType::Float32) => u64::from(1f32.to_bits()),
+        (Divide, KernelFloatType::Float64) => 1f64.to_bits(),
+        _ => return None,
+    };
+    if !float_endpoint_establishes(&bound, endpoint, false) || !same_float_operand(left, right) {
+        return None;
+    }
+    let operand = retained_float(left);
+    let finite = finite_float_requirement(bound.format, operand.clone())?;
+    let nonzero = if operator == Divide {
+        let zero = match bound.format {
+            KernelFloatType::Float32 => MachineTerm::constant(0),
+            KernelFloatType::Float64 => MachineTerm::uint64_constant(0),
+        };
+        let zero = crate::kernel::KernelTermImport::default().float(bound.format, &zero);
+        let condition = crate::kernel::KernelTerm::float_compare(
+            bound.format,
+            ComparisonOperator::NotEqual,
+            [operand, zero],
+        )
+        .ok()?;
+        Some(Proposition::condition_is(
+            crate::kernel::StoredConditionTerm::from_root(condition)?,
+            true,
+        ))
+    } else {
+        None
+    };
+    Some((finite, nonzero))
 }
 
 /// Ordered sums and differences, products and quotients over finite

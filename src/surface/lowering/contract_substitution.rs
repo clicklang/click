@@ -121,6 +121,10 @@ pub(in crate::surface) fn unfold_selected_predicates_in_proposition(
         ClickProposition::Defined { expression } => Ok(ClickProposition::Defined {
             expression: expression.clone(),
         }),
+        ClickProposition::IsA { class, pointer } => Ok(ClickProposition::IsA {
+            class: class.clone(),
+            pointer: pointer.clone(),
+        }),
         ClickProposition::At {
             selector,
             proposition,
@@ -469,6 +473,10 @@ fn substitute_click_proposition_nonlogical(
         }
         ClickProposition::Defined { expression } => Ok(ClickProposition::Defined {
             expression: substitute_contract_expression_in(expression, substitutions)?,
+        }),
+        ClickProposition::IsA { class, pointer } => Ok(ClickProposition::IsA {
+            class: class.clone(),
+            pointer: substitute_contract_expression_in(pointer, substitutions)?,
         }),
         ClickProposition::ForAll {
             click_type: interface_type,
@@ -858,6 +866,16 @@ fn rewrite_click_proposition_expression(
         ClickProposition::Defined { expression: value } => {
             let (value, changed) = expression(value);
             (ClickProposition::Defined { expression: value }, changed)
+        }
+        ClickProposition::IsA { class, pointer } => {
+            let (pointer, changed) = expression(pointer);
+            (
+                ClickProposition::IsA {
+                    class: class.clone(),
+                    pointer,
+                },
+                changed,
+            )
         }
         ClickProposition::At {
             selector,
@@ -2122,6 +2140,10 @@ fn apply_contract_let_expressions_inner(
         ClickProposition::Defined { expression } => Ok(ClickProposition::Defined {
             expression: apply_contract_lets_to_expression(expression, bindings)?,
         }),
+        ClickProposition::IsA { class, pointer } => Ok(ClickProposition::IsA {
+            class,
+            pointer: apply_contract_lets_to_expression(pointer, bindings)?,
+        }),
         ClickProposition::At {
             selector,
             proposition,
@@ -2925,7 +2947,11 @@ fn collect_click_proposition_referenced_bindings_one<N: ReferencedBinding>(
                 collect_program_expression_referenced_bindings(expression, names);
             }
         }
-        ClickProposition::Defined { expression } => {
+        ClickProposition::Defined { expression }
+        | ClickProposition::IsA {
+            pointer: expression,
+            ..
+        } => {
             collect_contract_expression_referenced_bindings(expression, names);
         }
         ClickProposition::At { proposition, .. } => {

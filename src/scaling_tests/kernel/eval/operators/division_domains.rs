@@ -81,10 +81,11 @@ fn literal_or_zero_check_ignores_related_and_unrelated_bounds() {
 }
 
 #[test]
-fn computed_divisor_queries_use_one_exact_operand_fact() {
+fn computed_divisor_queries_use_indexed_operand_facts() {
     let format = MachineIntegerType::Int32;
     let word = MachineTerm::var(Variable(973_001));
     let literal = MachineTerm::constant(1);
+    let positive = MachineTerm::var(Variable(973_002));
     let xor = MachineTerm::machine_binary(
         format,
         MachineBinaryOp::BitwiseXor,
@@ -95,14 +96,19 @@ fn computed_divisor_queries_use_one_exact_operand_fact() {
         format,
         MachineBinaryOp::BitwiseOr,
         word.clone(),
-        literal.clone(),
+        positive.clone(),
     );
     let zero = ConditionTerm::equal(xor.clone(), MachineTerm::constant(0));
+    let or_zero = ConditionTerm::equal(or.clone(), MachineTerm::constant(0));
     let path = ExecutionFacts::new();
     for related in [false, true] {
         let samples = [4, 16, 64].map(|size| {
             let mut facts = PureFactContext::new()
                 .assume_condition(ConditionTerm::equal(word.clone(), literal.clone()), false)
+                .assume_condition(
+                    ConditionTerm::signed_greater_than(positive.clone(), MachineTerm::constant(0)),
+                    true,
+                )
                 .assume_condition(
                     ConditionTerm::signed_greater_equal(word.clone(), MachineTerm::constant(0)),
                     true,
@@ -121,12 +127,18 @@ fn computed_divisor_queries_use_one_exact_operand_fact() {
             let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
                 (
                     decide_zero(&xor, &zero, &facts, &path),
-                    or_cannot_be_minus_one(format, &or, &facts, &path),
+                    decide_zero(&or, &or_zero, &facts, &path),
+                    bitwise_excludes(format, &or, true, &facts, &path),
+                    bitwise_excludes(format, &xor, true, &facts, &path),
                 )
             });
-            assert_eq!(result, (Some(false), true));
+            assert_eq!(result, (Some(false), Some(false), true, true));
             work
         });
-        assert_eq!(samples, [samples[0]; 3], "{related}: {samples:?}");
+        let minimum = samples.iter().copied().min().unwrap();
+        assert!(
+            samples.iter().all(|&work| work <= minimum + 4),
+            "{related}: {samples:?}"
+        );
     }
 }

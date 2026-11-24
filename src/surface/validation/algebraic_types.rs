@@ -1586,7 +1586,11 @@ fn validate_algebraic_proposition_one(
             .map(|_| ())
         }
         ClickProposition::FloatClassification { expression, .. }
-        | ClickProposition::Defined { expression } => validate_algebraic_expression(
+        | ClickProposition::Defined { expression }
+        | ClickProposition::IsA {
+            pointer: expression,
+            ..
+        } => validate_algebraic_expression(
             expression,
             variables,
             click_functions,
@@ -4278,7 +4282,11 @@ fn validate_generic_proposition_types_one(
             unreachable!("logical propositions are handled iteratively")
         }
         ClickProposition::FloatClassification { expression, .. }
-        | ClickProposition::Defined { expression } => {
+        | ClickProposition::Defined { expression }
+        | ClickProposition::IsA {
+            pointer: expression,
+            ..
+        } => {
             let _ = infer_generic_expression_type(
                 expression,
                 variables,
