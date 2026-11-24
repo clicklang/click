@@ -10109,7 +10109,7 @@ theorem float64_pointer_add_associate_uint64(p: double*, i: uint64, j: uint64) {
 
 ## Floating-point order
 
-[`library/float_order.click`](../../../library/float_order.click) provides
+[`library/float_order.click`](https://github.com/clicklang/click/blob/master/library/float_order.click) provides
 local transitivity laws for IEEE comparisons. The two true premises exclude
 NaN from every operand. Infinities and signed zeros obey the same laws.
 Use these with an explicitly stated intermediate endpoint.
