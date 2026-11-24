@@ -14,7 +14,7 @@ theorem bare_instantiate(n: int32, k: int32) {
         instantiate(forall (j: int32) {
             0 <= j and j < n implies tag(j) == 0
         }, k);
-        known();
+        close();
     }
 }
 ```

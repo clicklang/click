@@ -19,7 +19,7 @@ use click::surface::{
     verify_project_at, verify_sources_at,
 };
 
-const USAGE: &str = "usage: click expand [--work-limit <UNITS>] [--time-limit <DURATION>] [--output <PATH> | --in-place] <sidecar.click|mdtest.md>:<line>[:<column>]\n       click expand --claim <LABEL|PATH:LINE[:COLUMN]> [--work-limit <UNITS>] [--time-limit <DURATION>] [--output <PATH> | --in-place] <sidecar.click|mdtest.md>\n       click expand --migrate-normalize [--claim <LABEL>] <sidecar.click|mdtest.md>\n\n--migrate-normalize proposes checked substitutions for written normalize calls. The expanded proof is used as validation and the output keeps the short substitutions.\n\n--claim selects a claim by its label or by a line its clause or proof covers. Expansion is checked before output. Whole-claim expansions are checked with the implicit closer off. With --output, write the rewrite beside the input. With --in-place, atomically replace the input after targeted verification succeeds.\n\nThe whole command, generating the expansion and checking it, has a deterministic budget of --work-limit units (default 50000000), beside every tactic's own work budget. --time-limit (default 10m) is only a wall-clock crash-containment bound for a hung or CPU-starved run, not a verdict about the proof.";
+const USAGE: &str = "usage: click expand [--work-limit <UNITS>] [--time-limit <DURATION>] [--output <PATH> | --in-place] <sidecar.click|mdtest.md>:<line>[:<column>]\n       click expand --claim <LABEL|PATH:LINE[:COLUMN]> [--work-limit <UNITS>] [--time-limit <DURATION>] [--output <PATH> | --in-place] <sidecar.click|mdtest.md>\n       click expand --migrate-normalize [--claim <LABEL>] <sidecar.click|mdtest.md>\n\n--migrate-normalize proposes checked substitutions for written normalize calls. The expanded proof is used as validation and the output keeps the short substitutions.\n\n--claim selects a claim by its label or by a line its clause or proof covers. Expansion is checked before output. Whole-claim expansions are checked with proof search disabled. With --output, write the rewrite beside the input. With --in-place, atomically replace the input after targeted verification succeeds.\n\nThe whole command, generating the expansion and checking it, has a deterministic budget of --work-limit units (default 50000000), beside every tactic's own work budget. --time-limit (default 10m) is only a wall-clock crash-containment bound for a hung or CPU-starved run, not a verdict about the proof.";
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Arguments {
@@ -180,7 +180,7 @@ fn run_bounded(arguments: &Arguments) -> Result<String, String> {
             0,
         );
     }
-    let (claim, expanded) = generate_expansion(|| {
+    let selected = generate_expansion(|| {
         expand_selection(
             Some(&project),
             &click_source,
@@ -192,14 +192,7 @@ fn run_bounded(arguments: &Arguments) -> Result<String, String> {
             },
         )
     })?;
-    verified_expansion(
-        Some(&project),
-        &click_source,
-        expanded,
-        &inputs,
-        &claim,
-        arguments,
-    )
+    verified_expansion(Some(&project), &click_source, selected, &inputs, arguments)
 }
 
 fn check_output_directory(input: &Path, output: &Path) -> Result<(), String> {
@@ -289,7 +282,7 @@ fn run_mdtest(arguments: &Arguments) -> Result<String, String> {
             mdtest.replace_click_source(&markdown, &migrated)
         };
     }
-    let (claim, expanded) = generate_expansion(|| {
+    let selected = generate_expansion(|| {
         let selection = match &arguments.selection {
             Selection::Tactic { line, column } => Selection::Tactic {
                 line: mdtest.click_line(*line)?,
@@ -310,14 +303,8 @@ fn run_mdtest(arguments: &Arguments) -> Result<String, String> {
             &location,
         )
     })?;
-    let expanded = verified_expansion(
-        project.as_ref(),
-        click_source,
-        expanded,
-        &inputs,
-        &claim,
-        arguments,
-    )?;
+    let expanded =
+        verified_expansion(project.as_ref(), click_source, selected, &inputs, arguments)?;
     mdtest.replace_click_source(&markdown, &expanded)
 }
 
@@ -355,13 +342,19 @@ impl SelectionReport<'_> {
     }
 }
 
+struct SelectedExpansion {
+    claim: String,
+    source: String,
+    whole_claim: bool,
+}
+
 fn expand_selection(
     project: Option<&ClickProject>,
     click_source: &str,
     inputs: &VerificationInput,
     selection: &Selection,
     report: &SelectionReport<'_>,
-) -> Result<(String, String), String> {
+) -> Result<SelectedExpansion, String> {
     match selection {
         Selection::Tactic { line, column } => {
             let selected = select_smart_tactic(project, click_source, inputs, *line, *column)
@@ -395,7 +388,11 @@ fn expand_selection(
                     column,
                 )
             })?;
-            Ok((claim, expanded))
+            Ok(SelectedExpansion {
+                claim,
+                source: expanded,
+                whole_claim: false,
+            })
         }
         Selection::MigrateNormalize(_) => unreachable!("migration handled before expansion"),
         Selection::Claim(requested) => {
@@ -432,13 +429,20 @@ fn expand_selection(
                     report.path.display()
                 )
             })?;
-            Ok((expansion.proof_unit, expansion.source))
+            // A loop phase inside its owner's proof rewrites only part of
+            // that proof. Compare resolved labels even for FILE:LINE input.
+            Ok(SelectedExpansion {
+                whole_claim: claim == expansion.proof_unit,
+                claim: expansion.proof_unit,
+                source: expansion.source,
+            })
         }
     }
 }
 
 fn generate_expansion<R>(operation: impl FnOnce() -> Result<R, String>) -> Result<R, String> {
-    let (result, events) = click::instrumentation::collect(operation);
+    let (result, events) =
+        click::instrumentation::collect(|| click::surface::with_expansion_close_output(operation));
     if click::instrumentation::deadline_exceeded() {
         return Err(expansion_limit_error(
             "generating the selected tactic certificate",
@@ -518,49 +522,43 @@ fn select_smart_tactic(
     }
 }
 
-/// The expansion to write, verified: its grouped closers shortened
-/// (`tidy_expansion_closers`) when that form verifies, and as generated
-/// otherwise.
 fn verified_expansion(
     project: Option<&ClickProject>,
     click_source: &str,
-    expanded: String,
+    selected: SelectedExpansion,
     inputs: &VerificationInput,
-    claim: &str,
     arguments: &Arguments,
 ) -> Result<String, String> {
-    let whole_claim = selects_whole_claim(&arguments.selection, claim);
-    if let Some(tidied) = click::surface::tidy_expansion_closers(click_source, &expanded)
-        && verify_expansion(project, click_source, &tidied, inputs, claim, whole_claim).is_ok()
-    {
-        return Ok(tidied);
-    }
-    verify_expansion(project, click_source, &expanded, inputs, claim, whole_claim).map_err(
-        |error| {
-            let path = arguments.click_path.display();
-            let selection = match &arguments.selection {
-                Selection::MigrateNormalize(_) => unreachable!("migration checks directly"),
-                Selection::Claim(label) => format!("`{label}` in `{path}`"),
-                Selection::Tactic { line, column } => match column {
-                    Some(column) => format!("`{path}:{line}:{column}` in `{claim}`"),
-                    None => format!("`{path}:{line}` in `{claim}`"),
-                },
-            };
-            format!("{error}\nOriginal selection {selection}")
-        },
-    )?;
+    let SelectedExpansion {
+        claim,
+        source: expanded,
+        whole_claim,
+    } = selected;
+    verify_expansion(
+        project,
+        click_source,
+        &expanded,
+        inputs,
+        &claim,
+        whole_claim,
+    )
+    .map_err(|error| {
+        let path = arguments.click_path.display();
+        let selection = match &arguments.selection {
+            Selection::MigrateNormalize(_) => unreachable!("migration checks directly"),
+            Selection::Claim(label) => format!("`{label}` in `{path}`"),
+            Selection::Tactic { line, column } => match column {
+                Some(column) => format!("`{path}:{line}:{column}` in `{claim}`"),
+                None => format!("`{path}:{line}` in `{claim}`"),
+            },
+        };
+        format!("{error}\nOriginal selection {selection}")
+    })?;
     Ok(expanded)
 }
 
-/// Whether `selection` names the whole proof unit `claim` expanded. A loop
-/// phase selected by its label expands one site of its enclosing claim, whose
-/// other steps keep the implicit closer, as when the phase is selected by line.
-fn selects_whole_claim(selection: &Selection, claim: &str) -> bool {
-    matches!(selection, Selection::Claim(selected) if selected == claim)
-}
-
 /// Checks the expansion before it is written. A whole claim's expansion has
-/// nothing smart left, so that claim is checked with the implicit closer off
+/// nothing smart left, so that claim is checked with proof search disabled
 /// and so shown self-contained, while the proofs around it keep the closer
 /// they were written against, as in `click audit`. A single site's
 /// expansion leaves the claim's other steps and smart tactics, which still
@@ -574,7 +572,7 @@ fn verify_expansion(
     whole_claim: bool,
 ) -> Result<(), String> {
     if whole_claim {
-        click::surface::without_implicit_solve_for_claim(claim, || {
+        click::surface::without_proof_search_for_claim(claim, || {
             verify_expansion_now(project, original, expanded, inputs, claim)
         })
     } else {
@@ -1069,7 +1067,7 @@ int32 bad(int32 x) {
                 .lines()
                 .zip(from_solve.lines().skip(1))
                 .any(|(have, body)| have.trim() == "have st.live == 1 by {"
-                    && body.trim() == "known();"),
+                    && body.trim() == "close();"),
             "{from_solve}"
         );
         // The written `solve() using` is replaced, at whatever indentation.
@@ -1245,9 +1243,9 @@ int32 bad(int32 x) {
         assert_eq!(
             arm[..6],
             [
-                "have error == 7 by known();",
+                "have error == 7 by close();",
                 "step() by {",
-                "known();",
+                "close();",
                 "}",
                 "step();",
                 "step();",
@@ -1386,6 +1384,20 @@ int32 identity(int32 x) {
 
         assert_ne!(expanded, click_source);
         assert!(!expanded.contains("solve();"));
+        let by_location = Selection::Claim(format!("{}:2:5", arguments.click_path.display()));
+        let selection = expand_selection(
+            None,
+            click_source,
+            &VerificationInput::Bundle(Vec::new()),
+            &by_location,
+            &SelectionReport {
+                path: &arguments.click_path,
+                line_offset: 0,
+            },
+        )
+        .unwrap();
+        assert_eq!(selection.claim, "successor.ensures_0");
+        assert!(selection.whole_claim);
         fs::remove_dir_all(directory).unwrap();
     }
 
@@ -1503,7 +1515,8 @@ theorem use_add_one(x: Integer) {
             .expect("Integer theorem applications should expand and independently recheck");
 
         assert_ne!(expanded, click_source);
-        assert!(!expanded.contains("apply(add_one(x));"));
+        // Bare application is itself a checked step with these premises.
+        assert!(expanded.contains("apply(add_one(x));"));
         fs::remove_dir_all(directory).unwrap();
     }
 
@@ -1524,6 +1537,78 @@ theorem use_add_one(x: Integer) {
                 error.contains("report this as a bug") && error.contains(generated),
                 "{error}"
             );
+        }
+    }
+
+    #[test]
+    fn close_replays_direct_hits_and_expands_its_search() {
+        let source = r#"
+theorem written(x: int32) {
+    requires x == 0;
+    ensures x == 0 by known();
+}
+theorem direct(x: int32) {
+    requires x == 0;
+    ensures x == 0 by close();
+}
+theorem fallback(x: int32) {
+    ensures x == 0 implies x == 0 by close();
+}
+"#;
+        let inputs = VerificationInput::Bundle(Vec::new());
+        verify_expansion(None, source, source, &inputs, "direct.ensures_0", true).unwrap();
+
+        let claim = "fallback.ensures_0";
+        verify_expansion(None, source, source, &inputs, claim, false).unwrap();
+        assert!(verify_expansion(None, source, source, &inputs, claim, true).is_err());
+        let expanded = generate_expansion(|| {
+            click::surface::expand_c_claim_source_by_label(source, &[], claim)
+                .map_err(|error| error.report())
+        })
+        .unwrap();
+        assert!(expanded.contains("ensures x == 0 by known();"));
+        let fallback = expanded.split("theorem fallback").nth(1).unwrap();
+        assert!(fallback.contains("intro();") && fallback.contains("close();"));
+        assert!(!fallback.contains("known();"));
+        verify_expansion(None, source, &expanded, &inputs, claim, true).unwrap();
+        // If a step goes missing, ordinary verification can still recover
+        // at the new spelling. The whole-claim replay must refuse it.
+        let incomplete = expanded.replace("intro();", "");
+        verify_expansion(None, source, &incomplete, &inputs, claim, false).unwrap();
+        assert!(verify_expansion(None, source, &incomplete, &inputs, claim, true).is_err());
+    }
+
+    #[test]
+    fn whole_claim_replay_refuses_search_even_in_nested_proofs() {
+        let source = r#"
+theorem neighbor(x: int32) {
+    ensures x == 0 implies x == 0 by solve();
+}
+theorem selected(x: int32) {
+    ensures x == 0 implies x == 0 by {
+        intro();
+        have x == 0 by { known(); }
+        known();
+    }
+}
+"#;
+        let inputs = VerificationInput::Bundle(Vec::new());
+        let claim = "selected.ensures_0";
+        verify_expansion(None, source, source, &inputs, claim, true).unwrap();
+        for body in [
+            "solve();",
+            "intro(); have x == 0 by { solve(); } known();",
+            "intro();",
+        ] {
+            let incomplete = source.replace(
+                "intro();\n        have x == 0 by { known(); }\n        known();",
+                body,
+            );
+            assert_ne!(source, incomplete);
+            verify_expansion(None, source, &incomplete, &inputs, claim, false).unwrap();
+            let error =
+                verify_expansion(None, source, &incomplete, &inputs, claim, true).unwrap_err();
+            assert!(error.contains(claim), "{error}");
         }
     }
 

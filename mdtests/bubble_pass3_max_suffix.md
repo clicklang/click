@@ -57,18 +57,17 @@ int32 bubble_pass3(int32 p[3]) {
     loop {
         decreases 2 - j;
         invariant j >= 0 and j <= 2;
-        invariant all_le_range(p, 0, j, p[j]);
-        initialize by {
-            unfold(all_le_range(p, 0, j, p[j]));
-            solve();
-        }
+        invariant forall (m: int32) { 0 <= m and 0 <= m and m < j implies p[m] <= p[j] };
+        initialize by solve();
         maintain by {
             branch ensuring {
                 fact defined(j + 1);
                 fact p[j] <= p[j + 1];
-                fact all_le_range(p, 0, j, p[j + 1]);
+                fact forall (k: int32) { 0 <= k and 0 <= k and k < j implies defined(j + 1) };
+                fact forall (k: int32) { 0 <= k and 0 <= k and k < j implies p[k] <= p[j + 1] };
             } {
                 true => {
+                    mark before_swap;
                     step();
                     step();
                     step();
@@ -103,26 +102,61 @@ int32 bubble_pass3(int32 p[3]) {
                             unfold(all_le_range(p, 0, j, p[j + 1]));
                             intro(); intro();
                             have k == 0 by solve();
-                            solve();
+                            have at(before_swap, 0 <= k and 0 <= k and k < j) by solve();
+                            instantiate(at(before_swap, forall (m: int32) {
+                                0 <= m and 0 <= m and m < j implies p[m] <= p[j]
+                            }), k);
+                            have p[k] == at(before_swap, p[k]) by {
+                                rewrite(k, 0);
+                                solve() using {
+                                    at(loop(0).statement(0).statement(1).exit, p[0]) == at(loop(0).statement(0).statement(1).entry, p[0]);
+                                    at(loop(0).statement(0).statement(2).exit, p[0]) == at(loop(0).statement(0).statement(2).entry, p[0]);
+                                };
+                            }
+                            have p[j + 1] == at(before_swap, p[j]) by { solve(); }
+                            solve() using {
+                                p[k] == at(before_swap, p[k]);
+                                p[j + 1] == at(before_swap, p[j]);
+                                at(before_swap, p[k] <= p[j]);
+                            };
                         }
                     }
+                    have forall (k: int32) { 0 <= k and 0 <= k and k < j implies defined(j + 1) } by {
+                        intro(); intro(); known();
+                    }
+                    unfold(all_le_range(p, 0, j, p[j + 1]));
                 }
                 false => {
                     have defined(j + 1);
                     have p[j] <= p[j + 1];
                     have all_le_range(p, 0, j, p[j + 1]) by {
                         unfold(all_le_range(p, 0, j, p[j + 1]));
-                        solve();
+                        intro(); intro();
+                        instantiate(forall (i: int32) { 0 <= i and 0 <= i and i < j implies p[i] <= p[j] }, k);
+                        solve() using { p[k] <= p[j]; p[j] <= p[j + 1]; };
                     }
+                    have forall (k: int32) { 0 <= k and 0 <= k and k < j implies defined(j + 1) } by {
+                        intro(); intro(); known();
+                    }
+                    unfold(all_le_range(p, 0, j, p[j + 1]));
                 }
             }
             step();
-            unfold(all_le_range(p, 0, j, p[j + 1]));
+            solve();
         }
         owns p[0..3];
     }
-    step();
-    unfold(all_le_range(p, 0, j, p[j + 1]));
+    have j == 2 by solve();
+    have p[j] == p[2] by { normalize() using { j == 2; }; }
+    have all_le_range(p, 0, 2, p[2]) by {
+        unfold(all_le_range(p, 0, 2, p[2]));
+        intro(); intro();
+        have k < j by { solve() using { j == 2; k < 2; }; }
+        instantiate(forall (m: int32) { 0 <= m and 0 <= m and m < j implies p[m] <= p[j] }, k);
+        rewrite(p[2], p[j]);
+        known();
+    }
+    step_until(function.exit);
     solve();
 }
 ```

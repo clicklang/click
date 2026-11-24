@@ -1,4 +1,6 @@
-use super::schema::{Expression as E, Function, Record, RustExport, Statement as S, Type};
+use super::schema::{
+    Expression as E, Function, MirCallee, MirLocalId, Record, RustExport, Statement as S, Type,
+};
 #[cfg(test)]
 mod array_reference_tests;
 mod arrays;
@@ -562,7 +564,7 @@ fn no_effect(statement: &ProgramStatement) -> bool {
 
 /// The slice local `slice` reads: the local itself, or a shared borrow of it,
 /// `&bytes`, which has the same pointer and length.
-pub(super) fn shared_slice_local(slice: &E) -> Option<&String> {
+pub(super) fn shared_slice_local(slice: &E) -> Option<&MirLocalId> {
     match slice {
         E::Local { name } => Some(name),
         E::Borrow {
@@ -919,6 +921,16 @@ fn lower_function(
     } else {
         scalar_type(&f.return_type)?
     };
+    // Instances retain the names of their generic contract. Other bodyless
+    // declarations can take their parameter names from the sidecar head.
+    let instance_of = if f.external {
+        f.instance_of
+            .clone()
+            .or_else(|| super::standard_library::library_generic(f))
+    } else {
+        None
+    };
+    let owner = LocalFunctionId::new(Some(export.logical_source.clone()), f.name.clone());
     let mut parameters = Vec::new();
     let mut kernel_parameters = Vec::new();
     let mut locals = BTreeSet::new();
@@ -926,7 +938,18 @@ fn lower_function(
     let mut shared_scalar_slices = BTreeMap::new();
     let mut arrays = BTreeMap::new();
     let mut references = BTreeMap::new();
-    for p in &f.parameters {
+    for (position, p) in f.parameters.iter().enumerate() {
+        let spelling = || p.name.source_name().ok_or("unnamed Rust parameter");
+        let binding = match &p.name {
+            MirLocalId::Source(name) => BindingName::from(name.clone()),
+            MirLocalId::PositionalParameter { position: slot }
+                if f.external && instance_of.is_none() && *slot == position =>
+            {
+                let ordinal = u32::try_from(position).map_err(|_| "too many Rust parameters")?;
+                BindingName::from(LocalBindingId::new(owner.clone(), true, ordinal, None))
+            }
+            _ => return Err("unnamed Rust parameter".into()),
+        };
         crate::instrumentation::record_deterministic_work(1);
         if matches!(p.value_type, Type::Array { .. }) {
             return Err("by-value Rust arrays as parameters are not supported".into());
@@ -943,17 +966,17 @@ fn lower_function(
             }
             let layout = layouts.get(name).ok_or("missing parameter record layout")?;
             let parameter =
-                ImportedParameter::new(InterfaceType::UInt8Pointer, p.name.clone(), None)
+                ImportedParameter::from_binding(InterfaceType::UInt8Pointer, binding, None)
                     .with_struct_value(name.clone(), layout.clone());
             kernel_parameters.push(parameter.to_kernel_parameter());
             parameters.push(parameter);
             continue;
         }
         if let Type::ByteSlice { mutable } = &p.value_type {
-            let length = BindingName::slice_length(&p.name);
+            let length = BindingName::slice_length(spelling()?);
             slices.insert(p.name.clone(), (length.clone(), !mutable));
             parameters.push(
-                ImportedParameter::new(InterfaceType::UInt8Pointer, p.name.clone(), None)
+                ImportedParameter::from_binding(InterfaceType::UInt8Pointer, binding.clone(), None)
                     .with_pointee_constant(!mutable)
                     .with_slice_length_parameter(1),
             );
@@ -963,7 +986,7 @@ fn lower_function(
                 None,
             ));
             kernel_parameters.push(
-                program_parameter(&p.name, ProgramType::UInt8Pointer)
+                program_parameter(binding, ProgramType::UInt8Pointer)
                     .with_pointee_constant(!mutable)
                     .with_slice_length_parameter(1),
             );
@@ -974,7 +997,7 @@ fn lower_function(
             if !element.is_integer() {
                 return Err("scalar slice parameters require integer elements".into());
             }
-            let length = BindingName::slice_length(&p.name);
+            let length = BindingName::slice_length(spelling()?);
             let pointer = scalar_type(&Type::Reference {
                 mutable: *mutable,
                 pointee: element.clone(),
@@ -984,7 +1007,7 @@ fn lower_function(
                 (length.clone(), scalar_type(element)?.to_kernel_type()),
             );
             parameters.push(
-                ImportedParameter::new(pointer, p.name.clone(), None)
+                ImportedParameter::from_binding(pointer, binding.clone(), None)
                     .with_pointee_constant(!mutable)
                     .with_slice_length_parameter(1),
             );
@@ -994,7 +1017,7 @@ fn lower_function(
                 None,
             ));
             kernel_parameters.push(
-                program_parameter(&p.name, pointer.to_kernel_type())
+                program_parameter(binding, pointer.to_kernel_type())
                     .with_pointee_constant(!mutable)
                     .with_slice_length_parameter(1),
             );
@@ -1007,11 +1030,11 @@ fn lower_function(
         if let Type::FnPointer { .. } = &p.value_type {
             let signature = fn_pointer_signature(&p.value_type)?;
             kernel_parameters.push(program_parameter(
-                &p.name,
+                binding,
                 signature.pointer_type().to_kernel_type(),
             ));
             parameters.push(ImportedParameter::function_pointer(
-                p.name.clone(),
+                spelling()?.to_owned(),
                 signature,
             ));
             continue;
@@ -1047,11 +1070,12 @@ fn lower_function(
             ),
             _ => (None, false),
         };
-        let mut parameter = ImportedParameter::new(interface_type, p.name.clone(), tag.clone())
-            .with_pointee_constant(constant);
+        let mut parameter =
+            ImportedParameter::from_binding(interface_type, binding.clone(), tag.clone())
+                .with_pointee_constant(constant);
         // The record's layout is what seeds a whole-record `owns *x` at its
         // fields' widths, so a 64-bit field reads as one cell.
-        let mut kernel_parameter = program_parameter(&p.name, interface_type.to_kernel_type())
+        let mut kernel_parameter = program_parameter(binding, interface_type.to_kernel_type())
             .with_pointee_constant(constant);
         if let Some(layout) = tag.as_ref().and_then(|name| layouts.get(name)) {
             parameter = parameter.with_pointee_struct_layout(tag.clone().unwrap(), layout.clone());
@@ -1079,12 +1103,6 @@ fn lower_function(
         if f.mir.is_some() || !f.body.is_empty() {
             return Err("Rust extern function must not carry a body".into());
         }
-        // A core method the Click library states is an instance of its
-        // library generic function.
-        let instance_of = f
-            .instance_of
-            .clone()
-            .or_else(|| super::standard_library::library_generic(f));
         let generic = instance_of.is_some();
         let mut declaration = ImportedFunction::external(return_type, f.name.clone(), parameters)
             .with_generic_instance(instance_of);
@@ -1116,7 +1134,6 @@ fn lower_function(
     // A source name bound more than once is one declaration per binding,
     // spelled as the source spells it; MIR's local order is the
     // declaration order, so a proof's `word` is the innermost live one.
-    let owner = LocalFunctionId::new(Some(export.logical_source.clone()), f.name.clone());
     let bindings = f
         .mir
         .iter()
@@ -1125,7 +1142,13 @@ fn lower_function(
                 .iter()
                 .enumerate()
                 .filter_map(|(ordinal, local)| {
-                    let id = if let Some(&ordinal) = mir.compound_literals.get(&local.name) {
+                    let id = if local.name == mir.return_place {
+                        let id = LocalBindingId::return_place(owner.clone());
+                        if let Ok(value_type) = scalar_type(&local.value_type) {
+                            id.initialize_program_type(value_type.to_kernel_type());
+                        }
+                        id
+                    } else if let Some(&ordinal) = mir.compound_literals.get(&local.name) {
                         let id = LocalBindingId::compound_literal(owner.clone(), ordinal);
                         match &local.value_type {
                             Type::Array { element, length } => {
@@ -1145,6 +1168,9 @@ fn lower_function(
                         id
                     } else if let Some(&ordinal) = mir.borrowed_scalars.get(&local.name) {
                         LocalBindingId::temporary(owner.clone(), ordinal)
+                    } else if matches!(local.name, MirLocalId::SliceComponent { .. }) {
+                        let ordinal = u32::try_from(ordinal).ok()?;
+                        LocalBindingId::slice_component(owner.clone(), ordinal)
                     } else {
                         let spelling = mir.spellings.get(&local.name)?;
                         let ordinal = u32::try_from(ordinal).ok()?;
@@ -1219,11 +1245,15 @@ fn lower_function(
             mir.locals
                 .iter()
                 .filter_map(|local| match &local.value_type {
-                    Type::Record { name } => Some((cx.binding(&local.name), name.clone())),
+                    Type::Record { name } => Some(
+                        cx.binding(&local.name)
+                            .map(|binding| (binding, name.clone())),
+                    ),
                     _ => None,
                 })
-                .collect()
+                .collect::<Result<_, _>>()
         })
+        .transpose()?
         .unwrap_or_default();
     let mut lowered = ImportedFunction::external(return_type, f.name.clone(), parameters)
         .with_local_struct_values(local_records)
@@ -1249,33 +1279,34 @@ fn lower_function(
 struct Context<'a> {
     /// The binding of each local whose source name is bound more than
     /// once, by its MIR key; every other local is bound by its name.
-    bindings: BTreeMap<String, BindingName>,
+    bindings: BTreeMap<MirLocalId, BindingName>,
     /// Expression values retained until their last read.
-    scalar_operands: BTreeMap<String, (u32, crate::languages::rust::borrow_frontiers::MirPoint)>,
+    scalar_operands:
+        BTreeMap<MirLocalId, (u32, crate::languages::rust::borrow_frontiers::MirPoint)>,
     /// Where each of those is declared: its binding and source statement
     /// (`Function::sites`), so `statement(i).local(word)` names it.
     declaration_sites: Vec<(BindingName, u32)>,
-    shared_array_iterators: BTreeMap<String, shared_arrays::SliceIteratorStorage>,
+    shared_array_iterators: BTreeMap<MirLocalId, shared_arrays::SliceIteratorStorage>,
     /// The range locals, with their element type.
-    ranges: BTreeMap<String, ranges::RangeStorage>,
+    ranges: BTreeMap<MirLocalId, ranges::RangeStorage>,
     /// The count of each enumerated slice iterator and the index of each yielded Option.
-    enumerate_fields: BTreeMap<String, BindingName>,
-    shared_array_options: BTreeMap<String, shared_arrays::SliceIteratorOptionStorage>,
-    shared_scalar_slices: BTreeMap<String, (BindingName, ProgramType)>,
-    mir_chunk_iterators: BTreeMap<String, crate::languages::interface::ChunkIteratorFields>,
-    chunk_options: BTreeMap<String, chunks::ChunkOptionFields>,
-    local_arrays: BTreeSet<String>,
-    owned_locals: BTreeSet<String>,
+    enumerate_fields: BTreeMap<MirLocalId, BindingName>,
+    shared_array_options: BTreeMap<MirLocalId, shared_arrays::SliceIteratorOptionStorage>,
+    shared_scalar_slices: BTreeMap<MirLocalId, (BindingName, ProgramType)>,
+    mir_chunk_iterators: BTreeMap<MirLocalId, crate::languages::interface::ChunkIteratorFields>,
+    chunk_options: BTreeMap<MirLocalId, chunks::ChunkOptionFields>,
+    local_arrays: BTreeSet<MirLocalId>,
+    owned_locals: BTreeSet<MirLocalId>,
     /// Integer and `bool` locals, which a borrow takes the address of.
-    addressable_locals: BTreeSet<String>,
+    addressable_locals: BTreeSet<MirLocalId>,
     /// The enum and type-parameter locals the body borrows, with the C type
     /// of their value. Such a value otherwise lives in its local's binding;
     /// these live in their object's memory, so a write through the borrow
     /// is the value later reads see.
-    memory_values: BTreeMap<String, ProgramType>,
-    slices: BTreeMap<String, (BindingName, bool)>,
-    arrays: BTreeMap<String, (u64, ProgramType, bool)>,
-    references: BTreeMap<String, bool>,
+    memory_values: BTreeMap<MirLocalId, ProgramType>,
+    slices: BTreeMap<MirLocalId, (BindingName, bool)>,
+    arrays: BTreeMap<MirLocalId, (u64, ProgramType, bool)>,
+    references: BTreeMap<MirLocalId, bool>,
     source: &'a str,
     function: &'a str,
     fields: &'a BTreeMap<(&'a str, &'a str), (crate::kernel::LayoutOffset, ProgramType)>,
@@ -1290,7 +1321,7 @@ struct Context<'a> {
     step_pointee_layouts: std::cell::RefCell<BTreeMap<u32, crate::kernel::AggregateLayout>>,
     /// The iterator each loop advances, by loop index in preorder.
     loop_iterators: Vec<Option<crate::languages::interface::RustLoopIterator>>,
-    locals: BTreeSet<String>,
+    locals: BTreeSet<MirLocalId>,
     return_type: InterfaceType,
     layouts: &'a BTreeMap<String, RecordLayout>,
     records: &'a BTreeMap<&'a str, &'a Record>,
@@ -1298,11 +1329,14 @@ struct Context<'a> {
 }
 impl Context<'_> {
     /// The kernel binding of the local `name`.
-    fn binding(&self, name: &str) -> BindingName {
+    fn binding(&self, name: &MirLocalId) -> Result<BindingName, String> {
         self.bindings
             .get(name)
             .cloned()
-            .unwrap_or_else(|| BindingName::from(name))
+            .or_else(|| name.source_name().map(BindingName::from))
+            .ok_or_else(|| {
+                "unsupported Rust construct: compiler local has no storage binding".into()
+            })
     }
 
     fn result_step(&self) -> u32 {
@@ -1325,15 +1359,15 @@ impl Context<'_> {
 
     fn call_then_assign(
         &self,
-        target: impl Into<String>,
+        target: &MirLocalId,
         function: impl Into<String>,
         arguments: Vec<ProgramExpression>,
-    ) -> ProgramStatement {
+    ) -> Result<ProgramStatement, String> {
         let (call, value) = self.call_value(function, arguments);
-        program_seq(
+        Ok(program_seq(
             call,
-            program_assign(self.binding(&Into::<String>::into(target)), value),
-        )
+            program_assign(self.binding(target)?, value),
+        ))
     }
 
     fn load_with_source(
@@ -1381,7 +1415,7 @@ impl Context<'_> {
             block: point.block,
             statement: point.statement,
             node,
-            reference_local: name.as_str().into(),
+            reference_local: name.source_name()?.into(),
             kind,
         })
     }
@@ -1400,16 +1434,20 @@ impl Context<'_> {
         }
         statement
     }
-    fn declare_slice_length(&mut self, place: &str) -> Result<BindingName, String> {
-        if let Some(declaration) = self.bindings.get(place).and_then(BindingName::local_id)
-            && let Some(spelling) = declaration.spelling()
-        {
-            let shadows_parameter = self.slices.contains_key(spelling)
-                || self.shared_scalar_slices.contains_key(spelling);
-            return Ok(BindingName::lexical_local_slice_length(
-                declaration,
-                shadows_parameter,
-            ));
+    fn declare_slice_length(&mut self, place: &MirLocalId) -> Result<BindingName, String> {
+        if let Some(declaration) = self.bindings.get(place).and_then(BindingName::local_id) {
+            if let Some(length) = declaration.slice_component_length() {
+                return Ok(length.into());
+            }
+            if let Some(spelling) = declaration.spelling() {
+                let key = MirLocalId::from(spelling);
+                let shadows_parameter =
+                    self.slices.contains_key(&key) || self.shared_scalar_slices.contains_key(&key);
+                return Ok(BindingName::lexical_local_slice_length(
+                    declaration,
+                    shadows_parameter,
+                ));
+            }
         }
         let ordinal = self.next_slice_local;
         self.next_slice_local = ordinal.checked_add(1).ok_or("too many Rust slice locals")?;
@@ -1417,7 +1455,12 @@ impl Context<'_> {
             self.slice_local_owner.clone(),
             false,
             ordinal,
-            Some(place.to_owned()),
+            Some(
+                place
+                    .source_name()
+                    .ok_or("Rust slice storage has no source spelling")?
+                    .to_owned(),
+            ),
         )))
     }
 
@@ -1436,13 +1479,6 @@ impl Context<'_> {
                 left,
                 right,
             } => self.slice_split(slice, midpoint, left, right),
-            S::SliceFor {
-                iterator,
-                slice,
-                binding,
-                by_reference,
-                body,
-            } => self.slice_for(iterator, slice, binding, *by_reference, body),
             S::Declare { place, initializer } => {
                 if let Type::Reference { mutable, .. } = &place.value_type {
                     self.references.insert(place.name.clone(), !mutable);
@@ -1460,7 +1496,7 @@ impl Context<'_> {
                         .insert(place.name.clone(), (length.clone(), !mutable));
                     return Ok(program_seq(
                         program_declare_with_all_qualifiers(
-                            self.binding(&place.name),
+                            self.binding(&place.name)?,
                             ProgramType::UInt8Pointer,
                             false,
                             false,
@@ -1471,7 +1507,7 @@ impl Context<'_> {
                             program_declare(length.clone(), ProgramType::UInt64),
                             program_seq(
                                 program_assign(
-                                    self.binding(&place.name),
+                                    self.binding(&place.name)?,
                                     reference_view(
                                         pointer,
                                         ProgramType::UInt8Pointer,
@@ -1499,7 +1535,7 @@ impl Context<'_> {
                         .insert(place.name.clone(), (*length, source_element, !mutable));
                     return Ok(program_seq(
                         program_declare_with_all_qualifiers(
-                            self.binding(&place.name),
+                            self.binding(&place.name)?,
                             t,
                             false,
                             false,
@@ -1507,7 +1543,7 @@ impl Context<'_> {
                             !mutable,
                         ),
                         program_assign(
-                            self.binding(&place.name),
+                            self.binding(&place.name)?,
                             reference_view(pointer, t, false, !mutable),
                         ),
                     ));
@@ -1518,7 +1554,7 @@ impl Context<'_> {
                 }
                 let constant = matches!(place.value_type, Type::Reference { mutable: false, .. });
                 let declaration = program_declare_with_all_qualifiers(
-                    self.binding(&place.name),
+                    self.binding(&place.name)?,
                     t.to_kernel_type(),
                     false,
                     false,
@@ -1733,7 +1769,7 @@ impl Context<'_> {
                     result,
                     program_seq(
                         program_declare_with_all_qualifiers(
-                            self.binding(&place.name),
+                            self.binding(&place.name)?,
                             ProgramType::UInt8Pointer,
                             false,
                             false,
@@ -1755,7 +1791,7 @@ impl Context<'_> {
                 result,
                 program_seq(
                     program_assign(
-                        self.binding(&place.name),
+                        self.binding(&place.name)?,
                         reference_view(pointer, ProgramType::UInt8Pointer, false, true),
                     ),
                     program_assign(length_name, length),
@@ -1764,149 +1800,13 @@ impl Context<'_> {
         }
         Ok(result)
     }
-    // Semantic slice-iterator state: cursor plus remaining slice length.
-    // The signed length is the shared memory model's checked representation,
-    // not a generated count of processed elements.
-    fn slice_for(
-        &mut self,
-        iterator: &str,
-        slice: &E,
-        binding: &super::schema::Place,
-        by_reference: bool,
-        body: &[S],
-    ) -> Result<ProgramStatement, String> {
-        let (pointer, length) = self.slice_parts(slice)?;
-        let cursor = format!("{iterator}_cursor");
-        let remaining = format!("{iterator}_remaining");
-        let item = format!("{iterator}_item");
-        for name in [&cursor, &remaining, &item, &binding.name] {
-            if !self.locals.insert(name.clone()) {
-                return Err("Rust iterator state identity collision".into());
-            }
-        }
-        let expected = if by_reference {
-            Type::Reference {
-                mutable: false,
-                pointee: Box::new(Type::U8),
-            }
-        } else {
-            Type::U8
-        };
-        if binding.value_type != expected {
-            return Err("Rust iterator yielded binding type mismatch".into());
-        }
-        let declaration = program_declare_with_all_qualifiers(
-            self.binding(&binding.name),
-            scalar_type(&binding.value_type)?.to_kernel_type(),
-            false,
-            false,
-            false,
-            by_reference,
-        );
-        // Save Some's shared address before advancing. Copy patterns likewise
-        // read that address before the source body; None does neither operation.
-        let yielded = if by_reference {
-            crate::kernel::program_expression::variable(self.binding(&item))
-        } else {
-            let occurrence = self.next_load;
-            self.next_load = self
-                .next_load
-                .checked_add(1)
-                .ok_or("Rust load identity exhausted")?;
-            crate::kernel::program_expression::typed_load_with_source(
-                crate::kernel::program_expression::variable(self.binding(&item)),
-                ProgramType::UInt8,
-                Some(LoadSourceId {
-                    owner: LoadSourceOwnerId {
-                        source_unit: self.source.into(),
-                        function: self.function.into(),
-                    },
-                    occurrence,
-                    reference_access: None,
-                }),
-            )
-        };
-        // The remaining count is the slice's length, a `usize`.
-        let next = program_seq(
-            program_declare_with_all_qualifiers(
-                self.binding(&item),
-                ProgramType::UInt8Pointer,
-                false,
-                false,
-                false,
-                true,
-            ),
-            program_seq(
-                program_assign(
-                    self.binding(&item),
-                    crate::kernel::program_expression::variable(self.binding(&cursor)),
-                ),
-                program_seq(
-                    program_assign(
-                        self.binding(&cursor),
-                        crate::kernel::program_expression::add(
-                            crate::kernel::program_expression::variable(self.binding(&cursor)),
-                            crate::kernel::program_expression::int32_literal(1),
-                        ),
-                    ),
-                    program_seq(
-                        program_assign(
-                            self.binding(&remaining),
-                            crate::kernel::program_expression::subtract(
-                                crate::kernel::program_expression::variable(
-                                    self.binding(&remaining),
-                                ),
-                                crate::kernel::program_expression::uint64_literal(1),
-                            ),
-                        ),
-                        program_seq(
-                            declaration,
-                            program_assign(self.binding(&binding.name), yielded),
-                        ),
-                    ),
-                ),
-            ),
-        );
-        let source_body = self.body(body)?;
-        Ok(program_seq(
-            program_declare_with_all_qualifiers(
-                self.binding(&cursor),
-                ProgramType::UInt8Pointer,
-                false,
-                false,
-                false,
-                true,
-            ),
-            program_seq(
-                program_assign(self.binding(&cursor), pointer),
-                program_seq(
-                    program_declare(self.binding(&remaining), ProgramType::UInt64),
-                    program_seq(
-                        program_assign(self.binding(&remaining), length),
-                        program_while(
-                            crate::kernel::program_expression::not(
-                                crate::kernel::program_expression::equal(
-                                    crate::kernel::program_expression::variable(
-                                        self.binding(&remaining),
-                                    ),
-                                    crate::kernel::program_expression::uint64_literal(0),
-                                ),
-                            ),
-                            Vec::new(),
-                            program_seq(next, source_body),
-                        ),
-                    ),
-                ),
-            ),
-        ))
-    }
-    fn assign(&mut self, name: &str, e: &E) -> Result<ProgramStatement, String> {
+    fn assign(&mut self, name: &MirLocalId, e: &E) -> Result<ProgramStatement, String> {
         if !self.locals.contains(name) {
             return Err(format!("unknown Rust local `{name}`"));
         }
         if let Some(&value_type) = self.memory_values.get(name) {
             let (prefix, value) = self.prepared_expr(e)?;
-            let address = self.address(&E::Local { name: name.into() })?;
+            let address = self.address(&E::Local { name: name.clone() })?;
             return Ok(program_seq(
                 prefix,
                 program_typed_store(address, value, value_type),
@@ -1918,7 +1818,7 @@ impl Context<'_> {
                 return Err("shared scalar slice assignment element mismatch".into());
             }
             return Ok(program_seq(
-                program_assign(self.binding(name), pointer),
+                program_assign(self.binding(name)?, pointer),
                 program_assign(length, source_length),
             ));
         }
@@ -1933,7 +1833,7 @@ impl Context<'_> {
                 checks,
                 program_seq(
                     program_assign(
-                        self.binding(name),
+                        self.binding(name)?,
                         reference_view(pointer, ProgramType::UInt8Pointer, false, constant),
                     ),
                     program_assign(length, length_value),
@@ -1954,7 +1854,7 @@ impl Context<'_> {
                 _ => return Err("unsupported fixed array element".into()),
             };
             return Ok(program_assign(
-                self.binding(name),
+                self.binding(name)?,
                 reference_view(pointer, pointer_type, false, constant),
             ));
         }
@@ -1966,12 +1866,12 @@ impl Context<'_> {
                 let (checks, arguments) = self.prepared_arguments(function, arguments)?;
                 Ok(program_seq(
                     checks,
-                    self.call_then_assign(name, function, arguments),
+                    self.call_then_assign(name, function, arguments)?,
                 ))
             }
             _ => {
                 let (checks, value) = self.prepared_expr(e)?;
-                let mut assignment = program_assign(self.binding(name), value);
+                let mut assignment = program_assign(self.binding(name)?, value);
                 if let (
                     Some(import_identity),
                     Some(point),
@@ -1990,6 +1890,7 @@ impl Context<'_> {
                     )
                     && let E::Deref { reference, .. } = place.as_ref()
                     && let E::Local { name: parent } = reference.as_ref()
+                    && let (Some(parent), Some(child)) = (parent.source_name(), name.source_name())
                     && let ProgramStatement::Assign { source, .. } = &mut assignment
                 {
                     *source = StatementAssignSource::new(ReferenceBorrowSourceId {
@@ -1997,8 +1898,8 @@ impl Context<'_> {
                         function: self.function.into(),
                         block: point.block,
                         statement: point.statement,
-                        parent: parent.as_str().into(),
-                        child: name.into(),
+                        parent: parent.into(),
+                        child: child.into(),
                     });
                 }
                 Ok(program_seq(checks, assignment))
@@ -2041,15 +1942,14 @@ impl Context<'_> {
             let mut checks = program_skip();
             let mut values = Vec::new();
             if matches!(value_type, Type::Record { .. }) {
-                let E::Local { name } = argument else {
-                    return Err("owned call operand must be a MIR local".into());
+                let value = match argument {
+                    E::Local { name } if self.owned_locals.contains(name) => {
+                        crate::kernel::program_expression::variable(self.binding(name)?)
+                    }
+                    E::CallResult { keeps: false, .. } => self.expr(argument)?,
+                    _ => return Err("owned call operand has no supported value".into()),
                 };
-                if !self.owned_locals.contains(name) {
-                    return Err("owned call operand has no local storage".into());
-                }
-                values.push(crate::kernel::program_expression::variable(
-                    self.binding(name),
-                ));
+                values.push(value);
                 pieces.push((checks, values, None));
                 continue;
             }
@@ -2457,7 +2357,7 @@ impl Context<'_> {
             .get(name)
             .ok_or("unknown Rust slice reference")?;
         Ok((
-            crate::kernel::program_expression::variable(self.binding(name)),
+            crate::kernel::program_expression::variable(self.binding(name)?),
             crate::kernel::program_expression::variable(length.clone()),
         ))
     }
@@ -2507,7 +2407,7 @@ impl Context<'_> {
             E::Local { name } if self.shared_scalar_slices.contains_key(name) => {
                 let (length, element) = self.shared_scalar_slices[name].clone();
                 Ok((
-                    crate::kernel::program_expression::variable(self.binding(name)),
+                    crate::kernel::program_expression::variable(self.binding(name)?),
                     crate::kernel::program_expression::variable(length),
                     element,
                 ))
@@ -2551,7 +2451,7 @@ impl Context<'_> {
             }
         }
     }
-    fn array_pointer(&self, name: &str) -> Result<ProgramExpression, String> {
+    fn array_pointer(&self, name: &MirLocalId) -> Result<ProgramExpression, String> {
         let (_, element, constant) = self.arrays.get(name).ok_or("unknown fixed array")?;
         let pointer_type = match element {
             ProgramType::UInt8 => ProgramType::UInt8Pointer,
@@ -2560,7 +2460,7 @@ impl Context<'_> {
             _ => return Err("unsupported fixed array element".into()),
         };
         Ok(reference_view(
-            crate::kernel::program_expression::variable(self.binding(name)),
+            crate::kernel::program_expression::variable(self.binding(name)?),
             pointer_type,
             false,
             *constant,
@@ -2636,13 +2536,13 @@ impl Context<'_> {
             }
             E::Local { name } if self.owned_locals.contains(name) => {
                 Ok(crate::kernel::program_expression::cast(
-                    crate::kernel::program_expression::variable(self.binding(name)),
+                    crate::kernel::program_expression::variable(self.binding(name)?),
                     ProgramType::Int32Pointer,
                 ))
             }
             E::Local { name } if self.addressable_locals.contains(name) => {
                 Ok(ProgramExpression::AddressOf(Box::new(
-                    crate::kernel::program_expression::variable(self.binding(name)),
+                    crate::kernel::program_expression::variable(self.binding(name)?),
                 )))
             }
             E::Local { name } if self.memory_values.contains_key(name) => {
@@ -2652,7 +2552,7 @@ impl Context<'_> {
                     );
                 };
                 Ok(crate::kernel::program_expression::cast(
-                    crate::kernel::program_expression::variable(self.binding(name)),
+                    crate::kernel::program_expression::variable(self.binding(name)?),
                     ProgramType::ParameterPointer(value_type),
                 ))
             }
@@ -2684,7 +2584,12 @@ impl Context<'_> {
                 keeps,
             } => Ok(ProgramExpression::StepResult {
                 step: *call,
-                origin: crate::kernel::StepOrigin::Call(function.clone()),
+                origin: crate::kernel::StepOrigin::Call(
+                    function
+                        .source_name()
+                        .ok_or("unsupported Rust construct: unnamed function pointer result")?
+                        .to_owned(),
+                ),
                 ends: !*keeps,
             }),
             E::SharedArrayHasNext { iterator } => self.shared_array_has_next(iterator),
@@ -2811,7 +2716,7 @@ impl Context<'_> {
                     return Err(format!("unknown Rust local `{name}`"));
                 }
                 Ok(crate::kernel::program_expression::variable(
-                    self.binding(name),
+                    self.binding(name)?,
                 ))
             }
             E::Not { value } => Ok(crate::kernel::program_expression::bool_value(

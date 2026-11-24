@@ -568,6 +568,7 @@ pub(super) fn aggregate_zero_fields(
                 | ProgramType::Int8PointerPointer
                 | ProgramType::Float32PointerPointer
                 | ProgramType::Float64PointerPointer
+                | ProgramType::Pointer
                 | ProgramType::FunctionPointer(_) => {
                     ProgramValue::typed_pointer(Address::null(), element_type)
                 }
@@ -1332,6 +1333,7 @@ pub(super) fn copy_aggregate_fields_from(
                         .or_else(|| {
                             crate::kernel::eval::symbolic_load_value_unrecorded(
                                 &memory,
+                                captured_point(),
                                 &source_field,
                                 element_type,
                             )
@@ -1356,7 +1358,7 @@ pub(super) fn copy_aggregate_fields_from(
                     &memory,
                     &source_field,
                     field.program_type(),
-                    &captured_point,
+                    captured_point,
                 )
                 .map(|value| {
                     (

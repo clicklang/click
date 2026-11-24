@@ -1,6 +1,199 @@
 use super::*;
 
 #[test]
+fn exact_float_bound_checks_only_the_input_endpoint() {
+    let _session = VerificationSession::enter();
+    let ty = KernelType::Program(ProgramType::Float32);
+    let input = KernelTerm::variable(ty.clone(), Variable(995728));
+    let other = KernelTerm::variable(ty, Variable(995729));
+    let narrow = KernelFloatType::Float32;
+    let wide = KernelFloatType::Float64;
+    let upper = |format, operand, endpoint: MachineTerm| {
+        let literal = KernelTermImport::default().float(format, &endpoint);
+        let condition =
+            KernelTerm::float_compare(format, ComparisonOperator::LessThan, [operand, literal])
+                .unwrap();
+        Proposition::condition_is(StoredConditionTerm::from_root(condition).unwrap(), true)
+    };
+    let widened = KernelTerm::float_convert(wide, ProgramType::Float32, input.clone()).unwrap();
+    let goal = upper(
+        wide,
+        widened,
+        MachineTerm::uint64_constant(1.0f64.to_bits()),
+    );
+    let required = upper(
+        narrow,
+        input.clone(),
+        MachineTerm::constant(1.0f32.to_bits()),
+    );
+    for related in [false, true] {
+        let mut cost = Vec::new();
+        for size in [8, 32, 128] {
+            let mut facts = (0..size)
+                .map(|index| {
+                    upper(
+                        narrow,
+                        if related {
+                            input.clone()
+                        } else {
+                            other.clone()
+                        },
+                        MachineTerm::constant((index as f32 + 2.0).to_bits()),
+                    )
+                })
+                .collect::<Vec<_>>();
+            let missing = PureFactStore::from_ordered(&facts);
+            facts.push(required.clone());
+            let present = PureFactStore::from_ordered(&facts);
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                assert!(known_bridge_leaf(&goal, &|p| present.pure_known_available(p)));
+                assert!(!known_bridge_leaf(&goal, &|p| missing.pure_known_available(p)));
+            });
+            cost.push(work);
+        }
+        assert!(
+            cost.windows(2).all(|pair| pair[1] <= 2 * pair[0]),
+            "{cost:?}"
+        );
+    }
+}
+
+#[test]
+fn signed_product_bound_checks_only_the_exact_guards() {
+    let _session = VerificationSession::enter();
+    let ty = MachineIntegerType::Int32;
+    let observed = |id| IntegerTerm::from_machine(ty, MachineTerm::Variable(Variable(id))).unwrap();
+    let x = observed(995725);
+    let y = observed(995726);
+    let maximum = IntegerTerm::constant_i64(i64::from(i32::MAX));
+    let goal = le(
+        IntegerTerm::Multiply(x.clone().into(), y.into()),
+        maximum.clone(),
+    );
+    let guards = crate::kernel::proof::arithmetic_special::signed_product_guard_candidates(&goal)
+        .next()
+        .unwrap();
+    assert_eq!(guards.len(), 3);
+    for related in [false, true] {
+        let mut cost = Vec::new();
+        for size in [8, 32, 128] {
+            let mut facts = (0..size)
+                .map(|index| {
+                    le(
+                        if related { x.clone() } else { observed(995727) },
+                        IntegerTerm::constant_i64(i64::from(index + 1)),
+                    )
+                })
+                .collect::<Vec<_>>();
+            facts.extend(guards[..2].iter().cloned());
+            let missing = PureFactStore::from_ordered(&facts);
+            facts.push(guards[2].clone());
+            let present = PureFactStore::from_ordered(&facts);
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                assert!(known_bridge_leaf(&goal, &|p| present.pure_known_available(p)));
+                assert!(!known_bridge_leaf(&goal, &|p| missing.pure_known_available(p)));
+            });
+            cost.push(work);
+        }
+        assert!(
+            cost.windows(2).all(|pair| pair[1] <= 2 * pair[0]),
+            "{cost:?}"
+        );
+    }
+}
+
+#[test]
+fn shift_definedness_bridges_read_only_the_exact_count_bounds() {
+    use crate::kernel::machine_integer::{
+        comparison::condition_for_operand_views, range::constant_word,
+    };
+    for (signed, unsigned) in [
+        (MachineIntegerType::Int32, MachineIntegerType::UInt32),
+        (MachineIntegerType::Int64, MachineIntegerType::UInt64),
+    ] {
+        let _session = VerificationSession::enter();
+        let count = MachineTerm::Variable(Variable(995760));
+        let other = MachineTerm::Variable(Variable(995761));
+        let width = unsigned.format().bits();
+        let maximum = signed.format().bounds().1;
+        let observe = |ty, op, left, right| {
+            IntegerTerm::from_machine(
+                ty,
+                MachineTerm::Binary {
+                    format: ty,
+                    op,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                },
+            )
+            .unwrap()
+        };
+        let masked = observe(
+            unsigned,
+            MachineBinaryOp::BitwiseAnd,
+            count.clone(),
+            constant_word(unsigned, &(width - 1).into()).unwrap(),
+        );
+        let mask_goal = equality(
+            masked,
+            IntegerTerm::from_machine(unsigned, count.clone()).unwrap(),
+        );
+        let shift = |ty, d| {
+            observe(
+                ty,
+                MachineBinaryOp::ShiftRight,
+                constant_word(ty, &maximum).unwrap(),
+                d,
+            )
+        };
+        let right_shift = shift(signed, count.clone());
+        let shift_goal = equality(right_shift.clone(), shift(unsigned, count.clone()));
+        let different_count = equality(right_shift, shift(unsigned, other.clone()));
+        let bound = |d, endpoint: u32| {
+            let endpoint = constant_word(unsigned, &endpoint.into()).unwrap();
+            condition_for_operand_views(
+                unsigned,
+                CompareRelation::LessThan,
+                [
+                    MachineOperandView::Legacy(d),
+                    MachineOperandView::Legacy(&endpoint),
+                ],
+            )
+            .truth_claim(true)
+        };
+        for related in [false, true] {
+            let mut expected_work = None;
+            for size in [8, 32, 128] {
+                let noise = (0..size)
+                    .map(|i| bound(if related { &count } else { &other }, width + i + 1))
+                    .collect::<Vec<_>>();
+                let missing = PureFactStore::from_ordered(&noise);
+                let mut premises = noise;
+                premises.extend([bound(&count, width), bound(&other, width)]);
+                let present = PureFactStore::from_ordered(&premises);
+                let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    for goal in [&mask_goal, &shift_goal] {
+                        assert!(known_bridge_leaf(goal, &|p| present.pure_known_available(p)));
+                        assert!(!known_bridge_leaf(goal, &|p| missing.pure_known_available(p)));
+                    }
+                    assert!(
+                        !known_bridge_leaf(&different_count, &|p| present.pure_known_available(p))
+                    );
+                });
+                let baseline = *expected_work.get_or_insert(work);
+                // Indexed lookups can visit a different number of nodes as
+                // the fact store grows. A scan of either bucket would exceed
+                // this fixed allowance.
+                assert!(
+                    work <= baseline + 16,
+                    "{unsigned:?}, related={related}, facts={size}: {work} > {baseline} + 16"
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn local_observation_rules_ignore_unrelated_facts_and_related_bound_buckets() {
     for related in [false, true] {
         let _session = VerificationSession::enter();
@@ -82,9 +275,17 @@ fn observation_leaves_keep_growing_arithmetic_and_comparison_dags_shared() {
         let narrow = MachineIntegerType::UInt8;
         let narrow_arm =
             KernelTerm::machine_cast_shared(MachineCastSpelling::Generic, ty, narrow, root.clone());
+        let other_arm =
+            KernelTerm::variable(KernelType::Program(ProgramType::Int64), Variable(995722));
+        let narrow_other = KernelTerm::machine_cast_shared(
+            MachineCastSpelling::Generic,
+            ty,
+            narrow,
+            other_arm.clone(),
+        );
         let narrow_conditional = KernelTerm::machine_if_shared(
             narrow,
-            [guard.clone(), narrow_arm.clone(), narrow_arm.clone()],
+            [guard.clone(), narrow_other, narrow_arm.clone()],
         );
         let narrow_comparison = StoredConditionTerm::from_root(KernelTerm::boolean_comparison_raw(
             narrow,
@@ -93,22 +294,25 @@ fn observation_leaves_keep_growing_arithmetic_and_comparison_dags_shared() {
         ))
         .unwrap();
         let narrow_goal = Proposition::condition_is(narrow_comparison.clone(), true);
-        let conditional = KernelTerm::machine_if_shared(ty, [guard, root.clone(), root]);
+        let conditional = KernelTerm::machine_if_shared(ty, [guard, root, other_arm.clone()]);
         let conditional =
             IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(ty, conditional).unwrap());
+        let other_arm =
+            IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(ty, other_arm).unwrap());
         let mut premises = bounds(&exact, ty).to_vec();
         premises.push(Proposition::condition_is(condition, true));
         let facts = PureFactStore::from_ordered(&premises);
         let missing = PureFactStore::from_ordered(&[]);
         let operation_goal = equality(observed, exact);
-        let conditional_goal = equality(conditional, operand);
+        let conditional_goal = equality(conditional.clone(), operand);
+        let complementary_goal = equality(conditional, other_arm);
         let exports = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..2 {
                 assert!(known_bridge_leaf(&operation_goal, &|p| facts.pure_known_available(p)));
                 assert!(!known_bridge_leaf(&operation_goal, &|p| missing.pure_known_available(p)));
                 assert!(known_bridge_leaf(&conditional_goal, &|p| facts.pure_known_available(p)));
-                assert!(known_bridge_leaf(&conditional_goal, &|p| complementary
+                assert!(known_bridge_leaf(&complementary_goal, &|p| complementary
                     .pure_known_available(p)));
                 assert!(!known_bridge_leaf(&conditional_goal, &|p| missing.pure_known_available(p)));
                 assert!(known_bridge_leaf(&narrow_goal, &|p| complementary.pure_known_available(p)));

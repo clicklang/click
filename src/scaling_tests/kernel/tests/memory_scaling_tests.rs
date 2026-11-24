@@ -2089,7 +2089,7 @@ fn wide_range_observer_transport_ignores_unrelated_equalities() {
                 ProgramValue::UInt64(MachineTerm::uint64_constant(3)),
             );
             let load = |memory| {
-                MachineTerm::MemoryLoad(
+                MachineTerm::read_named(
                     ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                     Box::new(pointer.clone()),
                     LoadKind::Bits64,
@@ -2220,7 +2220,7 @@ fn sequential_owned_parameter_stores_ignore_earlier_cached_fields() {
                         4u32.into(),
                     )))
                 });
-            let unrelated = MachineTerm::MemoryLoad(
+            let unrelated = MachineTerm::read_named(
                 ProgramPoint::at(&intern_memory(SymbolicMemory::new())),
                 Box::new(Address::symbolic(Variable(970_000))),
                 LoadKind::Int32,

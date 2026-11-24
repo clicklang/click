@@ -718,7 +718,7 @@ impl Parser {
             {
                 true
             }
-            // An address, `&r->arr[0]`, or a value cast to a pointer type.
+            // An address, `&r->arr[0]`, or a cast to a pointer or float type.
             ContractExpression::ProgramExpression(
                 ProgramExpression::AddressOf(_) | ProgramExpression::CheckedObjectAddress(_),
             )
@@ -733,7 +733,17 @@ impl Parser {
             | ContractExpression::CUnary {
                 lowered: ProgramExpression::Cast { target_type, .. },
                 ..
-            } if target_type.is_pointer() => true,
+            } if target_type.is_pointer()
+                || matches!(target_type, ProgramType::Float32 | ProgramType::Float64) =>
+            {
+                true
+            }
+            ContractExpression::ProgramExpression(ProgramExpression::Value(value)) => {
+                matches!(
+                    value.program_type(),
+                    ProgramType::Float32 | ProgramType::Float64
+                )
+            }
             ContractExpression::Binding(name)
             | ContractExpression::ProgramBinding(name)
             | ContractExpression::ProgramExpression(ProgramExpression::Variable(
@@ -752,6 +762,7 @@ impl Parser {
                         .names
                         .program_parameter_types
                         .get(name)
+                        .or_else(|| self.spec_parameter_types.get(name))
                         .is_some_and(c_only)
                     || (name == "result"
                         && !self.names.program_parameter_types.contains_key(name)

@@ -72,6 +72,10 @@ pub(crate) struct MemoryStateLabels {
     source_read_names: HashMap<MachineTerm, String>,
     source_types: HashMap<Variable, crate::kernel::ProgramType>,
     anonymous_names: HashMap<Variable, String>,
+    /// How many placeholders (`<unnamed A>`, `<pointer A>`, `<state A>`)
+    /// this report has printed, so a caller can tell whether a spelling was
+    /// exact.
+    placeholders: usize,
     /// Memories a source spelling names only by a report-local `<state A>`,
     /// defined after the report.
     unknown_states: Vec<SymbolicMemory>,
@@ -271,6 +275,7 @@ impl MemoryStateLabels {
 
     /// The report-local name of a memory no recorded state names.
     pub(crate) fn state_label(&mut self, memory: &SymbolicMemory) -> String {
+        self.placeholders += 1;
         if let Some(index) = self
             .unknown_states
             .iter()
@@ -295,6 +300,7 @@ impl MemoryStateLabels {
         if let Some(name) = self.recorded_pointers.get(pointer) {
             return name.clone();
         }
+        self.placeholders += 1;
         self.placeholder_pointer(pointer)
     }
 
@@ -365,12 +371,7 @@ impl MemoryStateLabels {
         self.current_state = Some(state.clone());
         // A parameter among the state's locals keeps its source declaration,
         // which the merge below would otherwise replace with a kernel type.
-        let declarations = self
-            .naming
-            .as_deref()
-            .map_or(&[][..], |(parameters, _)| parameters.as_slice());
-        let (names, values) =
-            crate::surface::diagnostics::local_naming_tables_with_declarations(state, declarations);
+        let (names, values) = self.declared_local_naming_tables(state);
         let current = Self::naming(ParameterBinding::new(&names, &values));
         // A reassigned parameter's entry value is not its current value.
         for (variable, name) in &mut self.source_names {
@@ -443,9 +444,20 @@ impl MemoryStateLabels {
         Some(crate::surface::diagnostics::describe_program_point_selector(selector))
     }
 
+    /// `state`'s locals, each a parameter of the registered naming keeping
+    /// that parameter's source declaration, so a struct-pointer parameter
+    /// read at any point still spells its fields: `at(point, b->offset)`.
+    fn declared_local_naming_tables(&self, state: &ExecutionState) -> NamingTables {
+        let declarations = self
+            .naming
+            .as_deref()
+            .map_or(&[][..], |(parameters, _)| parameters.as_slice());
+        crate::surface::diagnostics::local_naming_tables_with_declarations(state, declarations)
+    }
+
     pub(crate) fn source_state(&mut self, state: &ExecutionState, point: String) {
         if self.source_memories.len() < MAX_MEMORY_STATE_LABELS {
-            let tables = crate::surface::diagnostics::local_naming_tables(state);
+            let tables = self.declared_local_naming_tables(state);
             let tables = std::sync::Arc::new(tables);
             if let Some(id) = state.observation_point_id() {
                 self.source_points
@@ -476,7 +488,7 @@ impl MemoryStateLabels {
             return (
                 Some(crate::surface::diagnostics::describe_program_point_selector(selector)),
                 Some(std::sync::Arc::new(
-                    crate::surface::diagnostics::local_naming_tables(state),
+                    self.declared_local_naming_tables(state),
                 )),
             );
         }
@@ -816,6 +828,22 @@ impl MemoryStateLabels {
             || "state<untracked>".to_owned(),
             |index| format!("state#{index}"),
         )
+    }
+}
+
+/// Whether the renderer spells `proposition` with no placeholder for an
+/// unnamed value, pointer or state. Checked on a copy of `labels`, so asking
+/// assigns no placeholder letters.
+pub(crate) fn renders_exactly(proposition: &Proposition, labels: &MemoryStateLabels) -> bool {
+    let mut trial = labels.clone();
+    let before = trial.placeholders;
+    let _ = render_proposition_labeled(proposition, &mut trial);
+    trial.placeholders == before
+}
+
+impl MemoryStateLabels {
+    pub(super) fn count_placeholder(&mut self) {
+        self.placeholders += 1;
     }
 }
 
@@ -2570,8 +2598,8 @@ impl Renderer<'_> {
                 self.push(&name);
             }
             crate::kernel::AddressBase::ExternalArgument => self.push("external"),
-            crate::kernel::AddressBase::LoadedPointer(identity) => {
-                self.fmt(format_args!("loaded-pointer#{}", identity.0))
+            crate::kernel::AddressBase::Load(load) => {
+                self.fmt(format_args!("loaded-pointer#{}", load.id()))
             }
             crate::kernel::AddressBase::StringLiteral { identity, .. } => {
                 self.push(&identity.to_string())

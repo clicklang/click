@@ -67,10 +67,9 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
     loop {
         decreases (2 - j);
         invariant j >= 0 and j <= 2;
-        invariant all_le_range(p, 0, j, p[j]);
+        invariant forall (k: int32) { 0 <= k and 0 <= k and k < j implies p[k] <= p[j] };
         initialize by {
             have j >= 0 and j <= 2 by {
-                unfold(all_le_range(p, 0, j, p[j]));
                 all {
                     j >= 0 => {
                         normalize();
@@ -80,21 +79,18 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                     }
                 }
             }
-            have all_le_range(p, 0, j, p[j]) by {
-                unfold(all_le_range(p, 0, j, p[j]));
+            have forall (k: int32) { 0 <= k and 0 <= k and k < j implies p[k] <= p[j] } by {
                 enumerate();
             }
         }
         maintain by {
             if p[(j + 1)] < p[j] {
-                unfold(all_le_range(p, 0, j, p[j]));
                 step();
                 step();
                 step();
                 step();
                 step();
-                have all_le_range(p, 0, j, p[j]) by {
-                    unfold(all_le_range(p, 0, j, p[j]));
+                have forall (k: int32) { 0 <= k and 0 <= k and k < j implies p[k] <= p[j] } by {
                     intro();
                     intro();
                     if k < (j - 1) {
@@ -135,23 +131,31 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                             preserve(memory(p[k]), statement(3).statement(0).statement(2));
                         }
 
-                        have p[k] == at(region(7).entry, p[(j + 1)]) by { rewrite(k, at(region(4).entry, j)); known(); }
+                        have at(statement(3).statement(0).statement(1).exit, p[k])
+                            == at(statement(3).statement(0).statement(1).entry, p[j + 1]) by {
+                            rewrite(k, at(region(4).entry, j));
+                            known();
+                        }
+                        have p[k] == at(statement(3).statement(0).statement(1).entry, p[j + 1]) by {
+                            solve() using {
+                                at(statement(3).statement(0).statement(1).exit, p[k]) == at(statement(3).statement(0).statement(1).entry, p[j + 1]);
+                                at(statement(3).statement(0).statement(2).exit, p[k]) == at(statement(3).statement(0).statement(2).entry, p[k]);
+                            };
+                        }
                         have p[j] == at(region(7).entry, tmp) by { known(); }
                         solve() using {
                             k == at(region(4).entry, j);
-                            p[k] == at(region(7).entry, p[(j + 1)]);
+                            p[k] == at(statement(3).statement(0).statement(1).entry, p[j + 1]);
                             p[j] == at(region(7).entry, tmp);
                             at(region(7).entry, p[(j + 1)]) < at(region(7).entry, tmp);
                         };
                     }
                 }
             } else {
-                unfold(all_le_range(p, 0, j, p[j]));
                 step();
                 step();
                 step();
-                have all_le_range(p, 0, j, p[j]) by {
-                    unfold(all_le_range(p, 0, j, p[j]));
+                have forall (k: int32) { 0 <= k and 0 <= k and k < j implies p[k] <= p[j] } by {
                     intro();
                     intro();
                     if k < (j - 1) {
@@ -177,16 +181,17 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
             }
         }
     }
-    unfold(all_le_range(p, 0, j, p[j]));
+    have j == 2 by solve();
+    have p[j] == p[2] by { normalize() using { j == 2; }; }
+    mark first_pass_done;
     step();
     loop {
         decreases (1 - j);
         invariant j >= 0 and j <= 1;
-        invariant all_le_range(p, 0, 2, p[2]);
-        invariant all_le_range(p, 0, j, p[j]);
+        invariant forall (k: int32) { 0 <= k and 0 <= k and k < 2 implies p[k] <= p[2] };
+        invariant forall (k: int32) { 0 <= k and 0 <= k and k < j implies p[k] <= p[j] };
         initialize by {
             have j >= 0 and j <= 1 by {
-                unfold(all_le_range(p, 0, j, p[j]));
                 all {
                     j >= 0 => {
                         normalize();
@@ -196,29 +201,39 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                     }
                 }
             }
-            have all_le_range(p, 0, 2, p[2]) by {
-                unfold(all_le_range(p, 0, 2, p[2]));
-                intro();
-                intro();
-                have at(region(10).entry, 0) <= at(region(10).entry, k) and at(region(10).entry, 0) <= at(region(10).entry, k) and at(region(10).entry, k) < at(region(10).entry, j);
-                instantiate(forall (__click_q0: int32) { at(region(10).entry, 0) <= at(region(10).entry, __click_q0) and at(region(10).entry, 0) <= at(region(10).entry, __click_q0) and at(region(10).entry, __click_q0) < at(region(10).entry, j) implies at(region(10).entry, p[__click_q0]) <= at(region(10).entry, p[j]) }, k);
-                have at(loop(0).exit, j) == 2 by { solve(); }
-                have at(region(10).entry, p[j]) == p[2] by {
-                    normalize() using { at(loop(0).exit, j) == 2; };
+            have forall (k: int32) { 0 <= k and 0 <= k and k < 2 implies p[k] <= p[2] } by {
+                intro(); intro();
+                have at(first_pass_done, k < j) by solve();
+                instantiate(at(first_pass_done, forall (m: int32) {
+                    0 <= m and 0 <= m and m < j implies p[m] <= p[j]
+                }), k);
+                have separate(memory(j), memory(p[k])) by known();
+                have separate(statement(4).footprint, memory(p[k])) by {
+                    normalize() using { separate(memory(j), memory(p[k])); };
+                }
+                have p[k] == at(first_pass_done, p[k]) by {
+                    preserve(memory(p[k]), statement(4));
+                }
+                have separate(memory(j), memory(p[2])) by known();
+                have separate(statement(4).footprint, memory(p[2])) by {
+                    normalize() using { separate(memory(j), memory(p[2])); };
+                }
+                have p[2] == at(first_pass_done, p[2]) by {
+                    preserve(memory(p[2]), statement(4));
                 }
                 solve() using {
-                    at(region(10).entry, p[k]) <= at(region(10).entry, p[j]);
-                    at(region(10).entry, p[j]) == p[2];
+                    p[k] == at(first_pass_done, p[k]);
+                    p[2] == at(first_pass_done, p[2]);
+                    at(first_pass_done, p[j] == p[2]);
+                    at(first_pass_done, p[k] <= p[j]);
                 };
             }
-            have all_le_range(p, 0, j, p[j]) by {
-                unfold(all_le_range(p, 0, j, p[j]));
+            have forall (k: int32) { 0 <= k and 0 <= k and k < j implies p[k] <= p[j] } by {
                 enumerate();
             }
         }
         maintain by {
             if p[(j + 1)] < p[j] {
-                unfold(all_le_range(p, 0, j, p[j]));
                 have j == 0 by {
                     have j <= 0;
                     solve() using {
@@ -226,7 +241,6 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                         j >= 0;
                     };
                 }
-                unfold(all_le_range(p, 0, 2, p[2]));
                 have p[0] <= p[2] by {
                     instantiate(forall (k: int32) { 0 <= k and 0 <= k and k < 2 implies p[k] <= p[2] }, 0);
                     known();
@@ -236,7 +250,6 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                     known();
                 }
                 mark before_swap;
-                unfold(all_le_range(p, 0, j, p[j]));
                 step();
                 step();
                 step();
@@ -296,13 +309,15 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                         p[0] < p[1];
                     };
                 }
-                have all_le_range(p, 0, j, p[j]) by {
-                    unfold(all_le_range(p, 0, j, p[j]));
-                    rewrite(j, 1);
-                    enumerate();
+                have forall (k: int32) { 0 <= k and 0 <= k and k < j implies p[k] <= p[j] } by {
+                    intro(); intro();
+                    have k == 0 by solve();
+                    have p[j] == p[1] by { normalize() using { j == 1; }; }
+                    rewrite(k, 0);
+                    rewrite(p[j], p[1]);
+                    known();
                 }
             } else {
-                unfold(all_le_range(p, 0, j, p[j]));
                 have j == 0 by {
                     have j <= 0;
                     solve() using {
@@ -310,7 +325,6 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                         j >= 0;
                     };
                 }
-                unfold(all_le_range(p, 0, 2, p[2]));
                 have p[0] <= p[2] by {
                     instantiate(forall (k: int32) { 0 <= k and 0 <= k and k < 2 implies p[k] <= p[2] }, 0);
                     known();
@@ -320,7 +334,6 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                     known();
                 }
                 mark before_swap;
-                unfold(all_le_range(p, 0, j, p[j]));
                 step();
                 step();
                 step();
@@ -344,40 +357,37 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                         at(region(18).entry, p[1]) >= at(region(18).entry, p[0]);
                     };
                 }
-                have all_le_range(p, 0, j, p[j]) by {
-                    unfold(all_le_range(p, 0, j, p[j]));
-                    rewrite(j, 1);
-                    enumerate();
+                have forall (k: int32) { 0 <= k and 0 <= k and k < j implies p[k] <= p[j] } by {
+                    intro(); intro();
+                    have k == 0 by solve();
+                    have p[j] == p[1] by { normalize() using { j == 1; }; }
+                    rewrite(k, 0);
+                    rewrite(p[j], p[1]);
+                    known();
                 }
             }
         }
     }
-    unfold(all_le_range(p, 0, j, p[j]));
-    unfold(all_le_range(p, 0, 2, p[2]));
-    step();
+    have j == 1 by solve();
+    have p[j] == p[1] by { normalize() using { j == 1; }; }
+    have p[0] <= p[1] by {
+        have 0 < j by solve();
+        instantiate(forall (k: int32) { 0 <= k and 0 <= k and k < j implies p[k] <= p[j] }, 0);
+        rewrite(p[1], p[j]);
+        known();
+    }
+    have p[1] <= p[2] by {
+        instantiate(forall (k: int32) { 0 <= k and 0 <= k and k < 2 implies p[k] <= p[2] }, 1);
+        known();
+    }
+    have p[0] <= p[2] by {
+        instantiate(forall (k: int32) { 0 <= k and 0 <= k and k < 2 implies p[k] <= p[2] }, 0);
+        known();
+    }
+    step_until(function.exit);
     have sorted(p, 3) by {
         unfold(sorted(p, 3));
         unfold(sorted_range(p, 0, 3));
-        have p[0] <= p[1] by {
-            have 0 <= 0 and at(loop(1).exit, 0) <= 0 and 0 < at(loop(1).exit, j);
-            instantiate(forall (k: int32) { 0 <= k and at(loop(1).exit, 0) <= k and k < at(loop(1).exit, j) implies at(loop(1).exit, p)[k] <= at(loop(1).exit, p[j]) }, 0);
-            have at(loop(1).exit, j) == 1 by { solve(); }
-            have at(loop(1).exit, p[j]) == p[1] by {
-                normalize() using { at(loop(1).exit, j) == 1; };
-            }
-            solve() using {
-                at(loop(1).exit, p)[0] <= at(loop(1).exit, p[j]);
-                at(loop(1).exit, p[j]) == p[1];
-            };
-        }
-        have p[1] <= p[2] by {
-            instantiate(forall (k: int32) { 0 <= k and 0 <= k and k < 2 implies p[k] <= p[2] }, 1);
-            known();
-        }
-        have p[0] <= p[2] by {
-            instantiate(forall (k: int32) { 0 <= k and 0 <= k and k < 2 implies p[k] <= p[2] }, 0);
-            known();
-        }
         enumerate();
     }
     known();

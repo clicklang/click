@@ -131,7 +131,11 @@ impl KernelTermImport {
         if let MachineTerm::MemoryLoad(point, pointer, kind) = term
             && *kind == format.load_kind()
         {
-            return KernelTerm::float_read(format, point.clone(), SharedAddress::import(pointer));
+            return KernelTerm::float_read(
+                format,
+                point.point().clone(),
+                SharedAddress::import(pointer.address()),
+            );
         }
         let view = FloatOperandView::Native(format, term);
         let ty = KernelType::Program(format.program_type());
@@ -321,9 +325,9 @@ impl KernelTerm {
                     }
                     KernelTermNode::FloatRead(read) => {
                         let (point, address) = read.parts();
-                        format.value(MachineTerm::MemoryLoad(
+                        format.value(crate::kernel::MachineTerm::read_named(
                             point.clone(),
-                            Box::new(address.export().expect("float read address")),
+                            address.export().expect("float read address"),
                             format.load_kind(),
                         ))
                     }

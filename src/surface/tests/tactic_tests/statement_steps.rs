@@ -273,7 +273,7 @@ fn simple_statement_transition_does_not_transport_facts_automatically() {
         base: "arg-memory".into(),
         offset: AddressOffset::Constant(4),
     };
-    let first_value = MachineTerm::MemoryLoad(
+    let first_value = MachineTerm::read_named(
         crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(base_memory.clone()))),
         Box::new(first.clone()),
         crate::kernel::LoadKind::Int32,
@@ -283,7 +283,7 @@ fn simple_statement_transition_does_not_transport_facts_automatically() {
         .store(first.clone(), int32(first_value.clone()))
         .store(
             second.clone(),
-            int32(MachineTerm::MemoryLoad(
+            int32(MachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(
                     &(crate::kernel::intern_memory(base_memory.clone())),
                 ),
@@ -346,7 +346,7 @@ fn simple_statement_transition_does_not_transport_facts_automatically() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::MemoryLoad(
+            left: Box::new(MachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(
                     &(crate::kernel::intern_memory(post_state.memory().clone())),
                 ),
@@ -443,12 +443,10 @@ fn ordinary_requirement_errors_have_no_call_site_metadata() {
         name: "ordinary_requirement".to_string(),
         arguments: Vec::new(),
     });
-    let error = ClickError::new("ordinary requirement").with_unresolved_requirement(&obligation);
-    assert!(
-        error
-            .report()
-            .contains("error kind: unclassified verification refusal")
-    );
+    let error = ClickError::new("ordinary requirement")
+        .with_unresolved_requirement(&obligation)
+        .with_proof_refusal(ProofRefusal::UnsuccessfulSearch);
+    assert!(error.report().contains("error kind: unsuccessful search"));
     assert!(
         error.report().contains("goal: ordinary_requirement()"),
         "{}",
@@ -1188,11 +1186,14 @@ fn synthesizes_loaded_pointer_equality_as_pointer_comparison() {
     )
     .expect("pointer-offset equality should have a surface form");
 
+    // No field or declaration names the loaded cell and a load carries no
+    // pointee type, so it spells at Click's untyped `Pointer`
+    // (`design/loads.md`, "Raising"), never at a guessed `int32 *`.
     assert!(matches!(
         surface,
         ClickProposition::Comparison {
             left: ContractExpression::ProgramExpression(ProgramExpression::TypedLoad {
-                value_type: ProgramType::Int32Pointer,
+                value_type: ProgramType::Pointer,
                 ..
             }),
             operator: ComparisonOperator::Equal,

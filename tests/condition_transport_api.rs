@@ -61,14 +61,14 @@ fn context_free_disjoint_store_transport_stays_closed() {
         offset: AddressOffset::Constant(4),
     };
     let after = before.clone().store(written, int32(7));
-    let old_load = MachineTerm::MemoryLoad(
-        ProgramPoint::at(&click::kernel::intern_memory(before)),
-        Box::new(preserved.clone()),
+    let old_load = MachineTerm::memory_read(
+        click::kernel::intern_memory(before),
+        preserved.clone(),
         LoadKind::Int32,
     );
-    let new_load = MachineTerm::MemoryLoad(
-        ProgramPoint::at(&click::kernel::intern_memory(after)),
-        Box::new(preserved),
+    let new_load = MachineTerm::memory_read(
+        click::kernel::intern_memory(after),
+        preserved,
         LoadKind::Int32,
     );
     let source = Proposition::condition_is(

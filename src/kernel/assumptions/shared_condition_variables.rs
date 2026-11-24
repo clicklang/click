@@ -89,7 +89,7 @@ impl Index {
                     let loads = crate::kernel::eval::LOAD_VARIABLE_RANGE;
                     if variables
                         .get_greater_than(&Variable(loads.start - 1))
-                        .is_some_and(|variable| variable.0 < loads.end)
+                        .is_some_and(crate::kernel::eval::is_load_variable)
                     {
                         return None;
                     }

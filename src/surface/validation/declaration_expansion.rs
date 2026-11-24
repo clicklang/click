@@ -53,8 +53,6 @@ struct DeclaredResourceScope {
     character_parameters: std::cell::RefCell<BTreeSet<String>>,
     /// Fills in the type arguments of constructors that leave them out.
     constructors: ConstructorTypes,
-    /// Local induction bindings shadow global theorem signatures in this block.
-    local_hypotheses: std::cell::RefCell<PersistentBinderMap<()>>,
 }
 
 impl DeclaredResourceScope {
@@ -1077,7 +1075,6 @@ fn expand_declared_resource_clauses_with_rules(
         )
     };
     let resource_definitions = DeclaredResourceScope {
-        local_hypotheses: Default::default(),
         family_rules,
         definitions: resource_definitions,
         families: Default::default(),
@@ -1529,7 +1526,6 @@ fn expand_declared_resource_proof_of(
     let mut bound = Vec::new();
     let mut expanded = Vec::with_capacity(tactics.len());
     let mut result = Ok(());
-    let outer_hypotheses = resource_definitions.local_hypotheses.borrow().clone();
     for tactic in tactics {
         if let ProofTactic::LetSatisfy(obtain) = &tactic {
             for (name, click_type) in &obtain.bindings {
@@ -1540,37 +1536,57 @@ fn expand_declared_resource_proof_of(
             ProofTactic::Intro => Some(None),
             ProofTactic::IntroAs(name) => Some(Some(SurfaceBinder::from(name))),
             ProofTactic::IntroBinder(name) => Some(Some(name.clone())),
+            ProofTactic::IntroBlock { binder, .. } => Some(binder.clone()),
             _ => None,
         };
-        match expand_declared_resource_tactic(tactic, resource_definitions) {
-            Ok(tactic) => expanded.push(tactic),
+        let scoped = matches!(tactic, ProofTactic::IntroBlock { .. });
+        let introduces = introduced.is_some();
+        let (inner_goal, binding) =
+            match introduced.and_then(|rename| goal.take().map(|goal| (rename, goal))) {
+                Some((
+                    rename,
+                    ClickProposition::ForAll {
+                        click_type,
+                        name,
+                        body,
+                        ..
+                    },
+                )) => (
+                    Some(*body),
+                    Some(constructors.bind(rename.unwrap_or(name), Some(click_type))),
+                ),
+                Some((_, ClickProposition::Implies(_, consequent))) => (Some(*consequent), None),
+                _ => (None, None),
+            };
+        let tactic = match tactic {
+            ProofTactic::IntroBlock { binder, body } => {
+                expand_declared_intro_block(binder, body, inner_goal.as_ref(), resource_definitions)
+            }
+            tactic => expand_declared_resource_tactic(tactic, resource_definitions),
+        };
+        if let Some(binding) = binding {
+            if scoped {
+                constructors.restore(binding);
+            } else {
+                bound.push(binding);
+            }
+        }
+        match tactic {
+            Ok(tactic) => {
+                if introduces && !scoped {
+                    goal = inner_goal;
+                }
+                expanded.push(tactic);
+            }
             Err(error) => {
                 result = Err(error);
                 break;
             }
         }
-        if let Some(rename) = introduced {
-            goal = match goal.take() {
-                Some(ClickProposition::ForAll {
-                    click_type,
-                    name,
-                    written_name,
-                    body,
-                }) => {
-                    let _ = written_name;
-                    let name = rename.unwrap_or(name);
-                    bound.push(constructors.bind(&name, Some(click_type)));
-                    Some(*body)
-                }
-                Some(ClickProposition::Implies(_, consequent)) => Some(*consequent),
-                _ => None,
-            };
-        }
     }
     if let Some(first) = bound.first() {
         constructors.restore(*first);
     }
-    *resource_definitions.local_hypotheses.borrow_mut() = outer_hypotheses;
     result.map(|()| SourceProof::Script(expanded))
 }
 
@@ -1606,17 +1622,6 @@ fn expand_declared_resource_tactic(
     resource_definitions: &DeclaredResourceScope,
 ) -> Result<ProofTactic, ClickError> {
     match tactic {
-        tactic @ ProofTactic::Induct { .. } => {
-            let ProofTactic::Induct { hypothesis, .. } = &tactic else {
-                unreachable!()
-            };
-            let inner = resource_definitions
-                .local_hypotheses
-                .borrow()
-                .with_inserted(hypothesis.clone(), ());
-            *resource_definitions.local_hypotheses.borrow_mut() = inner;
-            Ok(tactic)
-        }
         tactic @ (ProofTactic::ApplyTheorem(_)
         | ProofTactic::Witness(_)
         | ProofTactic::ApplyInduction { .. }
@@ -1645,7 +1650,8 @@ fn expand_declared_resource_tactic(
         | ProofTactic::Iterated(_)) => {
             expand_declared_resource_tactic_with_resources(tactic, resource_definitions)
         }
-        tactic @ (ProofTactic::Have(_)
+        tactic @ (ProofTactic::IntroBlock { .. }
+        | ProofTactic::Have(_)
         | ProofTactic::Open(_)
         | ProofTactic::If(_)
         | ProofTactic::Match(_)
@@ -1725,7 +1731,6 @@ fn expand_declared_resource_tactic_with_plain_scripts(
         AllArm(Box<ProofAllArm>),
         FinishArm(Box<ClickProposition>, usize),
         All(usize),
-        RestoreHypotheses(PersistentBinderMap<()>),
         Both { left: usize, right: usize },
         Close { count: usize },
     }
@@ -1735,13 +1740,7 @@ fn expand_declared_resource_tactic_with_plain_scripts(
     while let Some(frame) = pending.pop() {
         match frame {
             Frame::Script(tactics) => {
-                pending.push(Frame::RestoreHypotheses(
-                    resource_definitions.local_hypotheses.borrow().clone(),
-                ));
                 pending.extend(tactics.into_iter().rev().map(Frame::Visit));
-            }
-            Frame::RestoreHypotheses(outer) => {
-                *resource_definitions.local_hypotheses.borrow_mut() = outer;
             }
             Frame::Visit(ProofTactic::All(all)) => {
                 pending.push(Frame::All(all.arms.len()));
@@ -1762,6 +1761,7 @@ fn expand_declared_resource_tactic_with_plain_scripts(
                             | ProofTactic::Intro
                             | ProofTactic::IntroAs(_)
                             | ProofTactic::IntroBinder(_)
+                            | ProofTactic::IntroBlock { .. }
                     )
                 }) {
                     let SourceProof::Script(tactics) = expand_declared_resource_proof_of(
@@ -1839,17 +1839,11 @@ fn expand_declared_resource_tactic_with_expressions(
                 .into_iter()
                 .map(|argument| expand_declared_resource_expression(argument, resource_definitions))
                 .collect::<Result<_, _>>()?;
-            let local_hypothesis = resource_definitions
-                .local_hypotheses
-                .borrow()
-                .contains_key(&application.name);
-            if !local_hypothesis {
-                resource_definitions.constructors.resolve_call(
-                    CallKind::Theorem,
-                    &application.name,
-                    &mut application.arguments,
-                );
-            }
+            resource_definitions.constructors.resolve_call(
+                CallKind::Theorem,
+                &application.name,
+                &mut application.arguments,
+            );
             Ok(ProofTactic::ApplyTheorem(application))
         }
         ProofTactic::Witness(witness) => {
@@ -1879,17 +1873,11 @@ fn expand_declared_resource_tactic_with_expressions(
                         expand_declared_resource_expression(argument, resource_definitions)
                     })
                     .collect::<Result<Vec<_>, _>>()?;
-                if !resource_definitions
-                    .local_hypotheses
-                    .borrow()
-                    .contains_key(&application.name)
-                {
-                    resource_definitions.constructors.resolve_call(
-                        CallKind::Theorem,
-                        &application.name,
-                        &mut arguments,
-                    );
-                }
+                resource_definitions.constructors.resolve_call(
+                    CallKind::Theorem,
+                    &application.name,
+                    &mut arguments,
+                );
                 TheoremApplication {
                     name: application.name,
                     arguments,
@@ -1934,10 +1922,13 @@ fn expand_declared_resource_tactic_with_expressions(
         }
         ProofTactic::Instantiate {
             quantified,
-            argument,
+            arguments,
         } => Ok(ProofTactic::Instantiate {
             quantified: expand_declared_resource_proposition(quantified, resource_definitions)?,
-            argument: expand_declared_resource_expression(argument, resource_definitions)?,
+            arguments: arguments
+                .into_iter()
+                .map(|argument| expand_declared_resource_expression(argument, resource_definitions))
+                .collect::<Result<_, _>>()?,
         }),
         _ => unreachable!("tactic dispatched to the wrong declaration-expansion helper"),
     }
@@ -2061,11 +2052,30 @@ fn expand_declared_resource_script(
     Ok(expanded)
 }
 
+fn expand_declared_intro_block(
+    binder: Option<SurfaceBinder>,
+    body: Vec<ProofTactic>,
+    goal: Option<&ClickProposition>,
+    resource_definitions: &DeclaredResourceScope,
+) -> Result<ProofTactic, ClickError> {
+    let alternatives = resource_definitions.begin_alternatives();
+    let proof = resource_definitions.arm(&alternatives, || {
+        expand_declared_resource_proof_of(SourceProof::Script(body), goal, resource_definitions)
+    })?;
+    let SourceProof::Script(body) = proof else {
+        unreachable!("expansion retains proof scripts");
+    };
+    Ok(ProofTactic::IntroBlock { binder, body })
+}
+
 fn expand_declared_resource_tactic_with_nested_proofs(
     tactic: ProofTactic,
     resource_definitions: &DeclaredResourceScope,
 ) -> Result<ProofTactic, ClickError> {
     match tactic {
+        ProofTactic::IntroBlock { binder, body } => {
+            expand_declared_intro_block(binder, body, None, resource_definitions)
+        }
         ProofTactic::Have(have) => {
             let proposition =
                 expand_declared_resource_proposition(have.proposition, resource_definitions)?;

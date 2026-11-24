@@ -563,6 +563,10 @@ id = "language.word.cases"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
+id = "language.word.close"
+path = "reference/language/grammar.md#word-index"
+
+[[item]]
 id = "language.word.close_invariants"
 path = "reference/language/grammar.md#word-index"
 
@@ -1310,6 +1314,10 @@ id = "tactic.check_termination_callbacks"
 path = "reference/tactics/index.md#termination-checks"
 
 [[item]]
+id = "tactic.close"
+path = "reference/tactics/index.md#proposition-reasoning"
+
+[[item]]
 id = "tactic.known"
 path = "reference/tactics/index.md#proposition-reasoning"
 
@@ -1520,6 +1528,10 @@ id = "tactic-form.check-termination-callbacks"
 path = "reference/tactics/index.md#termination-checks"
 
 [[item]]
+id = "tactic-form.close"
+path = "reference/tactics/index.md#proposition-reasoning"
+
+[[item]]
 id = "tactic-form.known"
 path = "reference/tactics/index.md#proposition-reasoning"
 [[item]]
@@ -1545,6 +1557,9 @@ id = "tactic-form.enumerate"
 path = "reference/tactics/index.md#proposition-reasoning"
 [[item]]
 id = "tactic-form.contradiction"
+path = "reference/tactics/index.md#proposition-reasoning"
+[[item]]
+id = "tactic-form.contradiction-false"
 path = "reference/tactics/index.md#proposition-reasoning"
 [[item]]
 id = "tactic-form.rewrite"
@@ -1575,6 +1590,10 @@ path = "reference/cli/verify.md#options"
 
 [[item]]
 id = "cli.verify.--locked"
+path = "reference/cli/verify.md#options"
+
+[[item]]
+id = "cli.verify.--checked-only"
 path = "reference/cli/verify.md#options"
 
 [[item]]
@@ -2250,6 +2269,10 @@ id = "library.function.permutation::count"
 path = "reference/library/index.md#permutationcount"
 
 [[item]]
+id = "library.theorem.permutation::two_indicator_counts_commute"
+path = "reference/library/index.md#permutationtwo_indicator_counts_commute"
+
+[[item]]
 id = "library.predicate.permutation::permutation"
 path = "reference/library/index.md#permutationpermutation"
 
@@ -2344,6 +2367,10 @@ path = "reference/language/index.md#__click_constant_p_unknown"
 [[item]]
 id = "library.extern.fprintf"
 path = "reference/library/index.md#fprintf"
+
+[[item]]
+id = "library.extern.printf"
+path = "reference/library/index.md#printf"
 
 [[item]]
 id = "library.extern.memcpy"
@@ -2504,6 +2531,10 @@ path = "reference/library/index.md#optiont-and-resultt-e-unwrapping"
 [[item]]
 id = "library.rust.Option::unwrap"
 path = "reference/library/index.md#optiont-and-resultt-e-unwrapping"
+
+[[item]]
+id = "library.rust.Option::take"
+path = "reference/library/index.md#optiontaket"
 
 [[item]]
 id = "library.rust.Option::unwrap_or"
@@ -5152,6 +5183,10 @@ id = "library.theorem.integer::uint64_add_distinct"
 path = "reference/library/index.md#integeruint64_add_distinct"
 
 [[item]]
+id = "library.theorem.integer::uint64_add_subtract_cancel"
+path = "reference/library/index.md#integeruint64_add_subtract_cancel"
+
+[[item]]
 id = "library.theorem.integer::uint64_or_add_low"
 path = "reference/library/index.md#integeruint64_or_add_low"
 
@@ -5172,12 +5207,20 @@ id = "library.theorem.integer::uint8_pointer_add_address_int64"
 path = "reference/library/index.md#integeruint8_pointer_add_address_int64"
 
 [[item]]
+id = "library.theorem.integer::uint8_pointer_add_address_uint64"
+path = "reference/library/index.md#integeruint8_pointer_add_address_uint64"
+
+[[item]]
 id = "library.theorem.integer::int8_pointer_add_address_int32"
 path = "reference/library/index.md#integerint8_pointer_add_address_int32"
 
 [[item]]
 id = "library.theorem.integer::int8_pointer_add_address_int64"
 path = "reference/library/index.md#integerint8_pointer_add_address_int64"
+
+[[item]]
+id = "library.theorem.integer::int8_pointer_add_address_uint64"
+path = "reference/library/index.md#integerint8_pointer_add_address_uint64"
 
 [[item]]
 id = "library.theorem.integer::uint16_pointer_add_address_int32"
@@ -5188,12 +5231,20 @@ id = "library.theorem.integer::uint16_pointer_add_address_int64"
 path = "reference/library/index.md#integeruint16_pointer_add_address_int64"
 
 [[item]]
+id = "library.theorem.integer::uint16_pointer_add_address_uint64"
+path = "reference/library/index.md#integeruint16_pointer_add_address_uint64"
+
+[[item]]
 id = "library.theorem.integer::int16_pointer_add_address_int32"
 path = "reference/library/index.md#integerint16_pointer_add_address_int32"
 
 [[item]]
 id = "library.theorem.integer::int16_pointer_add_address_int64"
 path = "reference/library/index.md#integerint16_pointer_add_address_int64"
+
+[[item]]
+id = "library.theorem.integer::int16_pointer_add_address_uint64"
+path = "reference/library/index.md#integerint16_pointer_add_address_uint64"
 
 [[item]]
 id = "library.theorem.integer::uint32_pointer_add_address_int32"
@@ -5204,12 +5255,20 @@ id = "library.theorem.integer::uint32_pointer_add_address_int64"
 path = "reference/library/index.md#integeruint32_pointer_add_address_int64"
 
 [[item]]
+id = "library.theorem.integer::uint32_pointer_add_address_uint64"
+path = "reference/library/index.md#integeruint32_pointer_add_address_uint64"
+
+[[item]]
 id = "library.theorem.integer::int32_pointer_add_address_int32"
 path = "reference/library/index.md#integerint32_pointer_add_address_int32"
 
 [[item]]
 id = "library.theorem.integer::int32_pointer_add_address_int64"
 path = "reference/library/index.md#integerint32_pointer_add_address_int64"
+
+[[item]]
+id = "library.theorem.integer::int32_pointer_add_address_uint64"
+path = "reference/library/index.md#integerint32_pointer_add_address_uint64"
 
 [[item]]
 id = "library.theorem.integer::uint64_pointer_add_address_int32"
@@ -5220,12 +5279,20 @@ id = "library.theorem.integer::uint64_pointer_add_address_int64"
 path = "reference/library/index.md#integeruint64_pointer_add_address_int64"
 
 [[item]]
+id = "library.theorem.integer::uint64_pointer_add_address_uint64"
+path = "reference/library/index.md#integeruint64_pointer_add_address_uint64"
+
+[[item]]
 id = "library.theorem.integer::int64_pointer_add_address_int32"
 path = "reference/library/index.md#integerint64_pointer_add_address_int32"
 
 [[item]]
 id = "library.theorem.integer::int64_pointer_add_address_int64"
 path = "reference/library/index.md#integerint64_pointer_add_address_int64"
+
+[[item]]
+id = "library.theorem.integer::int64_pointer_add_address_uint64"
+path = "reference/library/index.md#integerint64_pointer_add_address_uint64"
 
 [[item]]
 id = "library.theorem.integer::float32_pointer_add_address_int32"
@@ -5236,12 +5303,20 @@ id = "library.theorem.integer::float32_pointer_add_address_int64"
 path = "reference/library/index.md#integerfloat32_pointer_add_address_int64"
 
 [[item]]
+id = "library.theorem.integer::float32_pointer_add_address_uint64"
+path = "reference/library/index.md#integerfloat32_pointer_add_address_uint64"
+
+[[item]]
 id = "library.theorem.integer::float64_pointer_add_address_int32"
 path = "reference/library/index.md#integerfloat64_pointer_add_address_int32"
 
 [[item]]
 id = "library.theorem.integer::float64_pointer_add_address_int64"
 path = "reference/library/index.md#integerfloat64_pointer_add_address_int64"
+
+[[item]]
+id = "library.theorem.integer::float64_pointer_add_address_uint64"
+path = "reference/library/index.md#integerfloat64_pointer_add_address_uint64"
 
 [[item]]
 id = "library.theorem.integer::nonnegative_remainder_from_reconstruction"
@@ -5434,3 +5509,51 @@ path = "reference/library/index.md#stdioformat_output-stdioformat_length-and-std
 [[item]]
 id = "library.function.stdio::write_requests"
 path = "reference/library/index.md#stdiowrite_requests"
+
+[[item]]
+id = "library.theorem.float_order::float32_le_le"
+path = "reference/library/index.md#float_orderfloat32_le_le"
+
+[[item]]
+id = "library.theorem.float_order::float32_le_lt"
+path = "reference/library/index.md#float_orderfloat32_le_lt"
+
+[[item]]
+id = "library.theorem.float_order::float32_lt_le"
+path = "reference/library/index.md#float_orderfloat32_lt_le"
+
+[[item]]
+id = "library.theorem.float_order::float64_le_le"
+path = "reference/library/index.md#float_orderfloat64_le_le"
+
+[[item]]
+id = "library.theorem.float_order::float64_le_lt"
+path = "reference/library/index.md#float_orderfloat64_le_lt"
+
+[[item]]
+id = "library.theorem.float_order::float64_lt_le"
+path = "reference/library/index.md#float_orderfloat64_lt_le"
+
+[[item]]
+id = "library.theorem.float_order::float32_add_lower"
+path = "reference/library/index.md#float_orderfloat32_add_lower"
+
+[[item]]
+id = "library.theorem.float_order::float32_add_upper"
+path = "reference/library/index.md#float_orderfloat32_add_upper"
+
+[[item]]
+id = "library.theorem.float_order::float64_add_lower"
+path = "reference/library/index.md#float_orderfloat64_add_lower"
+
+[[item]]
+id = "library.theorem.float_order::float64_add_upper"
+path = "reference/library/index.md#float_orderfloat64_add_upper"
+
+[[item]]
+id = "library.theorem.float_order::float32_scale_lower"
+path = "reference/library/index.md#float_orderfloat32_scale_lower"
+
+[[item]]
+id = "library.theorem.float_order::float32_scale_upper"
+path = "reference/library/index.md#float_orderfloat32_scale_upper"

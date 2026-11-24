@@ -305,6 +305,57 @@ impl RegionFootprint {
             ends_with_return: false,
         })
     }
+
+    /// Join two checked, single-write arms with the same effect. Matching
+    /// endpoints prevents an arm's final statement from standing in for an
+    /// earlier part of the branch. Resource-changing joins have no such
+    /// footprint.
+    pub(crate) fn shared_branch_write(
+        source: String,
+        before: &ExecutionState,
+        after: &ExecutionState,
+        arms: [(&ExecutionState, Option<&Arc<Self>>); 2],
+    ) -> Option<Arc<Self>> {
+        let [(left_exit, Some(left)), (right_exit, Some(right))] = arms else {
+            return None;
+        };
+        crate::instrumentation::record_deterministic_work(1);
+        let member = left.members.front()?;
+        if !matches!(member, Resource::Memory(_))
+            || !after.resources().shares_storage_with(before.resources())
+            || !after
+                .memory()
+                .shares_heap_deallocations_with(before.memory())
+        {
+            return None;
+        }
+        for (exit, effect) in [(left_exit, left), (right_exit, right)] {
+            if !effect.complete
+                || effect.members.len() != 1
+                || effect.members.front() != Some(member)
+                || MemoryStateIdentity::of(&effect.before)
+                    != MemoryStateIdentity::of(before.memory())
+                || MemoryStateIdentity::of(&effect.after) != MemoryStateIdentity::of(exit.memory())
+                || !effect
+                    .before_resources
+                    .shares_storage_with(before.resources())
+                || !effect.after_resources.shares_storage_with(exit.resources())
+                || !exit.resources().shares_storage_with(before.resources())
+                || !exit
+                    .memory()
+                    .shares_heap_deallocations_with(before.memory())
+            {
+                return None;
+            }
+        }
+        Some(Self::sequence(
+            source,
+            before,
+            after,
+            left.members.clone(),
+            true,
+        ))
+    }
 }
 
 /// Establish collection separation from explicitly selected premises. Only the

@@ -214,6 +214,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_native_integer_bound");
+        use crate::kernel::IntegerTerm;
         let (Some(goal), Some(written)) = (input.goal(), input.surface_goal()) else {
             return Ok(None);
         };
@@ -248,21 +249,33 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 return Ok(None);
             };
             let one = || Box::new(number(1));
-            let (law, left, right, adjustment) = if let (Some(bound), Some(target)) =
-                (lo.as_const(), goal_lo.as_const())
+            let (law, left, right, adjustment) = if let IntegerTerm::Add(value, increment) =
+                goal_lo.as_ref()
+                && value.value_read() == lo.value_read()
+                && increment.as_const().is_some_and(num_traits::One::is_one)
+                && hi.value_read() == goal_hi.value_read()
+                && let ContractExpression::Add(observed, _) = lower
+            {
+                ("lt_step_le", *observed, upper, None)
+            } else if let (Some(bound), Some(target)) = (lo.as_const(), goal_lo.as_const())
                 && hi == goal_hi
                 && &(bound + BigInt::one()) == target
             {
                 let original = surface_signed_integer_literal(bound);
                 let shifted = ContractExpression::Add(Box::new(original.clone()), one());
-                ("lt_step_le", original, upper, eq(lower, shifted))
+                ("lt_step_le", original, upper, Some(eq(lower, shifted)))
             } else if let (Some(bound), Some(target)) = (hi.as_const(), goal_hi.as_const())
                 && lo == goal_lo
                 && &(bound - BigInt::one()) == target
             {
                 let original = surface_signed_integer_literal(bound);
                 let shifted = ContractExpression::Subtract(Box::new(original.clone()), one());
-                ("lt_le_predecessor", lower, original, eq(upper, shifted))
+                (
+                    "lt_le_predecessor",
+                    lower,
+                    original,
+                    Some(eq(upper, shifted)),
+                )
             } else {
                 continue;
             };
@@ -277,9 +290,13 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 let observed = closed.join()?;
                 // The instantiated law retains its arithmetic endpoint.
                 // Rewrite the printed literal to that exact expression.
-                let rewritten = observed
-                    .driver()
-                    .apply_step(ProofStep::Rewrite(adjustment))?;
+                let rewritten = if let Some(adjustment) = adjustment {
+                    observed
+                        .driver()
+                        .apply_step(ProofStep::Rewrite(adjustment))?
+                } else {
+                    observed
+                };
                 rewritten
                     .driver()
                     .apply_step(apply(law, vec![left, right], vec![granted]))
@@ -301,7 +318,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if let Ok(closed) = scope.driver().apply_step(ProofStep::Known).or_else(|_| {
             scope
                 .driver()
-                .apply_step(ProofStep::NormalizeUsing(Vec::new()))
+                .apply_step(ProofStep::CompatibilityNormalize(Some(Vec::new())))
         }) {
             return Ok(Some(closed.join()?));
         }
@@ -692,8 +709,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         }
     }
 
-    /// Close one selected interval obligation through ordinary emitters only.
-    /// This never re-enters signed interval planning or its compatibility rule.
+    /// Close a selected interval obligation by computing or composing bounds.
+    /// A cast comparison asks for the uncast order over the same premises.
     pub(in crate::surface::proof) fn try_interval_fact_using(
         input: &Proof<'a>,
         premises: &[ClickProposition],
@@ -728,9 +745,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 .is_some_and(|view| view.format == MachineIntegerType::UInt32))
             && let Some(surface @ ClickProposition::Comparison { left, right, .. }) =
                 input.surface_goal()
+            && let ClickProposition::Comparison {
+                left: observed_left,
+                operator,
+                right: observed_right,
+            } = observed_native_surface_comparison(goal, surface)
         {
             let mut casts = Vec::new();
-            for expression in [left, right] {
+            let mut uncast = |expression: &ContractExpression, observed| {
                 let operand = match expression {
                     ContractExpression::CUnary {
                         operand,
@@ -749,10 +771,15 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     )),
                     _ => None,
                 };
-                if let Some(operand) = operand {
-                    casts.push(eq(to_integer(expression), to_integer(&operand)));
-                }
-            }
+                let Some(operand) = operand else {
+                    return observed;
+                };
+                let exact = to_integer(&operand);
+                casts.push(eq(to_integer(expression), exact.clone()));
+                exact
+            };
+            let left = uncast(left, observed_left);
+            let right = uncast(right, observed_right);
             if !casts.is_empty() {
                 let mut proof = input.clone();
                 for identity in &casts {
@@ -762,15 +789,22 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     };
                     proof = closed.join()?;
                 }
-                let observed_goal = observed_native_surface_comparison(goal, surface);
-                let mut scope = proof.driver().open_have(observed_goal)?;
-                for identity in casts {
-                    scope = scope.driver().apply_step(ProofStep::Rewrite(identity))?;
-                }
-                let Some(closed) = scope.driver().try_integer_composition_using(premises)? else {
+                // Prove the uncast order independently, while its written
+                // Integer observations are still available to the interval
+                // planner. Then substitute the checked identities in the
+                // original comparison and read the established order.
+                let scope = proof.driver().open_have(ClickProposition::Comparison {
+                    left,
+                    operator,
+                    right,
+                })?;
+                let Some(closed) = scope.driver().try_restricted_solve_closure(premises) else {
                     return Ok(None);
                 };
                 proof = closed.join()?;
+                for identity in casts {
+                    proof = proof.driver().apply_step(ProofStep::Rewrite(identity))?;
+                }
                 return proof.driver().apply_step(ProofStep::Known).map(Some);
             }
         }
@@ -1008,7 +1042,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 let step = if all_available && known {
                     ProofStep::Known
                 } else {
-                    ProofStep::NormalizeUsing(premises.to_vec())
+                    ProofStep::CompatibilityNormalize(Some(premises.to_vec()))
                 };
                 attempt::candidate_outcome(driver.apply_step(step))?
             }

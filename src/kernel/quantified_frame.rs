@@ -374,7 +374,7 @@ fn loads_unchanged(left: &MachineTerm, right: &MachineTerm, assumptions: &PureFa
     // Two spellings of one address: with its inner reads shown unchanged,
     // the right side's load at the left side's address has the right side's
     // value.
-    if left_pointer != right_pointer
+    if left_pointer.address() != right_pointer.address()
         && !pointers_equal_with_load_atoms(left_pointer, right_pointer, &|a, b| {
             loads_unchanged(a, b, assumptions)
         })
@@ -382,7 +382,7 @@ fn loads_unchanged(left: &MachineTerm, right: &MachineTerm, assumptions: &PureFa
         return false;
     }
     let right_at_left_address =
-        MachineTerm::MemoryLoad(right_memory.clone(), left_pointer.clone(), *right_kind);
+        MachineTerm::read_named(right_memory.clone(), left_pointer.clone(), *right_kind);
     crate::kernel::memory_history::explicit_atomic_equality_from_memory_derivations(
         left,
         &right_at_left_address,
@@ -410,9 +410,9 @@ mod wide_condition_tests {
             ProgramValue::UInt64(MachineTerm::uint64_constant(3)),
         );
         let load = |memory: &SymbolicMemory, kind| {
-            MachineTerm::MemoryLoad(
+            crate::kernel::MachineTerm::read_named(
                 ProgramPoint::at(&(crate::kernel::intern_memory_ref(memory))),
-                Box::new(pointer.clone()),
+                pointer.clone(),
                 kind,
             )
         };

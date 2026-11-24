@@ -73,7 +73,7 @@ fn charon_array_copy_preserves_symbolic_source_across_by_value_call() {
             matches!(
                 &block.terminator,
                 click::languages::rust::schema::MirTerminator::Call { owned_arguments, .. }
-                    if owned_arguments.iter().any(|arg| arg.local == "words" && !arg.moved)
+                    if owned_arguments.iter().any(|arg| arg.local.as_ref().and_then(|local| local.source_name()) == Some("words") && !arg.moved)
             )
         });
     assert!(folded_argument);
@@ -354,7 +354,7 @@ fn charon_external_array_copies_and_fills_verify_and_reject_false_bytes() {
         "copy_million.contract",
         "fill_million.contract",
         "independent.contract",
-        "empty.ensures_0",
+        "empty.contract",
     ] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
     }

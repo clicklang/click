@@ -9,6 +9,9 @@ use crate::kernel::{
 
 impl KernelLegacyTerm {
     pub(in crate::kernel) fn machine_operand(&self) -> Option<&MachineTerm> {
+        if let LegacyIdentity::ExactIntegerObservation(observation) = &self.identity {
+            return Some(observation.value());
+        }
         if !matches!(
             self.identity,
             LegacyIdentity::Machine(_) | LegacyIdentity::MachineObservation(_)
@@ -648,28 +651,14 @@ impl KernelTermImport {
                         // This is a typed input descriptor, not a boxed value
                         // argument. Keep its existing shared operand and exact
                         // envelope through native field storage/output.
-                        KernelTerm::legacy_at(
-                            argument.clone(),
-                            LegacyIdentity::ExactApplicationArgument {
-                                application: application.clone(),
-                                payload: application.payload_id(),
-                                index,
-                            },
-                        )
+                        KernelTerm::native_call_argument(application, index, true)
                     } else {
                         self.argument(argument)
                     }
                 } else if let Some(root) = application.common_argument(index) {
                     root
                 } else {
-                    KernelTerm::legacy_at(
-                        argument.clone(),
-                        LegacyIdentity::ExactApplicationArgument {
-                            application: application.clone(),
-                            payload: application.payload_id(),
-                            index,
-                        },
-                    )
+                    KernelTerm::native_call_argument(application, index, true)
                 }
             })
             .collect();
@@ -868,7 +857,7 @@ impl KernelTermExport {
                 point,
                 address,
                 kind,
-            } => Old::MemoryLoad(point.clone(), Box::new(address.export()?), *kind),
+            } => Old::read_named(point.clone(), address.export()?, *kind),
             Node::BoolCast {
                 destination,
                 operand,
@@ -909,6 +898,9 @@ impl KernelTermExport {
                 operand,
             } => Old::cast_node(*encoding, *source, *destination, Self::machine(operand)?),
             Node::Legacy(value) => {
+                if let LegacyIdentity::ExactIntegerObservation(observation) = &value.identity {
+                    return Ok(observation.value().clone());
+                }
                 let PureFunctionArgument::Value(value) = value.value() else {
                     return Err("expected a machine value legacy payload");
                 };

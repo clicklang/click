@@ -13,10 +13,14 @@ theorem positive_seven(left: uint8[], right: uint8[]) {
     requires right[0u64] == 1u8;
     ensures bytes::comparison(left, right, 2u64, 7) by {
         have not bytes::equal(left, 0u64, right, 0u64, 2u64) by {
-            unfold(bytes::equal(left, 0u64, right, 0u64, 2u64));
-            intro();
-            instantiate((0u64..2u64).all(|k| { left[0u64 + k] == right[0u64 + k] }), 0u64);
-            solve();
+            if bytes::equal(left, 0u64, right, 0u64, 2u64) {
+                unfold(bytes::equal(left, 0u64, right, 0u64, 2u64));
+                instantiate((0u64..2u64).all(|k| { left[0u64 + k] == right[0u64 + k] }), 0u64);
+                have false by { solve(); }
+                contradiction();
+            } else {
+                known();
+            }
         }
         have forall (k: uint64) {
             k < 2u64 and bytes::equal_range(left, right, 0u64, k) implies

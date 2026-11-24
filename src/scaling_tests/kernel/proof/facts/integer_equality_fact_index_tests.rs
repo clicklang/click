@@ -4,6 +4,10 @@
 
 use super::*;
 use crate::kernel::{CompareRelation, MachineIntegerType};
+use crate::kernel::{
+    IntegerComparisonOperator, KernelFold, KernelFoldIndex, KernelIntegerOperator, KernelTerm,
+    KernelTermExport, KernelTermImport, KernelType, StoredConditionTerm,
+};
 
 #[test]
 fn wide_equality_decision_uses_only_its_indexed_component() {
@@ -155,10 +159,109 @@ fn integer_alpha_index_skips_growing_scalar_certificate_facts() {
             0,
             "scalar certificate facts must stay off the fold alpha index"
         );
+        let scalar = KernelTermImport::default().integer(&scalar.into());
+        let retained = (0..depth)
+            .map(|value| {
+                let root = KernelTerm::integer_comparison(
+                    IntegerComparisonOperator::Equal,
+                    [scalar.clone(), KernelTerm::integer_literal(value.into())],
+                )
+                .unwrap();
+                Proposition::condition_is(StoredConditionTerm::from_root(root).unwrap(), true)
+            })
+            .collect::<Vec<_>>();
+        let exports = KernelTermExport::integer_export_count();
+        let (_, retained_work) = crate::instrumentation::measure_deterministic_work(|| {
+            retained
+                .iter()
+                .fold(PersistentMap::default(), index_integer_condition_fact)
+        });
+        assert_eq!(KernelTermExport::integer_export_count(), exports);
+        assert!(
+            retained_work <= depth,
+            "depth={depth}, work={retained_work}"
+        );
         samples.push(work);
     }
     for pair in samples.windows(2) {
         assert!(pair[1] <= pair[0] * 3 + 32, "{samples:?}");
+    }
+}
+
+#[test]
+fn integer_alpha_index_reads_arithmetic_only_folds_without_export() {
+    for depth in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let comparison = |accumulator, end: i64| {
+            let mut body = KernelTerm::variable(KernelType::Integer, Variable(accumulator));
+            for _ in 0..depth {
+                body = KernelTerm::integer_operation(
+                    KernelIntegerOperator::Add,
+                    vec![body.clone(), body],
+                )
+                .unwrap();
+            }
+            let zero = KernelTerm::integer_literal(0.into());
+            let fold = KernelFold::new(
+                KernelFoldIndex::Integer,
+                Variable(accumulator),
+                Variable(accumulator + 1),
+                [
+                    zero.clone(),
+                    KernelTerm::integer_literal(end.into()),
+                    zero,
+                    body,
+                ],
+            )
+            .unwrap();
+            KernelTerm::integer_comparison(
+                IntegerComparisonOperator::LessEqual,
+                [fold.into_term(), KernelTerm::integer_literal(9.into())],
+            )
+            .unwrap()
+        };
+        let retained =
+            |root| Proposition::condition_is(StoredConditionTerm::from_root(root).unwrap(), true);
+        let source_root = comparison(214_000, 8);
+        let source = retained(source_root.clone());
+        let required = retained(comparison(215_000, 8));
+        let different = retained(comparison(215_000, 9));
+        let exports = KernelTermExport::integer_export_count();
+        let index = index_integer_condition_fact(PersistentMap::default(), &source);
+        let key = integer_condition_alpha_key(&required).unwrap();
+        assert!(index.get(&key.fingerprint()).is_some());
+        assert_eq!(KernelTermExport::integer_export_count(), exports);
+
+        let native =
+            Proposition::condition_is(KernelTermExport::condition(&source_root).unwrap(), true);
+        assert_eq!(integer_condition_alpha_key(&native), Some(key));
+        let mut samples = Vec::new();
+        for unrelated in [0, 16, 64, 256] {
+            let mut premises = vec![native.clone()];
+            premises.extend((0..unrelated).map(|index| Proposition::Predicate {
+                name: format!("unrelated_{index}"),
+                arguments: vec![],
+            }));
+            let facts = PureFactStore::from_ordered(&premises);
+            let exports = KernelTermExport::integer_export_count();
+            let (matched, work) = crate::instrumentation::measure_deterministic_work(|| {
+                (
+                    facts.matching_integer_condition_alpha_fact(&required),
+                    facts.matching_integer_condition_alpha_fact(&different),
+                )
+            });
+            assert_eq!(matched, (Some(native.clone()), None));
+            assert_eq!(KernelTermExport::integer_export_count(), exports);
+            samples.push(work);
+        }
+        assert!(
+            samples.iter().all(|work| *work == samples[0]),
+            "{samples:?}"
+        );
+        assert!(
+            samples[0] <= 50 * depth + 200,
+            "depth={depth}, work={samples:?}"
+        );
     }
 }
 
@@ -237,6 +340,100 @@ fn proper_conjunct_index_walks_deep_conjunction_iteratively() {
 }
 
 #[test]
+fn memory_erased_integer_keys_read_retained_observations_and_skip_scalar_dags() {
+    use crate::kernel::MachineBinaryOp;
+    let mut samples = Vec::new();
+    for depth in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let format = MachineIntegerType::Int32;
+        let mut operand = KernelTerm::variable(
+            KernelType::Program(format.program_type()),
+            Variable(216_000),
+        );
+        for _ in 0..depth {
+            operand = KernelTerm::machine_binary_shared(
+                format,
+                MachineBinaryOp::Add,
+                [operand.clone(), operand],
+            );
+        }
+        let observation =
+            IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(format, operand).unwrap());
+        let observation = KernelTermImport::default().integer(&observation.into());
+        let literal = KernelTerm::integer_literal(9.into());
+        let retained = |root, truth| {
+            Proposition::condition_is(StoredConditionTerm::from_root(root).unwrap(), truth)
+        };
+        let comparison = |operator| {
+            KernelTerm::integer_comparison(operator, [observation.clone(), literal.clone()])
+                .unwrap()
+        };
+        let exports = KernelTermExport::integer_export_count();
+        let machine_exports = KernelTermExport::machine_export_count();
+        let fact = retained(comparison(IntegerComparisonOperator::LessEqual), true);
+        let (key, work) = crate::instrumentation::measure_deterministic_work(|| {
+            memory_erased_proposition_key(&fact)
+        });
+        assert!(matches!(key, MemoryErasedPropositionKey::Condition(..)));
+        assert_eq!(KernelTermExport::integer_export_count(), exports);
+        assert_eq!(KernelTermExport::machine_export_count(), machine_exports);
+        samples.push(work);
+
+        for operator in [
+            IntegerComparisonOperator::Equal,
+            IntegerComparisonOperator::NotEqual,
+            IntegerComparisonOperator::LessThan,
+            IntegerComparisonOperator::LessEqual,
+            IntegerComparisonOperator::GreaterThan,
+            IntegerComparisonOperator::GreaterEqual,
+        ] {
+            let root = comparison(operator);
+            let keys = [true, false]
+                .map(|truth| check_retained_key_no_export(&retained(root.clone(), truth)));
+            let native = KernelTermExport::condition(&root).unwrap();
+            for (actual, truth) in keys.into_iter().zip([true, false]) {
+                assert_eq!(
+                    actual,
+                    memory_erased_proposition_key(&Proposition::condition_is(
+                        native.clone(),
+                        truth
+                    ))
+                );
+            }
+        }
+
+        let scalar = KernelTermImport::default().integer(&growing_shared_scalar_dag(depth).into());
+        let huge = KernelTerm::integer_literal(num_bigint::BigInt::from(1) << 1024usize);
+        let wide =
+            KernelTerm::integer_comparison(IntegerComparisonOperator::Equal, [observation, huge])
+                .unwrap();
+        assert!(matches!(
+            check_retained_key_no_export(&retained(wide, true)),
+            MemoryErasedPropositionKey::Exact(_)
+        ));
+        let root =
+            KernelTerm::integer_comparison(IntegerComparisonOperator::Equal, [scalar, literal])
+                .unwrap();
+        let fact = retained(root, true);
+        let (key, work) = crate::instrumentation::measure_deterministic_work(|| {
+            check_retained_key_no_export(&fact)
+        });
+        assert!(matches!(key, MemoryErasedPropositionKey::Exact(_)));
+        assert!(work <= 2, "depth={depth}, work={work}");
+    }
+    for pair in samples.windows(2) {
+        assert!(pair[1] <= 4 * pair[0] + 64, "{samples:?}");
+    }
+}
+
+fn check_retained_key_no_export(fact: &Proposition) -> MemoryErasedPropositionKey {
+    let exports = KernelTermExport::integer_export_count();
+    let key = memory_erased_proposition_key(fact);
+    assert_eq!(KernelTermExport::integer_export_count(), exports);
+    key
+}
+
+#[test]
 fn memory_erased_same_bucket_lookup_scales_without_deep_dedup() {
     let mut samples = Vec::new();
     for size in [4usize, 16, 64, 128] {
@@ -255,7 +452,7 @@ fn memory_erased_same_bucket_lookup_scales_without_deep_dedup() {
             memories.push(crate::kernel::intern_memory(memory));
         }
         let load = |memory: &crate::kernel::SharedMemory| {
-            MachineTerm::MemoryLoad(
+            MachineTerm::read_named(
                 ProgramPoint::at(memory),
                 Box::new(Address {
                     base: "same-bucket-facts".into(),

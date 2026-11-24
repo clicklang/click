@@ -2119,7 +2119,9 @@ fn execute_function_paths(
             Ok(None) => std::borrow::Cow::Borrowed(execution_context.environment),
             Err(message) => {
                 paths.push(FunctionPath::new(
-                    FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(message)),
+                    FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(
+                        message.to_string(),
+                    )),
                     arguments_path.facts,
                     argument_obligations,
                 ));
@@ -4853,9 +4855,17 @@ fn execute_verified_function_applications_with_suspension(
         };
         facts.extend(allocation_effects);
         post_state.set_memory(memory);
+        // A consumed allocation named through a pointer proven equal to it,
+        // a contract's `result == p`, retires the storage the call's entry
+        // transfer moved: its unique storage coordinate.
         if let Some(error) = retired_allocations.iter().find_map(|range| {
             post_state
-                .retire_population_storage(&range.base().base)
+                .retire_population_storage(
+                    &effective_assumptions
+                        .equality_graph
+                        .storage_address(range.base())
+                        .base,
+                )
                 .err()
         }) {
             paths.push(FunctionPath::new(
@@ -6309,7 +6319,7 @@ fn prepare_verified_function_call<'a>(
                 )));
             };
             let entered = entry_events
-                .import_acquired_control_population(description, owned)
+                .import_acquired_control_population(description, owned, None)
                 .and_then(|events| {
                     events.transfer_call_fact(callee_events, caller_events, description, true)
                 })
@@ -7949,7 +7959,7 @@ fn function_contract_requirement_is_proven(
                     offset: AddressOffset::Constant(0),
                 } => Some(target),
                 Address {
-                    base: AddressBase::FunctionSymbolic(_) | AddressBase::LoadedPointer(_),
+                    base: AddressBase::FunctionSymbolic(_) | AddressBase::Load(_),
                     offset: AddressOffset::Constant(0),
                 } if matches!(pointer.program_type(), ProgramType::FunctionPointer(_)) => None,
                 _ => return Ok(false),
@@ -16656,8 +16666,37 @@ pub(super) fn expand_composite_resource_fact_with_children(
     at: &ProgramPoint,
     assumptions: &PureFactContext,
 ) -> Option<(ResourceContext, Vec<ResourceFact>, Vec<ResourceFact>)> {
-    construct_composite_resource_body(context, composite, definitions, at, assumptions, None, None)
-        .map(|body| (body.expanded, body.children, body.raw_children))
+    checked_expand_composite_resource_fact_with_children(
+        context,
+        composite,
+        definitions,
+        at,
+        assumptions,
+    )
+    .ok()
+}
+
+pub(super) fn checked_expand_composite_resource_fact_with_children(
+    context: &ResourceContext,
+    composite: &ResourceFact,
+    definitions: &[CompositeResourceDefinition],
+    at: &ProgramPoint,
+    assumptions: &PureFactContext,
+) -> Result<
+    (ResourceContext, Vec<ResourceFact>, Vec<ResourceFact>),
+    crate::kernel::ContractEntryRefusal,
+> {
+    construct_composite_resource_body_with_source(
+        context,
+        composite,
+        definitions,
+        at,
+        assumptions,
+        None,
+        None,
+        CompositeBodySource::Held,
+    )
+    .map(|body| (body.expanded, body.children, body.raw_children))
 }
 
 /// Occurrences recorded while evaluating the body, before normalization.
@@ -16702,6 +16741,7 @@ impl HeldCompositeBody {
 }
 
 #[allow(clippy::too_many_arguments)]
+#[cfg(test)]
 fn construct_composite_resource_body(
     context: &ResourceContext,
     composite: &ResourceFact,
@@ -16721,6 +16761,7 @@ fn construct_composite_resource_body(
         return_admission,
         CompositeBodySource::Held,
     )
+    .ok()
 }
 
 #[derive(Clone, Copy)]
@@ -16739,21 +16780,29 @@ fn construct_composite_resource_body_with_source(
     selected: Option<ResourceOccurrenceId>,
     mut return_admission: Option<&mut mixed_return_resources::ReturnFrontierAdmission>,
     source_kind: CompositeBodySource,
-) -> Option<CompositeBodyConstruction> {
+) -> Result<CompositeBodyConstruction, crate::kernel::ContractEntryRefusal> {
+    use crate::kernel::ContractEntryRefusal;
     let Resource::Composite { name, arguments } = composite.resource() else {
-        return None;
+        return Err(ContractEntryRefusal::Internal(
+            "expected a composite resource to open".into(),
+        ));
     };
+    let internal = |detail| ContractEntryRefusal::Internal(format!("composite `{name}`: {detail}"));
     let definition = &definitions[definitions
         .binary_search_by(|definition| {
             crate::instrumentation::record_deterministic_work(1);
             definition.name().cmp(name)
         })
-        .ok()?];
+        .map_err(|_| internal("the checked resource has no definition"))?];
     if definition.instance_schema.is_some() || definition.matched.is_some() {
-        return None;
+        return Err(internal(
+            "the checked resource has an instance or matched definition",
+        ));
     }
     if definition.parameters().len() != arguments.len() {
-        return None;
+        return Err(internal(
+            "the number of arguments differs from the definition",
+        ));
     }
     // A possibly empty owned head supplies no body cell. Empty token
     // populations have no body authority to expose, so their symbolic
@@ -16762,13 +16811,15 @@ fn construct_composite_resource_body_with_source(
         && !composite.is_view()
         && !composite.has_proven_positive_quantity(assumptions)
     {
-        return Some(CompositeBodyConstruction::opaque(context));
+        return Ok(CompositeBodyConstruction::opaque(context));
     }
     // A viewed composite carries its borrow dependency on the folded
     // occurrence.  Expansion must transfer that exact bundle to only the
     // newly inserted child occurrences; equal children in the ambient frame
     // are not eligible destinations.
-    let source = selected.or_else(|| context.first_exact_occurrence(composite))?;
+    let source = selected
+        .or_else(|| context.first_exact_occurrence(composite))
+        .ok_or_else(|| internal("the held resource has no matching occurrence"))?;
     let borrowed_parent = if composite.is_view() {
         context.borrow_dependency(source).cloned()
     } else {
@@ -16776,12 +16827,15 @@ fn construct_composite_resource_body_with_source(
     };
     let expansion_base = context
         .clone()
-        .without_exact_representation_for_occurrence(source)?;
+        .without_exact_representation_for_occurrence(source)
+        .ok_or_else(|| internal("the selected occurrence is missing from the frame"))?;
     let mut state = ExecutionState::at_point(at).with_resource_context(expansion_base.clone());
     for (parameter, argument) in definition.parameters().iter().zip(arguments.iter()) {
-        let argument = argument.as_program_value()?;
+        let argument = argument
+            .as_program_value()
+            .ok_or_else(|| internal("an argument is not a program value"))?;
         if parameter.program_type() != argument.program_type() {
-            return None;
+            return Err(internal("an argument has the wrong type"));
         }
         state.locals.set_typed(
             parameter.binding_name().clone(),
@@ -16797,14 +16851,16 @@ fn construct_composite_resource_body_with_source(
             None,
             assumptions,
             None,
-        )?
+        )
+        .ok_or_else(|| internal("could not bind the resource witnesses"))?
     } else {
         bind_composite_witnesses(
             definition,
             &(arguments).native_values(),
             &mut state,
             assumptions,
-        )?
+        )
+        .ok_or_else(|| internal("could not bind the resource witnesses"))?
     };
     let mut budget = ExecutionBudget::beside_live_state();
     // Opening a held composite assumes the body its fold established
@@ -16824,13 +16880,14 @@ fn construct_composite_resource_body_with_source(
     ) else {
         // A guarded folded resource remains opaque until the current path
         // decides its condition.
-        return Some(CompositeBodyConstruction::opaque(context));
+        return Ok(CompositeBodyConstruction::opaque(context));
     };
-    for contained in if body_active {
+    let contained = if body_active {
         definition.contains()
     } else {
         &[]
-    } {
+    };
+    for (index, contained) in contained.iter().enumerate() {
         let child_result = crate::instrumentation::measure_operation(
             name,
             "composite expansion",
@@ -16844,8 +16901,26 @@ fn construct_composite_resource_body_with_source(
                 )
             },
         );
-        let Ok(Ok(child)) = child_result else {
-            return None;
+        let child = match child_result {
+            Ok(Ok(child)) => child,
+            Ok(Err(error)) => {
+                return Err(ContractEntryRefusal::from_resource_error(
+                    &format!(
+                        "could not evaluate member {} of composite `{name}`",
+                        index + 1
+                    ),
+                    &error,
+                ));
+            }
+            Err(limit) => {
+                return Err(ContractEntryRefusal::from_limit(
+                    &format!(
+                        "could not evaluate member {} of composite `{name}`",
+                        index + 1
+                    ),
+                    limit,
+                ));
+            }
         };
         state.resources = state
             .resources
@@ -16864,7 +16939,11 @@ fn construct_composite_resource_body_with_source(
     let mut transferred = Vec::new();
     if let Some(admission) = return_admission.as_deref_mut() {
         for child in &raw_children {
-            transferred.push(admission.admit(child, assumptions)?);
+            transferred.push(
+                admission
+                    .admit(child, assumptions)
+                    .ok_or_else(|| internal("could not admit the returned member"))?,
+            );
         }
     }
     // The held head supplies the separating body and its frame relationship.
@@ -16882,7 +16961,7 @@ fn construct_composite_resource_body_with_source(
             // construct its body against the already emitted description frontier.
             expansion_base
                 .install_established_partition(emitted, assumptions)
-                .ok()?
+                .map_err(|_| internal("could not compose the returned body"))?
         } else {
             ResourceContext::install_held_composite_body(
                 HeldCompositeBody {
@@ -16906,7 +16985,7 @@ fn construct_composite_resource_body_with_source(
             }
         }
     }
-    Some(CompositeBodyConstruction {
+    Ok(CompositeBodyConstruction {
         witnesses,
         expanded,
         children,
@@ -17091,6 +17170,22 @@ pub(super) fn expand_all_composite_resource_facts_with_composites(
     at: &ProgramPoint,
     assumptions: &PureFactContext,
 ) -> Option<(ResourceContext, Vec<ResourceFact>)> {
+    checked_expand_all_composite_resource_facts_with_composites(
+        context,
+        definitions,
+        at,
+        assumptions,
+    )
+    .ok()
+}
+
+fn checked_expand_all_composite_resource_facts_with_composites(
+    context: &ResourceContext,
+    definitions: &[CompositeResourceDefinition],
+    at: &ProgramPoint,
+    assumptions: &PureFactContext,
+) -> Result<(ResourceContext, Vec<ResourceFact>), crate::kernel::ContractEntryRefusal> {
+    use crate::kernel::ContractEntryRefusal;
     let mut opened = Vec::new();
     let mut cached = context.clone();
     let supports = context
@@ -17109,7 +17204,13 @@ pub(super) fn expand_all_composite_resource_facts_with_composites(
         if expansion.as_slice() == [support.clone()] {
             continue;
         }
-        cached = cached.without_exact_representation_for_occurrence(support_occurrence)?;
+        cached = cached
+            .without_exact_representation_for_occurrence(support_occurrence)
+            .ok_or_else(|| {
+                ContractEntryRefusal::Internal(
+                    "a checked composite expansion lost its supporting occurrence".into(),
+                )
+            })?;
         opened.push(support.clone());
         let missing = expansion
             .into_iter()
@@ -17121,13 +17222,18 @@ pub(super) fn expand_all_composite_resource_facts_with_composites(
         // This is the selected held head's already established partition.
         cached = cached
             .install_established_partition(missing, assumptions)
-            .ok()?
+            .map_err(|error| {
+                ContractEntryRefusal::from_resource_error(
+                    "could not install the checked composite expansion",
+                    &resource_context_runtime_error(error),
+                )
+            })?
             .0;
     }
     let (resources, composites) =
         expand_composite_resource_context(&cached, definitions, at, assumptions)?;
     opened.extend(composites);
-    Some((resources, opened))
+    Ok((resources, opened))
 }
 
 /// Authority controls need their live ledger to expose the contained
@@ -17138,7 +17244,8 @@ fn expand_checked_authority_controls(
     definitions: &[CompositeResourceDefinition],
     state: &ExecutionState,
     assumptions: &PureFactContext,
-) -> Option<(ResourceContext, Vec<ResourceFact>)> {
+) -> Result<(ResourceContext, Vec<ResourceFact>), crate::kernel::ContractEntryRefusal> {
+    use crate::kernel::ContractEntryRefusal;
     let mut expanded = context.clone();
     let mut controls = Vec::new();
     for fact in context.composite_facts() {
@@ -17147,7 +17254,10 @@ fn expand_checked_authority_controls(
         };
         let definition = definitions
             .iter()
-            .find(|definition| definition.name() == name)?;
+            .find(|definition| definition.name() == name)
+            .ok_or_else(|| {
+                ContractEntryRefusal::Internal(format!("missing definition of composite `{name}`"))
+            })?;
         if !definition
             .contains()
             .iter()
@@ -17157,8 +17267,18 @@ fn expand_checked_authority_controls(
         }
         let (children, _) = state
             .checked_authority_wrapper_body(fact, definition, assumptions)
-            .ok()?;
-        expanded = expanded.without_fact_incrementally(fact, assumptions)?;
+            .map_err(|reason| {
+                ContractEntryRefusal::Internal(format!(
+                    "could not read the authority carried by composite `{name}`: {reason}",
+                ))
+            })?;
+        expanded = expanded
+            .without_fact_incrementally(fact, assumptions)
+            .ok_or_else(|| {
+                ContractEntryRefusal::Internal(format!(
+                    "the checked authority wrapper `{name}` is missing from the frame"
+                ))
+            })?;
         // A checked supporting expansion may already expose an exact child.
         // Reuse that ownership rather than composing a second occurrence.
         let children = children
@@ -17170,11 +17290,16 @@ fn expand_checked_authority_controls(
             .collect::<Vec<_>>();
         expanded = expanded
             .install_established_partition(children, assumptions)
-            .ok()?
+            .map_err(|error| {
+                ContractEntryRefusal::from_resource_error(
+                    &format!("could not install checked authority members of `{name}`"),
+                    &resource_context_runtime_error(error),
+                )
+            })?
             .0;
         controls.push(fact.clone());
     }
-    Some((expanded, controls))
+    Ok((expanded, controls))
 }
 
 pub(super) fn expand_all_composite_resource_facts_at_state(
@@ -17183,9 +17308,25 @@ pub(super) fn expand_all_composite_resource_facts_at_state(
     state: &ExecutionState,
     assumptions: &PureFactContext,
 ) -> Option<ResourceContext> {
+    checked_expand_all_composite_resource_facts_at_state(context, definitions, state, assumptions)
+        .ok()
+}
+
+pub(super) fn checked_expand_all_composite_resource_facts_at_state(
+    context: &ResourceContext,
+    definitions: &[CompositeResourceDefinition],
+    state: &ExecutionState,
+    assumptions: &PureFactContext,
+) -> Result<ResourceContext, crate::kernel::ContractEntryRefusal> {
     let (expanded, _) =
         expand_checked_authority_controls(context, definitions, state, assumptions)?;
-    expand_all_composite_resource_facts(&expanded, definitions, &state.program_point(), assumptions)
+    checked_expand_all_composite_resource_facts_with_composites(
+        &expanded,
+        definitions,
+        &state.program_point(),
+        assumptions,
+    )
+    .map(|(resources, _)| resources)
 }
 
 /// Expands only the folded branches needed to expose `target`, leaving
@@ -17638,7 +17779,7 @@ pub(super) fn resource_context_satisfies_definitional_fact(
     let required_context =
         ResourceContext::new_with_equalities(assumptions).unchecked_with_fact(required.clone());
     let Some((required, assembled)) =
-        expand_composite_resource_context(&required_context, definitions, at, assumptions)
+        expand_composite_resource_context(&required_context, definitions, at, assumptions).ok()
     else {
         return false;
     };

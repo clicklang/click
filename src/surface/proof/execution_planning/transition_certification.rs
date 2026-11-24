@@ -87,6 +87,8 @@ pub(in crate::surface) struct OpenObligationProbe {
     pub(in crate::surface) recorded: Vec<UnresolvedRequirement>,
     /// The refusal each recorded requirement stood for, in the same order.
     pub(in crate::surface) refusals: Vec<ClickError>,
+    /// A lowering refusal which has no requirement for the planner to prove.
+    pub(in crate::surface) terminal_lowering_refusal: Option<ClickError>,
     collect_step_requirements: bool,
 }
 
@@ -186,6 +188,15 @@ fn refuse_or_probe(
         Some(()) => Ok(()),
         None => Err(error),
     }
+}
+
+/// Retains a terminal refusal across a lowering interface that returns text.
+pub(in crate::surface) fn record_terminal_lowering_refusal(error: ClickError) {
+    OPEN_OBLIGATION_PROBE.with(|probe| {
+        if let Some(probe) = probe.borrow_mut().as_mut() {
+            probe.terminal_lowering_refusal = Some(error);
+        }
+    });
 }
 
 /// Returns `error`, or, while open obligations are being probed, records its
@@ -368,7 +379,7 @@ pub(in crate::surface::proof) fn certified_proof_condition_split(
                     crate::surface::diagnostics::describe_execution_statement_site()
                 ))
                 .with_reported_assertion_goal(kind.required_goal().cloned())
-                .with_kind(crate::surface::diagnostics::undefined_behavior_refusal_kind(&kind))
+                .with_kind(crate::surface::diagnostics::undefined_behavior_refusal_kind(kind))
                 .with_proof_refusal(crate::surface::ProofRefusal::Tactic)),
                 ConditionOutcome::RuntimeError(error) => Err(proof_condition_runtime_error(
                     context_label,
@@ -535,7 +546,7 @@ pub(in crate::surface::proof) fn certified_condition_transitions(
                     crate::surface::diagnostics::describe_execution_statement_site()
                 ))
                 .with_reported_assertion_goal(kind.required_goal().cloned())
-                .with_kind(crate::surface::diagnostics::undefined_behavior_refusal_kind(&kind))
+                .with_kind(crate::surface::diagnostics::undefined_behavior_refusal_kind(kind))
                 .with_proof_refusal(crate::surface::ProofRefusal::Tactic)),
                 Proposition::ProgramConditionEvaluates {
                     outcome: ConditionOutcome::RuntimeError(error),
@@ -1273,7 +1284,7 @@ mod condition_transition_tests {
             offset: AddressOffset::Constant(0),
         };
         let load = |pointer: Address| {
-            MachineTerm::MemoryLoad(
+            MachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(&memory),
                 Box::new(pointer),
                 crate::kernel::LoadKind::Int32,

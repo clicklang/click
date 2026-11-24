@@ -155,7 +155,7 @@ fn same_comparison_with_named_store_reads(left: &Proposition, right: &Propositio
             || matches!((left, right),
                 (MachineTerm::MemoryLoad(detached, address, kind),
                  MachineTerm::MemoryLoad(named, named_address, named_kind))
-                    if kind == named_kind && address == named_address
+                    if kind == named_kind && address.address() == named_address.address()
                         && named.names_detached_store_read(detached, address, *kind))
     }
 
@@ -547,6 +547,13 @@ fn rewrite_with_admitted_equality_reading(
                     };
                     match rewritten {
                         Ok(Proposition::ConditionIs(condition, value)) => {
+                            if matches!(
+                                condition.root().map(KernelTerm::node),
+                                Some(KernelTermNode::IntegerCompare { .. })
+                            ) {
+                                results.push((Proposition::ConditionIs(condition, value), true));
+                                continue;
+                            }
                             let condition = super::term_rewrite::folded_machine_condition(
                                 condition.native_compat().clone(),
                             );
@@ -863,10 +870,11 @@ fn rewrite_through_loaded_address_base(
             break None;
         }
         let definition = match &cursor.base {
-            AddressBase::LoadedPointer(identity) => {
-                crate::kernel::eval::registered_pointer_load(*identity)
-                    .map(|(memory, address)| (memory, address, None))
-            }
+            AddressBase::Load(load) => Some((
+                load.point().shared_memory().clone(),
+                load.cell().clone(),
+                None,
+            )),
             AddressBase::Symbolic(variable) if crate::kernel::is_load_variable(variable) => {
                 crate::kernel::registered_load_origin_for_variable(variable)
                     .or_else(|| crate::kernel::registered_load_for_variable(variable))
@@ -1324,6 +1332,28 @@ fn rewrite_atomic_proposition_by_exact_equality(
             ),
         );
     }
+    if let Some((ConditionTerm::IntegerEqual(left, right), true)) = (equality).condition_native() {
+        let mut rewrite = super::term_rewrite::TermRewrite::for_integer_exact(left, right);
+        let rewritten = rewrite.proposition(goal);
+        match rewrite.refusal() {
+            Some(super::term_rewrite::RewriteRefusal::WorkExhausted) => {
+                return Err(
+                    "`rewrite` exhausted its work budget while rewriting Integer terms".into(),
+                );
+            }
+            Some(super::term_rewrite::RewriteRefusal::UnsupportedScope) => {
+                return Err("`rewrite` cannot substitute an Integer equality through an internal fold or match binder".into());
+            }
+            None => {}
+        }
+        if !rewrite.changed {
+            return Err(AtomicRewriteRefusal::Absent(
+                "`rewrite` equality does not occur in the current goal".to_string(),
+            ));
+        }
+        return Ok(rewritten);
+    }
+
     if matches!(&goal, condition_source_0 @ Proposition::ConditionIs(
             _,
             _
@@ -1542,28 +1572,6 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 rewrite_shared,
             )),
         }
-    }
-
-    if let Some((ConditionTerm::IntegerEqual(left, right), true)) = (equality).condition_native() {
-        let mut rewrite = super::term_rewrite::TermRewrite::for_integer_exact(left, right);
-        let rewritten = rewrite.proposition(goal);
-        match rewrite.refusal() {
-            Some(super::term_rewrite::RewriteRefusal::WorkExhausted) => {
-                return Err(
-                    "`rewrite` exhausted its work budget while rewriting Integer terms".into(),
-                );
-            }
-            Some(super::term_rewrite::RewriteRefusal::UnsupportedScope) => {
-                return Err("`rewrite` cannot substitute an Integer equality through an internal fold or match binder".into());
-            }
-            None => {}
-        }
-        if !rewrite.changed {
-            return Err(AtomicRewriteRefusal::Absent(
-                "`rewrite` equality does not occur in the current goal".to_string(),
-            ));
-        }
-        return Ok(rewritten);
     }
 
     if let Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) = equality {
@@ -2908,7 +2916,7 @@ mod tests {
             SymbolicMemory::new().store(to.clone(), ProgramValue::Int32(7u32.into())),
         );
         let read = |address: &Address| {
-            let load = MachineTerm::MemoryLoad(
+            let load = MachineTerm::read_named(
                 ProgramPoint::at(&memory),
                 Box::new(address.clone()),
                 LoadKind::Int32,
@@ -3466,7 +3474,7 @@ mod tests {
     #[test]
     fn native_read_rewrite_preserves_literal_guards_of_integer_claims() {
         let _session = crate::kernel::VerificationSession::enter();
-        let read = MachineTerm::MemoryLoad(
+        let read = MachineTerm::read_named(
             ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
             Box::new(Address::symbolic(Variable(193_024))),
             LoadKind::Int32,
@@ -3786,7 +3794,7 @@ mod tests {
         let observe = |memory: SymbolicMemory| {
             IntegerTerm::from_machine(
                 MachineIntegerType::Int64,
-                MachineTerm::MemoryLoad(
+                MachineTerm::read_named(
                     ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                     Box::new(pointer.clone()),
                     LoadKind::Bits64,
@@ -3988,7 +3996,7 @@ mod tests {
             };
             crate::kernel::eval::declare_load_access_width(&pointer, if wide { 8 } else { 4 });
             let load = |memory: &SymbolicMemory, pointer: Address, kind| {
-                MachineTerm::MemoryLoad(
+                MachineTerm::read_named(
                     ProgramPoint::at(&(crate::kernel::intern_memory_ref(memory))),
                     Box::new(pointer),
                     kind,
@@ -4091,7 +4099,7 @@ mod tests {
             ProgramValue::UInt64(MachineTerm::Variable(Variable(933_000))),
         );
         let expression = |memory: &SymbolicMemory, size| {
-            let mut term = MachineTerm::MemoryLoad(
+            let mut term = MachineTerm::read_named(
                 ProgramPoint::at(&(crate::kernel::intern_memory_ref(memory))),
                 Box::new(pointer.clone()),
                 LoadKind::Bits64,
@@ -4175,7 +4183,7 @@ mod tests {
             ProgramValue::Int32(MachineTerm::constant(43)),
         );
         let load = |memory| {
-            MachineTerm::MemoryLoad(
+            MachineTerm::read_named(
                 ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                 Box::new(pointer.clone()),
                 crate::kernel::LoadKind::Int32,

@@ -1203,6 +1203,12 @@ impl<'a> Proof<'a> {
         append_execution_effect_facts(&mut execution.core.effect_facts, &joined_effect);
 
         let abstract_state = (*execution.core.state).clone();
+        if !rejoins_cases {
+            execution
+                .presentation
+                .recorded_states
+                .record_effect(execution.core.last_footprint.as_ref());
+        }
         execution
             .presentation
             .recorded_states
@@ -3042,7 +3048,7 @@ impl<'a> Proof<'a> {
                 .map(|fact| successor.checked_trace_fact(fact))
                 .collect();
             crate::surface::proof_trace::record_join(
-                Arc::as_ptr(&successor.node) as usize,
+                crate::surface::proof_trace::trace_node_key(&successor.node),
                 crate::surface::proof_trace::TraceJoin {
                     marker: Arc::as_ptr(&marker.node) as usize,
                     arms: [

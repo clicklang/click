@@ -21,6 +21,58 @@ pub(crate) use undefined_site::{
     UndefinedBehaviorSite, locate_undefined_behavior, locate_undefined_behavior_in_condition,
 };
 
+thread_local! {
+    static IN_CONDITIONAL_OPERAND: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// An unresolved safety check in this operand is owed under the condition
+/// that selected it. The caller attaches those already evaluated conditions.
+fn evaluate_conditional_operand<T>(evaluate: impl FnOnce() -> T) -> T {
+    struct Restore(bool);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            IN_CONDITIONAL_OPERAND.set(self.0);
+        }
+    }
+    let _restore = Restore(IN_CONDITIONAL_OPERAND.replace(true));
+    evaluate()
+}
+
+/// A conditional operand owes its arithmetic bounds only when it executes.
+/// The caller supplies the facts just produced by evaluating the condition,
+/// before executing the selected operand. Its result and later facts cannot
+/// justify an earlier operation.
+fn guard_conditional_arithmetic(prefix: &ExecutionFacts, obligations: &mut [ProofObligation]) {
+    let is_arithmetic = |bound: &ProofObligation| {
+        bound.float_to_integer_bound || bound.unsigned_divisor || bound.signed_arithmetic_bound
+    };
+    if prefix.is_empty() || !obligations.iter().any(is_arithmetic) {
+        return;
+    }
+    let guards = prefix
+        .iter()
+        .filter_map(|fact| {
+            crate::instrumentation::record_deterministic_work(1);
+            let proposition = fact.proposition();
+            (fact.is_public()
+                && !fact.is_certified()
+                && matches!(proposition, Proposition::ConditionIs(..)))
+            .then_some(proposition)
+        })
+        .collect::<Vec<_>>();
+    if guards.is_empty() {
+        return;
+    }
+    for obligation in obligations.iter_mut().filter(|bound| is_arithmetic(bound)) {
+        *obligation = obligation.clone().map_proposition(|goal| {
+            guards.iter().rev().fold(goal, |body, guard| {
+                crate::instrumentation::record_deterministic_work(1);
+                Proposition::Implies(Box::new((*guard).clone()), Box::new(body))
+            })
+        });
+    }
+}
+
 /// Retain each sequential volatile access as a unique, kernel-certified fact.
 /// The event id is allocated from the execution's existing fresh-variable
 /// stream, so repeated accesses remain distinct even when they have the same
@@ -89,6 +141,8 @@ pub(crate) use memory_loads::load_access_width_or_widest;
 pub(crate) use memory_loads::load_registry_entry_count;
 pub(crate) use memory_loads::load_term_access_width;
 #[cfg(test)]
+pub(crate) use memory_loads::load_variable_fact_census;
+#[cfg(test)]
 pub(crate) use memory_loads::load_variable_for_cell;
 #[cfg(test)]
 pub(crate) use memory_loads::load_variable_for_cell_with_origin;
@@ -136,7 +190,8 @@ pub(in crate::kernel) use memory_loads::{
     cached_symbolic_storage_cell_value, symbolic_storage_cell_value,
 };
 pub(crate) use memory_loads::{
-    canonical_cell_value, canonical_form_of_load, point_named_pointer_cell_read,
+    canonical_cell_value, canonical_form_of_load, canonical_form_of_load_at,
+    point_named_pointer_cell_read,
 };
 pub(super) use memory_loads::{
     canonical_offset_term, evaluate_exact_logical_memory_load_paths, evaluate_indexed_read,
@@ -157,9 +212,8 @@ pub(crate) use memory_loads::{
     load_variable_registry_len, with_load_variable_range, with_load_variable_registry_capacity,
 };
 pub(crate) use memory_loads::{
-    loaded_pointer_read_heap_identities, loaded_pointer_read_predates_block, pointer_load_at_point,
-    pointer_load_identity, record_pointer_load_source, registered_pointer_load,
-    registered_pointer_load_point, typed_pointer_read_variable,
+    loaded_pointer_read_heap_identities, loaded_pointer_read_predates_block,
+    record_pointer_load_source, typed_pointer_read_variable,
 };
 pub(crate) use memory_loads::{
     registered_load_kind_for_variable, registered_load_origin_term_for_variable,

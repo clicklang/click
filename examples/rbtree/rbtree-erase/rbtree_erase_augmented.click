@@ -81,7 +81,7 @@ tactic refold_erase_spine(focus: struct rb_node*, anchor: struct rb_node*) {
             unfold(c);
             let whole = fold(erase_left_at(anchor), { model: t.model, tree: t });
             have plug(Context::Top, old(t.model)) == old(t.model) by {
-                unfold(plug(Context::Top, old(t.model))); normalize();
+                unfold(plug(Context::Top, old(t.model))); known();
             }
             have whole.model == plug(erase_context(old(c.model)), old(t.model)) by {
                 rewrite(old(c.model), EraseSpine::Top);
@@ -92,7 +92,7 @@ tactic refold_erase_spine(focus: struct rb_node*, anchor: struct rb_node*) {
         EraseSpine::Left(identity, grandparent, color, sibling_model, up_model) => {
             have erase_context(EraseSpine::Left(identity, grandparent, color, sibling_model, up_model))
                 == Context::Left(identity, grandparent, color, sibling_model, erase_context(up_model)) by {
-                unfold(erase_context(EraseSpine::Left(identity, grandparent, color, sibling_model, up_model))); normalize();
+                unfold(erase_context(EraseSpine::Left(identity, grandparent, color, sibling_model, up_model))); known();
             }
             have rb_parent_consistent(plug(Context::Left(identity, grandparent, color, sibling_model, erase_context(up_model)), t.model), anchor) == 1 by {
                 rewrite(Context::Left(identity, grandparent, color, sibling_model, erase_context(up_model)), erase_context(EraseSpine::Left(identity, grandparent, color, sibling_model, up_model)));
@@ -112,7 +112,7 @@ tactic refold_erase_spine(focus: struct rb_node*, anchor: struct rb_node*) {
             have erase_spine_depth(old(c.model)) == erase_spine_depth(up_model) + 1 by {
                 rewrite(old(c.model), EraseSpine::Left(identity, grandparent, color, sibling_model, up_model));
                 unfold(erase_spine_depth(EraseSpine::Left(identity, grandparent, color, sibling_model, up_model)));
-                normalize();
+                known();
             }
             have erase_spine_depth(u.model) < erase_spine_depth(old(c.model)) by {
                 rewrite(u.model, up_model);
@@ -120,7 +120,7 @@ tactic refold_erase_spine(focus: struct rb_node*, anchor: struct rb_node*) {
             }
             have plug(Context::Left(identity, grandparent, color, sibling_model, erase_context(up_model)), old(t.model)) == plug(erase_context(up_model), RbTree::Node(identity, grandparent, color, old(t.model), sibling_model)) by {
                 unfold(plug(Context::Left(identity, grandparent, color, sibling_model, erase_context(up_model)), old(t.model)));
-                normalize();
+                known();
             }
             have rb_parent_consistent(plug(erase_context(u.model), sub.model), anchor) == 1 by {
                 rewrite(u.model, up_model);
@@ -219,7 +219,7 @@ tactic graft_erase_spine(focus: struct rb_node*, anchor: struct rb_node*, root: 
         EraseAnchorFrame::At(ap, ac, ar, au) => {
     have erase_anchor_context(anchor, old(base.model)) == Context::Left(anchor, ap, ac, ar, au) by {
         rewrite(old(base.model), EraseAnchorFrame::At(ap, ac, ar, au));
-        unfold(erase_anchor_context(anchor, EraseAnchorFrame::At(ap, ac, ar, au))); normalize();
+        unfold(erase_anchor_context(anchor, EraseAnchorFrame::At(ap, ac, ar, au))); known();
     }
     match c.model {
         EraseSpine::Top => {
@@ -246,7 +246,7 @@ tactic graft_erase_spine(focus: struct rb_node*, anchor: struct rb_node*, root: 
             have (if grandparent == erase_spine_parent(up_model, anchor) { erase_spine_links(up_model, anchor) } else { 0 })
                 == erase_spine_links(up_model, anchor) by {
                 rewrite(grandparent, erase_spine_parent(up_model, anchor));
-                normalize();
+                known();
             }
             have erase_spine_links(up_model, anchor) == 1 by {
                 rewrite(erase_spine_links(up_model, anchor),
@@ -259,7 +259,7 @@ tactic graft_erase_spine(focus: struct rb_node*, anchor: struct rb_node*, root: 
             apply(erase_spine_depth_is_nonnegative(up_model));
             have erase_spine_depth(old(c.model)) == erase_spine_depth(up_model) + 1 by {
                 rewrite(old(c.model), EraseSpine::Left(identity, grandparent, color, sibling_model, up_model));
-                unfold(erase_spine_depth(EraseSpine::Left(identity, grandparent, color, sibling_model, up_model))); normalize();
+                unfold(erase_spine_depth(EraseSpine::Left(identity, grandparent, color, sibling_model, up_model))); known();
             }
             have erase_spine_depth(path_tail.model) < erase_spine_depth(old(c.model));
             mark grafting_tail;
@@ -387,19 +387,19 @@ theorem erase_deep_no_fixup(tree: RbTree, up: Context, successor: struct rb_node
             RbTree::Empty => {
                 cases {
                     not(RbTree::Empty == RbTree::Empty) => {
-                        have RbTree::Empty == RbTree::Empty by normalize();
+                        have RbTree::Empty == RbTree::Empty by known();
                         contradiction(RbTree::Empty == RbTree::Empty);
                     }
                     color == Color::Red => {
                         rewrite(color, Color::Red);
                         unfold(erase_deep_outcome(tree, up, RbMinimum::Found(successor, Color::Red, RbTree::Empty)));
-                        normalize();
+                        known();
                     }
                 }
             }
             RbTree::Node(id, parent, child_color, left, right) => {
                 unfold(erase_deep_outcome(tree, up, RbMinimum::Found(successor, color, RbTree::Node(id, parent, child_color, left, right))));
-                normalize();
+                known();
             }
         }
     }
@@ -409,19 +409,19 @@ theorem erase_deep_no_fixup(tree: RbTree, up: Context, successor: struct rb_node
             RbTree::Empty => {
                 cases {
                     not(RbTree::Empty == RbTree::Empty) => {
-                        have RbTree::Empty == RbTree::Empty by normalize();
+                        have RbTree::Empty == RbTree::Empty by known();
                         contradiction(RbTree::Empty == RbTree::Empty);
                     }
                     color == Color::Red => {
                         rewrite(color, Color::Red);
                         unfold(erase_deep_splice(tree, RbMinimum::Found(successor, Color::Red, RbTree::Empty)));
-                        normalize();
+                        known();
                     }
                 }
             }
             RbTree::Node(id, parent, child_color, left, right) => {
                 unfold(erase_deep_splice(tree, RbMinimum::Found(successor, color, RbTree::Node(id, parent, child_color, left, right))));
-                normalize();
+                known();
             }
         }
     }

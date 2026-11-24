@@ -8,7 +8,7 @@ use super::*;
 impl Context<'_> {
     pub(super) fn enumerate_storage(
         &mut self,
-        name: &str,
+        name: &MirLocalId,
         element: &Type,
         option: bool,
         owner: &LocalFunctionId,
@@ -20,14 +20,14 @@ impl Context<'_> {
         } else {
             LocalBindingId::enumerate_count(owner.clone(), ordinal).into()
         };
-        self.enumerate_fields.insert(name.into(), field.clone());
+        self.enumerate_fields.insert(name.clone(), field.clone());
         Ok(program_seq(
             storage,
             program_declare(field, ProgramType::UInt64),
         ))
     }
 
-    pub(super) fn enumerate_count(&self, name: &str) -> Result<BindingName, String> {
+    pub(super) fn enumerate_count(&self, name: &MirLocalId) -> Result<BindingName, String> {
         self.enumerate_fields
             .get(name)
             .filter(|_| self.shared_array_iterators.contains_key(name))
@@ -35,7 +35,7 @@ impl Context<'_> {
             .ok_or_else(|| "unknown enumerated iterator".into())
     }
 
-    fn enumerate_index(&self, name: &str) -> Result<BindingName, String> {
+    fn enumerate_index(&self, name: &MirLocalId) -> Result<BindingName, String> {
         self.enumerate_fields
             .get(name)
             .filter(|_| self.shared_array_options.contains_key(name))
@@ -47,8 +47,8 @@ impl Context<'_> {
     /// nothing yet as an enumeration.
     pub(super) fn enumerate_initialize(
         &mut self,
-        target: &str,
-        source: &str,
+        target: &MirLocalId,
+        source: &MirLocalId,
     ) -> Result<ProgramStatement, String> {
         let count = self.enumerate_count(target)?;
         if self.enumerate_fields.contains_key(source) {
@@ -62,8 +62,8 @@ impl Context<'_> {
 
     pub(super) fn enumerate_move(
         &mut self,
-        target: &str,
-        source: &str,
+        target: &MirLocalId,
+        source: &MirLocalId,
     ) -> Result<ProgramStatement, String> {
         let target_count = self.enumerate_count(target)?;
         let source_count = self.enumerate_count(source)?;
@@ -80,15 +80,15 @@ impl Context<'_> {
     /// counts the element.
     /// `next` of an enumerated slice iterator: the `Option` built in
     /// `option`, or, once the loop reads only what it yields, the index
-    /// assigned to `index` and the element's reference to `element`. When the
+    /// assigned to `index` and the element or its reference to `element`. When the
     /// `for` header's test decided whether it yields (`taken`), only that arm
     /// runs; the arm that does not yield is nothing.
     pub(super) fn enumerate_next(
         &mut self,
-        iterator: &str,
-        option: Option<&str>,
-        index: Option<&str>,
-        element: Option<&str>,
+        iterator: &MirLocalId,
+        option: Option<&MirLocalId>,
+        index: Option<&MirLocalId>,
+        element: Option<(&MirLocalId, &Type)>,
         taken: Option<bool>,
     ) -> Result<ProgramStatement, String> {
         use crate::kernel::program_expression::{add, uint64_literal, variable};
@@ -97,7 +97,9 @@ impl Context<'_> {
             if taken == Some(false) {
                 return Ok(program_skip());
             }
-            let fields = self.shared_array_iterator(iterator)?.fields.clone();
+            let state = self.shared_array_iterator(iterator)?;
+            let fields = state.fields.clone();
+            let element_type = state.element;
             let mut some = program_skip();
             if let Some(index) = index {
                 some = program_seq(some, self.bind_local(index, variable(count.clone()))?);
@@ -106,11 +108,13 @@ impl Context<'_> {
                 some,
                 program_assign(count.clone(), add(variable(count), uint64_literal(1))),
             );
-            if let Some(element) = element {
-                some = program_seq(
-                    some,
-                    self.bind_local(element, variable(fields.pointer.clone()))?,
-                );
+            if let Some((name, payload_type)) = element {
+                let value = self.shared_array_yielded_value(
+                    variable(fields.pointer.clone()),
+                    element_type,
+                    payload_type,
+                )?;
+                some = program_seq(some, self.bind_local(name, value)?);
             }
             some = program_seq(some, shared_arrays::advance(&fields));
             return Ok(match taken {
@@ -129,7 +133,7 @@ impl Context<'_> {
     /// The index an enumerated iterator's `Some` holds.
     pub(super) fn enumerate_option_index(
         &self,
-        option: &str,
+        option: &MirLocalId,
     ) -> Result<(ProgramStatement, ProgramExpression), String> {
         let index = self.enumerate_index(option)?;
         Ok((
@@ -169,7 +173,7 @@ mod tests {
             .find(|local| matches!(local.value_type, Type::EnumerateIterator { .. }))
             .unwrap();
         mir.locals.push(Place {
-            name: format!("{}_count", iterator.name),
+            name: format!("{}_count", iterator.name).into(),
             value_type: Type::Usize,
             span: iterator.span.clone(),
         });

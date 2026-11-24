@@ -7,7 +7,7 @@
 //!
 //! ```text
 //! Concrete < StringLiteral < Function < FunctionSymbolic < ExternalArgument
-//!          < ExternalObject < Symbolic < LoadedPointer < PureFunctionApplication
+//!          < ExternalObject < Symbolic < Load < PureFunctionApplication
 //!          < Heap < Temporary < AutomaticLocal < StaticObject < ContractResult < AggregateReturn < ContractException
 //! ```
 //!
@@ -254,10 +254,8 @@ impl AliasCandidates {
         let intervals = match block {
             // A loaded pointer may hold any address but that of a heap
             // allocation made after its read.
-            AddressBase::LoadedPointer(identity) => {
-                if let Some(heap) =
-                    crate::kernel::eval::loaded_pointer_read_heap_identities(*identity)
-                {
+            AddressBase::Load(load) => {
+                if let Some(heap) = crate::kernel::eval::loaded_pointer_read_heap_identities(load) {
                     let mut intervals = vec![BlockInterval {
                         start: None,
                         end: Upper::Before(first_heap()),

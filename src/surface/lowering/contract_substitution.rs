@@ -3119,6 +3119,7 @@ pub(in crate::surface) struct ContractSubstitutions<'a> {
     references: PersistentBinderMap<Arc<[crate::kernel::BindingName]>>,
     free_references: PersistentMap<crate::kernel::BindingName, usize>,
     instance_renames: Cow<'a, BTreeMap<String, InstanceRename>>,
+    body_instance: Option<(String, InstanceId)>,
     /// Whether a scalar field of the resource body being defined is replaced
     /// by the C name the kernel binds it to (see `resource_body_program_expression`).
     body_fields_as_program_names: bool,
@@ -3184,6 +3185,7 @@ impl<'a> ContractSubstitutions<'a> {
             references: PersistentBinderMap::default(),
             free_references: PersistentMap::default(),
             instance_renames: Cow::Borrowed(&NO_INSTANCE_RENAMES),
+            body_instance: None,
             body_fields_as_program_names: false,
             body_field_values: None,
             contract_result_only: false,
@@ -3345,6 +3347,18 @@ impl<'a> ContractSubstitutions<'a> {
         }
     }
 
+    /// Instantiate a resource body's own field reads as reads of the opened instance.
+    pub(in crate::surface) fn with_body_instance<M: SubstitutionSourceMap>(
+        values: &'a M,
+        name: String,
+        identity: InstanceId,
+    ) -> Self {
+        Self {
+            body_instance: Some((name, identity)),
+            ..Self::new(values)
+        }
+    }
+
     /// Instantiate the body of an explicit fold with its written field
     /// initializers. These are definition-bound fields, not reads of a
     /// newly constructed (and not yet owned) instance.
@@ -3383,6 +3397,11 @@ impl<'a> ContractSubstitutions<'a> {
         owner: &str,
         identity: crate::kernel::InstanceRef,
     ) -> Option<(String, crate::kernel::InstanceRef)> {
+        if identity == crate::kernel::InstanceRef::Body
+            && let Some((name, target)) = &self.body_instance
+        {
+            return Some((name.clone(), (*target).into()));
+        }
         self.instance_renames
             .get(owner)
             .filter(|rename| rename.identity == identity)
@@ -3625,11 +3644,9 @@ pub(in crate::surface) fn pure_function_parameter_argument(
 pub(in crate::surface) fn pure_function_parameter_conversion(
     parameter: &FunctionParameter,
 ) -> Option<(ProgramType, crate::kernel::IntegerCastMode)> {
-    if parameter.click_type().interface_type()?.to_kernel_type() == ProgramType::VoidPointer {
-        Some((
-            ProgramType::VoidPointer,
-            crate::kernel::IntegerCastMode::PointerCoercion,
-        ))
+    let kernel_type = parameter.click_type().interface_type()?.to_kernel_type();
+    if matches!(kernel_type, ProgramType::VoidPointer | ProgramType::Pointer) {
+        Some((kernel_type, crate::kernel::IntegerCastMode::PointerCoercion))
     } else {
         pure_function_parameter_scalar_type(parameter)
             .map(|target| (target, crate::kernel::IntegerCastMode::CConversion))
@@ -4010,7 +4027,6 @@ fn substitute_contract_expression_node(
         ContractExpression::ResourceField(access)
             if let Some(fields) = substitutions.body_field_values
                 && access.identity == crate::kernel::InstanceRef::Body
-                && access.owner == "__body"
                 && access.children.is_empty() =>
         {
             fields.get(&access.field).cloned().ok_or_else(|| {
@@ -5079,7 +5095,6 @@ pub(in crate::surface) fn resource_body_program_expression(
 ) -> Option<ProgramExpression> {
     contract_expression_as_program_expression_resolving_fields(expression, &|access| {
         (access.identity == crate::kernel::InstanceRef::Body
-            && access.owner == "__body"
             && access.children.is_empty()
             && access
                 .click_type

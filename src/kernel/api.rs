@@ -1,12 +1,13 @@
 use super::borrows::{
-    BorrowBinding, BorrowBindings, BorrowLedger, BorrowRefusal, BorrowRefusalDiagnostic,
-    BorrowRefusalOperation, BorrowRefusalSubject, BorrowedContractInputBacking,
+    BorrowBinding, BorrowBindings, BorrowLedger, BorrowRefusal, BorrowRefusalOperation,
+    BorrowRefusalSubject, BorrowedContractInputBacking,
 };
 pub(crate) use super::functions::admit_declared_entry_resources;
 use super::functions::{
     apply_verified_contract_resource_transition,
+    checked_expand_composite_resource_fact_with_children,
     construct_program_function_resource as construct_c_function_resource_checked,
-    evaluate_function_resource_context_with_metadata, expand_composite_resource_fact_with_children,
+    evaluate_function_resource_context_with_metadata,
     function_return_resources_definitionally_established,
 };
 pub(super) use super::memory_history::*;
@@ -1030,6 +1031,12 @@ impl LoopPreservationContext {
 pub enum LoopHeadRefusal {
     /// A refusal the kernel spells on its own.
     Message(String),
+    Contract(String),
+    Tactic(String),
+    /// A declared loop resource could not be read at the loop entry.
+    ResourceEvaluation(String),
+    /// The loop test did not produce a value on a reachable path.
+    GuardEvaluation(String),
     /// A premise the head's guard owes that the entry context does not
     /// discharge. The invariants owe none here: their side conditions are
     /// invariant content, assumed at the head and owed at entry and at every
@@ -1183,6 +1190,15 @@ pub(crate) fn loop_phase_preservation_contexts(
             super::loops::LoopResourceFailure::Message(message) => {
                 LoopHeadRefusal::Message(message.clone())
             }
+            super::loops::LoopResourceFailure::Contract(message) => {
+                LoopHeadRefusal::Contract(message.clone())
+            }
+            super::loops::LoopResourceFailure::Tactic(message) => {
+                LoopHeadRefusal::Tactic(message.clone())
+            }
+            super::loops::LoopResourceFailure::Evaluation(message) => {
+                LoopHeadRefusal::ResourceEvaluation(message.clone())
+            }
             super::loops::LoopResourceFailure::Unheld { fact, state } => {
                 LoopHeadRefusal::UnheldResource {
                     fact: fact.clone(),
@@ -1262,7 +1278,9 @@ pub(crate) fn loop_phase_preservation_contexts(
             // A guard operand this function may not read leaves the head's
             // premises undefined; there is no iteration to describe here.
             if let Some(outcome) = assumption.undecided_outcome() {
-                return Err(undecided_loop_guard_context(outcome).into());
+                return Err(LoopHeadRefusal::GuardEvaluation(
+                    undecided_loop_guard_context(outcome),
+                ));
             }
             let ConditionAssumption {
                 facts, obligations, ..
@@ -1345,32 +1363,33 @@ fn loop_head_invariant_failure(
     iterations: &IntegerTerm,
     assumptions: &PureFactContext,
     error: ExecutionLimit,
-) -> String {
+) -> LoopHeadRefusal {
     let mut budget = ExecutionBudget::beside_live_state();
     for check in invariant_checks {
-        if assume_invariant_checks(
-            top_state,
-            loop_entry_state,
-            std::slice::from_ref(check),
-            iterations,
-            assumptions,
-            &[],
-            &[],
-            &mut budget,
-        )
-        .is_err()
-        {
+        if matches!(
+            assume_invariant_checks(
+                top_state,
+                loop_entry_state,
+                std::slice::from_ref(check),
+                iterations,
+                assumptions,
+                &[],
+                &[],
+                &mut budget,
+            ),
+            Err(ExecutionLimit::ResourceFieldInstanceUnavailable)
+        ) {
             let context = invariant_context(check, InvariantPhase::Preservation)
                 .unwrap_or("a loop invariant");
-            return format!(
+            return LoopHeadRefusal::Contract(format!(
                 "{context}: could not be read at the loop head; a loop invariant may only read the resource instances the loop declares"
-            );
+            ));
         }
     }
-    format!(
+    LoopHeadRefusal::Message(format!(
         "could not assume loop invariants: they stopped at {}",
         error.describe()
-    )
+    ))
 }
 
 pub fn loop_invariant_obligations_at_back_edge(
@@ -1476,15 +1495,34 @@ pub fn program_execution_environment_with_recursion_anchor(
     caller_state: &ExecutionState,
     arguments: &[ProgramExpression],
 ) -> Result<ExecutionEnvironment, String> {
+    program_execution_environment_with_recursion_anchor_reporting(
+        environment,
+        function,
+        caller_state,
+        arguments,
+    )
+    .map_err(|error| error.to_string())
+}
+
+pub(crate) fn program_execution_environment_with_recursion_anchor_reporting(
+    environment: ExecutionEnvironment,
+    function: &ProgramFunction,
+    caller_state: &ExecutionState,
+    arguments: &[ProgramExpression],
+) -> Result<ExecutionEnvironment, TerminationError> {
     if !function.contract_interface().has_call_ranked_recursion() {
         return Ok(environment);
     }
     let entry_state =
         program_function_entry_state(caller_state, function, arguments).ok_or_else(|| {
-            format!(
-                "could not bind `{}`'s arguments to read its `decreases` measure at entry",
-                function.name()
-            )
+            TerminationError {
+                message: format!(
+                    "could not bind `{}`'s arguments to read its `decreases` measure at entry",
+                    function.name()
+                ),
+                function: Some(function.name().to_owned()),
+                kind: TerminationErrorKind::Internal,
+            }
         })?;
     let anchor = crate::kernel::termination::program_function_recursion_anchor(
         function,
@@ -3283,6 +3321,7 @@ pub fn program_lower_spec_proposition_at_state_with_head_origins(
 #[derive(Clone, Debug)]
 pub struct LoweringRefusal {
     pub message: String,
+    pub limit: Option<ExecutionLimit>,
     /// Present when the lowering pruned a range fold because its body did not
     /// lower to one symbolic iteration under the fold's binders.
     pub dropped_fold_body: Option<DroppedFoldBody>,
@@ -3308,7 +3347,7 @@ impl From<LoweringRefusal> for String {
 pub(crate) const BOOL_HAS_NO_INTEGER_VALUE: &str =
     "a `Bool` has no integer value; write `b as int32`, or compare it with `true` or `false`";
 
-fn describe_spec_lowering_limit(what: &str, limit: ExecutionLimit) -> String {
+pub(in crate::kernel) fn describe_spec_lowering_limit(what: &str, limit: ExecutionLimit) -> String {
     match limit {
         // The lowering runs beside a live execution whose identity mark it
         // does not carry, so an identity from the base of that range would
@@ -3349,6 +3388,9 @@ fn describe_spec_lowering_limit(what: &str, limit: ExecutionLimit) -> String {
         ExecutionLimit::MixedBoolArms => {
             "a conditional's arms have one type: one is an integer and the other a `Bool`; write `b as int32`, or use `true` and `false` arms".to_string()
         }
+        ExecutionLimit::SymbolicPointerConditional => {
+            "Click cannot yet represent a symbolic choice between distinct pointers. Put the comparison inside both cases, using `or`".to_string()
+        }
         ExecutionLimit::DisjunctionRightUndefined => {
             "the right side of `or` is undefined wherever its left side is false, the only case in which it is read".to_string()
         }
@@ -3360,6 +3402,19 @@ fn describe_spec_lowering_limit(what: &str, limit: ExecutionLimit) -> String {
                 .to_string()
         }
         limit => format!("the kernel {what} stopped at {}", limit.describe()),
+    }
+}
+
+fn retained_lowering_limit(budget: &ExecutionBudget, limit: ExecutionLimit) -> ExecutionLimit {
+    if budget.dropped_symbolic_pointer_conditional
+        && matches!(
+            limit,
+            ExecutionLimit::Paths | ExecutionLimit::DisjunctionRightUndefined
+        )
+    {
+        ExecutionLimit::SymbolicPointerConditional
+    } else {
+        limit
     }
 }
 
@@ -3586,15 +3641,27 @@ fn lower_checked_proof_proposition(
         &lowering_assumptions,
         &mut budget,
     )
-    .map_err(|limit| describe_spec_lowering_limit("lowering", limit))
-    .map_err(|message| LoweringRefusal {
-        message,
-        dropped_fold_body: None,
-        dropped_comparison: None,
+    .map_err(|limit| {
+        let limit = retained_lowering_limit(&budget, limit);
+        LoweringRefusal {
+            message: describe_spec_lowering_limit("lowering", limit),
+            limit: Some(limit),
+            dropped_fold_body: None,
+            dropped_comparison: None,
+        }
     })?;
     let Some(path) = exactly_selected_spec_proposition_path(&paths, assumptions) else {
+        let limit = (paths.is_empty()
+            && budget.dropped_symbolic_pointer_conditional
+            && budget.dropped_runtime_error().is_none())
+        .then_some(ExecutionLimit::SymbolicPointerConditional);
         return Err(LoweringRefusal {
-            message: no_single_path_message("lowering", &paths, &budget),
+            message: if let Some(limit) = limit {
+                describe_spec_lowering_limit("lowering", limit)
+            } else {
+                no_single_path_message("lowering", &paths, &budget)
+            },
+            limit,
             // Only a lowering that produced nothing at all is explained by a
             // pruned fold: with a path in hand the count, not the prune, is
             // what the caller must read. A dropped runtime error is more
@@ -3905,7 +3972,7 @@ pub(crate) fn execution_state_with_borrowed_contract_inputs(
     function: &ProgramFunction,
     arguments: &[ProgramExpression],
     assumptions: &PureFactContext,
-) -> Result<ExecutionState, BorrowRefusalDiagnostic> {
+) -> Result<ExecutionState, RuntimeError> {
     let mut state = state;
     state.preserves_mutex_protocols |=
         crate::kernel::functions::preserves_mutex_protocols(function.contract_interface());
@@ -3921,7 +3988,9 @@ pub(crate) fn execution_state_with_borrowed_contract_inputs(
         || state.borrow_bindings().iter().next().is_some()
         || !state.borrow_bindings_are_consistent()
     {
-        return Err(BorrowRefusal::InvalidEvidence.diagnostic(BorrowRefusalOperation::Entry));
+        return Err(BorrowRefusal::InvalidEvidence
+            .diagnostic(BorrowRefusalOperation::Entry)
+            .into());
     }
     if let Some(rooted) = BORROWED_INPUT_ROOTS.with(|roots| {
         roots
@@ -4037,8 +4106,10 @@ pub(crate) fn execution_state_with_borrowed_contract_inputs(
                 assumptions,
                 &mut budget,
             )
-            .map_err(|_| BorrowRefusal::InvalidEvidence.diagnostic(BorrowRefusalOperation::Entry))?
-            .map_err(|_| BorrowRefusal::MissingBacking.diagnostic(BorrowRefusalOperation::Entry))?;
+            .map_err(|limit| {
+                ContractEntryRefusal::from_limit("could not evaluate a mutex input", limit)
+                    .into_runtime_error()
+            })??;
             rooted = rooted
                 .bind_named_mutex_authority(identity, &fact)
                 .map_err(|_| {
@@ -4048,7 +4119,7 @@ pub(crate) fn execution_state_with_borrowed_contract_inputs(
     }
     if let Some(contract) =
         crate::kernel::mutexes::helper_contracts::classify(function.contract_interface())
-            .map_err(|_| BorrowRefusal::InvalidEvidence.diagnostic(BorrowRefusalOperation::Entry))?
+            .map_err(|reason| RuntimeError::InvalidContractResource(reason.into()))?
     {
         let entry =
             program_function_entry_state(&rooted, function, arguments).ok_or_else(|| {
@@ -4063,8 +4134,10 @@ pub(crate) fn execution_state_with_borrowed_contract_inputs(
                 assumptions,
                 &mut budget,
             )
-            .map_err(|_| BorrowRefusal::InvalidEvidence.diagnostic(BorrowRefusalOperation::Entry))?
-            .map_err(|_| BorrowRefusal::MissingBacking.diagnostic(BorrowRefusalOperation::Entry))
+            .map_err(|limit| {
+                ContractEntryRefusal::from_limit("could not evaluate a mutex input", limit)
+                    .into_runtime_error()
+            })?
         };
         let access = evaluate(&contract.access)?;
         let (guard, payload) =
@@ -4107,7 +4180,7 @@ fn install_borrowed_contract_inputs(
     function: &ProgramFunction,
     arguments: &[ProgramExpression],
     assumptions: &PureFactContext,
-) -> Result<ExecutionState, BorrowRefusalDiagnostic> {
+) -> Result<ExecutionState, RuntimeError> {
     let entry = program_function_entry_state(&state, function, arguments)
         .ok_or_else(|| BorrowRefusal::MissingBacking.diagnostic(BorrowRefusalOperation::Entry))?;
     let mut budget = ExecutionBudget::beside_live_state();
@@ -4118,8 +4191,10 @@ fn install_borrowed_contract_inputs(
         &assumptions.clone().assume_entry_clause_spans(),
         &mut budget,
     )
-    .map_err(|_| BorrowRefusal::InvalidEvidence.diagnostic(BorrowRefusalOperation::Entry))?
-    .map_err(|_| BorrowRefusal::MissingBacking.diagnostic(BorrowRefusalOperation::Entry))?;
+    .map_err(|limit| {
+        ContractEntryRefusal::from_limit("could not evaluate the input view clauses", limit)
+            .into_runtime_error()
+    })??;
 
     // The contract's partition is the precondition: an owned clause that
     // provably overlaps a viewed clause, or a viewed composite's direct
@@ -4182,15 +4257,20 @@ fn install_borrowed_contract_inputs(
             && let Some((_, owner)) = owned_composites
                 .directly_supporting_owned_entry_ignoring_separation(&input.fact, assumptions)
         {
-            return Err(BorrowRefusal::ActiveDependency.proven_overlap_diagnostic(
-                BorrowRefusalOperation::Entry,
-                BorrowRefusalSubject::for_conflicting_resources(input.fact.clone(), owner.clone()),
-            ));
+            return Err(BorrowRefusal::ActiveDependency
+                .proven_overlap_diagnostic(
+                    BorrowRefusalOperation::Entry,
+                    BorrowRefusalSubject::for_conflicting_resources(
+                        input.fact.clone(),
+                        owner.clone(),
+                    ),
+                )
+                .into());
         }
         if let Some(range) = input.fact.memory_range()
             && let Some(diagnostic) = refuse_owned_overlap(range)
         {
-            return Err(diagnostic);
+            return Err(diagnostic.into());
         }
         if matches!(
             input.fact.resource(),
@@ -4204,10 +4284,12 @@ fn install_borrowed_contract_inputs(
             .resources()
             .principal_input_view_occurrence(&input.fact, assumptions)
         else {
-            return Err(BorrowRefusal::MissingBorrowBinding.diagnostic_with_subject(
-                BorrowRefusalOperation::Entry,
-                BorrowRefusalSubject::for_resource(input.fact.clone()),
-            ));
+            return Err(BorrowRefusal::MissingBorrowBinding
+                .diagnostic_with_subject(
+                    BorrowRefusalOperation::Entry,
+                    BorrowRefusalSubject::for_resource(input.fact.clone()),
+                )
+                .into());
         };
         let viewed = state
             .resources()
@@ -4245,10 +4327,12 @@ fn install_borrowed_contract_inputs(
             .directly_supporting_owned_entry_ignoring_separation(&viewed, assumptions)
         {
             let owner = owner.clone();
-            return Err(BorrowRefusal::ActiveDependency.diagnostic_with_subject(
-                BorrowRefusalOperation::Entry,
-                BorrowRefusalSubject::for_supported_view(viewed, owner, occurrence),
-            ));
+            return Err(BorrowRefusal::ActiveDependency
+                .diagnostic_with_subject(
+                    BorrowRefusalOperation::Entry,
+                    BorrowRefusalSubject::for_supported_view(viewed, owner, occurrence),
+                )
+                .into());
         }
         selected.entry(occurrence).or_insert(viewed);
     }
@@ -4266,45 +4350,48 @@ fn install_borrowed_contract_inputs(
         let (backing, backing_pieces) = if matches!(viewed.resource(), Resource::Composite { .. }) {
             let singleton = ResourceContext::new_with_equalities(assumptions)
                 .unchecked_with_fact(viewed.clone());
-            let pieces = expand_composite_resource_fact_with_children(
-                &singleton,
-                &viewed,
-                function.composite_resource_definitions(),
-                &state.program_point(),
-                assumptions,
-            )
-            .map(|(_, mut children, raw_children)| {
-                for raw_child in raw_children {
-                    let candidates = state
-                        .resources()
-                        .view_occurrences_for_fact(&raw_child, assumptions);
-                    if let [occurrence] = candidates.as_slice()
-                        && let Some(actual) = state
-                            .resources()
-                            .view_fact_at_occurrence(*occurrence)
-                            .cloned()
-                        && !children.contains(&actual)
-                    {
-                        children.push(actual);
-                    }
-                }
-                children
-            })
-            .and_then(|pieces| {
-                BorrowedContractInputBacking::from_checked_expansion(
-                    occurrence,
-                    viewed.clone(),
-                    pieces.clone(),
+            let (_, mut pieces, raw_children) =
+                checked_expand_composite_resource_fact_with_children(
+                    &singleton,
+                    &viewed,
+                    function.composite_resource_definitions(),
+                    &state.program_point(),
+                    assumptions,
                 )
-                .map(|backing| (backing, pieces))
-            })
+                .map_err(ContractEntryRefusal::into_runtime_error)?;
+            for raw_child in raw_children {
+                let candidates = state
+                    .resources()
+                    .view_occurrences_for_fact(&raw_child, assumptions);
+                if let [occurrence] = candidates.as_slice()
+                    && let Some(actual) = state
+                        .resources()
+                        .view_fact_at_occurrence(*occurrence)
+                        .cloned()
+                    && !pieces.contains(&actual)
+                {
+                    pieces.push(actual);
+                }
+            }
+            if pieces
+                .iter()
+                .any(|piece| matches!(piece.resource(), Resource::Instance(_)))
+            {
+                return Err(RuntimeError::InvalidContractResource(
+                    "a composite input view cannot include an exclusive resource instance".into(),
+                ));
+            }
+            let backing = BorrowedContractInputBacking::from_checked_expansion(
+                occurrence,
+                viewed.clone(),
+                pieces.clone(),
+            )
             .ok_or_else(|| {
-                BorrowRefusal::UnsupportedResource.diagnostic_with_subject(
-                    BorrowRefusalOperation::Entry,
-                    BorrowRefusalSubject::with_support_id(occurrence),
+                RuntimeError::ContractEntryInvariant(
+                    "the checked composite input did not produce a stable view".into(),
                 )
             })?;
-            (Some(pieces.0), pieces.1)
+            (Some(backing), pieces)
         } else {
             (None, Vec::new())
         };
@@ -4337,7 +4424,7 @@ fn install_borrowed_contract_inputs(
             if let Some(range) = piece.memory_range()
                 && let Some(diagnostic) = refuse_owned_overlap(range)
             {
-                return Err(diagnostic);
+                return Err(diagnostic.into());
             }
             let occurrences = state
                 .resources()
@@ -4358,10 +4445,12 @@ fn install_borrowed_contract_inputs(
                     );
                 }
                 _ => {
-                    return Err(BorrowRefusal::MissingBorrowBinding.diagnostic_with_subject(
-                        BorrowRefusalOperation::Entry,
-                        BorrowRefusalSubject::for_resource(piece),
-                    ));
+                    return Err(BorrowRefusal::MissingBorrowBinding
+                        .diagnostic_with_subject(
+                            BorrowRefusalOperation::Entry,
+                            BorrowRefusalSubject::for_resource(piece),
+                        )
+                        .into());
                 }
             }
         }
@@ -4424,11 +4513,10 @@ pub(crate) fn program_function_contract_entry_state_with_refusal(
             "could not prepare contract resources",
             &error,
         )),
-        Err(limit) => Err(format!(
-            "contract resource preparation stopped at {}",
-            limit.describe()
-        )
-        .into()),
+        Err(limit) => Err(ContractEntryRefusal::from_limit(
+            "could not prepare contract resources",
+            limit,
+        )),
     }
 }
 
@@ -7288,14 +7376,13 @@ pub fn substitute_integer_term_in_proposition(
                 walk_term(left, from, to, changed, memo),
                 walk_term(right, from, to, changed, memo),
             ),
-            IntegerTerm::TruncatingQuotient(left, right) => IntegerTerm::truncating_quotient(
-                walk_term(left, from, to, changed, memo).as_ref().clone(),
-                walk_term(right, from, to, changed, memo).as_ref().clone(),
-            ),
-            IntegerTerm::TruncatingRemainder(left, right) => IntegerTerm::truncating_remainder(
-                walk_term(left, from, to, changed, memo).as_ref().clone(),
-                walk_term(right, from, to, changed, memo).as_ref().clone(),
-            ),
+            IntegerTerm::TruncatingQuotient(left, right)
+            | IntegerTerm::TruncatingRemainder(left, right) => {
+                let left = walk_term(left, from, to, changed, memo);
+                let right = walk_term(right, from, to, changed, memo);
+                let remainder = matches!(term.as_ref(), IntegerTerm::TruncatingRemainder(..));
+                IntegerTerm::truncating_division_shared(left, right, remainder)
+            }
             _ => term.as_ref().clone(),
         };
         let result = SharedIntegerTerm::intern(rebuilt);
@@ -7708,26 +7795,72 @@ pub fn program_function_contract_refinement_context(
     target_name: &str,
     values: &[ProgramValue],
 ) -> Option<FunctionContractRefinementContext> {
+    program_function_contract_refinement_context_reporting(
+        environment,
+        contract_name,
+        target_name,
+        values,
+    )
+    .ok()
+}
+
+pub(crate) enum ConcreteRefinementRefusal {
+    MissingContract,
+    InvalidContractArguments,
+    MissingTarget,
+    ThrowingTarget,
+    DifferentExceptionType,
+    IncompatibleInterface,
+    ContextUnavailable,
+}
+
+pub(crate) fn program_function_contract_refinement_context_reporting(
+    environment: &ExecutionEnvironment,
+    contract_name: &str,
+    target_name: &str,
+    values: &[ProgramValue],
+) -> Result<FunctionContractRefinementContext, ConcreteRefinementRefusal> {
+    use ConcreteRefinementRefusal::*;
     let contract = environment
-        .get_function_contract(contract_name)?
-        .instantiated(values)?;
-    let function = if let Some(rule) = environment.get_verified_function_rule(target_name) {
-        &rule.function
-    } else {
-        &environment
-            .get_external_function_rule(target_name)?
-            .function
-    };
+        .get_function_contract(contract_name)
+        .ok_or(MissingContract)?
+        .instantiated(values)
+        .ok_or(InvalidContractArguments)?;
+    let checked = environment
+        .get_verified_function_rule(target_name)
+        .map(|rule| &rule.function)
+        .or_else(|| {
+            environment
+                .get_external_function_rule(target_name)
+                .map(|rule| &rule.function)
+        });
+    let declaration = checked
+        .or_else(|| environment.get_function(target_name))
+        .ok_or(MissingTarget)?;
+    let required = contract.interface().exceptional_signature();
+    let actual = declaration.contract_interface().exceptional_signature();
+    if !actual.is_empty() && actual != required {
+        return Err(if required.is_empty() {
+            ThrowingTarget
+        } else {
+            DifferentExceptionType
+        });
+    }
+    let function = checked.ok_or(MissingTarget)?;
+    if !contract.has_compatible_signature_and_resource_vocabulary(function) {
+        return Err(IncompatibleInterface);
+    }
     let mut context = prepare_function_contract_refinement_context(
         &contract,
         function,
         &mut ExecutionBudget::for_new_execution(),
-    )?;
+    )
+    .ok_or(ContextUnavailable)?;
     context.object_type_requirements = function
         .contract_interface()
         .object_type_requirements()
         .clone();
-    Some(context)
+    Ok(context)
 }
 
 /// Whether `function`'s contract refines the named contract `contract_name`,
@@ -7770,6 +7903,51 @@ pub fn program_function_refines_function_contract(
         &mut ExecutionBudget::for_new_execution(),
     )
     .map_err(ExecutionLimit::describe)
+}
+
+pub(crate) enum OverrideInterface<'a> {
+    Named(&'a str),
+    Verified(&'a ProgramFunction),
+}
+
+pub(crate) enum OverrideRefusal {
+    InterfaceUnavailable,
+    UnprovedRequirement(usize),
+    Incompatible,
+}
+
+pub(crate) fn program_override_refinement_failure(
+    environment: &ExecutionEnvironment,
+    interface: OverrideInterface<'_>,
+    function: &ProgramFunction,
+) -> ExecutionResult<Option<OverrideRefusal>> {
+    let verified_contract;
+    let contract = match interface {
+        OverrideInterface::Named(name) => environment.get_function_contract(name),
+        OverrideInterface::Verified(interface) => {
+            verified_contract = FunctionContract::new(interface.name(), interface.clone());
+            verified_contract.as_ref()
+        }
+    };
+    let Some(contract) = contract else {
+        return Ok(Some(OverrideRefusal::InterfaceUnavailable));
+    };
+    let mut unproved = None;
+    let refines = super::functions::function_refines_named_contract_reporting(
+        contract,
+        function,
+        function.contract_interface().object_type_requirements(),
+        &mut ExecutionBudget::for_new_execution(),
+        Some(&mut unproved),
+    )?;
+    Ok(if refines {
+        None
+    } else {
+        Some(unproved.map_or(
+            OverrideRefusal::Incompatible,
+            OverrideRefusal::UnprovedRequirement,
+        ))
+    })
 }
 
 /// The explicit refinement theorem a refused concrete formation needs.

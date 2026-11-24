@@ -71,6 +71,7 @@ fn charon_enumerated_loops_bind_their_index_and_element_without_an_option() {
     use click::languages::rust::schema::{MirStatement, Type};
     let prepared = prepared_enumeration();
     let mut bound = 0;
+    let mut bound_copied_byte = false;
     for function in &prepared.export().functions {
         let Some(mir) = &function.mir else { continue };
         assert!(
@@ -96,10 +97,14 @@ fn charon_enumerated_loops_bind_their_index_and_element_without_an_option() {
                     function.name
                 );
                 bound += usize::from(index.is_some() || element.is_some());
+                bound_copied_byte |= function.name == "last_index"
+                    && index.as_ref().is_some_and(|name| name == "i")
+                    && element.as_ref().is_some_and(|name| name == "_byte");
             }
         }
     }
     assert!(bound > 0);
+    assert!(bound_copied_byte);
 }
 
 #[test]

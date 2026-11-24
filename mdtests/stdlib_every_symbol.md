@@ -9,6 +9,19 @@ The `authority` resource's restricted empty-population source use is verified
 by `authority_establishes_and_retires_empty_stack_population` in
 `src/surface/tests/execution_tests.rs`.
 
+The transitivity laws `float_order::float32_le_le`,
+`float_order::float32_le_lt`, `float_order::float32_lt_le`,
+`float_order::float64_le_le`, `float_order::float64_le_lt`, and
+`float_order::float64_lt_le` are exercised in
+[`float_order_transitivity.md`](float_order_transitivity.md).
+The rounded addition bounds `float_order::float32_add_lower`,
+`float_order::float32_add_upper`, `float_order::float64_add_lower`, and
+`float_order::float64_add_upper` are exercised in
+[`arithmetic_expression_float_add_pair.md`](arithmetic_expression_float_add_pair.md).
+The finite positive scaling bounds `float_order::float32_scale_lower` and
+`float_order::float32_scale_upper` are exercised in
+[`arithmetic_expression_float_bound_composition.md`](arithmetic_expression_float_bound_composition.md).
+
 The representation law `integer::uint32_from_le_bytes` is exercised in
 [`integer_uint32_from_le_bytes_initialization.md`](integer_uint32_from_le_bytes_initialization.md).
 
@@ -54,7 +67,7 @@ The stream also appears in
 [`hosted_stdout_stream_follows_file_pointer_alias.md`](hosted_stdout_stream_follows_file_pointer_alias.md).
 
 The `stdio::format_output`, `stdio::format_length` and
-`stdio::literal_format` functions state the `fprintf` contract, used by
+`stdio::literal_format` functions state the `fprintf` and `printf` contracts, used by
 [`printf_and_fprintf_share_the_streams_write_history.md`](printf_and_fprintf_share_the_streams_write_history.md).
 
 The `VarArg` datatype, the variable arguments a variadic C call passes, is
@@ -89,7 +102,7 @@ The unsigned address-word laws are checked in
 `integer::uint64_or_zero`, `integer::uint64_or_disjoint`, `integer::uint64_mask_add_low`,
 `integer::uint64_mask_add_high`, `integer::uint64_mask_multiple`,
 `integer::uint64_mask_keep`, `integer::uint64_mask_add_clear`,
-`integer::uint64_add_distinct`, `integer::uint64_or_add_low`, `integer::uint64_mask_subset`,
+`integer::uint64_add_distinct`, `integer::uint64_add_subtract_cancel`, `integer::uint64_or_add_low`, `integer::uint64_mask_subset`,
 `integer::uint64_or_masked`, `integer::uint8_pointer_add_address_int32`,
 `integer::uint8_pointer_add_address_int64`, `integer::int8_pointer_add_address_int32`,
 `integer::int8_pointer_add_address_int64`, `integer::uint16_pointer_add_address_int32`,
@@ -100,7 +113,7 @@ The unsigned address-word laws are checked in
 `integer::uint64_pointer_add_address_int64`, `integer::int64_pointer_add_address_int32`,
 `integer::int64_pointer_add_address_int64`, `integer::float32_pointer_add_address_int32`,
 `integer::float32_pointer_add_address_int64`, `integer::float64_pointer_add_address_int32`,
-`integer::float64_pointer_add_address_int64`.
+`integer::float64_pointer_add_address_int64`, `integer::uint8_pointer_add_address_uint64`, `integer::int8_pointer_add_address_uint64`, `integer::uint16_pointer_add_address_uint64`, `integer::int16_pointer_add_address_uint64`, `integer::uint32_pointer_add_address_uint64`, `integer::int32_pointer_add_address_uint64`, `integer::uint64_pointer_add_address_uint64`, `integer::int64_pointer_add_address_uint64`, `integer::float32_pointer_add_address_uint64`, `integer::float64_pointer_add_address_uint64`.
 
 The scalar-pointer translation and association families are checked by the
 strict scalar-width replay matrix and
@@ -775,6 +788,13 @@ predicate docs_use_uint64_wrapping_mul(left: uint64, right: uint64) {
 
 predicate docs_use_count(p: int32[], lo: int32, hi: int32, x: int32) {
     permutation::count(p, lo, hi, x) == permutation::count(p, lo, hi, x)
+}
+
+theorem docs_use_two_indicator_counts_commute(a: Bool, b: Bool) {
+    ensures (0 + (if a { 1 } else { 0 }) + (if b { 1 } else { 0 })) ==
+            (0 + (if b { 1 } else { 0 }) + (if a { 1 } else { 0 })) by {
+        apply(permutation::two_indicator_counts_commute(a, b));
+    }
 }
 
 predicate docs_use_permutation(a: int32[], b: int32[], lo: int32, hi: int32) {

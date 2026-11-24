@@ -27,6 +27,7 @@ pub(super) fn link_c_units(
         validate_modeled_pthread_binding(&units)?;
     }
 
+    let link_error = |message: String| ClickError::new(message).with_kind(ClickErrorKind::Type);
     // Headers may declare libc objects that the verified program never uses.
     // Keep those declarations for compatibility checks, but require storage
     // only when a C value or address expression actually names the object.
@@ -41,7 +42,7 @@ pub(super) fn link_c_units(
             let function_name = function.name().to_string();
             let previous = parsed.insert(function_name.clone(), (source_path.clone(), function));
             if previous.is_some() {
-                return Err(ClickError::new(format!(
+                return Err(link_error(format!(
                     "more than one `verifying` source defines function `{function_name}`"
                 )));
             }
@@ -57,7 +58,7 @@ pub(super) fn link_c_units(
             let name = declaration.linkage_name();
             if let Some((previous_source, previous)) = function_declarations.get(name) {
                 if !previous.compatible_with(declaration) {
-                    return Err(ClickError::new(format!(
+                    return Err(link_error(format!(
                         "conflicting C function declarations for `{name}` in `{previous_source}` and `{source_path}`"
                     )));
                 }
@@ -75,12 +76,12 @@ pub(super) fn link_c_units(
         if declaration.is_variadic() && !variable_arguments {
             return Err(ClickError::new(format!(
                 "`{name}` is declared with `...` in `{source_path}`; its `extern` contract names the variable arguments with a last parameter `...args`"
-            )));
+            )).with_proof_refusal(ProofRefusal::Contract));
         }
         if !declaration.is_variadic() && *variable_arguments {
             return Err(ClickError::new(format!(
                 "`{name}` is not declared with `...` in `{source_path}`, so its `extern` contract has no `...args` parameter"
-            )));
+            )).with_proof_refusal(ProofRefusal::Contract));
         }
     }
 
@@ -94,14 +95,14 @@ pub(super) fn link_c_units(
         for (name, global) in &unit.globals {
             match source_globals.get(name) {
                 Some(previous) if previous.interface_type() != global.interface_type() => {
-                    return Err(ClickError::new(format!(
+                    return Err(link_error(format!(
                         "conflicting declarations for global `{name}`"
                     )));
                 }
                 Some(previous)
                     if previous.pointee_is_constant() != global.pointee_is_constant() =>
                 {
-                    return Err(ClickError::new(format!(
+                    return Err(link_error(format!(
                         "conflicting declarations for global `{name}`"
                     )));
                 }
@@ -110,7 +111,7 @@ pub(super) fn link_c_units(
                         && global.is_initialized_definition() =>
                 {
                     if previous != global {
-                        return Err(ClickError::new(format!(
+                        return Err(link_error(format!(
                             "conflicting definitions for global `{name}` in `{source_path}`"
                         )));
                     }
@@ -137,14 +138,14 @@ pub(super) fn link_c_units(
             }
             match globals.get(name) {
                 Some(previous) if previous.interface_type() != global.interface_type() => {
-                    return Err(ClickError::new(format!(
+                    return Err(link_error(format!(
                         "conflicting declarations for global `{name}`"
                     )));
                 }
                 Some(previous)
                     if previous.pointee_is_constant() != global.pointee_is_constant() =>
                 {
-                    return Err(ClickError::new(format!(
+                    return Err(link_error(format!(
                         "conflicting declarations for global `{name}`"
                     )));
                 }
@@ -152,7 +153,7 @@ pub(super) fn link_c_units(
                     if previous.is_initialized_definition()
                         && global.is_initialized_definition() =>
                 {
-                    return Err(ClickError::new(format!(
+                    return Err(link_error(format!(
                         "multiple definitions of global `{name}`"
                     )));
                 }
@@ -175,7 +176,7 @@ pub(super) fn link_c_units(
             && !global.is_defined()
             && !global.is_hosted_stdout()
     }) {
-        return Err(ClickError::new(format!(
+        return Err(link_error(format!(
             "global `{name}` is declared `extern` but has no definition"
         )));
     }
@@ -190,7 +191,7 @@ pub(super) fn link_c_units(
                 .get(source_path)
                 .is_some_and(|source_globals| source_globals.contains_key(name))
             {
-                return Err(ClickError::new(format!(
+                return Err(link_error(format!(
                     "global `{name}` conflicts with a scalar global declaration"
                 )));
             }
@@ -199,7 +200,7 @@ pub(super) fn link_c_units(
                     if previous.element_type() != array.element_type()
                         || !syntax::array_shapes_compatible(previous, array) =>
                 {
-                    return Err(ClickError::new(format!(
+                    return Err(link_error(format!(
                         "conflicting declarations for global array `{name}`"
                     )));
                 }
@@ -208,7 +209,7 @@ pub(super) fn link_c_units(
                         && array.is_initialized_definition() =>
                 {
                     if previous != array {
-                        return Err(ClickError::new(format!(
+                        return Err(link_error(format!(
                             "conflicting definitions for global array `{name}` in `{source_path}`"
                         )));
                     }
@@ -228,7 +229,7 @@ pub(super) fn link_c_units(
             .iter()
             .find(|(_, array)| array.is_file_static() && !array.is_defined())
         {
-            return Err(ClickError::new(format!(
+            return Err(link_error(format!(
                 "file-scope static array `{name}` has an incomplete tentative definition but no complete definition in `{source_path}`"
             )));
         }
@@ -240,7 +241,7 @@ pub(super) fn link_c_units(
                 continue;
             }
             if globals.contains_key(name) {
-                return Err(ClickError::new(format!(
+                return Err(link_error(format!(
                     "global `{name}` conflicts with a scalar global declaration"
                 )));
             }
@@ -249,7 +250,7 @@ pub(super) fn link_c_units(
                     if previous.element_type() != array.element_type()
                         || !syntax::array_shapes_compatible(previous, array) =>
                 {
-                    return Err(ClickError::new(format!(
+                    return Err(link_error(format!(
                         "conflicting declarations for global array `{name}`"
                     )));
                 }
@@ -257,7 +258,7 @@ pub(super) fn link_c_units(
                     if previous.is_initialized_definition()
                         && array.is_initialized_definition() =>
                 {
-                    return Err(ClickError::new(format!(
+                    return Err(link_error(format!(
                         "multiple definitions of global array `{name}`"
                     )));
                 }
@@ -282,7 +283,7 @@ pub(super) fn link_c_units(
         } else {
             format!("global array `{name}` is declared `extern` but has no definition")
         };
-        return Err(ClickError::new(message));
+        return Err(link_error(message));
     }
     let mut global_aggregates_by_source =
         BTreeMap::<String, BTreeMap<String, syntax::CGlobalAggregate>>::new();
@@ -298,7 +299,7 @@ pub(super) fn link_c_units(
                     .get(source_path)
                     .is_some_and(|source_arrays| source_arrays.contains_key(name))
             {
-                return Err(ClickError::new(format!(
+                return Err(link_error(format!(
                     "global `{name}` conflicts with a scalar or array declaration"
                 )));
             }
@@ -307,17 +308,17 @@ pub(super) fn link_c_units(
                     if previous.struct_name() != aggregate.struct_name()
                         || previous.layout() != aggregate.layout() =>
                 {
-                    return Err(ClickError::new(format!(
+                    return Err(link_error(format!(
                         "conflicting declarations for aggregate global `{name}`"
                     )));
                 }
                 Some(previous) if previous.is_constant() != aggregate.is_constant() => {
-                    return Err(ClickError::new(format!(
+                    return Err(link_error(format!(
                         "conflicting const qualifiers for aggregate global `{name}`"
                     )));
                 }
                 Some(previous) if previous.is_file_static() != aggregate.is_file_static() => {
-                    return Err(ClickError::new(format!(
+                    return Err(link_error(format!(
                         "conflicting linkage declarations for aggregate global `{name}`"
                     )));
                 }
@@ -326,7 +327,7 @@ pub(super) fn link_c_units(
                         && aggregate.is_initialized_definition() =>
                 {
                     if previous != aggregate {
-                        return Err(ClickError::new(format!(
+                        return Err(link_error(format!(
                             "conflicting definitions for aggregate global `{name}` in `{source_path}`"
                         )));
                     }
@@ -351,7 +352,7 @@ pub(super) fn link_c_units(
                 continue;
             }
             if globals.contains_key(name) || global_arrays.contains_key(name) {
-                return Err(ClickError::new(format!(
+                return Err(link_error(format!(
                     "global `{name}` conflicts with a scalar or array declaration"
                 )));
             }
@@ -360,12 +361,12 @@ pub(super) fn link_c_units(
                     if previous.struct_name() != aggregate.struct_name()
                         || previous.layout() != aggregate.layout() =>
                 {
-                    return Err(ClickError::new(format!(
+                    return Err(link_error(format!(
                         "conflicting declarations for aggregate global `{name}`"
                     )));
                 }
                 Some(previous) if previous.is_constant() != aggregate.is_constant() => {
-                    return Err(ClickError::new(format!(
+                    return Err(link_error(format!(
                         "conflicting const qualifiers for aggregate global `{name}`"
                     )));
                 }
@@ -373,7 +374,7 @@ pub(super) fn link_c_units(
                     if previous.is_initialized_definition()
                         && aggregate.is_initialized_definition() =>
                 {
-                    return Err(ClickError::new(format!(
+                    return Err(link_error(format!(
                         "multiple definitions of aggregate global `{name}`"
                     )));
                 }
@@ -393,7 +394,7 @@ pub(super) fn link_c_units(
     if let Some((name, _)) = global_aggregates.iter().find(|(name, aggregate)| {
         referenced_external_objects.contains(name.as_str()) && !aggregate.is_defined()
     }) {
-        return Err(ClickError::new(format!(
+        return Err(link_error(format!(
             "aggregate global `{name}` is declared `extern` but has no definition"
         )));
     }
@@ -414,7 +415,7 @@ pub(super) fn link_c_units(
                     .get(source_path)
                     .is_some_and(|source_aggregates| source_aggregates.contains_key(name))
             {
-                return Err(ClickError::new(format!(
+                return Err(link_error(format!(
                     "global `{name}` conflicts with a scalar, array, or aggregate declaration"
                 )));
             }
@@ -427,17 +428,17 @@ pub(super) fn link_c_units(
                             aggregate.array_length(),
                         ) =>
                 {
-                    return Err(ClickError::new(format!(
+                    return Err(link_error(format!(
                         "conflicting declarations for aggregate global array `{name}`"
                     )));
                 }
                 Some(previous) if previous.is_constant() != aggregate.is_constant() => {
-                    return Err(ClickError::new(format!(
+                    return Err(link_error(format!(
                         "conflicting const qualifiers for aggregate global array `{name}`"
                     )));
                 }
                 Some(previous) if previous.is_file_static() != aggregate.is_file_static() => {
-                    return Err(ClickError::new(format!(
+                    return Err(link_error(format!(
                         "conflicting linkage declarations for aggregate global array `{name}`"
                     )));
                 }
@@ -446,7 +447,7 @@ pub(super) fn link_c_units(
                         && aggregate.is_initialized_definition() =>
                 {
                     if previous != aggregate {
-                        return Err(ClickError::new(format!(
+                        return Err(link_error(format!(
                             "conflicting definitions for aggregate global array `{name}` in `{source_path}`"
                         )));
                     }
@@ -475,7 +476,7 @@ pub(super) fn link_c_units(
                 || global_arrays.contains_key(name)
                 || global_aggregates.contains_key(name)
             {
-                return Err(ClickError::new(format!(
+                return Err(link_error(format!(
                     "global `{name}` conflicts with a scalar, array, or aggregate declaration"
                 )));
             }
@@ -488,12 +489,12 @@ pub(super) fn link_c_units(
                             aggregate.array_length(),
                         ) =>
                 {
-                    return Err(ClickError::new(format!(
+                    return Err(link_error(format!(
                         "conflicting declarations for aggregate global array `{name}`"
                     )));
                 }
                 Some(previous) if previous.is_constant() != aggregate.is_constant() => {
-                    return Err(ClickError::new(format!(
+                    return Err(link_error(format!(
                         "conflicting const qualifiers for aggregate global array `{name}`"
                     )));
                 }
@@ -501,7 +502,7 @@ pub(super) fn link_c_units(
                     if previous.is_initialized_definition()
                         && aggregate.is_initialized_definition() =>
                 {
-                    return Err(ClickError::new(format!(
+                    return Err(link_error(format!(
                         "multiple definitions of aggregate global array `{name}`"
                     )));
                 }
@@ -521,7 +522,7 @@ pub(super) fn link_c_units(
     if let Some((name, _)) = global_aggregate_arrays.iter().find(|(name, aggregate)| {
         referenced_external_objects.contains(name.as_str()) && !aggregate.is_defined()
     }) {
-        return Err(ClickError::new(format!(
+        return Err(link_error(format!(
             "aggregate global array `{name}` is declared `extern` but has no definition"
         )));
     }
@@ -872,19 +873,24 @@ pub(super) fn c_layouts(
                 .values()
                 .filter_map(syntax::library_contract_module),
         );
+        let hosted_stdout = unit
+            .globals
+            .get("stdout")
+            .is_some_and(syntax::CGlobal::is_hosted_stdout);
         for (name, header) in &unit.function_declarations {
             if let Some(contract) =
                 crate::languages::c::formatted_output::contract_for_function(name)
             {
                 frontend_contracts.entry(name.clone()).or_insert(contract);
             }
-            if let Some(contract) = syntax::library_interface_contract(header) {
+            if let Some(contract) = syntax::library_interface_contract(header, hosted_stdout) {
                 frontend_contracts
                     .entry(name.clone())
                     .or_insert_with(|| contract.to_string());
             }
         }
         tables.register_file_static_bindings(&unit);
+        record_declaration_tables(&mut tables, &unit);
         for function in unit.functions {
             tables.register_local_bindings(&function);
             tables.register_string_literals(&function);
@@ -921,6 +927,14 @@ fn c_parse_error_kind(error: &syntax::CSyntaxError) -> ClickErrorKind {
     }
 }
 
+fn c_source_error_kind(error: &crate::languages::c::source::CSourceError) -> ClickErrorKind {
+    use crate::languages::c::source::CSourceErrorKind;
+    match error.kind {
+        CSourceErrorKind::Syntax => ClickErrorKind::Syntax,
+        CSourceErrorKind::Unsupported => ClickErrorKind::Unsupported,
+    }
+}
+
 pub(super) fn parse_c_source_unit(
     source_path: &str,
     c_sources: &ProgramSourceContext<'_>,
@@ -945,6 +959,7 @@ pub(super) fn parse_c_source_unit(
                     ClickError::new(format!(
                         "failed to resolve includes for C source `{source_path}`: {error}"
                     ))
+                    .with_kind(c_source_error_kind(&error))
                 })?;
         for header_path in expanded.dependencies() {
             let header = crate::languages::c::source::expand_includes_for_target(
@@ -956,6 +971,7 @@ pub(super) fn parse_c_source_unit(
                 ClickError::new(format!(
                     "failed to resolve includes for C header `{header_path}`: {error}"
                 ))
+                .with_kind(c_source_error_kind(&error))
             })?;
             let header_line_map = header
                 .line_map()
@@ -1235,6 +1251,61 @@ pub(super) fn unit_qualified_objects(
         }
     }
     objects
+}
+
+/// Records the program objects a declared function's `extern` contract may
+/// name: the externally linked file-scope objects of a unit that declares
+/// it, and the hosted `stdout`. A contract reads them at the call, as it
+/// reads its parameters. A function this unit defines gets its own tables
+/// from [`record_function_tables`]; a declaration in several units sees the
+/// objects of each.
+fn record_declaration_tables(tables: &mut parser::ProgramLayouts, unit: &syntax::CTranslationUnit) {
+    let defined = unit
+        .functions
+        .iter()
+        .map(|function| function.source_name().to_string())
+        .collect::<BTreeSet<_>>();
+    let visible = unit
+        .globals
+        .values()
+        .filter(|object| !object.is_file_static())
+        .map(|object| object.name().to_string())
+        .chain(
+            unit.global_arrays
+                .values()
+                .filter(|object| !object.is_file_static())
+                .map(|object| object.name().to_string()),
+        )
+        .chain(
+            unit.global_aggregates
+                .values()
+                .filter(|object| !object.is_file_static())
+                .map(|object| object.name().to_string()),
+        )
+        .chain(
+            unit.global_aggregate_arrays
+                .values()
+                .filter(|object| !object.is_file_static())
+                .map(|object| object.name().to_string()),
+        )
+        .collect::<BTreeSet<_>>();
+    let stdout = unit
+        .globals
+        .get("stdout")
+        .and_then(syntax::CGlobal::hosted_stdout);
+    for name in unit.function_declarations.keys() {
+        if defined.contains(name) {
+            continue;
+        }
+        let names = tables.program_object_names.entry(name.clone()).or_default();
+        std::sync::Arc::make_mut(names).extend(visible.iter().cloned());
+        if let Some(stdout) = &stdout {
+            tables
+                .hosted_stdout
+                .entry(name.clone())
+                .or_insert_with(|| stdout.clone());
+        }
+    }
 }
 
 /// Records the objects, array shapes and locals of one C function that its

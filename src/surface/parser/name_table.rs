@@ -17,9 +17,16 @@ use super::*;
 #[derive(Clone, Debug, Default)]
 pub(super) struct ResourceTargets {
     names: BTreeMap<String, ResourceClause>,
-    calls: std::collections::HashMap<ContractExpression, BTreeSet<String>>,
+    calls: std::collections::HashMap<ContractExpression, BTreeSet<ResourceTargetKey>>,
     placeholders: BTreeSet<String>,
-    hidden: std::collections::HashMap<ResourceClause, BTreeSet<String>>,
+    hidden: std::collections::HashMap<ResourceClause, BTreeSet<crate::kernel::InstanceId>>,
+    unnamed: BTreeMap<crate::kernel::InstanceId, ResourceClause>,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum ResourceTargetKey {
+    Named(String),
+    Unnamed(crate::kernel::InstanceId),
 }
 
 impl std::ops::Deref for ResourceTargets {
@@ -64,19 +71,13 @@ impl ResourceTargets {
         let previous = self.remove(&name);
         if selectable {
             if let Some(call) = Self::call(&target) {
-                self.calls.entry(call).or_default().insert(name.clone());
+                self.calls
+                    .entry(call)
+                    .or_default()
+                    .insert(ResourceTargetKey::Named(name.clone()));
             }
         } else {
             self.placeholders.insert(name.clone());
-        }
-        if selectable
-            && name.starts_with('#')
-            && let ResourceClause::Named { resource, .. } = &target
-        {
-            self.hidden
-                .entry(resource.as_ref().clone())
-                .or_default()
-                .insert(name.clone());
         }
         self.names.insert(name, target);
         previous
@@ -87,25 +88,61 @@ impl ResourceTargets {
         let selectable = !self.placeholders.remove(name);
         if selectable && let Some(call) = Self::call(&target) {
             let names = self.calls.get_mut(&call).expect("indexed resource target");
-            names.remove(name);
+            names.remove(&ResourceTargetKey::Named(name.to_owned()));
             if names.is_empty() {
                 self.calls.remove(&call);
             }
         }
-        if selectable
-            && name.starts_with('#')
-            && let ResourceClause::Named { resource, .. } = &target
-        {
-            let names = self
-                .hidden
-                .get_mut(resource.as_ref())
-                .expect("indexed hidden target");
-            names.remove(name);
-            if names.is_empty() {
-                self.hidden.remove(resource.as_ref());
+        Some((target, selectable))
+    }
+
+    fn insert_unnamed(
+        &mut self,
+        identity: crate::kernel::InstanceId,
+        target: ResourceClause,
+    ) -> Option<ResourceClause> {
+        let previous = self.remove_unnamed(identity);
+        let ResourceClause::Named { resource, .. } = &target else {
+            unreachable!("unnamed target retains an instance identity");
+        };
+        if let Some(call) = Self::call(&target) {
+            self.calls
+                .entry(call)
+                .or_default()
+                .insert(ResourceTargetKey::Unnamed(identity));
+        }
+        self.hidden
+            .entry(resource.as_ref().clone())
+            .or_default()
+            .insert(identity);
+        self.unnamed.insert(identity, target);
+        previous
+    }
+
+    fn remove_unnamed(&mut self, identity: crate::kernel::InstanceId) -> Option<ResourceClause> {
+        let target = self.unnamed.remove(&identity)?;
+        if let Some(call) = Self::call(&target) {
+            let keys = self
+                .calls
+                .get_mut(&call)
+                .expect("indexed unnamed resource target");
+            keys.remove(&ResourceTargetKey::Unnamed(identity));
+            if keys.is_empty() {
+                self.calls.remove(&call);
             }
         }
-        Some((target, selectable))
+        let ResourceClause::Named { resource, .. } = &target else {
+            unreachable!("unnamed target retains an instance identity");
+        };
+        let identities = self
+            .hidden
+            .get_mut(resource.as_ref())
+            .expect("indexed unnamed target");
+        identities.remove(&identity);
+        if identities.is_empty() {
+            self.hidden.remove(resource.as_ref());
+        }
+        Some(target)
     }
 
     pub(super) fn select(&self, call: &ContractExpression) -> Result<Option<&ResourceClause>, ()> {
@@ -116,15 +153,16 @@ impl ResourceTargets {
         if names.len() != 1 {
             return Err(());
         }
-        Ok(self
-            .names
-            .get(names.first().expect("nonempty selector bucket")))
+        Ok(match names.first().expect("nonempty selector bucket") {
+            ResourceTargetKey::Named(name) => self.names.get(name),
+            ResourceTargetKey::Unnamed(identity) => self.unnamed.get(identity),
+        })
     }
 
     pub(super) fn hidden(&self, target: &ResourceClause) -> Option<&ResourceClause> {
         crate::instrumentation::record_deterministic_work(1);
         let name = self.hidden.get(target)?.first()?;
-        self.names.get(name)
+        self.unnamed.get(name)
     }
 }
 
@@ -175,6 +213,10 @@ pub(super) enum ShadowRestore {
         name: String,
         previous: Option<(ResourceClause, bool)>,
     },
+    UnnamedInstanceTarget {
+        identity: crate::kernel::InstanceId,
+        previous: Option<ResourceClause>,
+    },
     /// The hidden parent field `child.field` read before a body bound it.
     HiddenChildField {
         key: (String, String),
@@ -205,9 +247,11 @@ pub(super) enum NameKind {
     ReferenceParameter,
     /// A declaration's type parameter.
     TypeParameter,
+    /// A local callable introduced by `let name = induct(parameter)`.
+    InductionHypothesis,
 }
 
-const KINDS: usize = 9;
+const KINDS: usize = 10;
 
 impl NameKind {
     /// The kinds that bind a value a proposition can read by name, which a
@@ -242,6 +286,7 @@ impl NameKind {
             NameKind::StructArrayParameter => 6,
             NameKind::ReferenceParameter => 7,
             NameKind::TypeParameter => 8,
+            NameKind::InductionHypothesis => 9,
         }
     }
 }
@@ -402,6 +447,16 @@ impl NameTable {
     }
 
     /// Gives instance `name` its target until the open scope ends.
+    pub(super) fn set_unnamed_instance_target(
+        &mut self,
+        identity: crate::kernel::InstanceId,
+        target: ResourceClause,
+    ) {
+        let previous = self.resource_targets.insert_unnamed(identity, target);
+        self.undo
+            .push(ShadowRestore::UnnamedInstanceTarget { identity, previous });
+    }
+
     pub(super) fn set_instance_target(&mut self, name: String, target: ResourceClause) {
         let previous = self.resource_targets.insert(name.clone(), target, true);
         self.undo
@@ -508,6 +563,14 @@ impl NameTable {
                     }
                     None => {
                         self.resource_targets.remove(&name);
+                    }
+                },
+                ShadowRestore::UnnamedInstanceTarget { identity, previous } => match previous {
+                    Some(target) => {
+                        self.resource_targets.insert_unnamed(identity, target);
+                    }
+                    None => {
+                        self.resource_targets.remove_unnamed(identity);
                     }
                 },
                 ShadowRestore::HiddenChildField { key, previous } => match previous {

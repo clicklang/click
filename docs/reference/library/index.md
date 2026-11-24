@@ -4239,6 +4239,47 @@ function count<T>(p: T*, lo: int32, hi: int32, x: T) -> int32 {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. [`mdtests/stdlib_permutation_count_over_bytes.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_permutation_count_over_bytes.md) counts a `uint8` buffer, [`mdtests/stdlib_permutation_count_over_bytes_rejects_overwrite.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_permutation_count_over_bytes_rejects_overwrite.md) refuses an overwrite as a byte permutation, and [`mdtests/stdlib_permutation_count_rejects_mixed_element_types.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_permutation_count_rejects_mixed_element_types.md) refuses an `int32` value counted in a `uint8` buffer.
 
+### `permutation::two_indicator_counts_commute`
+
+```click
+theorem two_indicator_counts_commute(a: Bool, b: Bool) {
+    ensures (0 + (if a { 1 } else { 0 }) + (if b { 1 } else { 0 })) ==
+            (0 + (if b { 1 } else { 0 }) + (if a { 1 } else { 0 })) by {
+        if a {
+            have (if a { 1 } else { 0 }) == 1 by known();
+            rewrite((if a { 1 } else { 0 }), 1);
+            if b {
+                have (if b { 1 } else { 0 }) == 1 by known();
+                rewrite((if b { 1 } else { 0 }), 1);
+                known();
+            } else {
+                have (if b { 1 } else { 0 }) == 0 by known();
+                rewrite((if b { 1 } else { 0 }), 0);
+                known();
+            }
+        } else {
+            have (if a { 1 } else { 0 }) == 0 by known();
+            rewrite((if a { 1 } else { 0 }), 0);
+            if b {
+                have (if b { 1 } else { 0 }) == 1 by known();
+                rewrite((if b { 1 } else { 0 }), 1);
+                known();
+            } else {
+                have (if b { 1 } else { 0 }) == 0 by known();
+                rewrite((if b { 1 } else { 0 }), 0);
+                known();
+            }
+        }
+    }
+}
+```
+
+Interchanges the two Boolean indicators in the unfolded two-element count.
+The equality keeps the fold's initial zero and uses native `int32` addition.
+Both the integer and byte swap proofs apply it after unfolding the counts.
+[`compare_swap2_permutation.md`](https://github.com/clicklang/click/blob/master/mdtests/compare_swap2_permutation.md)
+[`stdlib_permutation_count_over_bytes.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_permutation_count_over_bytes.md)
+
 ### `permutation::permutation`
 
 ```click
@@ -5939,6 +5980,32 @@ selects this contract for the projected `<stdio.h>` declaration
 
 **Verified use:** [`mdtests/printf_and_fprintf_share_the_streams_write_history.md`](https://github.com/clicklang/click/blob/master/mdtests/printf_and_fprintf_share_the_streams_write_history.md); a format that converts is refused in [`mdtests/fprintf_refuses_a_format_that_converts.md`](https://github.com/clicklang/click/blob/master/mdtests/fprintf_refuses_a_format_that_converts.md).
 
+### `printf`
+
+```click
+int32 printf(const uint8* format, ...args) {
+    let n: uint64;
+    views click::c::string::cstr_at(format, n);
+    requires n <= 2147483647u64;
+    requires click::c::stdio::literal_format(format, 0u64, n as int32);
+    owns out: click::c::stdio::stream(stdout);
+    ensures result == click::c::stdio::format_length(format, 0u64, n as int32, 0) or result < 0;
+    ensures out.write_history == List::Cons(
+        WriteAttempt::Attempt(click::c::stdio::format_output(format, 0u64, n as int32), result),
+        old(out.write_history));
+    ensures click::c::stdio::write_requests(out.write_history) == List::Cons(
+        click::c::stdio::format_output(format, 0u64, n as int32),
+        old(click::c::stdio::write_requests(out.write_history)));
+}
+```
+
+**Meaning:** [`fprintf`](#fprintf) with the stream `stdout`, the hosted
+target's standard output, which the contract names as a program global. The
+C front end selects this contract for the projected `<stdio.h>` declaration
+on the hosted target ([formatted output](../language/c.md#formatted-output)).
+
+**Verified use:** [`mdtests/printf_and_fprintf_share_the_streams_write_history.md`](https://github.com/clicklang/click/blob/master/mdtests/printf_and_fprintf_share_the_streams_write_history.md); a format that converts is refused in [`mdtests/printf_refuses_a_format_that_converts.md`](https://github.com/clicklang/click/blob/master/mdtests/printf_refuses_a_format_that_converts.md).
+
 ### `memcpy`
 
 ```click
@@ -6129,7 +6196,7 @@ theorem readable_len_unique(bytes: uint8[], left: uint64, right: uint64) {
         cases {
             left < right => {
                 instantiate(forall (k: uint64) { k < right implies bytes[k] != '\0' }, left);
-                contradiction(false);
+                contradiction();
             }
             not (left < right) => {
                 have right < left or not (right < left) by {
@@ -6142,7 +6209,7 @@ theorem readable_len_unique(bytes: uint8[], left: uint64, right: uint64) {
                 cases {
                     right < left => {
                         instantiate(forall (k: uint64) { k < left implies bytes[k] != '\0' }, right);
-                        contradiction(false);
+                        contradiction();
                     }
                     not (right < left) => {
                         have to_integer(left) <= to_integer(right) by known();
@@ -8045,6 +8112,25 @@ every other element unchanged.
 
 **Verified use:** [`tests/rust_import/core_methods.rs`](https://github.com/clicklang/click/blob/master/tests/rust_import/core_methods.rs) verifies `exchange`, `swap_bytes` and `reverse_three` in [`design/charon-trial/core-methods/methods.rs`](https://github.com/clicklang/click/blob/master/design/charon-trial/core-methods/methods.rs), and refuses a `swap` index not shown in bounds.
 
+### `Option::take<T>`
+
+```click
+fn Option::take<T>(o: &mut Option<T>) -> Option<T> {
+    owns *o;
+    ensures result == old(*o);
+    ensures *o == Option<T>::None;
+}
+```
+
+**Meaning:** `o.take()` is `mem::replace(o, None)`: it returns the option
+`*o` held and leaves `None` there. The importer declares it at a scalar
+payload, `Option::take<u32>`; an option of a box is still lowered to the move
+the call makes ([Boxes](../rust.md#boxes)).
+
+**Kind:** Rust core model. Each declaration is an explicit verification assumption, reported as `Rust core`.
+
+**Verified use:** [`tests/rust_import.rs`](https://github.com/clicklang/click/blob/master/tests/rust_import.rs) verifies `scalar_taken` and `take_param` in [`design/charon-trial/option-take/take.rs`](https://github.com/clicklang/click/blob/master/design/charon-trial/option-take/take.rs) in `charon_option_take_moves_out_and_leaves_none`.
+
 ### `Option<T>` and `Result<T, E>` unwrapping
 
 ```click
@@ -8926,6 +9012,16 @@ axiom uint64_add_distinct(base: uint64, a: uint64, b: uint64) {
 
 **Axiom:** trusted, not proved.
 
+### `integer::uint64_add_subtract_cancel`
+
+```click
+axiom uint64_add_subtract_cancel(a: uint64, b: uint64) {
+    ensures ((((a + b) as uint64) - a) as uint64) == b;
+}
+```
+
+**Axiom:** trusted, not proved. Wrapping addition and subtraction cancel for every pair of words.
+
 ### `integer::uint64_or_add_low`
 
 ```click
@@ -8998,6 +9094,16 @@ axiom uint8_pointer_add_address_int64(p: uint8*, index: int64) {
 
 **Axiom:** trusted, not proved.
 
+### `integer::uint8_pointer_add_address_uint64`
+
+```click
+axiom uint8_pointer_add_address_uint64(p: uint8*, index: uint64) {
+    ensures address(p + index) == ((address(p) + index * 1u64) as uint64);
+}
+```
+
+**Axiom:** trusted, not proved. A `size_t` index such as `p + n` with `size_t n`.
+
 ### `integer::int8_pointer_add_address_int32`
 
 ```click
@@ -9017,6 +9123,16 @@ axiom int8_pointer_add_address_int64(p: int8*, index: int64) {
 ```
 
 **Axiom:** trusted, not proved.
+
+### `integer::int8_pointer_add_address_uint64`
+
+```click
+axiom int8_pointer_add_address_uint64(p: int8*, index: uint64) {
+    ensures address(p + index) == ((address(p) + index * 1u64) as uint64);
+}
+```
+
+**Axiom:** trusted, not proved. A `size_t` index such as `p + n` with `size_t n`.
 
 ### `integer::uint16_pointer_add_address_int32`
 
@@ -9038,6 +9154,16 @@ axiom uint16_pointer_add_address_int64(p: uint16*, index: int64) {
 
 **Axiom:** trusted, not proved.
 
+### `integer::uint16_pointer_add_address_uint64`
+
+```click
+axiom uint16_pointer_add_address_uint64(p: uint16*, index: uint64) {
+    ensures address(p + index) == ((address(p) + index * 2u64) as uint64);
+}
+```
+
+**Axiom:** trusted, not proved. A `size_t` index such as `p + n` with `size_t n`.
+
 ### `integer::int16_pointer_add_address_int32`
 
 ```click
@@ -9057,6 +9183,16 @@ axiom int16_pointer_add_address_int64(p: int16*, index: int64) {
 ```
 
 **Axiom:** trusted, not proved.
+
+### `integer::int16_pointer_add_address_uint64`
+
+```click
+axiom int16_pointer_add_address_uint64(p: int16*, index: uint64) {
+    ensures address(p + index) == ((address(p) + index * 2u64) as uint64);
+}
+```
+
+**Axiom:** trusted, not proved. A `size_t` index such as `p + n` with `size_t n`.
 
 ### `integer::uint32_pointer_add_address_int32`
 
@@ -9078,6 +9214,16 @@ axiom uint32_pointer_add_address_int64(p: uint32*, index: int64) {
 
 **Axiom:** trusted, not proved.
 
+### `integer::uint32_pointer_add_address_uint64`
+
+```click
+axiom uint32_pointer_add_address_uint64(p: uint32*, index: uint64) {
+    ensures address(p + index) == ((address(p) + index * 4u64) as uint64);
+}
+```
+
+**Axiom:** trusted, not proved. A `size_t` index such as `p + n` with `size_t n`.
+
 ### `integer::int32_pointer_add_address_int32`
 
 ```click
@@ -9097,6 +9243,16 @@ axiom int32_pointer_add_address_int64(p: int32*, index: int64) {
 ```
 
 **Axiom:** trusted, not proved.
+
+### `integer::int32_pointer_add_address_uint64`
+
+```click
+axiom int32_pointer_add_address_uint64(p: int32*, index: uint64) {
+    ensures address(p + index) == ((address(p) + index * 4u64) as uint64);
+}
+```
+
+**Axiom:** trusted, not proved. A `size_t` index such as `p + n` with `size_t n`.
 
 ### `integer::uint64_pointer_add_address_int32`
 
@@ -9118,6 +9274,16 @@ axiom uint64_pointer_add_address_int64(p: uint64*, index: int64) {
 
 **Axiom:** trusted, not proved.
 
+### `integer::uint64_pointer_add_address_uint64`
+
+```click
+axiom uint64_pointer_add_address_uint64(p: uint64*, index: uint64) {
+    ensures address(p + index) == ((address(p) + index * 8u64) as uint64);
+}
+```
+
+**Axiom:** trusted, not proved. A `size_t` index such as `p + n` with `size_t n`.
+
 ### `integer::int64_pointer_add_address_int32`
 
 ```click
@@ -9137,6 +9303,16 @@ axiom int64_pointer_add_address_int64(p: int64*, index: int64) {
 ```
 
 **Axiom:** trusted, not proved.
+
+### `integer::int64_pointer_add_address_uint64`
+
+```click
+axiom int64_pointer_add_address_uint64(p: int64*, index: uint64) {
+    ensures address(p + index) == ((address(p) + index * 8u64) as uint64);
+}
+```
+
+**Axiom:** trusted, not proved. A `size_t` index such as `p + n` with `size_t n`.
 
 ### `integer::float32_pointer_add_address_int32`
 
@@ -9158,6 +9334,16 @@ axiom float32_pointer_add_address_int64(p: float*, index: int64) {
 
 **Axiom:** trusted, not proved.
 
+### `integer::float32_pointer_add_address_uint64`
+
+```click
+axiom float32_pointer_add_address_uint64(p: float*, index: uint64) {
+    ensures address(p + index) == ((address(p) + index * 4u64) as uint64);
+}
+```
+
+**Axiom:** trusted, not proved. A `size_t` index such as `p + n` with `size_t n`.
+
 ### `integer::float64_pointer_add_address_int32`
 
 ```click
@@ -9177,6 +9363,16 @@ axiom float64_pointer_add_address_int64(p: double*, index: int64) {
 ```
 
 **Axiom:** trusted, not proved.
+
+### `integer::float64_pointer_add_address_uint64`
+
+```click
+axiom float64_pointer_add_address_uint64(p: double*, index: uint64) {
+    ensures address(p + index) == ((address(p) + index * 8u64) as uint64);
+}
+```
+
+**Axiom:** trusted, not proved. A `size_t` index such as `p + n` with `size_t n`.
 
 ### `integer::nonnegative_remainder_from_reconstruction`
 
@@ -9910,3 +10106,145 @@ theorem float64_pointer_add_associate_uint64(p: double*, i: uint64, j: uint64) {
 **Proved:** from pointer translation and the corresponding addition observation theorem.
 
 **Verified use:** the scalar-width strict replay matrix in [`pointer_offsets.rs`](https://github.com/clicklang/click/blob/master/src/surface/proof/smart_closures/pointer_offsets.rs); representative named applications in [`pointer_offset_explicit_bridge.md`](https://github.com/clicklang/click/blob/master/mdtests/pointer_offset_explicit_bridge.md).
+
+## Floating-point order
+
+[`library/float_order.click`](https://github.com/clicklang/click/blob/master/library/float_order.click) provides
+local transitivity laws for IEEE comparisons. The two true premises exclude
+NaN from every operand. Infinities and signed zeros obey the same laws.
+Use these with an explicitly stated intermediate endpoint.
+
+### `float_order::float32_le_le`
+
+```click
+axiom float32_le_le(a: float, b: float, c: float) {
+    requires a <= b;
+    requires b <= c;
+    ensures a <= c;
+}
+```
+
+### `float_order::float32_le_lt`
+
+```click
+axiom float32_le_lt(a: float, b: float, c: float) {
+    requires a <= b;
+    requires b < c;
+    ensures a < c;
+}
+```
+
+### `float_order::float32_lt_le`
+
+```click
+axiom float32_lt_le(a: float, b: float, c: float) {
+    requires a < b;
+    requires b <= c;
+    ensures a < c;
+}
+```
+
+### `float_order::float64_le_le`
+
+```click
+axiom float64_le_le(a: double, b: double, c: double) {
+    requires a <= b;
+    requires b <= c;
+    ensures a <= c;
+}
+```
+
+### `float_order::float64_le_lt`
+
+```click
+axiom float64_le_lt(a: double, b: double, c: double) {
+    requires a <= b;
+    requires b < c;
+    ensures a < c;
+}
+```
+
+### `float_order::float64_lt_le`
+
+```click
+axiom float64_lt_le(a: double, b: double, c: double) {
+    requires a < b;
+    requires b <= c;
+    ensures a < c;
+}
+```
+
+Rounded addition bounds take two ordered inputs and two finite endpoints. The
+endpoint sum and the operand sum round at the precision of the law.
+
+### `float_order::float32_add_lower`
+
+```click
+axiom float32_add_lower(x: float, y: float, a: float, b: float) {
+    requires x >= a;
+    requires y >= b;
+    requires isfinite(a);
+    requires isfinite(b);
+    ensures x + y >= a + b;
+}
+```
+
+### `float_order::float32_add_upper`
+
+```click
+axiom float32_add_upper(x: float, y: float, a: float, b: float) {
+    requires x <= a;
+    requires y <= b;
+    requires isfinite(a);
+    requires isfinite(b);
+    ensures x + y <= a + b;
+}
+```
+
+### `float_order::float64_add_lower`
+
+```click
+axiom float64_add_lower(x: double, y: double, a: double, b: double) {
+    requires x >= a;
+    requires y >= b;
+    requires isfinite(a);
+    requires isfinite(b);
+    ensures x + y >= a + b;
+}
+```
+
+### `float_order::float64_add_upper`
+
+```click
+axiom float64_add_upper(x: double, y: double, a: double, b: double) {
+    requires x <= a;
+    requires y <= b;
+    requires isfinite(a);
+    requires isfinite(b);
+    ensures x + y <= a + b;
+}
+```
+
+A finite positive factor preserves non-strict float32 bounds through rounded multiplication.
+
+### `float_order::float32_scale_lower`
+
+```click
+axiom float32_scale_lower(factor: float, x: float, bound: float) {
+    requires x >= bound;
+    requires isfinite(factor);
+    requires float32_from_bits(0) < factor;
+    ensures factor * x >= factor * bound;
+}
+```
+
+### `float_order::float32_scale_upper`
+
+```click
+axiom float32_scale_upper(factor: float, x: float, bound: float) {
+    requires x <= bound;
+    requires isfinite(factor);
+    requires float32_from_bits(0) < factor;
+    ensures factor * x <= factor * bound;
+}
+```

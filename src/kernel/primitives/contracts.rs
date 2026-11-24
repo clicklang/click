@@ -2457,8 +2457,7 @@ impl MemoryRange {
     pub(crate) fn spatial_key(&self) -> Self {
         let carrier = Pointer::new(self.base.clone(), ProgramType::VoidPointer);
         Self {
-            bounds_owner: carrier.array_object().owner().cloned(),
-            carrier_bounds_known: carrier.bounds_are_known(),
+            carrier: carrier.array_object().clone(),
             provenance: std::sync::Arc::new(self.base.object_identity()),
             typed_carrier: false,
             formation_coverage: Default::default(),
@@ -2512,8 +2511,7 @@ impl MemoryRange {
         assert!(element_width > 0, "memory element width must be positive");
         let carrier = Pointer::new(base.clone(), ProgramType::VoidPointer);
         Self {
-            bounds_owner: carrier.array_object().owner().cloned(),
-            carrier_bounds_known: carrier.bounds_are_known(),
+            carrier: carrier.array_object().clone(),
             provenance: std::sync::Arc::new(base.object_identity()),
             typed_carrier: false,
             base,
@@ -2622,11 +2620,7 @@ impl MemoryRange {
         Pointer {
             address: self.base.clone(),
             provenance: self.provenance.clone(),
-            array: ArrayObject::from_parts(
-                self.carrier_bounds_known,
-                None,
-                self.bounds_owner.clone(),
-            ),
+            array: self.carrier.clone(),
             program_type: ProgramType::VoidPointer,
             qualifiers: None,
         }
@@ -2634,14 +2628,31 @@ impl MemoryRange {
 
     pub(in crate::kernel) fn with_pointer_carrier(mut self, value: &Pointer) -> Self {
         self.provenance = value.provenance.clone();
-        self.bounds_owner = value.array_object().owner().cloned();
-        self.carrier_bounds_known = value.bounds_are_known();
+        self.carrier = value.array_object().with_bounds(None);
         self.typed_carrier = true;
         self
     }
 
+    /// The array object of the pointer that named the range.
+    pub(in crate::kernel) fn carrier_array(&self) -> &ArrayObject {
+        &self.carrier
+    }
+
+    pub(in crate::kernel) fn with_carrier_array(mut self, carrier: ArrayObject) -> Self {
+        self.carrier = carrier.with_bounds(None);
+        self
+    }
+
+    pub(in crate::kernel) fn carrier_owner(&self) -> Option<&std::sync::Arc<Address>> {
+        self.carrier.owner()
+    }
+
+    pub(in crate::kernel) fn carrier_known(&self) -> bool {
+        self.carrier.is_known()
+    }
+
     pub(crate) fn carrier_has_known_bounds(&self) -> bool {
-        self.carrier_bounds_known && self.bounds_owner.is_none()
+        matches!(self.carrier, ArrayObject::Allocation)
     }
 
     pub(in crate::kernel) fn with_bounds_owner(
@@ -2649,8 +2660,7 @@ impl MemoryRange {
         origin: Option<std::sync::Arc<Address>>,
         known: bool,
     ) -> Self {
-        self.bounds_owner = origin;
-        self.carrier_bounds_known = known;
+        self.carrier = ArrayObject::from_parts(known, None, origin);
         self
     }
 
@@ -2671,18 +2681,16 @@ impl MemoryRange {
         self.provenance = source.provenance.clone();
         self.formation_coverage = source.formation_coverage.clone();
         self.typed_carrier = source.typed_carrier;
-        self.bounds_owner = source.bounds_owner.clone();
-        self.carrier_bounds_known = source.carrier_bounds_known;
+        self.carrier = source.carrier.clone();
         self
     }
 
     pub(in crate::kernel) fn access_provenance(&self) -> (&Address, Option<&Address>) {
         (
             &self.provenance,
-            if self.carrier_bounds_known {
-                None
-            } else {
-                self.bounds_owner.as_deref()
+            match &self.carrier {
+                ArrayObject::Opaque(owner) => owner.as_deref(),
+                ArrayObject::Allocation | ArrayObject::Member(_) => None,
             },
         )
     }
@@ -2692,8 +2700,8 @@ impl MemoryRange {
     pub(crate) fn diagnostic_pointer_metadata(&self) -> (&Address, Option<&Address>, bool) {
         (
             &self.provenance,
-            self.bounds_owner.as_deref(),
-            self.carrier_bounds_known,
+            self.carrier.owner().map(|owner| &**owner),
+            self.carrier.is_known(),
         )
     }
 
@@ -2969,8 +2977,7 @@ impl MemoryRange {
             formation_coverage: self.formation_coverage.clone(),
             provenance: self.provenance.clone(),
             typed_carrier: self.typed_carrier,
-            bounds_owner: self.bounds_owner.clone(),
-            carrier_bounds_known: self.carrier_bounds_known,
+            carrier: self.carrier.clone(),
             ..Self::new_with_element_width(base, start, end, self.element_width)
         }
     }

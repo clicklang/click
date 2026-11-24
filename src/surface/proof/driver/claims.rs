@@ -53,6 +53,16 @@ struct ContractClosingInput {
     specification: Arc<crate::kernel::PublishedFunctionOutcome>,
 }
 
+// Entry runs before the proof starts. Preserve typed refusals from the
+// producers above it and report an unexplained setup failure as a Click defect.
+fn classify_contract_entry_error(error: ClickError) -> ClickError {
+    if error.kind() == ClickErrorKind::Proof && error.proof_refusal().is_none() {
+        error.with_kind(ClickErrorKind::Internal)
+    } else {
+        error
+    }
+}
+
 fn contract_closing_input(
     root: Option<&Proof<'_>>,
     execution: &CheckedFunctionExecution,
@@ -433,7 +443,7 @@ fn next_checked_post_execution_tactic<'a>(
                         ))
                     })?;
                     scope = Some(focused.scope_call_payload(
-                        scope.as_ref().or_else(|| {
+                        scope.as_ref().or({
                             if locals.ends.is_empty() {
                                 None
                             } else {
@@ -770,9 +780,7 @@ fn prove_claims_by_checked_tactics(
             )
         })
         .map_err(|error| {
-            error
-                .at_declaration(function_block.signature().name())
-                .with_proof_refusal(crate::surface::ProofRefusal::ContractEntry)
+            classify_contract_entry_error(error.at_declaration(function_block.signature().name()))
         })?;
     // A shared context was built for an earlier claim; name this function's
     // parameters for diagnostics as building it would have.
@@ -826,14 +834,7 @@ fn prove_claims_by_checked_tactics(
                         ParameterBinding::new(parsed_function.parameters(), &arguments),
                     ),
                 ));
-                if matches!(
-                    error,
-                    crate::kernel::RuntimeError::ContractEntryInvariant(_)
-                ) {
-                    diagnostic.with_kind(ClickErrorKind::Internal)
-                } else {
-                    diagnostic.with_proof_refusal(contract_entry_resource_refusal(&error))
-                }
+                contract_entry_runtime_refusal(diagnostic, &error)
             })?;
             entry
                 .open_contract_root(function_source_registry.program())
@@ -844,7 +845,7 @@ fn prove_claims_by_checked_tactics(
                     .with_kind(ClickErrorKind::Internal)
                 })
         })
-        .map_err(|error| error.with_proof_refusal(crate::surface::ProofRefusal::ContractEntry))?;
+        .map_err(classify_contract_entry_error)?;
     // Every clause uses the function produced by this generative entry.
     // Re-lowering a sibling clause can allocate different binder identities.
     let function = opened_entry.function().clone();
@@ -931,13 +932,18 @@ fn prove_claims_by_checked_tactics(
     // self-call raise the descent obligations. The opened execution core binds
     // that context before any statements run; outcome completion retains it.
     let anchored_function_environment =
-        crate::kernel::program_execution_environment_with_recursion_anchor(
+        crate::kernel::program_execution_environment_with_recursion_anchor_reporting(
             function_environment.clone(),
             &function,
             &state,
             &arguments,
         )
-        .map_err(|message| ClickError::new(format!("`{proof_label}`: {message}")))?;
+        .map_err(|error| {
+            crate::surface::verification::termination_analysis_error(
+                &error,
+                format!("`{proof_label}`: {error}"),
+            )
+        })?;
     let function_environment = &anchored_function_environment;
     let proof_site = proof_site_for_claims(function_block, claims, grouped);
     let nested_tactic_capture = expansion_capture
@@ -1565,13 +1571,14 @@ fn contract_closing_goal<'a>(
                 ClickError::new(
                     "contract closing could not construct the postcondition's entry and exit views",
                 )
+                .with_kind(ClickErrorKind::Internal)
             })?
             .goals(*contract_index)
             .map_err(|reason| {
-                ClickError::new(format!(
-                    "contract closing for `{}.ensures_{contract_index}`: {reason}",
-                    function.name(),
-                ))
+                closing_goal_error(
+                    &format!("`{}.ensures_{contract_index}`", function.name()),
+                    reason,
+                )
             })?,
         FunctionContractClaimTarget::ExceptionalEnsureProposition(contract_index) => {
             match retained_entry {
@@ -1591,24 +1598,68 @@ fn contract_closing_goal<'a>(
                     assumptions,
                 ),
             }
-            .ok_or_else(|| {
-                ClickError::new("contract closing could not evaluate the exceptional postcondition")
-            })?
+            .map_err(|reason| closing_goal_error(&claim_label, reason))?
         }
         _ => return Ok(None),
     };
     if goals.is_empty() {
         return Err(ClickError::new(format!(
             "contract closing could not evaluate `{claim_label}` at this outcome",
-        )));
+        ))
+        .with_proof_refusal(ProofRefusal::IncompleteProof));
     }
     if goals.len() != 1 {
         return Err(ClickError::new(format!(
             "contract closing produced {} evaluation paths for `{claim_label}`; establish the selecting condition before closing this claim",
             goals.len(),
-        )));
+        )).with_proof_refusal(ProofRefusal::IncompleteProof));
     }
     Ok(goals.pop())
+}
+
+fn closing_goal_error(claim: &str, reason: crate::kernel::EnsureGoalRefusal) -> ClickError {
+    use crate::kernel::{EnsureGoalRefusal, ExecutionLimit};
+    let diagnostic = ClickError::new(format!("contract closing for {claim}: {reason}"));
+    match reason {
+        EnsureGoalRefusal::MissingClause(_)
+        | EnsureGoalRefusal::MissingExceptionalClause(_)
+        | EnsureGoalRefusal::EntryUnavailable
+        | EnsureGoalRefusal::ExpectedThrow
+        | EnsureGoalRefusal::Stopped(
+            ExecutionLimit::Deadline
+            | ExecutionLimit::ExpressionSteps
+            | ExecutionLimit::StatementSteps
+            | ExecutionLimit::FunctionCalls
+            | ExecutionLimit::LoopUnrolls
+            | ExecutionLimit::KernelVariables { .. }
+            | ExecutionLimit::MatchBinderVariables { .. }
+            | ExecutionLimit::ExecutionIdentityBesideLiveState
+            | ExecutionLimit::QuantifierDoesNotClose,
+        ) => diagnostic.with_kind(ClickErrorKind::Internal),
+        EnsureGoalRefusal::Stopped(
+            ExecutionLimit::GuardedConjunctionTooLong
+            | ExecutionLimit::SymbolicPointerConditional
+            | ExecutionLimit::UnsupportedPureFunctionResult(_),
+        ) => diagnostic.with_kind(ClickErrorKind::Unsupported),
+        EnsureGoalRefusal::Stopped(
+            ExecutionLimit::BoolArithmetic
+            | ExecutionLimit::BoolComparedWithInteger
+            | ExecutionLimit::BoolOrdered
+            | ExecutionLimit::MixedBoolArms
+            | ExecutionLimit::LoopIterationsUnbound,
+        ) => diagnostic.with_proof_refusal(ProofRefusal::Contract),
+        EnsureGoalRefusal::Unavailable(_)
+        | EnsureGoalRefusal::Stopped(
+            ExecutionLimit::Paths
+            | ExecutionLimit::ResourceFieldInstanceUnavailable
+            | ExecutionLimit::AuthorityCountNeedsExactPointer
+            | ExecutionLimit::AuthorityCountNeedsResolvedMember
+            | ExecutionLimit::AuthorityCountNeedsOwnership
+            | ExecutionLimit::AuthorityCountLentToWorker
+            | ExecutionLimit::AuthorityCountPendingLockedWorker
+            | ExecutionLimit::DisjunctionRightUndefined,
+        ) => diagnostic.with_proof_refusal(ProofRefusal::IncompleteProof),
+    }
 }
 
 /// The retained contract judgment for an explicit closer. Definition
@@ -2135,6 +2186,7 @@ fn close_claim_directly_from_outcome<'a>(
         resource_facts,
         native_result.as_deref(),
         &mut labels,
+        &|fact| proof.round_trip_source_text(fact),
     );
     // A read of a cell a store dropped after the store search missed names
     // that store and the fact that keeps the cell.
@@ -2619,6 +2671,8 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
         "solve() using"
     } else if matches!(post_tactic, PostExecutionTactic::ImplicitSolve) {
         "implicit tail"
+    } else if matches!(post_tactic, PostExecutionTactic::Leaf(ProofTactic::Close)) {
+        "close"
     } else {
         "solve"
     };
@@ -2629,6 +2683,11 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
     // already closed every claim.
     if implicit_closer && closures.iter().all(|closure| closure.is_closed()) {
         return Ok(());
+    }
+    if crate::surface::proof::implicit_solve_scope::checked_only() {
+        return Err(ClickError::new(format!(
+            "`{proof_label}`: checked-only verification forbids {closer_name}; write its proof steps explicitly"
+        )));
     }
     // A written solve selects one goal; the implicit tail schedules all goals.
     let main_claim = main_goal_claim(outcome_proof, closures)?;
@@ -3165,7 +3224,7 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
             if proof_context.constants.grouped_contract
                 && direct_resource_claims.is_empty()
                 && !direct_claims.is_empty()
-                && let Some(closer) = [ProofStep::Known, ProofStep::Normalize]
+                && let Some(closer) = [ProofStep::Known, ProofStep::CompatibilityNormalize(None)]
                     .into_iter()
                     .find(|closer| direct_claims.iter().all(|(index, _, _)| {
                         rewritten_claim_proofs[*index]
@@ -3557,6 +3616,7 @@ fn opens_outcome_claim_scope(tactic: &ProofTactic) -> bool {
             | ProofTactic::Intro
             | ProofTactic::IntroAs(_)
             | ProofTactic::IntroBinder(_)
+            | ProofTactic::IntroBlock { .. }
     )
 }
 
@@ -4367,7 +4427,7 @@ pub(super) fn finish_ordered_proof<'a>(
                             .map_or_else(|| proof.facts().clone(), |root| root.facts().clone());
                         if !matches!(
                             deferred.tactic,
-                            PostExecutionTactic::Leaf(ProofTactic::Known)
+                            PostExecutionTactic::Leaf(ProofTactic::Known | ProofTactic::Close)
                         ) {
                             known_transition_attempted = false;
                         }
@@ -4375,9 +4435,11 @@ pub(super) fn finish_ordered_proof<'a>(
                             deferred.tactic,
                             PostExecutionTactic::Leaf(
                                 ProofTactic::Known
+                                    | ProofTactic::Close
                                     | ProofTactic::Enumerate
                                     | ProofTactic::Normalize
                                     | ProofTactic::NormalizeUsing(_)
+                                    | ProofTactic::CompatibilityNormalize(_)
                                     | ProofTactic::ArithmeticUsing(_)
                                     | ProofTactic::Preserve(_)
                             ) | PostExecutionTactic::Both(_)
@@ -4476,6 +4538,7 @@ pub(super) fn finish_ordered_proof<'a>(
                             PostExecutionTactic::Leaf(
                                 tactic @ (ProofTactic::Normalize
                                 | ProofTactic::NormalizeUsing(_)
+                                | ProofTactic::CompatibilityNormalize(_)
                                 | ProofTactic::ArithmeticUsing(_)
                                 | ProofTactic::Preserve(_)),
                             ) => Some(tactic_name(tactic)),
@@ -4493,7 +4556,7 @@ pub(super) fn finish_ordered_proof<'a>(
                         // The implicit solver schedules that primitive for every omitted proof.
                         if matches!(
                             post_tactic,
-                            PostExecutionTactic::Leaf(ProofTactic::Known)
+                            PostExecutionTactic::Leaf(ProofTactic::Known | ProofTactic::Close)
                                 | PostExecutionTactic::Solve
                                 | PostExecutionTactic::ImplicitSolve
                         ) && !matches!(post_tactic, PostExecutionTactic::ImplicitSolve)
@@ -4516,6 +4579,60 @@ pub(super) fn finish_ordered_proof<'a>(
                                 ProofTactic::Known,
                             );
                             continue;
+                        }
+                        macro_rules! solve_outcome {
+                            () => {{
+                                close_post_execution_claims_with_solve(
+                                    post_tactic,
+                                    deferred,
+                                    tactic_index,
+                                    path_index,
+                                    &proof_label,
+                                    require_explicit_closers,
+                                    function_block,
+                                    parsed_function,
+                                    function,
+                                    arguments,
+                                    claims,
+                                    spec_definitions,
+                                    parameter_binding,
+                                    pre_state,
+                                    contract_pre_state,
+                                    proof_context,
+                                    execution,
+                                    &completed_execution,
+                                    &entry_pure_facts,
+                                    path_capture,
+                                    &path_requirements,
+                                    &rewrite_claim_equalities,
+                                    &rewritten_claim_proofs,
+                                    &mut outcome,
+                                    &mut outcome_proof,
+                                    &mut opened_claim,
+                                    &mut closures,
+                                    &mut resource_transition_applied,
+                                    &mut pending_resource_transition_error,
+                                    &mut path_surface_post_tactics,
+                                    &mut path_grouped_surface_closers,
+                                    &mut path_deferred_capture_tactics,
+                                )
+                                .map_err(|mut error| {
+                                    if error.verification_stopped()
+                                        && error.proof_claim_label().is_none()
+                                        && let Some(root) = &outcome_proof
+                                    {
+                                        if let Ok(Some(index)) =
+                                            main_goal_claim(&outcome_proof, &closures)
+                                        {
+                                            error = error.with_unlowered_goal(
+                                                diagnostic_claim_statement(&claims[index]),
+                                            );
+                                        }
+                                        error = root.attach_step_diagnostic(error);
+                                    }
+                                    error
+                                })?;
+                            }};
                         }
                         match post_tactic {
                             PostExecutionTactic::ResourceStepProved(ProofTactic::StepProved {
@@ -4603,26 +4720,54 @@ pub(super) fn finish_ordered_proof<'a>(
                                         }
                                     }
                                 };
-                                let step = SourceContext::PostExecution
-                                    .leaf_step(tactic)
-                                    .expect("a post-execution leaf converts to its checked step");
                                 let refreshed = opened
                                     .proof
                                     .refresh_outcome_from(required_outcome(&outcome_proof)?)?;
                                 let before = refreshed.checkpoint();
-                                let proof = refreshed.driver().apply_step(step)?;
+                                let proof = if let ProofTactic::IntroBlock { binder, body } = tactic
+                                {
+                                    refreshed.driver().apply_scoped_intro(
+                                        binder.as_ref(),
+                                        body,
+                                        !implicit_solve_disabled(),
+                                    )?
+                                } else {
+                                    let step =
+                                        SourceContext::PostExecution.leaf_step(tactic).expect(
+                                            "a post-execution leaf converts to its checked step",
+                                        );
+                                    refreshed.driver().apply_step(step)?
+                                };
                                 let certificate = proof.certificate_since(&before)?;
-                                let introduces_scope = opened.introduces_scope
-                                    || matches!(
-                                        tactic,
-                                        ProofTactic::Intro
-                                            | ProofTactic::IntroAs(_)
-                                            | ProofTactic::IntroBinder(_)
-                                    );
-                                opened_claim = Some(OpenedClaimProof {
-                                    introduces_scope,
-                                    ..opened.with_proof(proof)
-                                });
+                                if matches!(tactic, ProofTactic::IntroBlock { .. }) {
+                                    let claim_index = opened.claim_index;
+                                    record_claim_closure(
+                                        &mut outcome_proof,
+                                        &mut closures,
+                                        claims,
+                                        &completed_execution,
+                                        path_index,
+                                        claim_index,
+                                        ClaimClosure::by_continued_proposition(
+                                            claims[claim_index].key(),
+                                            path_index,
+                                            Vec::new(),
+                                            proof.completed_proposition()?,
+                                        ),
+                                    )?;
+                                } else {
+                                    let introduces_scope = opened.introduces_scope
+                                        || matches!(
+                                            tactic,
+                                            ProofTactic::Intro
+                                                | ProofTactic::IntroAs(_)
+                                                | ProofTactic::IntroBinder(_)
+                                        );
+                                    opened_claim = Some(OpenedClaimProof {
+                                        introduces_scope,
+                                        ..opened.with_proof(proof)
+                                    });
+                                }
                                 for tactic in certificate.to_proof_tactics() {
                                     record_post_execution_surface_tactic(
                                         &mut path_surface_post_tactics,
@@ -5004,9 +5149,11 @@ pub(super) fn finish_ordered_proof<'a>(
                             }
                             PostExecutionTactic::Leaf(
                                 ProofTactic::Known
+                                | ProofTactic::Close
                                 | ProofTactic::Enumerate
                                 | ProofTactic::Normalize
                                 | ProofTactic::NormalizeUsing(_)
+                                | ProofTactic::CompatibilityNormalize(_)
                                 | ProofTactic::ArithmeticUsing(_)
                                 | ProofTactic::Preserve(_),
                             )
@@ -5016,9 +5163,15 @@ pub(super) fn finish_ordered_proof<'a>(
                                 // closers and `both`. Only `known` reads
                                 // a resource claim and the outcome's recorded
                                 // lowerings.
+                                let is_close = matches!(
+                                    post_tactic,
+                                    PostExecutionTactic::Leaf(ProofTactic::Close)
+                                );
                                 let is_known = matches!(
                                     post_tactic,
-                                    PostExecutionTactic::Leaf(ProofTactic::Known)
+                                    PostExecutionTactic::Leaf(
+                                        ProofTactic::Known | ProofTactic::Close
+                                    )
                                 );
                                 let closer_name = match post_tactic {
                                     PostExecutionTactic::Both(_) => "all",
@@ -5028,12 +5181,17 @@ pub(super) fn finish_ordered_proof<'a>(
                                 // The step this closer applies is the written
                                 // tactic's.
                                 let closer_step = match post_tactic {
+                                    PostExecutionTactic::Leaf(ProofTactic::Close) => {
+                                        ProofStep::Known
+                                    }
                                     PostExecutionTactic::Leaf(tactic) => {
                                         SourceContext::PostExecution.leaf_step(tactic).expect(
                                             "a post-execution leaf converts to its checked step",
                                         )
                                     }
-                                    PostExecutionTactic::Both(_) => ProofStep::Normalize,
+                                    PostExecutionTactic::Both(_) => {
+                                        ProofStep::CompatibilityNormalize(None)
+                                    }
                                     _ => unreachable!("matched a closer above"),
                                 };
                                 if let Some(certificate) = continue_outcome_claim_proof(
@@ -5046,6 +5204,8 @@ pub(super) fn finish_ordered_proof<'a>(
                                     |proof| {
                                         if let PostExecutionTactic::Both(both) = post_tactic {
                                             proof.driver().apply_all_source(both, true)
+                                        } else if is_close {
+                                            proof.driver().apply_close()
                                         } else {
                                             proof.driver().apply_step(closer_step.clone())
                                         }
@@ -5143,7 +5303,11 @@ pub(super) fn finish_ordered_proof<'a>(
                                         // Postconditions are conditional on return.
                                         // The checked execution outcome supplies
                                         // vacuity without a return value or state.
-                                        if matches!(closer_step, ProofStep::NormalizeUsing(_)) {
+                                        if matches!(
+                                            closer_step,
+                                            ProofStep::NormalizeUsing(_)
+                                                | ProofStep::CompatibilityNormalize(Some(_))
+                                        ) {
                                             return Err(ClickError::new(
                                                 "`normalize using` requires a return-state proposition; use `known()` for a divergent path",
                                             ));
@@ -5335,6 +5499,15 @@ pub(super) fn finish_ordered_proof<'a>(
                                     }
                                 }
                                 if !closed_any {
+                                    if is_close
+                                        && !crate::surface::proof::implicit_solve_scope::checked_only()
+                                        && !failed_known.as_ref().is_some_and(ClickError::verification_stopped)
+                                    {
+                                        let _timing = TacticTiming::followup_search("close");
+                                        let _origin = crate::surface::proof_trace::TraceOrigin::enter(Some("close"));
+                                        solve_outcome!();
+                                        continue;
+                                    }
                                     if both_errors.len() == 1
                                         && let Some(error) = both_errors.pop()
                                     {
@@ -5360,7 +5533,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                     };
                                     let error = ClickError::new(format!(
                                         "`{proof_label}` path {path_index}, tactic {tactic_index}: {reason}"
-                                    ));
+                                    )).with_proof_refusal(ProofRefusal::Tactic).with_failed_tactic(closer_name);
                                     return Err(
                                         match failed_known
                                             .and_then(|failure| failure.diagnostic().cloned())
@@ -5456,56 +5629,7 @@ pub(super) fn finish_ordered_proof<'a>(
                             PostExecutionTactic::Solve
                             | PostExecutionTactic::ImplicitSolve
                             | PostExecutionTactic::SolveUsing(_) => {
-                                close_post_execution_claims_with_solve(
-                                    post_tactic,
-                                    deferred,
-                                    tactic_index,
-                                    path_index,
-                                    &proof_label,
-                                    require_explicit_closers,
-                                    function_block,
-                                    parsed_function,
-                                    function,
-                                    arguments,
-                                    claims,
-                                    spec_definitions,
-                                    parameter_binding,
-                                    pre_state,
-                                    contract_pre_state,
-                                    proof_context,
-                                    execution,
-                                    &completed_execution,
-                                    &entry_pure_facts,
-                                    path_capture,
-                                    &path_requirements,
-                                    &rewrite_claim_equalities,
-                                    &rewritten_claim_proofs,
-                                    &mut outcome,
-                                    &mut outcome_proof,
-                                    &mut opened_claim,
-                                    &mut closures,
-                                    &mut resource_transition_applied,
-                                    &mut pending_resource_transition_error,
-                                    &mut path_surface_post_tactics,
-                                    &mut path_grouped_surface_closers,
-                                    &mut path_deferred_capture_tactics,
-                                )
-                                .map_err(|mut error| {
-                                    if error.verification_stopped()
-                                        && error.proof_claim_label().is_none()
-                                        && let Some(root) = &outcome_proof
-                                    {
-                                        if let Ok(Some(index)) =
-                                            main_goal_claim(&outcome_proof, &closures)
-                                        {
-                                            error = error.with_unlowered_goal(
-                                                diagnostic_claim_statement(&claims[index]),
-                                            );
-                                        }
-                                        error = root.attach_step_diagnostic(error);
-                                    }
-                                    error
-                                })?;
+                                solve_outcome!();
                                 if matches!(post_tactic, PostExecutionTactic::ImplicitSolve)
                                     && !super::proof_object::implicit_solve_disabled()
                                 {

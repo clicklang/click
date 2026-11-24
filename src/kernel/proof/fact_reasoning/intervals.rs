@@ -7,31 +7,18 @@ use std::collections::HashMap;
 type Bounds = (i128, i128);
 
 fn parts(p: &Proposition) -> Option<(&SharedIntegerTerm, &SharedIntegerTerm, bool)> {
-    match p {
-        condition_source_0 @ Proposition::ConditionIs(_, true)
-            if let Some((ConditionTerm::IntegerLessEqual(a, b), _)) =
-                condition_source_0.condition_native() =>
-        {
-            Some((a, b, false))
-        }
-        condition_source_0 @ Proposition::ConditionIs(_, true)
-            if let Some((ConditionTerm::IntegerLessThan(a, b), _)) =
-                condition_source_0.condition_native() =>
-        {
-            Some((a, b, true))
-        }
-        condition_source_0 @ Proposition::ConditionIs(_, true)
-            if let Some((ConditionTerm::IntegerGreaterEqual(a, b), _)) =
-                condition_source_0.condition_native() =>
-        {
-            Some((b, a, false))
-        }
-        condition_source_0 @ Proposition::ConditionIs(_, true)
-            if let Some((ConditionTerm::IntegerGreaterThan(a, b), _)) =
-                condition_source_0.condition_native() =>
-        {
-            Some((b, a, true))
-        }
+    let (condition, expected) = p.condition_native()?;
+    // Integer order is total. A negative C safety test is the opposite
+    // directed bound, with the opposite strictness.
+    match (condition, expected) {
+        (ConditionTerm::IntegerLessEqual(a, b), true)
+        | (ConditionTerm::IntegerGreaterThan(a, b), false) => Some((a, b, false)),
+        (ConditionTerm::IntegerLessThan(a, b), true)
+        | (ConditionTerm::IntegerGreaterEqual(a, b), false) => Some((a, b, true)),
+        (ConditionTerm::IntegerGreaterEqual(a, b), true)
+        | (ConditionTerm::IntegerLessThan(a, b), false) => Some((b, a, false)),
+        (ConditionTerm::IntegerGreaterThan(a, b), true)
+        | (ConditionTerm::IntegerLessEqual(a, b), false) => Some((b, a, true)),
         _ => None,
     }
 }

@@ -340,6 +340,19 @@ impl KernelTerm {
         pointer: KernelTerm,
         element_type: ProgramType,
     ) -> Self {
+        // A null array views no memory, so the state it was formed at would
+        // only tell otherwise equal arguments apart. It is formed at no state.
+        // Read the retained address in place; no native copy is made.
+        let null = pointer.pointer_payload().is_some_and(|value| {
+            let address = value.node().address.node();
+            address.base.native_atom() == &Address::null().base
+                && matches!(address.offset.node(), KernelAddressOffset::Constant(0))
+        });
+        let point = if null {
+            ProgramPoint::of_memory(&crate::kernel::SymbolicMemory::new())
+        } else {
+            point
+        };
         Self::intern(
             KernelType::ArrayRef(element_type),
             KernelTermNode::ArrayReference {
@@ -527,19 +540,12 @@ impl KernelTermImport {
             .iter()
             .zip(retained)
             .enumerate()
-            .map(|(index, (argument, retained))| {
+            .map(|(index, (_, retained))| {
                 retained.unwrap_or_else(|| {
                     if let Some(root) = application.common_argument(index) {
                         root
                     } else {
-                        KernelTerm::legacy_at(
-                            argument.clone(),
-                            LegacyIdentity::ExactApplicationArgument {
-                                application: application.clone(),
-                                payload: application.payload_id(),
-                                index,
-                            },
-                        )
+                        KernelTerm::native_call_argument(application, index, true)
                     }
                 })
             })

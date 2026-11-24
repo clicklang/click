@@ -2500,9 +2500,9 @@ mod tests {
                     &memory,
                 ))
             } else {
-                MachineTerm::MemoryLoad(
+                crate::kernel::MachineTerm::read_named(
                     ProgramPoint::at(&memory),
-                    Box::new(pointer.clone()),
+                    pointer.clone(),
                     crate::kernel::LoadKind::Int32,
                 )
             };
@@ -2607,9 +2607,9 @@ mod tests {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessEqual,
-                        left: Box::new(MachineTerm::MemoryLoad(
+                        left: Box::new(crate::kernel::MachineTerm::read_named(
                             crate::kernel::ProgramPoint::of_memory(&memory),
-                            Box::new(pointer.clone()),
+                            pointer.clone(),
                             crate::kernel::LoadKind::Int32,
                         )),
                         right: Box::new(MachineTerm::Variable(Variable(binder))),
@@ -2875,9 +2875,9 @@ mod tests {
                                 node: AlgebraicTermNode::Variable(Variable(argument)),
                             })],
                         },
-                        MachineTerm::MemoryLoad(
+                        crate::kernel::MachineTerm::read_named(
                             ProgramPoint::at(&memory),
-                            Box::new(pointer.clone()),
+                            pointer.clone(),
                             LoadKind::Int32,
                         ),
                     ),
@@ -2908,12 +2908,12 @@ mod tests {
         // and with the same universal written in load terms.
         let memory = intern_memory(SymbolicMemory::new().with_block("p", 12));
         let cell = |index: Variable| {
-            MachineTerm::MemoryLoad(
+            crate::kernel::MachineTerm::read_named(
                 ProgramPoint::at(&memory),
-                Box::new(Address {
+                Address {
                     base: "p".into(),
                     offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(index), 4),
-                }),
+                },
                 crate::kernel::LoadKind::Int32,
             )
         };
@@ -3017,9 +3017,9 @@ mod tests {
         let phase_field = owner_field(4);
         let cell_field = owner_field(8);
         let load = |memory: &SymbolicMemory, pointer: &Address| {
-            MachineTerm::MemoryLoad(
+            crate::kernel::MachineTerm::read_named(
                 ProgramPoint::at(&(intern_memory(memory.clone()))),
-                Box::new(pointer.clone()),
+                pointer.clone(),
                 crate::kernel::LoadKind::Int32,
             )
         };
@@ -3262,9 +3262,9 @@ impl<'a> OriginsUnchanged<'a> {
             let read = crate::kernel::eval::scalar_read_observation(
                 crate::kernel::MachineOperandView::Legacy(term),
             )?;
-            Some(MachineTerm::MemoryLoad(
+            Some(crate::kernel::MachineTerm::read_named(
                 read.origin?.for_legacy_read(),
-                Box::new(read.pointer),
+                read.pointer,
                 read.kind,
             ))
         };
@@ -3287,7 +3287,7 @@ impl<'a> OriginsUnchanged<'a> {
                     right,
                     self.assumptions,
                 ))
-                || left_pointer == right_pointer
+                || left_pointer.address() == right_pointer.address()
                     && crate::kernel::explicit_atomic_equality_from_memory_derivations(
                         &left_load,
                         &right_load,
@@ -3770,9 +3770,9 @@ mod integer_reflexivity_tests {
                     IntegerTerm::var(accumulator),
                     IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                         MachineIntegerType::Int32,
-                        MachineTerm::MemoryLoad(
+                        crate::kernel::MachineTerm::read_named(
                             ProgramPoint::at(memory),
-                            Box::new(pointer),
+                            pointer,
                             LoadKind::Int32,
                         ),
                     )),
@@ -4044,9 +4044,9 @@ mod integer_reflexivity_tests {
                 item,
                 IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                     MachineIntegerType::Int32,
-                    MachineTerm::MemoryLoad(
+                    crate::kernel::MachineTerm::read_named(
                         ProgramPoint::at(memory),
-                        Box::new(pointer.clone()),
+                        pointer.clone(),
                         crate::kernel::LoadKind::Int32,
                     ),
                 )),
@@ -4527,9 +4527,9 @@ mod annotated_address_condition_tests {
             let pointer = Address {
                 base: "annotated-address-target".into(),
                 offset: AddressOffset::scale_int32(
-                    MachineTerm::MemoryLoad(
+                    crate::kernel::MachineTerm::read_named(
                         ProgramPoint::at(&memory),
-                        Box::new(cell.clone()),
+                        cell.clone(),
                         LoadKind::Int32,
                     ),
                     1,

@@ -1,9 +1,14 @@
 use super::*;
 use crate::kernel::MachineTerm;
 use crate::kernel::binary_term;
+use crate::kernel::machine_integer::comparison::condition_for_operand_views;
 use crate::kernel::{bits32_constant, constant_u32};
 
 mod division_domains;
+#[cfg(test)]
+mod signed_literal_shift_scaling_tests {
+    include!("../../scaling_tests/kernel/eval/operators/signed_literal_shifts.rs");
+}
 mod narrow_arithmetic;
 mod spec_arithmetic;
 pub(in crate::kernel) use narrow_arithmetic::{
@@ -19,14 +24,7 @@ type ValidShiftCountEvaluator = fn(
     ExecutionFacts,
     Vec<ProofObligation>,
     &PureFactContext,
-) -> Vec<ExpressionPath>;
-
-type ValidInt64ShiftCountEvaluator = fn(
-    MachineTerm,
-    MachineTerm,
-    ExecutionFacts,
-    Vec<ProofObligation>,
-    &PureFactContext,
+    bool,
 ) -> Vec<ExpressionPath>;
 
 fn program_type_mismatch_expression_path(
@@ -67,6 +65,11 @@ fn split_on_undefined_behavior(
         }],
         Some(false) => defined(facts, obligations),
         None => {
+            if let Some(requirement) = conditional_signed_overflow_requirement(&undefined) {
+                let mut obligations = obligations;
+                obligations.push(requirement);
+                return defined(facts, obligations);
+            }
             let mut defined_facts = facts.clone();
             add_arithmetic_branch_fact(&mut defined_facts, assumptions, undefined.clone(), false)
                 .expect("an undecided undefined-behavior condition should be consistent");
@@ -82,6 +85,34 @@ fn split_on_undefined_behavior(
             paths
         }
     }
+}
+
+/// Keep the undecided overflow check on the value path of a conditional
+/// operand. A caller that evaluates a branch will prefix its requirement
+/// with the branch facts before merging the paths.
+fn conditional_signed_overflow_requirement(overflow: &ConditionTerm) -> Option<ProofObligation> {
+    if !IN_CONDITIONAL_OPERAND.get() {
+        return None;
+    }
+    let ConditionTerm::Overflows {
+        format,
+        op,
+        left,
+        right,
+    } = overflow
+    else {
+        return None;
+    };
+    let operation = match op {
+        OverflowOperation::Add => MachineBinaryOp::Add,
+        OverflowOperation::Multiply => MachineBinaryOp::Multiply,
+        _ => return None,
+    };
+    let goal = Proposition::signed_arithmetic_domain(*format, operation, left, right);
+    let mut obligation = ProofObligation::verification_condition(goal)
+        .with_context("signed overflow in a conditional operand must be ruled out");
+    obligation.signed_arithmetic_bound = true;
+    Some(obligation)
 }
 
 /// Publish arithmetic branch evidence using ordinary propositions. The old
@@ -114,7 +145,12 @@ fn add_arithmetic_branch_fact(
                 ))
             }
             OverflowOperation::ShiftLeft => Some(Proposition::condition_is(
-                ConditionTerm::signed_shift_result_fits(*format, *left.clone(), *right.clone()),
+                ConditionTerm::signed_shift_result_fits(
+                    *format,
+                    *left.clone(),
+                    *right.clone(),
+                    false,
+                ),
                 true,
             )),
             _ => None,
@@ -1966,6 +2002,23 @@ fn pointer_difference_offsets<'a>(
     Some((left, right))
 }
 
+/// `left - right` in elements of `byte_width` bytes when the two addresses
+/// share no written base: the signed difference of their address bits,
+/// divided by the element width. C defines the result only for pointers into
+/// one array object (C11 6.5.6p9), where the distance is a whole number of
+/// elements, so the truncating quotient is exact.
+fn symbolic_pointer_difference(left: &Address, right: &Address, byte_width: u32) -> MachineTerm {
+    let bytes = MachineTerm::int64_from_uint64_bits(MachineTerm::uint64_subtract(
+        MachineTerm::object_pointer_address(left.clone(), None),
+        MachineTerm::object_pointer_address(right.clone(), None),
+    ));
+    if byte_width == 1 {
+        bytes
+    } else {
+        MachineTerm::int64_divide(bytes, MachineTerm::int64_constant(i64::from(byte_width)))
+    }
+}
+
 fn apply_pointer_difference(
     left: &Address,
     right: &Address,
@@ -2035,10 +2088,15 @@ fn apply_pointer_difference(
     let indices = pointer_difference_offsets(left, right)
         .and_then(|(left, right)| Some((index(left)?, index(right)?)));
     let Some((left, right)) = indices else {
+        // The operands are built on different terms, such as two reads of
+        // one field across a store. Their distance is the difference of
+        // their addresses in elements, whatever the facts say; the proof
+        // relates it to their offsets. Same-object provenance was already
+        // decided or owed by the caller's guard.
         return vec![ExpressionPath {
-            outcome: ExpressionOutcome::RuntimeError(
-                RuntimeError::UnsupportedPointerSubtractionOffsets,
-            ),
+            outcome: ExpressionOutcome::Value(ProgramValue::Int64(symbolic_pointer_difference(
+                left, right, byte_width,
+            ))),
             facts,
             obligations,
         }];
@@ -2115,6 +2173,7 @@ fn apply_same_allocation_pointer_operation(
     state: &ExecutionState,
     left: Pointer,
     right: Pointer,
+    context: &'static str,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
@@ -2142,6 +2201,7 @@ fn apply_same_allocation_pointer_operation(
                     apply_same_allocation_guard(
                         &guard_left,
                         &guard_right,
+                        context,
                         facts,
                         obligations,
                         assumptions,
@@ -2167,8 +2227,9 @@ fn apply_same_allocation_pointer_operation(
 fn apply_same_allocation_guard(
     left: &Pointer,
     right: &Pointer,
+    context: &'static str,
     mut facts: ExecutionFacts,
-    obligations: Vec<ProofObligation>,
+    mut obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
     apply: impl FnOnce(ExecutionFacts, Vec<ProofObligation>) -> Vec<ExpressionPath>,
 ) -> Vec<ExpressionPath> {
@@ -2184,28 +2245,16 @@ fn apply_same_allocation_guard(
             facts,
             obligations,
         }],
+        // Undecided here: C's precondition is the proof's to establish. It
+        // becomes an obligation at the operation, stated as written, and the
+        // path continues under it; the operation itself decides nothing more.
         None => {
-            let mut invalid_facts = facts.clone();
-            if add_path_fact(&mut facts, assumptions, fact.clone()).is_none() {
+            obligations
+                .push(ProofObligation::verification_condition(fact.clone()).with_context(context));
+            if add_path_fact(&mut facts, assumptions, fact).is_none() {
                 return Vec::new();
             }
-            let mut paths = apply(facts, obligations.clone());
-            if add_path_fact(
-                &mut invalid_facts,
-                assumptions,
-                Proposition::Not(Box::new(fact)),
-            )
-            .is_some()
-            {
-                paths.push(ExpressionPath {
-                    outcome: ExpressionOutcome::UndefinedBehavior(
-                        UndefinedBehavior::PointerArithmetic,
-                    ),
-                    facts: invalid_facts,
-                    obligations,
-                });
-            }
-            paths
+            apply(facts, obligations)
         }
     }
 }
@@ -2536,6 +2585,7 @@ pub(super) fn apply_program_comparison(
                 state,
                 left,
                 right,
+                "pointer comparison requires both pointers in one object (C11 6.5.8p5)",
                 facts,
                 obligations,
                 assumptions,
@@ -2809,6 +2859,7 @@ pub(in crate::kernel) fn apply_program_subtract(
                 state,
                 left,
                 right,
+                "pointer subtraction requires both pointers in one object (C11 6.5.6p9)",
                 facts,
                 obligations,
                 assumptions,
@@ -4240,6 +4291,15 @@ pub(in crate::kernel) fn apply_program_int32_add(
             obligations,
         }],
         None => {
+            if let Some(requirement) = conditional_signed_overflow_requirement(&overflow) {
+                let mut obligations = obligations;
+                obligations.push(requirement);
+                return vec![ExpressionPath {
+                    outcome: ExpressionOutcome::Value(int32(program_int32_add_value(left, right))),
+                    facts,
+                    obligations,
+                }];
+            }
             let mut normal_facts = facts.clone();
             add_arithmetic_branch_fact(&mut normal_facts, assumptions, overflow.clone(), false)
                 .expect("unknown overflow fact should be consistent");
@@ -4361,7 +4421,7 @@ fn apply_program_int32_division_like(
 ) -> Vec<ExpressionPath> {
     let zero = MachineTerm::constant(0);
     let divides_by_zero = ConditionTerm::equal(right.clone(), zero);
-    match decide_with_facts(assumptions, &facts, &divides_by_zero) {
+    match division_domains::decide_zero(&right, &divides_by_zero, assumptions, &facts) {
         Some(true) => {
             return vec![ExpressionPath {
                 outcome: ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::DivisionByZero),
@@ -4464,7 +4524,7 @@ fn apply_program_int64_division_like(
     result: fn(MachineTerm, MachineTerm) -> MachineTerm,
 ) -> Vec<ExpressionPath> {
     let zero = ConditionTerm::int64_equal(right.clone(), MachineTerm::int64_constant(0));
-    match decide_with_facts(assumptions, &facts, &zero) {
+    match division_domains::decide_zero(&right, &zero, assumptions, &facts) {
         Some(true) => {
             return vec![ExpressionPath {
                 outcome: ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::DivisionByZero),
@@ -4518,8 +4578,8 @@ fn apply_program_int64_division_nonzero(
     )
 }
 
-/// One conditional successor with C's divisor domain left for the driver.
-/// Even an already known domain is retained; this operation has no fact context.
+/// Keep C's divisor domain for the driver unless the evaluated operands' path
+/// already establishes it. Only facts available before this operation count.
 fn apply_program_unsigned_division_like(
     width: ScalarWidth,
     left: MachineTerm,
@@ -4535,9 +4595,20 @@ fn apply_program_unsigned_division_like(
         ScalarWidth::UInt64 => (MachineTerm::uint64_constant(0), ProgramValue::UInt64),
         _ => unreachable!("unsigned division width"),
     };
-    let zero_divisor =
-        ConditionTerm::machine_compare(width.format(), CompareRelation::Equal, right.clone(), zero);
-    obligations.push(ProofObligation::nonzero_unsigned_divisor(zero_divisor));
+    let equals = |left, right| {
+        ConditionTerm::machine_compare(width.format(), CompareRelation::Equal, left, right)
+    };
+    let zero_divisor = equals(right.clone(), zero.clone());
+    let already_guarded = !facts.is_empty()
+        && (facts
+            .contains_indexed_proposition(&Proposition::condition_is(zero_divisor.clone(), false))
+            || facts.contains_indexed_proposition(&Proposition::condition_is(
+                equals(zero, right.clone()),
+                false,
+            )));
+    if !already_guarded {
+        obligations.push(ProofObligation::nonzero_unsigned_divisor(zero_divisor));
+    }
     vec![ExpressionPath {
         outcome: ExpressionOutcome::Value(wrap(result(left, right))),
         facts,
@@ -4706,7 +4777,7 @@ pub(in crate::kernel) fn apply_program_shift_left(
             assumptions,
             unsigned_count,
             right_is_64_bit,
-            |left, right, facts, obligations, _| {
+            |left, right, facts, obligations, _, _| {
                 vec![ExpressionPath {
                     outcome: ExpressionOutcome::Value(uint32(MachineTerm::uint32_shift_left(
                         left, right,
@@ -4801,7 +4872,7 @@ pub(in crate::kernel) fn apply_program_shift_right(
             assumptions,
             unsigned_count,
             right_is_64_bit,
-            |left, right, facts, obligations, _| {
+            |left, right, facts, obligations, _, _| {
                 vec![ExpressionPath {
                     outcome: ExpressionOutcome::Value(uint32(MachineTerm::logical_shift_right(
                         left, right,
@@ -4819,7 +4890,7 @@ pub(in crate::kernel) fn apply_program_shift_right(
             assumptions,
             unsigned_count,
             right_is_64_bit,
-            |left, right, facts, obligations, _| {
+            |left, right, facts, obligations, _, _| {
                 vec![ExpressionPath {
                     outcome: ExpressionOutcome::Value(int32(MachineTerm::arithmetic_shift_right(
                         left, right,
@@ -4849,7 +4920,7 @@ fn apply_program_int64_with_valid_shift_count(
     assumptions: &PureFactContext,
     unsigned_count: bool,
     right_is_64_bit: bool,
-    apply_valid_count: ValidInt64ShiftCountEvaluator,
+    apply_valid_count: ValidShiftCountEvaluator,
 ) -> Vec<ExpressionPath> {
     let count = if right_is_64_bit {
         right
@@ -4881,6 +4952,7 @@ fn apply_program_int64_with_valid_shift_count(
                 facts,
                 obligations,
                 assumptions,
+                unsigned_count,
                 apply_valid_count,
             )
         }
@@ -4891,6 +4963,7 @@ fn apply_program_int64_with_valid_shift_count(
             facts,
             obligations,
             assumptions,
+            unsigned_count,
             apply_valid_count,
         ),
         None => {
@@ -4908,6 +4981,7 @@ fn apply_program_int64_with_valid_shift_count(
                     valid_facts,
                     obligations.clone(),
                     assumptions,
+                    unsigned_count,
                     apply_valid_count,
                 )
             } else {
@@ -4922,6 +4996,7 @@ fn apply_program_int64_with_valid_shift_count(
                     valid_facts,
                     obligations.clone(),
                     assumptions,
+                    unsigned_count,
                     apply_valid_count,
                 )
             };
@@ -4942,7 +5017,8 @@ fn apply_program_int64_shift_count_upper_bound(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-    apply_valid_count: ValidInt64ShiftCountEvaluator,
+    unsigned_count: bool,
+    apply_valid_count: ValidShiftCountEvaluator,
 ) -> Vec<ExpressionPath> {
     split_on_undefined_behavior(
         too_large,
@@ -4950,7 +5026,9 @@ fn apply_program_int64_shift_count_upper_bound(
         facts,
         obligations,
         assumptions,
-        |facts, obligations| apply_valid_count(left, count, facts, obligations, assumptions),
+        |facts, obligations| {
+            apply_valid_count(left, count, facts, obligations, assumptions, unsigned_count)
+        },
     )
 }
 
@@ -4960,6 +5038,7 @@ fn apply_program_int64_shift_left_valid_count(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
+    unsigned_count: bool,
 ) -> Vec<ExpressionPath> {
     let negative_left =
         ConditionTerm::int64_signed_less_than(left.clone(), MachineTerm::int64_constant(0));
@@ -4970,7 +5049,14 @@ fn apply_program_int64_shift_left_valid_count(
         obligations,
         assumptions,
         |facts, obligations| {
-            apply_program_int64_shift_left_nonnegative(left, right, facts, obligations, assumptions)
+            apply_program_int64_shift_left_nonnegative(
+                left,
+                right,
+                facts,
+                obligations,
+                assumptions,
+                unsigned_count,
+            )
         },
     )
 }
@@ -4981,28 +5067,28 @@ fn apply_program_int64_shift_left_nonnegative(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
+    unsigned_count: bool,
 ) -> Vec<ExpressionPath> {
-    let overflow = ConditionTerm::bool_not(ConditionTerm::signed_shift_result_fits(
+    let fits = if literal_signed_shift_fits(
         MachineIntegerType::Int64,
-        left.clone(),
-        right.clone(),
-    ));
-    split_on_undefined_behavior(
-        overflow,
-        UndefinedBehavior::SignedOverflow,
-        facts,
-        obligations,
+        &left,
+        &right,
+        unsigned_count,
         assumptions,
-        |facts, obligations| {
-            vec![ExpressionPath {
-                outcome: ExpressionOutcome::Value(ProgramValue::Int64(
-                    MachineTerm::int64_shift_left(left, right),
-                )),
-                facts,
-                obligations,
-            }]
-        },
-    )
+        &facts,
+    ) {
+        ConditionTerm::Constant(true)
+    } else {
+        ConditionTerm::signed_shift_result_fits(
+            MachineIntegerType::Int64,
+            left.clone(),
+            right.clone(),
+            unsigned_count,
+        )
+    };
+    signed_shift_result_path(fits, facts, obligations, assumptions, || {
+        ProgramValue::Int64(MachineTerm::int64_shift_left(left, right))
+    })
 }
 
 fn apply_program_uint64_shift_left_valid_count(
@@ -5011,6 +5097,7 @@ fn apply_program_uint64_shift_left_valid_count(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     _assumptions: &PureFactContext,
+    _unsigned_count: bool,
 ) -> Vec<ExpressionPath> {
     vec![ExpressionPath {
         outcome: ExpressionOutcome::Value(ProgramValue::UInt64(MachineTerm::uint64_shift_left(
@@ -5027,6 +5114,7 @@ fn apply_program_int64_shift_right_valid_count(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     _assumptions: &PureFactContext,
+    _unsigned_count: bool,
 ) -> Vec<ExpressionPath> {
     vec![ExpressionPath {
         outcome: ExpressionOutcome::Value(ProgramValue::Int64(
@@ -5043,6 +5131,7 @@ fn apply_program_uint64_shift_right_valid_count(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     _assumptions: &PureFactContext,
+    _unsigned_count: bool,
 ) -> Vec<ExpressionPath> {
     vec![ExpressionPath {
         outcome: ExpressionOutcome::Value(ProgramValue::UInt64(
@@ -5208,6 +5297,7 @@ fn apply_program_int32_with_nonnegative_wide_shift_count(
                 facts,
                 obligations,
                 assumptions,
+                unsigned_count,
             )
         },
     )
@@ -5233,7 +5323,9 @@ fn apply_program_int32_with_nonnegative_shift_count(
         facts,
         obligations,
         assumptions,
-        |facts, obligations| apply_valid_count(left, right, facts, obligations, assumptions),
+        |facts, obligations| {
+            apply_valid_count(left, right, facts, obligations, assumptions, unsigned_count)
+        },
     )
 }
 
@@ -5243,6 +5335,7 @@ fn apply_program_int32_shift_left_valid_count(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
+    unsigned_count: bool,
 ) -> Vec<ExpressionPath> {
     let negative_left = ConditionTerm::signed_less_than(left.clone(), MachineTerm::constant(0));
     match decide_with_facts(assumptions, &facts, &negative_left) {
@@ -5260,6 +5353,7 @@ fn apply_program_int32_shift_left_valid_count(
                 facts,
                 obligations,
                 assumptions,
+                unsigned_count,
             );
         }
         None => {}
@@ -5279,6 +5373,7 @@ fn apply_program_int32_shift_left_valid_count(
         normal_facts,
         obligations.clone(),
         assumptions,
+        unsigned_count,
     );
     paths.push(ExpressionPath {
         outcome: ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::InvalidShift),
@@ -5294,26 +5389,123 @@ fn apply_program_int32_shift_left_nonnegative(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
+    unsigned_count: bool,
 ) -> Vec<ExpressionPath> {
-    let overflow = ConditionTerm::bool_not(ConditionTerm::signed_shift_result_fits(
+    let fits = if literal_signed_shift_fits(
         MachineIntegerType::Int32,
-        left.clone(),
-        right.clone(),
-    ));
-    split_on_undefined_behavior(
-        overflow,
-        UndefinedBehavior::SignedOverflow,
+        &left,
+        &right,
+        unsigned_count,
+        assumptions,
+        &facts,
+    ) {
+        ConditionTerm::Constant(true)
+    } else {
+        ConditionTerm::signed_shift_result_fits(
+            MachineIntegerType::Int32,
+            left.clone(),
+            right.clone(),
+            unsigned_count,
+        )
+    };
+    signed_shift_result_path(fits, facts, obligations, assumptions, || {
+        int32(MachineTerm::shift_left(left, right))
+    })
+}
+
+/// This path has already checked the count's validity and the left operand's
+/// sign. For a positive literal, the number of shifts before the sign bit
+/// is reached gives an ordinary upper-bound query on the original count.
+fn literal_signed_shift_fits(
+    format: MachineIntegerType,
+    left: &MachineTerm,
+    count: &MachineTerm,
+    unsigned_count: bool,
+    assumptions: &PureFactContext,
+    facts: &ExecutionFacts,
+) -> bool {
+    let Some(value) = format
+        .constant_from_term(left)
+        .and_then(|value| value.to_i128())
+    else {
+        return false;
+    };
+    if value <= 0 {
+        return false;
+    }
+    let bits = format.format().bits();
+    let limit = bits - (value as u128).ilog2() - 1;
+    let (count_format, endpoint) = match (format, unsigned_count) {
+        (MachineIntegerType::Int32, true) => {
+            (MachineIntegerType::UInt32, MachineTerm::constant(limit))
+        }
+        (MachineIntegerType::Int64, true) => (
+            MachineIntegerType::UInt64,
+            MachineTerm::uint64_constant(limit.into()),
+        ),
+        (MachineIntegerType::Int64, false) => (
+            MachineIntegerType::Int64,
+            MachineTerm::int64_constant(limit.into()),
+        ),
+        _ => (MachineIntegerType::Int32, MachineTerm::constant(limit)),
+    };
+    crate::instrumentation::record_deterministic_work(1);
+    let condition = condition_for_operand_views(
+        count_format,
+        CompareRelation::LessThan,
+        [
+            MachineOperandView::Legacy(count),
+            MachineOperandView::Legacy(&endpoint),
+        ],
+    );
+    indexed_condition_value(assumptions, facts, &condition) == Some(true)
+}
+
+/// Decide a fixed comparison from its exact context or path index, without
+/// scanning additional path facts. Retain the written comparison otherwise.
+fn indexed_condition_value(
+    assumptions: &PureFactContext,
+    facts: &ExecutionFacts,
+    condition: &ConditionTerm,
+) -> Option<bool> {
+    if let ConditionTerm::Constant(value) = condition {
+        return Some(*value);
+    }
+    assumptions.known_condition_value(condition).or_else(|| {
+        [true, false].into_iter().find(|truth| {
+            facts
+                .contains_indexed_proposition(&Proposition::condition_is(condition.clone(), *truth))
+        })
+    })
+}
+
+/// After validating the count and operand sign, retain an undecided
+/// representability check as a requirement on the shift's value path.
+fn signed_shift_result_path(
+    fits: ConditionTerm,
+    facts: ExecutionFacts,
+    mut obligations: Vec<ProofObligation>,
+    assumptions: &PureFactContext,
+    result: impl FnOnce() -> ProgramValue,
+) -> Vec<ExpressionPath> {
+    let outcome = match decide_with_facts(assumptions, &facts, &fits) {
+        Some(false) => ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::SignedOverflow),
+        decision => {
+            if decision.is_none() {
+                let mut obligation =
+                    ProofObligation::verification_condition(Proposition::condition_is(fits, true))
+                        .with_context("signed overflow from a left shift must be ruled out");
+                obligation.signed_arithmetic_bound = true;
+                obligations.push(obligation);
+            }
+            ExpressionOutcome::Value(result())
+        }
+    };
+    vec![ExpressionPath {
+        outcome,
         facts,
         obligations,
-        assumptions,
-        |facts, obligations| {
-            vec![ExpressionPath {
-                outcome: ExpressionOutcome::Value(int32(MachineTerm::shift_left(left, right))),
-                facts,
-                obligations,
-            }]
-        },
-    )
+    }]
 }
 
 pub(in crate::kernel) fn evaluate_program_equal_paths(
@@ -5737,9 +5929,13 @@ pub(in crate::kernel) fn evaluate_program_logical_and_paths(
                         &left_truthiness.facts,
                         &left_truthiness.obligations,
                     );
-                    for right_path in
-                        evaluate_program_condition_paths(state, right, &right_assumptions, budget)?
-                    {
+                    for mut right_path in evaluate_conditional_operand(|| {
+                        evaluate_program_condition_paths(state, right, &right_assumptions, budget)
+                    })? {
+                        guard_conditional_arithmetic(
+                            &left_truthiness.facts,
+                            &mut right_path.obligations,
+                        );
                         let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
                             &left_truthiness.facts,
                             &left_truthiness.obligations,
@@ -5835,9 +6031,13 @@ pub(in crate::kernel) fn evaluate_program_logical_or_paths(
                         &left_truthiness.facts,
                         &left_truthiness.obligations,
                     );
-                    for right_path in
-                        evaluate_program_condition_paths(state, right, &right_assumptions, budget)?
-                    {
+                    for mut right_path in evaluate_conditional_operand(|| {
+                        evaluate_program_condition_paths(state, right, &right_assumptions, budget)
+                    })? {
+                        guard_conditional_arithmetic(
+                            &left_truthiness.facts,
+                            &mut right_path.obligations,
+                        );
                         let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
                             &left_truthiness.facts,
                             &left_truthiness.obligations,

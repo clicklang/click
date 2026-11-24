@@ -2,9 +2,9 @@
 
 `a != b` holds when the premises refute `a == b`: `k < j` gives `k != j`,
 because `k == j` with `k < j` is a linear contradiction. `solve() using`
-proves it from the listed premises, and the omitted proof from the connected facts, as
-`intro()`, which adds `k == j` and leaves `false`, and an arithmetic
-certificate for `false`. This holds for machine and `Integer` operands.
+proves it from the listed premises, and the omitted proof from the connected
+facts. Expansion splits on `k == j` and proves `false` in the equal arm.
+This holds for machine and `Integer` operands.
 
 ```click
 theorem native_lt_neq(k: int32, j: int32) {

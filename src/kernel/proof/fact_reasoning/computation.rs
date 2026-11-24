@@ -408,6 +408,32 @@ fn stored_uint8_observation(term: &IntegerTerm) -> Option<num_bigint::BigInt> {
     stored_uint8_literal(value.ty(), value.operand_view()).map(|byte| byte.to_integer())
 }
 
+fn literal_word_bits(operand: MachineOperandView<'_>, width: u32) -> Option<u128> {
+    let MachineTerm::Constant { format, bits } = operand.literal()? else {
+        return None;
+    };
+    (format.format().bits() == width).then_some(bits)
+}
+
+/// A same-width OR preserves every set bit of either operand. Only the root
+/// and its immediate operands matter; the other operand can remain opaque.
+fn bitwise_or_has_set_bit(value: MachineOperandView<'_>, width: u32) -> bool {
+    let Some((format, MachineBinaryOp::BitwiseOr, operands)) = value.binary() else {
+        return false;
+    };
+    format.format().bits() == width
+        && operands
+            .into_iter()
+            .any(|operand| literal_word_bits(operand, width).is_some_and(|bits| bits != 0))
+}
+
+fn observed_bitwise_or_has_set_bit(value: &IntegerTerm) -> bool {
+    let IntegerTerm::Machine(value) = value else {
+        return false;
+    };
+    bitwise_or_has_set_bit(value.operand_view(), value.ty().format().bits())
+}
+
 fn condition_value(condition: &ConditionTerm) -> Option<bool> {
     match condition {
         ConditionTerm::Constant(value) => Some(*value),
@@ -426,6 +452,16 @@ fn condition_value(condition: &ConditionTerm) -> Option<bool> {
                 | ConditionTerm::IntegerGreaterEqual(left, right) => (left, right),
                 _ => unreachable!(),
             };
+            if matches!(
+                condition,
+                ConditionTerm::IntegerEqual(..) | ConditionTerm::IntegerNotEqual(..)
+            ) && ((left.as_const().is_some_and(num_traits::Zero::is_zero)
+                && observed_bitwise_or_has_set_bit(right))
+                || (right.as_const().is_some_and(num_traits::Zero::is_zero)
+                    && observed_bitwise_or_has_set_bit(left)))
+            {
+                return Some(matches!(condition, ConditionTerm::IntegerNotEqual(..)));
+            }
             if left == right {
                 return Some(matches!(
                     condition,
@@ -476,6 +512,15 @@ fn condition_value(condition: &ConditionTerm) -> Option<bool> {
             left,
             right,
         } => {
+            let a = MachineOperandView::Legacy(left);
+            let b = MachineOperandView::Legacy(right);
+            let width = format.format().bits();
+            if *relation == CompareRelation::Equal
+                && ((literal_word_bits(a, width) == Some(0) && bitwise_or_has_set_bit(b, width))
+                    || (literal_word_bits(b, width) == Some(0) && bitwise_or_has_set_bit(a, width)))
+            {
+                return Some(false);
+            }
             if *format == MachineIntegerType::Int32
                 && *relation == CompareRelation::Equal
                 && (unchanged_machine_folds_equal(left, right)
@@ -484,8 +529,6 @@ fn condition_value(condition: &ConditionTerm) -> Option<bool> {
             {
                 return Some(true);
             }
-            let a = MachineOperandView::Legacy(left);
-            let b = MachineOperandView::Legacy(right);
             if *format == MachineIntegerType::Int32
                 && *relation == CompareRelation::Equal
                 && (a.conditional_view().is_some() || b.conditional_view().is_some())
@@ -774,16 +817,20 @@ pub(in crate::kernel) fn closed_algebraic_if_comparison(goal: &Proposition) -> O
     })
 }
 
-fn selected_closed_integer_arm(term: &SharedIntegerTerm) -> Option<&SharedIntegerTerm> {
-    let IntegerTerm::If {
-        condition,
-        then_term,
-        else_term,
-    } = term.as_ref()
+fn selected_closed_integer_arm(term: &KernelTerm) -> Option<&KernelTerm> {
+    let KernelTermNode::IntegerIf {
+        arguments: [guard, then_term, else_term],
+    } = term.node()
     else {
         return None;
     };
-    let truth = literal_value_if_guard(condition)?;
+    let truth = match guard.node() {
+        KernelTermNode::BoolLiteral(truth) => *truth,
+        _ if is_literal_value_if_guard_root(guard) => {
+            literal_value_if_guard(&KernelTermExport::condition(guard).ok()?)?
+        }
+        _ => return None,
+    };
     Some(if truth { then_term } else { else_term })
 }
 
@@ -791,12 +838,12 @@ pub(in crate::kernel) fn closed_integer_if_comparison(
     condition: &ConditionTerm,
 ) -> Option<ConditionTerm> {
     map_integer_comparison(condition, |term| {
-        let mut arm = selected_closed_integer_arm(term)?;
+        let mut arm = selected_closed_integer_arm(term.root())?;
         while let Some(selected) = selected_closed_integer_arm(arm) {
             crate::instrumentation::record_deterministic_work(1);
             arm = selected;
         }
-        Some(arm.clone())
+        Some(SharedIntegerTerm::from_root(arm.clone()))
     })
 }
 
@@ -857,9 +904,7 @@ fn algebraic_equality(left: &AlgebraicTerm, right: &AlgebraicTerm) -> Option<boo
     {
         return Some(true);
     }
-    if constructor_match_forwards_payload(left, right)
-        || constructor_match_forwards_payload(right, left)
-    {
+    if scoped_constructor_matches_equal(left, right) {
         return Some(true);
     }
     let projected_left = constructor_match_projection(left);
@@ -899,6 +944,7 @@ fn algebraic_equality(left: &AlgebraicTerm, right: &AlgebraicTerm) -> Option<boo
 fn is_constructor_payload_literal(field: &AlgebraicValue) -> bool {
     match field {
         AlgebraicValue::Integer(IntegerTerm::Constant(_)) => true,
+        AlgebraicValue::Program(ProgramValue::Bool(word)) => word.bool_constant_value().is_some(),
         AlgebraicValue::Program(integer_c_value!(MachineTerm::Constant { format, .. })) => {
             field.value_type() == AlgebraicValueType::Program(format.program_type())
         }
@@ -906,99 +952,293 @@ fn is_constructor_payload_literal(field: &AlgebraicValue) -> bool {
     }
 }
 
-/// Follow selected constructor arms that forward scalar payloads into a
-/// constructor, possibly alongside literals or captured Integer variables.
-/// Resolve each binding in its scrutinee's scope before checking the result.
-fn constructor_match_forwards_payload(matched: &AlgebraicTerm, expected: &AlgebraicTerm) -> bool {
-    let AlgebraicTermNode::Constructor {
-        variant: expected_variant,
-        fields: expected_fields,
-    } = &expected.node
+fn is_constructor_payload(field: &AlgebraicValue) -> bool {
+    let AlgebraicValue::Algebraic(AlgebraicTerm {
+        node: AlgebraicTermNode::Constructor { fields, .. },
+        ..
+    }) = field
     else {
-        return false;
+        return constructor_payload_variable(field).is_some()
+            || is_constructor_payload_literal(field);
     };
-    if !matches!(matched.node, AlgebraicTermNode::Match { .. }) {
-        return false;
+    let mut pending = vec![fields.as_slice()];
+    while let Some(fields) = pending.pop() {
+        crate::instrumentation::record_deterministic_work(fields.len());
+        for field in fields {
+            if let AlgebraicValue::Algebraic(AlgebraicTerm {
+                node: AlgebraicTermNode::Constructor { fields, .. },
+                ..
+            }) = field
+            {
+                pending.push(fields);
+            } else if constructor_payload_variable(field).is_none()
+                && !is_constructor_payload_literal(field)
+            {
+                return false;
+            }
+        }
     }
+    true
+}
 
-    let mut payloads = std::collections::HashMap::new();
-    let mut bindings = Vec::new();
-    let mut selected = matched;
-    while let AlgebraicTermNode::Match { scrutinee, arms } = &selected.node {
-        let AlgebraicTermNode::Constructor { variant, fields } = &scrutinee.node else {
+fn constructor_payload_variable(field: &AlgebraicValue) -> Option<Variable> {
+    match field {
+        AlgebraicValue::Program(integer_c_value!(MachineTerm::Variable(variable)))
+        | AlgebraicValue::Integer(IntegerTerm::Variable(variable))
+        | AlgebraicValue::Algebraic(AlgebraicTerm {
+            node: AlgebraicTermNode::Variable(variable),
+            ..
+        }) => Some(*variable),
+        AlgebraicValue::Program(ProgramValue::Bool(MachineTerm::BoolCast {
+            to: MachineIntegerType::UInt8,
+            value,
+        })) => match value.as_ref() {
+            ConditionTerm::Variable(variable) => Some(*variable),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn same_constructor_payload_type(left: &AlgebraicValue, right: &AlgebraicValue) -> bool {
+    match (left, right) {
+        (AlgebraicValue::Algebraic(left), AlgebraicValue::Algebraic(right)) => {
+            left.algebraic_type == right.algebraic_type
+        }
+        _ => left.value_type() == right.value_type(),
+    }
+}
+
+#[derive(Clone, Copy)]
+struct ConstructorPayload<'a> {
+    value: &'a AlgebraicValue,
+    scope: usize,
+}
+
+// Each binder is installed once. A payload sees only bindings already in
+// scope where the payload was written.
+type ConstructorBindings<'a> = std::collections::HashMap<Variable, (usize, ConstructorPayload<'a>)>;
+
+impl<'a> ConstructorPayload<'a> {
+    fn resolve(self, bindings: &ConstructorBindings<'a>) -> Self {
+        constructor_payload_variable(self.value)
+            .and_then(|variable| bindings.get(&variable))
+            .filter(|(scope, _)| *scope <= self.scope)
+            .map_or(self, |(_, payload)| *payload)
+    }
+}
+
+fn constructor_result_fields_match(
+    result: &[AlgebraicValue],
+    expected: &[AlgebraicValue],
+    left: &ConstructorResult<'_>,
+    right: &ConstructorResult<'_>,
+) -> bool {
+    let mut pending = vec![(result, expected, left.scope, right.scope)];
+    while let Some((result, expected, left_scope, right_scope)) = pending.pop() {
+        if result.len() != expected.len() {
             return false;
+        }
+        crate::instrumentation::record_deterministic_work(result.len());
+        for (field, expected) in result.iter().zip(expected) {
+            let resolved = ConstructorPayload {
+                value: field,
+                scope: left_scope,
+            }
+            .resolve(&left.bindings);
+            let expected_resolved = ConstructorPayload {
+                value: expected,
+                scope: right_scope,
+            }
+            .resolve(&right.bindings);
+            let payload = resolved.value;
+            if !same_constructor_payload_type(payload, field)
+                || !same_constructor_payload_type(expected_resolved.value, expected)
+            {
+                return false;
+            }
+            let expected = expected_resolved.value;
+            if let (
+                AlgebraicValue::Algebraic(AlgebraicTerm {
+                    node: AlgebraicTermNode::Constructor { variant, fields },
+                    ..
+                }),
+                AlgebraicValue::Algebraic(AlgebraicTerm {
+                    node:
+                        AlgebraicTermNode::Constructor {
+                            variant: expected_variant,
+                            fields: expected_fields,
+                        },
+                    ..
+                }),
+            ) = (payload, expected)
+            {
+                if variant != expected_variant || !same_constructor_payload_type(payload, expected)
+                {
+                    return false;
+                }
+                pending.push((
+                    fields,
+                    expected_fields,
+                    resolved.scope,
+                    expected_resolved.scope,
+                ));
+            } else if !(constructor_payload_variable(payload).is_some()
+                || is_constructor_payload_literal(payload))
+                || payload != expected
+            {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+struct ConstructorResult<'a> {
+    term: &'a AlgebraicTerm,
+    scope: usize,
+    bindings: ConstructorBindings<'a>,
+}
+
+/// Resolve each selected binding in its scrutinee's scope, keeping the
+/// bindings for this side of the equality together with the result.
+fn scoped_constructor_result(term: &AlgebraicTerm) -> Option<ConstructorResult<'_>> {
+    let mut payloads = ConstructorBindings::new();
+    let mut scope = 0;
+    let mut bindings = Vec::new();
+    let mut selected = term;
+    loop {
+        if let AlgebraicTermNode::If {
+            condition,
+            then_term,
+            else_term,
+        } = &selected.node
+        {
+            crate::instrumentation::record_deterministic_work(1);
+            let truth = if let ConditionTerm::Variable(variable) = condition.as_ref() {
+                let (_, payload) = payloads.get(variable)?;
+                let AlgebraicValue::Program(ProgramValue::Bool(word)) = payload.value else {
+                    return None;
+                };
+                word.bool_constant_value()?
+            } else {
+                literal_value_if_guard(condition)?
+            };
+            selected = if truth { then_term } else { else_term };
+            continue;
+        }
+        let AlgebraicTermNode::Match { scrutinee, arms } = &selected.node else {
+            break;
+        };
+        let (scrutinee, scrutinee_scope, already_checked) =
+            if let AlgebraicTermNode::Variable(variable) = &scrutinee.node {
+                let (_, payload) = payloads.get(variable)?;
+                let AlgebraicValue::Algebraic(value) = payload.value else {
+                    return None;
+                };
+                if value.algebraic_type != scrutinee.algebraic_type {
+                    return None;
+                }
+                (value, payload.scope, true)
+            } else {
+                (scrutinee.as_ref(), scope, false)
+            };
+        let AlgebraicTermNode::Constructor { variant, fields } = &scrutinee.node else {
+            return None;
         };
         crate::instrumentation::record_deterministic_work(arms.len() + fields.len());
-        let Some(arm) = arms.iter().find(|arm| arm.variant == *variant) else {
-            return false;
-        };
+        let arm = arms.iter().find(|arm| arm.variant == *variant)?;
         if arm.bindings.len() != fields.len() {
-            return false;
+            return None;
         }
         // The new bindings are in scope in the arm body, but not in its scrutinee.
         for (binder, field) in arm.bindings.iter().zip(fields) {
-            let (variable, payload) = match (binder, field) {
-                (
-                    AlgebraicValue::Program(integer_c_value!(MachineTerm::Variable(variable))),
-                    AlgebraicValue::Program(integer_c_value!(MachineTerm::Variable(source))),
-                )
-                | (
-                    AlgebraicValue::Integer(IntegerTerm::Variable(variable)),
-                    AlgebraicValue::Integer(IntegerTerm::Variable(source)),
-                ) => (variable, payloads.get(source).copied().unwrap_or(field)),
-                (
-                    AlgebraicValue::Program(integer_c_value!(MachineTerm::Variable(variable)))
-                    | AlgebraicValue::Integer(IntegerTerm::Variable(variable)),
-                    field,
-                ) if is_constructor_payload_literal(field) => (variable, field),
-                _ => return false,
-            };
-            let field_type = field.value_type();
-            if binder.value_type() != field_type || payload.value_type() != field_type {
-                return false;
+            let variable = constructor_payload_variable(binder)?;
+            // Previously bound constructors already passed the shape check.
+            if !already_checked && !is_constructor_payload(field) {
+                return None;
             }
-            bindings.push((*variable, payload));
+            let payload = ConstructorPayload {
+                value: field,
+                scope: scrutinee_scope,
+            }
+            .resolve(&payloads);
+            if !same_constructor_payload_type(binder, field)
+                || !same_constructor_payload_type(payload.value, field)
+            {
+                return None;
+            }
+            bindings.push((variable, payload));
         }
+        scope += 1;
         for (variable, payload) in bindings.drain(..) {
-            if payloads.insert(variable, payload).is_some() {
-                return false;
+            if payloads.insert(variable, (scope, payload)).is_some() {
+                return None;
             }
         }
         selected = &arm.body;
     }
 
-    let AlgebraicTermNode::Constructor {
-        variant: result_variant,
-        fields: result_fields,
-    } = &selected.node
-    else {
-        return false;
+    let result = if let AlgebraicTermNode::Variable(variable) = &selected.node
+        && let Some((_, payload)) = payloads.get(variable)
+    {
+        let AlgebraicValue::Algebraic(value) = payload.value else {
+            return None;
+        };
+        if value.algebraic_type != selected.algebraic_type {
+            return None;
+        }
+        scope = payload.scope;
+        value
+    } else {
+        selected
     };
-    if result_variant != expected_variant || result_fields.len() != expected_fields.len() {
+    Some(ConstructorResult {
+        term: result,
+        scope,
+        bindings: payloads,
+    })
+}
+
+fn scoped_constructor_matches_equal(left: &AlgebraicTerm, right: &AlgebraicTerm) -> bool {
+    if !matches!(left.node, AlgebraicTermNode::Match { .. })
+        && !matches!(right.node, AlgebraicTermNode::Match { .. })
+    {
         return false;
     }
-    crate::instrumentation::record_deterministic_work(result_fields.len());
-    result_fields
-        .iter()
-        .zip(expected_fields)
-        .all(|(field, expected)| {
-            let (variable, captured) = match field {
-                AlgebraicValue::Program(integer_c_value!(MachineTerm::Variable(variable))) => {
-                    (variable, None)
-                }
-                AlgebraicValue::Integer(IntegerTerm::Variable(variable)) => (variable, Some(field)),
-                _ => return is_constructor_payload_literal(field) && field == expected,
-            };
-            payloads
-                .get(variable)
-                .copied()
-                .or(captured)
-                .is_some_and(|payload| {
-                    payload.value_type() == field.value_type() && payload == expected
-                })
-        })
-        && matched.is_well_formed()
-        && expected.is_well_formed()
+    if ![left, right].iter().all(|term| {
+        matches!(
+            term.node,
+            AlgebraicTermNode::Match { .. }
+                | AlgebraicTermNode::Constructor { .. }
+                | AlgebraicTermNode::Variable(_)
+        )
+    }) {
+        return false;
+    }
+    let (Some(a), Some(b)) = (
+        scoped_constructor_result(left),
+        scoped_constructor_result(right),
+    ) else {
+        return false;
+    };
+    let equal = match (&a.term.node, &b.term.node) {
+        (
+            AlgebraicTermNode::Constructor { variant, fields },
+            AlgebraicTermNode::Constructor {
+                variant: expected_variant,
+                fields: expected_fields,
+            },
+        ) => {
+            variant == expected_variant
+                && constructor_result_fields_match(fields, expected_fields, &a, &b)
+        }
+        (AlgebraicTermNode::Variable(variable), AlgebraicTermNode::Variable(expected)) => {
+            variable == expected
+        }
+        _ => false,
+    };
+    equal && left.is_well_formed() && right.is_well_formed()
 }
 
 /// Select an algebraic field when the match names its constructor and
@@ -1582,9 +1822,10 @@ fn integer_affine_difference(
                 }
             }
             IntegerTerm::If { .. } => {
-                if let Some(arm) = selected_closed_integer_arm(&term) {
+                if let Some(arm) = selected_closed_integer_arm(term.root()) {
+                    let arm = SharedIntegerTerm::from_root(arm.clone());
                     stack.push((arm.clone(), false));
-                    reduced_operands.insert(term.id(), arm.clone());
+                    reduced_operands.insert(term.id(), arm);
                 }
             }
             IntegerTerm::AlgebraicMatch { .. } => {
@@ -1687,7 +1928,7 @@ mod tests {
             offset: AddressOffset::Constant(4),
         };
         let read = |memory: SymbolicMemory, pointer: &Address| {
-            MachineTerm::MemoryLoad(
+            MachineTerm::read_named(
                 ProgramPoint::at(&crate::kernel::intern_memory(memory)),
                 Box::new(pointer.clone()),
                 LoadKind::Int32,
@@ -1835,7 +2076,7 @@ mod tests {
             let before = memory.clone().store(base.clone(), int32(1));
             let after = before.clone().store(base.clone(), int32(u32::MAX));
             let check = |memory| {
-                let read = MachineTerm::MemoryLoad(
+                let read = MachineTerm::read_named(
                     ProgramPoint::at(&crate::kernel::intern_memory(memory)),
                     Box::new(base.clone()),
                     LoadKind::Int32,

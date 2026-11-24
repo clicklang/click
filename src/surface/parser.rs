@@ -776,6 +776,8 @@ fn removed_tactic_refusal(name: &str) -> Option<&'static str> {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) enum Token {
+    /// The input view carried into the loan of a generated shared pack.
+    SharedObjectView,
     Ident(String),
     Number(u32),
     // Keep literal metadata shared so adding Rust forms does not enlarge
@@ -882,6 +884,7 @@ impl Token {
             | Self::Lifetime(_)
             | Self::String(_)
             | Self::ByteString(_) => "",
+            Self::SharedObjectView => "shared object view",
             Self::LBrace => "{",
             Self::RBrace => "}",
             Self::LParen => "(",
@@ -1349,6 +1352,7 @@ pub(super) fn is_c_type_keyword(name: &str) -> bool {
             | "_Bool"
             | "bool"
             | "Bool"
+            | "Pointer"
             | "struct"
             | "int32"
             | "int"
@@ -1462,6 +1466,9 @@ impl ProgramLayouts {
             let Some(id) = binding.local_id() else {
                 return;
             };
+            if id.is_return_place() {
+                return;
+            }
             // A same-named local hides a slice parameter even if that
             // local has no length. Resolve through the live binding in proofs.
             if !id.is_parameter()
@@ -2085,23 +2092,6 @@ impl Parser {
             } else {
                 language
             };
-        // Reserve written binder identities before desugaring allocates any names.
-        for window in tokens.windows(4) {
-            if let [Token::Ident(name), Token::LParen, number, Token::RParen] = window
-                && name == "binder"
-            {
-                let number = match number {
-                    Token::Number(n) => Some(u64::from(*n)),
-                    Token::UnsuffixedUInt64(n) | Token::UInt64Number(n) => Some(*n),
-                    Token::UnsuffixedInt64(n) | Token::Int64Number(n) => u64::try_from(*n).ok(),
-                    Token::RustInteger(n) => n.digits.parse::<u64>().ok(),
-                    _ => None,
-                };
-                if let Some(number) = number {
-                    crate::kernel::GeneratedBinderId::from_spelling(number);
-                }
-            }
-        }
         let mut tokens = tokens;
         if language == SourceLanguage::Rust {
             rust_literals::normalize_tokens(&mut tokens);
@@ -2911,6 +2901,7 @@ impl Parser {
                 return Err(ClickError::new(
                     crate::languages::display_source_names(&message).into_owned(),
                 )
+                .with_kind(ClickErrorKind::Unsupported)
                 .at_declaration(&crate::languages::display_source_names(caller)));
             }
         }
@@ -4136,9 +4127,8 @@ impl Parser {
         else {
             return;
         };
-        let is_parent = |access: &ResourceFieldAccess| {
-            access.owner == "__body" && access.identity == crate::kernel::InstanceRef::Body
-        };
+        let is_parent =
+            |access: &ResourceFieldAccess| access.identity == crate::kernel::InstanceRef::Body;
         let (child, parent) = match (is_parent(one), is_parent(other)) {
             (false, true) => (one, other),
             (true, false) => (other, one),
@@ -4181,7 +4171,7 @@ impl Parser {
         for child_field in child_fields {
             let hidden_name = format!("{}.{}", binding.name, child_field.name);
             let hidden = ResourceFieldAccess {
-                owner: "__body".into(),
+                owner: String::new(),
                 resource_name: resource_name.into(),
                 identity: crate::kernel::InstanceRef::Body,
                 children: vec![],
@@ -4243,7 +4233,7 @@ impl Parser {
                     (
                         field.name.clone(),
                         ResourceFieldAccess {
-                            owner: "__body".into(),
+                            owner: String::new(),
                             resource_name: resource_name.into(),
                             identity: crate::kernel::InstanceRef::Body,
                             children: vec![],
@@ -5376,6 +5366,7 @@ impl Parser {
         let mut contract_let_names = BTreeSet::new();
         let mut requires = Vec::new();
         let mut view_inputs = BTreeMap::new();
+        let mut shared_object_view = None;
         let mut decreases = None;
         let mut constructs = Vec::new();
         let mut ensures = Vec::new();
@@ -5766,9 +5757,18 @@ impl Parser {
                                 "a named input view must name one memory range or composite",
                             ));
                         }
-                        let name = self.expect_ident("input view name")?;
-                        if view_inputs.insert(name.clone(), requires.len()).is_some() {
-                            return Err(self.error(format!("duplicate input view name `{name}`")));
+                        if self.peek() == Some(&Token::SharedObjectView) {
+                            self.position += 1;
+                            if shared_object_view.replace(requires.len()).is_some() {
+                                return Err(self.error("duplicate shared object view"));
+                            }
+                        } else {
+                            let name = self.expect_ident("input view name")?;
+                            if view_inputs.insert(name.clone(), requires.len()).is_some() {
+                                return Err(
+                                    self.error(format!("duplicate input view name `{name}`"))
+                                );
+                            }
                         }
                     }
                     self.expect(Token::Semicolon)?;
@@ -5885,10 +5885,7 @@ impl Parser {
                             self.expect(Token::RParen)?;
                             let source = if explicit_source {
                                 self.expect_ident_spelling("from")?;
-                                let name = self.expect_ident("input view name")?;
-                                Some(view_inputs.get(&name).copied().ok_or_else(|| {
-                                    self.error(format!("unknown input view `{name}`"))
-                                })?)
+                                Some(self.parse_view_source(&view_inputs, shared_object_view)?)
                             } else {
                                 None
                             };
@@ -5914,21 +5911,17 @@ impl Parser {
                         }
                     }
                     let resource = self.parse_function_contract_memory_binding()?;
-                    let view_source =
-                        if self.peek_ident() == Some("from") {
-                            if !matches!(resource, ResourceClause::Declared { .. }) {
-                                return Err(self.error(
+                    let view_source = if self.peek_ident() == Some("from") {
+                        if !matches!(resource, ResourceClause::Declared { .. }) {
+                            return Err(self.error(
                                 "`from` requires a produced view or an unnamed composite resource",
                             ));
-                            }
-                            self.position += 1;
-                            let name = self.expect_ident("input view name")?;
-                            Some(view_inputs.get(&name).copied().ok_or_else(|| {
-                                self.error(format!("unknown input view `{name}`"))
-                            })?)
-                        } else {
-                            None
-                        };
+                        }
+                        self.position += 1;
+                        Some(self.parse_view_source(&view_inputs, shared_object_view)?)
+                    } else {
+                        None
+                    };
                     let proof = self.parse_proof_clause_or_default()?;
                     let binder_resource =
                         apply_contract_lets_to_resource_clause(resource.clone(), &contract_lets)
@@ -7135,6 +7128,17 @@ impl Parser {
                     }
                     saw_pointer = true;
                 }
+                if alias_pointer.is_none()
+                    && self.verifies_cpp()
+                    && !self.struct_layouts.contains_key(&struct_name)
+                {
+                    if interface_type != InterfaceType::Int32Pointer {
+                        return Err(
+                            self.error("layout-free C++ records support only one pointer level")
+                        );
+                    }
+                    interface_type = InterfaceType::VoidPointer;
+                }
                 return Ok(ParsedType {
                     interface_type,
                     struct_name: Some(struct_name),
@@ -7202,6 +7206,10 @@ impl Parser {
                     InterfaceType::Bool
                 }
                 "Bool" => InterfaceType::Bool,
+                // Click's untyped pointer, an address and a provenance with
+                // no pointee type. A function head writes its language's
+                // type, so there the name is left to a C typedef.
+                "Pointer" if !self.exact_long_rank => InterfaceType::Pointer,
                 "int8" | "int8_t" => InterfaceType::Int8,
                 "int16" | "int16_t" => InterfaceType::Int16,
                 "int32" | "int32_t" => InterfaceType::Int32,
@@ -7274,6 +7282,12 @@ impl Parser {
                     return Err(self.error("a reference to `void` is not a type"));
                 }
                 InterfaceType::Void => InterfaceType::VoidPointer,
+                InterfaceType::Pointer => {
+                    return Err(self.error(
+                        "a `Pointer` has no pointee type, so `Pointer *` is not a type; a \
+                         pointer to a `Pointer` cell is itself a `Pointer`",
+                    ));
+                }
                 InterfaceType::Int8 => InterfaceType::Int8Pointer,
                 InterfaceType::Int16 => InterfaceType::Int16Pointer,
                 InterfaceType::UInt16 => InterfaceType::UInt16Pointer,
@@ -8015,6 +8029,22 @@ impl Parser {
             self.position += length;
             return Ok(ResourceSubject::Emp);
         }
+        if let Some((receiver, width)) = self.object_resource_selector() {
+            let name = rust_trait_objects::object_resource_spelling(receiver);
+            if let Some(identity) = self
+                .names
+                .resource_bindings
+                .get(&name)
+                .and_then(|(identity, _)| identity.instance())
+            {
+                self.position += width;
+                return Ok(ResourceSubject::Instance {
+                    name,
+                    identity,
+                    at: None,
+                });
+            }
+        }
         if let Some(name) = self.peek_ident()
             && self.peek_next() != Some(&Token::LParen)
             && let Some(identity) = self
@@ -8062,9 +8092,22 @@ impl Parser {
                 self.expect(Token::RParen)?;
                 return Ok(subject);
             }
-            let segment = self.parse_current_contract_segment()?;
+            let start = self.position;
+            let subject = match self.parse_current_contract_segment() {
+                Ok(segment) => ResourceSubject::Memory(segment),
+                Err(error) => {
+                    self.position = start;
+                    let Ok(base) = self.parse_contract_primary() else {
+                        return Err(error);
+                    };
+                    if !Self::is_allocation_address(&base) {
+                        return Err(error);
+                    }
+                    self.parse_saved_memory_range(base)?
+                }
+            };
             self.expect(Token::RParen)?;
-            return Ok(ResourceSubject::Memory(segment));
+            return Ok(subject);
         }
 
         let saved = self.position;
@@ -8087,6 +8130,13 @@ impl Parser {
 
     fn parse_saved_memory_subject(&mut self) -> Result<ResourceSubject, ClickError> {
         let base = self.parse_contract_primary()?;
+        self.parse_saved_memory_range(base)
+    }
+
+    fn parse_saved_memory_range(
+        &mut self,
+        base: ContractExpression,
+    ) -> Result<ResourceSubject, ClickError> {
         self.expect(Token::LBracket)?;
         let start = self.parse_contract_expression()?;
         let end = if self.peek() == Some(&Token::DotDot) {
@@ -8257,7 +8307,7 @@ impl Parser {
         let mut type_arguments = Vec::new();
         let mut value_arguments = Vec::new();
         while has_map && self.peek() != Some(&Token::RBrace) {
-            let binder = self.expect_ident("callee resource binder")?;
+            let binder = self.expect_resource_binder("callee resource binder")?;
             self.expect(Token::Colon)?;
             if let Some(declaration) = declared.get(&binder)
                 && declaration.kind == CalleeResourceBinderKind::Value
@@ -8419,6 +8469,7 @@ impl Parser {
                 output.parameter_names.clear();
                 output.resource = Some(ResourceClause::Named {
                     binding: ResourceInstanceBinding {
+                        unnamed: false,
                         name: "state".into(),
                         identity: output.identity,
                         children: vec![],
@@ -8608,6 +8659,7 @@ impl Parser {
             name.to_string(),
             ResourceClause::Named {
                 binding: ResourceInstanceBinding {
+                    unnamed: false,
                     name: name.to_string(),
                     identity,
                     children: binding.children,
@@ -8657,6 +8709,7 @@ impl Parser {
                 };
                 let resource = family.map(|family| ResourceClause::Named {
                     binding: ResourceInstanceBinding {
+                        unnamed: false,
                         name: binder.name().to_string(),
                         identity: binder.resource_binder(),
                         children: vec![],
@@ -8827,6 +8880,22 @@ impl Parser {
 
     /// A function contract's `owns`, `consumes`, or `produces` target, which
     /// may be `uninitialized(p[a..b])`.
+    fn parse_view_source(
+        &mut self,
+        inputs: &BTreeMap<String, usize>,
+        shared_object_view: Option<usize>,
+    ) -> Result<usize, ClickError> {
+        if self.peek() == Some(&Token::SharedObjectView) {
+            self.position += 1;
+            return shared_object_view.ok_or_else(|| self.error("missing shared object view"));
+        }
+        let name = self.expect_ident("input view name")?;
+        inputs
+            .get(&name)
+            .copied()
+            .ok_or_else(|| self.error(format!("unknown input view `{name}`")))
+    }
+
     fn parse_function_contract_memory_binding(&mut self) -> Result<ResourceClause, ClickError> {
         self.uninitialized_memory_allowed = true;
         let resource = self.parse_owned_resource_binding();
@@ -8850,12 +8919,16 @@ impl Parser {
         &mut self,
         rebinding: bool,
     ) -> Result<ResourceClause, ClickError> {
-        if !matches!(self.peek(), Some(Token::Ident(_))) || self.peek_next() != Some(&Token::Colon)
-        {
+        let named =
+            matches!(self.peek(), Some(Token::Ident(_))) && self.peek_next() == Some(&Token::Colon);
+        let object = self.object_resource_selector().is_some_and(|(_, width)| {
+            self.tokens.get(self.position + width) == Some(&Token::Colon)
+        });
+        if !named && !object {
             let target = self.parse_owned_resource_target()?;
             return Ok(self.hold_a_hidden_record_unnamed(target));
         }
-        let name = self.expect_ident("resource instance name")?;
+        let name = self.expect_resource_binder("resource instance name")?;
         self.expect(Token::Colon)?;
         let rebound = rebinding
             .then(|| self.names.resource_bindings.get(&name).cloned())
@@ -8905,6 +8978,7 @@ impl Parser {
             .bind_instance(name.clone(), (identity, resource_name.clone()));
         let target = ResourceClause::Named {
             binding: ResourceInstanceBinding {
+                unnamed: false,
                 name: name.clone(),
                 identity,
                 children: vec![],
@@ -8952,14 +9026,13 @@ impl Parser {
         if let Some(held) = self.hidden_binder(&target) {
             return held;
         }
-        let identity = crate::kernel::ResourceBinder::Instance(self.fresh_instance_identity());
-        let binder = format!("#{name}{}", identity.variable().0);
-        self.names
-            .bind_instance(binder.clone(), (identity, name.clone()));
+        let identity = self.fresh_instance_identity();
+        let name = crate::surface::printing::format_resource_call(&target);
         let named = ResourceClause::Named {
             binding: ResourceInstanceBinding {
-                name: binder.clone(),
-                identity,
+                unnamed: true,
+                name,
+                identity: crate::kernel::ResourceBinder::Instance(identity),
                 children: vec![],
                 schema: None,
                 fields: None,
@@ -8968,7 +9041,8 @@ impl Parser {
             },
             resource: Box::new(target),
         };
-        self.names.set_instance_target(binder, named.clone());
+        self.names
+            .set_unnamed_instance_target(identity, named.clone());
         named
     }
 
@@ -9051,7 +9125,7 @@ impl Parser {
     }
 
     fn expect_resource_path(&mut self) -> Result<String, ClickError> {
-        let mut name = self.expect_ident("resource instance")?;
+        let mut name = self.expect_resource_binder("resource instance")?;
         while self.peek() == Some(&Token::Dot) {
             self.position += 1;
             name.push('.');
@@ -9581,7 +9655,6 @@ impl Parser {
                 self.peek_ident(),
                 Some(
                     "address"
-                        | "binder"
                         | "byte_offset"
                         | "sizeof"
                         | "float32_from_bits"
@@ -9590,6 +9663,7 @@ impl Parser {
             )
             && self.peek_next() == Some(&Token::LParen)
             && !self.looks_like_region_result()
+            && self.object_resource_field_selector().is_none()
         {
             if let Some(name) = self.peek_ident()
                 && let Some(value_parameters) = self.contract_value_parameter_names.get(name)
@@ -9983,18 +10057,9 @@ impl Parser {
         self.expect(Token::LParen)?;
         // An untyped item binder is contextual sugar for a predicate lambda.
         // A typed literal or another expression is an ordinary predicate value.
-        // The item may be a generated binder, spelled `binder(N)`.
-        let binder_end = if self.tokens.get(self.position + 1)
-            == Some(&Token::Ident("binder".into()))
-            && self.tokens.get(self.position + 2) == Some(&Token::LParen)
-        {
-            self.position + 5
-        } else {
-            self.position + 2
-        };
         let untyped_binder = self.peek() == Some(&Token::Pipe)
             && matches!(self.peek_next(), Some(Token::Ident(_)))
-            && self.tokens.get(binder_end) == Some(&Token::Pipe);
+            && self.tokens.get(self.position + 2) == Some(&Token::Pipe);
         if !untyped_binder {
             let predicate = self.parse_contract_expression()?;
             self.expect(Token::RParen)?;
@@ -10047,6 +10112,13 @@ impl Parser {
         expected_name: &str,
     ) -> Result<(String, Vec<ContractExpression>), ClickError> {
         let name = self.expect_reference_name(expected_name)?;
+        let arguments = self.parse_call_argument_list()?;
+        let arguments = self.observe_integer_arguments(&name, arguments);
+        let arguments = self.spread_slice_arguments(&name, arguments)?;
+        Ok((name, arguments))
+    }
+
+    fn parse_call_argument_list(&mut self) -> Result<Vec<ContractExpression>, ClickError> {
         self.expect(Token::LParen)?;
         let mut arguments = Vec::new();
         if self.peek() != Some(&Token::RParen) {
@@ -10065,9 +10137,7 @@ impl Parser {
             }
         }
         self.expect(Token::RParen)?;
-        let arguments = self.observe_integer_arguments(&name, arguments);
-        let arguments = self.spread_slice_arguments(&name, arguments)?;
-        Ok((name, arguments))
+        Ok(arguments)
     }
 
     fn parse_proposition_comparison(&mut self) -> Result<ClickProposition, ClickError> {
@@ -10730,6 +10800,7 @@ impl Parser {
                     name.clone(),
                     ResourceClause::Named {
                         binding: ResourceInstanceBinding {
+                            unnamed: false,
                             name: name.clone(),
                             identity,
                             children: Vec::new(),
@@ -10759,7 +10830,7 @@ impl Parser {
         self.position += 1;
         let mut bindings = Vec::new();
         while self.peek() != Some(&Token::RBrace) {
-            let binder = self.expect_ident("output binder")?;
+            let binder = self.expect_resource_binder("output binder")?;
             self.expect(Token::Colon)?;
             let name = self.expect_ident("output binding name")?;
             bindings.push((binder, name));
@@ -10798,19 +10869,6 @@ impl Parser {
     // common tactic dispatcher so nested proof bodies fit the bounded stack.
     #[inline(never)]
     fn parse_let_proof_tactic(&mut self) -> Result<ProofTactic, ClickError> {
-        // Generated logical identities are valid intro outputs, while
-        // resource and call output patterns retain their written names.
-        if self.peek_ident() == Some("binder") && self.peek_next() == Some(&Token::LParen) {
-            let binder = self.expect_surface_binder("introduced variable")?;
-            self.expect(Token::Equal)?;
-            self.expect_ident_spelling("intro")?;
-            if self.tactic_names.contains("intro") {
-                return Err(self.error("generated binder outputs require the built-in `intro`"));
-            }
-            self.expect_empty_tactic_args("intro")?;
-            self.expect(Token::Semicolon)?;
-            return self.named_intro(binder);
-        }
         if self.peek() == Some(&Token::LParen) {
             self.position += 1;
             let mut names = vec![self.expect_ident("existential witness name")?];
@@ -10855,6 +10913,13 @@ impl Parser {
             let parameter = self.expect_ident("induction parameter")?;
             self.expect(Token::RParen)?;
             self.expect(Token::Semicolon)?;
+            if self.names.contains(NameKind::InductionHypothesis, &name) {
+                return Err(
+                    self.error("induction hypothesis was already introduced in this proof scope")
+                );
+            }
+            self.names
+                .set_scoped(NameKind::InductionHypothesis, &name, true);
             return Ok(ProofTactic::Induct {
                 parameter,
                 hypothesis: name,
@@ -10947,13 +11012,21 @@ impl Parser {
             ResourceClause::Named { binding, resource } => {
                 // A child keeps its parent's clause as a placeholder until
                 // its actual resource arguments are known.
-                let (root, _) = binding.name.split_once('.').unwrap_or((&binding.name, ""));
-                let family = self
-                    .names
-                    .resource_bindings
-                    .get(root)
-                    .and_then(|(_, family)| self.resource_path_family(family, &binding.children))
-                    .map(str::to_owned);
+                let family = if binding.unnamed {
+                    match resource.as_ref() {
+                        ResourceClause::Declared { name, .. } => Some(name.clone()),
+                        _ => None,
+                    }
+                } else {
+                    let (root, _) = binding.name.split_once('.').unwrap_or((&binding.name, ""));
+                    self.names
+                        .resource_bindings
+                        .get(root)
+                        .and_then(|(_, family)| {
+                            self.resource_path_family(family, &binding.children)
+                        })
+                        .map(str::to_owned)
+                };
                 let declared_witnesses = family
                     .as_ref()
                     .and_then(|family| self.declared_resource_witnesses.get(family));
@@ -10997,26 +11070,31 @@ impl Parser {
         else {
             return Err(self.error("fold construction requires a declared resource"));
         };
-        let name = match name {
-            Some(name) => name,
-            None => match self.hidden_binder(&resource) {
-                Some(ResourceClause::Named { binding, .. }) => binding.name,
-                _ => format!("#{resource_name}{}", self.next_resource_identity),
-            },
-        };
-        if self.names.contains_any(NameKind::VALUES, &name)
-            || self.specification_binding_kind(&name).is_some()
-        {
-            return Err(self.error("fold result conflicts with a C or pure binding"));
-        }
-        self.bind_proof_name(&name, true)?;
-        let identity = if let Some((identity, previous)) = self.names.resource_bindings.get(&name) {
-            if previous != resource_name && !self.child_slot_identities.contains(identity) {
-                return Err(self.error("fold result changes the named resource family"));
+        let unnamed = name.is_none();
+        let (name, identity) = if let Some(name) = name {
+            if self.names.contains_any(NameKind::VALUES, &name)
+                || self.specification_binding_kind(&name).is_some()
+            {
+                return Err(self.error("fold result conflicts with a C or pure binding"));
             }
-            *identity
+            self.bind_proof_name(&name, true)?;
+            let identity =
+                if let Some((identity, previous)) = self.names.resource_bindings.get(&name) {
+                    if previous != resource_name && !self.child_slot_identities.contains(identity) {
+                        return Err(self.error("fold result changes the named resource family"));
+                    }
+                    *identity
+                } else {
+                    crate::kernel::ResourceBinder::Instance(self.fresh_instance_identity())
+                };
+            (name, identity)
+        } else if let Some(ResourceClause::Named { binding, .. }) = self.hidden_binder(&resource) {
+            (binding.name, binding.identity)
         } else {
-            crate::kernel::ResourceBinder::Instance(self.fresh_instance_identity())
+            (
+                crate::surface::printing::format_resource_call(&resource),
+                crate::kernel::ResourceBinder::Instance(self.fresh_instance_identity()),
+            )
         };
         let declared = self
             .declared_resource_fields
@@ -11075,6 +11153,7 @@ impl Parser {
         }
         self.expect(Token::RParen)?;
         let binding = ResourceInstanceBinding {
+            unnamed,
             name: name.clone(),
             identity,
             children: vec![],
@@ -11083,15 +11162,18 @@ impl Parser {
             fold_fields: None,
             child_bindings: Some(Vec::new().into()),
         };
-        self.names
-            .bind_instance(name.clone(), (identity, resource_name.clone()));
-        self.names.set_instance_target(
-            name,
-            ResourceClause::Named {
-                binding: binding.clone(),
-                resource: Box::new(resource.clone()),
-            },
-        );
+        let target = ResourceClause::Named {
+            binding: binding.clone(),
+            resource: Box::new(resource.clone()),
+        };
+        if unnamed {
+            self.names
+                .set_unnamed_instance_target(binding.instance()?, target);
+        } else {
+            self.names
+                .bind_instance(name.clone(), (identity, resource_name.clone()));
+            self.names.set_instance_target(name, target);
+        }
         // Like any fold, a construction may prove the body facts it leaves
         // open with `by` or `requires` entries.
         self.parse_step_proof(ProofTactic::FoldResource(ResourceClause::Named {
@@ -11769,6 +11851,40 @@ impl Parser {
         })
     }
 
+    fn parse_intro_tactic(&mut self) -> Result<ProofTactic, ClickError> {
+        if self.peek() != Some(&Token::LParen) {
+            return Err(self.error("`intro` requires parentheses; write `intro()`"));
+        }
+        self.expect(Token::LParen)?;
+        let binder = if self.peek() == Some(&Token::RParen) {
+            None
+        } else {
+            Some(self.expect_surface_binder("introduced variable")?)
+        };
+        self.expect(Token::RParen)?;
+        if binder.is_none() && self.peek() != Some(&Token::LBrace) {
+            if self.peek_ident() == Some("as") {
+                return Err(self.error("write `intro(name) { ... }` to introduce a named binder"));
+            }
+            self.expect(Token::Semicolon)?;
+            return Ok(ProofTactic::Intro);
+        }
+        let scope = self.names.scope();
+        let old_names = self.names.take(NameKind::ProofBinder);
+        let body = (|| {
+            if let Some(name) = binder.as_ref() {
+                self.named_intro(name.clone())?;
+            }
+            self.parse_possibly_empty_tactic_block()
+        })();
+        self.names.end(scope);
+        self.names.replace(NameKind::ProofBinder, old_names);
+        Ok(ProofTactic::IntroBlock {
+            binder,
+            body: body?,
+        })
+    }
+
     // Keep the large leaf-tactic dispatch frame out of recursive proof-body
     // parsing. Expanded both/if/closure scopes can nest while reading terms.
     #[inline(never)]
@@ -11890,9 +12006,12 @@ impl Parser {
             }
             "apply" => {
                 self.expect(Token::LParen)?;
-                // A call remains a theorem application. Other propositions,
-                // including named facts and parenthesized implications, are facts.
+                // Resolve local callable bindings before global theorem names.
+                // Other propositions, including named facts, are implications.
                 let start = self.position;
+                let local = self.peek_ident().is_some_and(|name| {
+                    self.names.contains(NameKind::InductionHypothesis, name)
+                });
                 let application = if self.peek_ident().is_some()
                     && self.peek_next() == Some(&Token::LParen)
                     && !matches!(
@@ -11900,9 +12019,14 @@ impl Parser {
                         Some("at" | "old" | "exact" | "forall" | "exists")
                     )
                 {
-                    let application = self.parse_theorem_application()?;
+                    let call = if local {
+                        let hypothesis = self.expect_ident("induction hypothesis")?;
+                        (hypothesis, self.parse_call_argument_list()?)
+                    } else {
+                        self.parse_call_arguments("theorem name")?
+                    };
                     if self.peek() == Some(&Token::RParen) {
-                        Some(application)
+                        Some(call)
                     } else {
                         self.position = start;
                         None
@@ -11910,7 +12034,7 @@ impl Parser {
                 } else {
                     None
                 };
-                if application.is_none() {
+                let Some((name, arguments)) = application else {
                     let fact = self.parse_proposition()?;
                     self.expect(Token::RParen)?;
                     if self.peek_ident() == Some("using") {
@@ -11920,15 +12044,18 @@ impl Parser {
                     }
                     self.skip_redundant_semicolon();
                     return Ok(ProofTactic::ApplyFact(fact));
-                }
-                let application = application.unwrap();
+                };
                 self.expect(Token::RParen)?;
                 if self.peek_ident() == Some("using") {
                     return Err(self.error(
                         "application takes no `using` list; write `apply(name(args))`",
                     ));
                 }
-                ProofTactic::ApplyTheorem(application)
+                if local {
+                    ProofTactic::ApplyInduction { hypothesis: name, arguments }
+                } else {
+                    ProofTactic::ApplyTheorem(TheoremApplication { name, arguments })
+                }
             }
             "observe" => {
                 self.expect(Token::LParen)?;
@@ -12021,6 +12148,10 @@ impl Parser {
                 self.expect_empty_tactic_args(&name)?;
                 ProofTactic::CheckTerminationCallbacks
             }
+            "close" => {
+                self.expect_empty_tactic_args(&name)?;
+                ProofTactic::Close
+            }
             "known" => {
                 self.expect_empty_tactic_args(&name)?;
                 ProofTactic::Known
@@ -12055,13 +12186,7 @@ impl Parser {
                 };
                 ProofTactic::Preserve(separation)
             }
-            "intro" => {
-                self.expect_empty_tactic_args(&name)?;
-                if self.peek_ident() == Some("as") {
-                    return Err(self.error("`intro() as name` is now `let name = intro();`"));
-                }
-                ProofTactic::Intro
-            }
+            "intro" => return self.parse_intro_tactic(),
             "split" | "left" | "right" => {
                 return Err(self.error(format!(
                     "`{name}()` is now `known()`, which closes a conjunction whose sides are facts and a disjunction with one side a fact"
@@ -12073,7 +12198,11 @@ impl Parser {
             }
             "contradiction" => {
                 self.expect(Token::LParen)?;
-                let proposition = self.parse_proposition()?;
+                let proposition = if self.peek() == Some(&Token::RParen) {
+                    ClickProposition::Value(bool_literal(false))
+                } else {
+                    self.parse_proposition()?
+                };
                 self.expect(Token::RParen)?;
                 ProofTactic::Contradiction(proposition)
             }
@@ -12114,14 +12243,18 @@ impl Parser {
                 self.expect(Token::LParen)?;
                 let quantified = self.parse_proposition()?;
                 self.expect(Token::Comma)?;
-                let argument = self.parse_contract_expression()?;
+                let mut arguments = vec![self.parse_contract_expression()?];
+                while self.peek() == Some(&Token::Comma) {
+                    self.position += 1;
+                    arguments.push(self.parse_contract_expression()?);
+                }
                 self.expect(Token::RParen)?;
                 if self.peek_ident() == Some("using") {
                     return Err(self.error("`instantiate` takes no `using` list; prove guards with ordinary `have` steps"));
                 }
                 ProofTactic::Instantiate {
                     quantified,
-                    argument,
+                    arguments,
                 }
             }
             "solve" => {
@@ -12256,6 +12389,7 @@ impl Parser {
             .bind_instance(name.clone(), (identity, resource_name.clone()));
         let target = ResourceClause::Named {
             binding: ResourceInstanceBinding {
+                unnamed: false,
                 name: name.clone(),
                 identity,
                 children: vec![],
@@ -12515,11 +12649,6 @@ impl Parser {
             .replace(NameKind::ProofBinder, previous_proof_let_names);
         self.loop_proof_value_names = value_scope;
         result
-    }
-
-    fn parse_theorem_application(&mut self) -> Result<TheoremApplication, ClickError> {
-        let (name, arguments) = self.parse_call_arguments("theorem name")?;
-        Ok(TheoremApplication { name, arguments })
     }
 
     fn parse_declared_resource_call(&mut self) -> Result<ResourceClause, ClickError> {
@@ -15234,6 +15363,7 @@ impl Parser {
     /// `verifying "f.c" as uint32` would otherwise read as a cast.
     fn refuse_cast_type_binder(&self, name: &str) -> Result<(), ClickError> {
         if rust_syntax::click_numeric_cast_type(name).is_some()
+            || name == rust_syntax::UNTYPED_POINTER_TYPE
             || (self.verifies_rust() && rust_syntax::rust_scalar_type(name).is_some())
         {
             return Err(self.error(format!(
@@ -15392,6 +15522,23 @@ impl Parser {
         self.lower_qualified_click_cast(target_type, false, false, operand)
     }
 
+    // A recorded allocation names an identity, even if the pointer returned
+    // by the allocator has since been reassigned. Address transformations of
+    // that identity do not read a pointer value from another program state.
+    fn is_allocation_address(expression: &ContractExpression) -> bool {
+        match expression {
+            ContractExpression::RegionAllocation(_) => true,
+            ContractExpression::CUnary { operand, lowered }
+                if matches!(lowered, ProgramExpression::PointerOffsetBytes { .. })
+                    || matches!(lowered, ProgramExpression::Cast { target_type, .. }
+                        if target_type.is_pointer()) =>
+            {
+                Self::is_allocation_address(operand)
+            }
+            _ => false,
+        }
+    }
+
     fn lower_qualified_click_cast(
         &mut self,
         target_type: ProgramType,
@@ -15399,8 +15546,10 @@ impl Parser {
         pointee_volatile: bool,
         operand: ContractExpression,
     ) -> Result<ContractExpression, ClickError> {
+        let allocation_address = Self::is_allocation_address(&operand);
         let historical = crate::surface::validation::contains_old_expression(&operand)
-            || crate::surface::validation::contains_at_expression(&operand);
+            || (!allocation_address
+                && crate::surface::validation::contains_at_expression(&operand));
         // Numeric casts consume the value observed by their operand.
         // Pointer casts retain their current-expression validation.
         let numeric_target = matches!(
@@ -15423,7 +15572,7 @@ impl Parser {
         }
         let expression = contract_expression_as_program_expression(&operand)
             .unwrap_or(ProgramExpression::Value(int32(0)));
-        if target_type == ProgramType::VoidPointer {
+        if target_type == ProgramType::VoidPointer && !allocation_address {
             crate::surface::validation::validate_void_pointer_cast_source(
                 &expression,
                 &self.names.program_parameter_types,
@@ -15587,7 +15736,7 @@ impl Parser {
                     source_base,
                     ProgramExpression::PointerOffsetBytes {
                         pointer: Box::new(base),
-                        bytes: (*offset_bytes).into(),
+                        bytes: *offset_bytes,
                     },
                 ));
             }
@@ -16769,9 +16918,6 @@ impl Parser {
         if let Some(literal) = self.parse_struct_value_literal()? {
             return Ok(literal);
         }
-        if self.peek_ident() == Some("binder") && self.peek_next() == Some(&Token::LParen) {
-            return Ok(self.expect_surface_binder("binder reference")?.reference());
-        }
         if let Some(binding) = self.take_local_binding_reference()? {
             return Ok(binding);
         }
@@ -17300,6 +17446,28 @@ impl Parser {
             return Ok(ContractExpression::ResourceCount(Box::new(resource)));
         }
 
+        if let Some((receiver, width)) = self.object_resource_field_selector() {
+            let owner = rust_trait_objects::object_resource_spelling(receiver);
+            if let Some((identity, resource_name)) =
+                self.names.resource_bindings.get(&owner).cloned()
+            {
+                self.position += width + 1;
+                let field = self.expect_ident("object resource field")?;
+                return Ok(ContractExpression::ResourceField(ResourceFieldAccess {
+                    owner,
+                    resource_name,
+                    identity: identity
+                        .instance()
+                        .ok_or_else(|| self.error("an object resource must be an instance"))?
+                        .into(),
+                    children: vec![],
+                    field,
+                    field_index: 0,
+                    click_type: None,
+                }));
+            }
+        }
+
         if matches!(self.peek(), Some(Token::Ident(_))) && self.peek_next() == Some(&Token::LParen)
         {
             let (name, arguments) = self.parse_call_arguments("function name")?;
@@ -17512,43 +17680,6 @@ impl Parser {
     }
 
     fn parse_contract_value_let_expression(&mut self) -> Result<ContractExpression, ClickError> {
-        if self.tokens.get(self.position + 1) == Some(&Token::Ident("binder".into()))
-            && self.tokens.get(self.position + 2) == Some(&Token::LParen)
-        {
-            self.expect_ident_spelling("let")?;
-            let name = self.expect_surface_binder("let binding")?;
-            let click_type = if self.peek() == Some(&Token::Colon) {
-                self.position += 1;
-                Some(self.parse_click_type()?.0)
-            } else {
-                None
-            };
-            self.expect(Token::Equal)?;
-            let previous_integer = std::mem::replace(
-                &mut self.integer_literal_context,
-                click_type == Some(ClickType::Integer),
-            );
-            let value = self.parse_contract_expression();
-            self.integer_literal_context = previous_integer;
-            let value = value?;
-            let value = match &click_type {
-                Some(ClickType::Integer) => self.at_integer_position(value),
-                Some(ClickType::Program(ty)) => {
-                    self.typed_let_literal("generated binder", *ty, value)?
-                }
-                _ => value,
-            };
-            self.expect(Token::Semicolon)?;
-            let shadowed = self.bind_let_operand(&name, click_type.as_ref(), Some(&value));
-            let body = self.parse_branch_value(self.bool_value_context);
-            self.unbind_let_operands(vec![shadowed]);
-            return Ok(ContractExpression::Let {
-                name,
-                click_type,
-                value: Box::new(value),
-                body: Box::new(body?),
-            });
-        }
         let bool_body = std::mem::take(&mut self.bool_value_context);
         let mut bindings = Vec::new();
         let mut shadowed_lets = Vec::new();
@@ -18022,17 +18153,9 @@ impl Parser {
         self.expect(Token::Comma)?;
         // The untyped two-name spelling is contextual lambda sugar.
         // A typed literal or any other expression is an ordinary step value.
-        let binder_end = if self.tokens.get(self.position + 1)
-            == Some(&Token::Ident("binder".into()))
-            && self.tokens.get(self.position + 2) == Some(&Token::LParen)
-        {
-            self.position + 5
-        } else {
-            self.position + 2
-        };
         let untyped_binder = self.peek() == Some(&Token::Pipe)
             && matches!(self.peek_next(), Some(Token::Ident(_)))
-            && self.tokens.get(binder_end) == Some(&Token::Comma);
+            && self.tokens.get(self.position + 2) == Some(&Token::Comma);
         if !untyped_binder {
             let step = self.parse_contract_expression()?;
             self.expect(Token::RParen)?;
@@ -18424,16 +18547,41 @@ impl Parser {
         }
     }
 
-    fn expect_surface_binder(&mut self, expected: &str) -> Result<SurfaceBinder, ClickError> {
-        if self.peek_ident() == Some("binder") && self.peek_next() == Some(&Token::LParen) {
-            self.position += 2;
-            let number = self.expect_u64("binder identity")?;
-            self.expect(Token::RParen)?;
-            let id = crate::kernel::GeneratedBinderId::from_spelling(number);
-            Ok(SurfaceBinder::Generated(id))
-        } else {
-            self.expect_ident(expected).map(Into::into)
+    /// A receiver's modeled resource, or the distinguished resource slot in
+    /// the contract of a pack or unpack call.
+    fn object_resource_selector(&self) -> Option<(Option<&str>, usize)> {
+        if self.peek_ident() != Some(rust_trait_objects::OBJECT_RESOURCE)
+            || self.peek_next() != Some(&Token::LParen)
+        {
+            return None;
         }
+        match (
+            self.tokens.get(self.position + 2),
+            self.tokens.get(self.position + 3),
+        ) {
+            (Some(Token::RParen), _) => Some((None, 3)),
+            (Some(Token::Ident(receiver)), Some(Token::RParen)) => Some((Some(receiver), 4)),
+            _ => None,
+        }
+    }
+
+    fn object_resource_field_selector(&self) -> Option<(Option<&str>, usize)> {
+        self.object_resource_selector()
+            .filter(|(_, width)| self.tokens.get(self.position + width) == Some(&Token::Dot))
+    }
+
+    fn expect_resource_binder(&mut self, expected: &str) -> Result<String, ClickError> {
+        if let Some((receiver, width)) = self.object_resource_selector() {
+            let spelling = rust_trait_objects::object_resource_spelling(receiver);
+            self.position += width;
+            Ok(spelling)
+        } else {
+            self.expect_ident(expected)
+        }
+    }
+
+    fn expect_surface_binder(&mut self, expected: &str) -> Result<SurfaceBinder, ClickError> {
+        self.expect_ident(expected).map(Into::into)
     }
 
     fn expect_number(&mut self, expected: &str) -> Result<u32, ClickError> {
@@ -18663,6 +18811,7 @@ impl Parser {
         match self.tokens.get(index + 1) {
             Some(Token::Ident(name)) => {
                 rust_syntax::click_numeric_cast_type(name).is_some()
+                    || name == rust_syntax::UNTYPED_POINTER_TYPE
                     || (self.verifies_rust() && rust_syntax::rust_scalar_type(name).is_some())
             }
             Some(Token::LParen) => matches!(
@@ -19466,12 +19615,7 @@ mod tactic_classification_tests {
 
     #[test]
     fn logical_bindings_use_let_and_round_trip() {
-        for source in [
-            "intro();",
-            "let x = intro();",
-            "let binder(7) = intro();",
-            "let ih = induct(n);",
-        ] {
+        for source in ["intro();", "let x = intro();", "let ih = induct(n);"] {
             let tactic = Parser::new(source).unwrap().parse_proof_tactic().unwrap();
             let printed = super::super::printing::format_partial_tactic_sequence(
                 std::slice::from_ref(&tactic),
@@ -19481,7 +19625,6 @@ mod tactic_classification_tests {
             match (source, &tactic) {
                 ("intro();", ProofTactic::Intro) => {}
                 ("let x = intro();", ProofTactic::IntroAs(name)) => assert_eq!(name, "x"),
-                ("let binder(7) = intro();", ProofTactic::IntroBinder(_)) => {}
                 (
                     "let ih = induct(n);",
                     ProofTactic::Induct {
@@ -19498,6 +19641,7 @@ mod tactic_classification_tests {
         for source in [
             "intro() as x;",
             "intro() as binder(7);",
+            "let binder(7) = intro();",
             "induct(n) as ih;",
             "let x = intro(3);",
             "let ih = induct(n, m);",
@@ -19615,6 +19759,7 @@ mod tactic_classification_tests {
         ("observe-resource", "observe(reference(p));"),
         ("witness", "witness(1);"),
         ("obtain", "let x = obtain(exists (k: Integer) { k == k });"),
+        ("close", "close();"),
         ("known", "known();"),
         ("normalize", "normalize();"),
         ("normalize-using", "normalize() using { x == 1; };"),
@@ -19623,6 +19768,7 @@ mod tactic_classification_tests {
         ("intro-as", "let name = intro();"),
         ("enumerate", "enumerate();"),
         ("contradiction", "contradiction(x == 1);"),
+        ("contradiction-false", "contradiction();"),
         ("rewrite", "rewrite(x, 1);"),
         ("transport", "transport(x == 1, y == 1);"),
         (
@@ -19735,6 +19881,11 @@ mod tactic_classification_tests {
                         "reference".to_string(),
                     ),
                 );
+                if form.id == "apply-induction" {
+                    parser
+                        .names
+                        .insert(NameKind::InductionHypothesis, "ih".into());
+                }
                 parser.parse_proof_tactic()
             });
             let tactic = match parsed {
@@ -19743,17 +19894,6 @@ mod tactic_classification_tests {
                     failures.push(format!("{}: `{written}` does not parse: {error}", form.id));
                     continue;
                 }
-            };
-            // An induction binding is resolved after parsing the enclosing
-            // proof, so standalone call syntax initially parses as a theorem.
-            let tactic = match (form.id, tactic) {
-                ("apply-induction", ProofTactic::ApplyTheorem(application)) => {
-                    ProofTactic::ApplyInduction {
-                        hypothesis: application.name,
-                        arguments: application.arguments,
-                    }
-                }
-                (_, tactic) => tactic,
             };
             let class = tactic.class();
             classes.insert(form.id, class);

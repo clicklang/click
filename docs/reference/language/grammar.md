@@ -151,7 +151,7 @@ documentation inventory keep the following accepted words synchronized.
 | `apply`, `have`, `if`, `cases`, `all`, `branch`, `outcomes`, `loop` | Theorem application and structural proof tactics. |
 | `both` | Retired conjunction tactic. Use `all { P => { ... } Q => { ... } }`. |
 | `witness`, `obtain` | Existential introduction and elimination. `let` binds what an operation produces. |
-| `known`, `normalize`, `intro`, `enumerate`, `contradiction` | Explicit proposition tactics. |
+| `close`, `known`, `normalize`, `intro`, `enumerate`, `contradiction` | Explicit proposition tactics. |
 | `sorry` | Dev-only proof hole `sorry()`. It parses only under `click verify --allow-sorry`; see [Dev-only proof hole](../cli/verify.md#dev-only-proof-hole). A user-defined tactic may not take the name. |
 | `assumption`, `auto`, `arithmetic`, `execute`, `execute_until` | Removed tactic names. The parser refuses each with a diagnostic that names its replacement: `known()` for `assumption()`; the omitted proof for `by auto();` and `solve();` for a written `auto();`; `solve() using { ... }` for `arithmetic() using { ... }` and `solve() using {}` for bare `arithmetic()`; the implicit tail, or `step_until(function.exit)` to work at function exit, for `execute()`; and `step_until` for `execute_until`. |
 | `close_invariants` | Retired loop tactic, still reserved. The parser rejects it with `` `close_invariants` is retired ``; a loop's back edge now closes each bundle member with `solve()`, helped by `have` facts proved before it. |
@@ -768,10 +768,10 @@ theorem existential_range_lambda(lo: int32, hi: int32) {
 ```
 
 The value forms use `item` as the written range binder. An `.any` witness
-therefore names `item`; an `.all` proof may choose a binder with
-`let k = intro()`. The universal range proof introduces both its index and
-its range condition, as `let k = intro(); intro();`. Elaborated applications
-use the existing universal/existential range terms and add no proof search.
+therefore names `item`. In an `.all` proof, `intro(k) { ... }` binds the
+index as `k` and introduces both bounds for the block. The flat equivalent
+is `let k = intro(); intro();`. Elaborated applications use the existing
+universal/existential range terms and add no proof search.
 
 ### Range folds
 
@@ -813,15 +813,10 @@ exists (x: int32) { x == value }
 Binder scope is the body between braces. Renaming a bound variable doesn't
 change the proposition or expression it denotes.
 
-Expansion spells generated specification binders as `binder(N)`. This is a
-structured binder identity in a namespace separate from source identifiers;
-it is not a C object and has no address. Quantifiers, specification lambdas,
-lexical lets, match patterns, and range operations accept this binder form.
-`let binder(N) = intro()` names an introduced universal value. References use the
-same `binder(N)` form within the binder's scope. An introduction uses an
-identity not already introduced in the active proof scope. Numeric spellings survive
-printing and reparsing; the elaborator allocates fresh identities without
-probing source names.
+Expansion gives an introduced proof value an ordinary lexical name.
+For example, `let x = intro();` introduces the value for a universal goal.
+References use `x` within its scope. Expansion chooses names that avoid
+the surrounding source bindings.
 
 `(expression : Integer)` supplies mathematical integer context without a
 binding. It is also used by expansion when an integer result has lost the

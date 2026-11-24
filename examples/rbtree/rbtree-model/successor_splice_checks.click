@@ -207,8 +207,13 @@ theorem other_successor_cases(successor: struct rb_node*, parent: struct rb_node
     ensures not(rb_minimum(RbTree::Node(successor, parent, Color::Red, RbTree::Empty, RbTree::Empty))
         == RbMinimum::Found(successor, Color::Black, RbTree::Empty)) by {
         unfold(rb_minimum(RbTree::Node(successor, parent, Color::Red, RbTree::Empty, RbTree::Empty)));
-        intro();
-        known();
+        if RbMinimum::Found(successor, Color::Red, RbTree::Empty)
+            == RbMinimum::Found(successor, Color::Black, RbTree::Empty) {
+            have false by { known(); }
+            contradiction();
+        } else {
+            known();
+        }
     }
 
     ensures not(rb_minimum(RbTree::Node(successor, parent, Color::Black, RbTree::Empty,
@@ -216,8 +221,14 @@ theorem other_successor_cases(successor: struct rb_node*, parent: struct rb_node
         == RbMinimum::Found(successor, Color::Black, RbTree::Empty)) by {
         unfold(rb_minimum(RbTree::Node(successor, parent, Color::Black, RbTree::Empty,
             RbTree::Node(child, successor, Color::Red, RbTree::Empty, RbTree::Empty))));
-        intro();
-        known();
+        if RbMinimum::Found(successor, Color::Black,
+            RbTree::Node(child, successor, Color::Red, RbTree::Empty, RbTree::Empty))
+            == RbMinimum::Found(successor, Color::Black, RbTree::Empty) {
+            have false by { known(); }
+            contradiction();
+        } else {
+            known();
+        }
     }
 }
 

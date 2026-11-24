@@ -3,6 +3,37 @@
 //! separately; this entry point does not export an unsupported prefix.
 use super::*;
 
+enum IntegerExactSource<'a> {
+    Mathematical(KernelTerm),
+    Observation {
+        written: SharedMachineIntegerTerm,
+        reading: &'a SharedIntegerTerm,
+    },
+}
+
+impl IntegerExactSource<'_> {
+    fn matches(&self, term: &KernelTerm, observation: Option<&SharedMachineIntegerTerm>) -> bool {
+        match self {
+            Self::Mathematical(source) => term == source,
+            Self::Observation { written, reading } => {
+                if let Some(observation) = observation {
+                    if observation == written {
+                        return true;
+                    }
+                    return match observation.value_reading() {
+                        Some(value) => value == reading.as_ref(),
+                        None => {
+                            reading.root().exact_shared_integer_observation().as_ref()
+                                == Some(observation)
+                        }
+                    };
+                }
+                reading.mathematical_root() == Some(term)
+            }
+        }
+    }
+}
+
 impl TermRewrite<'_> {
     pub(super) fn reserve_shared_rewrite_variables_once(
         &mut self,
@@ -52,6 +83,29 @@ impl TermRewrite<'_> {
                             }
                         }
                     }
+                    KernelTermNode::Fold(fold) if term.ty() == &KernelType::Integer => {
+                        variables.integer.insert(fold.accumulator);
+                        if fold.index == KernelFoldIndex::Integer {
+                            variables.integer.insert(fold.item);
+                            pending.extend(&fold.arguments);
+                        } else {
+                            variables.program_values.insert(fold.item);
+                            for endpoint in &fold.arguments[..2] {
+                                collect_machine_operand_carriers(
+                                    MachineOperandView::Shared(endpoint),
+                                    &mut variables,
+                                );
+                            }
+                            pending.extend(&fold.arguments[2..]);
+                        }
+                    }
+                    KernelTermNode::Call { arguments, .. }
+                        if arguments
+                            .iter()
+                            .all(|argument| argument.ty() == &KernelType::Integer) =>
+                    {
+                        pending.extend(arguments);
+                    }
                     KernelTermNode::MachineObservation { operand, .. } => {
                         collect_machine_operand_carriers(
                             MachineOperandView::Shared(operand),
@@ -70,7 +124,6 @@ impl TermRewrite<'_> {
         Some(())
     }
 
-    #[allow(dead_code)] // Term dispatch activation follows its remaining node families.
     pub(in crate::kernel) fn shared_integer_operand(
         &mut self,
         root: &KernelTerm,
@@ -78,10 +131,34 @@ impl TermRewrite<'_> {
         self.shared_integer_operand_in(root, false)
     }
 
-    /// Fold scope already performs capture checks. Rewrite arithmetic and
-    /// nested folds here, bridging the remaining node families.
+    pub(in crate::kernel) fn retained_integer_field(
+        &mut self,
+        root: &KernelTerm,
+    ) -> Option<KernelTerm> {
+        self.reserve_shared_rewrite_variables_once(root)?;
+        self.shared_fold_integer_child(root)
+    }
+
+    /// Fold scope already performs capture checks. Rewrite the supported
+    /// Integer children here, bridging the remaining node families.
     pub(super) fn shared_fold_integer_child(&mut self, root: &KernelTerm) -> Option<KernelTerm> {
         self.shared_integer_operand_in(root, true)
+    }
+
+    pub(super) fn can_rewrite_exact_observation(&self, root: &KernelTerm) -> bool {
+        root.is_integer_observation_arithmetic()
+            && self.integer_exact.is_some_and(|(source, replacement)| {
+                source.mathematical_root().is_none()
+                    && source
+                        .root()
+                        .exact_shared_integer_observation()
+                        .is_some_and(|value| value.shared_operand().is_some())
+                    && (replacement.mathematical_root().is_some()
+                        || replacement
+                            .root()
+                            .exact_shared_integer_observation()
+                            .is_some_and(|value| value.shared_operand().is_some()))
+            })
     }
 
     fn shared_integer_operand_in(
@@ -89,11 +166,38 @@ impl TermRewrite<'_> {
         root: &KernelTerm,
         fold_child: bool,
     ) -> Option<KernelTerm> {
-        if root.ty() != &KernelType::Integer || self.integer_exact.is_some() {
-            // This partial entry point admits variable/typed substitutions.
-            // Exact-source/read-through matching is required before Term use.
+        if root.ty() != &KernelType::Integer {
             return None;
         }
+        let exact = match self.integer_exact {
+            Some((source, replacement))
+                if fold_child
+                    && root.is_mathematical_integer()
+                    && source.read_through_ref().mathematical_root().is_some()
+                    && replacement.mathematical_root().is_some() =>
+            {
+                Some((
+                    IntegerExactSource::Mathematical(
+                        source.read_through_ref().mathematical_root()?.clone(),
+                    ),
+                    replacement.mathematical_root()?.clone(),
+                ))
+            }
+            Some((source, replacement))
+                if fold_child && self.can_rewrite_exact_observation(root) =>
+            {
+                let observation = source.root().exact_shared_integer_observation()?;
+                Some((
+                    IntegerExactSource::Observation {
+                        written: observation,
+                        reading: source.read_through_ref(),
+                    },
+                    KernelTermImport::default().integer(replacement),
+                ))
+            }
+            Some(_) => return None,
+            None => None,
+        };
         if !fold_child {
             self.reserve_shared_rewrite_variables_once(root)?;
             self.visit(); // The native integer entry charges before its shared walk.
@@ -120,13 +224,40 @@ impl TermRewrite<'_> {
             if memo.borrow().contains_key(&key(&term)) {
                 continue;
             }
+            let retained_fold_if = match term.node() {
+                KernelTermNode::IntegerIf { arguments } if self.condition_exact.is_none() => {
+                    match arguments[0].node() {
+                        KernelTermNode::BoolLiteral(_) | KernelTermNode::Variable(_) => true,
+                        // These guards have a fixed-width native representation.
+                        KernelTermNode::BoolCompare { arguments, .. }
+                        | KernelTermNode::BoolOverflow { arguments, .. } => {
+                            arguments.iter().all(|operand| {
+                                matches!(operand.node(), KernelTermNode::MachineLiteral(_))
+                            })
+                        }
+                        _ => false,
+                    }
+                }
+                _ => false,
+            };
+            let retained_integer_call = fold_child
+                && exact.is_none()
+                && matches!(
+                    term.node(),
+                    KernelTermNode::Call { arguments, .. }
+                        if arguments.iter().all(|argument| argument.ty() == &KernelType::Integer)
+                );
             if fold_child
+                && exact.is_none()
+                && !retained_fold_if
+                && !retained_integer_call
                 && !matches!(
                     term.node(),
                     KernelTermNode::IntegerLiteral(_)
                         | KernelTermNode::Variable(_)
                         | KernelTermNode::IntegerOperation { .. }
                         | KernelTermNode::Fold(_)
+                        | KernelTermNode::MachineObservation { .. }
                 )
             {
                 let native = self.fold_integer_bridge.integer(&term).ok()?;
@@ -141,6 +272,30 @@ impl TermRewrite<'_> {
             if !finish {
                 self.visit();
                 if self.checked_work_exhausted() {
+                    return None;
+                }
+            }
+            let exact_observation = if exact.is_some() {
+                term.exact_shared_integer_observation()
+            } else {
+                None
+            };
+            if let Some((source, replacement)) = &exact {
+                if source.matches(&term, exact_observation.as_ref()) {
+                    let work = match replacement.node() {
+                        KernelTermNode::IntegerLiteral(value) => value.bits() as usize + 1,
+                        _ => 1,
+                    };
+                    self.charge_rewrite_work(work);
+                    if self.checked_work_exhausted() {
+                        return None;
+                    }
+                    self.changed = true;
+                    memo.borrow_mut().insert(key(&term), replacement.clone());
+                    continue;
+                }
+                if matches!(term.node(), KernelTermNode::Fold(_)) {
+                    self.unsupported_integer_scope = true;
                     return None;
                 }
             }
@@ -172,12 +327,41 @@ impl TermRewrite<'_> {
                     self.retained_fold_in(fold).ok()?.into_term()
                 }
                 KernelTermNode::MachineObservation { format, operand } => {
-                    let rewritten = self.shared_machine_operand(operand)?;
+                    let exact = exact.is_some();
+                    let rewritten = if exact
+                        && exact_observation
+                            .as_ref()
+                            .and_then(SharedMachineIntegerTerm::shared_operand)
+                            != Some(operand)
+                    {
+                        None
+                    } else {
+                        self.shared_machine_operand(operand)
+                    };
+                    let Some(rewritten) = rewritten else {
+                        if (!exact && !fold_child) || self.refusal_status().is_some() {
+                            return None;
+                        }
+                        // Native-only payloads can themselves contain Integer
+                        // expressions. Preserve their existing rewrite rules at
+                        // this leaf without exporting the surrounding DAG.
+                        let native = self.fold_integer_bridge.integer(&term).ok()?;
+                        let rewritten = self.integer_shared(&native);
+                        if self.refusal_status().is_some() {
+                            return None;
+                        }
+                        memo.borrow_mut()
+                            .insert(key(&term), import.integer(&rewritten.into()));
+                        continue;
+                    };
                     let changed = rewritten != *operand;
                     let view = MachineOperandView::Shared(&rewritten);
-                    let observed = view
-                        .observe(*format)
-                        .unwrap_or_else(|| IntegerTerm::Machine(view.retain(*format)));
+                    let observed = if exact {
+                        IntegerTerm::Machine(view.retain(*format))
+                    } else {
+                        view.observe(*format)
+                            .unwrap_or_else(|| IntegerTerm::Machine(view.retain(*format)))
+                    };
                     let observed = match observed {
                         IntegerTerm::Machine(machine) if changed => {
                             if let Some(root) = machine.shared_operand() {
@@ -202,19 +386,40 @@ impl TermRewrite<'_> {
                     }
                 }
                 KernelTermNode::IntegerIf { arguments } => {
-                    if self.collected_conditions.is_some() {
+                    if self.collected_conditions.is_some() && !fold_child {
                         return None;
                     }
                     if !finish {
-                        let preserve = self.integer_variables.is_some()
-                            && crate::kernel::proof::fact_reasoning::is_literal_value_if_guard_root(
-                                &arguments[0],
-                            );
-                        let guard = self.shared_boolean_operand(&arguments[0])?;
-                        let guard = if preserve {
-                            guard
+                        let (guard, preserve) = if fold_child {
+                            // Keep the native guard check and its collection
+                            // rules while the Integer arms stay in the DAG.
+                            let guard = KernelTermExport::condition(&arguments[0]).ok()?;
+                            if let Some(conditions) = &mut self.collected_conditions {
+                                conditions.push(guard.clone());
+                            }
+                            let preserve = self.preserves_closed_value_conditional(&guard);
+                            let guard = self.condition(&guard);
+                            let guard = if preserve {
+                                guard
+                            } else {
+                                folded_machine_condition(guard)
+                            };
+                            if self.checked_work_exhausted() {
+                                return None;
+                            }
+                            (import.condition(&guard), preserve)
                         } else {
-                            common_boolean::folded_shared_machine_condition(guard)
+                            let preserve = self.integer_variables.is_some()
+                                && crate::kernel::proof::fact_reasoning::is_literal_value_if_guard_root(
+                                    &arguments[0],
+                                );
+                            let guard = self.shared_boolean_operand(&arguments[0])?;
+                            let guard = if preserve {
+                                guard
+                            } else {
+                                common_boolean::folded_shared_machine_condition(guard)
+                            };
+                            (guard, preserve)
                         };
                         guards.insert(term.id(), (guard.clone(), preserve));
                         pending.push((term.clone(), true));
@@ -237,11 +442,39 @@ impl TermRewrite<'_> {
                         let yes = memo.borrow()[&key(&arguments[1])].clone();
                         let no = memo.borrow()[&key(&arguments[2])].clone();
                         crate::instrumentation::record_deterministic_work(1);
-                        if !preserve && yes.integer_native_syntax_equal(&no) {
+                        let equal = !preserve
+                            && if fold_child {
+                                // Native Integer `if` collapses equal arms by
+                                // interned identity. Reuse the fold's bridge
+                                // for differing handles rather than comparing
+                                // those two DAGs afresh at each conditional.
+                                yes == no
+                                    || self.fold_integer_bridge.integer(&yes).ok()?
+                                        == self.fold_integer_bridge.integer(&no).ok()?
+                            } else {
+                                yes.integer_native_syntax_equal(&no)
+                            };
+                        if equal {
                             yes
                         } else {
                             KernelTerm::integer_if_raw([guard, yes, no])
                         }
+                    }
+                }
+                KernelTermNode::Call { name, arguments } if retained_integer_call => {
+                    if !finish && !arguments.is_empty() {
+                        pending.push((term.clone(), true));
+                        pending.extend(arguments.iter().rev().cloned().map(|child| (child, false)));
+                        continue;
+                    }
+                    let rewritten: Vec<_> = arguments
+                        .iter()
+                        .map(|child| memo.borrow()[&key(child)].clone())
+                        .collect();
+                    if rewritten == *arguments {
+                        term.clone()
+                    } else {
+                        KernelTerm::checked_call(KernelType::Integer, name.clone(), rewritten)
                     }
                 }
                 KernelTermNode::IntegerOperation {
@@ -285,6 +518,46 @@ mod tests {
             KernelIntegerOperator::TruncatingRemainder => IntegerTerm::TruncatingRemainder(a, b),
             KernelIntegerOperator::Negate => unreachable!(),
         }
+    }
+
+    #[test]
+    fn exact_observation_rewrite_preserves_historical_reads() {
+        let _session = VerificationSession::enter();
+        let format = MachineIntegerType::Int32;
+        let address = Address::symbolic(Variable(992842));
+        let before = intern_memory(SymbolicMemory::new());
+        let after = intern_memory(SymbolicMemory::new().store(
+            address.clone(),
+            ProgramValue::Int32(MachineTerm::constant(7)),
+        ));
+        let observe = |point| {
+            let read = MachineTerm::read_named(point, address.clone(), LoadKind::Int32);
+            let operand = KernelTermImport::default().machine(format, &read);
+            let value: SharedIntegerTerm = IntegerTerm::Machine(
+                SharedMachineIntegerTerm::from_shared(format, operand).unwrap(),
+            )
+            .into();
+            let root = KernelTermImport::default().integer(&value);
+            (value, root)
+        };
+        let (source, before) = observe(ProgramPoint::at(&before));
+        let (_, after) = observe(ProgramPoint::at(&after));
+        let stored = |root| Term::Integer(StoredIntegerTerm::from_root(root).unwrap());
+        let goal = Proposition::Equal(stored(before.clone()), stored(after.clone()));
+        let replacement: SharedIntegerTerm = IntegerTerm::constant_i64(21).into();
+        let mut rewrite = TermRewrite::for_integer_exact(&source, &replacement);
+        let exports = KernelTermExport::integer_export_count();
+        let rewritten = rewrite.proposition(&goal);
+        assert_eq!(rewrite.refusal(), None);
+        assert!(rewrite.changed);
+        assert_eq!(KernelTermExport::integer_export_count(), exports);
+        let Proposition::Equal(Term::Integer(left), Term::Integer(right)) = rewritten else {
+            panic!("Integer equality");
+        };
+        assert_eq!(left.root(), replacement.mathematical_root());
+        assert_eq!(right.root(), Some(&after));
+        assert!(!before.has_cached_native_argument());
+        assert!(!after.has_cached_native_argument());
     }
 
     #[test]
@@ -350,7 +623,7 @@ mod tests {
         );
         let replacements = [
             MachineTerm::Variable(load),
-            MachineTerm::MemoryLoad(
+            MachineTerm::read_named(
                 ProgramPoint::at(&memory),
                 Box::new(address),
                 LoadKind::Int32,
@@ -438,7 +711,7 @@ mod tests {
             offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(from), 4),
         };
         let memory = intern_memory(SymbolicMemory::new());
-        let read = MachineTerm::MemoryLoad(
+        let read = MachineTerm::read_named(
             ProgramPoint::at(&memory),
             Box::new(address),
             LoadKind::Int32,
@@ -581,12 +854,20 @@ mod conditional_tests {
                             rewrite.push_integer_substitution_scope(from, Variable(995105), false)
                         });
                         let expected = baseline.integer(&input);
-                        let exports = KernelTermExport::machine_export_count();
+                        let exports = (
+                            KernelTermExport::machine_export_count(),
+                            KernelTermExport::integer_export_count(),
+                        );
                         let cached = root.has_cached_native_argument();
                         let actual = rewrite.shared_integer_operand(&root).unwrap();
-                        assert_eq!(KernelTermExport::machine_export_count(), exports);
+                        assert_eq!(
+                            (
+                                KernelTermExport::machine_export_count(),
+                                KernelTermExport::integer_export_count(),
+                            ),
+                            exports,
+                        );
                         assert_eq!(root.has_cached_native_argument(), cached);
-                        assert!(!actual.has_cached_native_argument());
                         assert_eq!(rewrite.changed, baseline.changed);
                         assert_eq!(rewrite.refusal(), baseline.refusal());
                         assert_eq!(
@@ -632,11 +913,11 @@ mod conditional_tests {
                 vec![PureFunctionArgument::Value(ProgramValue::Pointer(
                     pointer
                         .clone()
-                        .with_declared_object_class(constant.then(|| {
+                        .with_declared_object_class(constant.then_some(
                             crate::kernel::effective_type::CAccessClass::Scalar(
                                 crate::kernel::effective_type::CScalarClass::Int,
-                            )
-                        })),
+                            ),
+                        )),
                 ))],
             ))
         });

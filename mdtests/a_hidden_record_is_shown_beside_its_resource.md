@@ -2,10 +2,12 @@
 
 `pair` declares no field, so it keeps its child's field `first.v` in a
 record the author does not write. A refusal lists the held `pair(p)` with
-that record, `record { first.v: <unnamed A> }`, in the same labels as the
-pure facts, so the reader sees which value the facts `old(p->n) == <unnamed A>`
-and `<unnamed A> >= 0` are about. The claim `result >= 1` is false: the
-record only says the field is nonnegative.
+that record, `record { first.v: old(pair(p).first.v) }`, in the same
+spelling as the pure facts, so the reader sees which value the facts
+`old(p->n) == old(pair(p).first.v)` and `old(pair(p).first.v) >= 0` are
+about. The field's value is the contract's entry model, which `old(..)`
+always names. The claim `result >= 1` is false: the record only says the
+field is nonnegative.
 
 ```c filename=a_hidden_record_is_shown_beside_its_resource.c
 struct cell { int32 value; };
@@ -45,5 +47,5 @@ int32 get(struct pair* p) {
 ```
 
 ```expect
-fail: resource facts: [owns pair(p) record { first.v: <unnamed A> }
+fail: resource facts: [owns pair(p) record { first.v: old(pair(p).first.v) }
 ```

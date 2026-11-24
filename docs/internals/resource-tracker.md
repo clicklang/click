@@ -667,6 +667,33 @@ way (`ProgramType::read_cell`, `LoadKind::read_cell`): C11 6.5p7 lets any charac
 type read an object's bytes, and the reinterpretation is the same modular
 conversion.
 
+**A load term's identity is its load and its kind** (`design/loads.md`, step
+3a). `MachineTerm::MemoryLoad(point, cell, kind)` holds a `ReadPoint`, the
+point its producer selected, and a `LoadCell`, the address as the producer
+spelled it together with its interned `Load` (`src/kernel/primitives/load.rs`),
+keyed by the point's read key and the cell. Equality and hashing compare the
+load's id and the kind, and ordering compares the load by content (its stored
+content hash, then point and cell) and then the kind, so iteration order does
+not depend on interning order: the `ReadPoint` compares equal to every
+other, and the address is not compared, since the load's identity holds it.
+Within one memory arena this is the equivalence the term had when it compared
+point, address and kind, because `ProgramPoint` equality is read-key equality
+there; across arenas two memory-named reads of equal-content memories are two
+terms. A new arena starts only with a new verification session, which also
+clears the load interner, so such terms never meet in one proof
+(`design/loads.md`, step 3a-i).
+Two reads of one cell at one read key are one term whichever selection (exact,
+indexed write, indexed cell) built each, and each keeps its own selection:
+consumers branch on the term's `ReadPoint`, never on `Load::point`, which is the
+first selection of that key. Reads of one cell at two kinds share the load and
+are two terms. `MachineTerm::read_named` is the only builder, through
+`read_operands`; a substitution or rewrite that changes the address builds a
+new read and so interns the load of the new cell
+(`build_support/read_construction.rs`). Because the fields compare as a whole
+term, compare `point.point()` or `cell.address()` when code means the
+producer's point or address alone: `ReadPoint == ReadPoint` is always true and
+`LoadCell == LoadCell` compares loads.
+
 When a pointer read reuses a cached scalar load name, its coordinates come from
 that name's defining read. Reading the same cached cell through an
 alias in a different symbolic storage block must not rebase its pointer value
@@ -1023,7 +1050,7 @@ stated exact equality places the pointer in such a local.
 `a_symbolic_store_skips_locals_whose_address_is_never_taken`
 (`src/scaling_tests/kernel/tests/memory_scaling_tests.rs`) is the regression.
 
-A load through a `Symbolic` or `LoadedPointer` pointer reads the same map,
+A load through a `Symbolic` or `AddressBase::Load` pointer reads the same map,
 which holds each reachable cell's value as well as its key
 (`CellStore::caught_up_pointer_reachable`). Such a load observes every
 reachable cell except, for a loaded pointer, locals declared after it was

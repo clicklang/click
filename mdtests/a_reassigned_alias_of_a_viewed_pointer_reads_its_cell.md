@@ -5,11 +5,10 @@ its own equality, so the outcome knows `q == p` at two points, once about the
 value `q` held after the first call and once about the value it holds now. The
 read of `q[0]` is a load through the newer value.
 
-`solve` closes such a goal by rewriting with the recorded equalities. It used to
-commit to the first one that applied, and rewriting `p` into the *older* value
-of `q` leaves a goal no rewrite by the newer equality makes reflexive. Every
-remaining equality is now offered the chance to close the goal before one that
-merely applies is taken.
+The proof applies a checked alias-read theorem while `q` names the value
+from the second call. The theorem names both pointers and the viewable cell,
+and its proof rewrites the alias to `p`. This establishes a fact the return
+can reuse with `known()`.
 
 The range is variable-length on purpose: nothing seeds a cell for `p[0]`, so
 the proof has to go through the loads' addresses. The sibling below, whose
@@ -37,12 +36,28 @@ int read_twice(int *p, int n) {
 verifying "view.c";
 verifying "caller.c";
 
+theorem aliased_cell_read(p: int32*, q: const int32*) {
+    requires p == q;
+    requires viewable(p[0..1]);
+    ensures q[0] == p[0] by {
+        rewrite(q, p);
+        known();
+    }
+}
+
 const int *view(int *p) { ensures result == p; }
 
 int read_twice(int *p, int n) {
     views p[0..n];
     requires 0 < n;
-    ensures result == p[0];
+    ensures result == p[0] by {
+        step_until(statement(2).entry);
+        have q[0] == p[0] by {
+            apply(aliased_cell_read(p, q));
+        }
+        step_until(function.exit);
+        known();
+    }
 }
 ```
 

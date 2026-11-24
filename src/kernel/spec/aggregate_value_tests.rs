@@ -98,7 +98,13 @@ fn caller_callback_reads_keep_the_entry_point() {
         let load = pointer.address().as_loaded_value().expect("callback read");
         assert_eq!(load.point.read_version_id(), entry.program_point_id());
         assert_eq!(load.defining_address, address);
-        assert_eq!(load.value_type, Some(ty));
+        // A callback read is the cell's one load, decoded as a function
+        // pointer: the category is the term's, not the load's.
+        assert!(load.identity.is_point_named());
+        assert!(matches!(
+            pointer.program_type(),
+            ProgramType::FunctionPointer(_)
+        ));
     };
     let assumptions = PureFactContext::new();
     let logical = SpecExpression::MemoryLoad {

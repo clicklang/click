@@ -52,7 +52,9 @@ loop {
 ```
 
 The condition is evaluated at entry, at an arbitrary iteration's start, and
-at each backedge. When it is true, the loop must own the stated resource.
+at each backedge. Write the condition as a scalar comparison over C values,
+independent of the mutex heldness it describes. When it is true, the loop
+must own the stated resource.
 A branch proving the condition may use that ownership; proving the condition
 alone does not create ownership. The next iteration may carry a different
 mutex acquisition, but it must belong to the same initialization.
@@ -110,7 +112,10 @@ read, an application of a pure Click function, or a resource model field, and
 Click reads the one declared component at the iteration's entry and again at
 the back edge, exactly as it reads an invariant about the same cells. It may
 not mention `old` or `at`, because a measure that names a fixed state reads
-the same state twice and so can never decrease. Each component is checked in its own type, so its arithmetic must also be
+the same state twice and so can never decrease. A loop measure cannot read a
+C local if the program takes its address. A write through a pointer could
+change that local outside the updates the ranking check tracks.
+Each component is checked in its own type, so its arithmetic must also be
 defined under those assumptions. This produces separate termination evidence; it does not
 change what an invariant or a postcondition means. A separately ranked nested loop is
 treated as a terminating phase when checking its enclosing loop; an outer

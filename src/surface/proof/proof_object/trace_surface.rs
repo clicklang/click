@@ -106,7 +106,10 @@ impl Proof<'_> {
                 if let Some(text) = immutable_field_hint(hint, &address, &locals) {
                     return Some(PointerTraceView {
                         text: text.to_string(),
-                        retained_state: Some((memory.into_shared_memory(), point)),
+                        retained_state: Some((
+                            crate::kernel::ProgramPoint::from(memory).into_shared_memory(),
+                            point,
+                        )),
                     });
                 }
             }
@@ -121,7 +124,7 @@ impl Proof<'_> {
                     return Some(PointerTraceView {
                         text: text.to_string(),
                         retained_state: Some((
-                            memory.into_shared_memory(),
+                            crate::kernel::ProgramPoint::from(memory).into_shared_memory(),
                             Some(
                                 crate::surface::diagnostics::describe_program_point_selector(
                                     selector,
@@ -154,7 +157,10 @@ impl Proof<'_> {
                 ) {
                     return Some(PointerTraceView {
                         text: text.to_string(),
-                        retained_state: Some((memory.into_shared_memory(), point)),
+                        retained_state: Some((
+                            crate::kernel::ProgramPoint::from(memory).into_shared_memory(),
+                            point,
+                        )),
                     });
                 }
             }

@@ -393,39 +393,115 @@ impl super::ProofSearch<PureFactContext> {
         })
     }
 
-    /// Choose one stronger float comparison from the goal's existing
-    /// dependency buckets. The certificate checks just the chosen premise.
-    pub(crate) fn select_float_bound(
+    /// Choose one bound from the goal's existing dependency buckets. The
+    /// certificate checks only that bound and any explicit count evidence.
+    pub(crate) fn select_arithmetic_bound(
         context: &PureFactContext,
         goal: &Proposition,
     ) -> Option<Proposition> {
         #[cfg(test)]
-        crate::kernel::search::record_discovery("select_float_bound");
-        use crate::kernel::proof::arithmetic_special::{float_bound_weakens, is_float_bound};
-        if !is_float_bound(goal) {
+        crate::kernel::search::record_discovery("select_arithmetic_bound");
+        use crate::kernel::proof::arithmetic_special::{
+            float_bound_weakens, is_float_bound, same_signed_max_shift_bound,
+            signed_max_shift_count_bound,
+        };
+        let float = is_float_bound(goal);
+        if !float && signed_max_shift_count_bound(goal).is_none() {
             return None;
         }
+        Self::find_connected_arithmetic_bound(context, goal, float, |premise| {
+            let checks = if float {
+                float_bound_weakens(premise, goal)
+            } else {
+                same_signed_max_shift_bound(premise, goal)
+            };
+            checks.then(|| premise.clone())
+        })
+    }
+
+    pub(crate) fn select_float_bound_chain(
+        context: &PureFactContext,
+        goal: &Proposition,
+    ) -> Option<Vec<Proposition>> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("select_float_bound_chain");
+        use crate::kernel::proof::arithmetic_special::{
+            float_bound_chain, is_compound_float_bound,
+        };
+        if !is_compound_float_bound(goal) {
+            return None;
+        }
+        Self::find_connected_arithmetic_bound(context, goal, true, |premise| {
+            float_bound_chain(premise, goal)
+        })
+    }
+
+    /// Select bounds independently, so a large premise bucket cannot
+    /// cause a Cartesian product of candidate pairs.
+    pub(crate) fn select_float_pair_bounds(
+        context: &PureFactContext,
+        goal: &Proposition,
+    ) -> Option<Vec<Proposition>> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("select_float_pair_bounds");
+        let pair = crate::kernel::proof::arithmetic_special::FloatPairBound::new(goal)?;
+        let mut best: [Option<(u64, Proposition)>; 4] = [None, None, None, None];
+        Self::find_connected_arithmetic_bound(context, goal, true, |premise| {
+            let count = pair.premise_count();
+            for (index, slot) in best[..count].iter_mut().enumerate() {
+                if let Some(endpoint) = pair.operand_endpoint(index, premise)
+                    && slot.as_ref().is_none_or(|(previous, _)| {
+                        pair.stronger_endpoint(index, endpoint, *previous)
+                    })
+                {
+                    *slot = Some((endpoint, premise.clone()));
+                }
+            }
+            let mut endpoints = [0; 4];
+            for (index, source) in best[..count].iter().enumerate() {
+                endpoints[index] = source.as_ref()?.0;
+            }
+            pair.established_by(endpoints).then(|| {
+                best[..count]
+                    .iter()
+                    .flatten()
+                    .map(|(_, premise)| premise.clone())
+                    .collect()
+            })
+        })
+    }
+
+    fn find_connected_arithmetic_bound<T>(
+        context: &PureFactContext,
+        goal: &Proposition,
+        float: bool,
+        mut select: impl FnMut(&Proposition) -> Option<T>,
+    ) -> Option<T> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("find_connected_arithmetic_bound");
         for key in collect_atomic_connection_keys(goal) {
             for fact in context.atomic_facts_connected_to(&key, false).0 {
                 if crate::instrumentation::deadline_exceeded_with_work(1) {
                     return None;
                 }
                 match fact {
-                    AtomicConnectedFact::Condition(condition, true)
-                        if matches!(
-                            condition,
-                            ConditionTerm::Float32(_) | ConditionTerm::Float64(_)
-                        ) =>
+                    AtomicConnectedFact::Condition(condition, expected)
+                        if !float
+                            || (expected
+                                && matches!(
+                                    condition,
+                                    ConditionTerm::Float32(_) | ConditionTerm::Float64(_)
+                                )) =>
                     {
-                        let premise = Proposition::condition_is(condition.clone(), true);
-                        if float_bound_weakens(&premise, goal) {
-                            return Some(premise);
+                        let premise = Proposition::condition_is(condition.clone(), expected);
+                        if let Some(selected) = select(&premise) {
+                            return Some(selected);
                         }
                     }
-                    AtomicConnectedFact::Proposition(premise)
-                        if float_bound_weakens(premise, goal) =>
-                    {
-                        return Some(premise.clone());
+                    AtomicConnectedFact::Proposition(premise) => {
+                        if let Some(selected) = select(premise) {
+                            return Some(selected);
+                        }
                     }
                     _ => {}
                 }
@@ -1298,10 +1374,8 @@ impl super::ProofSearch<PureFactContext> {
             .map(|instances| PropositionDerivationRule::FiniteForAll { instances })
     }
 
-    /// Select one exact existential fact, rename its witness binder to the
-    /// goal binder, and derive the goal body from the witness body's
-    /// conjuncts. The selected fact is retained by the resulting rule; the
-    /// witness conjuncts are local assumptions of its child proof.
+    /// Open the goal and one selected existential fact at the same fresh
+    /// witness. The source conjuncts are local assumptions of the child proof.
     pub(crate) fn derive_exists_from_fact(
         context: &PureFactContext,
         var: Variable,
@@ -1310,6 +1384,9 @@ impl super::ProofSearch<PureFactContext> {
     ) -> Option<PropositionDerivationRule> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("derive_exists_from_fact");
+        let witness = crate::kernel::quantifiers::opening_witness()?;
+        let opened_goal =
+            crate::kernel::quantifiers::rename_quantified_variable(body, var, witness, sort)?;
         let candidates = context
             .proposition_facts(SearchPermission::new())
             .filter_map(|source| {
@@ -1325,10 +1402,10 @@ impl super::ProofSearch<PureFactContext> {
                 if source_sort != sort {
                     return None;
                 }
-                let renamed = crate::kernel::api::substitute_quantified_body_capture_free(
+                let renamed = crate::kernel::quantifiers::rename_quantified_variable(
                     source_body,
                     **source_var,
-                    var,
+                    witness,
                     sort,
                 )?;
                 Some((source.clone(), renamed))
@@ -1343,12 +1420,13 @@ impl super::ProofSearch<PureFactContext> {
             }
             let derivation = crate::kernel::search::ProofSearch::derive_proposition_using(
                 &(witness_assumptions),
-                body,
+                &opened_goal,
                 false,
             );
             if let Some(derivation) = derivation {
                 return Some(PropositionDerivationRule::ExistsFromFact {
                     source: Box::new(source),
+                    witness,
                     body: derivation,
                 });
             }
@@ -1979,7 +2057,7 @@ mod condition_premise_tests {
             },
             ProgramValue::Int32(term(70)),
         );
-        let load = MachineTerm::MemoryLoad(
+        let load = MachineTerm::read_named(
             ProgramPoint::at(&(intern_memory(memory))),
             Box::new(pointer),
             LoadKind::Int32,

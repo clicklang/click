@@ -6,6 +6,7 @@ fn selected_constructor_payload_check_scales_with_written_fields() {
     let types = [
         AlgebraicValueType::Program(ProgramType::Int32),
         AlgebraicValueType::Program(ProgramType::UInt64),
+        AlgebraicValueType::Program(ProgramType::Bool),
         AlgebraicValueType::Integer,
     ];
     let sizes = [8, 32, 128];
@@ -20,6 +21,9 @@ fn selected_constructor_payload_check_scales_with_written_fields() {
             let variable = Variable(id);
             match ty {
                 AlgebraicValueType::Integer => AlgebraicValue::Integer(IntegerTerm::var(variable)),
+                AlgebraicValueType::Program(ProgramType::Bool) => AlgebraicValue::Program(
+                    ProgramValue::of_bool(ConditionTerm::Variable(variable)),
+                ),
                 AlgebraicValueType::Program(program_type) => AlgebraicValue::Program(
                     MachineIntegerType::from_program_type(*program_type)
                         .unwrap()
@@ -28,9 +32,12 @@ fn selected_constructor_payload_check_scales_with_written_fields() {
                 _ => unreachable!(),
             }
         };
-        let fields = (0..size)
+        let mut fields = (0..size)
             .map(|i| value(992_300 + i as u64))
             .collect::<Vec<_>>();
+        if *ty == AlgebraicValueType::Program(ProgramType::Bool) {
+            fields[0] = AlgebraicValue::Program(ProgramValue::bool_constant(true));
+        }
         scrutinee.node = constructor(fields.clone());
         let bindings = (0..size)
             .map(|i| value(992_100 + i as u64))
@@ -38,18 +45,13 @@ fn selected_constructor_payload_check_scales_with_written_fields() {
         let mut expected_fields = fields.into_iter().rev().collect::<Vec<_>>();
         let mut result_fields = bindings.iter().cloned().rev().collect::<Vec<_>>();
         let extra_field = match ty {
-            AlgebraicValueType::Integer => {
-                Some(AlgebraicValue::Integer(IntegerTerm::var(Variable(992_500))))
+            AlgebraicValueType::Program(ProgramType::UInt64) => {
+                AlgebraicValue::Program(uint64(MachineTerm::uint64_constant(7)))
             }
-            AlgebraicValueType::Program(ProgramType::UInt64) => Some(AlgebraicValue::Program(
-                uint64(MachineTerm::uint64_constant(7)),
-            )),
-            _ => None,
+            _ => value(992_500),
         };
-        if let Some(field) = extra_field {
-            expected_fields[0] = field.clone();
-            result_fields[0] = field;
-        }
+        expected_fields[0] = extra_field.clone();
+        result_fields[0] = extra_field;
         let expected = AlgebraicTerm {
             algebraic_type: scrutinee.algebraic_type.clone(),
             node: constructor(expected_fields),
@@ -78,6 +80,247 @@ fn selected_constructor_payload_check_scales_with_written_fields() {
             crate::instrumentation::measure_deterministic_work(|| computes_leaf(&goal));
         assert!(proved);
         assert!((2 * size..=8 * size + 48).contains(&work), "{size}: {work}");
+    }
+}
+
+#[test]
+fn algebraic_constructor_payload_check_scales_with_written_fields() {
+    let field_type = AlgebraicValueType::Algebraic {
+        name: "Color".into(),
+        arguments: vec![],
+    };
+    let colors: std::sync::Arc<[AlgebraicVariantType]> = [
+        AlgebraicVariantType {
+            name: "Red".into(),
+            fields: vec![],
+        },
+        AlgebraicVariantType {
+            name: "Green".into(),
+            fields: vec![],
+        },
+        AlgebraicVariantType {
+            name: "Layer".into(),
+            fields: vec![field_type.clone()],
+        },
+    ]
+    .into();
+    for size in [8, 32, 128] {
+        let _session = VerificationSession::enter();
+        let mut scrutinee = KernelMatch::test_scrutinee(vec![field_type.clone(); size]);
+        let outer = &mut scrutinee.algebraic_type;
+        outer.schemas =
+            std::sync::Arc::new(AlgebraicSchemas::new(std::collections::BTreeMap::from([
+                (outer.value_type(), outer.variants.clone()),
+                (field_type.clone(), colors.clone()),
+            ])));
+        let color = outer.resolve_nested_type(&field_type).unwrap();
+        let value = |node| {
+            AlgebraicValue::Algebraic(AlgebraicTerm {
+                algebraic_type: color.clone(),
+                node,
+            })
+        };
+        let variable = |id| value(AlgebraicTermNode::Variable(Variable(id)));
+        let tag = |variant: &str| {
+            value(AlgebraicTermNode::Constructor {
+                variant: variant.into(),
+                fields: vec![],
+            })
+        };
+        let layer = |field| {
+            value(AlgebraicTermNode::Constructor {
+                variant: "Layer".into(),
+                fields: vec![field],
+            })
+        };
+        let mut fields = (0..size)
+            .map(|i| variable(994_300 + i as u64))
+            .collect::<Vec<_>>();
+        // The scrutinee reads this ID before the arm introduces its binding.
+        fields[0] = layer(variable(994_101));
+        let bindings = (0..size)
+            .map(|i| variable(994_100 + i as u64))
+            .collect::<Vec<_>>();
+        let arm = |fields| AlgebraicTermNode::Constructor {
+            variant: "Arm".into(),
+            fields,
+        };
+        scrutinee.node = arm(fields.clone());
+        let mut expected = fields.into_iter().rev().map(layer).collect::<Vec<_>>();
+        let mut result = bindings
+            .iter()
+            .cloned()
+            .rev()
+            .map(layer)
+            .collect::<Vec<_>>();
+        for fields in [&mut expected, &mut result] {
+            fields[0] = layer(variable(994_500));
+            fields[1] = layer(layer(tag("Green")));
+        }
+        let algebraic_type = scrutinee.algebraic_type.clone();
+        let expected = AlgebraicTerm {
+            algebraic_type: algebraic_type.clone(),
+            node: arm(expected),
+        };
+        let body = AlgebraicTerm {
+            algebraic_type: algebraic_type.clone(),
+            node: arm(result),
+        };
+        let matched = AlgebraicTerm {
+            algebraic_type,
+            node: AlgebraicTermNode::Match {
+                scrutinee: Box::new(scrutinee),
+                arms: vec![AlgebraicResultMatchArm {
+                    variant: "Arm".into(),
+                    bindings,
+                    binding_names: Default::default(),
+                    body,
+                }],
+            },
+        };
+        let goal = Proposition::Equal(
+            Term::Algebraic(matched.into()),
+            Term::Algebraic(expected.into()),
+        );
+        let (proved, work) =
+            crate::instrumentation::measure_deterministic_work(|| computes_leaf(&goal));
+        assert!(proved);
+        assert!((3 * size..=8 * size + 48).contains(&work), "{size}: {work}");
+    }
+}
+
+#[test]
+fn nested_constructor_selection_reuses_closed_payloads() {
+    let field_type = AlgebraicValueType::Algebraic {
+        name: "Chain".into(),
+        arguments: vec![],
+    };
+    let variants: std::sync::Arc<[AlgebraicVariantType]> = [
+        AlgebraicVariantType {
+            name: "End".into(),
+            fields: vec![],
+        },
+        AlgebraicVariantType {
+            name: "Link".into(),
+            fields: vec![field_type.clone()],
+        },
+    ]
+    .into();
+    for depth in [4_u64, 8, 16] {
+        let _session = VerificationSession::enter();
+        let flag = Variable(995_900);
+        let mut scrutinee = KernelMatch::test_scrutinee(vec![
+            field_type.clone(),
+            AlgebraicValueType::Program(ProgramType::Bool),
+        ]);
+        let outer = &mut scrutinee.algebraic_type;
+        outer.schemas =
+            std::sync::Arc::new(AlgebraicSchemas::new(std::collections::BTreeMap::from([
+                (outer.value_type(), outer.variants.clone()),
+                (field_type.clone(), variants.clone()),
+            ])));
+        let chain = outer.resolve_nested_type(&field_type).unwrap();
+        let constructor = |variant: &str, fields| AlgebraicTermNode::Constructor {
+            variant: variant.into(),
+            fields,
+        };
+        let value = |node| AlgebraicTerm {
+            algebraic_type: chain.clone(),
+            node,
+        };
+        let end = value(constructor("End", vec![]));
+        let link = |field| value(constructor("Link", vec![AlgebraicValue::Algebraic(field)]));
+        let variable = |index| AlgebraicTerm {
+            algebraic_type: chain.clone(),
+            node: AlgebraicTermNode::Variable(Variable(995_000 + index)),
+        };
+        let field = (0..depth).fold(end.clone(), |field, _| link(field));
+        scrutinee.node = constructor(
+            "Arm",
+            vec![
+                AlgebraicValue::Algebraic(field),
+                AlgebraicValue::Program(ProgramValue::bool_constant(true)),
+            ],
+        );
+        let mut body = variable(depth);
+        for index in (0..depth).rev() {
+            body = AlgebraicTerm {
+                algebraic_type: chain.clone(),
+                node: AlgebraicTermNode::Match {
+                    scrutinee: Box::new(variable(index)),
+                    arms: vec![
+                        AlgebraicResultMatchArm {
+                            variant: "End".into(),
+                            binding_names: Default::default(),
+                            bindings: vec![],
+                            body: link(end.clone()),
+                        },
+                        AlgebraicResultMatchArm {
+                            variant: "Link".into(),
+                            binding_names: Default::default(),
+                            bindings: vec![AlgebraicValue::Algebraic(variable(index + 1))],
+                            body,
+                        },
+                    ],
+                },
+            };
+            body = value(AlgebraicTermNode::If {
+                condition: Box::new(ConditionTerm::Variable(flag)),
+                then_term: Box::new(body),
+                else_term: Box::new(link(end.clone())),
+            });
+        }
+        let matched = AlgebraicTerm {
+            algebraic_type: chain.clone(),
+            node: AlgebraicTermNode::Match {
+                scrutinee: Box::new(scrutinee),
+                arms: vec![AlgebraicResultMatchArm {
+                    variant: "Arm".into(),
+                    binding_names: Default::default(),
+                    bindings: vec![
+                        AlgebraicValue::Algebraic(variable(0)),
+                        AlgebraicValue::Program(ProgramValue::of_bool(ConditionTerm::Variable(
+                            flag,
+                        ))),
+                    ],
+                    body,
+                }],
+            },
+        };
+        // Reuse a binder ID from the left match. Its right-hand value
+        // comes from this match's own scrutinee.
+        let expected = AlgebraicTerm {
+            algebraic_type: chain.clone(),
+            node: AlgebraicTermNode::Match {
+                scrutinee: Box::new(link(end.clone())),
+                arms: vec![
+                    AlgebraicResultMatchArm {
+                        variant: "End".into(),
+                        binding_names: Default::default(),
+                        bindings: vec![],
+                        body: link(end),
+                    },
+                    AlgebraicResultMatchArm {
+                        variant: "Link".into(),
+                        binding_names: Default::default(),
+                        bindings: vec![AlgebraicValue::Algebraic(variable(0))],
+                        body: variable(0),
+                    },
+                ],
+            },
+        };
+        let goal = Proposition::Equal(
+            Term::Algebraic(matched.into()),
+            Term::Algebraic(expected.into()),
+        );
+        let (proved, work) =
+            crate::instrumentation::measure_deterministic_work(|| computes_leaf(&goal));
+        assert!(proved);
+        let depth = depth as usize;
+        assert!(
+            (7 * depth..=7 * depth + 32).contains(&work),
+            "{depth}: {work}"
+        );
     }
 }
 
@@ -195,7 +438,7 @@ fn stored_byte_order_uses_only_the_exact_cells() {
         MachineTerm::machine_integer_cast(
             MachineIntegerType::UInt8,
             format,
-            MachineTerm::MemoryLoad(
+            MachineTerm::read_named(
                 ProgramPoint::at(&crate::kernel::intern_memory(memory.clone())),
                 Box::new(pointer),
                 LoadKind::UInt8,
@@ -393,12 +636,12 @@ fn computation_refusal_is_independent_of_memory_history() {
             after = after.store(other.clone(), ProgramValue::Int32(MachineTerm::constant(7)));
         }
         let after = crate::kernel::intern_memory(after);
-        let left = MachineTerm::MemoryLoad(
+        let left = MachineTerm::read_named(
             ProgramPoint::at(&before),
             Box::new(pointer.clone()),
             LoadKind::Int32,
         );
-        let right = MachineTerm::MemoryLoad(
+        let right = MachineTerm::read_named(
             ProgramPoint::at(&after),
             Box::new(pointer.clone()),
             LoadKind::Int32,

@@ -22,6 +22,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         else {
             return Ok(None);
         };
+        let outcome = search_input.focused_outcome_data().is_some();
         let (current, returned) = match (left, right) {
             (
                 current,
@@ -38,8 +39,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 current,
             ) if current == saved.as_ref() => (current, false),
             (_, ContractExpression::Old(read))
-                if search_input.focused_outcome_data().is_some()
-                    && crate::surface::proposition_names_result(target) =>
+                if outcome && crate::surface::proposition_names_result(target) =>
             {
                 (read.as_ref(), true)
             }
@@ -122,9 +122,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             )?;
             let separated = match separated {
                 Some(separated) => Some(separated),
-                None if (returned || derive_separation) && footprint.members.len() == 1 => {
+                None if (outcome || derive_separation) && footprint.members.len() == 1 => {
                     let written = footprint.members.front().expect("one footprint member");
-                    if returned
+                    if outcome
                         && !loop_exit
                         && let Some(separated) = Self::try_distinct_indexed_store_separation(
                             &proof,
@@ -134,14 +134,16 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         )?
                     {
                         Some(separated)
-                    } else {
-                        attempt::candidate_outcome(Self::try_single_memory_write_separation(
+                    } else if returned || derive_separation {
+                        attempt::candidate_outcome(Self::try_memory_footprint_separation(
                             &proof,
-                            written,
+                            &footprint,
                             &kept,
                             &separation,
                         ))?
                         .flatten()
+                    } else {
+                        None
                     }
                 }
                 None => None,
@@ -314,89 +316,111 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         crate::kernel::search::record_discovery("try_index_disequality_from_order");
         let known =
             ProofCertificate::from_steps(vec![ProofStep::Known]).expect("ordinary order lookup");
-        let refute_order =
-            ProofCertificate::from_steps(vec![ProofStep::Rewrite(equality), ProofStep::Normalize])
-                .expect("ordinary refutation of an irreflexive order");
+        let refute_order = ProofCertificate::from_steps(vec![
+            ProofStep::Rewrite(equality.clone()),
+            ProofStep::CompatibilityNormalize(None),
+        ])
+        .expect("ordinary refutation of an irreflexive order");
         for order in orders {
             let Some(proof) =
                 attempt::candidate_outcome(search_input.driver().apply_have_step(&order, &known))?
+                    .or_else(|| Self::retain_signed_order_bounds(search_input, &order, 2))
             else {
                 continue;
             };
-            let proof_steps = ProofCertificate::from_steps(vec![
-                ProofStep::Intro,
+            let equal_case = ProofCertificate::from_steps(vec![
                 ProofStep::Have {
                     proposition: ClickProposition::Not(Box::new(order.clone())),
                     proof: Box::new(refute_order.clone()),
                 },
                 ProofStep::Contradiction(order),
             ])
+            .expect("ordinary refutation of equal indices");
+            let proof_steps = ProofCertificate::from_steps(vec![ProofStep::If {
+                condition: equality.clone(),
+                ensuring: None,
+                then_proof: Box::new(equal_case),
+                else_proof: Box::new(known.clone()),
+            }])
             .expect("ordinary index disequality");
-            if let Some(proof) =
-                attempt::candidate_outcome(proof.driver().apply_have_step(distinct, &proof_steps))?
-            {
+            let checked = || {
+                let scope = proof
+                    .driver()
+                    .open_have_with_goal_observations(distinct.clone(), true)?;
+                scope
+                    .driver()
+                    .try_authoritative_linear_script(&proof_steps.to_proof_tactics())?
+                    .map(|done| done.join())
+                    .transpose()
+            };
+            if let Some(Some(proof)) = attempt::candidate_outcome(checked())? {
                 return Ok(Some(proof));
             }
         }
         Ok(None)
     }
 
-    /// Restrict a separated range to the selected read before checking a
-    /// footprint with one memory member.
-    pub(in crate::surface::proof) fn try_single_memory_write_separation(
+    /// Prove separation for each recorded write before checking separation
+    /// from the complete footprint.
+    pub(in crate::surface::proof) fn try_memory_footprint_separation(
         search_input: &Proof<'a>,
-        written: &Resource,
+        footprint: &crate::kernel::RegionFootprint,
         kept: &ResourceSubject,
         footprint_separation: &ClickProposition,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
-        crate::kernel::search::record_discovery("try_single_memory_write_separation");
-        if !matches!(written, Resource::Memory(_)) {
-            return Ok(None);
-        }
+        crate::kernel::search::record_discovery("try_memory_footprint_separation");
         let Some(view) = search_input.premise_fixed_state_view() else {
             return Ok(None);
         };
         let _recorded_points = super::super::surface_synthesis::SynthesisRecordedPointsScope::enter(
             view.fixed_state.recorded_states,
         );
-        let Some(written) = super::super::surface_synthesis::synthesize_surface_resource_subject(
-            written,
-            view.parameter_binding,
-            view.fixed_state.state,
-            &std::collections::BTreeMap::new(),
-        ) else {
-            return Ok(None);
-        };
-        let separation = ClickProposition::Separate {
-            left: written,
-            right: kept.clone(),
-        };
         let known = ProofCertificate::from_steps(vec![ProofStep::Known])
             .expect("ordinary footprint separation");
-        let proof = match attempt::candidate_outcome(
-            search_input.driver().apply_have_step(&separation, &known),
-        )? {
-            Some(proof) => proof,
-            None => {
-                let Some(goal) = attempt::candidate_outcome(
-                    search_input.driver().open_have(separation.clone()),
-                )?
-                else {
-                    return Ok(None);
-                };
-                let Some(separated) = goal
-                    .driver()
-                    .try_indexed_separation_restriction(&separation)?
-                else {
-                    return Ok(None);
-                };
-                if !separated.is_complete() {
-                    return Ok(None);
-                }
-                separated.join()?
+        let mut proof = search_input.clone();
+        for member in &footprint.members {
+            check_verification_deadline()?;
+            crate::instrumentation::record_deterministic_work(1);
+            if !matches!(member, Resource::Memory(_)) {
+                return Ok(None);
             }
-        };
+            let Some(written) =
+                super::super::surface_synthesis::synthesize_surface_resource_subject(
+                    member,
+                    view.parameter_binding,
+                    view.fixed_state.state,
+                    &std::collections::BTreeMap::new(),
+                )
+            else {
+                return Ok(None);
+            };
+            let separation = ClickProposition::Separate {
+                left: written,
+                right: kept.clone(),
+            };
+            if let Some(checked) =
+                attempt::candidate_outcome(proof.driver().apply_have_step(&separation, &known))?
+            {
+                proof = checked;
+                continue;
+            }
+            let Some(goal) =
+                attempt::candidate_outcome(proof.driver().open_have(separation.clone()))?
+            else {
+                return Ok(None);
+            };
+            let Some(separated) = goal
+                .driver()
+                .try_indexed_separation_restriction(&separation)?
+            else {
+                return Ok(None);
+            };
+            if !separated.is_complete() {
+                return Ok(None);
+            }
+            proof = separated.join()?;
+        }
         attempt::candidate_outcome(proof.driver().apply_have_step(footprint_separation, &known))
     }
 
@@ -448,9 +472,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if !footprint.complete || footprint.members.len() != 1 {
             return Ok(None);
         }
-        let Some(written @ Resource::Memory(_)) = footprint.members.front() else {
-            return Ok(None);
-        };
         let observation = Resource::Memory(crate::kernel::MemoryRange::new_with_element_width(
             address.clone(),
             0u32.into(),
@@ -470,7 +491,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             right: kept.clone(),
         };
         let Some(proof) =
-            Self::try_single_memory_write_separation(search_input, written, &kept, &separation)?
+            Self::try_memory_footprint_separation(search_input, &footprint, &kept, &separation)?
         else {
             return Ok(None);
         };

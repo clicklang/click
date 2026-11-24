@@ -41,6 +41,7 @@ this page covers each form's full rules and edge cases.
 | `forall (k: int32) { P }`, `(lo..hi).all(\|k\| { P })` | Quantified propositions; the range form guards memory reads | [Propositions](#propositions) |
 | `Integer`, `to_integer(x)` | Unbounded mathematical integers | [Mathematical integers](#mathematical-integers) |
 | `true`, `false`, `-> Bool`, `ensures p(x);` | The logical sort `Bool`; a `Bool` value written alone is the claim that it holds | [Booleans](#booleans) |
+| `Pointer`, `load<Pointer>(a)`, `p as Pointer` | Click's untyped pointer: an address and a provenance with no pointee type | [Untyped pointers](#untyped-pointers) |
 | `function f(x: int32) -> int32 { ... }` | A pure Click function | [Pure Click functions](#pure-click-functions) |
 | `predicate p(...) { ... }` | A named proposition, possibly over resources | [Predicates](#predicates) |
 | `theorem t() { requires P; ensures Q; }` | A pure theorem | [Pure theorems](#pure-theorems) |
@@ -220,14 +221,30 @@ A cast is written after its operand, `e as T`. A numeric target is bare:
 parenthesized: `p as (uint8 *)`, `p as (void *)`, `p as (struct node *)`,
 `p as (const struct node *)`. The targets are the ten machine integer types
 `int8` to `uint128`, `float`, `double`, `void *`, a pointer to one of them,
-and a pointer to a struct. Native pointer targets may add `const`, `volatile`,
+a pointer to a struct, and Click's untyped pointer, bare like a numeric
+target: `p as Pointer` ([Untyped pointers](#untyped-pointers)). Native pointer targets may add `const`, `volatile`,
 or both before the pointee type, such as `p as (const uint8 *)`; struct pointer
 targets support `const`. An unqualified byte view inherits its source's const
 qualification. Casting a pointer from a non-character type, including
 `void *`, to a byte pointer forms the byte view of its allocation, as the C
 conversion does; casting to `void *` or between byte pointer types keeps the
 pointer's bounds. Qualifying a pointer grants no
-memory access permission. A Rust source's sidecar
+memory access permission. A `void *` has no pointee type, as in C, so
+`*q` and `q[i]` on one are refused ("a `void *` has no pointee type; cast
+it to a typed pointer or use `load<T>`"); a spec casts first,
+`*(q as (uint8 *))`, or reads `load<T>(q)`
+(`mdtests/void_pointer_spec_dereference_is_refused.md`); a call's `void *`
+result is refused the same way, so `statement(0).call(get, 0).result[0]`
+needs a cast (`mdtests/void_pointer_call_result_index_is_refused.md`).
+`q + k`, `k + q` and `q - k` step a `void *` by `k` bytes, as Click's C
+side does (the GNU extension), so `ensures result == q + 1` states a body's `return q + 1;`
+(`mdtests/void_pointer_spec_addition_steps_one_byte.md`,
+`mdtests/void_pointer_spec_step_reads_the_next_byte.md`); the difference of
+two `void *` is refused
+(`mdtests/void_pointer_spec_difference_is_refused.md`). A range
+`q[a..b]` in `views` or `owns` counts elements, so one based at a `void *` is
+refused; `(q as (uint8 *))[0..n]` states the bytes
+(`mdtests/void_pointer_range_is_refused.md`). A Rust source's sidecar
 also writes Rust's scalar names, `x as u32`.
 
 Float pointer casts preserve the address and use the existing pointer-cast
@@ -1222,6 +1239,13 @@ in checked certificates, so a fact the kernel records about it, such as the
 bound `count >= 1` a consumed member places on it, is cited like a written
 premise
 (`mdtests/a_consumed_member_bound_on_an_entry_count_is_cited.md`).
+A total a mutex lock acquires is written
+`at(statement(i).exit, count(R(p)))` for the lock's statement `i`: the count
+where the lock returns. The lock's returned control holds the population's
+authority, so the count can be read there and while that control stays
+folded (`mdtests/a_lock_exit_reads_its_acquired_total.md`). A state that holds
+no authority over the population, such as the lock's entry, has no readable
+count (`mdtests/a_count_before_the_lock_is_refused.md`).
 Resources may declare `field total: Integer;`: folding checks the resource's
 facts, and `old(model.total)` retains the entry value across updates.
 Checked resource pattern bindings retain each field's declared carrier, name,
@@ -3716,6 +3740,45 @@ theorem three_is_in_range() {
   that operand is refused
   (`mdtests/a_parenthesized_comparison_is_a_value_only_in_rust.md`).
 
+## Untyped pointers
+
+`Pointer` is Click's untyped pointer, written capitalized like `Bool` and
+`Integer`: an address and a provenance with no pointee type, like LLVM's
+opaque `ptr`. A type belongs to the operation that uses a pointer, not to
+the pointer. It is a type of Click's own positions (parameters, results,
+binders, `let`, `load<T>`, casts); a function head writes its language's
+type, and `Pointer *` is not a type.
+
+<!-- verified-example: mdtests/untyped_pointer_load_of_a_pointer_field.md -->
+```click
+int32 *next_of(struct node *s) {
+    views s->next;
+    ensures load<Pointer>(&s->next) == s->next;
+    ensures result == load<Pointer>(&s->next) as (int32 *);
+}
+```
+
+- **Reads.** `load<Pointer>(a)` reads the pointer cell at `a`, whatever
+  object pointer type the cell was declared with; its value is the pointer
+  stored there.
+- **Conversions.** Every object pointer converts to and from `Pointer`,
+  implicitly at a parameter or binding and explicitly as `p as Pointer` or
+  `q as (T *)`. The conversion keeps the value: it is not a C conversion, so
+  a cast to a character pointer forms no byte view and `void *`'s rules do
+  not apply. Function pointers are not `Pointer`s.
+- **Equality.** `p == q` compares the whole value, address and provenance,
+  also between a `Pointer` and a typed pointer.
+- **No pointee.** `*q`, `q[i]`, `q + k` and `q - k` are refused ("a
+  `Pointer` has no pointee type; cast it to a typed pointer or use
+  `load<T>`"), and so is a `views` or `owns` range `q[a..b]`, which counts
+  elements ("a `Pointer` has no pointee type to count a range in").
+  `byte_offset(q, n)` is the `Pointer` `n` bytes on, and `load<T>(q)`
+  reads a `T` there
+  (`mdtests/untyped_pointer_byte_offset.md`,
+  `mdtests/untyped_pointer_has_no_pointee.md`,
+  `mdtests/untyped_pointer_range_is_refused.md`,
+  `mdtests/untyped_pointer_owned_range_is_refused.md`).
+
 ## Propositions
 
 Click proposition connectives are words:
@@ -4144,7 +4207,10 @@ call returned, retained at the region's exit even if the source discards it.
 It still names that result after every local or cell that held it has lost it,
 and a fact the call produced lowers from it exactly
 (`mdtests/a_call_result_is_spelled_by_its_call.md`,
-`mdtests/a_discarded_call_result_keeps_its_call_name.md`). Allocation regions also
+`mdtests/a_discarded_call_result_keeps_its_call_name.md`). A pointer result
+indexes by its pointee, so `R.result[1]` for a `uint8 *` result is its
+second byte (`mdtests/a_byte_call_result_indexes_by_its_byte_pointee.md`);
+a `void *` result has none and is cast first. Allocation regions also
 expose their nullable return through `.result`. In C++, the region that
 reserves storage for a materialized object exposes its address through
 `.result` before construction. Reading a field still requires initialized
@@ -4194,7 +4260,9 @@ An allocation region also exposes `R.allocation`, the fresh heap identity
 reserved for its successful outcome. For example, `statement(1).allocation`
 keeps this identity distinct from the nullable `statement(1).result`. The
 name is available after the allocation step and survives reassignment and
-`free`. Naming it does not prove that allocation succeeded or grant access
+`free`. Pointer casts and `byte_offset(R.allocation, N)` can use that identity
+to name a typed range in a `memory(...)` descriptor.
+Naming it does not prove that allocation succeeded or grant access
 to freed memory (`mdtests/an_allocation_result_keeps_its_name_after_reassignment.md`,
 `mdtests/an_allocation_name_does_not_keep_freed_memory_readable.md`).
 

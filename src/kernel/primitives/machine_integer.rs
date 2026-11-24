@@ -517,17 +517,44 @@ impl MachineTerm {
     /// 2026-10-30): the `int8` and `uint8` reads of one byte are two loads,
     /// neither a conversion of the other, related by the 8-bit sign cast
     /// when they read the same byte (R-mem).
+    ///
+    /// The read is named by `memory` itself, the legacy naming: its callers
+    /// are the reads still to move to a point version
+    /// (`design/point-named-reads.md`).
     #[cfg_attr(test, track_caller)]
-    pub(crate) fn memory_read(
+    pub fn memory_read(
         memory: crate::kernel::SharedMemory,
         pointer: crate::kernel::Address,
         kind: crate::kernel::LoadKind,
     ) -> Self {
-        Self::MemoryLoad(
-            crate::kernel::ProgramPoint::at(&memory),
-            Box::new(pointer),
+        Self::read_named(crate::kernel::ProgramPoint::at(&memory), pointer, kind)
+    }
+
+    /// The read of `kind` at `pointer` named by `point`, as the caller
+    /// selected it. Every read term is built here or through
+    /// [`Self::memory_read`]; `build_support/read_construction.rs` holds other
+    /// direct constructions to a shrinking count, so a change to how reads
+    /// are named has one place to go (`design/point-named-reads.md`).
+    #[cfg_attr(test, track_caller)]
+    pub(crate) fn read_named(
+        point: impl Into<crate::kernel::ProgramPoint>,
+        pointer: impl Into<Box<crate::kernel::Address>>,
+        kind: crate::kernel::LoadKind,
+    ) -> Self {
+        let point = point.into();
+        let pointer = pointer.into();
+        #[cfg(test)]
+        crate::kernel::mixed_read_names::record_producer(
+            &point,
+            &pointer,
             kind,
-        )
+            std::panic::Location::caller(),
+        );
+        // The term's identity is the load of the cell at the point's read
+        // key, re-interned for every address a rewrite builds; the point
+        // stays the producer's selection (`design/loads.md`, step 3a).
+        let (point, cell) = crate::kernel::read_operands(point, pointer);
+        Self::MemoryLoad(point, cell, kind)
     }
 
     /// The `signed char` value of the byte whose `unsigned char` value is
@@ -822,6 +849,143 @@ pub(crate) fn is_sign_cast32(source: MachineIntegerType, destination: MachineInt
 mod tests {
 
     use super::*;
+
+    /// An integer read's identity is its interned load and its kind
+    /// (`design/loads.md`, step 3a): two reads of one cell at one read key
+    /// are one term whichever selection of the point built each, and each
+    /// keeps its own selection for consumers to branch on; reads of one cell
+    /// at two widths share the load and are two terms; a read of another
+    /// cell is another load.
+    #[test]
+    fn an_integer_read_is_its_load_and_kind_whatever_selection_built_it() {
+        use crate::kernel::{
+            Address, AddressBase, AddressOffset, ExecutionState, LoadKind, ProgramType,
+            ProgramValue, SymbolicMemory,
+        };
+        use std::hash::{Hash, Hasher};
+        let _session = crate::kernel::VerificationSession::enter();
+        let slot = Address {
+            base: AddressBase::Concrete("local:read-identity-slot".into()),
+            offset: AddressOffset::Constant(0),
+        };
+        let start = ExecutionState::new()
+            .with_memory(SymbolicMemory::new().with_block(slot.base.clone(), 8));
+        let written = start.clone().with_memory(
+            start
+                .memory()
+                .clone()
+                .store(slot.clone(), ProgramValue::Int32(MachineTerm::constant(7))),
+        );
+        let point = written.program_point();
+        let exact = point.clone().for_exact_read();
+        let indexed = point
+            .indexed_typed_version(&slot, ProgramType::Int32)
+            .expect("the store's version");
+        assert_eq!(exact.read_key(), indexed.read_key());
+        assert!(exact.is_exact_read() && !indexed.is_exact_read());
+        let hash = |term: &MachineTerm| {
+            let mut state = std::collections::hash_map::DefaultHasher::new();
+            term.hash(&mut state);
+            state.finish()
+        };
+        for (first, second) in [(&exact, &indexed), (&indexed, &exact)] {
+            let left = MachineTerm::read_named(first.clone(), slot.clone(), LoadKind::Int32);
+            let right = MachineTerm::read_named(second.clone(), slot.clone(), LoadKind::Int32);
+            assert_eq!(left, right, "one read key, cell and kind: one term");
+            assert_eq!(hash(&left), hash(&right));
+            assert_eq!(left.cmp(&right), std::cmp::Ordering::Equal);
+            let (
+                MachineTerm::MemoryLoad(left_point, left_cell, _),
+                MachineTerm::MemoryLoad(right_point, right_cell, _),
+            ) = (&left, &right)
+            else {
+                unreachable!("reads")
+            };
+            assert_eq!(left_cell.load(), right_cell.load());
+            // Each term keeps the selection its producer chose, not the
+            // load's first one.
+            assert_eq!(left_point.is_exact_read(), first.is_exact_read());
+            assert_eq!(right_point.is_exact_read(), second.is_exact_read());
+        }
+        let int32 = MachineTerm::read_named(exact.clone(), slot.clone(), LoadKind::Int32);
+        for kind in [LoadKind::UInt8, LoadKind::UInt32, LoadKind::Bits64] {
+            let other = MachineTerm::read_named(exact.clone(), slot.clone(), kind);
+            assert_ne!(int32, other, "{kind:?} at one address is another term");
+            let (MachineTerm::MemoryLoad(_, left, _), MachineTerm::MemoryLoad(_, right, _)) =
+                (&int32, &other)
+            else {
+                unreachable!("reads")
+            };
+            assert_eq!(left.load(), right.load(), "one cell's bytes, one load");
+        }
+        let next = MachineTerm::read_named(exact, slot.offset_by_bytes(4), LoadKind::Int32);
+        assert_ne!(int32, next, "another cell is another load");
+    }
+
+    /// Integer reads order and hash by content, not by when their loads were
+    /// interned or how many sessions came before: proof search iterates
+    /// term-keyed sets in this order. The same reads interned in reverse,
+    /// in a later session after other arenas, compare and hash as before.
+    #[test]
+    fn integer_reads_order_and_hash_the_same_whatever_was_interned_before() {
+        use crate::kernel::{
+            Address, AddressBase, AddressOffset, LoadKind, ProgramPoint, ProgramValue,
+            SymbolicMemory,
+        };
+        use std::hash::{Hash, Hasher};
+        let block = AddressBase::Concrete("local:read-order-slot".into());
+        let cell = |offset| Address {
+            base: block.clone(),
+            offset: AddressOffset::Constant(offset),
+        };
+        let reads = || {
+            let empty = SymbolicMemory::new().with_block(block.clone(), 8);
+            [
+                empty.clone(),
+                empty.store(cell(0), ProgramValue::Int32(MachineTerm::constant(7))),
+            ]
+            .into_iter()
+            .flat_map(|memory| {
+                let memory = crate::kernel::intern_memory(memory);
+                [0, 4].map(|offset| (ProgramPoint::at(&memory), cell(offset)))
+            })
+            .collect::<Vec<_>>()
+        };
+        let hash = |term: &MachineTerm| {
+            let mut state = std::collections::hash_map::DefaultHasher::new();
+            term.hash(&mut state);
+            state.finish()
+        };
+        let observe = |reverse: bool| {
+            let _session = crate::kernel::VerificationSession::enter();
+            let mut operands = reads();
+            if reverse {
+                operands.reverse();
+            }
+            let mut terms = operands
+                .into_iter()
+                .map(|(point, address)| MachineTerm::read_named(point, address, LoadKind::Int32))
+                .collect::<Vec<_>>();
+            if reverse {
+                terms.reverse();
+            }
+            let order = terms
+                .iter()
+                .map(|left| {
+                    terms
+                        .iter()
+                        .map(|right| left.cmp(right))
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>();
+            (order, terms.iter().map(hash).collect::<Vec<_>>())
+        };
+        let first = observe(false);
+        for _ in 0..3 {
+            let _other = crate::kernel::VerificationSession::enter();
+        }
+        assert_eq!(observe(true), first);
+    }
 
     /// A 32-to-64-bit extension is built as the typed node C lowering
     /// builds, whichever constructor builds it, and rule W reads the

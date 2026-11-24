@@ -13,6 +13,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Option<(Proof<'a>, Vec<Proposition>)>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_execute_until_descendant");
+        if crate::surface::proof::implicit_solve_scope::checked_only() {
+            return Err(search_input.step_error("checked-only verification forbids step_until; write its execution steps explicitly"));
+        }
         let target = match point {
             ExecutionPoint::BackEdge(loop_index) => {
                 return crate::kernel::search::ProofSearch::try_execute_to_back_edge_descendant(
@@ -81,6 +84,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Option<(Proof<'a>, Vec<Proposition>)>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_execute_to_back_edge_descendant");
+        if crate::surface::proof::implicit_solve_scope::checked_only() {
+            return Err(search_input.step_error("checked-only verification forbids implicit back-edge execution; write its execution steps explicitly"));
+        }
         let frontier = &search_input
             .execution()
             .ok_or_else(|| {
@@ -183,6 +189,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Option<(Proof<'a>, Vec<Proposition>)>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_execute_to_exit_descendant");
+        if crate::surface::proof::implicit_solve_scope::checked_only() {
+            return Err(search_input.step_error("checked-only verification forbids implicit execution; write its execution steps explicitly"));
+        }
         if search_input.is_at_function_exit() {
             return Ok(None);
         }

@@ -2426,18 +2426,49 @@ impl<'a> Proof<'a> {
 
     pub(super) fn apply_fixed_state_instantiate(
         &self,
-        surface_quantified: &ClickProposition,
-        argument: &ContractExpression,
+        source: &ClickProposition,
+        arguments: &[ContractExpression],
     ) -> Result<KernelProofHandle, ClickError> {
-        let surface_quantified =
-            self.substitute_fixed_state_locals_in_proposition(surface_quantified)?;
-        let lowered_quantified = self.lower_cited_surface_proposition(
-            &surface_quantified,
-            "`instantiate` quantified fact",
-        )?;
+        let Some((first, remaining)) = arguments.split_first() else {
+            return Err(self.step_error("`instantiate` requires at least one value"));
+        };
+        let surface = self.substitute_fixed_state_locals_in_proposition(source)?;
+        let quantified =
+            self.lower_cited_surface_proposition(&surface, "`instantiate` quantified fact")?;
+        let (mut state, mut residual, mut written) =
+            self.instantiate_one(source, quantified, Some(&surface), first)?;
+        if remaining.is_empty() {
+            return Ok(state);
+        }
+
+        // Each intermediate instance is available to check the next value.
+        // Close the active goal only after every written value has checked.
+        let mut added = state.state().added_facts().to_vec();
+        for (index, argument) in remaining.iter().enumerate() {
+            if !matches!(residual, Proposition::ForAll { .. }) {
+                return Err(self.step_error(format!(
+                    "`instantiate` argument {} has no remaining universal binder",
+                    index + 2,
+                )));
+            }
+            let proof = self.with_kernel_state(state);
+            (state, residual, written) =
+                proof.instantiate_one(source, residual, written.as_ref(), argument)?;
+            added.extend_from_slice(state.state().added_facts());
+        }
+        Ok(state.with_fact_deltas(added.clone(), added))
+    }
+
+    fn instantiate_one(
+        &self,
+        source: &ClickProposition,
+        quantified: Proposition,
+        surface: Option<&ClickProposition>,
+        argument: &ContractExpression,
+    ) -> Result<(KernelProofHandle, Proposition, Option<ClickProposition>), ClickError> {
         // The argument has the binder's type. A fact that is not a universal
         // is refused by the kernel below; it is read as `int32` here.
-        let binder = match &lowered_quantified {
+        let binder = match &quantified {
             Proposition::ForAll { sort, .. } => sort.clone(),
             _ => Sort::ProgramInt32,
         };
@@ -2462,44 +2493,47 @@ impl<'a> Proof<'a> {
             InstanceArgument::Integer(_) => None,
         };
 
-        let checked = self
-            .state
-            .apply_instantiate(lowered_quantified, argument)
-            .map_err(|error| match error {
-                PropositionCloseError::NotProposition => {
-                    self.step_error("`instantiate` requires a proposition goal")
-                }
-                PropositionCloseError::InstantiateQuantifiedUnavailable => {
-                    self.step_error(format!(
-                        "`instantiate` quantified fact is not exactly available: {}",
-                        describe_click_proposition(&surface_quantified)
-                    ))
-                }
-                PropositionCloseError::InstantiateInvalid(message) => self.step_error(format!(
-                    "`instantiate` failed: {}",
-                    format_forall_instantiation_error(message, &|missing| {
-                        self.render_diagnostic_proposition(missing)
-                    })
-                )),
-                _ => unreachable!("kernel returned an unrelated instantiate error"),
-            })?;
+        let (checked, conclusion) =
+            self.state
+                .apply_instantiate(quantified, argument)
+                .map_err(|error| match error {
+                    PropositionCloseError::NotProposition => {
+                        self.step_error("`instantiate` requires a proposition goal")
+                    }
+                    PropositionCloseError::InstantiateQuantifiedUnavailable => {
+                        self.step_error(format!(
+                            "`instantiate` quantified fact is not exactly available: {}",
+                            describe_click_proposition(source)
+                        ))
+                    }
+                    PropositionCloseError::InstantiateInvalid(message) => self.step_error(format!(
+                        "`instantiate` failed: {}",
+                        format_forall_instantiation_error(message, &|missing| {
+                            self.render_diagnostic_proposition(missing)
+                        })
+                    )),
+                    _ => unreachable!("kernel returned an unrelated instantiate error"),
+                })?;
+        let keeps_spelling = matches!(self.context.as_ref(), ProofContext::FixedState(_))
+            || self.focused_outcome_data().is_some();
+        let written = match (surface, surface_argument) {
+            (Some(ClickProposition::ForAll { name, body, .. }), Some(argument))
+                if keeps_spelling =>
+            {
+                substitute_click_proposition(body, &BTreeMap::from([(name.clone(), argument)])).ok()
+            }
+            _ => None,
+        };
         // Keep the kernel-checked conclusion's spelling in the same immutable
         // proof scope. This index supplies no fact and is optional when the
         // written shape cannot be recorded.
-        if (matches!(self.context.as_ref(), ProofContext::FixedState(_))
-            || self.focused_outcome_data().is_some())
-            && let ClickProposition::ForAll { name, body, .. } = &surface_quantified
-            && let Some(surface_argument) = surface_argument
-            && let [conclusion] = checked.state().checked_facts()
-            && let Ok(written) = substitute_click_proposition(
-                body,
-                &BTreeMap::from([(name.clone(), surface_argument)]),
-            )
+        if let Some(spelling) = &written
+            && !checked.state().checked_facts().is_empty()
         {
             let mut locals = checked.state().locals().clone();
             let mut spelled = locals.checked_lowerings.clone();
-            let mut surface = &written;
-            let mut kernel = conclusion;
+            let mut surface = spelling;
+            let mut kernel = &conclusion;
             let facts = &checked
                 .state()
                 .open_branches()
@@ -2523,9 +2557,10 @@ impl<'a> Proof<'a> {
             }
             let _ = spelled.record_lowering(surface, kernel);
             locals.checked_lowerings = spelled;
-            return Ok(checked.with_locals(locals));
+            Ok((checked.with_locals(locals), conclusion, written))
+        } else {
+            Ok((checked, conclusion, written))
         }
-        Ok(checked)
     }
 
     pub(super) fn apply_rewrite(

@@ -78,6 +78,7 @@ remains supported.
 - `rewrite(from, to)`: rewrite the goal with an available equality. See
   [Proposition reasoning](#proposition-reasoning).
 - `contradiction(P)`: close an impossible case from a fact and its negation.
+  Use `contradiction()` when the context already establishes `false`.
   See [Proposition reasoning](#proposition-reasoning).
 
 ## Which to use
@@ -470,9 +471,16 @@ This solving is smart and may miss; for example, it can prove a callee's
 `requires a > 0` from `requires x == 5 or x == 7`.
 
 Arithmetic evaluation still decides some safety conditions before generating
-an obligation; migrating those decisions is separate remaining work. An emitted
+an obligation; migrating those decisions is separate remaining work. Pointer
+subtraction and relational pointer comparison owe C's same-object
+precondition this way: when the context does not decide it, the step emits
+`same_allocation(left, right)` as an obligation at the operation, named by its
+C rule, rather than a path of undefined behavior
+(`mdtests/an_undecided_pointer_subtraction_owes_same_allocation.md`). An emitted
 definedness requirement states the defined path's condition, such as
-`s >= 0 and s < 32` for `x << s`.
+`s >= 0 and s < 32` for `x << s`. Unsigned divisor and float-to-integer
+requirements in an operand of `&&`, `||`, or `?:` are conditional on the
+facts from the condition that selects that operand.
 
 The step produces one successor state:
 
@@ -938,6 +946,12 @@ contract inputs, and the `let` pattern names outputs such as
 - The `let` pattern names every `produces` binder. A produced instance's
   resource arguments are the call's arguments
   ([`c_call_binder_transport_multiple_produces.md`](https://github.com/clicklang/click/blob/master/mdtests/c_call_binder_transport_multiple_produces.md)).
+  In a Rust or C++ object pack contract, `object_resource()` selects the
+  packed object's resource. For example,
+  `let { object_resource(): packed } = step(Square__click_pack_const__Shape);`
+  names that instance `packed`. Other resources still use their declared
+  output binders. Use the same selector in the input map of an unpack step
+  to supply the packed instance.
 - Omit the input map when there are no entries. An empty map is equivalent,
   and expansion uses the shorter spelling. Either form can bind a call result
   ([`call_result_in_condition.md`](https://github.com/clicklang/click/blob/master/mdtests/call_result_in_condition.md)).
@@ -1120,16 +1134,18 @@ step is still checked.
 | `check_termination_local("f")` | simple | Expansion output | Establish the generated local descent classification. | [Reference](#termination-checks) |
 | `check_termination_component("f", mode)` | simple | Expansion output | Classify a generated recursive component using established premises. | [Reference](#termination-checks) |
 | `check_termination_callbacks()` | simple | Expansion output | Classify callback safety using established strict return premises. | [Reference](#termination-checks) |
-| `known()` | simple | Expansion output | Close a goal from available facts or goal-local computation. | [Reference](#available-facts) |
-| `normalize()` | simple | Expansion output | Close a goal by evaluation without context. | [Reference](#context-free-normalization) |
-| `normalize() using { P; ... }` | simple | Expansion output | Check normalization against written premises. | [Reference](#normalization-with-selected-premises) |
+| `close()` | smart | Core | Try the direct goal check, then search if it fails. | [Reference](#closing-a-goal) |
+| `known()` | simple | Specialized | Require a direct goal check. | [Reference](#available-facts) |
+| `normalize()` | simple | Compatibility | Close a goal by evaluation without context. | [Reference](#context-free-normalization) |
+| `normalize() using { P; ... }` | simple | Compatibility | Check normalization against written premises. | [Reference](#normalization-with-selected-premises) |
 | `preserve(resource, region)` | simple | Specialized | Preserve a selected read across a separated effect. | [Reference](#preservation) |
 | `rewrite(from, to)` | simple | Core | Rewrite the goal using an equality. | [Reference](#rewriting) |
 | `intro()` | simple | Core | Introduce a universal binder or implication premise. | [Reference](#introducing-a-binder-or-premise) |
 | `let name = intro()` | simple | Specialized | Choose the name introduced into the proof. | [Reference](#naming-an-introduced-binder) |
 | `enumerate()` | simple | Expansion output | Close a constant-bounded universal from its instances. | [Reference](#finite-enumeration) |
 | `contradiction(P)` | simple | Core | Close a goal from incompatible facts. | [Reference](#contradictions) |
-| `instantiate(F, value)` | simple | Specialized | Instantiate an available universal fact. | [Reference](#universal-instantiation) |
+| `contradiction()` | simple | Core | Close a goal from an established `false`. | [Reference](#contradictions) |
+| `instantiate(F, value, ...)` | simple | Specialized | Instantiate an available universal fact. | [Reference](#universal-instantiation) |
 | `apply(fact)` | simple | Core | Apply an established implication, proving its antecedents. | [Reference](#fact-application) |
 | `apply(theorem(args))` | simple | Core | Apply a theorem and prove any open prerequisites. | [Reference](#theorem-application) |
 | `unfold(function(args))` | simple | Core | Open one layer of a pure function. | [Reference](#unfolding-pure-functions) |
@@ -1588,6 +1604,23 @@ the rule gap, and profiling reports the restricted site.
 
 **Checked examples:** [`condition_search_explicit_decomposition.md`](https://github.com/clicklang/click/blob/master/mdtests/condition_search_explicit_decomposition.md)
 
+### Closing a goal
+
+**Form:** `close()`
+
+`close()` first runs the same direct check as `known()`. On a hit it
+finishes immediately. On a miss ordinary verification runs the standard
+`solve()` search with its usual budget. Checked-only verification reports
+the direct-check failure at the tactic. `click expand` emits the checked
+steps selected by either path, spelling direct goal closures `close()`.
+
+<!-- verified-example: mdtests/close_tactic.md -->
+```click
+theorem closes_by_search(x: int32) {
+    ensures x == 0 implies x == 0 by close();
+}
+```
+
 ### Available facts
 
 **Form:** `known()`
@@ -1596,9 +1629,9 @@ The former form `assumption()` is refused with a diagnostic naming
 `known()`. It reuses available facts and also checks the computational leaves
 described below.
 
-**Expansion output.** `click expand` writes it; by hand, write it to close a
-goal that is already available or true by direct computation, without search,
-typically after a `rewrite`. It closes the goal or refuses; it adds no fact.
+**Specialized.** Use `known()` when the preceding steps should have made the
+goal directly available, for example after a `rewrite`. It refuses when the
+direct check fails. Expansion writes this checked operation as `close()`.
 
 Smart closure uses `known()` for computational leaves, including residuals
 after a rewrite or unfold and leaves inside logical proofs. Proof strategies
@@ -1689,18 +1722,27 @@ decided guard and otherwise bounds both arms. Its arithmetic uses only the
 operands in the goal, with a bounded walk and checked machine ranges.
 
 A match on a written constructor can close an equality when its selected arm
-builds a constructor directly from its bound fields, machine-integer or
-`Integer` literals, or captured `Integer` variables. The check follows nested
-matches on written constructors and keeps the selected bindings in scope. The
-scrutinee's fields can be machine-integer or `Integer` literals and variables.
-Machine fields retain their exact width and signedness.
+builds a constructor from bound fields, literal fields, or captured variables.
+Literals and variables can be machine integers, `Integer`s, or `Bool`s.
+Algebraic result fields can also be constructors that contain these values.
+A constructor passed into a pattern binder can contain literals, variables,
+and nested constructors. The check reads those variables in the scope where
+the constructor was written. It follows nested matches on written constructors
+or constructors held by earlier pattern binders. A selected arm can return
+a bound or captured algebraic value directly. An equality can compare
+the selected results of two matches, with each side using its own bindings.
+Within a selected arm, a literal guard or a Boolean pattern binder holding a
+literal can select an `if` branch. Machine fields retain their exact width and
+signedness.
 
 Two values of the same constructor are unequal if a corresponding field
 holds a different machine-integer literal of the same type. The check
 visits only the immediate fields and uses their literal values.
 
 Direct computation also recognizes the neutral bitwise identities `0 & x == 0`
-and `0 | x == x` at a native word's own format, in either operand order. Intrinsic
+and `0 | x == x` at a native word's own format, in either operand order. A bitwise
+OR is unequal to zero when either operand is a same-width nonzero literal. The
+rule also applies to the exact `Integer` observation of that word. Intrinsic
 alignment of a null, heap, global or static address reads only that address's
 block registration and constant byte offset. It does not search alignment facts
 or infer alignment for a symbolic offset.
@@ -1717,7 +1759,10 @@ An unsigned `x % d` is at most `x` when the exact divisor is known nonzero.
 Signed quotient and remainder bounds against zero use the named operand
 signs and the divisor's nonzero guard. Machine operations also require
 evidence that excludes the signed minimum divided by `-1` when the signs
-alone leave that pair possible.
+alone leave that pair possible. A signed product's exact Integer bound at its
+machine minimum or maximum uses the two operand signs and the corresponding
+quotient guard when needed. The written product and endpoint name the guards
+for exact lookup.
 A full-width unsigned index agrees with its signed low word when both use
 the same base and stride and the full-width index is at most `INT32_MAX`.
 `known()` checks this bound on the full-width index itself. See
@@ -1731,8 +1776,21 @@ not search for an interval or derive missing bounds.
 For a valid literal shift count, a left-shift observation equals multiplication
 by its power of two when the exact result is in range; signed shifts also
 require a nonnegative source. A bitwise-and with a nonnegative literal mask
-is between zero and the mask, and is at most a nonnegative source. A root
-conditional equals its selected arm when its written guard is available.
+is between zero and the mask, and is at most a nonnegative source. For
+unsigned words, this range also supports comparisons of compound expressions.
+For example, `known()` can prove `((y & 7u32) + 1u32) as uint32 != 0u32`
+because the addition's range is `[1, 8]` and fits the word.
+
+For a 32- or 64-bit shift count, `known()` can remove the mask `width - 1`
+when the count is known in range. It also checks the equality of the signed
+and unsigned right shifts of the positive signed maximum at the same in-range
+count. A constant right shift of a zero-extended unsigned byte or halfword
+has a range computed from its source width and count, including after a
+signed widening of the result.
+
+A root conditional equals its selected arm when its written guard is available.
+A root Integer or machine conditional with identical arms equals that shared
+arm without a guard premise.
 Shared native comparison guards retain their operand DAGs; other shared
 compound guards require explicit logical steps rather than exporting a guard
 tree. Missing guards and unsupported forms are refused.
@@ -1882,10 +1940,9 @@ No operand history or ambient facts are read.
 
 **Form:** `normalize() using { P; ... }`
 
-**Expansion output.** `click expand` writes it; by hand, write it only in an
-explicit proof that must evaluate a goal under named conditions without search.
-It decides conditions in the goal from the cited premises and the equality
-graph, then applies `normalize()`'s check (see
+This compatibility form checks a goal under its named premises. Expansion
+retains written calls. The tactic decides conditions in the goal from the cited
+premises and the equality graph, then applies `normalize()`'s check (see
 [Context-free normalization](#context-free-normalization)) to the result.
 
 For a signed `int32` order goal, the cited comparisons can form a chain in
@@ -1893,9 +1950,39 @@ list order from the goal's lower endpoint to its upper endpoint. A strict
 goal needs at least one strict link. Replay checks the listed links directly.
 
 A true `float` or `double` comparison against a literal can cite one stronger
-bound on the same operand. The cited bound must have the same direction and
-width. Equal endpoints require a strict premise for a strict goal. A negated
-comparison can hold for NaN and cannot supply an ordered bound.
+bound. Exact widening from `float` to `double` widens the endpoint and preserves
+the direction. Narrowing from `double` to `float` rounds the endpoint and
+gives a non-strict bound in the original direction. Unary float negation negates the endpoint and reverses the
+direction. Adding or subtracting a finite literal, subtracting from a finite
+literal, and multiplying or dividing by a finite nonzero literal transform
+and round the endpoint at the same width. Subtraction from a literal and
+multiplication or division by a negative literal reverse the direction.
+The rounded endpoint gives a non-strict bound because
+distinct inputs can round to the same result. An unchanged or exact endpoint
+requires a strict premise for a strict goal with that endpoint. A negated comparison can hold for NaN and cannot
+supply an ordered bound. A sum or difference of two float operands can
+cite one ordered bound per operand with finite literal endpoints. A sum
+uses two bounds in the goal's direction. For a difference the right
+operand's bound points in the opposite direction. The rule combines and
+rounds the endpoints at the operation's width.
+A positive finite literal divided by an operand with a positive finite
+lower endpoint has lower bound zero and an upper bound obtained by dividing
+by that endpoint. The operand may be positive infinity.
+For a product or quotient with two positive finite operand ranges, cite the
+lower and upper endpoints of both ranges. The rule checks the appropriate
+corner at the operation's width. A product's lower bound can instead cite
+just the two strictly positive lower endpoints.
+
+
+For two negative signed operands, `x < 0`, `y < 0`, and
+`x >= MAX / y` bound their product by `MAX`. This guard permits
+`y == -1` because `MAX / -1` is defined. A lower product bound
+using `MIN / y` with a negative divisor still needs `y < -1`.
+
+For an unsigned left shift of one, citing the count bound proves the result
+is nonzero. For example, `normalize() using { d < 32u32; }` proves
+`(1u32 << d) != 0u32`. This also discharges the divisor obligation for
+C division and remainder.
 
 An in-range operation or cast identity also accepts exactly two ordered
 Integer bounds on its exact result: the lower bound, then the upper bound.
@@ -1921,7 +2008,13 @@ none selects premises or expands a polynomial.
 For a reflexive `float` or `double` comparison, `solve` expands to
 `known()` when the exact `isfinite(x)` fact is available for the common
 operand. Restricted `solve() using` must select that fact. For example,
-`isfinite(x)` establishes `x == x`, `x <= x` and `not(x < x)`.
+`isfinite(x)` establishes `x == x`, `x <= x` and `not(x < x)`. An ordered
+bound on an exact float widening or sign negation also closes with
+`known()` from the corresponding input comparison at the same endpoint.
+Negation reverses the order and flips the endpoint's sign. The widening
+check requires the endpoint to be exactly representable in the input width.
+For a weaker result bound, `solve()` records the transported comparison in
+a `have` and applies the corresponding `click::float_order` transitivity law.
 
 For supported native unsigned address words, `solve` emits ordinary `have`
 goals, `apply(click::integer::...)`, rewrites, and `known()`: alignment
@@ -2173,14 +2266,15 @@ normalization steps with explicit premises.
 
 A disequality goal `a != b` (or `not (a == b)`) over machine or `Integer`
 operands, which no certificate family reads directly, is proved by refuting
-`a == b`: `intro()` adds the equality and leaves `false`, which arithmetic
-proves from the listed premises and the equality. `k < j` gives `k != j`
+`a == b`. In the equal arm of a proof `if`, arithmetic proves `false` from
+the listed premises and the equality. The other arm has the disequality as a
+fact. `k < j` gives `k != j`
 ([`arithmetic_proves_a_disequality_by_refuting_its_equality.md`](https://github.com/clicklang/click/blob/master/mdtests/arithmetic_proves_a_disequality_by_refuting_its_equality.md));
 `k <= j` does not, and the refusal is the one for the `false` goal
 ([`a_disequality_its_premises_allow_is_refused.md`](https://github.com/clicklang/click/blob/master/mdtests/a_disequality_its_premises_allow_is_refused.md)).
 `solve` proves `a < b`, or else `b < a`, by selected-premise arithmetic,
 which a linear refutation of `a == b` always leaves, and refutes the equality
-from it; its expansion writes that `have`, `intro()` and the certificate.
+from it. Expansion writes that `have` and the two arms of the proof `if`.
 
 Arithmetic reads no disequality premise, so a disequality goal that only
 another disequality gives is proved by cases. When every other strategy
@@ -2528,18 +2622,23 @@ charges the affected expression.
 
 ### Introducing a binder or premise
 
-**Form:** `intro()`
+**Forms:** `intro() { ... }` or `intro(name) { ... }` for a named universal binder.
 
-**Core.** For an implication, negation, or universal goal, add the antecedent or
-named binder and continue with the body goal. A universal's variable keeps the
-name its quantifier wrote; if that name is already in scope it shadows the older
-one, which stays readable as `outer.name`. That includes a range quantifier's
+**Core.** For an implication, the block assumes the antecedent and proves
+the consequent. For a universal, it fixes an arbitrary value and proves
+the body at that value. The closing brace discharges the original goal and
+ends the scope of the premise or binder. In a grouped contract proof the
+next tactic can then work on the next claim. The flat forms `intro();` and
+`let name = intro();` are also accepted.
+
+With `intro()`, a universal's variable keeps the name its quantifier wrote.
+An earlier binding of the same name stays readable as `outer.name`. That
+includes a range quantifier's
 variable in a `have` stated between C statements
 ([`intro_names_a_range_variable_in_a_have_between_statements.md`](https://github.com/clicklang/click/blob/master/mdtests/intro_names_a_range_variable_in_a_have_between_statements.md)). A known C/C++ record binding named `outer` keeps ordinary `outer.field`
 access in a proof; it is not parsed as the shadowed-binder qualifier.
 
-**Accepts** a goal whose lowered head is one of these, and makes one
-introduction:
+**Accepts** a goal whose lowered head is one of these:
 
 - `A implies B`: `A` becomes a fact and the goal is `B`. A conjunction `A` is
   available conjunct by conjunct, so `known()` closes `0 <= k` after
@@ -2547,27 +2646,21 @@ introduction:
   `A implies B implies C` takes two `intro()`s.
 - `forall (x: T) { B }` for an `int32`, `uint64`, pointer, `Integer`, or
   `spec enum` binder: `x` is a new variable in scope and the goal is `B`.
-- `(lo..hi).all(|x| { B })`: the first `intro()` binds `x`; the second adds
-  the range guard `lo <= x and x < hi` as a fact and leaves `B`.
-- An implication lowering inserted in front of a written body: the definedness
-  of an operation the body evaluates, such as `defined(k + 1)` for
-  `k + 1 > 0`, or a path fact. It is introduced as a fact while the written
-  goal stays focused, so a written `forall (k: int32) { k + 1 > 0 and k >= 0
-  implies k >= 0 }` takes three `intro()`s: binder, guard, antecedent.
-- `not P` whose `P` lowers to a connective or quantifier, such as
-  `not (A and B)` or `not (forall (x: int32) { ... })`: `P` becomes a fact and
-  the goal is `false`, closed by `contradiction`.
-- `not P` for a comparison or `bool` `P`, written as `not`, such as
-  `not (n == 1)` or `not (x >= y)`, though lowering states it as one
-  comparison: `P` becomes a fact and the goal is `false`.
-- A disequality `a != b`, the negation of `a == b`, in every family:
-  `a == b` becomes a fact and the goal is `false`.
-
+- `(lo..hi).all(|x| { B })`: one scoped introduction binds `x` and makes
+  both `lo <= x` and `x < hi` available while proving `B`. Use one nested
+  block per range and a separate block for an implication written in `B`.
+  Flat introductions take two steps, one for the binder and one for membership.
+- An implication lowering inserted in front of a written body, such as a
+  path fact: `intro()` adds the premise and keeps the written goal focused.
+  If such an implication sits between a range binder and the membership
+  premise, introduce those premises explicitly inside the binder's block.
+  Definedness requirements for evaluated expressions must be established
+  separately.
 **Outside it**, with what to write instead:
 
-- An order comparison not written as `not`, such as `x < y`: `intro` does not
-  turn it into a refutation of `x >= y`. Prove it directly, or split with a
-  proof `if` or `cases` on the complement.
+- A negation or disequality: use a proof `if` on the denied condition. Refute
+  that condition in the first arm and use the complementary fact in the
+  second arm.
 - A conjunction: `all`. A disjunction: prove one disjunct with `have` and
   close with `known()`.
 - An existential, including `(lo..hi).any(...)`: `witness`.
@@ -2577,10 +2670,10 @@ introduction:
 **Failure, checking, and tools:**
 
 A refusal names the goal's shape, such as "got a condition fact" or "got a
-conjunction". Click checks the one introduction rule; expansion is unchanged,
-and profiling charges one leaf.
+conjunction". Click checks the introduction and the proof of its body. Expansion preserves
+the written block and expands any smart steps inside it.
 
-**Checked examples:** [`copy_n_segment_invariant.md`](https://github.com/clicklang/click/blob/master/mdtests/copy_n_segment_invariant.md), [`quantifier_intro_nested_connectives.md`](https://github.com/clicklang/click/blob/master/mdtests/quantifier_intro_nested_connectives.md), [`lowering_guard_before_written_implication.md`](https://github.com/clicklang/click/blob/master/mdtests/lowering_guard_before_written_implication.md), [`integer_forall_intro.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_forall_intro.md), [`an_introduced_variable_hides_a_parameter_of_its_name.md`](https://github.com/clicklang/click/blob/master/mdtests/an_introduced_variable_hides_a_parameter_of_its_name.md)
+**Checked examples:** [`scoped_intro.md`](https://github.com/clicklang/click/blob/master/mdtests/scoped_intro.md), [`copy_n_segment_invariant.md`](https://github.com/clicklang/click/blob/master/mdtests/copy_n_segment_invariant.md), [`quantifier_intro_nested_connectives.md`](https://github.com/clicklang/click/blob/master/mdtests/quantifier_intro_nested_connectives.md), [`integer_forall_intro.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_forall_intro.md), [`an_introduced_variable_hides_a_parameter_of_its_name.md`](https://github.com/clicklang/click/blob/master/mdtests/an_introduced_variable_hides_a_parameter_of_its_name.md)
 
 ### Naming an introduced binder
 
@@ -2678,11 +2771,12 @@ unchanged, and profiling reports that work.
 
 ### Contradictions
 
-**Form:** `contradiction(P)`
+**Forms:** `contradiction()` and `contradiction(P)`.
 
-**Core.** Close the focused branch, whatever its goal, from `P` and its
-negation. Nothing is searched: each check below is an indexed lookup or at most
-one context-free normalization.
+**Core.** `contradiction()` closes the focused branch, whatever its goal,
+when `false` is already established. `contradiction(P)` closes the branch
+from the selected proposition and its negation. Both use indexed lookups
+and context-free checks.
 
 **Accepts** `P` when both halves hold:
 
@@ -2713,9 +2807,10 @@ one context-free normalization.
 
 **Failure, checking, and tools:**
 
-A refusal says which half is missing: "`P` itself is not an available fact", or
-"`P` is available, but neither `not (P)` nor its opposite comparison is".
-Expansion is unchanged, and profiling charges one leaf.
+An empty call without an established `false` is refused. For a selected
+proposition, the refusal names the missing half. `contradiction(false)`
+is also accepted, and expansion prints it as `contradiction()`. Profiling
+charges one leaf for either form.
 
 **Checked examples:** [`an_antecedent_normalization_refutes_closes_its_implication.md`](https://github.com/clicklang/click/blob/master/mdtests/an_antecedent_normalization_refutes_closes_its_implication.md), [`surface_syntax.rs`](https://github.com/clicklang/click/blob/master/src/surface/tests/surface_syntax.rs),
 [`contradiction_opposite_comparison.md`](https://github.com/clicklang/click/blob/master/mdtests/contradiction_opposite_comparison.md),
@@ -2723,11 +2818,14 @@ Expansion is unchanged, and profiling charges one leaf.
 
 ### Universal instantiation
 
-**Form:** `instantiate(F, value)`
+**Form:** `instantiate(F, value, ...)`
 
-**Specialized.** Substitute one value into an established universal fact and
-add its entire body, including any implication guards. No guard is proved or
-assumed by this operation.
+**Specialized.** Supply a nonempty prefix of values for an established
+universal fact, in binder order. For example, `instantiate(F, x, n)`
+specializes `forall (i: int32) { forall (j: uint64) { B } }` at `x` and
+`n`. Each substitution adds its resulting fact, including any implication
+guards. Supplying fewer values leaves a universal available. Each
+argument must have a remaining outer universal binder.
 
 **Accepts:**
 
@@ -2739,10 +2837,9 @@ assumed by this operation.
   expression such as `to_integer(x)` for `Integer`, and a correctly typed
   pointer for a pointer binder.
 
-The added fact is `B[value/k]`. For a range quantifier it retains the range
-condition. Nested quantifiers remain quantified and can be instantiated one
-binder at a time. The selected value is captured at the operation's state;
-`old` or `at` in the body does not reinterpret that argument at another state.
+A range quantifier retains the range condition. The selected values are
+captured at the operation's program point. Any `old` or `at` in the body
+reads its own state while using those captured values.
 
 For `forall (k: int32) { 0 <= k implies f(k) >= 0 }`, instantiating at `x`
 adds `0 <= x implies f(x) >= 0`. If `0 <= x` is already an exact fact,
@@ -2754,15 +2851,21 @@ instantiation performs no premise search or guard discharge.
 **Outside it:** a universal not yet established must be proved first with
 `have`. A value of another carrier needs a conversion. The former `using`
 list is rejected; write ordinary guard proofs instead.
+The loop preservation checker currently supports instantiation inside
+`have proposition by { ... }`. Supporting a standalone instantiation in
+`maintain` requires the checker to carry the added fact between execution
+steps.
+
 
 **Failure, checking, and tools:**
 
 An unavailable source names the missing quantified fact. A non-universal or
 wrongly typed argument is refused locally. Missing guards do not cause an
-instantiation error: they remain in its resulting implication. If the whole
-instance is the goal, the step closes it; otherwise `known()` can close a
-consequence made available by propagation. Expansion emits bare instantiation
-and retains any needed guard proofs as ordinary `have` blocks. Checking does
+instantiation error: they remain in its resulting implication. After all
+arguments have checked, the step closes the goal if it added that exact
+fact. Use `known()` to close a consequence made available by propagation.
+Expansion retains the argument list and any needed guard proofs as ordinary
+`have` blocks. Checking does
 indexed source lookup and substitution over the selected body, without scans
 of unrelated facts.
 
@@ -3078,8 +3181,8 @@ the arm certificates.
 
 **Form:** `apply(ih(m))`
 
-**Core.** Instantiate the local induction hypothesis when its premises are
-available. For a scalar measure, those premises are `m < n`, `0 <= m` for a
+**Core.** Instantiate the local induction hypothesis and prove its premises.
+For a scalar measure, those premises are `m < n`, `0 <= m` for a
 signed measure, and the theorem's requirements at `m`. Other parameters stay
 fixed. For structural induction, the inducted argument must be a recursive
 field of the current arm, and the requirements are checked at the full
@@ -3087,12 +3190,14 @@ written parameter list.
 
 A premise may be stated in an equivalent order form such as `n > m` for
 `m < n`. Range requirements also owe their span halves. A previously stated
-range supplies those halves where they are available. Use `have` to establish
-missing premises.
+range supplies those halves where they are available. The ordinary implicit
+solver tries any remaining premises, and a preceding `have` can supply a
+premise explicitly.
 
 The application adds the instantiated theorem conclusion and closes the
-focused goal if the conclusion proves it. Expansion keeps the application
-unchanged. A missing premise is named in the refusal.
+focused goal if the conclusion proves it. Expansion retains the premise
+proofs as `have` steps followed by the bare application. A refusal names the
+premise it could not prove.
 
 **Checked examples:** [`scalar_induction_after_helper_facts.md`](https://github.com/clicklang/click/blob/master/mdtests/scalar_induction_after_helper_facts.md), [`pure_induction_countdown_explicit.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_induction_countdown_explicit.md), [`induction_hypothesis_cites_a_listed_range_with_its_span.md`](https://github.com/clicklang/click/blob/master/mdtests/induction_hypothesis_cites_a_listed_range_with_its_span.md), [`induction_hypothesis_owes_the_range_span.md`](https://github.com/clicklang/click/blob/master/mdtests/induction_hypothesis_owes_the_range_span.md).
 

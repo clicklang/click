@@ -71,6 +71,7 @@ tactic advance_sized_path(child: struct rb_node*, parent_node: struct rb_node*,
     ensures sized_walk_tree(next.model) == sized_plug(sized_path_context(old(path.model)), old(sub.model));
     ensures sized_walk_rank(next.model) < sized_context_depth(sized_path_context(old(path.model))) + 1;
     ensures sized_walk_pending(next.model) == 1 or parent_node == stop;
+    ensures address(parent_node) != address(stop) or sized_walk_pending(next.model) == 0;
     ensures 0 <= sized_walk_rank(next.model);
 } by {
     match path.model {
@@ -128,6 +129,7 @@ tactic advance_sized_path(child: struct rb_node*, parent_node: struct rb_node*,
                         rewrite(next.model, SizedWalk::Done(SizedResult::Tree(root, old(sub.model)))); unfold(sized_walk_pending(SizedWalk::Done(SizedResult::Tree(root, old(sub.model))))); known();
                     }
                     have sized_walk_pending(next.model) == 1 or parent_node == stop by { known(); }
+                    have address(parent_node) != address(stop) or sized_walk_pending(next.model) == 0 by { known(); }
                     have 0 <= sized_walk_rank(next.model) by {
                         rewrite(next.model, SizedWalk::Done(SizedResult::Tree(root, old(sub.model)))); unfold(sized_walk_rank(SizedWalk::Done(SizedResult::Tree(root, old(sub.model))))); known();
                     }
@@ -180,6 +182,7 @@ tactic advance_sized_path(child: struct rb_node*, parent_node: struct rb_node*,
                         rewrite(next.model, SizedWalk::Active(value, SizedTree::Node(node, parent, color, value, old(sub.model), sibling_model), SizedPath::Path(root, up_model))); unfold(sized_walk_pending(SizedWalk::Active(value, SizedTree::Node(node, parent, color, value, old(sub.model), sibling_model), SizedPath::Path(root, up_model)))); known();
                     }
                     apply(sized_context_depth_nonnegative(up_model));
+                    have address(parent_node) != address(stop) or sized_walk_pending(next.model) == 0 by { known(); }
                     have 0 <= sized_walk_rank(next.model) by {
                         rewrite(next.model, SizedWalk::Active(value, SizedTree::Node(node, parent, color, value, old(sub.model), sibling_model), SizedPath::Path(root, up_model))); unfold(sized_walk_rank(SizedWalk::Active(value, SizedTree::Node(node, parent, color, value, old(sub.model), sibling_model), SizedPath::Path(root, up_model)))); unfold(sized_path_context(SizedPath::Path(root, up_model))); solve() using { 0 <= sized_context_depth(up_model); };
                     }
@@ -232,6 +235,7 @@ tactic advance_sized_path(child: struct rb_node*, parent_node: struct rb_node*,
                         rewrite(next.model, SizedWalk::Active(value, SizedTree::Node(node, parent, color, value, sibling_model, old(sub.model)), SizedPath::Path(root, up_model))); unfold(sized_walk_pending(SizedWalk::Active(value, SizedTree::Node(node, parent, color, value, sibling_model, old(sub.model)), SizedPath::Path(root, up_model)))); known();
                     }
                     apply(sized_context_depth_nonnegative(up_model));
+                    have address(parent_node) != address(stop) or sized_walk_pending(next.model) == 0 by { known(); }
                     have 0 <= sized_walk_rank(next.model) by {
                         rewrite(next.model, SizedWalk::Active(value, SizedTree::Node(node, parent, color, value, sibling_model, old(sub.model)), SizedPath::Path(root, up_model))); unfold(sized_walk_rank(SizedWalk::Active(value, SizedTree::Node(node, parent, color, value, sibling_model, old(sub.model)), SizedPath::Path(root, up_model)))); unfold(sized_path_context(SizedPath::Path(root, up_model))); solve() using { 0 <= sized_context_depth(up_model); };
                     }

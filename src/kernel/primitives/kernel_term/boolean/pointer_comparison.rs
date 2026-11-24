@@ -16,7 +16,7 @@ impl KernelTerm {
         if left == right {
             let comparison = Self::address_offset_equal([a.offset.clone(), b.offset.clone()]);
             if let KernelTermNode::BoolLiteral(value) = comparison.node()
-                && !(*value && matches!(left, AddressBase::LoadedPointer(_)))
+                && !(*value && matches!(left, AddressBase::Load(_)))
             {
                 return comparison;
             }
@@ -220,7 +220,7 @@ mod tests {
         let memory_b = crate::kernel::intern_memory(after);
         for wide in [false, true] {
             let condition = |memory| {
-                let value = MachineTerm::MemoryLoad(
+                let value = MachineTerm::read_named(
                     memory,
                     Box::new(crate::kernel::SymbolicMemory::global_pointer(
                         "offset-condition",

@@ -189,7 +189,7 @@ pub(in crate::kernel) fn memory_block_may_alias(block: &AddressBase) -> bool {
         AddressBase::ExternalArgument
             | AddressBase::Symbolic(_)
             | AddressBase::FunctionSymbolic(_)
-            | AddressBase::LoadedPointer(_)
+            | AddressBase::Load(_)
     )
 }
 
@@ -5578,7 +5578,7 @@ impl ResourceContext {
                 // A loaded pointer's displacement is all of its offset: the
                 // read itself, at displacement zero, is the object's base.
                 AddressOffset::Int32Scaled { .. } | AddressOffset::Int64Scaled { .. }
-                    if matches!(base.base, AddressBase::LoadedPointer(_)) =>
+                    if matches!(base.base, AddressBase::Load(_)) =>
                 {
                     AddressOffset::Constant(0)
                 }
@@ -7733,8 +7733,8 @@ impl ResourceContext {
                 available.is_some_and(|available| {
                     (!required.typed_carrier
                         || (available.provenance == required.provenance
-                            && (required.carrier_bounds_known
-                                || available.bounds_owner == required.bounds_owner)))
+                            && (required.carrier_known()
+                                || available.carrier_owner() == required.carrier_owner())))
                         && memory_range_structurally_covers(&available, required, None)
                             == Some(true)
                 })
@@ -7962,11 +7962,10 @@ impl ResourceContext {
         // of it, holds the field.
         let by_member = || -> Option<&MemoryRange> {
             let stored = match &object.base {
-                AddressBase::LoadedPointer(identity) => {
-                    crate::kernel::eval::loaded_pointer_stored_address(*identity).and_then(
-                        |stored| (object.offset == AddressOffset::Constant(0)).then_some(stored),
-                    )
-                }
+                AddressBase::Load(load) => crate::kernel::eval::loaded_pointer_stored_address(
+                    load, None,
+                )
+                .and_then(|stored| (object.offset == AddressOffset::Constant(0)).then_some(stored)),
                 _ => None,
             };
             std::iter::once(object.clone())
@@ -8370,7 +8369,8 @@ impl ResourceContext {
     ) -> Option<Self> {
         let range = required.memory_own_range()?;
         let candidates = self.memory_fact_candidates(range, true, assumptions);
-        if let Some(entry) = candidates.entries.single_supplier()
+        let supplier = candidates.entries.single_supplier();
+        if let Some(entry) = supplier
             && self.fact(entry).has_proven_positive_quantity(assumptions)
             && !self
                 .fact(entry)
@@ -8386,13 +8386,13 @@ impl ResourceContext {
         {
             return Some(self);
         }
+        // A constant request can cross a symbolic partition boundary.
         if range.has_symbolic_bounds()
-            || (range.wide_bounds().is_some()
-                && candidates.entries.single_supplier().is_some_and(|entry| {
-                    self.fact(entry)
-                        .memory_own_range()
-                        .is_some_and(MemoryRange::has_symbolic_bounds)
-                }))
+            || supplier.is_some_and(|entry| {
+                self.fact(entry)
+                    .memory_own_range()
+                    .is_some_and(MemoryRange::has_symbolic_bounds)
+            })
         {
             return self.consume_symbolic_partition(required, assumptions, origins);
         }
@@ -12398,7 +12398,6 @@ pub(in crate::kernel) fn symbolic_object_covers_field(
         None => (required.constant_start() == Some(0))
             .then(|| required.constant_end())
             .flatten()
-            .and_then(|count| u32::try_from(count).ok())
             .and_then(|count| count.checked_mul(required.element_width()))
             .map(crate::kernel::AccessExtent::Bytes),
     };
@@ -14463,7 +14462,10 @@ fn merge_memory_ranges(
         return None;
     }
     if !assumptions.provenance_equal(&left.provenance, &right.provenance)
-        || !match (left.bounds_owner.as_deref(), right.bounds_owner.as_deref()) {
+        || !match (
+            left.carrier_owner().map(|owner| &**owner),
+            right.carrier_owner().map(|owner| &**owner),
+        ) {
             (None, None) => true,
             (Some(a), Some(b)) => assumptions.bounds_owners_equal(a, b),
             _ => false,
@@ -14791,12 +14793,12 @@ mod support_removal_tests {
                 wide_pointer.clone(),
                 ProgramValue::Float64(MachineTerm::uint64_constant(0)),
             );
-        let short_load = MachineTerm::MemoryLoad(
+        let short_load = MachineTerm::read_named(
             ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
             Box::new(short_pointer.clone()),
             crate::kernel::LoadKind::Int16,
         );
-        let wide_load = MachineTerm::MemoryLoad(
+        let wide_load = MachineTerm::read_named(
             ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
             Box::new(wide_pointer.clone()),
             crate::kernel::LoadKind::Float64,
@@ -14834,12 +14836,12 @@ mod support_removal_tests {
             .with_block("mixed-loads", 8)
             .store(pointer.clone(), int16(0));
         let second = first.clone().store(pointer.clone(), int16(1));
-        let first_load = MachineTerm::MemoryLoad(
+        let first_load = MachineTerm::read_named(
             ProgramPoint::at(&(crate::kernel::intern_memory_ref(&first))),
             Box::new(pointer.clone()),
             crate::kernel::LoadKind::Int32,
         );
-        let second_load = MachineTerm::MemoryLoad(
+        let second_load = MachineTerm::read_named(
             ProgramPoint::at(&(crate::kernel::intern_memory_ref(&second))),
             Box::new(pointer),
             crate::kernel::LoadKind::Int32,
@@ -14867,7 +14869,7 @@ mod support_removal_tests {
         let memory = SymbolicMemory::new()
             .with_block("deep-load", 8)
             .store(pointer.clone(), int16(0));
-        let load = MachineTerm::MemoryLoad(
+        let load = MachineTerm::read_named(
             ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
             Box::new(pointer),
             crate::kernel::LoadKind::Int32,

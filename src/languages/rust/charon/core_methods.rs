@@ -359,6 +359,79 @@ impl Adapter<'_> {
         Ok(Some(function))
     }
 
+    /// The external function a call of `Option::<T>::take` on an option
+    /// of a scalar calls, declared once per payload type: the library's
+    /// `Option::take<T>`, which takes the option through its reference and
+    /// leaves `None`.
+    pub(super) fn option_take_method_call(
+        &self,
+        callee: &a::FunDecl,
+        pointer: &a::FnPtr,
+        call: &a::Call,
+    ) -> Result<Option<String>, String> {
+        let identity = !callee.item_meta.is_local
+            && matches!(callee.src, a::FunSource::Normal)
+            && matches!(callee.item_meta.name.name.as_slice(), [
+                a::PathElem::Ident(core, _),
+                a::PathElem::Ident(option, _),
+                a::PathElem::Impl(a::ImplElem::Ty(_)),
+                a::PathElem::Ident(method, d),
+            ] if core == "core" && option == "option" && method == "take"
+                && *d == a::Disambiguator::ZERO);
+        if !identity {
+            return Ok(None);
+        }
+        let refused = || unsupported("core method `Option::take` signature");
+        let [payload] = pointer.generics.types.as_raw_slice() else {
+            return Err(refused());
+        };
+        let payload = self.ty(payload)?;
+        if !payload.is_scalar() {
+            return Ok(None);
+        }
+        let option = self.option_enum(payload.clone())?;
+        let type_name = payload.scalar_name().expect("a scalar");
+        let reference = Type::Reference {
+            mutable: true,
+            pointee: Box::new(option.clone()),
+        };
+        let [argument] = call.args.as_slice() else {
+            return Err(refused());
+        };
+        if callee.signature.is_unsafe
+            || call.safety == a::CallSafety::Unsafe
+            || !pointer.generics.const_generics.is_empty()
+            || self.ty(argument.ty())? != reference
+            || self.ty(&call.dest.ty)? != option
+        {
+            return Err(refused());
+        }
+        let mut function = super::super::names::qualified_name(["Option", "take"]);
+        super::super::names::push_type_argument(&mut function, type_name);
+        self.core_methods.borrow_mut().insert(
+            function.clone(),
+            out::Function {
+                sites: Vec::new(),
+                name: function.clone(),
+                return_type: option,
+                parameters: vec![out::Place {
+                    name: "o".into(),
+                    value_type: reference,
+                    span: span(callee.item_meta.span),
+                }],
+                body: vec![],
+                mir: None,
+                external: true,
+                captures: 0,
+                implements: None,
+                instance_of: None,
+                core_method: Some(super::super::standard_library::OPTION_TAKE.into()),
+                span: span(callee.item_meta.span),
+            },
+        );
+        Ok(Some(function))
+    }
+
     /// The external function a call of `<[T]>::swap` calls, declared once
     /// per element type: its contract, which the library supplies, owns the
     /// slice and exchanges two of its elements.

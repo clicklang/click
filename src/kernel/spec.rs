@@ -1091,7 +1091,7 @@ fn lower_spec_negation_chain_in(
 fn wrap_spec_negation_path(path: SpecPropositionPath) -> SpecPropositionPath {
     // A negated condition is the condition with the other value, as an
     // execution spells the branch it did not take. Only the remaining shape
-    // keeps a `Not` node an introduction can reach.
+    // keeps an explicit `Not` node.
     let (proposition, introductions) = match path.proposition {
         Proposition::ConditionIs(condition, value) => (
             Proposition::condition_is(condition, !value),
@@ -1710,7 +1710,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             .map(|path| {
                 // A negated condition is the condition with the other value,
                 // as an execution spells the branch it did not take. Only the
-                // remaining shape keeps a `Not` node an introduction can reach.
+                // remaining shape keeps an explicit `Not` node.
                 let (proposition, introductions) = match path.proposition {
                     Proposition::ConditionIs(condition, value) => (
                         Proposition::condition_is(condition, !value),
@@ -2765,7 +2765,7 @@ fn integer_carrier_in_pointer(pointer: &Address, variable: Variable) -> bool {
     // application or registry DAG once for every fold obligation.
     matches!(
         pointer.base,
-        AddressBase::PureFunctionApplication(_) | AddressBase::LoadedPointer(_)
+        AddressBase::PureFunctionApplication(_) | AddressBase::Load(_)
     ) || integer_carrier_in_pointer_offset(&pointer.offset, variable)
 }
 
@@ -2850,7 +2850,8 @@ fn integer_carrier_in_bitvector(term: &MachineTerm, variable: Variable) -> bool 
     let Some(kind) = crate::kernel::eval::registered_load_kind_for_variable(load) else {
         return true;
     };
-    let selected_load = MachineTerm::MemoryLoad(ProgramPoint::at(&memory), Box::new(pointer), kind);
+    let selected_load =
+        crate::kernel::MachineTerm::read_named(ProgramPoint::at(&memory), pointer, kind);
     let mut pointer_variables = BTreeSet::new();
     collect_bitvector_integer_variables(&selected_load, &mut pointer_variables);
     if pointer_variables.contains(&variable) {
@@ -6488,8 +6489,10 @@ fn invalid_mutex_held_path(
     context: &str,
 ) -> SpecPropositionPath {
     let refusal = super::loops::false_equals_true_proposition();
-    obligations
-        .push(ProofObligation::verification_condition(refusal.clone()).with_context(context));
+    let mut obligation =
+        ProofObligation::verification_condition(refusal.clone()).with_context(context);
+    obligation.invalid_mutex_held_observation = true;
+    obligations.push(obligation);
     SpecPropositionPath {
         introductions: Vec::new(),
         proposition: refusal,
@@ -7362,7 +7365,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 return Ok(vec![SpecExpressionPath {
                     value: value.clone().into(),
                     facts: Vec::new().into(),
-                    obligations: Vec::new().into(),
+                    obligations: Vec::new(),
                 }]);
             }
             let Some(value) = retained_state
@@ -7693,39 +7696,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             )?
         }
         SpecExpression::ProgramExpression(expression) => {
-            let _specification = crate::kernel::eval::SpecificationReadScope::enter();
-            let native_state = scope.native_expression_state(expression);
-            let paths =
-                evaluate_expression_value_paths(&native_state, expression, assumptions, budget)?;
-            let retain_results = !budget.machine_result_production_disabled;
-            spec_execution_value_paths_in(
-                paths.into_iter().map(|path| {
-                    path.map_value(|value| {
-                        let value = if retain_results {
-                            value.retain_boolean_result()
-                        } else {
-                            value
-                        };
-                        if retain_results
-                            && (value.machine().is_some()
-                                || value.float().is_some()
-                                || value.shared().is_some_and(|root| {
-                                    matches!(root.ty(), KernelType::Bool | KernelType::Algebraic(_))
-                                        || root.pointer_payload().is_some()
-                                        || matches!(
-                                            root.node(),
-                                            KernelTermNode::ProgramParameter { .. }
-                                        )
-                                }))
-                        {
-                            value
-                        } else {
-                            SpecValue::Native(value.into_native())
-                        }
-                    })
-                }),
-                budget,
-            )
+            evaluate_spec_program_expression_paths_in(scope, expression, assumptions, budget)?
         }
         SpecExpression::CountedResourceCount { name, arguments } => evaluate_resource_count_paths(
             SpecScope { state, ..scope },
@@ -8042,8 +8013,10 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     let outcome = match value {
                         ProgramValue::Pointer(pointer)
                             if target_type.is_pointer()
-                                && (*target_type != ProgramType::VoidPointer
-                                    || pointer.program_type().is_object_pointer()) =>
+                                && (!matches!(
+                                    *target_type,
+                                    ProgramType::VoidPointer | ProgramType::Pointer
+                                ) || pointer.program_type().is_object_pointer()) =>
                         {
                             ExpressionOutcome::Value(ProgramValue::Pointer(
                                 pointer.with_type(*target_type),
@@ -8391,7 +8364,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 };
                 let integer_read_through_loaded_pointer =
                     MachineIntegerType::from_program_type(*value_type).is_some()
-                        && matches!(pointer.base, AddressBase::LoadedPointer(_));
+                        && matches!(pointer.base, AddressBase::Load(_));
                 let version = if !*exact
                     && (ProgramPoint::supports_indexed_version(&pointer)
                         || integer_read_through_loaded_pointer
@@ -9680,6 +9653,104 @@ fn evaluate_spec_requires_paths_in(
     Ok(paths)
 }
 
+// A C ternary used in a specification denotes a value over the entry
+// state. Use the specification conditional producer so neither arm's
+// condition becomes a fact about that state.
+fn evaluate_spec_program_expression_paths_in(
+    scope: SpecScope<'_>,
+    expression: &ProgramExpression,
+    assumptions: &PureFactContext,
+    budget: &mut SpecEvaluation<'_>,
+) -> ExecutionResult<Vec<SpecExpressionPath>> {
+    if let ProgramExpression::Ternary {
+        condition,
+        then_branch,
+        else_branch,
+    } = expression
+    {
+        budget.consume_expression_step()?;
+        let evaluate_operand = |operand: &ProgramExpression,
+                                assumptions: &PureFactContext,
+                                budget: &mut SpecEvaluation<'_>| {
+            let paths =
+                evaluate_spec_program_expression_paths_in(scope, operand, assumptions, budget)?;
+            // An executable guard must stay scoped to its own case.
+            if paths.iter().any(|path| {
+                path.facts
+                    .iter()
+                    .any(|fact| !fact.is_certified() && !fact.is_logical_read_equation())
+            }) {
+                return Err(ExecutionLimit::Paths);
+            }
+            Ok(paths)
+        };
+        let condition_paths = evaluate_operand(condition, assumptions, budget)?
+            .into_iter()
+            .map(|path| {
+                let condition = match path.value.native().numeric_value() {
+                    ProgramValue::Float32(bits) => ConditionTerm::float32_classification(
+                        bits.clone(),
+                        FloatClassification::Zero,
+                    )
+                    .truth_claim(false),
+                    ProgramValue::Float64(bits) => ConditionTerm::float64_classification(
+                        bits.clone(),
+                        FloatClassification::Zero,
+                    )
+                    .truth_claim(false),
+                    value => ConditionTerm::nonzero_test(value)
+                        .ok_or(ExecutionLimit::Paths)?
+                        .truth_claim(true),
+                };
+                Ok(SpecPropositionPath {
+                    proposition: condition,
+                    facts: path.facts,
+                    obligations: path.obligations,
+                    introductions: Vec::new(),
+                })
+            })
+            .collect::<ExecutionResult<Vec<_>>>()?;
+        return join_spec_if_paths_in(
+            condition_paths,
+            assumptions,
+            budget,
+            |truth, assumptions, budget| {
+                let branch = if truth { then_branch } else { else_branch };
+                evaluate_operand(branch, assumptions, budget)
+            },
+        );
+    }
+    let _specification = crate::kernel::eval::SpecificationReadScope::enter();
+    let native_state = scope.native_expression_state(expression);
+    let paths = evaluate_expression_value_paths(&native_state, expression, assumptions, budget)?;
+    let retain_results = !budget.machine_result_production_disabled;
+    Ok(spec_execution_value_paths_in(
+        paths.into_iter().map(|path| {
+            path.map_value(|value| {
+                let value = if retain_results {
+                    value.retain_boolean_result()
+                } else {
+                    value
+                };
+                if retain_results
+                    && (value.machine().is_some()
+                        || value.float().is_some()
+                        || value.shared().is_some_and(|root| {
+                            matches!(root.ty(), KernelType::Bool | KernelType::Algebraic(_))
+                                || root.pointer_payload().is_some()
+                                || matches!(root.node(), KernelTermNode::ProgramParameter { .. })
+                        }))
+                {
+                    value
+                } else {
+                    SpecValue::Native(value.into_native())
+                }
+            })
+        }),
+        budget,
+    ))
+}
+
 fn evaluate_spec_if_paths_in(
     scope: SpecScope<'_>,
     condition: &SpecProposition,
@@ -9688,7 +9759,6 @@ fn evaluate_spec_if_paths_in(
     assumptions: &PureFactContext,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecExpressionPath>> {
-    let mut paths = Vec::new();
     let previous_guard = std::mem::replace(&mut budget.conditional_guard, true);
     let condition_paths = lower_spec_proposition_at_state_with_algebraic_bindings_in(
         scope,
@@ -9697,7 +9767,33 @@ fn evaluate_spec_if_paths_in(
         budget,
     );
     budget.conditional_guard = previous_guard;
-    let condition_paths = condition_paths?;
+    join_spec_if_paths_in(
+        condition_paths?,
+        assumptions,
+        budget,
+        |truth, assumptions, budget| {
+            let branch = if truth { then_branch } else { else_branch };
+            evaluate_spec_expression_paths_with_algebraic_bindings_in(
+                scope,
+                branch,
+                assumptions,
+                budget,
+            )
+        },
+    )
+}
+
+fn join_spec_if_paths_in(
+    condition_paths: Vec<SpecPropositionPath>,
+    assumptions: &PureFactContext,
+    budget: &mut SpecEvaluation<'_>,
+    mut evaluate_branch: impl FnMut(
+        bool,
+        &PureFactContext,
+        &mut SpecEvaluation<'_>,
+    ) -> ExecutionResult<Vec<SpecExpressionPath>>,
+) -> ExecutionResult<Vec<SpecExpressionPath>> {
+    let mut paths = Vec::new();
     for condition_path in condition_paths {
         let branch_assumptions = assumptions_with_path_context(
             assumptions,
@@ -9798,18 +9894,7 @@ fn evaluate_spec_if_paths_in(
         };
 
         let branch_paths = match condition_truth {
-            Some(true) => evaluate_spec_expression_paths_with_algebraic_bindings_in(
-                scope,
-                then_branch,
-                &branch_assumptions,
-                budget,
-            )?,
-            Some(false) => evaluate_spec_expression_paths_with_algebraic_bindings_in(
-                scope,
-                else_branch,
-                &branch_assumptions,
-                budget,
-            )?,
+            Some(truth) => evaluate_branch(truth, &branch_assumptions, budget)?,
             None => {
                 // Each arm is evaluated only where the condition selects it,
                 // as with `implies` and `or`, so its evaluation obligations
@@ -9829,22 +9914,15 @@ fn evaluate_spec_if_paths_in(
                         )
                     }) || (!closed_word_equality && path.value.boolean().is_some())
                 };
-                let mut evaluate = |expression| {
-                    evaluate_spec_expression_paths_with_algebraic_bindings_in(
-                        scope,
-                        expression,
-                        &branch_assumptions,
-                        budget,
-                    )
-                };
+                let mut evaluate = |truth| evaluate_branch(truth, &branch_assumptions, budget);
                 let (then_paths, else_paths) = if retained_comparison
                     && let Some(truth) = constant_spec_condition_value(condition)
                 {
-                    let selected = evaluate(if truth { then_branch } else { else_branch })?;
+                    let selected = evaluate(truth)?;
                     // Other result families keep their existing selected-arm
                     // representation. Do not evaluate their unselected arm.
                     let other = if selected.first().is_some_and(scalar) {
-                        evaluate(if truth { else_branch } else { then_branch })?
+                        evaluate(!truth)?
                     } else {
                         Vec::new()
                     };
@@ -9854,7 +9932,7 @@ fn evaluate_spec_if_paths_in(
                         (other, selected)
                     }
                 } else {
-                    (evaluate(then_branch)?, evaluate(else_branch)?)
+                    (evaluate(true)?, evaluate(false)?)
                 };
                 let scalar_arms =
                     then_paths
@@ -9907,6 +9985,11 @@ fn evaluate_spec_if_paths_in(
                                 !budget.machine_result_production_disabled,
                             )?
                             else {
+                                if then_path.value.program_type().is_pointer()
+                                    && else_path.value.program_type().is_pointer()
+                                {
+                                    budget.dropped_symbolic_pointer_conditional = true;
+                                }
                                 continue;
                             };
                             branch_paths.push(SpecExpressionPath {

@@ -46,7 +46,7 @@ pub(in crate::kernel) fn integer_to_float64_bits(negative: bool, magnitude: u128
     integer_to_float_bits(negative, magnitude, 52, 11, 1023, 0x8000_0000_0000_0000)
 }
 
-fn float32_to_float64_bits(bits: u32) -> u64 {
+pub(in crate::kernel) fn float32_to_float64_bits(bits: u32) -> u64 {
     let sign = u64::from(bits & 0x8000_0000) << 32;
     let exponent = (bits >> 23) & 0xff;
     let fraction = bits & 0x007f_ffff;
@@ -73,7 +73,7 @@ fn float32_to_float64_bits(bits: u32) -> u64 {
     sign | (encoded_exponent << 52) | (u64::from(significand) << (52 - highest_bit))
 }
 
-fn float64_to_float32_bits(bits: u64) -> u32 {
+pub(in crate::kernel) fn float64_to_float32_bits(bits: u64) -> u32 {
     let sign = (bits >> 32) as u32 & 0x8000_0000;
     let exponent = ((bits >> 52) & 0x7ff) as u32;
     let fraction = bits & 0x000f_ffff_ffff_ffff;

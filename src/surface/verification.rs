@@ -432,15 +432,8 @@ impl<'a> ProgramSourceContext<'a> {
 }
 
 fn collect_applied_theorems(tactics: &[ProofTactic], names: &mut BTreeSet<String>) {
-    for (index, tactic) in tactics.iter().enumerate() {
+    for tactic in tactics {
         match tactic {
-            ProofTactic::Induct { hypothesis, .. } => {
-                let mut subsequent = BTreeSet::new();
-                collect_applied_theorems(&tactics[index + 1..], &mut subsequent);
-                subsequent.remove(hypothesis);
-                names.extend(subsequent);
-                break;
-            }
             ProofTactic::ApplyTheorem(application)
             | ProofTactic::ApplyTheoremUsing { application, .. } => {
                 names.insert(application.name.clone());
@@ -457,7 +450,9 @@ fn collect_applied_theorems(tactics: &[ProofTactic], names: &mut BTreeSet<String
                 collect_applied_theorems(&proof_if.then_tactics, names);
                 collect_applied_theorems(&proof_if.else_tactics, names);
             }
-            ProofTactic::CloseInvariantsBy(body) => collect_applied_theorems(body, names),
+            ProofTactic::IntroBlock { body, .. } | ProofTactic::CloseInvariantsBy(body) => {
+                collect_applied_theorems(body, names);
+            }
             ProofTactic::StepProved { proof, .. } => match proof {
                 StepProof::By(body) => collect_applied_theorems(body, names),
                 StepProof::Requires(entries) => {
@@ -925,7 +920,9 @@ fn with_tactic_procedures(
             return Err(ClickError::new(format!(
                 "tactic `{name}` runs no code, so its proof cannot use `{executing}`; a \
                  tactic's proof folds, unfolds, applies, and proves facts at one point"
-            )));
+            ))
+            .with_proof_refusal(ProofRefusal::Tactic)
+            .at_declaration(&name));
         }
         let mut suffix = vec![ProofTactic::Synthetic(Box::new(ProofTactic::Step))];
         suffix.extend(std::iter::repeat_n(
@@ -980,15 +977,16 @@ fn append_on_every_path(script: &mut Vec<ProofTactic>, suffix: &[ProofTactic]) {
     }
 }
 
-/// The first tactic in `tactics`, at any depth of proof control, that runs
-/// C or addresses a C control-flow point, by its source name.
 /// How many tactics the checker appends where each path of a tactic's proof
 /// ends: one `step` over the procedure's `return`, then a `known` per
-/// `ensures` and per contract-closing goal.
+/// claim and per contract-closing goal. With no written `ensures`, verification
+/// checks one implicit body-safety claim.
 pub(in crate::surface) fn tactic_procedure_ending_len(block: &FunctionBlock) -> usize {
-    1 + block.ensures().len() + crate::kernel::proof::ContractClosingGoal::COUNT
+    1 + block.ensures().len().max(1) + crate::kernel::proof::ContractClosingGoal::COUNT
 }
 
+/// The first tactic in `tactics`, at any depth of proof control, that runs
+/// C or addresses a C control-flow point, by its source name.
 fn first_executing_tactic(tactics: &[ProofTactic]) -> Option<&'static str> {
     tactics.iter().find_map(|tactic| match tactic {
         ProofTactic::Step
@@ -2655,6 +2653,7 @@ fn verify_program_in_context(
                 "`{}` is not defined by any `verifying` source",
                 function_block.signature.name()
             ))
+            .with_kind(ClickErrorKind::Type)
         })?;
         check_signature(
             &function_block.signature,
@@ -3500,8 +3499,6 @@ pub enum ModelFamily {
     Allocator,
     /// The contract the C front end writes for one `snprintf` format.
     Snprintf,
-    /// The contract the C front end writes for a literal `printf`.
-    Printf,
     /// A C++ standard-library catalog contract.
     CppStd,
     /// A Rust core-method contract.
@@ -3514,12 +3511,11 @@ pub enum ModelFamily {
 impl ModelFamily {
     /// Every family a function's assumptions can belong to; the thread
     /// runtime, which a whole verification assumes, is reported apart.
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 7] = [
         Self::Extern,
         Self::CLibrary,
         Self::Allocator,
         Self::Snprintf,
-        Self::Printf,
         Self::CppStd,
         Self::RustCore,
         Self::Primitive,
@@ -3532,7 +3528,6 @@ impl ModelFamily {
             Self::CLibrary => "C library",
             Self::Allocator => "allocator",
             Self::Snprintf => "snprintf",
-            Self::Printf => "printf",
             Self::CppStd => "C++ std",
             Self::RustCore => "Rust core",
             Self::Primitive => "primitive",
@@ -3596,7 +3591,6 @@ fn program_assumptions_parsed(
                 use crate::languages::c::formatted_output::FormattedOutput;
                 match function {
                     FormattedOutput::Snprintf => ModelFamily::Snprintf,
-                    FormattedOutput::Printf => ModelFamily::Printf,
                 }
             } else if file.source_language() == crate::languages::SourceLanguage::C
                 && syntax::is_library_interface_function(name)
@@ -4482,7 +4476,7 @@ pub(in crate::surface) fn executing_function_names(
                 return Err(ClickError::new(format!(
                     "contracts `{previous}` and `{}` select the same C definition; use one ordinary contract per definition",
                     signature.name()
-                )));
+                )).with_proof_refusal(ProofRefusal::Contract));
             }
             if signature.c_source.is_some() {
                 names.insert(signature.name().to_string(), kernel_name);
@@ -4543,7 +4537,7 @@ pub(in crate::surface) fn function_recursion_resource_requirement(
         ClickError::new(format!(
             "function-level `decreases {measure_name}(...)` in `{}` must exactly match an owned or viewed entry resource",
             function.signature().name()
-        ))
+        )).with_proof_refusal(ProofRefusal::Contract)
     })?;
     Ok(Some(index))
 }
@@ -4729,7 +4723,7 @@ fn parsed_function_for_source_name<'a>(
     if matches.next().is_some() {
         return Err(ClickError::new(format!(
             "source-named inline function `{source_name}` has multiple translation-unit-local definitions"
-        )));
+        )).with_kind(ClickErrorKind::Type));
     }
     Ok(Some(first))
 }
@@ -5259,6 +5253,56 @@ fn validate_modeled_pthread_calls(
     Ok(())
 }
 
+/// `function`, an `extern` declaration's interface, with the program's
+/// externally linked file-scope objects, which its contract may read as a
+/// verified function's contract reads them. Every defined function is linked
+/// to the same externally visible objects; a file-scope `static` belongs to
+/// its own translation unit, which an `extern` function is not in.
+fn with_linked_globals(
+    function: crate::languages::interface::ImportedFunction,
+    parsed_sources: &BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>,
+) -> crate::languages::interface::ImportedFunction {
+    let Some((_, defined)) = parsed_sources
+        .values()
+        .find(|(_, defined)| !defined.globals().is_empty() || !defined.global_arrays().is_empty())
+    else {
+        return function;
+    };
+    function
+        .with_globals(
+            defined
+                .globals()
+                .iter()
+                .filter(|(_, object)| !object.is_file_static())
+                .map(|(name, object)| (name.clone(), object.clone()))
+                .collect(),
+        )
+        .with_global_arrays(
+            defined
+                .global_arrays()
+                .iter()
+                .filter(|(_, object)| !object.is_file_static())
+                .map(|(name, object)| (name.clone(), object.clone()))
+                .collect(),
+        )
+        .with_global_aggregates(
+            defined
+                .global_aggregates()
+                .iter()
+                .filter(|(_, object)| !object.is_file_static())
+                .map(|(name, object)| (name.clone(), object.clone()))
+                .collect(),
+        )
+        .with_global_aggregate_arrays(
+            defined
+                .global_aggregate_arrays()
+                .iter()
+                .filter(|(_, object)| !object.is_file_static())
+                .map(|(name, object)| (name.clone(), object.clone()))
+                .collect(),
+        )
+}
+
 pub(in crate::surface) fn external_c_function(
     function_block: &FunctionBlock,
 ) -> crate::languages::interface::ImportedFunction {
@@ -5350,8 +5394,10 @@ pub(in crate::surface) fn build_function_environment(
     let mut environment = ExecutionEnvironment::new();
     for definition in contract_definitions {
         let function_block = definition.function_block();
-        let parsed_function =
-            external_c_function_with_layouts(function_block, resource_environment.struct_layouts());
+        let parsed_function = with_linked_globals(
+            external_c_function_with_layouts(function_block, resource_environment.struct_layouts()),
+            parsed_sources,
+        );
         let InitialClaimContext {
             state, arguments, ..
         } = initial_claim_context_with_caller_owner(
@@ -5391,11 +5437,13 @@ pub(in crate::surface) fn build_function_environment(
                 contract.with_value_parameters(definition.value_parameters().len())
             })
             .ok_or_else(|| {
-                ClickError::new(format!(
-                    "named contract `{}` cannot be applied opaquely{}",
+                crate::surface::lowering::opaque_contract_refusal(
                     definition.name(),
-                    crate::surface::lowering::opaque_contract_refusal_suffix(definition.name())
-                ))
+                    format!(
+                        "named contract `{}` cannot be applied opaquely",
+                        definition.name()
+                    ),
+                )
             })?;
         let proof_parameters = definition
             .proof_parameters()
@@ -5421,8 +5469,10 @@ pub(in crate::surface) fn build_function_environment(
         .filter(|block| block.is_external() && block.signature().has_abstract_types())
     {
         let name = function_block.signature().name();
-        let parsed_function =
-            external_c_function_with_layouts(function_block, resource_environment.struct_layouts());
+        let parsed_function = with_linked_globals(
+            external_c_function_with_layouts(function_block, resource_environment.struct_layouts()),
+            parsed_sources,
+        );
         let InitialClaimContext {
             state, arguments, ..
         } = initial_claim_context_with_caller_owner(
@@ -5656,9 +5706,12 @@ pub(in crate::surface) fn build_function_environment(
         }
         let parsed_function = match prepared_interfaces.get(name) {
             Some(prepared) => (*prepared).clone(),
-            None => external_c_function_with_layouts(
-                function_block,
-                resource_environment.struct_layouts(),
+            None => with_linked_globals(
+                external_c_function_with_layouts(
+                    function_block,
+                    resource_environment.struct_layouts(),
+                ),
+                parsed_sources,
             ),
         };
         let InitialClaimContext {
@@ -5681,24 +5734,20 @@ pub(in crate::surface) fn build_function_environment(
         )?;
         let mut rule =
             crate::kernel::program_external_function_rule(function.clone()).ok_or_else(|| {
-                ClickError::new(format!(
-                    "external function `{}` has a contract that cannot be applied opaquely{}",
-                    function_block.signature().name(),
-                    crate::surface::lowering::opaque_contract_refusal_suffix(
-                        function_block.signature().name()
-                    )
-                ))
+                crate::surface::lowering::opaque_contract_refusal(
+                    name,
+                    format!(
+                        "external function `{name}` has a contract that cannot be applied opaquely"
+                    ),
+                )
             })?;
         // A crate trait method's interface is also the named contract its
         // implementations refine.
         if interfaces.contains(name) {
             let contract = FunctionContract::new(name, function.clone()).ok_or_else(|| {
-                ClickError::new(format!(
-                    "trait method interface `{name}` has a contract that cannot be applied opaquely{}",
-                    crate::surface::lowering::opaque_contract_refusal_suffix(
-                        function_block.signature().name()
-                    )
-                ))
+                crate::surface::lowering::opaque_contract_refusal(
+                    name, format!("trait method interface `{name}` has a contract that cannot be applied opaquely"),
+                )
             })?;
             environment = environment.with_function_contract(contract);
         }
@@ -5800,25 +5849,29 @@ fn check_trait_method_implementations(
         let Some(implementation) = environment.get_function(function.name()) else {
             continue;
         };
-        let mut refines = true;
+        let mut refusal = None;
         for contract in contracts {
-            refines &= match (contract, verified_interface) {
-                (None, Some(interface)) => {
-                    crate::kernel::program_function_refines_function_contract(
-                        environment,
-                        interface,
-                        implementation,
-                    )
+            let interface = match (contract, verified_interface) {
+                (None, Some(interface)) => crate::kernel::OverrideInterface::Verified(interface),
+                (contract, _) => {
+                    crate::kernel::OverrideInterface::Named(contract.unwrap_or(interface))
                 }
-                (contract, _) => crate::kernel::program_function_refines_named_contract(
-                    environment,
-                    contract.unwrap_or(interface),
-                    implementation,
-                ),
+            };
+            refusal = crate::kernel::program_override_refinement_failure(
+                environment,
+                interface,
+                implementation,
+            )
+            .map_err(|error| {
+                ClickError::new(format!("could not check override refinement: {error}"))
+                    .with_kind(ClickErrorKind::Internal)
+                    .at_declaration(function.name())
+            })?;
+            if refusal.is_some() {
+                break;
             }
-            .map_err(ClickError::new)?;
         }
-        if !refines {
+        if let Some(refusal) = refusal {
             let (name, interface) = if rust {
                 (
                     function.name(),
@@ -5830,12 +5883,47 @@ fn check_trait_method_implementations(
                     format!("the virtual method `{interface_name}` it overrides"),
                 )
             };
+            let detail = match refusal {
+                crate::kernel::OverrideRefusal::InterfaceUnavailable => {
+                    return Err(ClickError::new(format!(
+                        "Click could not prepare {interface} for override checking"
+                    ))
+                    .with_kind(ClickErrorKind::Internal)
+                    .at_declaration(function.name()));
+                }
+                crate::kernel::OverrideRefusal::UnprovedRequirement(index) => {
+                    let written = implementation
+                        .contract_interface()
+                        .contract_requirement_source(index)
+                        .flatten()
+                        .and_then(|source_index| {
+                            function_blocks
+                                .iter()
+                                .find(|block| block.signature().name() == function.source_name())?
+                                .requires()
+                                .get(source_index)?
+                                .proposition()
+                        });
+                    match written {
+                        Some(proposition) => format!(
+                            "\n  override requirement not established by the interface: `{}`",
+                            crate::surface::diagnostics::describe_click_proposition(proposition),
+                        ),
+                        None => format!(
+                            "\n  override requirement {} is not established by the interface",
+                            index + 1
+                        ),
+                    }
+                }
+                crate::kernel::OverrideRefusal::Incompatible => String::new(),
+            };
             return Err(ClickError::new(format!(
                 "`{name}` does not refine {interface}: its contract must accept every call the \
                  interface allows; it inherits the interface's guarantees, and its `requires` \
                  must follow from the interface's, each clause read exactly or decided as a \
-                 bare comparison"
+                 bare comparison{detail}"
             ))
+            .with_proof_refusal(ProofRefusal::Contract)
             .at_declaration(function.name()));
         }
     }
@@ -6226,7 +6314,7 @@ pub(super) fn function_resource_summary_with_entry_ranges(
                         return Err(ClickError::new(format!(
                             "produced view `{}` {problem}; name its input with `views ... as name` and write `from name`",
                             crate::surface::printing::format_resource_target(resource)
-                        )));
+                        )).with_proof_refusal(ProofRefusal::Contract));
                     }
                 };
                 spec = spec.with_view_source(source);
@@ -7623,8 +7711,10 @@ pub(in crate::surface) fn validate_loop_initialization_tactics(
             | ProofTactic::ApplyTheoremUsing { .. }
             | ProofTactic::Have(_)
             | ProofTactic::Known
+            | ProofTactic::Close
             | ProofTactic::Normalize
             | ProofTactic::NormalizeUsing(_)
+            | ProofTactic::CompatibilityNormalize(_)
             | ProofTactic::Rewrite(_)
             | ProofTactic::Solve => {}
             ProofTactic::If(proof_if) => {
@@ -8944,7 +9034,7 @@ fn rust_enum_type_name(enum_type: crate::kernel::TypeParameterName) -> String {
     }
 }
 
-fn termination_analysis_error(
+pub(in crate::surface) fn termination_analysis_error(
     error: &crate::kernel::TerminationError,
     message: String,
 ) -> ClickError {

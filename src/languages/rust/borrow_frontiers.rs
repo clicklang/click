@@ -2,7 +2,9 @@
 //! This is source evidence for subsequent local authority integration; it
 //! neither grants memory authority nor ends a production borrow.
 
-use super::schema::{Expression as E, Function, MirStatement as S, MirTerminator as T, Type};
+use super::schema::{
+    Expression as E, Function, MirCallee, MirLocalId, MirStatement as S, MirTerminator as T, Type,
+};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
@@ -155,6 +157,9 @@ impl CheckedScalarReferenceEnd<'_> {
             return Vec::new();
         };
         let E::Local { name: parent } = reference.as_ref() else {
+            return Vec::new();
+        };
+        let (Some(parent), Some(child)) = (parent.source_name(), child.source_name()) else {
             return Vec::new();
         };
         let mut candidates = BTreeMap::<usize, Candidate<'e>>::new();
@@ -316,7 +321,7 @@ pub(super) fn mir_expression_nodes(statement: &S) -> BTreeMap<usize, usize> {
     nodes
 }
 
-fn direct_alias_source(expr: &E) -> Option<&str> {
+fn direct_alias_source(expr: &E) -> Option<&MirLocalId> {
     match expr {
         E::Local { name } => Some(name),
         E::Borrow { place, .. } => match place.as_ref() {
@@ -335,8 +340,8 @@ struct AccessCollector<'a, 'b> {
     import_identity: &'a str,
     borrow: MirPoint,
     point: MirPoint,
-    types: &'b BTreeMap<&'a str, &'a Type>,
-    aliases: &'b BTreeSet<&'a str>,
+    types: &'b BTreeMap<&'a MirLocalId, &'a Type>,
+    aliases: &'b BTreeSet<&'a MirLocalId>,
     nodes: &'b BTreeMap<usize, usize>,
     accesses: Vec<CheckedScalarReferenceAccess<'a>>,
 }
@@ -352,24 +357,24 @@ impl<'a> AccessCollector<'a, '_> {
         use ScalarReferenceAccessKind::Read;
         crate::instrumentation::record_deterministic_work(1);
         let children: Vec<(&E, Option<ScalarReferenceAccessKind>)> = match expr {
-            E::Local { name } => return Ok(self.aliases.contains(name.as_str())),
+            E::Local { name } => return Ok(self.aliases.contains(name)),
             E::Borrow { place, .. } => return self.expression(place, None),
             E::Deref {
                 reference,
                 value_type,
             } => {
-                let selected = matches!(reference.as_ref(), E::Local { name } if self.aliases.contains(name.as_str()));
+                let selected = matches!(reference.as_ref(), E::Local { name } if self.aliases.contains(name));
                 if selected {
                     let E::Local { name } = reference.as_ref() else {
                         unreachable!()
                     };
-                    if !matches!(self.types.get(name.as_str()), Some(Type::Reference { pointee, .. }) if pointee.as_ref() == value_type)
+                    if !matches!(self.types.get(name), Some(Type::Reference { pointee, .. }) if pointee.as_ref() == value_type)
                     {
                         return Err(FrontierRefusal::UnsupportedFlow);
                     }
                     if kind == Some(ScalarReferenceAccessKind::Write)
                         && !matches!(
-                            self.types.get(name.as_str()),
+                            self.types.get(name),
                             Some(Type::Reference { mutable: true, .. })
                         )
                     {
@@ -384,7 +389,7 @@ impl<'a> AccessCollector<'a, '_> {
                             occurrence: self.accesses.len(),
                             source_node: self.nodes[&(expr as *const E as usize)],
                             place: expr,
-                            reference: name,
+                            reference: name.source_name().ok_or(FrontierRefusal::UnsupportedFlow)?,
                             kind,
                         });
                     }
@@ -438,7 +443,7 @@ fn scalar_reference(ty: &Type) -> bool {
         if matches!(pointee.as_ref(), Type::I32 | Type::U8 | Type::U16 | Type::U32 | Type::Bool))
 }
 
-fn scalar_value(expr: &E, types: &BTreeMap<&str, &Type>) -> bool {
+fn scalar_value(expr: &E, types: &BTreeMap<&MirLocalId, &Type>) -> bool {
     crate::instrumentation::record_deterministic_work(1);
     let scalar = |ty: &Type| {
         matches!(
@@ -451,7 +456,7 @@ fn scalar_value(expr: &E, types: &BTreeMap<&str, &Type>) -> bool {
         | E::UnsignedInteger { .. }
         | E::SignedInteger { .. }
         | E::Boolean { .. } => true,
-        E::Local { name } => types.get(name.as_str()).is_some_and(|ty| scalar(ty)),
+        E::Local { name } => types.get(name).is_some_and(|ty| scalar(ty)),
         E::Deref { value_type, .. } => scalar(value_type),
         E::Not { value } | E::BitwiseNot { value, .. } => scalar_value(value, types),
         E::Cast { value, value_type } => scalar(value_type) && scalar_value(value, types),
@@ -473,10 +478,13 @@ fn scalar_value(expr: &E, types: &BTreeMap<&str, &Type>) -> bool {
 
 // Each operand is visited once. The second bit detects opaque alias capture,
 // including calls/aggregates nested inside otherwise scalar expressions.
-fn alias_effect(expr: &E, aliases: &BTreeSet<&str>) -> Result<(bool, bool), FrontierRefusal> {
+fn alias_effect(
+    expr: &E,
+    aliases: &BTreeSet<&MirLocalId>,
+) -> Result<(bool, bool), FrontierRefusal> {
     crate::instrumentation::record_deterministic_work(1);
     let children: Vec<&E> = match expr {
-        E::Local { name } => return Ok((aliases.contains(name.as_str()), false)),
+        E::Local { name } => return Ok((aliases.contains(name), false)),
         E::IntegerFrom { value, .. }
         | E::Not { value }
         | E::BitwiseNot { value, .. }
@@ -545,8 +553,8 @@ fn alias_effect(expr: &E, aliases: &BTreeSet<&str>) -> Result<(bool, bool), Fron
 
 fn transfer<'a>(
     statement: &'a S,
-    types: &BTreeMap<&str, &Type>,
-    aliases: &mut BTreeSet<&'a str>,
+    types: &BTreeMap<&MirLocalId, &Type>,
+    aliases: &mut BTreeSet<&'a MirLocalId>,
     after_end: bool,
 ) -> Result<(), FrontierRefusal> {
     crate::instrumentation::record_deterministic_work(1);
@@ -568,9 +576,7 @@ fn transfer<'a>(
                 return Err(FrontierRefusal::FutureUse);
             }
             if let E::Local { name } = target {
-                let ty = types
-                    .get(name.as_str())
-                    .ok_or(FrontierRefusal::UnsupportedFlow)?;
+                let ty = types.get(name).ok_or(FrontierRefusal::UnsupportedFlow)?;
                 if scalar_reference(ty) {
                     if source_uses {
                         // A scalar read used to choose another address does
@@ -585,7 +591,7 @@ fn transfer<'a>(
                         }
                         aliases.insert(name);
                     } else {
-                        aliases.remove(name.as_str());
+                        aliases.remove(name);
                     }
                 } else if source_uses
                     && (!matches!(
@@ -643,10 +649,7 @@ pub(super) fn certify_scalar_reference_end<'a>(
     let mut types = BTreeMap::new();
     for local in function.parameters.iter().chain(&mir.locals) {
         crate::instrumentation::record_deterministic_work(1);
-        if types
-            .insert(local.name.as_str(), &local.value_type)
-            .is_some()
-        {
+        if types.insert(&local.name, &local.value_type).is_some() {
             return Err(FrontierRefusal::UnsupportedFlow);
         }
     }
@@ -659,7 +662,7 @@ pub(super) fn certify_scalar_reference_end<'a>(
     };
     if !matches!(value_type, Type::Reference { mutable: true, .. })
         || !scalar_reference(value_type)
-        || types.get(name.as_str()).copied() != Some(value_type)
+        || types.get(name).copied() != Some(value_type)
     {
         return Err(FrontierRefusal::UnsupportedBorrow);
     }
@@ -673,13 +676,13 @@ pub(super) fn certify_scalar_reference_end<'a>(
     let E::Local { name: parent } = reference.as_ref() else {
         return Err(FrontierRefusal::UnsupportedBorrow);
     };
-    if !matches!(types.get(parent.as_str()), Some(Type::Reference { mutable: true, pointee: parent_ty })
+    if !matches!(types.get(parent), Some(Type::Reference { mutable: true, pointee: parent_ty })
         if parent_ty.as_ref() == pointee)
         || !matches!(value_type, Type::Reference { pointee: child_ty, .. } if child_ty.as_ref() == pointee)
     {
         return Err(FrontierRefusal::UnsupportedBorrow);
     }
-    let mut aliases = BTreeSet::from([name.as_str()]);
+    let mut aliases = BTreeSet::from([name]);
     let mut accesses = BTreeMap::new();
     let mut access_index = BTreeMap::new();
     for (offset, statement) in block.statements[borrow.statement + 1..end.statement]
@@ -740,13 +743,14 @@ pub(super) fn certify_scalar_reference_end<'a>(
                 destination,
                 target,
                 function,
-                through_pointer,
                 ..
             } => {
-                let mut used = *through_pointer && aliases.contains(function.as_str());
+                let mut used =
+                    matches!(function, MirCallee::Pointer { local } if aliases.contains(local));
                 used |= owned_arguments
                     .iter()
-                    .any(|arg| aliases.contains(arg.local.as_str()));
+                    .filter_map(|arg| arg.local.as_ref())
+                    .any(|local| aliases.contains(local));
                 for argument in arguments {
                     used |= alias_effect(argument, &aliases)?.0;
                 }
@@ -756,7 +760,7 @@ pub(super) fn certify_scalar_reference_end<'a>(
                 // A call whose inputs contain no selected alias cannot carry
                 // that alias into its result; earlier aggregate escapes were refused.
                 if let Some(destination) = destination {
-                    aliases.remove(destination.as_str());
+                    aliases.remove(destination);
                 }
                 point = MirPoint {
                     block: *target,
@@ -982,7 +986,6 @@ mod tests {
             owned_arguments: vec![],
             destination: Some("x".into()),
             target: 1,
-            through_pointer: false,
             result: None,
         };
         f.mir.as_mut().unwrap().blocks.push(MirBlock {

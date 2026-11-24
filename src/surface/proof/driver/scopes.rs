@@ -3,6 +3,27 @@ use super::*;
 use crate::surface::proof::driver::ProofDriver;
 
 impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
+    /// Replay one operation bound inside the selected have body.
+    pub(in crate::surface::proof) fn try_float_bound_link(
+        &self,
+        source: &Proposition,
+        goal: &Proposition,
+        source_surface: &ClickProposition,
+    ) -> Result<Option<ProofScope<'a>>, ClickError> {
+        let Some(body) = crate::kernel::search::ProofSearch::try_float_bound_link(
+            &self.proof.body,
+            source,
+            goal,
+            source_surface,
+        )?
+        else {
+            return Ok(None);
+        };
+        let mut next = self.proof.clone();
+        next.body = body;
+        Ok(Some(next))
+    }
+
     pub(in crate::surface::proof) fn try_signed_definedness_bounds(
         &self,
         width: crate::kernel::SignedDefinedWidth,

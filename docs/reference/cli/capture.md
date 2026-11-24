@@ -1466,11 +1466,12 @@ destruction, and no virtual dispatch. Empty tags serve only as type arguments;
 this does not add empty runtime objects. Click verifies the
 resolved layout and bodies without performing template substitution itself.
 
-### Layout-free class references
+### Layout-free class addresses
 
-References to named forward-declared classes can be passed to contracted calls.
-The C++ artifact retains the class's nominal declaration and the reference's
-constness. Its address carries no access to object bytes. Field projections,
+References and mutable pointer parameters to named forward-declared classes
+can be passed to contracted calls. The C++ artifact retains the class's
+nominal declaration. A reference also retains its constness. These addresses
+carry no access to object bytes. Field projections,
 by-value operations, and automatic storage require a modeled layout.
 
 The catalog can select this boundary for a complete system class as well. An
@@ -2130,6 +2131,9 @@ Limits:
   none of the object class's, is refused the same way
   (`mdtests/cpp_class_subclass_override_call_through_this_is_refused.md`,
   `mdtests/cpp_class_subclass_memory_method_through_a_reference_is_refused.md`).
+  Supporting these calls requires a checked conversion between the object
+  resource and the class memory or dispatch resource the callee needs,
+  with evidence that the conversion is valid for the receiver's dynamic type.
 - A class whose own fields reuse its base's tail padding is refused by the
   layout profile.
 - A call through the interface inside a larger expression is an expression

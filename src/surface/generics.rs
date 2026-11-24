@@ -500,6 +500,7 @@ pub(crate) fn interface_type_from_program_type(interface_type: ProgramType) -> I
         ProgramType::Bool => InterfaceType::Bool,
         ProgramType::VoidPointer => InterfaceType::VoidPointer,
         ProgramType::VoidPointerPointer => InterfaceType::VoidPointerPointer,
+        ProgramType::Pointer => InterfaceType::Pointer,
         ProgramType::Int8 => InterfaceType::Int8,
         ProgramType::Int16 => InterfaceType::Int16,
         ProgramType::Int32 => InterfaceType::Int32,
@@ -1152,6 +1153,10 @@ fn instantiate_proof_tactic(
                 .map(proposition)
                 .collect::<Result<Vec<_>, _>>()?,
         },
+        ProofTactic::IntroBlock { binder, body } => ProofTactic::IntroBlock {
+            binder: binder.clone(),
+            body: instantiate_proof_tactics(body, substitution, algebraic_parameters)?,
+        },
         ProofTactic::Have(have) => ProofTactic::Have(ProofHave {
             proposition: proposition(&have.proposition)?,
             proof: instantiate_source_proof(&have.proof, substitution, algebraic_parameters)?,
@@ -1251,6 +1256,17 @@ fn instantiate_proof_tactic(
                 .map(proposition)
                 .collect::<Result<Vec<_>, _>>()?,
         ),
+        ProofTactic::CompatibilityNormalize(premises) => ProofTactic::CompatibilityNormalize(
+            premises
+                .as_ref()
+                .map(|premises| {
+                    premises
+                        .iter()
+                        .map(proposition)
+                        .collect::<Result<Vec<_>, _>>()
+                })
+                .transpose()?,
+        ),
         ProofTactic::NormalizeUsing(premises) => ProofTactic::NormalizeUsing(
             premises
                 .iter()
@@ -1277,10 +1293,10 @@ fn instantiate_proof_tactic(
         },
         ProofTactic::Instantiate {
             quantified,
-            argument,
+            arguments,
         } => ProofTactic::Instantiate {
             quantified: proposition(quantified)?,
-            argument: expression(argument)?,
+            arguments: arguments.iter().map(expression).collect::<Result<_, _>>()?,
         },
         ProofTactic::SolveUsing(using) => ProofTactic::SolveUsing(ProofSolveUsing {
             premises: using

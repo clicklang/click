@@ -1,16 +1,14 @@
-# The implicit closer proves a machine conservation equation
+# Machine conservation equations preserve bounds
 
-`capacity - amount == used + (available - amount)` over `int32` is proved
-through its `Integer` reading: the equality fact `capacity == used +
-available` is carried to `Integer`, each operation is shown defined and
-observed term by term, and both bounds of the `Integer` equality are refuted.
-A machine equality is the equality of its `to_integer` observations, so that
-closes the goal. The conjunction goal
-is split and each side proved the same way. The shrink claim states definedness
-explicitly: its word equality alone also holds modulo 2^32 when an intermediate
-subtraction underflows, so it cannot stand in for an overflow check.
+The shrink proof uses the already-defined subtraction `capacity - amount`
+to bound the equal expression `used + (available - amount)` in `Integer`.
+The contract checks definedness explicitly because the word equality also
+holds modulo 2^32. The grow theorem exercises the implicit closer on the
+corresponding addition.
 
 ```click
+import click::integer;
+
 theorem shrink_conservation(capacity: int32, used: int32, available: int32, amount: int32) {
     requires 0 <= used;
     requires 0 <= amount;
@@ -19,7 +17,30 @@ theorem shrink_conservation(capacity: int32, used: int32, available: int32, amou
     requires defined(used + available);
     requires defined(capacity - amount);
     ensures defined(available - amount) and defined(used + (available - amount)) and
-        capacity - amount == used + (available - amount);
+        capacity - amount == used + (available - amount) by {
+        apply(integer::int32_nonnegative_subtract_within_value_is_defined(available, amount));
+        apply(integer::int32_subtract_to_integer(available, amount));
+        apply(integer::int32_subtract_to_integer(capacity, amount));
+        apply(integer::int32_add_to_integer(used, available));
+        have to_integer(used) + to_integer(available - amount) ==
+                to_integer(capacity) - to_integer(amount) by {
+            rewrite(to_integer(available - amount), to_integer(available) - to_integer(amount));
+            rewrite(to_integer(capacity), to_integer(used) + to_integer(available));
+            known();
+        }
+        have -2147483648 <= to_integer(used) + to_integer(available - amount) by {
+            rewrite(to_integer(used) + to_integer(available - amount), to_integer(capacity) - to_integer(amount));
+            known();
+        }
+        have to_integer(used) + to_integer(available - amount) <= 2147483647 by {
+            rewrite(to_integer(used) + to_integer(available - amount), to_integer(capacity) - to_integer(amount));
+            known();
+        }
+        have defined(used + (available - amount)) by { known(); }
+        apply(integer::int32_add_to_integer(used, available - amount));
+        have capacity - amount == used + (available - amount) by { known(); }
+        known();
+    }
 }
 
 theorem grow_conservation(capacity: int32, used: int32, available: int32, amount: int32) {
@@ -29,8 +50,20 @@ theorem grow_conservation(capacity: int32, used: int32, available: int32, amount
     requires capacity == used + available;
     requires defined(used + available);
     requires defined(capacity + amount);
-    ensures defined(used + (available + amount)) and
-        capacity + amount == used + (available + amount);
+    ensures defined(available + amount) and defined(used + (available + amount)) and
+        capacity + amount == used + (available + amount) by {
+        have to_integer(capacity) + to_integer(amount) <= 2147483647 by known();
+        have to_integer(available) + to_integer(amount) <= 2147483647 by {
+            solve() using { 0 <= used; capacity == used + available; to_integer(capacity) + to_integer(amount) <= 2147483647; };
+        }
+        have -2147483648 <= to_integer(available) + to_integer(amount) by {
+            solve() using { 0 <= available; 0 <= amount; };
+        }
+        have defined(available + amount) by known();
+        have defined(used + (available + amount)) by solve();
+        have capacity + amount == used + (available + amount) by solve();
+        known();
+    }
 }
 ```
 

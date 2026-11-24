@@ -43,6 +43,16 @@ int32 fill3_array_loop(int32 p[3]) {
         }
     }
     step();
+    have 3 <= at(loop(0).exit, i) by known();
+    have 0 < at(loop(0).exit, i) by {
+        apply(click::integer::int32_less_than_less_equal_transitive(0, 3, at(loop(0).exit, i)));
+    }
+    have 1 < at(loop(0).exit, i) by {
+        apply(click::integer::int32_less_than_less_equal_transitive(1, 3, at(loop(0).exit, i)));
+    }
+    have 2 < at(loop(0).exit, i) by {
+        apply(click::integer::int32_less_than_less_equal_transitive(2, 3, at(loop(0).exit, i)));
+    }
     solve();
 }
 ```

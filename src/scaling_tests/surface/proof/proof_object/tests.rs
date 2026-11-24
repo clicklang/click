@@ -549,12 +549,12 @@ fn choose_body_indexing_scales_with_selected_body_size() {
                 })
                 .collect(),
         );
-        let source = Proposition::Exists {
-            name: "source_value".to_string(),
-            var: chosen_variable,
-            sort: Sort::ProgramInt32,
-            body: Box::new(body),
-        };
+        let source = crate::kernel::quantifiers::test_exists(
+            "source_value".to_string(),
+            chosen_variable,
+            Sort::ProgramInt32,
+            body,
+        );
         let owner = CallerSourceOwnerId::ordinary("test.c", "identity");
         let entry_origins = vec![EntryFactOrigin::Requirement {
             source_id: RequirementSourceId {
@@ -1513,7 +1513,7 @@ fn indexed_rewrite_does_not_spell_registered_read_definitions() {
         let mut facts = Vec::new();
         let mut reads = Vec::new();
         for index in 0..size {
-            let load = MachineTerm::MemoryLoad(
+            let load = MachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(&memory),
                 Box::new(Address {
                     base: "rewrite_reads".into(),
@@ -1876,7 +1876,7 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
                 Box::new(MachineTerm::constant(7)),
             );
             memory = memory.store(pointer.clone(), ProgramValue::UInt32(stored.clone()));
-            let load = MachineTerm::MemoryLoad(
+            let load = MachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
                 Box::new(pointer),
                 crate::kernel::LoadKind::Int32,
@@ -2486,7 +2486,7 @@ fn fixed_state_goal_opening_ignores_load_equality_buckets() {
     let surfaces = SurfacePropositionMap::default();
     let memory = crate::kernel::intern_memory(crate::kernel::SymbolicMemory::new());
     let read = |index| {
-        MachineTerm::MemoryLoad(
+        MachineTerm::read_named(
             crate::kernel::ProgramPoint::at(&memory),
             Box::new(crate::kernel::Address::symbolic(Variable(index))),
             crate::kernel::LoadKind::Int32,
@@ -2609,6 +2609,22 @@ fn exact_goal_solve_stops_at_known_as_related_and_unrelated_facts_grow() {
                 &[],
             );
             let scope = root.driver().open_have(surface.clone()).unwrap();
+            let check = |tactic| {
+                crate::instrumentation::measure_deterministic_work(|| {
+                    let _fast =
+                        crate::kernel::search::FastOperationScope::enter("closing an exact fact");
+                    scope
+                        .body()
+                        .driver()
+                        .try_authoritative_linear_script(&[tactic])
+                        .unwrap()
+                        .unwrap()
+                })
+            };
+            let (_, known_work) = check(ProofTactic::Known);
+            let (close, close_work) = check(ProofTactic::Close);
+            assert_eq!(close.certificate().steps(), &[ProofStep::Known]);
+            assert_eq!(close_work, known_work, "related={related}, size={size}");
             let (closed, work) = crate::instrumentation::measure_deterministic_work(|| {
                 scope.driver().try_solve_closure().unwrap().unwrap()
             });

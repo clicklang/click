@@ -235,9 +235,12 @@ fn initialize_script_layout<'a>(
             matches!(tactic, ProofTactic::Have(have)
                     if &have.proposition == item.proposition())
         })
-        && rest[invariant_items.len()..]
-            .iter()
-            .all(|tactic| matches!(tactic, ProofTactic::Known | ProofTactic::Solve));
+        && rest[invariant_items.len()..].iter().all(|tactic| {
+            matches!(
+                tactic,
+                ProofTactic::Known | ProofTactic::Close | ProofTactic::Solve
+            )
+        });
     let mut grouped: Vec<Vec<(usize, &SourceProof)>> = Vec::new();
     let mut consumed = 0;
     for item in invariant_items {
@@ -255,13 +258,15 @@ fn initialize_script_layout<'a>(
         grouped.push(bodies);
     }
     let names_every_invariant = grouped.len() == invariant_items.len()
-        && rest[consumed..]
-            .iter()
-            .all(|tactic| matches!(tactic, ProofTactic::Known | ProofTactic::Solve));
+        && rest[consumed..].iter().all(|tactic| {
+            matches!(
+                tactic,
+                ProofTactic::Known | ProofTactic::Close | ProofTactic::Solve
+            )
+        });
     let invariant_bodies = names_every_invariant.then_some(grouped);
-    // Only a `solve()` that stands for what is left of the phase is a
-    // whole-phase closer. A `solve()` written before the steps it closes
-    // would be one invariant's own proof, not the phase's.
+    // A closing call that stands for the rest of the phase is a whole-phase
+    // closer. An earlier one belongs to an individual invariant proof.
     let closer_start = if names_every_invariant {
         helper_end + consumed
     } else {
@@ -271,7 +276,7 @@ fn initialize_script_layout<'a>(
         .iter()
         .copied()
         .zip(&tactics[closer_start.min(tactics.len())..])
-        .filter(|(_, tactic)| matches!(tactic, ProofTactic::Solve))
+        .filter(|(_, tactic)| matches!(tactic, ProofTactic::Close | ProofTactic::Solve))
         .map(|(index, _)| index)
         .collect();
     InitializeScriptLayout {
@@ -394,7 +399,8 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
                 "`{claim_label}`: loop binder `{name}` is not an enclosing contract binder, so an \
                  invariant that reads it has nothing to read at loop entry; reuse the enclosing \
                  binder's name, whose instance the loop takes over"
-            ));
+            ))
+            .with_proof_refusal(ProofRefusal::Contract);
         }
         if let Some(refusal) = invariant_items.iter().find_map(|item| {
             crate::surface::diagnostics::describe_consumed_instance_field_read(
@@ -405,7 +411,8 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
         }) {
             return ClickError::new(format!(
                 "`{claim_label}` loop {loop_index} invariant: {refusal}"
-            ));
+            ))
+            .with_proof_refusal(ProofRefusal::IncompleteProof);
         }
         ClickError::new(format!("`{claim_label}`: {message}"))
     })?;
@@ -414,7 +421,8 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
             "loop {loop_index} entry has {} lowered declarations for {} written invariants",
             entry_goals.declarations().len(),
             invariant_items.len(),
-        )));
+        ))
+        .with_kind(ClickErrorKind::Internal));
     }
     let layout = initialize_script_layout(proof, &invariant_items, initialize_source_index);
     let mut phase = Proof::for_fixed_state_frontier_of_list(
@@ -491,7 +499,7 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
                 item.title(invariant_index),
                 goals.len(),
                 bodies.len()
-            )));
+            )).with_proof_refusal(ProofRefusal::Tactic).with_failed_tactic("loop"));
         }
         // With one body the invariant's goals all run it; the timing label
         // below describes that first body either way.
@@ -546,7 +554,8 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
                 if obligation.is_impossible_goal()
                     && let Some(reason) = obligation.context()
                 {
-                    return ClickError::new(reason);
+                    return error
+                        .with_rewritten_place(|detail| Some(format!("{reason}\n{detail}")));
                 }
                 // Name the judgment that was compared: a declaration owes its
                 // side conditions as goals of their own beside its body, so
@@ -986,7 +995,7 @@ pub(in crate::surface::proof) fn verify_loop_otherwise(
         };
         phase = phase.at_source_tactic(index);
         let checkpoint = phase.checkpoint();
-        let (next, conclusion) = check_loop_phase_have(&phase, have, "otherwise", scoped_exits)?;
+        let (next, conclusion) = check_loop_phase_have(&phase, have, "otherwise", true)?;
         phase = next;
         explicit_facts.extend(conclusion);
         if let Some(site) = source.proof_site.as_ref()
@@ -1004,10 +1013,16 @@ pub(in crate::surface::proof) fn verify_loop_otherwise(
     let facts = if scoped_exits {
         explicit_facts
     } else {
-        phase
+        let mut introduced = phase
             .facts()
             .introduced_since(&initial_facts)
-            .expect("checked have extends the phase facts")
+            .expect("checked have extends the phase facts");
+        // A checked `have` may use a conclusion already present in the phase.
+        // The exit must still state it for the join to rebind its model.
+        let introduced_set = introduced.iter().collect::<BTreeSet<_>>();
+        explicit_facts.retain(|fact| !introduced_set.contains(fact));
+        introduced.extend(explicit_facts);
+        introduced
     };
     Ok((
         facts.into_iter().map(ExecutionPureFact::new).collect(),

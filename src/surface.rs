@@ -33,10 +33,9 @@ use crate::kernel::{
     assume_universally_quantified_pure_implication, contract_refinement_context, int32,
     loop_invariants_hold_at_entry, program_assign, program_condition_fact_memories,
     program_declare, program_do_while_with_invariant_and_effect_checks, program_function,
-    program_function_contract_refinement_arguments, program_function_contract_refinement_context,
-    program_function_entry_state, program_function_termination_plan, program_if,
-    program_pointer_offsets_proven_equal_for_effect, program_seq,
-    program_while_with_invariant_and_effect_checks, prove_int32_le_antisymmetric,
+    program_function_contract_refinement_arguments, program_function_entry_state,
+    program_function_termination_plan, program_if, program_pointer_offsets_proven_equal_for_effect,
+    program_seq, program_while_with_invariant_and_effect_checks, prove_int32_le_antisymmetric,
     prove_owned_resource_quantity_nonnegative, prove_program_condition_fact_transport,
     prove_program_function_contract_refinement,
     prove_symbolic_execution_statement_verification_paths_with_environment_and_loop_rule_using_budget,
@@ -115,7 +114,7 @@ pub use expansion::{
     project_tactic_source_position, project_tactic_source_positions, select_smart_tactic,
     selected_c_target, selected_project_c_target, selected_project_thread_runtime,
     selected_thread_runtime, smart_tactic_source_sites, tactic_source_position,
-    tidy_expansion_closers, verifying_source_paths,
+    verifying_source_paths,
 };
 use expansion::{
     ExpansionCapture, NestedTacticCapture, ProofSite, VerificationTarget, verification_target_at,
@@ -132,7 +131,7 @@ pub fn click_source_is_declaration_module(source: &str) -> bool {
     parser::declares_only_definitions(source)
 }
 use parser::ContractLetBinding;
-pub use printing::{format_proof_certificate, format_proof_tactics};
+pub use printing::{format_proof_certificate, format_proof_tactics, with_expansion_close_output};
 use proof::*;
 pub(crate) use pure_fact_list::PureFactList;
 use source_registry::*;
@@ -161,7 +160,10 @@ pub use verification::{
     verify_project_with_summary, verify_sources_at, verify_standard_library, with_allow_sorry,
 };
 mod proof_trace;
-pub use proof::{check_audit_claim, without_implicit_solve, without_implicit_solve_for_claim};
+pub use proof::{
+    check_audit_claim, without_implicit_solve, without_implicit_solve_for_claim,
+    without_proof_search, without_proof_search_for_claim,
+};
 pub use proof_trace::with_proof_trace;
 
 /// Render one accepted checked path while `with_proof_trace` is active.
@@ -227,6 +229,7 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "byte_offset",
     "call",
     "cases",
+    "close",
     "close_invariants",
     "constructs",
     "consumes",
@@ -706,6 +709,10 @@ const CLICK_LIBRARY_MODULES: &[(&str, &str)] = &[
     (
         "library/integer.click",
         include_str!("../library/integer.click"),
+    ),
+    (
+        "library/float_order.click",
+        include_str!("../library/float_order.click"),
     ),
     (
         "library/c/string.interface.click",
@@ -2293,6 +2300,9 @@ pub struct IteratedResourceClause {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ResourceInstanceBinding {
+    unnamed: bool,
+    /// The spelling of a lexical binder or, for an unnamed instance, its
+    /// resource application for presentation.
     name: String,
     /// What the binder names comes from its resource: an instance, or a
     /// mutex authority for a named mutex live, use or guard clause.
@@ -4394,10 +4404,13 @@ impl RecordedStates {
         let index = self.result_region_index(region)?;
         if let Some(selector) = selector
             && self.records_call_snapshots()
-            && self
-                .source_layout
-                .as_ref()
-                .is_some_and(|layout| layout.call_number(index).is_some())
+            && self.source_layout.as_ref().is_some_and(|layout| {
+                layout.call_number(index).is_some()
+                    || layout
+                        .call_result_local(index)
+                        .and_then(crate::kernel::BindingName::local_id)
+                        .is_some_and(crate::kernel::LocalBindingId::is_return_place)
+            })
         {
             return self
                 .call_results_at(selector)
@@ -4881,6 +4894,66 @@ impl RecordedStates {
         for (point, state) in unlabeled {
             self.insert(point, state);
         }
+    }
+
+    /// The region a footprint runs across, which `R.footprint` names: the
+    /// region its entry point is recorded as entering, when that region's
+    /// recorded exit is the footprint's end point and its recorded footprint
+    /// is this one. A point can carry several names (a statement and the
+    /// call it makes end together), so the exit is confirmed by its identity
+    /// rather than read from the point's name.
+    pub(in crate::surface) fn footprint_region(
+        &self,
+        footprint: &crate::kernel::RegionFootprint,
+    ) -> Option<CodeRegionRef> {
+        let ProgramPointSelector::ProgramPoint(ProgramPointRef {
+            region,
+            kind: ProgramPointKind::Entry,
+        }) = self.point_names.get(&footprint.before_point.id()?)?
+        else {
+            return None;
+        };
+        let exit = ProgramPointSelector::ProgramPoint(ProgramPointRef {
+            region: region.clone(),
+            kind: ProgramPointKind::Exit,
+        });
+        if self.get(&exit)?.observation_point_id() != footprint.after_point.id() {
+            return None;
+        }
+        // A region of several recorded effects has a combined footprint of
+        // its own, which `R.footprint` lowers to; only the region whose
+        // recorded footprint is this one names it.
+        match self.footprint(region) {
+            Ok(crate::kernel::Resource::Footprint(recorded)) if *recorded == *footprint => {
+                Some(region.clone())
+            }
+            _ => None,
+        }
+    }
+
+    /// Where a population total a lock acquired is spelled: the exit of the
+    /// region whose recorded entry the lock started from, when that exit's
+    /// state still counts exactly that total.
+    pub(in crate::surface) fn acquired_total_point(
+        &self,
+        variable: crate::kernel::Variable,
+        acquired_from: crate::kernel::program_point::ProgramPointId,
+    ) -> Option<ProgramPointSelector> {
+        let ProgramPointSelector::ProgramPoint(ProgramPointRef {
+            region,
+            kind: ProgramPointKind::Entry,
+        }) = self.point_names.get(&acquired_from)?
+        else {
+            return None;
+        };
+        let exit = ProgramPointSelector::ProgramPoint(ProgramPointRef {
+            region: region.clone(),
+            kind: ProgramPointKind::Exit,
+        });
+        let state = self.get(&exit)?;
+        (state.population_count_acquired_point(variable) == Some(acquired_from)
+            && state.population_total_unchanged(variable))
+        .then_some(exit)
     }
 
     /// The name of the recorded point a path reached, by that point's
@@ -6237,15 +6310,22 @@ pub enum ProofTactic {
         strict: bool,
     },
     CheckTerminationCallbacks,
+    Close,
     Known,
     Normalize,
     NormalizeUsing(Vec<ClickProposition>),
+    /// A compatibility check used in verification. It has no expansion spelling.
+    CompatibilityNormalize(Option<Vec<ClickProposition>>),
     ArithmeticUsing(Vec<ClickProposition>),
     Intro,
     /// `let name = intro()`: introduce a universal goal's variable under a
     /// name the proof chooses instead of the one the proposition wrote.
     IntroAs(String),
     IntroBinder(SurfaceBinder),
+    IntroBlock {
+        binder: Option<SurfaceBinder>,
+        body: Vec<ProofTactic>,
+    },
     Enumerate,
     Contradiction(ClickProposition),
     CloseInvariants,
@@ -6260,10 +6340,10 @@ pub enum ProofTactic {
         target: ClickProposition,
         premises: Vec<ClickProposition>,
     },
-    /// Substitute one universal binder, preserving its whole body and guards.
+    /// Substitute consecutive universal binders, preserving the residual body and guards.
     Instantiate {
         quantified: ClickProposition,
-        argument: ContractExpression,
+        arguments: Vec<ContractExpression>,
     },
     Solve,
     /// The driver schedules ordinary `solve` for every remaining claim.
@@ -6407,6 +6487,7 @@ pub enum SmartSite {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ControlTactic {
+    Intro,
     Match,
     CloseInvariants,
     /// A `step` with proofs of its open obligations.
@@ -6630,6 +6711,11 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
         class: "simple",
     },
     PublicTacticForm {
+        id: "close",
+        syntax: "close()",
+        class: "smart",
+    },
+    PublicTacticForm {
         id: "known",
         syntax: "known()",
         class: "simple",
@@ -6670,6 +6756,11 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
         class: "simple",
     },
     PublicTacticForm {
+        id: "contradiction-false",
+        syntax: "contradiction()",
+        class: "simple",
+    },
+    PublicTacticForm {
         id: "rewrite",
         syntax: "rewrite(from, to)",
         class: "simple",
@@ -6686,7 +6777,7 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
     },
     PublicTacticForm {
         id: "instantiate",
-        syntax: "instantiate(F, value)",
+        syntax: "instantiate(F, value, ...)",
         class: "simple",
     },
     PublicTacticForm {
@@ -6772,6 +6863,7 @@ impl ProofTactic {
                     .collect(),
             },
             Self::Have(have) => vec![Obligation(Source(&have.proof))],
+            Self::IntroBlock { body, .. } => vec![Obligation(Script(body))],
             Self::Open(open) => vec![Continuing(Script(&open.tactics))],
             Self::If(proof_if) => vec![
                 Continuing(Script(&proof_if.then_tactics)),
@@ -6847,7 +6939,7 @@ impl ProofTactic {
             | Self::CheckTerminationComponent { .. }
             | Self::CheckTerminationCallbacks => TacticClass::Simple(SimpleTactic::Termination),
             Self::Known => TacticClass::Simple(SimpleTactic::Known),
-            Self::Normalize | Self::NormalizeUsing(_) => {
+            Self::Normalize | Self::NormalizeUsing(_) | Self::CompatibilityNormalize(_) => {
                 TacticClass::Simple(SimpleTactic::Normalize)
             }
             Self::ArithmeticUsing(_) => TacticClass::smart(SmartTacticKind::Arithmetic),
@@ -6872,9 +6964,12 @@ impl ProofTactic {
             Self::SmartExecute | Self::ExecuteUntil(_) => {
                 TacticClass::smart(SmartTacticKind::Execute)
             }
-            Self::Solve | Self::SolveUsing(_) => TacticClass::smart(SmartTacticKind::Solve),
+            Self::Close | Self::Solve | Self::SolveUsing(_) => {
+                TacticClass::smart(SmartTacticKind::Solve)
+            }
             Self::ImplicitSolve => TacticClass::Smart(SmartSite::Implicit),
             Self::Have(_) => TacticClass::Control(ControlTactic::Have),
+            Self::IntroBlock { .. } => TacticClass::Control(ControlTactic::Intro),
             Self::Open(_) => TacticClass::Control(ControlTactic::Open),
             Self::If(_) => TacticClass::Control(ControlTactic::If),
             Self::Match(_) => TacticClass::Control(ControlTactic::Match),
@@ -7071,17 +7166,6 @@ impl ProofCases {
     /// The disjunction the arms eliminate.
     pub(crate) fn disjunction(&self) -> ClickProposition {
         case_arms_disjunction(&self.arms)
-    }
-
-    /// The same arms with each tactic list rewritten by `rewrite`.
-    pub(crate) fn try_map_tactics<E>(
-        &self,
-        mut rewrite: impl FnMut(&[ProofTactic]) -> Result<Vec<ProofTactic>, E>,
-    ) -> Result<Self, E> {
-        self.try_map(
-            |assumption| Ok(assumption.clone()),
-            |tactics| rewrite(tactics),
-        )
     }
 
     /// The same arms with each assumption and tactic list rewritten.
@@ -8980,20 +9064,6 @@ pub enum ClickErrorKind {
     Internal,
 }
 
-impl ClickErrorKind {
-    fn label(self) -> &'static str {
-        match self {
-            Self::Syntax => "syntax error",
-            Self::WorkLimitReached => "work limit reached",
-            Self::TimedOut => "timed out",
-            Self::Type => "type error",
-            Self::Proof => "unclassified verification refusal",
-            Self::Unsupported => "unsupported",
-            Self::Internal => "internal error",
-        }
-    }
-}
-
 /// The reason a proof operation was refused, when the verifier can classify it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ProofRefusal {
@@ -9002,19 +9072,81 @@ pub enum ProofRefusal {
     ImplicitStatementSearch,
     IncompleteProof,
     Contract,
-    ContractEntry,
 }
 
-impl ProofRefusal {
-    fn label(self) -> &'static str {
+/// A concrete failure outcome reported by verification.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum VerificationOutcome {
+    SyntaxError,
+    TypeError,
+    TacticError,
+    UnsuccessfulSearch,
+    IncompleteProof,
+    ContractError,
+    Unsupported,
+    InternalError,
+    WorkLimitReached,
+    TimedOut,
+}
+
+impl VerificationOutcome {
+    pub const ALL: [Self; 10] = [
+        Self::SyntaxError,
+        Self::TypeError,
+        Self::TacticError,
+        Self::UnsuccessfulSearch,
+        Self::IncompleteProof,
+        Self::ContractError,
+        Self::Unsupported,
+        Self::InternalError,
+        Self::WorkLimitReached,
+        Self::TimedOut,
+    ];
+
+    pub fn label(self) -> &'static str {
         match self {
-            Self::Tactic => "tactic error",
-            Self::UnsuccessfulSearch | Self::ImplicitStatementSearch => "unsuccessful search",
+            Self::SyntaxError => "syntax error",
+            Self::TypeError => "type error",
+            Self::TacticError => "tactic error",
+            Self::UnsuccessfulSearch => "unsuccessful search",
             Self::IncompleteProof => "incomplete proof",
-            Self::Contract => "contract error",
-            Self::ContractEntry => "contract entry refused",
+            Self::ContractError => "contract error",
+            Self::Unsupported => "unsupported",
+            Self::InternalError => "internal error",
+            Self::WorkLimitReached => "work limit reached",
+            Self::TimedOut => "timed out",
         }
     }
+}
+
+/// A diagnostic classified before terminal rendering starts.
+pub struct VerificationDiagnostic<'a> {
+    error: &'a ClickError,
+    outcome: VerificationOutcome,
+    missing_classification: bool,
+}
+
+impl<'a> VerificationDiagnostic<'a> {
+    pub fn error(&self) -> &'a ClickError {
+        self.error
+    }
+
+    pub fn outcome(&self) -> VerificationOutcome {
+        self.outcome
+    }
+
+    pub fn concise_report_parts(&self) -> (String, Vec<String>) {
+        self.error
+            .render_concise_parts(self.outcome, self.missing_classification)
+    }
+}
+
+/// The authored requirement and argument bindings behind a prepared theorem premise.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(in crate::surface) struct TheoremRequirementSource {
+    index: usize,
+    clause: ClickProposition,
+    bindings: std::sync::Arc<[(String, ContractExpression)]>,
 }
 
 /// A required kernel verification condition that a checked execution step
@@ -9033,6 +9165,7 @@ pub(in crate::surface) struct UnresolvedRequirement {
     /// (`0 == 1`, which holds only where that path is unreachable), the
     /// asserted condition: what a proof at the step's pre-state shows.
     pub(in crate::surface) assertion_condition: Option<crate::kernel::ProgramExpression>,
+    pub(in crate::surface) theorem_source: Option<std::sync::Arc<TheoremRequirementSource>>,
     /// The defined successor of a C operation supplied this safety goal.
     pub(in crate::surface) statement_safety: bool,
     /// The Surface spelling the tactic that owes this requirement gave it
@@ -10601,7 +10734,7 @@ impl VerifiedProgramTheorem {
             self.function_block.signature().returns_reference(),
         );
         let _reference_carriers = diagnostics::ParameterPlaceScope::enter(&self.function_block);
-        Ok(format_proof_certificate(
+        expansion::require_surface_expansion(format_proof_certificate(
             &self.expanded_proof_certificate()?,
         ))
     }
@@ -10651,7 +10784,7 @@ impl VerifiedPureTheorem {
             .contract_value_parameters
             .as_ref()
             .map(printing::ContractValueParameterScope::enter);
-        Ok(format_proof_certificate(&self.proof_certificate()?))
+        expansion::require_surface_expansion(format_proof_certificate(&self.proof_certificate()?))
     }
 }
 
@@ -10987,6 +11120,14 @@ impl ClickError {
     /// Keeping these separate lets the CLI put source excerpts and trace
     /// instructions in their own readable sections.
     pub fn concise_report_parts(&self) -> (String, Vec<String>) {
+        self.verification_diagnostic().concise_report_parts()
+    }
+
+    fn render_concise_parts(
+        &self,
+        outcome: VerificationOutcome,
+        missing_classification: bool,
+    ) -> (String, Vec<String>) {
         let _accessors = self.report_model_accessor_scope();
         let reason = if self.verification_stopped() {
             self.message.as_str()
@@ -11023,7 +11164,7 @@ impl ClickError {
             (
                 format!(
                     "{} in `{function}` during contract certification:",
-                    self.report_label()
+                    outcome.label()
                 ),
                 obligation.unwrap_or(detail),
                 obligation.is_some(),
@@ -11036,13 +11177,16 @@ impl ClickError {
                 .map(|(function, _)| function)
         {
             (
-                format!("{} in `{function}`:", self.report_label()),
+                format!("{} in `{function}`:", outcome.label()),
                 reason,
                 false,
             )
         } else {
-            (format!("{}:", self.report_label()), reason, false)
+            (format!("{}:", outcome.label()), reason, false)
         };
+        if missing_classification {
+            report.push_str("\n  Click did not classify this verifier failure.");
+        }
         for (nested, line) in concise_reason_lines(reason) {
             report.push_str(if nested { "\n    " } else { "\n  " });
             report.push_str(line);
@@ -11351,14 +11495,45 @@ impl ClickError {
             return None;
         }
         self.proof_refusal.or_else(|| {
-            (self.failed_tactic.is_some() || self.proof_source_tactic_path().is_some())
+            let checked_step = self.diagnostic.as_ref().is_some_and(|diagnostic| {
+                diagnostic.origin.stage == proof_diagnostics::ProofDiagnosticStage::CheckedStep
+            });
+            (self.failed_tactic.is_some()
+                || self.proof_source_tactic_path().is_some()
+                || checked_step)
                 .then_some(ProofRefusal::Tactic)
         })
     }
 
+    pub fn verification_diagnostic(&self) -> VerificationDiagnostic<'_> {
+        let kind = self.kind();
+        let refusal = self.proof_refusal();
+        let outcome = match kind {
+            ClickErrorKind::Syntax => VerificationOutcome::SyntaxError,
+            ClickErrorKind::Type => VerificationOutcome::TypeError,
+            ClickErrorKind::WorkLimitReached => VerificationOutcome::WorkLimitReached,
+            ClickErrorKind::TimedOut => VerificationOutcome::TimedOut,
+            ClickErrorKind::Unsupported => VerificationOutcome::Unsupported,
+            ClickErrorKind::Internal => VerificationOutcome::InternalError,
+            ClickErrorKind::Proof => match refusal {
+                Some(ProofRefusal::Tactic) => VerificationOutcome::TacticError,
+                Some(ProofRefusal::UnsuccessfulSearch | ProofRefusal::ImplicitStatementSearch) => {
+                    VerificationOutcome::UnsuccessfulSearch
+                }
+                Some(ProofRefusal::IncompleteProof) => VerificationOutcome::IncompleteProof,
+                Some(ProofRefusal::Contract) => VerificationOutcome::ContractError,
+                None => VerificationOutcome::InternalError,
+            },
+        };
+        VerificationDiagnostic {
+            error: self,
+            outcome,
+            missing_classification: kind == ClickErrorKind::Proof && refusal.is_none(),
+        }
+    }
+
     fn report_label(&self) -> &'static str {
-        self.proof_refusal()
-            .map_or(self.kind().label(), ProofRefusal::label)
+        self.verification_diagnostic().outcome().label()
     }
 
     pub(crate) fn with_proof_refusal(mut self, refusal: ProofRefusal) -> Self {
@@ -11668,7 +11843,8 @@ impl ClickError {
             introductions: obligation.introductions().cloned().unwrap_or_default(),
             call_site: obligation.call_requirement_site().cloned(),
             assertion_condition: None,
-            statement_safety: false,
+            theorem_source: None,
+            statement_safety: obligation.is_signed_arithmetic_bound(),
             surface: None,
         }));
         self
@@ -11703,9 +11879,22 @@ impl ClickError {
             introductions: Default::default(),
             call_site: None,
             assertion_condition: None,
+            theorem_source: None,
             statement_safety: false,
             surface: Some(surface),
         }));
+        self
+    }
+
+    pub(in crate::surface) fn with_theorem_requirement_source(
+        mut self,
+        source: TheoremRequirementSource,
+    ) -> Self {
+        let requirement = self
+            .unresolved_requirement
+            .as_mut()
+            .expect("attached theorem premise");
+        std::sync::Arc::make_mut(requirement).theorem_source = Some(std::sync::Arc::new(source));
         self
     }
 

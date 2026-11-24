@@ -285,7 +285,7 @@ mod tests {
             let make = |memory| {
                 let value = SharedMachineIntegerTerm::index(
                     format,
-                    MachineTerm::MemoryLoad(
+                    MachineTerm::read_named(
                         ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                         Box::new(cell.clone()),
                         if matches!(
@@ -453,4 +453,86 @@ mod tests {
 #[cfg(test)]
 mod scaling_tests {
     include!("../../scaling_tests/kernel/assumptions/pointer_checks.rs");
+}
+#[cfg(test)]
+mod value_equality_tests {
+    use crate::kernel::*;
+
+    fn equal(left: &Pointer, right: &Pointer) -> Proposition {
+        Proposition::Equal(
+            Term::ProgramValue(ProgramValue::Pointer(left.clone()).into()),
+            Term::ProgramValue(ProgramValue::Pointer(right.clone()).into()),
+        )
+    }
+
+    /// Value equality compares the whole provenance: allocation and array
+    /// object. A parameter in a block's allocation, at the block's address,
+    /// may point into a member of it, so it is not known to be the block
+    /// pointer until the two values are stated equal.
+    #[test]
+    fn same_allocation_and_address_do_not_make_an_opaque_pointer_a_block_pointer() {
+        let block = Pointer::new(
+            Address {
+                base: AddressBase::Heap(4_211_001),
+                offset: AddressOffset::Constant(0),
+            },
+            ProgramType::Int32Pointer,
+        );
+        let parameter = Pointer::new(
+            Address::symbolic(Variable(4_211_002)),
+            ProgramType::Int32Pointer,
+        );
+        let context = PureFactContext::new()
+            .assume_proposition(crate::kernel::eval::same_allocation_proposition(
+                &parameter, &block,
+            ))
+            .assume_proposition(Proposition::condition_is(
+                ConditionTerm::address_equal(parameter.address().clone(), block.address().clone()),
+                true,
+            ));
+        assert!(context.provenance_equal(parameter.provenance(), block.provenance()));
+        assert!(!context.contains_known(&equal(&parameter, &block)));
+        assert!(!context.contains_known(&equal(&block, &parameter)));
+        let stated = context.assume_proposition(equal(&parameter, &block));
+        assert!(stated.contains_known(&equal(&parameter, &block)));
+    }
+
+    /// A parameter and its byte view have one address and allocation but
+    /// different array objects, so they are different values.
+    #[test]
+    fn a_pointer_is_not_decided_equal_to_its_byte_view() {
+        let parameter = Pointer::new(
+            Address::symbolic(Variable(4_211_011)),
+            ProgramType::Int32Pointer,
+        );
+        let view = parameter.clone().with_root_bounds();
+        let condition = ConditionTerm::pointer_equal(parameter.clone(), view.clone());
+        let context = PureFactContext::new();
+        assert_ne!(context.decide(&condition), Some(true));
+        assert!(!context.contains_known(&equal(&parameter, &view)));
+    }
+
+    /// That they are different values is consistent: it says nothing about
+    /// their addresses, which are equal.
+    #[test]
+    fn a_pointer_unequal_to_its_byte_view_is_consistent() {
+        let parameter = Pointer::new(
+            Address::symbolic(Variable(4_211_021)),
+            ProgramType::Int32Pointer,
+        );
+        let view = parameter.clone().with_root_bounds();
+        let context = PureFactContext::new().assume_proposition(Proposition::condition_is(
+            ConditionTerm::pointer_equal(parameter.clone(), view.clone()),
+            false,
+        ));
+        let unrelated = ConditionTerm::Variable(Variable(4_211_022));
+        assert_eq!(context.decide(&unrelated), None);
+        assert_eq!(
+            context.decide(&ConditionTerm::address_equal(
+                parameter.address().clone(),
+                view.address().clone()
+            )),
+            Some(true)
+        );
+    }
 }

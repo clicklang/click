@@ -3009,6 +3009,43 @@ fn a_match_binder_is_no_other_producer_s_identity() {
     );
 }
 
+/// Variables order by origin first: every ordinary variable, whatever its
+/// number, before `Variable::FIRST_NON_ORDINARY`, and every other origin at
+/// or after it, so a query for the greatest ordinary variable bounds itself
+/// by the sentinel and a producer's variables are one contiguous run.
+#[test]
+fn variables_order_by_origin_before_number() {
+    let others = [
+        Variable::FIRST_NON_ORDINARY,
+        Variable::match_binder(0),
+        Variable::spec_fold_binder(3),
+        Variable::witness(0),
+        Variable::produced(crate::kernel::Producer::ProofQuantifier, 0),
+    ];
+    for other in others {
+        assert!(Variable(u64::MAX) < other, "{other:?}");
+        assert!(Variable::FIRST_NON_ORDINARY <= other, "{other:?}");
+        assert!(!other.is_ordinary() || other == Variable::FIRST_NON_ORDINARY);
+    }
+    assert!(Variable(0).is_ordinary() && !Variable::FIRST_NON_ORDINARY.is_ordinary());
+    let set: std::collections::BTreeSet<_> = [
+        Variable(7),
+        Variable::witness(1),
+        Variable(u64::MAX - 1),
+        Variable::match_binder(2),
+    ]
+    .into_iter()
+    .collect();
+    assert_eq!(
+        set.range(..Variable::FIRST_NON_ORDINARY).next_back(),
+        Some(&Variable(u64::MAX - 1))
+    );
+    let witnesses: Vec<_> = set
+        .range(Variable::witness(0)..=Variable::witness(u64::MAX))
+        .collect();
+    assert_eq!(witnesses, [&Variable::witness(1)]);
+}
+
 /// A universal introduction's witness is a free identity standing for an
 /// arbitrary value, and it has to miss every producer that can appear free
 /// beside it — starting with the C identities, which the freshener used to

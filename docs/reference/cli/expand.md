@@ -77,6 +77,13 @@ tail, the steps, splits, and closers that run the remaining C and close each
 goal, and at a loop back edge one `have <member> by { ... }` per invariant
 bundle member not already available as a fact. Expansion keeps a named theorem application as `apply(t(x))` and retains
 proofs of its open requirements in `have` steps.
+Expansion writes checked goal closers as `close()`. Handwritten tactics
+outside the selected replacement keep their spelling.
+Whole-claim expansion replays the selected proof with proof search disabled.
+Use [`click verify --checked-only`](verify.md) to repeat that check after editing
+an expanded proof. Expanding one tactic allows the untouched tactics in the
+same proof to use their existing search.
+
 The implicit closer that proves a `step()` or `fold` requirement is written
 into that step, as
 `step() by { ... }` or as its `requires` entries.
@@ -215,14 +222,12 @@ reporting a missing source occurrence.
 
 Arithmetic expansion writes each intermediate derivation once as an ordinary
 `have`, then reuses the established fact through explicit premises. A grouped closure proves each open claim in a `have` and
-then closes every goal with its own `known();`. When some of those
-`have`s are proved by `normalize();` alone and their run of closers ends the
-block, the command drops those `have`s and closes their claims with
-`normalize();` instead. A closer acts on the first open goal, so the closers
-stay one per goal, in contract order: those for goals no `have` proves, such
-as held resources, first, then one per `have`. It keeps that shorter form only
-when it verifies; otherwise it writes the closure as generated, at the cost of
-one more check.
+then closes each goal in contract order.
+
+Expansion retains handwritten `normalize()` calls that occur in the checked
+source proof. If verification uses legacy normalization internally and has
+no ordinary certificate for a selected proof, expansion reports that
+limitation without rewriting the source.
 
 The command exits with status 1 and writes no requested artifact when
 selection, expansion extraction, or rewritten proof verification fails, a

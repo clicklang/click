@@ -115,18 +115,18 @@ fn address_bases_equal_with_load_atoms(
 ) -> bool {
     left == right
         || match (left, right) {
-            (AddressBase::LoadedPointer(a), AddressBase::LoadedPointer(b)) => {
-                let (Some((am, ap)), Some((bm, bp))) = (
-                    crate::kernel::eval::registered_pointer_load(*a),
-                    crate::kernel::eval::registered_pointer_load(*b),
-                ) else {
-                    return false;
-                };
-                loads_match(
-                    &MachineTerm::MemoryLoad(ProgramPoint::at(&am), Box::new(ap), LoadKind::Bits64),
-                    &MachineTerm::MemoryLoad(ProgramPoint::at(&bm), Box::new(bp), LoadKind::Bits64),
-                )
-            }
+            (AddressBase::Load(a), AddressBase::Load(b)) => loads_match(
+                &crate::kernel::MachineTerm::read_named(
+                    ProgramPoint::at(a.point().shared_memory()),
+                    a.cell().clone(),
+                    LoadKind::Bits64,
+                ),
+                &crate::kernel::MachineTerm::read_named(
+                    ProgramPoint::at(b.point().shared_memory()),
+                    b.cell().clone(),
+                    LoadKind::Bits64,
+                ),
+            ),
             (AddressBase::Symbolic(_), AddressBase::Symbolic(_)) => {
                 let base = |block: &AddressBase| Address {
                     base: block.clone(),
@@ -1751,7 +1751,7 @@ fn loads_equal_by_bounded_state_match(
     else {
         return false;
     };
-    left_pointer == right_pointer
+    left_pointer.address() == right_pointer.address()
         && left_kind == right_kind
         && !crate::kernel::reasoning::loads_lack_recorded_equality(
             left_memory.shared_memory(),
@@ -1817,9 +1817,9 @@ mod exact_materialization_tests {
         };
         (0..length).fold(MachineTerm::constant(tail), |value, _| {
             let memory = SymbolicMemory::new().store(pointer.clone(), ProgramValue::Int32(value));
-            MachineTerm::MemoryLoad(
+            crate::kernel::MachineTerm::read_named(
                 ProgramPoint::at(&(intern_memory(memory))),
-                Box::new(pointer.clone()),
+                pointer.clone(),
                 crate::kernel::LoadKind::Int32,
             )
         })
@@ -1857,14 +1857,14 @@ mod exact_materialization_tests {
             base: "exact-kind-control".into(),
             offset: AddressOffset::Constant(0),
         };
-        let unsigned = MachineTerm::MemoryLoad(
+        let unsigned = crate::kernel::MachineTerm::read_named(
             ProgramPoint::at(
                 &(intern_memory(
                     SymbolicMemory::new()
                         .store(pointer.clone(), ProgramValue::UInt32(17u32.into())),
                 )),
             ),
-            Box::new(pointer),
+            pointer,
             LoadKind::UInt32,
         );
         for (left, right, expected) in [
@@ -1908,9 +1908,9 @@ mod exact_materialization_tests {
         };
         let before = SymbolicMemory::new().with_block("retained-retained_state", 64);
         let load = |memory| {
-            MachineTerm::MemoryLoad(
+            crate::kernel::MachineTerm::read_named(
                 ProgramPoint::at(&(intern_memory(memory))),
-                Box::new(pointer.clone()),
+                pointer.clone(),
                 LoadKind::Int32,
             )
         };
@@ -5032,9 +5032,9 @@ impl PureFactContext {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
                         left: Box::new(MachineTerm::Variable(*variable)),
-                        right: Box::new(MachineTerm::MemoryLoad(
+                        right: Box::new(crate::kernel::MachineTerm::read_named(
                             ProgramPoint::at(memory),
-                            Box::new(address.clone()),
+                            address.clone(),
                             kind,
                         )),
                     };
@@ -6816,6 +6816,8 @@ impl PureFactContext {
 
     fn insert_shared_proposition_fact(&mut self, shared: std::sync::Arc<Proposition>) {
         let proposition = shared.as_ref();
+        #[cfg(test)]
+        crate::kernel::load_variable_fact_census::observe(proposition);
         self.execution_variable_ceiling
             .file_proposition(proposition);
         if let Proposition::ResourceComposition(resources) = proposition {
@@ -7513,9 +7515,13 @@ impl PureFactContext {
                     .admitted
                     .pointer_value_classes
                     .equal(left, right)
-                    || (self.provenance_equal(left.provenance(), right.provenance())
-                        && left.bounds() == right.bounds()
-                        && self.pointers_known_equal(left.address(), right.address()))
+                    // Value equality compares the whole provenance, the
+                    // allocation and the array object, and the address.
+                    || (pointer_checks::origins_match(
+                        pointer_checks::Origins::native(left),
+                        pointer_checks::Origins::native(right),
+                        self,
+                    ) && self.pointers_known_equal(left.address(), right.address()))
             }
             Proposition::Equal(Term::Algebraic(a), Term::Algebraic(b)) => self
                 .equality_graph
@@ -7789,6 +7795,13 @@ impl PureFactContext {
             return self;
         }
         crate::kernel::eval::check_canonical_at_creation(&condition, value);
+        #[cfg(test)]
+        if crate::kernel::load_variable_fact_census::active() {
+            crate::kernel::load_variable_fact_census::observe(&Proposition::condition_is(
+                condition.clone(),
+                value,
+            ));
+        }
         if cfg!(debug_assertions) {
             // A quantifier's bound variable has no meaning outside its
             // quantifier: assuming a condition over one means a body was used
@@ -8957,7 +8970,11 @@ impl PropositionDerivation {
                         .all(|premise| !proposition_has_free_bitvector_variable(premise, *witness))
                     && proof.check(available)
             }
-            PropositionDerivationRule::ExistsFromFact { source, body } => {
+            PropositionDerivationRule::ExistsFromFact {
+                source,
+                witness,
+                body,
+            } => {
                 let Proposition::Exists {
                     var,
                     sort,
@@ -8978,15 +8995,22 @@ impl PropositionDerivation {
                 };
                 if sort != source_sort
                     || !available.proves_exact(source)
-                    || body.conclusion != **expected_body
+                    || witness.is_bound()
+                    || !crate::kernel::quantifiers::rename_quantified_variable(
+                        expected_body,
+                        **var,
+                        *witness,
+                        sort,
+                    )
+                    .is_some_and(|opened| body.conclusion == opened)
                 {
                     return false;
                 }
                 let Some(renamed_source_body) =
-                    crate::kernel::api::substitute_quantified_body_capture_free(
+                    crate::kernel::quantifiers::rename_quantified_variable(
                         source_body,
                         **source_var,
-                        **var,
+                        *witness,
                         sort,
                     )
                 else {
@@ -10535,8 +10559,10 @@ impl ProofObligation {
             assumable: true,
             evaluation_domain: false,
             assertion_failure: false,
+            invalid_mutex_held_observation: false,
             unsigned_divisor: false,
             float_to_integer_bound: false,
+            signed_arithmetic_bound: false,
             statement_entry_required: false,
             live_view_write: false,
             call_requirement_site: None,
@@ -10554,8 +10580,10 @@ impl ProofObligation {
             assumable: false,
             evaluation_domain: false,
             assertion_failure: false,
+            invalid_mutex_held_observation: false,
             unsigned_divisor: false,
             float_to_integer_bound: false,
+            signed_arithmetic_bound: false,
             statement_entry_required: false,
             live_view_write: false,
             call_requirement_site: None,
@@ -10574,6 +10602,10 @@ impl ProofObligation {
         self
     }
 
+    pub(crate) fn is_invalid_mutex_held_observation(&self) -> bool {
+        self.invalid_mutex_held_observation
+    }
+
     pub(crate) fn is_assertion_failure(&self) -> bool {
         self.assertion_failure
     }
@@ -10586,6 +10618,22 @@ impl ProofObligation {
         obligation
     }
 
+    pub(crate) fn is_signed_arithmetic_bound(&self) -> bool {
+        self.signed_arithmetic_bound
+    }
+
+    fn bound_under_exact_guards<'a>(&'a self, facts: &PureFactContext) -> Option<&'a Proposition> {
+        let mut goal = &self.proposition;
+        while let Proposition::Implies(guard, bound) = goal {
+            crate::instrumentation::record_deterministic_work(1);
+            if !facts.contains_assumed_exact(guard) {
+                return None;
+            }
+            goal = bound;
+        }
+        Some(goal)
+    }
+
     /// Use the retained comparison as the key for the same indexed and
     /// intrinsic checks as other execution conditions. An open comparison
     /// stays available to the proof driver as a verification condition.
@@ -10593,7 +10641,10 @@ impl ProofObligation {
         if !self.unsigned_divisor {
             return false;
         }
-        let Some((condition, required)) = self.proposition.condition_native() else {
+        let Some((condition, required)) = self
+            .bound_under_exact_guards(facts)
+            .and_then(Proposition::condition_native)
+        else {
             return false;
         };
         if let Some(truth) = PureFactContext::decide_intrinsically(condition)
@@ -10657,7 +10708,7 @@ impl ProofObligation {
         if !self.float_to_integer_bound {
             return None;
         }
-        let (condition, true) = self.proposition.condition_native()? else {
+        let (condition, true) = self.bound_under_exact_guards(facts)?.condition_native()? else {
             return None;
         };
         if let Some(truth) = facts.known_condition_value(condition) {
@@ -10821,8 +10872,10 @@ impl ProofObligation {
             assumable: self.assumable,
             evaluation_domain: self.evaluation_domain,
             assertion_failure: self.assertion_failure,
+            invalid_mutex_held_observation: self.invalid_mutex_held_observation,
             unsigned_divisor: self.unsigned_divisor,
             float_to_integer_bound: self.float_to_integer_bound,
+            signed_arithmetic_bound: self.signed_arithmetic_bound,
             statement_entry_required: self.statement_entry_required,
             live_view_write: self.live_view_write,
             call_requirement_site: None,
@@ -11254,7 +11307,7 @@ fn generated_load_binding_matches_proposition(
                 && matches!(load, MachineTerm::MemoryLoad(expected_point, _, expected)
                     if *expected == kind
                         && ((expected_point.read_version_id().is_none() && memory.read_version_id().is_none())
-                            || expected_point == &memory))
+                            || expected_point.point() == memory.point()))
         }
         _ => false,
     }
@@ -11535,9 +11588,9 @@ mod dynamic_current_load_tests {
         let pointer = pointer();
         let memory = SymbolicMemory::new();
         let retained_state = crate::kernel::intern_memory_ref(&memory);
-        let load = MachineTerm::MemoryLoad(
+        let load = crate::kernel::MachineTerm::read_named(
             ProgramPoint::at(&retained_state),
-            Box::new(pointer.clone()),
+            pointer.clone(),
             crate::kernel::LoadKind::Int32,
         );
         let value = Term::ProgramValue(ProgramValue::Int64(load.clone()).into());
@@ -11579,9 +11632,9 @@ mod dynamic_current_load_tests {
     fn load_payload(memory: &SymbolicMemory, format: MachineIntegerType) -> SharedIntegerTerm {
         let load = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             format,
-            MachineTerm::MemoryLoad(
+            crate::kernel::MachineTerm::read_named(
                 ProgramPoint::at(&(crate::kernel::intern_memory_ref(memory))),
-                Box::new(pointer()),
+                pointer(),
                 crate::kernel::LoadKind::Int32,
             ),
         ))
@@ -11787,6 +11840,19 @@ fn observation_comparison_form(proposition: &Proposition) -> Proposition {
     crate::instrumentation::record_deterministic_work(1);
     match proposition {
         Proposition::ConditionIs(condition, value) => {
+            if let Some(KernelTermNode::IntegerCompare { arguments, .. }) =
+                condition.root().map(KernelTerm::node)
+                && arguments.iter().any(|argument| {
+                    matches!(
+                        argument.node(),
+                        KernelTermNode::IntegerOperation { .. } | KernelTermNode::Variable(_)
+                    )
+                })
+            {
+                // A structural machine comparison needs observations or
+                // literals. Arithmetic and variables keep their Integer form.
+                return proposition.clone();
+            }
             match super::machine_integer::comparison::structural_native_comparison_view(
                 condition.native_compat(),
                 *value,
@@ -13148,9 +13214,9 @@ mod execution_variable_ceiling_tests {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::MemoryLoad(
+            left: Box::new(crate::kernel::MachineTerm::read_named(
                 ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
-                Box::new(word(4)),
+                word(4),
                 crate::kernel::LoadKind::Int32,
             )),
             right: Box::new(MachineTerm::constant(0)),
@@ -13780,7 +13846,7 @@ mod shared_load_atom_comparison_tests {
                 ty.format().bits() / 8,
             );
             (
-                MachineTerm::MemoryLoad(ProgramPoint::at(&memory), Box::new(pointer), kind),
+                crate::kernel::MachineTerm::read_named(ProgramPoint::at(&memory), pointer, kind),
                 variable,
             )
         };
@@ -14251,9 +14317,9 @@ mod shared_read_memory_collection_tests {
             base: AddressBase::Concrete("read-width".into()),
             offset: AddressOffset::Constant(0),
         };
-        let raw = MachineTerm::MemoryLoad(
+        let raw = crate::kernel::MachineTerm::read_named(
             ProgramPoint::at(&(intern_memory(memory.clone()))),
-            Box::new(pointer.clone()),
+            pointer.clone(),
             LoadKind::Int32,
         );
         let narrow = MachineTerm::Cast {
@@ -14377,9 +14443,9 @@ mod pointer_index_walk_tests {
                     format: ty,
                     op: MachineBinaryOp::Add,
                     left: MachineTerm::Variable(Variable(1007210)).into(),
-                    right: MachineTerm::MemoryLoad(
+                    right: MachineTerm::read_named(
                         ProgramPoint::at(&retained_state),
-                        address.clone().into(),
+                        address.clone(),
                         LoadKind::Int32,
                     )
                     .into(),

@@ -64,6 +64,33 @@ int round_trip(Cell<int>& small, Cell<unsigned int>& large, int x, unsigned int 
     requires small.count < 1000u64;
     requires large.count < 1000u64;
     ensures result == x;
+} by {
+    step();
+    have small.value == x by { known(); }
+    mark before_large;
+    step();
+    have contains(memory(small.value), memory((&small.value)[0..1])) by { normalize(); }
+    have contains(memory(large), region(1).footprint) by { known(); }
+    have separate(memory(large), memory(small.value)) by { known(); }
+    apply(click::separation::separate_restrict(memory(large), memory(small.value), region(1).footprint, memory((&small.value)[0..1])));
+    have small.value == at(before_large, small.value) by {
+        preserve(memory((&small.value)[0..1]), region(1));
+    }
+    have small.value == x by {
+        rewrite(small.value, at(before_large, small.value));
+        known();
+    }
+    step();
+    step();
+    step();
+    step();
+    have small.value == x by { known(); }
+    let { result: got } = step();
+    have got == small.value by { known(); }
+    have got == x by { rewrite(got, small.value); known(); }
+    step();
+    have result == got by { known(); }
+    have result == x by { rewrite(result, got); known(); }
 }
 ```
 

@@ -2,6 +2,7 @@ use super::*;
 use crate::kernel::CompareRelation;
 #[cfg(test)]
 use crate::kernel::binary_node;
+use crate::kernel::proof::term_rewrite::mathematical_comparison;
 use crate::kernel::unary_term;
 use crate::kernel::{MachineCastSpelling, cast_term};
 use crate::kernel::{bits32_constant, int64_constant, native_constant, uint64_constant};
@@ -20,6 +21,8 @@ trait VariableSubstitution {
     fn from(&self) -> Variable;
     fn bitvector(&self, term: &MachineTerm) -> MachineTerm;
     fn integer(&self, term: &IntegerTerm) -> IntegerTerm;
+    fn stored_integer_root(&self, root: KernelTerm) -> KernelTerm;
+
     fn pointer(&self, pointer: &Address) -> Address;
     /// The address of a local's storage slot.
     fn local_slot(&self, pointer: &Address) -> Address;
@@ -101,6 +104,22 @@ impl VariableSubstitution for BitvectorSubstitution<'_> {
     fn integer(&self, term: &IntegerTerm) -> IntegerTerm {
         substitute_bitvector_variable_in_integer(term, self.from, self.to)
     }
+    fn stored_integer_root(&self, root: KernelTerm) -> KernelTerm {
+        if root.is_mathematical_integer() {
+            return root;
+        }
+        let source = MachineTerm::Variable(self.from);
+        let mut rewrite =
+            crate::kernel::proof::term_rewrite::TermRewrite::for_bits_checked(&source, self.to);
+        let result = rewrite.retained_integer_field(&root);
+        integer_substitution_refusal(rewrite.refusal())
+            .unwrap_or_else(|error| panic!("integer substitution refused: {error}"));
+        if let Some(result) = result {
+            return result;
+        }
+        let value = self.integer(root.integer_native_compat().expect("Integer field"));
+        KernelTermImport::for_exact_field_inputs().integer(&value.into())
+    }
     fn pointer(&self, pointer: &Address) -> Address {
         substitute_bitvector_variable_in_pointer(pointer, self.from, self.to)
     }
@@ -172,6 +191,9 @@ impl VariableSubstitution for PointerSubstitution<'_> {
     }
     fn integer(&self, term: &IntegerTerm) -> IntegerTerm {
         term.clone()
+    }
+    fn stored_integer_root(&self, root: KernelTerm) -> KernelTerm {
+        root
     }
     fn pointer(&self, pointer: &Address) -> Address {
         substitute_pointer_variable_in_pointer(pointer, self.from, self.to)
@@ -772,9 +794,7 @@ fn walk_resource<S: VariableSubstitution + ?Sized>(resource: &Resource, s: &S) -
                             StoredResourceField::from_program(s.stored_program_value(value.value()))
                         }
                         StoredResourceField::Integer(root) => {
-                            StoredResourceField::from_minted(AlgebraicValue::Integer(
-                                s.integer(root.integer_native_compat().expect("Integer field")),
-                            ))
+                            StoredResourceField::Integer(s.stored_integer_root(root))
                         }
                         StoredResourceField::Algebraic(root) => {
                             let value = root.algebraic_native_term().expect("algebraic field");
@@ -1787,10 +1807,9 @@ fn walk_memory_range<S: VariableSubstitution + ?Sized>(range: &MemoryRange, s: &
         .with_provenance(std::sync::Arc::new(s.pointer(&range.provenance)))
         .with_bounds_owner(
             range
-                .bounds_owner
-                .as_deref()
+                .carrier_owner()
                 .map(|origin| std::sync::Arc::new(s.pointer(origin))),
-            range.carrier_bounds_known,
+            range.carrier_known(),
         );
     if !range.formation_coverage.is_empty() {
         result.formation_coverage = range
@@ -3052,7 +3071,7 @@ fn collect_pointer_bound_variables(pointer: &Address, variables: &mut BTreeSet<V
         | AddressBase::StringLiteral { .. }
         | AddressBase::Function(_)
         | AddressBase::ExternalArgument
-        | AddressBase::LoadedPointer(_)
+        | AddressBase::Load(_)
         | AddressBase::Heap(_)
         | AddressBase::Temporary(_) => {}
     }
@@ -3989,7 +4008,7 @@ pub(crate) fn substitute_integer_variable_in_pure_proposition(
     // `validate_integer_pure_term` uses the checked carrier collector, so the
     // replacement's selected registered-load pointers are included in this
     // one setup traversal without scanning their states.
-    validate_integer_pure_term(to, &mut reserved, &mut collector)?;
+    validate_integer_pure_term(to, &mut collector)?;
     validate_integer_pure_proposition(proposition, &mut reserved, &mut collector)?;
     if collector.exhausted() {
         return Err(IntegerPureSubstitutionError::WorkLimitExceeded);
@@ -4014,6 +4033,36 @@ pub(crate) fn substitute_integer_variable_in_pure_proposition(
     let result = substitute_pure_proposition_with_walker(proposition, from, false, &mut walker);
     integer_substitution_refusal(walker.refusal())?;
     result
+}
+
+#[cfg(test)]
+#[test]
+fn checked_integer_substitution_rewrites_retained_comparison_without_export() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let variable = Variable(87654001);
+    let left = KernelTerm::variable(KernelType::Integer, variable);
+    let right = KernelTerm::integer_literal(87654002.into());
+    let root =
+        KernelTerm::integer_comparison(IntegerComparisonOperator::LessEqual, [left, right.clone()])
+            .unwrap();
+    let proposition =
+        Proposition::condition_is(StoredConditionTerm::from_root(root.clone()).unwrap(), false);
+    let replacement = IntegerTerm::constant_i64(87654003);
+    let exports = KernelTermExport::integer_export_count();
+    let result =
+        substitute_integer_variable_in_pure_proposition(&proposition, variable, &replacement)
+            .unwrap();
+    let Proposition::ConditionIs(condition, false) = result else {
+        panic!("comparison and truth polarity must survive substitution");
+    };
+    let expected = KernelTerm::integer_comparison(
+        IntegerComparisonOperator::LessEqual,
+        [KernelTerm::integer_literal(87654003.into()), right],
+    )
+    .unwrap();
+    assert_eq!(condition.root(), Some(&expected));
+    assert_eq!(KernelTermExport::integer_export_count(), exports);
+    assert!(!root.has_cached_native_argument());
 }
 
 fn integer_substitution_refusal(
@@ -4044,11 +4093,6 @@ fn validate_integer_pure_proposition(
 ) -> Result<(), IntegerPureSubstitutionError> {
     integer_work(1)?;
     match proposition {
-        Proposition::Equal(Term::Integer(left), Term::Integer(right)) => {
-            validate_integer_pure_term(left.native_compat(), variables, collector)?;
-            validate_integer_pure_term(right.native_compat(), variables, collector)?;
-            Ok(())
-        }
         Proposition::Equal(left, right)
             if integer_atomic_term_supported(left) && integer_atomic_term_supported(right) =>
         {
@@ -4058,7 +4102,11 @@ fn validate_integer_pure_proposition(
             validate_integer_atomic_proposition(proposition, collector)
         }
         Proposition::ConditionIs(condition, _) => {
-            validate_integer_pure_condition(condition.native_compat(), collector)
+            if mathematical_comparison(condition).is_some() {
+                validate_integer_atomic_proposition(proposition, collector)
+            } else {
+                validate_integer_pure_condition(condition.native_compat(), collector)
+            }
         }
         Proposition::MemoryReadDefined { .. } | Proposition::MemoryLoadable { .. } => {
             // A symbolic array read contributes this obligation to the
@@ -4131,7 +4179,6 @@ fn validate_integer_pure_condition(
 
 fn validate_integer_pure_term(
     term: &IntegerTerm,
-    _variables: &mut BTreeSet<Variable>,
     collector: &mut crate::kernel::proof::term_rewrite::IntegerSubstitutionVariableCollector,
 ) -> Result<(), IntegerPureSubstitutionError> {
     validate_integer_atomic_proposition(
@@ -4259,24 +4306,6 @@ fn substitute_pure_proposition_with_walker(
                             arguments: result,
                         });
                     }
-                    Proposition::Equal(Term::Integer(left), Term::Integer(right)) => {
-                        rewritten.push(Proposition::Equal(
-                            Term::Integer(
-                                substitute_integer_pure_term_with_walker(
-                                    left.native_compat(),
-                                    walker,
-                                )?
-                                .into(),
-                            ),
-                            Term::Integer(
-                                substitute_integer_pure_term_with_walker(
-                                    right.native_compat(),
-                                    walker,
-                                )?
-                                .into(),
-                            ),
-                        ));
-                    }
                     Proposition::Equal(left, right)
                         if integer_atomic_term_supported(left)
                             && integer_atomic_term_supported(right) =>
@@ -4287,6 +4316,14 @@ fn substitute_pure_proposition_with_walker(
                         )?);
                     }
                     Proposition::SequenceMembership { .. } => {
+                        rewritten.push(rewrite_integer_atomic_proposition_with_walker(
+                            proposition,
+                            walker,
+                        )?);
+                    }
+                    Proposition::ConditionIs(condition, _)
+                        if mathematical_comparison(condition).is_some() =>
+                    {
                         rewritten.push(rewrite_integer_atomic_proposition_with_walker(
                             proposition,
                             walker,
@@ -4609,24 +4646,6 @@ fn rewrite_integer_memory_loadable_with_walker(
         ),
         wide: *wide,
     })
-}
-
-fn substitute_integer_pure_term_with_walker(
-    term: &IntegerTerm,
-    walker: &mut crate::kernel::proof::term_rewrite::TermRewrite<'_>,
-) -> Result<IntegerTerm, IntegerPureSubstitutionError> {
-    let Proposition::Equal(Term::Integer(result), _) =
-        rewrite_integer_atomic_proposition_with_walker(
-            &Proposition::Equal(
-                Term::Integer(term.clone().into()),
-                Term::Integer(IntegerTerm::constant_i64(0).into()),
-            ),
-            walker,
-        )?
-    else {
-        unreachable!()
-    };
-    Ok(result.into_native_compat())
 }
 
 fn integer_atomic_term_supported(term: &Term) -> bool {
@@ -5395,8 +5414,9 @@ mod machine_integer_substitution_tests {
         let base = Address::symbolic(Variable(38_551));
         let index = Variable(38_552);
         let value = MachineTerm::Variable(Variable(38_553));
-        let read =
-            |pointer| MachineTerm::MemoryLoad(point.clone(), Box::new(pointer), LoadKind::Int32);
+        let read = |pointer| {
+            crate::kernel::MachineTerm::read_named(point.clone(), pointer, LoadKind::Int32)
+        };
         let equation = |pointer| {
             Proposition::condition_is(
                 ConditionTerm::machine_compare(
@@ -5942,9 +5962,9 @@ fn substitute_through_load_variable(
         );
     }
     Some(crate::kernel::eval::canonical_term(
-        &MachineTerm::MemoryLoad(
+        &crate::kernel::MachineTerm::read_named(
             ProgramPoint::at(&substituted_memory),
-            Box::new(substituted_pointer),
+            substituted_pointer,
             kind,
         ),
     ))
@@ -6145,11 +6165,13 @@ pub(crate) fn substitute_bitvector_variable(
                     &rewritten_pointer,
                     read.bytes,
                 );
-                return crate::kernel::eval::canonical_term(&MachineTerm::MemoryLoad(
-                    ProgramPoint::at(&source),
-                    Box::new(rewritten_pointer),
-                    *kind,
-                ));
+                return crate::kernel::eval::canonical_term(
+                    &crate::kernel::MachineTerm::read_named(
+                        ProgramPoint::at_read_site(&source, memory),
+                        rewritten_pointer,
+                        *kind,
+                    ),
+                );
             }
             // Opening a quantifier renames its bound variable in the reads
             // of its body. Record the access at the renamed address, as a
@@ -6162,8 +6184,8 @@ pub(crate) fn substitute_bitvector_variable(
                     read.bytes,
                 );
             }
-            crate::kernel::eval::scalar_read_for_exact_cell(
-                &rewritten_memory,
+            crate::kernel::eval::scalar_read_for_exact_cell_at(
+                &ProgramPoint::at_read_site(&rewritten_memory, memory),
                 &rewritten_pointer,
                 *kind,
                 read.bytes,
@@ -9605,11 +9627,12 @@ mod integer_range_fold_substitution_tests {
                 ProgramValue::Int32(MachineTerm::constant(7)),
             ));
         crate::kernel::eval::record_load_access_width(source.memory(), &pointer, 4);
-        let original = crate::kernel::eval::canonical_term(&MachineTerm::MemoryLoad(
-            ProgramPoint::at(&source),
-            Box::new(pointer.clone()),
-            crate::kernel::LoadKind::Int32,
-        ));
+        let original =
+            crate::kernel::eval::canonical_term(&crate::kernel::MachineTerm::read_named(
+                ProgramPoint::at(&source),
+                pointer.clone(),
+                crate::kernel::LoadKind::Int32,
+            ));
         let MachineTerm::MemoryLoad(projected, _, _) = &original else {
             panic!("structural read");
         };
@@ -9626,11 +9649,12 @@ mod integer_range_fold_substitution_tests {
         let actual =
             substitute_bitvector_variable(&original, binder, &MachineTerm::Variable(renamed));
         crate::kernel::eval::record_load_access_width(source.memory(), &renamed_pointer, 4);
-        let expected = crate::kernel::eval::canonical_term(&MachineTerm::MemoryLoad(
-            ProgramPoint::at(&source),
-            Box::new(renamed_pointer),
-            crate::kernel::LoadKind::Int32,
-        ));
+        let expected =
+            crate::kernel::eval::canonical_term(&crate::kernel::MachineTerm::read_named(
+                ProgramPoint::at(&source),
+                renamed_pointer,
+                crate::kernel::LoadKind::Int32,
+            ));
         assert_eq!(actual, expected);
         assert_eq!(
             crate::kernel::eval::scalar_read_observation(
@@ -9831,6 +9855,10 @@ mod integer_range_fold_substitution_tests {
 mod resource_reference_substitution_tests {
     use super::*;
     use crate::kernel::{ResourceFieldSchema, ResourceFieldType, ResourceReference};
+
+    mod scaling_tests {
+        include!("../../scaling_tests/kernel/reasoning/substitution/resource_fields.rs");
+    }
 
     fn reference_resource() -> Resource {
         let schema = ResourceFieldSchema::new(vec![(
@@ -10207,16 +10235,6 @@ mod checked_singleton_substitution_tests {
         include!(
             "../../scaling_tests/kernel/reasoning/substitution/checked_singleton_substitution_tests.rs"
         );
-    }
-}
-
-#[cfg(test)]
-mod checked_surface_load_resolution_tests {
-    use super::*;
-
-    fn observed(variable: Variable) -> IntegerTerm {
-        IntegerTerm::from_machine(MachineIntegerType::Int32, MachineTerm::Variable(variable))
-            .unwrap()
     }
 }
 

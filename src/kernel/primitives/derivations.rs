@@ -681,7 +681,11 @@ impl PropositionDerivation {
             | PropositionDerivationRule::ForAllBody { proof, .. } => {
                 proof.collect_context_premises(premises);
             }
-            PropositionDerivationRule::ExistsFromFact { source, body } => {
+            PropositionDerivationRule::ExistsFromFact {
+                source,
+                witness,
+                body,
+            } => {
                 premises.insert(source.as_ref().clone());
                 let mut body_premises = BTreeSet::new();
                 body.collect_context_premises(&mut body_premises);
@@ -691,16 +695,12 @@ impl PropositionDerivation {
                     body: source_body,
                     ..
                 } = source.as_ref()
-                    && let Some(renamed) =
-                        crate::kernel::api::substitute_quantified_body_capture_free(
-                            source_body,
-                            **source_var,
-                            match &self.conclusion {
-                                Proposition::Exists { var, .. } => **var,
-                                _ => **source_var,
-                            },
-                            sort,
-                        )
+                    && let Some(renamed) = crate::kernel::quantifiers::rename_quantified_variable(
+                        source_body,
+                        **source_var,
+                        *witness,
+                        sort,
+                    )
                 {
                     let mut conjuncts = BTreeSet::new();
                     collect_local_assumptions(&renamed, &mut conjuncts);
@@ -1489,6 +1489,7 @@ impl ExecutionBudget {
     pub(in crate::kernel) const UNIVERSAL_WITNESS_LIMIT: u64 = 1 << 40;
 
     /// Whether `variable` is a universal-introduction or choice witness.
+    #[cfg(test)]
     pub(in crate::kernel) fn is_universal_witness_variable(variable: Variable) -> bool {
         variable.is_witness()
     }
@@ -1583,6 +1584,7 @@ impl ExecutionBudget {
             dropped_range_span: None,
             dropped_refuted_range_span: None,
             dropped_fold_body: None,
+            dropped_symbolic_pointer_conditional: false,
             dropped_comparison: None,
             program_byte_order: None,
         }

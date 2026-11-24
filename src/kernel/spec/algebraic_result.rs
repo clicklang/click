@@ -272,11 +272,11 @@ mod storage_tests {
             AlgebraicValue::Program(ProgramValue::Pointer(
                 pointer
                     .clone()
-                    .with_declared_object_class(constant.then(|| {
+                    .with_declared_object_class(constant.then_some(
                         crate::kernel::effective_type::CAccessClass::Scalar(
                             crate::kernel::effective_type::CScalarClass::Int,
-                        )
-                    })),
+                        ),
+                    )),
             ))
         };
         let left_field = AlgebraicFieldResult::from_native(field(false));
@@ -314,7 +314,7 @@ mod storage_tests {
     }
 
     #[test]
-    fn algebraic_result_and_field_storage_release_native_integer_children() {
+    fn algebraic_result_and_field_storage_keep_integer_children_retained() {
         let _session = VerificationSession::enter();
         let ty = KernelMatch::test_scrutinee(vec![AlgebraicValueType::Integer]).algebraic_type;
         for as_field in [false, true] {
@@ -339,7 +339,11 @@ mod storage_tests {
             } else {
                 AlgebraicResult::from(source).into_kernel()
             };
-            assert!(weak.upgrade().is_none(), "as_field={as_field}");
+            assert!(
+                weak.upgrade()
+                    .is_some_and(|root| !root.has_cached_native_argument()),
+                "as_field={as_field}"
+            );
             let KernelTermNode::Constructor(constructor) = root.node() else {
                 panic!("common constructor")
             };

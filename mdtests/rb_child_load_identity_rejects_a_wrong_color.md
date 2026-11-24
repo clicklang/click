@@ -7,8 +7,8 @@ words is `mdtests/rb_replace_node_with_children.md`). Here the refold
 proposes `Color::Black` for a child whose arm bound an arbitrary color. The
 exact body-fact check still has to discharge `(((old & 1) | address(new_node)) & 1) == color_bit(Color::Black)`
 and the premise says only that the word's bit is `color_bit(lc)`, so the fold
-is refused. Naming the cells one `unfold` exposes settles *which* value the two
-sides talk about; it proves nothing about that value.
+is refused. The proof preserves the original child pointer across the three
+field stores of the record assignment before opening the child for reparenting.
 
 ```c filename=rbtree.h
 #ifndef RBTREE_H
@@ -101,12 +101,35 @@ void reparent_left_child(struct rb_node* victim, struct rb_node* new_node,
             match l.model {
                 RbTree::Empty => { contradiction(l.model == RbTree::Empty); },
                 RbTree::Node(lid, lc, ll, lr) => {
+                    have separate(memory((new_node as (int32 *))[0..2]), memory(victim->rb_left)) by known();
+                    have separate(memory((new_node as (int32 *))[2..4]), memory(victim->rb_left)) by known();
+                    have separate(memory((new_node as (int32 *))[4..6]), memory(victim->rb_left)) by known();
+                    step();
+                    have separate(statement(0).region(0).footprint, memory(victim->rb_left)) by known();
+                    have victim->rb_left == at(statement(0).region(0).entry, victim->rb_left) by {
+                        preserve(memory(victim->rb_left), statement(0).region(0));
+                    }
+                    step();
+                    have separate(statement(0).region(1).footprint, memory(victim->rb_left)) by known();
+                    have victim->rb_left == at(statement(0).region(1).entry, victim->rb_left) by {
+                        preserve(memory(victim->rb_left), statement(0).region(1));
+                    }
+                    step();
+                    have separate(statement(0).region(2).footprint, memory(victim->rb_left)) by known();
+                    have victim->rb_left == at(statement(0).region(2).entry, victim->rb_left) by {
+                        preserve(memory(victim->rb_left), statement(0).region(2));
+                    }
                     let { left: lleft, right: lright } = unfold(l);
                     step_until(function.exit);
-                    let l2 = fold(rb_at(new_node->rb_left, new_node), {
+                    let l2 = fold(rb_at(lid, new_node), {
                         model: RbTree::Node(lid, Color::Black, ll, lr),
                         left: lleft, right: lright
-                    });
+                    }) {
+                        requires (lid->__rb_parent_color & 1) == color_bit(Color::Black) by {
+                            have (lid->__rb_parent_color & 1) == color_bit(Color::Black) by known();
+                            known();
+                        }
+                    }
                     solve();
                 },
             }
@@ -116,5 +139,5 @@ void reparent_left_child(struct rb_node* victim, struct rb_node* new_node,
 ```
 
 ```expect
-fail: fold requires the instance body facts for the proposed fields: fact 6 of 6 of arm `Node` is not established
+fail: `have` failed for `(lid->__rb_parent_color & 1) == color_bit(Color::Black())`
 ```

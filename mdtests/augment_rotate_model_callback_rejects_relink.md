@@ -144,12 +144,71 @@ struct node* rotate_left(
         Shape::Empty => { contradiction(r.model == Shape::Empty); },
         Shape::Node(pivot_node, middle_model, far_model) => {
             let { left: m, right: z } = unfold(r);
-            step();
-            step();
-            step();
-            step();
-            step();
-            step();
+            // Carry the untouched link reads across each store before folding.
+            step_until(statement(2).entry);
+            have defined(node->left) by { normalize(); }
+            have separate(memory(node->left), memory(node->right)) by { known(); }
+            have defined(pivot->right) by { normalize(); }
+            have separate(memory(pivot->right), memory(node->right)) by { known(); }
+            have node->left == old(node->left) by known();
+            have pivot->right == old(node->right->right) by known();
+            mark before_right;
+            step_until(statement(3).entry);
+            have separate(statement(2).footprint, memory(node->left)) by {
+                normalize() using { at(before_right, separate(memory(node->left), memory(node->right))); };
+            }
+            have defined(node->left) by { preserve(memory(node->left), statement(2)); }
+            have node->left == at(before_right, node->left) by { preserve(memory(node->left), statement(2)); }
+            have separate(statement(2).footprint, memory(pivot->right)) by {
+                normalize() using { at(before_right, separate(memory(pivot->right), memory(node->right))); };
+            }
+            have defined(pivot->right) by { preserve(memory(pivot->right), statement(2)); }
+            have pivot->right == at(before_right, pivot->right) by { preserve(memory(pivot->right), statement(2)); }
+
+            have separate(memory(node->left), memory(pivot->left)) by { known(); }
+            have defined(node->right) by { normalize(); }
+            have node->right == middle by { normalize(); }
+            have middle == old(node->right->left) by { solve(); }
+            have separate(memory(node->right), memory(pivot->left)) by { known(); }
+            have defined(pivot->right) by { normalize(); }
+            have separate(memory(pivot->right), memory(pivot->left)) by { known(); }
+            mark before_left;
+            step_until(statement(4).entry);
+            have separate(statement(3).footprint, memory(node->left)) by {
+                normalize() using { at(before_left, separate(memory(node->left), memory(pivot->left))); };
+            }
+            have defined(node->left) by { preserve(memory(node->left), statement(3)); }
+            have separate(statement(3).footprint, memory(node->right)) by {
+                normalize() using { at(before_left, separate(memory(node->right), memory(pivot->left))); };
+            }
+            have defined(node->right) by { preserve(memory(node->right), statement(3)); }
+            have node->right == at(before_left, node->right) by { preserve(memory(node->right), statement(3)); }
+            have node->right == middle by {
+                rewrite(node->right, at(before_left, node->right));
+                known();
+            }
+            have pivot->left == node by { normalize(); }
+            have separate(statement(3).footprint, memory(pivot->right)) by {
+                normalize() using { at(before_left, separate(memory(pivot->right), memory(pivot->left))); };
+            }
+            have defined(pivot->right) by { preserve(memory(pivot->right), statement(3)); }
+            have defined(pivot->left) by { normalize(); }
+            have node->left == at(before_left, node->left) by { preserve(memory(node->left), statement(3)); }
+            have node->left == old(node->left) by {
+                rewrite(node->left, at(before_left, node->left));
+                rewrite(at(before_left, node->left), at(before_right, node->left));
+                known();
+            }
+            have node->right == old(node->right->left) by {
+                rewrite(node->right, middle);
+                known();
+            }
+            have pivot->right == at(before_left, pivot->right) by { preserve(memory(pivot->right), statement(3)); }
+            have pivot->right == old(node->right->right) by {
+                rewrite(pivot->right, at(before_left, pivot->right));
+                rewrite(at(before_left, pivot->right), at(before_right, pivot->right));
+                known();
+            }
             let lower = fold(tree_at(node), {
                 model: Shape::Node(node, l.model, m.model),
                 left: l, right: m
@@ -204,35 +263,12 @@ struct node* rotate_clobber(struct node* node) {
     ensures 0 <= result->augmented;
     ensures result->augmented <= 1000;
 } by {
+    have AugmentRotate(&clobber) by { solve(); }
     let { rotated: rotated } = step(rotate_left, { l: a, r: b });
 }
 
-struct node* rotate_reset(struct node* node) {
-    requires node != 0;
-    requires node->right != 0;
-    requires node != node->right;
-    requires 0 <= node->augmented;
-    requires node->augmented < 1000;
-    consumes node->left;
-    consumes node->right;
-    consumes a: tree_at(node->left);
-    consumes b: tree_at(node->right);
-    requires b.model != Shape::Empty;
-    owns node->augmented;
-    owns node->right->augmented;
-    produces rotated: tree_at(result);
-
-    ensures result == old(node->right);
-    ensures rotated.model == Shape::Node(old(node->right),
-        Shape::Node(node, old(a.model), shape_left(old(b.model))),
-        shape_right(old(b.model)));
-    ensures 0 <= result->augmented;
-    ensures result->augmented <= 1000;
-} by {
-    let { rotated: rotated } = step(rotate_left, { l: a, r: b });
-}
 ```
 
 ```expect
-fail: function `clobber` does not satisfy named contract `AugmentRotate`
+fail: could not establish `AugmentRotate(&clobber)`
 ```

@@ -8184,7 +8184,26 @@ fn unsigned_positive_divisor_contract_expands_and_reverifies() {
     check_first_claim_certificate(
         &project,
         &import,
-        "verifying \"unsigned.cpp\"; uint64 div64(uint64 a, uint64 b) { requires b > 0u64; ensures result == a / b; }",
+        r#"verifying "unsigned.cpp";
+            uint64 div64(uint64 a, uint64 b) {
+                requires b > 0u64;
+                ensures result == a / b;
+            } by {
+                have b != 0u64 by {
+                    if b == 0u64 {
+                        have not (b > 0u64) by {
+                            rewrite(b, 0u64);
+                            known();
+                        }
+                        contradiction(b > 0u64);
+                    } else {
+                        known();
+                    }
+                }
+                step();
+                solve();
+            }
+        "#,
     );
 }
 
@@ -19113,6 +19132,60 @@ fn layout_free_cpp_references_forward_to_contracts() {
     );
 }
 
+#[test]
+fn layout_free_cpp_pointers_forward_to_contracts() {
+    let project = Project::with_fixture(
+        "driver.cpp",
+        "read",
+        "struct Buffer;\nunsigned long length(Buffer* buffer) noexcept;\nunsigned long read(Buffer* buffer) noexcept { return length(buffer); }\n",
+    );
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let [record] = import.export().records.as_slice() else {
+        panic!("one nominal record declaration")
+    };
+    assert_eq!(record.path, ["Buffer"]);
+    assert_eq!((record.size_bytes, record.alignment_bytes), (0, 0));
+    assert!(record.fields.is_empty());
+
+    fs::write(
+        project.directory.join("buffer.interface.click"),
+        r#"abstract resource buffer_state(buffer: Buffer*) { field count: uint64; }
+unsigned long length(Buffer* buffer) {
+    owns state: buffer_state(buffer);
+    ensures state.count == old(state.count);
+    ensures result == state.count;
+}
+"#,
+    )
+    .unwrap();
+    let path = project.directory.join("read.click");
+    let source = r#"import "buffer.interface.click";
+verifying "driver.cpp";
+unsigned long read(Buffer* buffer) {
+    owns state: buffer_state(buffer);
+    ensures state.count == old(state.count);
+    ensures result == state.count;
+}
+"#;
+    fs::write(&path, source).unwrap();
+    let parsed = read_click_project(&path, source).unwrap();
+    verify_program_prepared_project(&parsed, &import)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+
+    let missing_state = r#"import "buffer.interface.click";
+verifying "driver.cpp";
+unsigned long read(Buffer* buffer) { ensures result == result; }
+"#;
+    let parsed = read_click_project(&path, missing_state).unwrap();
+    let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
+    assert!(
+        error.report().contains("unbound instance binder `state`"),
+        "{}",
+        error.report()
+    );
+}
+
 const BYTE_VECTOR_FIXTURE_HEADER: &str = r#"#pragma clang system_header
 namespace std {
 template<class T> struct allocator;
@@ -19148,6 +19221,40 @@ unsigned char probe(unsigned char* destination, const unsigned char* source) noe
     project.write_config("probe");
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
+    // Read the fresh capture directly, before the importer normalizes older spellings.
+    let captured: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
+    assert!(
+        captured["reachable_functions"][0]["parameters"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|parameter| parameter["name"] == "")
+    );
+    let lowered = lower_import(&import).unwrap();
+    let reachable = &lowered.reachable_kernel_functions()[0];
+    let parameters = reachable.parameters();
+    let interface = lowered
+        .contract_functions()
+        .iter()
+        .find(|function| function.name() == reachable.name())
+        .unwrap();
+    assert_eq!(parameters.len(), 3);
+    assert!(
+        interface
+            .parameters()
+            .iter()
+            .map(|parameter| parameter.binding_name())
+            .eq(parameters.iter().map(|parameter| parameter.binding_name()))
+    );
+    for (index, parameter) in parameters.iter().enumerate() {
+        let click::kernel::BindingName::Local(identity) = parameter.binding_name() else {
+            panic!("unnamed parameter has a typed declaration identity")
+        };
+        assert_eq!(identity.ordinal() as usize, index);
+        assert!(identity.is_parameter());
+        assert!(identity.spelling().is_none());
+    }
     let source = r#"verifying "driver.cpp";
 uint8 probe(uint8* destination, const uint8* source) {
     owns uninitialized(destination[0..1]);
@@ -20157,7 +20264,7 @@ fn bound_class_object_call_obligations_expand_and_cold_replay() {
         fs::remove_file(&project.exporter).unwrap();
         // Naming the pack's output is sufficient: the ordinary call-obligation
         // solver proves its model-field bounds, without an extra written have.
-        assert!(source.contains("__object_object: packed"));
+        assert!(source.contains("object_resource(): packed"));
         assert!(!source.contains("have "));
         let sidecar = project.directory.join("object.click");
         fs::write(&sidecar, &source).unwrap();
@@ -20171,7 +20278,7 @@ fn bound_class_object_call_obligations_expand_and_cold_replay() {
         )
         .unwrap()
         .expect("the caller's written proof has a certificate");
-        assert!(expanded.contains("__object_object: packed"), "{expanded}");
+        assert!(expanded.contains("object_resource(): packed"), "{expanded}");
         let rewritten = parsed.with_entry_source(expanded.clone());
         let position = project_tactic_source_position(
             &rewritten,

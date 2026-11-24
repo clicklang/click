@@ -27,18 +27,18 @@ fn array_layout(element: ProgramType, length: u64) -> Result<AggregateLayout, St
 impl Context<'_> {
     pub(super) fn declare_array(
         &mut self,
-        name: &str,
+        name: &MirLocalId,
         element: &Type,
         length: u64,
         initializer: &E,
     ) -> Result<ProgramStatement, String> {
         let element = scalar_type(element)?.to_kernel_type();
         let layout = array_layout(element, length)?;
-        self.local_arrays.insert(name.into());
-        self.arrays.insert(name.into(), (length, element, false));
+        self.local_arrays.insert(name.clone());
+        self.arrays.insert(name.clone(), (length, element, false));
         Ok(program_seq(
             // Fresh storage supplies transferable authority for helper calls.
-            program_begin_aggregate_construction(self.binding(name), layout),
+            program_begin_aggregate_construction(self.binding(name)?, layout),
             self.assign_array(self.array_pointer(name)?, element, length, initializer)?,
         ))
     }

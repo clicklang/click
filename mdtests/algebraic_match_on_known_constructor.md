@@ -58,6 +58,113 @@ theorem rewritten_tag(p: WidePacket, value: uint64) {
         solve();
     }
 }
+
+theorem rewritten_capture(p: WidePacket, value: uint64, other: uint64) {
+    requires p == WidePacket::Full(value);
+    ensures (match p {
+        WidePacket::Full(n) => TaggedOutput::Value(n, other),
+    }) == TaggedOutput::Value(value, other) by {
+        rewrite(p, WidePacket::Full(value));
+        solve();
+    }
+}
+
+spec enum BoolOutput { Value(uint64, Bool) }
+
+theorem rewritten_bool_tag(p: WidePacket, value: uint64) {
+    requires p == WidePacket::Full(value);
+    ensures (match p {
+        WidePacket::Full(n) => BoolOutput::Value(n, true),
+    }) == BoolOutput::Value(value, true) by {
+        rewrite(p, WidePacket::Full(value));
+        solve();
+    }
+}
+
+spec enum BoolPacket { Full(Bool) }
+spec enum Flag { Value(Bool) }
+
+theorem rewritten_bool_field(p: BoolPacket, flag: Bool) {
+    requires p == BoolPacket::Full(flag);
+    ensures (match p {
+        BoolPacket::Full(b) => Flag::Value(b),
+    }) == Flag::Value(flag) by {
+        rewrite(p, BoolPacket::Full(flag));
+        solve();
+    }
+}
+
+theorem rewritten_bool_literal(p: BoolPacket) {
+    requires p == BoolPacket::Full(true);
+    ensures (match p {
+        BoolPacket::Full(b) => Flag::Value(b),
+    }) == Flag::Value(true) by {
+        rewrite(p, BoolPacket::Full(true));
+        solve();
+    }
+}
+
+theorem rewritten_bool_capture(p: WidePacket, value: uint64, flag: Bool) {
+    requires p == WidePacket::Full(value);
+    ensures (match p {
+        WidePacket::Full(n) => BoolOutput::Value(n, flag),
+    }) == BoolOutput::Value(value, flag) by {
+        rewrite(p, WidePacket::Full(value));
+        solve();
+    }
+}
+
+spec enum Box { Value(Integer) }
+spec enum BoxPacket { Full(Box) }
+spec enum BoxOutput { Item(Box) }
+
+theorem rewritten_algebraic_field(p: BoxPacket, value: Box, other: Box) {
+    requires p == BoxPacket::Full(value);
+    ensures (match p {
+        BoxPacket::Full(x) => BoxOutput::Item(x),
+    }) == BoxOutput::Item(value) by {
+        rewrite(p, BoxPacket::Full(value));
+        solve();
+    }
+}
+
+spec enum BoxCapture { Item(uint64, Box) }
+
+theorem rewritten_algebraic_capture(p: WidePacket, value: uint64, captured: Box, other: Box) {
+    requires p == WidePacket::Full(value);
+    ensures (match p {
+        WidePacket::Full(x) => BoxCapture::Item(x, captured),
+    }) == BoxCapture::Item(value, captured) by {
+        rewrite(p, WidePacket::Full(value));
+        solve();
+    }
+}
+
+spec enum Color { Red, Green }
+spec enum ColorPacket { Full(Color) }
+spec enum ColorOutput { Item(Color) }
+
+theorem rewritten_nullary_field(p: ColorPacket) {
+    requires p == ColorPacket::Full(Color::Red);
+    ensures (match p {
+        ColorPacket::Full(x) => ColorOutput::Item(x),
+    }) == ColorOutput::Item(Color::Red) by {
+        rewrite(p, ColorPacket::Full(Color::Red));
+        solve();
+    }
+}
+
+spec enum ColorTag { Item(uint64, Color) }
+
+theorem rewritten_nullary_tag(p: WidePacket, value: uint64) {
+    requires p == WidePacket::Full(value);
+    ensures (match p {
+        WidePacket::Full(x) => ColorTag::Item(x, Color::Red),
+    }) == ColorTag::Item(value, Color::Red) by {
+        rewrite(p, WidePacket::Full(value));
+        solve();
+    }
+}
 ```
 
 ```expect

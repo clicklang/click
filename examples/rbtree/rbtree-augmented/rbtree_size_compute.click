@@ -217,10 +217,28 @@ contract int32 ComputeSize(struct sized_node* node, int32 exit) {
     ensures result == 0 or old(parent.value) == 1 + old(left.value) + old(right.value);
 }
 
+// Call effects check the joined view of the two adjacent child links.
+theorem separate_size_write_from_child_links(links: int32*, cache: Resource) {
+    requires separate(memory(links[2..4]), cache);
+    requires separate(memory(links[4..6]), cache);
+    ensures separate(cache, memory(links[2..6])) by {
+        apply(click::separation::separate_star(memory(links[2..4]), memory(links[4..6]), cache));
+        apply(click::separation::contains_joined_ranges(links, 2, 4, 6));
+        apply(click::separation::contains_refl(cache));
+        apply(click::separation::separate_restrict(
+            memory(links[2..4]) * memory(links[4..6]), cache, memory(links[2..6]), cache));
+        apply(click::separation::separate_symm(memory(links[2..6]), cache));
+    }
+}
+
 theorem compute_size_has_size_contract()
     executes compute_size(struct sized_node* node, int32 exit) {
     ensures ComputeSize(&compute_size) as { parent: p, left: l, right: r } by {
         apply(size_sum_defined(l.value, r.value));
+        // The cache slot begins after the two child links.
+        apply(click::separation::separate_adjacent_ranges(node as (int32 *), 2, 6, 8));
+        apply(click::separation::separate_symm(
+            memory((node as (int32 *))[2..6]), memory((node as (int32 *))[6..8])));
         if node->rb.rb_left != 0 {
             if node->rb.rb_right != 0 {
                 have separate(memory(node->rb.rb_left), memory((node->rb.rb_left as (uint8 *) as (struct sized_node *))->size)) by {
@@ -247,6 +265,10 @@ theorem compute_size_has_size_contract()
                         separate(memory(node->rb.rb_right), memory((node->rb.rb_right as (uint8 *) as (struct sized_node *))->size)) => { known(); }
                     }
                 }
+                apply(separate_size_write_from_child_links(node as (int32 *),
+                    memory((node->rb.rb_left as (int32 *))[6..8])));
+                apply(separate_size_write_from_child_links(node as (int32 *),
+                    memory((node->rb.rb_right as (int32 *))[6..8])));
                 step(compute_size, { parent: p, left: l, right: r });
                 solve();
             } else {
@@ -262,6 +284,8 @@ theorem compute_size_has_size_contract()
                         separate(memory(node->rb.rb_right), memory((node->rb.rb_left as (uint8 *) as (struct sized_node *))->size)) => { known(); }
                     }
                 }
+                apply(separate_size_write_from_child_links(node as (int32 *),
+                    memory((node->rb.rb_left as (int32 *))[6..8])));
                 step(compute_size, { parent: p, left: l, right: r });
                 solve();
             }
@@ -279,6 +303,8 @@ theorem compute_size_has_size_contract()
                         separate(memory(node->rb.rb_right), memory((node->rb.rb_right as (uint8 *) as (struct sized_node *))->size)) => { known(); }
                     }
                 }
+                apply(separate_size_write_from_child_links(node as (int32 *),
+                    memory((node->rb.rb_right as (int32 *))[6..8])));
                 step(compute_size, { parent: p, left: l, right: r });
                 solve();
             } else {

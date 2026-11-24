@@ -171,7 +171,7 @@ fn int32_load_defining_state_is_independent_of_live_origin() {
     graph.add_int32_equality(&var(1), &var(2));
     assert!(!graph.are_int32_equal(&left, &right));
     let raw = |m: &SharedMemory| {
-        MachineTerm::MemoryLoad(
+        MachineTerm::read_named(
             ProgramPoint::at(m),
             Box::new(address(1)),
             crate::kernel::LoadKind::Int32,
@@ -396,7 +396,7 @@ fn reads_of_one_cell_at_both_signednesses_are_related() {
         crate::kernel::eval::restore_load_variable_registry(&cold_reads);
         // Keep term-bridge imports and canonical forms cold at every sample
         // size.
-        crate::kernel::clear_integer_bridge_memo();
+        crate::kernel::clear_machine_observation_memo();
         crate::kernel::eval::clear_load_canonicalization_caches();
         crate::kernel::memory_history::clear_canonical_form_caches();
         let mut graph = EqualityGraph::default();
@@ -450,7 +450,7 @@ fn widening_chains_are_related_with_constant_work_per_widening() {
     for size in sizes {
         crate::kernel::eval::restore_load_variable_registry(&cold_reads);
         // Keep descriptor caches and term-bridge imports cold at every sample size.
-        crate::kernel::clear_integer_bridge_memo();
+        crate::kernel::clear_machine_observation_memo();
         let word = |value: MachineTerm| MachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             value: Box::new(value),
@@ -498,7 +498,7 @@ fn structural_read_graph_registration_keeps_native_version_identity() {
         },
         ProgramValue::Int32(var(993182)),
     ));
-    let raw = MachineTerm::MemoryLoad(
+    let raw = MachineTerm::read_named(
         ProgramPoint::at(&beside),
         Box::new(pointer.clone()),
         LoadKind::Int32,
@@ -516,7 +516,7 @@ fn structural_read_graph_registration_keeps_native_version_identity() {
         native
     );
     assert_eq!(root.machine_read_leaf(), Some(&raw));
-    let changed = MachineTerm::MemoryLoad(
+    let changed = MachineTerm::read_named(
         ProgramPoint::at(
             &(intern_memory(
                 before
@@ -553,7 +553,7 @@ fn structural_word_read_requires_its_explicit_store_equation() {
     );
     // The typed word producer supplies its access width before graph queries.
     crate::kernel::eval::record_load_access_width(retained_state.memory(), &pointer, 4);
-    let read = MachineTerm::MemoryLoad(
+    let read = MachineTerm::read_named(
         ProgramPoint::at(&retained_state),
         Box::new(pointer),
         LoadKind::Int32,

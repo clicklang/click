@@ -238,7 +238,7 @@ impl Adapter<'_> {
                     ));
                 }
                 let mut parameters = vec![out::Place {
-                    name: "__rust_arg_0".into(),
+                    name: MirLocalId::PositionalParameter { position: 0 },
                     value_type: Type::Reference {
                         mutable: *kind == a::RefKind::Mut,
                         pointee: Box::new(Type::TraitObject),
@@ -253,7 +253,9 @@ impl Adapter<'_> {
                         return Err(unsupported("trait method parameter other than a scalar"));
                     }
                     parameters.push(out::Place {
-                        name: format!("__rust_arg_{}", index + 1),
+                        name: MirLocalId::PositionalParameter {
+                            position: index + 1,
+                        },
                         value_type,
                         span: span(binder.item_meta.span),
                     });
@@ -495,12 +497,11 @@ impl BodyAdapter<'_, '_> {
             .map(|argument| self.operand(argument))
             .collect::<Result<_, String>>()?;
         Ok(T::Call {
-            function,
+            function: function.into(),
             arguments,
             owned_arguments: Vec::new(),
             destination: Some(self.local(dest)?),
             target: target.index(),
-            through_pointer: false,
             result: None,
         })
     }
@@ -628,7 +629,7 @@ impl Adapter<'_> {
                 name,
                 return_type: Type::Unit,
                 parameters: vec![out::Place {
-                    name: "__rust_arg_0".into(),
+                    name: MirLocalId::PositionalParameter { position: 0 },
                     value_type: Type::Reference {
                         mutable: false,
                         pointee: Box::new(Type::Record {
@@ -712,12 +713,11 @@ pub(super) fn wrap_object_coercions(
             T::Goto { target: usize::MAX },
         );
         let call_with = |function: &str, argument: &E, target: usize| T::Call {
-            function: function.to_string(),
+            function: function.into(),
             arguments: vec![argument.clone()],
             owned_arguments: Vec::new(),
             destination: destination.clone(),
             target,
-            through_pointer: false,
             result: None,
         };
         // Blocks in order: packs after the first, the call, the unpacks.
@@ -800,7 +800,7 @@ mod tests {
             .iter()
             .flat_map(|mir| &mir.blocks)
             .filter_map(|block| match &block.terminator {
-                T::Call { function, .. } => Some(function.as_str()),
+                T::Call { function, .. } => function.source_name(),
                 _ => None,
             })
             .collect()
@@ -816,6 +816,9 @@ mod tests {
         let function = |name: &str| export.functions.iter().find(|f| f.name == name).unwrap();
         let interface = function(INTERFACE);
         assert!(interface.external && interface.mir.is_none());
+        for (position, parameter) in interface.parameters.iter().enumerate() {
+            assert_eq!(parameter.name, MirLocalId::PositionalParameter { position });
+        }
         assert_eq!(
             interface.parameters[0].value_type,
             Type::Reference {
@@ -883,7 +886,7 @@ mod tests {
                     T::Call {
                         function, target, ..
                     } => {
-                        calls.push(display(function));
+                        calls.push(display(function.source_name().unwrap()));
                         block = *target;
                     }
                     T::Goto { target } => block = *target,
@@ -922,6 +925,10 @@ mod tests {
                 })
                 .unwrap();
             assert!(coercion.external && coercion.return_type == Type::Unit);
+            assert_eq!(
+                coercion.parameters[0].name,
+                MirLocalId::PositionalParameter { position: 0 }
+            );
             assert!(super::super::super::names::is_object_coercion(
                 &coercion.name
             ));

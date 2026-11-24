@@ -965,7 +965,7 @@ fn write_program_lvalue_paths_for_initialization(
                 .as_ref()
                 .filter(|_| {
                     !matches!(pointer.offset, AddressOffset::Add(_, _))
-                        && !matches!(pointer.base, AddressBase::LoadedPointer(_))
+                        && !matches!(pointer.base, AddressBase::Load(_))
                 })
                 .and_then(|range| {
                     effective_assumptions
@@ -4917,7 +4917,6 @@ fn execute_execution_statement_leaf_paths(
             steps,
             expression,
             value_type,
-            pointee_constant: _,
             ..
         } => {
             if let Some(layout) = aggregate_layout {
@@ -6224,7 +6223,9 @@ pub(in crate::kernel) fn declare_local(
         ProgramType::Parameter(_) => crate::kernel::ABSTRACT_VALUE_WIDTH,
         ProgramType::Void => unreachable!("void local objects are not supported"),
         ProgramType::Bool => 1,
-        ProgramType::VoidPointer | ProgramType::VoidPointerPointer => C_POINTER_BYTE_WIDTH,
+        ProgramType::VoidPointer | ProgramType::VoidPointerPointer | ProgramType::Pointer => {
+            C_POINTER_BYTE_WIDTH
+        }
         ProgramType::Int8 => 1,
         ProgramType::Int16 | ProgramType::UInt16 => 2,
         ProgramType::Int32 => 4,
@@ -6717,7 +6718,12 @@ fn refresh_scalar_local_binding(
         let read = scalar_read_for_exact_cell_at(&version, &slot, kind, kind.byte_width());
         Some(format.value_from_term(read))
     } else {
-        crate::kernel::eval::symbolic_load_value(&state.memory, &slot, program_type)
+        crate::kernel::eval::symbolic_load_value(
+            &state.memory,
+            Some(&state.program_point()),
+            &slot,
+            program_type,
+        )
     };
     match refreshed {
         Some(refreshed) => state.locals.set_typed_with_all_qualifiers(

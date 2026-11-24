@@ -2,7 +2,7 @@
 use super::*;
 use crate::kernel::{
     KernelFold, KernelFoldIndex, KernelIntegerOperator, KernelTerm, KernelTermExport,
-    KernelTermNode, KernelType, MachineOperandView, SharedIntegerRangeEndpoint,
+    KernelTermNode, KernelType, MachineOperandView,
 };
 
 pub(super) fn bindings() -> AlphaBindings {
@@ -86,12 +86,57 @@ pub(crate) fn integer_key(fold: &KernelFold) -> Option<IntegerFoldAlphaKey> {
     })
 }
 
+/// Integer variables, arithmetic and mathematical range binders are unchanged
+/// by comparison normalization. Other nodes need the existing normalization
+/// before they can supply a fact key.
+pub(super) fn unchanged_integer_comparison_key(
+    operator: IntegerComparisonOperator,
+    arguments: &[KernelTerm; 2],
+) -> Option<IntegerConditionAlphaKey> {
+    integer_comparison_key(operator, arguments, true)
+}
+
+pub(super) fn integer_comparison_key(
+    operator: IntegerComparisonOperator,
+    [left, right]: &[KernelTerm; 2],
+    unchanged_in_comparisons: bool,
+) -> Option<IntegerConditionAlphaKey> {
+    let mut bindings = bindings();
+    alpha_work_checkpoint(&mut bindings, 1)?;
+    alpha_work_checkpoint(&mut bindings, 1)?;
+    let mut next_binder = 0;
+    let mut operand_key = |operand| {
+        RetainedIntegerKey {
+            unchanged_in_comparisons,
+            ..Default::default()
+        }
+        .into_key(operand, &mut bindings, &mut next_binder)
+    };
+    let condition =
+        AlphaConditionKey::IntegerComparison(operator, operand_key(left)?, operand_key(right)?);
+    #[cfg(test)]
+    ALPHA_PROPOSITION_KEY_VISITS.with(|visits| visits.set(visits.get() + 1));
+    Some(IntegerConditionAlphaKey {
+        key: AlphaPropositionKey::Condition(condition, true),
+        work_units: bindings.work_units,
+    })
+}
+
+pub(super) fn integer_operand_key(
+    term: &KernelTerm,
+    bindings: &mut AlphaBindings,
+    next_binder: &mut usize,
+) -> Option<AlphaIntegerKey> {
+    RetainedIntegerKey::integer(term, bindings, next_binder)
+}
+
 #[derive(Default)]
 struct RetainedIntegerKey {
     nodes: Vec<AlphaIntegerNode>,
     retained: HashMap<(u64, u64, u64), usize>,
     native: HashMap<(u64, u64, u64), usize>,
     argument_export: KernelTermExport,
+    unchanged_in_comparisons: bool,
 }
 
 impl RetainedIntegerKey {
@@ -107,6 +152,20 @@ impl RetainedIntegerKey {
         }
         alpha_work_checkpoint(bindings, 1)?;
         use KernelTermNode as Node;
+        if self.unchanged_in_comparisons
+            && !matches!(
+                term.node(),
+                Node::IntegerLiteral(_)
+                    | Node::Variable(_)
+                    | Node::IntegerOperation { .. }
+                    | Node::Fold(KernelFold {
+                        index: KernelFoldIndex::Integer,
+                        ..
+                    })
+            )
+        {
+            return None;
+        }
         let node = match term.node() {
             Node::IntegerLiteral(value) => {
                 alpha_work_checkpoint(bindings, (value.bits() as usize).saturating_add(1))?;
@@ -211,15 +270,20 @@ impl RetainedIntegerKey {
                 self.node(end, bindings, next_binder)?,
             ),
             KernelFoldIndex::Int32 | KernelFoldIndex::UInt64 => {
-                let start = SharedIntegerRangeEndpoint::from_shared(start.clone())?;
-                let end = SharedIntegerRangeEndpoint::from_shared(end.clone())?;
+                if !start.is_shared_machine_operand() || !end.is_shared_machine_operand() {
+                    return None;
+                }
+                // Native Integer folds historically key both machine-index forms
+                // through the same retagged endpoint carrier.
+                let start = start.with_machine_observation_type(MachineIntegerType::Int32);
+                let end = end.with_machine_observation_type(MachineIntegerType::Int32);
                 let start = alpha_machine_key::<false>(
-                    start.machine_operand().operand_view(),
+                    MachineOperandView::Shared(&start),
                     bindings,
                     next_binder,
                 )?;
                 let end = alpha_machine_key::<false>(
-                    end.machine_operand().operand_view(),
+                    MachineOperandView::Shared(&end),
                     bindings,
                     next_binder,
                 )?;
@@ -247,10 +311,18 @@ impl RetainedIntegerKey {
         bindings: &mut AlphaBindings,
         next_binder: &mut usize,
     ) -> Option<AlphaIntegerKey> {
-        let mut builder = Self::default();
-        let root = builder.node(term, bindings, next_binder)?;
+        Self::default().into_key(term, bindings, next_binder)
+    }
+
+    fn into_key(
+        mut self,
+        term: &KernelTerm,
+        bindings: &mut AlphaBindings,
+        next_binder: &mut usize,
+    ) -> Option<AlphaIntegerKey> {
+        let root = self.node(term, bindings, next_binder)?;
         Some(AlphaIntegerKey {
-            nodes: builder.nodes,
+            nodes: self.nodes,
             root,
         })
     }
@@ -520,7 +592,7 @@ mod tests {
             let native = machine_fold(
                 81,
                 82,
-                MachineTerm::MemoryLoad(
+                MachineTerm::read_named(
                     crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory_ref(memory))),
                     Box::new(pointer.clone()),
                     LoadKind::Int32,

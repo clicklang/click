@@ -4607,7 +4607,7 @@ fn contract_entry_overlap_does_not_walk_pointer_aliases() {
             ));
         }
         assert!(
-            work.chunks_exact(3).skip(1).all(|row| {
+            work.as_chunks::<3>().0.iter().skip(1).all(|row| {
                 row.iter()
                     .zip(&work[..3])
                     .all(|(actual, first)| *actual <= *first + 16)

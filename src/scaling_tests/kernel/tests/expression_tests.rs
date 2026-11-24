@@ -413,6 +413,62 @@ fn unsigned_division_domain_generation_ignores_ambient_facts() {
 }
 
 #[test]
+fn unsigned_division_checks_only_an_indexed_operand_guard() {
+    let width = MachineIntegerType::UInt32;
+    let dividend = Variable(992_311);
+    let divisor = Variable(992_312);
+    let assumptions = PureFactContext::new();
+    let mut samples = Vec::new();
+    for count in [4, 16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let prefix = (0..count)
+            .map(|index| {
+                ExecutionPureFact::new(Proposition::condition_is(
+                    ConditionTerm::equal(
+                        MachineTerm::Variable(Variable(993_000 + index)),
+                        MachineTerm::constant(0),
+                    ),
+                    false,
+                ))
+            })
+            .collect::<ExecutionFacts>();
+        let guard = ConditionTerm::equal(MachineTerm::Variable(divisor), MachineTerm::constant(0));
+        let runs = [None, Some(false), Some(true)].map(|polarity| {
+            let mut facts = prefix.clone();
+            if let Some(polarity) = polarity {
+                facts.push(ExecutionPureFact::new(Proposition::condition_is(
+                    guard.clone(),
+                    polarity,
+                )));
+            }
+            facts.ensure_indexed();
+            let indexed = crate::kernel::execution_facts::indexed_execution_facts();
+            let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
+                crate::kernel::eval::apply_program_divide(
+                    width.symbolic_value(dividend),
+                    width.symbolic_value(divisor),
+                    facts,
+                    vec![],
+                    &assumptions,
+                )
+            });
+            assert_eq!(paths.len(), 1);
+            assert_eq!(paths[0].obligations.is_empty(), polarity == Some(false));
+            assert_eq!(
+                crate::kernel::execution_facts::indexed_execution_facts(),
+                indexed
+            );
+            work
+        });
+        samples.push(runs);
+    }
+    assert!(
+        samples.iter().all(|sample| *sample == samples[0]),
+        "{samples:?}"
+    );
+}
+
+#[test]
 fn signed_addition_does_not_walk_the_operands_equality_class() {
     let mut samples = Vec::new();
     for count in [8, 32, 128] {
@@ -450,7 +506,7 @@ fn signed_addition_does_not_walk_the_operands_equality_class() {
             samples.push(work);
         }
     }
-    for sample in samples.chunks_exact(2) {
+    for sample in samples.as_chunks::<2>().0 {
         assert_eq!(sample, &samples[..2], "{samples:?}");
     }
 }
@@ -499,4 +555,141 @@ fn float_cast_refutation_uses_fixed_fact_keys() {
         samples.iter().all(|sample| sample == &samples[0]),
         "{samples:?}"
     );
+}
+
+#[test]
+fn signed_shift_requirement_checks_one_bound_as_facts_grow() {
+    use crate::kernel::program_expression as expr;
+
+    let operand = MachineTerm::Variable(Variable(994_500));
+    let state = ExecutionState::new().with_local("n", ProgramValue::Int32(operand.clone()));
+    let expression = expr::shift_left(expr::variable("n"), expr::int32_literal(1));
+    let fits = ConditionTerm::signed_shift_result_fits(
+        MachineIntegerType::Int32,
+        operand.clone(),
+        MachineTerm::constant(1),
+        false,
+    );
+    for related in [false, true] {
+        let samples = [4u32, 16, 64, 256].map(|size| {
+            let bound = |value, lower| {
+                ConditionTerm::signed_greater_equal(value, MachineTerm::constant(lower))
+            };
+            let facts = (0..size).fold(
+                PureFactContext::new().assume_condition(bound(operand.clone(), 0), true),
+                |facts, index| {
+                    let variable = if related {
+                        operand.clone()
+                    } else {
+                        MachineTerm::Variable(Variable(994_501 + u64::from(index)))
+                    };
+                    facts.assume_condition(bound(variable, !index), true)
+                },
+            );
+            [None, Some(true), Some(false)].map(|decision| {
+                let facts = match decision {
+                    Some(value) => facts.clone().assume_condition(fits.clone(), value),
+                    None => facts.clone(),
+                };
+                let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    evaluate_program_expression_paths(
+                        &state,
+                        &expression,
+                        &facts,
+                        &mut ExecutionBudget::for_program_expression(&expression),
+                    )
+                    .unwrap()
+                });
+                let [path] = paths.as_slice() else {
+                    panic!("expected one shift path, got {paths:?}");
+                };
+                if decision == Some(false) {
+                    assert!(matches!(
+                        path.outcome,
+                        ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::SignedOverflow)
+                    ));
+                } else {
+                    assert!(matches!(path.outcome, ExpressionOutcome::Value(_)));
+                }
+                assert_eq!(path.obligations.len(), usize::from(decision.is_none()));
+                work
+            })
+        });
+        for sample in &samples[1..] {
+            assert!(
+                sample
+                    .iter()
+                    .zip(samples[0])
+                    .all(|(work, baseline)| *work <= baseline),
+                "{related}: {samples:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn checked_difference_guard_uses_one_sign_and_one_comparison_as_facts_grow() {
+    use crate::kernel::program_expression as expr;
+
+    let (x, y) = (
+        MachineTerm::Variable(Variable(994_800)),
+        MachineTerm::Variable(Variable(994_801)),
+    );
+    let state = ExecutionState::new()
+        .with_local("x", ProgramValue::Int32(x.clone()))
+        .with_local("y", ProgramValue::Int32(y.clone()));
+    let expression = expr::conditional(
+        expr::less_equal(
+            expr::variable("x"),
+            expr::subtract(expr::int32_literal(i32::MAX as u32), expr::variable("y")),
+        ),
+        expr::int32_literal(1),
+        expr::int32_literal(0),
+    );
+    let observe = |term| IntegerTerm::from_machine(MachineIntegerType::Int32, term).unwrap();
+    let exact = ConditionTerm::integer_less_equal(
+        observe(x),
+        IntegerTerm::subtract(
+            IntegerTerm::constant_i64(i64::from(i32::MAX)),
+            observe(y.clone()),
+        ),
+    );
+    let nonnegative = ConditionTerm::signed_greater_equal(y.clone(), MachineTerm::constant(0));
+    for related in [false, true] {
+        let samples = [4u32, 16, 64, 256].map(|size| {
+            let facts = (0..size).fold(
+                PureFactContext::new().assume_condition(nonnegative.clone(), true),
+                |facts, index| {
+                    let value = if related {
+                        y.clone()
+                    } else {
+                        MachineTerm::Variable(Variable(994_810 + u64::from(index)))
+                    };
+                    facts.assume_condition(
+                        ConditionTerm::signed_greater_equal(value, MachineTerm::constant(!index)),
+                        true,
+                    )
+                },
+            );
+            let facts = facts.assume_condition(exact.clone(), false);
+            let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
+                evaluate_program_expression_paths(
+                    &state,
+                    &expression,
+                    &facts,
+                    &mut ExecutionBudget::for_program_expression(&expression),
+                )
+                .unwrap()
+            });
+            let [path] = paths.as_slice() else {
+                panic!("expected only the false arm, got {paths:?}");
+            };
+            assert_eq!(path.outcome, ExpressionOutcome::Value(int32(0)));
+            work
+        });
+        assert!(
+            samples.iter().all(|work| *work <= samples[0] + 8),
+            "{related}: {samples:?}"
+        );
+    }
 }

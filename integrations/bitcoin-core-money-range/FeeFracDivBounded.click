@@ -82,8 +82,17 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
         have quot <= 9223372036854775806i64 by {
             solve() using { to_integer(quot) <= 9223372036854775806; };
         }
+        have to_integer(quot) + 1 <= 9223372036854775807 by {
+            solve() using { to_integer(quot) <= 9223372036854775806; };
+        }
+        have -9223372036854775808 <= to_integer(quot) + 1 by {
+            solve() using { -9223372036854775808 <= to_integer(quot); };
+        }
         have defined(quot + 1i64) by {
-            solve() using { quot <= 9223372036854775806i64; };
+            all {
+                to_integer(quot) + 1 <= 9223372036854775807 => { known(); }
+                to_integer(quot) + 1 >= -9223372036854775808 => { known(); }
+            }
         }
         have to_integer(quot + 1i64) == to_integer(quot) + to_integer(1i64);
         have -9223372036854775808 <= to_integer(quot + 1i64) by { solve() using {

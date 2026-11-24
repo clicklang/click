@@ -367,12 +367,24 @@ void pipeline(struct pool* pool, struct payload* first, struct payload* second) 
     step();
     with(item(pool, first)) {
         step();
-        have first->value == 11;
-    }
-    with(item(pool, second)) {
-        step();
-        have first->value == 11;
-        have second->value == 22;
+        have first->value == 11 by { known(); }
+        // Keep both payload cells visible so the second store's frame is explicit.
+        with(item(pool, second)) {
+            have separate(memory(first->value), memory(second->value)) by { known(); }
+            mark before_second;
+            step();
+            have separate(statement(4).footprint, memory(first->value)) by {
+                normalize() using { separate(memory(first->value), memory(second->value)); };
+            }
+            have first->value == at(before_second, first->value) by {
+                preserve(memory(first->value), statement(4));
+            }
+            have first->value == 11 by {
+                rewrite(first->value, at(before_second, first->value));
+                known();
+            }
+            have second->value == 22 by { known(); }
+        }
     }
     have to_integer(count(item(pool, second))) == 1 by {
         known();

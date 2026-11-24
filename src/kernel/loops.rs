@@ -1352,7 +1352,7 @@ fn execute_program_indirect_call_paths(
                     }
                     AddressBase::FunctionSymbolic(_)
                     | AddressBase::Function(_)
-                    | AddressBase::LoadedPointer(_)
+                    | AddressBase::Load(_)
                         if matches!(pointer.program_type(), ProgramType::FunctionPointer(_)) =>
                     {
                         let target_assumptions =
@@ -2258,13 +2258,12 @@ fn join_loop_exit_paths(
             exits[1..].iter().map(|exit| entries(exit).map(identity)),
         )
         .into_iter()
-        .filter_map(|index| {
-            seen.insert(&identities[index]).then(|| {
-                first_objects
-                    .get(index)
-                    .map(|fact| (*fact).clone())
-                    .unwrap_or_else(|| ExecutionPureFact::new(first[index].clone()))
-            })
+        .filter(|&index| seen.insert(&identities[index]))
+        .map(|index| {
+            first_objects
+                .get(index)
+                .map(|fact| (*fact).clone())
+                .unwrap_or_else(|| ExecutionPureFact::new(first[index].clone()))
         })
         .collect();
         return Some((facts, obligations, borrow_evidence));
@@ -5878,8 +5877,9 @@ pub(super) fn collect_loop_preservation_summary(
 pub(super) struct EvaluatedMemorySegment {
     pub(super) base: Address,
     pub(super) provenance: std::sync::Arc<Address>,
-    pub(super) bounds_owner: Option<std::sync::Arc<Address>>,
-    pub(super) bounds_known: bool,
+    /// The array object of the pointer that names the segment, without
+    /// bounds of its own.
+    pub(super) carrier: crate::kernel::primitives::ArrayObject,
     pub(super) start: MachineTerm,
     pub(super) end: MachineTerm,
     pub(super) element_width: u32,
@@ -5906,7 +5906,7 @@ impl EvaluatedMemorySegment {
         range.formation_coverage = self.formation_coverage;
         range
             .with_provenance(provenance)
-            .with_bounds_owner(self.bounds_owner, self.bounds_known)
+            .with_carrier_array(self.carrier)
             .with_typed_carrier()
     }
 }
@@ -6034,6 +6034,9 @@ pub(super) struct LoopHead {
 #[derive(Clone, Debug)]
 pub(super) enum LoopResourceFailure {
     Message(String),
+    Contract(String),
+    Tactic(String),
+    Evaluation(String),
     Unheld {
         fact: ResourceFact,
         state: ExecutionState,
@@ -6048,9 +6051,24 @@ impl LoopResourceFailure {
     /// spell the resource; the loop-head refusal carries it instead.
     pub(super) fn context(&self) -> String {
         match self {
-            Self::Message(message) => message.clone(),
+            Self::Message(message)
+            | Self::Evaluation(message)
+            | Self::Contract(message)
+            | Self::Tactic(message) => message.clone(),
             Self::Unheld { .. } => Self::UNHELD.to_string(),
         }
+    }
+}
+
+impl From<String> for LoopResourceFailure {
+    fn from(message: String) -> Self {
+        Self::Message(message)
+    }
+}
+
+impl From<&str> for LoopResourceFailure {
+    fn from(message: &str) -> Self {
+        Self::Message(message.to_owned())
     }
 }
 
@@ -6565,7 +6583,7 @@ pub(super) fn prepare_loop_top_state(
             Ok(())
         })();
         if let Err(message) = result {
-            rebound_failures.push(message);
+            rebound_failures.push(LoopResourceFailure::Message(message));
         }
     }
     // A direct conditional clause owns a typed occurrence whose condition
@@ -6647,7 +6665,7 @@ pub(super) fn prepare_loop_top_state(
             loop_havoc_ranges.as_deref(),
         )
     };
-    resource_failures.extend(rebound_failures.drain(..).map(LoopResourceFailure::Message));
+    resource_failures.append(&mut rebound_failures);
     resource_failures.extend(body_failures);
     let borrow_requirements = borrow_check.unwrap_or_else(|message| {
         resource_failures.push(LoopResourceFailure::Message(message.to_string()));
@@ -6924,7 +6942,7 @@ fn loop_declared_and_withheld_resources(
     let declared = match evaluated? {
         Ok(declared) => declared,
         Err(error) => {
-            return Ok(Err(LoopResourceFailure::Message(format!(
+            return Ok(Err(LoopResourceFailure::Evaluation(format!(
                 "loop declares a resource the enclosing function does not hold: {}",
                 super::api::contract_certification::describe_certification_runtime_error(&error)
             ))));
@@ -7179,7 +7197,7 @@ fn rebind_loop_binder_instances(
     resource_specs: &[ResourceSpec],
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<ExecutionState, String>> {
+) -> ExecutionResult<Result<ExecutionState, LoopResourceFailure>> {
     if !resource_specs.iter().any(ResourceSpec::is_instance) {
         return Ok(Ok(state.clone()));
     }
@@ -7205,12 +7223,14 @@ fn rebind_loop_binder_instances(
                 Ok(_) => {
                     return Ok(Err(format!(
                         "loop binder `{binder}` requires one owned resource definition"
-                    )));
+                    )
+                    .into()));
                 }
                 Err(error) => {
                     return Ok(Err(format!(
                         "loop binder `{binder}` could not be evaluated here: {error}"
-                    )));
+                    )
+                    .into()));
                 }
             };
         let references =
@@ -7219,7 +7239,8 @@ fn rebind_loop_binder_instances(
                 Err(_) => {
                     return Ok(Err(format!(
                         "loop binder `{binder}` requires its declared resource arguments"
-                    )));
+                    )
+                    .into()));
                 }
             };
         state = match rebind_one_loop_binder_instance(
@@ -7298,7 +7319,8 @@ pub(crate) fn loop_state_with_loop_binders_rebound(
             (&name, &arguments, &references),
             &mut claimed,
             assumptions,
-        )?;
+        )
+        .map_err(|refusal| refusal.context())?;
     }
     Ok(rebound)
 }
@@ -7321,7 +7343,7 @@ fn rebind_one_loop_binder_instance(
     ),
     claimed: &mut BTreeSet<InstanceId>,
     assumptions: &PureFactContext,
-) -> Result<ExecutionState, String> {
+) -> Result<ExecutionState, LoopResourceFailure> {
     let (name, arguments, references) = resource;
     let arguments_match = |instance: &ResourceInstance| {
         instance.resource_arguments() == references
@@ -7353,15 +7375,26 @@ fn rebind_one_loop_binder_instance(
             .cloned()
             .collect::<Vec<_>>();
         let Some(selected) = candidates.pop() else {
-            return Err(format!(
+            return Err(LoopResourceFailure::Tactic(format!(
                 "loop binder `{binder}` has no owned `{name}` instance at its arguments here"
-            ));
+            )));
         };
         if !candidates.is_empty() {
-            return Err(format!(
-                "loop binder `{binder}` matches {} owned `{name}` instances at its arguments; a loop binder must name exactly one",
-                candidates.len() + 1
-            ));
+            let count = candidates.len() + 1;
+            let names = candidates
+                .iter()
+                .chain(std::iter::once(&selected))
+                .map(|instance| {
+                    crate::kernel::model_fields::registered_instance_spelling(instance.identity)
+                        .map(|name| format!("`{name}`"))
+                })
+                .collect::<Option<Vec<_>>>();
+            let choices = names.map_or_else(String::new, |names| {
+                format!(" ({}). Use the intended enclosing binder", names.join(", "))
+            });
+            return Err(LoopResourceFailure::Tactic(format!(
+                "loop binder `{binder}` matches {count} owned `{name}` instances at its arguments; a loop binder must name exactly one{choices}"
+            )));
         }
         selected
     };
@@ -7377,7 +7410,8 @@ fn rebind_one_loop_binder_instance(
     ) else {
         return Err(format!(
             "loop binder `{binder}` names an instance whose fields do not match its schema"
-        ));
+        )
+        .into());
     };
     // The matching step established the declared argument values on this exit.
     // Publish those values before joining exits, while their equality premises
@@ -7389,9 +7423,7 @@ fn rebind_one_loop_binder_instance(
         .clone()
         .without_fact_incrementally(&held, assumptions)
     else {
-        return Err(format!(
-            "loop binder `{binder}` could not take the instance it names"
-        ));
+        return Err(format!("loop binder `{binder}` could not take the instance it names").into());
     };
     Ok(state.clone().with_resource_context(
         resources.unchecked_with_fact(ResourceFact::own(Resource::Instance(rebound))),
@@ -7879,8 +7911,7 @@ pub(super) fn collect_loop_effect_check_obligations(
                         .iter()
                         .map(|range| EvaluatedMemorySegment {
                             provenance: range.provenance.clone(),
-                            bounds_owner: range.bounds_owner.clone(),
-                            bounds_known: range.carrier_bounds_known,
+                            carrier: range.carrier_array().clone(),
                             base: range.base.clone(),
                             start: range.bound_terms().0.clone(),
                             end: range.bound_terms().1.clone(),
@@ -8061,8 +8092,11 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
     {
         let evaluated = EvaluatedMemorySegment {
             provenance: std::sync::Arc::new(base_value.provenance().clone()),
-            bounds_owner: base_value.bounds_owner().cloned().map(std::sync::Arc::new),
-            bounds_known: base_value.bounds_are_known(),
+            carrier: crate::kernel::primitives::ArrayObject::from_parts(
+                base_value.bounds_are_known(),
+                None,
+                base_value.bounds_owner().cloned().map(std::sync::Arc::new),
+            ),
             base,
             start,
             end,
@@ -8105,8 +8139,11 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
     let element_width = segment.element_width;
     let evaluated = EvaluatedMemorySegment {
         provenance: std::sync::Arc::new(base_value.provenance().clone()),
-        bounds_owner: base_value.bounds_owner().cloned().map(std::sync::Arc::new),
-        bounds_known: base_value.bounds_are_known(),
+        carrier: crate::kernel::primitives::ArrayObject::from_parts(
+            base_value.bounds_are_known(),
+            None,
+            base_value.bounds_owner().cloned().map(std::sync::Arc::new),
+        ),
         base,
         start,
         end,

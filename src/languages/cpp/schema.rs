@@ -639,6 +639,7 @@ pub struct CppConstantReference {
 #[serde(deny_unknown_fields)]
 pub struct CppPlace {
     pub declaration_id: String,
+    /// Written spelling, empty for an unnamed standard-library parameter.
     pub name: String,
     pub value_type: CppType,
     pub span: CppSpan,
@@ -2990,12 +2991,7 @@ impl CppFunction {
                     if let Some((declaration_id, name)) =
                         super::scalar::record_pointee(&parameter.value_type) =>
                 {
-                    let record = validate_record_reference(records, declaration_id, name)?;
-                    if record.is_layout_free() {
-                        return Err(format!(
-                            "layout-free C++ record `{name}` requires a reference parameter"
-                        ));
-                    }
+                    validate_record_reference(records, declaration_id, name)?;
                 }
                 CppType::Pointer { .. } => {
                     require_native_object_pointer(&parameter.value_type, "pointer parameter")?;
@@ -6911,12 +6907,16 @@ fn validate_argument_types(
             _ => false,
         };
         if !compatible {
+            let parameter = if parameter_name.is_empty() {
+                String::new()
+            } else {
+                format!(" for parameter `{parameter_name}`")
+            };
             return Err(format!(
-                "C++ call from `{}` to `{}` has unsupported argument {} for parameter `{}`",
+                "C++ call from `{}` to `{}` has unsupported argument {}{parameter}",
                 caller.function.name,
                 callee_name,
                 index + 1,
-                parameter_name
             ));
         }
     }

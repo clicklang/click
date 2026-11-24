@@ -421,14 +421,14 @@ fn load_equality_resolves_through_stored_cell_chains_of_any_length() {
         let mut memory = SymbolicMemory::new()
             .store(cell(length), ProgramValue::Int32(MachineTerm::constant(42)));
         for index in (0..length).rev() {
-            let next = MachineTerm::MemoryLoad(
+            let next = MachineTerm::read_named(
                 ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                 Box::new(cell(index + 1)),
                 crate::kernel::LoadKind::Int32,
             );
             memory = SymbolicMemory::new().store(cell(index), ProgramValue::Int32(next));
         }
-        let load = MachineTerm::MemoryLoad(
+        let load = MachineTerm::read_named(
             ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
             Box::new(cell(0)),
             crate::kernel::LoadKind::Int32,

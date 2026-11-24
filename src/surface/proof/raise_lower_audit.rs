@@ -374,6 +374,189 @@ int32 short_sum(int32 seed) {
         }
     }
 
+    /// A quantifier raises with the name it was written with, `forall (k:
+    /// int32)`, rather than a generated `binder(N)`, when nothing its body
+    /// names is spelled `k`; the named form still lowers back to the fact.
+    #[test]
+    fn a_quantifier_raises_with_its_written_binder_name() {
+        let fixture = crate::cli::parse_mdtest(
+            std::path::Path::new("call_step_retains_old_array_bound.md"),
+            include_str!("../../../mdtests/call_step_retains_old_array_bound.md"),
+        )
+        .unwrap();
+        let sources = fixture
+            .c_sources
+            .iter()
+            .map(|(name, source)| (name.as_str(), source.as_str()))
+            .collect::<Vec<_>>();
+        let lines = capture(|| {
+            let _ = crate::surface::verify_c_sources(
+                fixture.click_source.as_deref().unwrap(),
+                &sources,
+            );
+        });
+        let raised = lines
+            .iter()
+            .map(|line| line.split('\t').collect::<Vec<_>>())
+            .filter(|fields| fields[7].contains("forall ("))
+            .collect::<Vec<_>>();
+        assert!(
+            raised.iter().any(|fields| fields[0] == "same"
+                && fields[7].starts_with("forall (k: int32) { 0 <= k and k < n")),
+            "{lines:#?}"
+        );
+        assert!(
+            raised
+                .iter()
+                .all(|fields| !fields[7].contains("forall (binder(")),
+            "{lines:#?}"
+        );
+    }
+
+    /// A call's published bound `contains(R, region.footprint)` raises with
+    /// the footprint spelled as the region it belongs to, and lowers back to
+    /// the same descriptor.
+    #[test]
+    fn a_call_footprint_containment_round_trips() {
+        let lines = round_trips(
+            "call_checked_input_facts_keep_prestate.md",
+            include_str!("../../../mdtests/call_checked_input_facts_keep_prestate.md"),
+        );
+        assert!(
+            lines.contains(&(
+                "same".to_string(),
+                "contains(p[0], region(0).footprint)".to_string()
+            )),
+            "{lines:#?}"
+        );
+    }
+
+    #[test]
+    fn a_theorem_resource_parameter_round_trips_by_name() {
+        let source = r#"
+            import click::separation;
+            theorem separate_from_a_star(A: Resource, B: Resource, C: Resource, E: Resource) {
+                requires separate(A, C);
+                requires separate(B, C);
+                requires contains(A * B, E);
+                ensures separate(E, C) by {
+                    apply(separation::separate_star(A, B, C));
+                    apply(separation::contains_refl(C));
+                    apply(separation::separate_restrict(A * B, C, E, C));
+                }
+            }
+        "#;
+        let lines = capture(|| {
+            crate::surface::verify_c_sources(source, &[]).unwrap();
+        });
+        let outcomes = lines
+            .iter()
+            .map(|line| {
+                let fields = line.split('\t').collect::<Vec<_>>();
+                (fields[0], fields[6])
+            })
+            .collect::<Vec<_>>();
+        assert!(outcomes.contains(&("same", "separate(E, C)")), "{lines:#?}");
+        assert!(
+            outcomes.contains(&("same", "separate((A * B), C)")),
+            "{lines:#?}"
+        );
+    }
+
+    #[test]
+    fn a_pointer_address_passed_to_a_spec_function_round_trips() {
+        let source = r#"
+            import click::list;
+            theorem nil_has_no_address(target: uint8*) {
+                ensures not list::contains(List<uint64>::Nil, address(target)) by {
+                    unfold(list::contains(List<uint64>::Nil, address(target)));
+                    known();
+                }
+            }
+        "#;
+        let lines = capture(|| {
+            crate::surface::verify_c_sources(source, &[]).unwrap();
+        });
+        assert!(
+            lines.iter().any(|line| {
+                let fields = line.split('\t').collect::<Vec<_>>();
+                fields[0] == "same" && fields[6].contains("click::list::contains")
+            }),
+            "{lines:#?}"
+        );
+        assert!(
+            lines.iter().all(|line| !line.starts_with("unraised\t")),
+            "{lines:#?}"
+        );
+    }
+
+    #[test]
+    fn a_null_pointer_passed_to_a_spec_function_round_trips() {
+        // `struct node*` is a one-`int` object, so the kernel holds the
+        // argument as an array reference rather than a bare pointer.
+        let c = "struct node { int value; };\nint touch(struct node *n) { return 0; }\n";
+        let click = r#"
+            verifying "nullarg.c";
+            function is_null(p: struct node*) -> int32 {
+                if p == 0 { 1 } else { 0 }
+            }
+            int32 touch(struct node* n) {
+                ensures result == 0;
+            } by {
+                have is_null(0) == 1 by { unfold(is_null(0)); known(); }
+                step_until(function.exit);
+            }
+        "#;
+        let lines = capture(|| {
+            crate::surface::verify_c_sources(click, &[("nullarg.c", c)]).unwrap();
+        });
+        assert!(
+            lines.iter().any(|line| {
+                let fields = line.split('\t').collect::<Vec<_>>();
+                fields[0] == "same" && fields[7] == "is_null(0) == 1"
+            }),
+            "{lines:#?}"
+        );
+    }
+
+    #[test]
+    fn a_total_a_lock_acquired_round_trips_at_the_lock_exit() {
+        let fixture = crate::cli::parse_mdtest(
+            std::path::Path::new("authority_mutex_locked_release.md"),
+            include_str!("../../../mdtests/authority_mutex_locked_release.md"),
+        )
+        .unwrap();
+        let sources = fixture
+            .c_sources
+            .iter()
+            .map(|(name, source)| (name.as_str(), source.as_str()))
+            .collect::<Vec<_>>();
+        let lines = capture(|| {
+            crate::surface::verify_c_sources(fixture.click_source.as_deref().unwrap(), &sources)
+                .unwrap();
+        });
+        let counts = lines
+            .iter()
+            .filter(|line| {
+                line.split('\t')
+                    .nth(7)
+                    .is_some_and(|raised| raised.contains("count("))
+            })
+            .collect::<Vec<_>>();
+        assert!(
+            counts.iter().any(|line| {
+                line.starts_with("same\t")
+                    && line.split('\t').nth(7)
+                        == Some("at(statement(0).exit, (count(reference(obj)) as int32)) >= 1")
+            }),
+            "{counts:#?}"
+        );
+        assert!(
+            counts.iter().all(|line| !line.starts_with("unlowered\t")),
+            "{counts:#?}"
+        );
+    }
+
     /// The round trips `fixture` records, as `(outcome, original)` pairs.
     fn round_trips(name: &str, text: &str) -> Vec<(String, String)> {
         let fixture = crate::cli::parse_mdtest(std::path::Path::new(name), text).unwrap();
@@ -675,12 +858,12 @@ int32 f(struct holder* h, uint64 n, uint64 k) {
             })
         };
         // The unfolded viewability round-trips, and so does the hidden
-        // record's value: raised with the entry state, it is
-        // `old(pair(p).first.v)`.
+        // record's value: it is the contract's entry model, so both the
+        // diagnostic and the raiser spell it `old(pair(p).first.v)`.
         assert!(
             unfold("same", "viewable((p as (uint8 *))[0..8])"),
             "{lines:#?}"
         );
-        assert!(unfold("same", "<unnamed A> >= 0"), "{lines:#?}");
+        assert!(unfold("same", "old(pair(p).first.v) >= 0"), "{lines:#?}");
     }
 }

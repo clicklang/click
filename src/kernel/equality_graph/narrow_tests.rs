@@ -118,7 +118,7 @@ fn narrow_operator_chains_intern_with_constant_work_per_node() {
         let mut samples = Vec::new();
         for size in sizes {
             // Keep term-bridge imports cold at every sample size.
-            crate::kernel::clear_integer_bridge_memo();
+            crate::kernel::clear_machine_observation_memo();
             let mut sum = var(10_000);
             for index in 1..size {
                 sum = MachineTerm::machine_binary(format, Op::Add, sum, var(10_000 + index));
@@ -216,7 +216,7 @@ fn check_narrow_store_equation(format: Ty) {
                 .store(pointer.clone(), value.clone()),
         );
         let read =
-            MachineTerm::MemoryLoad(ProgramPoint::at(&memory), Box::new(query.clone()), kind);
+            MachineTerm::read_named(ProgramPoint::at(&memory), Box::new(query.clone()), kind);
         let shared = KernelTermImport::default()
             .machine_arithmetic(format, &read)
             .unwrap();
@@ -279,7 +279,7 @@ fn check_narrow_store_equation(format: Ty) {
                 .clone()
                 .store(pointer.clone(), new_value.clone()),
         );
-        let new_read = MachineTerm::MemoryLoad(ProgramPoint::at(&after), Box::new(query), kind);
+        let new_read = MachineTerm::read_named(ProgramPoint::at(&after), Box::new(query), kind);
         assert!(!narrow_equal(
             &established.equality_graph,
             format,

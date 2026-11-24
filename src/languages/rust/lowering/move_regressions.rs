@@ -17,7 +17,7 @@ fn generated_call_results_do_not_reuse_later_mir_call_identities() {
              "parameters": [], "body": [], "span": span,
              "mir": {"locals": [
                  {"name": "first", "value_type": {"kind": "u32"}, "span": span},
-                 {"name": "__rust_mir_0", "value_type": {"kind": "u32"}, "span": span}
+                 {"name": 0, "value_type": {"kind": "u32"}, "span": span}
              ], "blocks": [
                  {"statements": [], "terminator": {"kind": "call",
                   "function": "read", "arguments": [], "destination": "first",
@@ -26,7 +26,7 @@ fn generated_call_results_do_not_reuse_later_mir_call_identities() {
                   "function": "read", "arguments": [], "destination": "unused",
                   "target": 2, "result": 0}},
                  {"statements": [{"kind": "assign",
-                  "target": {"kind": "local", "name": "__rust_mir_0"},
+                  "target": {"kind": "local", "name": 0},
                   "value": {"kind": "call_result", "call": 0, "function": "read"}}],
                   "terminator": {"kind": "return"}}
              ]}}

@@ -448,6 +448,65 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         Ok(Some((right.join_focused_both(&marker, split, ids)?, None)))
     }
 
+    pub(in crate::surface::proof) fn apply_scoped_intro(
+        &self,
+        binder: Option<&SurfaceBinder>,
+        body: &[ProofTactic],
+        implicit_tail: bool,
+    ) -> Result<Proof<'a>, ClickError> {
+        let parent = self.proof;
+        let step = binder
+            .cloned()
+            .map_or(ProofStep::Intro, ProofStep::IntroBinder);
+        let introduced = self.apply_step(step)?;
+        let range_opened = parent
+            .opens_scoped_range(&introduced)
+            .then(|| introduced.driver().apply_step(ProofStep::Intro))
+            .transpose()?;
+        let opened = range_opened.as_ref().unwrap_or(&introduced);
+        let sites = (0..body.len())
+            .map(|index| parent.site().in_arm(0, "intro", index))
+            .collect::<Vec<_>>();
+        let completed = opened
+            .driver()
+            .run_addressed_linear_script(body, &sites, &mut None, None, implicit_tail)?
+            .ok_or_else(|| parent.step_error("the `intro` block must prove its opened goal"))?;
+        parent.finish_scoped_intro(&introduced, opened, completed)
+    }
+
+    pub(in crate::surface::proof) fn apply_close(&self) -> Result<Proof<'a>, ClickError> {
+        match self.apply_step(ProofStep::Known) {
+            Ok(closed) => Ok(closed),
+            Err(error)
+                if error.verification_stopped()
+                    || crate::surface::proof::implicit_solve_scope::checked_only() =>
+            {
+                Err(error.with_failed_tactic("close"))
+            }
+            Err(_) => {
+                let _timing = TacticTiming::followup_search("close");
+                let _origin = crate::surface::proof_trace::TraceOrigin::enter(Some("close"));
+                let mut search = attempt::search_scope("close fallback");
+                let (result, checks) =
+                    crate::surface::proof_diagnostics::capture_check_observations(|| {
+                        crate::kernel::search::ProofSearch::try_solve_closure(self.proof)
+                    });
+                match result {
+                    Ok(Some(closed)) => {
+                        search.succeed();
+                        Ok(closed)
+                    }
+                    result => Err(result
+                        .err()
+                        .unwrap_or_else(|| self.proof.solve_failure())
+                        .with_failed_tactic("close")
+                        .with_check_observations(checks)
+                        .with_search_failures(search.finish())),
+                }
+            }
+        }
+    }
+
     pub(in crate::surface::proof) fn run_addressed_linear_script(
         &self,
         tactics: &[ProofTactic],
@@ -533,9 +592,11 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 if matches!(
                     tactic,
                     ProofTactic::Known
+                        | ProofTactic::Close
                         | ProofTactic::Solve
                         | ProofTactic::Normalize
                         | ProofTactic::NormalizeUsing(_)
+                        | ProofTactic::CompatibilityNormalize(_)
                 ) {
                     // The harmless closer checks nothing: its expansion is
                     // empty.
@@ -557,7 +618,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     tactic => tactic_name(tactic),
                 };
                 return Err(proof.step_error(format!(
-                    "`{name}` follows a goal-closing tactic: {closer} already closed this goal, so only `known()`, a bare `solve()`, or `normalize()` may follow it",
+                    "`{name}` follows a goal-closing tactic: {closer} already closed this goal, so only `known()`, `close()`, a bare `solve()`, or `normalize()` may follow it",
                 )));
             }
             // A step that adds a fact can close the goal before a written
@@ -575,22 +636,43 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     | ProofTactic::Transport { .. }
                     | ProofTactic::TransportUsing { .. }
                     | ProofTactic::LetSatisfy(_)
-            ) && tactics
-                .get(index + 1)
-                .is_some_and(|next| !matches!(next, ProofTactic::Known | ProofTactic::Solve));
+            ) && tactics.get(index + 1).is_some_and(|next| {
+                !matches!(
+                    next,
+                    ProofTactic::Known | ProofTactic::Close | ProofTactic::Solve
+                )
+            });
             let retain_application = retain_application
                 || (matches!(tactic, ProofTactic::ApplyTheorem(_))
                     && tactics.get(index + 1).is_some_and(|next| {
-                        !matches!(next, ProofTactic::Known | ProofTactic::Solve)
+                        !matches!(
+                            next,
+                            ProofTactic::Known | ProofTactic::Close | ProofTactic::Solve
+                        )
                     }));
             let before_application = retain_application.then(|| proof.clone());
             match tactic {
+                ProofTactic::IntroBlock { binder, body } => {
+                    proof =
+                        proof
+                            .driver()
+                            .apply_scoped_intro(binder.as_ref(), body, implicit_tail)?;
+                }
                 ProofTactic::ApplyFact(fact) => {
                     proof = proof.driver().apply_fact_application(fact)?;
                 }
                 ProofTactic::ApplyTheorem(application) => {
                     proof = proof.driver().apply_theorem_application(application)?;
                 }
+                ProofTactic::ApplyInduction {
+                    hypothesis,
+                    arguments,
+                } => {
+                    proof = proof
+                        .driver()
+                        .apply_induction_application(hypothesis, arguments)?;
+                }
+                ProofTactic::Close => proof = proof.driver().apply_close()?,
                 ProofTactic::Solve => {
                     let mut search = attempt::search_scope("written solve");
                     let (selected, checks) = solve(&proof);

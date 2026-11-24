@@ -698,6 +698,20 @@ fn checked_fold_collectors_bound_mixed_carrier_payloads_and_opaque_states() {
             fixed_item,
         );
     }
+    let fixed_body = Term::Integer(fixed_body.into());
+    let rewrite_fixed_body = |replacement: &IntegerTerm| {
+        with_checked_simple_budget(1_000_000, || {
+            let renamings = BTreeMap::new();
+            let mut rewrite =
+                TermRewrite::for_integer_variables(fixed_source, replacement, false, &renamings);
+            let output = rewrite.term(&fixed_body);
+            (
+                rewrite.unsupported_integer_scope,
+                rewrite.integer_work_exhausted,
+                output,
+            )
+        })
+    };
     let mut state_work = Vec::new();
     for state_size in [0usize, 256] {
         let memory = memory_state_identity(state_size);
@@ -705,7 +719,7 @@ fn checked_fold_collectors_bound_mixed_carrier_payloads_and_opaque_states() {
             base: AddressBase::Concrete("checked-fold-opaque".into()),
             offset: AddressOffset::Constant(0),
         };
-        let replacement_payload = MachineTerm::MemoryLoad(
+        let replacement_payload = MachineTerm::read_named(
             ProgramPoint::at(&memory),
             Box::new(pointer),
             crate::kernel::LoadKind::Int32,
@@ -714,23 +728,12 @@ fn checked_fold_collectors_bound_mixed_carrier_payloads_and_opaque_states() {
             crate::kernel::MachineIntegerType::Int32,
             replacement_payload,
         ));
-        let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-            with_checked_simple_budget(1_000_000, || {
-                let renamings = BTreeMap::new();
-                let mut rewrite = TermRewrite::for_integer_variables(
-                    fixed_source,
-                    &replacement,
-                    false,
-                    &renamings,
-                );
-                let output = rewrite.term(&Term::Integer(fixed_body.clone().into()));
-                (
-                    rewrite.unsupported_integer_scope,
-                    rewrite.integer_work_exhausted,
-                    output,
-                )
-            })
-        });
+        // Keep both checks in the same selected-expression cache state.
+        // Each rewrite still starts with new lexical collection and scope maps.
+        let prepared = rewrite_fixed_body(&replacement);
+        let (result, work) =
+            crate::instrumentation::measure_deterministic_work(|| rewrite_fixed_body(&replacement));
+        assert_eq!(result, prepared);
         assert!(!result.0 && !result.1);
         assert!(matches!(result.2, Term::Integer(_)));
         state_work.push(work);
@@ -762,7 +765,7 @@ fn checked_fold_collectors_bound_mixed_carrier_payloads_and_opaque_states() {
         }
         let integer_capture = *integer_accumulators.last().unwrap();
         let c_capture = *c_items.last().unwrap();
-        let mut mixed_c_payload = MachineTerm::MemoryLoad(
+        let mut mixed_c_payload = MachineTerm::read_named(
             ProgramPoint::at(&memory),
             Box::new(pointer.clone()),
             crate::kernel::LoadKind::Int32,
@@ -869,7 +872,7 @@ fn checked_fold_collectors_bound_mixed_carrier_payloads_and_opaque_states() {
         }
         let math_capture = *math_accumulators.last().unwrap();
         let c_item_capture = *mixed_c_items.last().unwrap();
-        let mut c_replacement = MachineTerm::MemoryLoad(
+        let mut c_replacement = MachineTerm::read_named(
             ProgramPoint::at(&memory),
             Box::new(pointer),
             crate::kernel::LoadKind::Int32,
@@ -1641,7 +1644,7 @@ fn resource_read_collection_scales_with_selected_arguments() {
         let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let arguments = (0..size)
             .map(|index| {
-                AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::MemoryLoad(
+                AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::read_named(
                     ProgramPoint::at(&memory),
                     Box::new(Address::symbolic(Variable(3_219_100 + index as u64))),
                     LoadKind::Int32,
@@ -1683,7 +1686,7 @@ fn one_proposition_read_comparison_batch_scales_with_selected_reads() {
         let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let reads: Vec<_> = (0..size)
             .map(|index| {
-                MachineTerm::MemoryLoad(
+                MachineTerm::read_named(
                     ProgramPoint::at(&memory),
                     Box::new(Address::symbolic(Variable(4_021_000 + index as u64))),
                     LoadKind::Int32,

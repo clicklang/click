@@ -1078,25 +1078,15 @@ fn parses_and_prints_pure_induction_tactics() {
     ));
     assert!(matches!(
         &tactics[1],
-        ProofTactic::ApplyTheorem(application)
-            if application.name == "ih" && application.arguments.len() == 1
+        ProofTactic::ApplyInduction { hypothesis, arguments }
+            if hypothesis == "ih" && arguments.len() == 1
     ));
 
     let legacy = source.replace("apply(ih(n - 1));", "apply(ih(n - 1)) using { n > 0; };");
     let error = parse(&legacy).unwrap_err();
     assert!(error.message().contains("takes no `using` list"), "{error}");
 
-    let printable = vec![
-        tactics[0].clone(),
-        ProofTactic::ApplyInduction {
-            hypothesis: "ih".to_string(),
-            arguments: match &tactics[1] {
-                ProofTactic::ApplyTheorem(application) => application.arguments.clone(),
-                _ => unreachable!(),
-            },
-        },
-        ProofTactic::Known,
-    ];
+    let printable = vec![tactics[0].clone(), tactics[1].clone(), ProofTactic::Known];
     let printed = super::printing::format_partial_tactic_sequence(&printable);
     let reparsed = parse(&format!(
         "theorem induction_shape(n: int32) {{ requires n >= 0; ensures n == n by {{ {printed} }} }}"
@@ -1108,9 +1098,54 @@ fn parses_and_prints_pure_induction_tactics() {
     };
     assert!(matches!(
         &reparsed[1],
-        ProofTactic::ApplyTheorem(application) if application.name == "ih"
+        ProofTactic::ApplyInduction { hypothesis, .. } if hypothesis == "ih"
     ));
     assert!(matches!(&reparsed[2], ProofTactic::Known));
+
+    let source = r#"
+        spec enum Nodes { End, Next(Nodes) }
+        theorem smaller(n: Integer) { ensures n == n; }
+        theorem scoped_hypothesis(xs: Nodes) {
+            ensures true by {
+                apply(smaller(0));
+                if true {
+                    let smaller = induct(xs);
+                    have true by apply(smaller(xs));
+                } else {
+                    apply(smaller(1));
+                }
+                apply(smaller(2));
+            }
+        }
+        theorem another_proof() { ensures true by apply(smaller(3)); }
+    "#;
+    let file = parse(source).expect("local induction binding can shadow a theorem");
+    let SourceProof::Script(tactics) = file.theorem_definitions()[1].ensures()[0].proof() else {
+        panic!("expected an explicit theorem proof");
+    };
+    let ProofTactic::If(branch) = &tactics[1] else {
+        panic!("expected proof branches");
+    };
+    let ProofTactic::Have(have) = &branch.then_tactics[1] else {
+        panic!("expected a nested fact proof");
+    };
+    assert!(matches!(
+        have.proof.tactics().unwrap(),
+        [ProofTactic::ApplyInduction { hypothesis, arguments }]
+            if hypothesis == "smaller" && arguments.len() == 1
+    ));
+    let following_proof = file.theorem_definitions()[2].ensures()[0].proof();
+    for call in [
+        &tactics[0],
+        &branch.else_tactics[0],
+        &tactics[2],
+        &following_proof.tactics().unwrap()[0],
+    ] {
+        assert!(matches!(
+            call,
+            ProofTactic::ApplyTheorem(application) if application.name == "smaller"
+        ));
+    }
 }
 
 #[test]
@@ -1160,9 +1195,9 @@ fn parses_and_prints_structural_induction_arms() {
     assert!(arms[0].bindings.is_empty());
     assert_eq!(arms[1].bindings, ["head", "tail"]);
     assert!(matches!(
-        arms[1].tactics[0],
-        ProofTactic::ApplyTheorem(ref application)
-            if application.name == "ih" && application.arguments.len() == 1
+        &arms[1].tactics[0],
+        ProofTactic::ApplyInduction { hypothesis, arguments }
+            if hypothesis == "ih" && arguments.len() == 1
     ));
 
     let printed = super::printing::format_partial_tactic_sequence(tactics);
@@ -1733,8 +1768,11 @@ fn verifies_explicit_structural_logic_tactics() {
         theorem negated_conjunction_rule(x: int32) {
             requires x == x;
             ensures not (x != x and x == x) by {
-                intro();
-                contradiction(x == x);
+                if x != x and x == x {
+                    contradiction(x == x);
+                } else {
+                    known();
+                }
             }
         }
 
@@ -2025,7 +2063,7 @@ fn surface_synthesis_prefers_struct_field_places_to_typed_loads() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::MemoryLoad(
+            left: Box::new(MachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(
                     &(crate::kernel::intern_memory(SymbolicMemory::new())),
                 ),
@@ -2056,7 +2094,7 @@ fn surface_synthesis_prefers_struct_field_places_to_typed_loads() {
     ));
     assert_eq!(describe_contract_expression(&left), "owner->len");
 
-    let data_pointer = MachineTerm::MemoryLoad(
+    let data_pointer = MachineTerm::read_named(
         crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(SymbolicMemory::new()))),
         Box::new(owner.offset_by_bytes(8)),
         crate::kernel::LoadKind::Int32,
@@ -2069,7 +2107,7 @@ fn surface_synthesis_prefers_struct_field_places_to_typed_loads() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::MemoryLoad(
+            left: Box::new(MachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(
                     &(crate::kernel::intern_memory(SymbolicMemory::new())),
                 ),
@@ -3720,6 +3758,7 @@ fn typed_loads_lower_and_raise_back_to_the_same_term() {
         ("load<float>(p)", (ProgramType::Float32, false, false)),
         ("load<double>(p)", (ProgramType::Float64, false, false)),
         ("load<void*>(p)", (ProgramType::VoidPointer, false, false)),
+        ("load<Pointer>(p)", (ProgramType::Pointer, false, false)),
         ("load<int32*>(p)", (ProgramType::Int32Pointer, false, false)),
         (
             "load<uint8**>(p)",
@@ -3766,7 +3805,12 @@ fn typed_loads_lower_and_raise_back_to_the_same_term() {
         let (_, relowered) = lowered_load(&raised);
         assert_eq!(relowered, lowered, "lowering the raised `{raised}`");
     }
-    for refused in ["load<const int32>(p)", "load<void>(p)"] {
+    for refused in [
+        "load<const int32>(p)",
+        "load<void>(p)",
+        "load<Pointer*>(p)",
+        "load<pointer>(p)",
+    ] {
         assert!(
             parser::parse_file_items(&format!(
                 "function read(p: uint64*) -> Integer {{ {refused} }}"
@@ -3775,6 +3819,44 @@ fn typed_loads_lower_and_raise_back_to_the_same_term() {
             "`{refused}` should be refused"
         );
     }
+}
+
+/// `p as Pointer` lowers to a cast to Click's untyped pointer, and printing
+/// it writes `p as Pointer` back, which lowers to the same cast.
+#[test]
+fn an_untyped_pointer_cast_lowers_and_raises_back_to_the_same_term() {
+    let lowered_cast = |text: &str| {
+        let file = parser::parse_file_items(&format!(
+            "function untyped(p: int32*) -> Pointer {{ {text} }}"
+        ))
+        .unwrap_or_else(|error| panic!("`{text}` should parse: {}", error.report()));
+        let body = file.click_function_definitions()[0].body().unwrap().clone();
+        let (ContractExpression::ProgramExpression(lowered @ ProgramExpression::Cast { .. })
+        | ContractExpression::CUnary {
+            lowered: lowered @ ProgramExpression::Cast { .. },
+            ..
+        }) = &body
+        else {
+            panic!("`{text}` should lower to a cast: {body:?}");
+        };
+        (body.clone(), lowered.clone())
+    };
+    let (cast, lowered) = lowered_cast("p as Pointer");
+    assert!(matches!(
+        lowered,
+        ProgramExpression::Cast {
+            target_type: ProgramType::Pointer,
+            ..
+        }
+    ));
+    let raised = crate::surface::diagnostics::describe_contract_expression(&cast);
+    // A cast printed alone is parenthesized, as every cast is.
+    assert_eq!(raised, "(p as Pointer)");
+    assert_eq!(lowered_cast(&raised).1, lowered);
+    assert!(
+        parser::parse_file_items("function f(p: int32*) -> Pointer { p as pointer }").is_err(),
+        "lowercase `pointer` is not a type"
+    );
 }
 
 #[test]

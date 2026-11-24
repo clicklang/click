@@ -524,7 +524,7 @@ impl CheckedFocusedTransition {
 /// Proof-local surface names introduced by checked refinements such as
 /// `choose`. The persistent map makes forks and one local binding logarithmic;
 /// the counter is branch-local scalar freshness state.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 struct ProofLocals {
     values: PersistentBinderMap<ContractExpression>,
     value_names: binding_names::BindingNames,
@@ -573,25 +573,6 @@ impl ProofLocals {
         self.value_names
             .update_algebraics(&self.algebraic_values, &values);
         self.algebraic_values = values;
-    }
-}
-
-impl Default for ProofLocals {
-    fn default() -> Self {
-        Self {
-            values: PersistentBinderMap::default(),
-            value_names: binding_names::BindingNames::default(),
-            integer_values: PersistentBinderMap::default(),
-            algebraic_values: PersistentBinderMap::default(),
-            surface_facts: SurfacePropositionMap::default(),
-            checked_lowerings: SurfacePropositionMap::default(),
-            termination_diagnostics: Default::default(),
-            next_choice_variable: 0,
-            retained_match_algebraic: PersistentBinderMap::default(),
-            retained_match_integers: PersistentBinderMap::default(),
-            induction_active: false,
-            structural_induction_setup: None,
-        }
     }
 }
 
@@ -1027,7 +1008,7 @@ impl LoopRuleEnvironment {
 /// holds its typed identity (raised by the checker) or its name (parsed from
 /// a proof), so conditions that differ only that way are one condition.
 fn branch_condition_spelling(condition: &ClickProposition) -> String {
-    crate::surface::printing::source_click_proposition(condition)
+    crate::surface::printing::identity_click_proposition(condition)
 }
 
 /// Whether two branch conditions are the same Click condition; see
@@ -2178,7 +2159,9 @@ impl Proof<'_> {
                 failing_path: Some(path_index),
                 checks: None,
                 origin: crate::surface::proof_diagnostics::ProofDiagnosticOrigin {
-                    stage: "execution path certification".into(),
+                    stage: crate::surface::proof_diagnostics::ProofDiagnosticStage::Other(
+                        "execution path certification",
+                    ),
                     location: format!("{claim} path {path_index}"),
                     source_tactic_path: None,
                 },
@@ -2207,7 +2190,9 @@ impl Proof<'_> {
                 failing_path: None,
                 checks: None,
                 origin: crate::surface::proof_diagnostics::ProofDiagnosticOrigin {
-                    stage: "return-fold certification".into(),
+                    stage: crate::surface::proof_diagnostics::ProofDiagnosticStage::Other(
+                        "return-fold certification",
+                    ),
                     location: self.claim_label().to_owned(),
                     source_tactic_path: None,
                 },
@@ -2298,7 +2283,7 @@ impl Proof<'_> {
                 .collect()
         };
         crate::surface::proof_trace::record_branch(
-            Arc::as_ptr(marker) as usize,
+            crate::surface::proof_trace::trace_node_key(marker),
             crate::surface::proof_trace::TraceBranch {
                 header: format!("{location}: {kind}"),
                 source_tactic_path: self.site().source_tactic_path(),
@@ -2343,7 +2328,7 @@ impl Proof<'_> {
                 .collect()
         };
         crate::surface::proof_trace::record_branch(
-            Arc::as_ptr(marker) as usize,
+            crate::surface::proof_trace::trace_node_key(marker),
             crate::surface::proof_trace::TraceBranch {
                 header: format!("{location}: branch"),
                 source_tactic_path: self.site().source_tactic_path(),
@@ -2357,7 +2342,62 @@ impl Proof<'_> {
 impl Proof<'_> {
     /// `proposition` spelled for a refusal's own text, with the names the
     /// report's `goal:` line uses for the same variables.
+    /// The Click text of `proposition` when it raises to a Surface form that
+    /// lowers back to it in this proof's context, the round trip the
+    /// raise-lower audit checks. Diagnostics print it in preference to the
+    /// renderer's spelling, which has no recorded points and names some
+    /// values only by placeholders. A raised form that lowers to another
+    /// fact would misname it, so it is never printed. Uncharged: it runs only
+    /// while a diagnostic is built.
+    pub(in crate::surface::proof) fn round_trip_source_text(
+        &self,
+        proposition: &Proposition,
+    ) -> Option<String> {
+        if !matches!(self.context.as_ref(), ProofContext::Pure(_))
+            && self.premise_fixed_state_view().is_none()
+        {
+            return None;
+        }
+        let scope = crate::surface::proof::attempt::search_scope("diagnostic spelling");
+        let text = crate::instrumentation::without_charging(|| {
+            let surface = self.structural_proposition_candidate(proposition)?;
+            let lowered =
+                crate::surface::proof::execution_planning::without_open_obligation_probe(|| {
+                    self.lower_surface_proposition_direct(&surface, "diagnostic spelling")
+                })
+                .ok()?;
+            (&lowered == proposition)
+                .then(|| crate::surface::printing::source_click_proposition(&surface))
+                .filter(|text| !text.contains("__click_"))
+        });
+        drop(scope.finish());
+        text
+    }
+
     pub(in crate::surface::proof) fn render_diagnostic_proposition(
+        &self,
+        proposition: &Proposition,
+    ) -> String {
+        use crate::surface::proof_diagnostics::ProofDiagnosticState as _;
+        use crate::surface::proof_diagnostics::render;
+        let mut labels = render::MemoryStateLabels::ambient();
+        self.diagnostic_state().register_names(&mut labels);
+        // The renderer's spelling where it is exact; otherwise the fact's
+        // round-tripping Surface form, before any placeholder spelling.
+        if !render::renders_exactly(proposition, &labels)
+            && let Some(text) = self.round_trip_source_text(proposition)
+        {
+            return text;
+        }
+        let mut text = render::render_proposition_labeled(proposition, &mut labels);
+        text.push_str(&labels.trace_legend());
+        text
+    }
+
+    /// The renderer's spelling of `proposition` alone, never the raiser's:
+    /// the raise-lower audit shows each kernel fact this way, so its record
+    /// of the original does not depend on what it checks.
+    pub(in crate::surface::proof) fn render_kernel_proposition(
         &self,
         proposition: &Proposition,
     ) -> String {
@@ -3486,7 +3526,7 @@ impl<'a> Proof<'a> {
     pub(in crate::surface::proof) fn ends_in_empty_normalize_using(&self) -> bool {
         matches!(
             self.node.step.as_deref(),
-            Some(ProofStep::NormalizeUsing(premises)) if premises.is_empty()
+            Some(ProofStep::CompatibilityNormalize(Some(premises))) if premises.is_empty()
         )
     }
 
@@ -3555,6 +3595,12 @@ impl<'a> Proof<'a> {
         self.state
             .apply_contradiction(&fact)
             .map_err(|error| match error {
+                PropositionCloseError::ContradictionUnavailable { .. }
+                    if matches!(surface, ClickProposition::Value(value)
+                        if bool_literal_value(value) == Some(false)) =>
+                {
+                    self.step_error("`contradiction()` requires an established `false` fact")
+                }
                 PropositionCloseError::ContradictionUnavailable { fact_held } => {
                     let written = crate::surface::diagnostics::describe_click_proposition(surface);
                     let missing = if fact_held {
@@ -3703,7 +3749,7 @@ impl<'a> Proof<'a> {
             failing_path: None,
             checks: None,
             origin: crate::surface::proof_diagnostics::ProofDiagnosticOrigin {
-                stage: "proof step".to_owned(),
+                stage: crate::surface::proof_diagnostics::ProofDiagnosticStage::CheckedStep,
                 location,
                 source_tactic_path: self.site.source_tactic_path(),
             },
@@ -3754,7 +3800,7 @@ impl<'a> Proof<'a> {
             failing_path: None,
             checks: None,
             origin: crate::surface::proof_diagnostics::ProofDiagnosticOrigin {
-                stage: "proof step".to_owned(),
+                stage: crate::surface::proof_diagnostics::ProofDiagnosticStage::CheckedStep,
                 location,
                 source_tactic_path: self.site.source_tactic_path(),
             },
@@ -3899,10 +3945,14 @@ fn proof_step_source_name(step: &ProofStep) -> &'static str {
         ProofStep::CheckTerminationCallbacks => "check_termination_callbacks",
         ProofStep::Known => "known()",
         ProofStep::Normalize | ProofStep::NormalizeUsing(_) => "normalize()",
+        ProofStep::CompatibilityNormalize(_) => "compatibility normalization",
         ProofStep::ArithmeticUsing(_) => "solve() using",
         ProofStep::Preserve(_) => "preserve",
 
-        ProofStep::Intro | ProofStep::IntroAs(_) | ProofStep::IntroBinder(_) => "intro()",
+        ProofStep::Intro
+        | ProofStep::IntroAs(_)
+        | ProofStep::IntroBinder(_)
+        | ProofStep::IntroBlock { .. } => "intro()",
         ProofStep::Enumerate => "enumerate()",
         ProofStep::Step
         | ProofStep::StepBind(_)

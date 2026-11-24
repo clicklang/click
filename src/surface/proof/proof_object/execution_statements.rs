@@ -1401,15 +1401,16 @@ impl<'a> Proof<'a> {
             .facts()
             .introduced_since(self.facts())
             .expect("obligation proofs extend their original fact context");
-        // A call precondition can already belong to the input context. Its
-        // proof still supplies evidence to the execution path, whose retained
-        // facts are separate from the frontier's persistent input context.
-        // Other obligation adapters (notably assertion false-path goals)
-        // retain the facts their proofs actually introduce above.
+        // Call preconditions and statement safety conditions are retained
+        // in the kernel's spelling on the execution path. Publish the exact
+        // discharged proposition too, since its checked source proof can
+        // state it with a different comparison reading or additional guards.
         introduced.extend(
             discharged
                 .iter()
-                .filter(|requirement| requirement.call_site.is_some())
+                .filter(|requirement| {
+                    requirement.call_site.is_some() || requirement.statement_safety
+                })
                 .map(|requirement| requirement.proposition.clone()),
         );
         let original = self
@@ -2148,6 +2149,7 @@ fn requirement_deduplication_uses_replay_truth_and_polarity() {
         introductions: Default::default(),
         call_site: None,
         assertion_condition: None,
+        theorem_source: None,
         statement_safety: false,
         surface: None,
     };

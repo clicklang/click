@@ -167,6 +167,7 @@ pub(crate) use equality_graph::{
 };
 pub(crate) use eval::canonical_condition_fact;
 pub(crate) use eval::canonical_form_of_load;
+pub(crate) use eval::canonical_form_of_load_at;
 pub(crate) use eval::canonical_term;
 pub(crate) use eval::canonicalized_offset_index_term;
 #[cfg(test)]
@@ -180,6 +181,8 @@ pub(crate) use eval::is_store_fact;
 pub(crate) use eval::load_access_width_at_address_or_widest;
 pub(crate) use eval::load_access_width_or_widest;
 pub(crate) use eval::load_term_access_width;
+#[cfg(test)]
+pub(crate) use eval::load_variable_fact_census;
 #[cfg(test)]
 pub(crate) use eval::load_variable_for_cell_with_origin;
 pub(crate) use eval::load_variable_for_term;
@@ -429,7 +432,7 @@ impl VerificationSession {
             reasoning::memory_resolution::clear_canonical_memory_cache();
             reasoning::memory_resolution::clear_memory_resolution_memos();
             assumptions::clear_assumption_memos();
-            primitives::clear_integer_bridge_memo();
+            primitives::clear_machine_observation_memo();
             api::clear_borrowed_input_root_memo();
             reasoning::variable_collection::clear_shared_memory_variables();
             functions::clear_automatic_lifetime_retirement();
@@ -509,7 +512,7 @@ impl VerificationSession {
         reasoning::memory_resolution::clear_canonical_memory_cache();
         reasoning::memory_resolution::clear_memory_resolution_memos();
         assumptions::clear_assumption_memos();
-        primitives::clear_integer_bridge_memo();
+        primitives::clear_machine_observation_memo();
         api::clear_borrowed_input_root_memo();
         reasoning::variable_collection::clear_shared_memory_variables();
         functions::clear_automatic_lifetime_retirement();

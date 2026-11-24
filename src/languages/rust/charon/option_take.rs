@@ -2,8 +2,9 @@
 //!
 //! The library defines `o.take()` as `mem::replace(&mut o, None)`. The
 //! compiler borrows the option, `r = &mut o`, and calls `take(r)`; when that
-//! borrow serves only the call, `t = take(r)` is `t = o; o = None`, for an
-//! option of a box as for an option of a scalar.
+//! borrow serves only the call, `t = take(r)` of an option of a box is
+//! `t = o; o = None`. An option of a scalar calls the library's
+//! `Option::take<T>` contract instead.
 use super::*;
 
 impl Adapter<'_> {
@@ -112,8 +113,13 @@ impl Adapter<'_> {
                 ));
             };
             let boxed = self.option_box_payload(&option.ty).is_some();
-            if !boxed && self.option_payload(&option.ty).is_none() {
-                return Err(unsupported("`Option::take` of this option type"));
+            if !boxed {
+                // An option of a scalar calls the library's
+                // `Option::take<T>` through its reference.
+                if self.option_payload(&option.ty).is_none() {
+                    return Err(unsupported("`Option::take` of this option type"));
+                }
+                continue;
             }
             let a::TyKind::Adt(option_type) = option.ty.kind().clone() else {
                 unreachable!("an option is an ADT")

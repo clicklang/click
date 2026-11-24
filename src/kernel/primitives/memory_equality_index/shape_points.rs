@@ -1,7 +1,10 @@
 //! Token/composite candidates attached to the graph's typed address classes.
 use super::*;
 
-type Shape = (ResourceFamily, String, usize);
+/// A token's or composite's family, name and arity, and whether the entry
+/// is owned: an owned requirement is met only by an owner, so owners have
+/// their own bucket.
+type Shape = (ResourceFamily, String, usize, bool);
 
 pub(super) fn payload_is_empty(storage: &ResourceContextStorage) -> bool {
     storage.index.memory_by_block.is_empty() && storage.index.exact_shapes.is_empty()
@@ -19,7 +22,7 @@ fn shape_pointer(fact: &ResourceFact) -> Option<(Shape, &Address)> {
         return None;
     };
     Some((
-        (fact.family(), name.clone(), arguments.len()),
+        (fact.family(), name.clone(), arguments.len(), fact.is_own()),
         pointer.address(),
     ))
 }
@@ -127,14 +130,22 @@ impl ResourceContext {
             return None;
         }
         let class = index.graph.address_class(pointer)?;
-        Some(
-            index
-                .shapes
-                .classes
-                .get(&class)
-                .and_then(|bucket| bucket.shapes.get(&shape))
+        let bucket = index.shapes.classes.get(&class);
+        let entries = |shape: &Shape| {
+            bucket
+                .and_then(|bucket| bucket.shapes.get(shape))
                 .cloned()
-                .unwrap_or_default(),
-        )
+                .unwrap_or_default()
+        };
+        // An owner supplies a view too, so a view looks in both buckets.
+        let mut found = entries(&shape);
+        if !fact.is_own() {
+            let (family, name, arity, _) = shape;
+            for entry in entries(&(family, name, arity, true)).iter() {
+                crate::instrumentation::record_deterministic_work(1);
+                found = found.with_value(*entry);
+            }
+        }
+        Some(found)
     }
 }

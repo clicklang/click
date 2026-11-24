@@ -132,7 +132,7 @@ fn have(claim: ClickProposition, steps: Vec<ProofStep>) -> ProofStep {
 fn computational_fact(claim: ClickProposition) -> ProofStep {
     // Let run_scope prefer known and explicit algebra for goal-local
     // identities. Other identities still use the existing checked rule.
-    have(claim, vec![ProofStep::Normalize])
+    have(claim, vec![ProofStep::CompatibilityNormalize(None)])
 }
 
 fn expression(form: &Form, atoms: &BTreeMap<u64, Atom>) -> ContractExpression {
@@ -832,7 +832,7 @@ fn run_scope<'a>(
                 let closed = run_scope(nested, proof.steps())?;
                 scope = scope.join_nested(closed)?;
             }
-            ProofStep::Normalize => {
+            ProofStep::CompatibilityNormalize(None) => {
                 if scope
                     .body()
                     .goal()
@@ -844,7 +844,9 @@ fn run_scope<'a>(
                 {
                     scope = closed;
                 } else {
-                    scope = scope.driver().apply_step(ProofStep::Normalize)?;
+                    scope = scope
+                        .driver()
+                        .apply_step(ProofStep::CompatibilityNormalize(None))?;
                 }
             }
             step => scope = scope.driver().apply_step(step.clone())?,
@@ -856,6 +858,32 @@ fn run_scope<'a>(
 #[cfg(test)]
 thread_local! {
     static LAST_FAILURE: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Whether a definedness range bound is an established fact. The domain
+/// query states its lower bound as `exact >= MIN`, while a proved bound
+/// written `MIN <= exact` lowers to the reversed comparison; both are the
+/// same fact, so either exact key counts.
+fn range_bound_available(proof: &Proof<'_>, bound: &Proposition) -> bool {
+    let facts = proof.facts();
+    if facts.listed_premise_available(bound, &[], false) {
+        return true;
+    }
+    let reversed = match bound {
+        Proposition::ConditionIs(condition, value) => match condition.native_compat() {
+            ConditionTerm::IntegerGreaterEqual(left, right) => Proposition::condition_is(
+                ConditionTerm::IntegerLessEqual(right.clone(), left.clone()),
+                *value,
+            ),
+            ConditionTerm::IntegerLessEqual(left, right) => Proposition::condition_is(
+                ConditionTerm::IntegerGreaterEqual(right.clone(), left.clone()),
+                *value,
+            ),
+            _ => return false,
+        },
+        _ => return false,
+    };
+    facts.listed_premise_available(&reversed, &[], false)
 }
 
 #[cfg(test)]
@@ -944,13 +972,22 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 vec![a.clone(), b.clone(), c.clone(), d.clone()],
                 vec![surface.clone(), compare(c, true, a), compare(d, true, b)],
             );
-            let introduced = input.driver().apply_step(ProofStep::Intro)?;
-            let scope = introduced.driver().open_have(impossible.clone())?;
-            let closed = scope.driver().apply_step(substitution)?;
-            return closed
+            let (proof, split, ids) = input.split_focused_if(equality.clone())?;
+            let marker = proof.checkpoint();
+            let equal_arm = proof.focus_branch(ids[0])?;
+            let scope = equal_arm.driver().open_have(impossible.clone())?;
+            let equal_done = scope
+                .driver()
+                .apply_step(substitution)?
                 .join()?
                 .driver()
-                .apply_step(ProofStep::Contradiction(impossible))
+                .apply_step(ProofStep::Contradiction(impossible))?;
+            let unequal_done = equal_done
+                .focus_branch(ids[1])?
+                .driver()
+                .apply_step(ProofStep::Known)?;
+            return unequal_done
+                .join_focused_if(&marker, split, ids, equality)
                 .map(Some);
         }
         Ok(None)
@@ -1409,13 +1446,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 steps = vec![have(canonical.clone(), steps), ProofStep::Known];
             }
         }
-        if uses_negated_goal {
-            let double_negation = ClickProposition::Not(Box::new(ClickProposition::Not(Box::new(
-                surface_goal.clone(),
-            ))));
-            steps.insert(0, ProofStep::Intro);
-            steps = vec![have(double_negation.clone(), steps), ProofStep::Known];
-        }
         // The theorem's arguments can contain partial native operations.
         // Cite their already established domains explicitly, so the simple
         // using checker sees the same argument evidence during replay.
@@ -1488,7 +1518,18 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let mut domains = Vec::new();
         let mut domain_proofs = Vec::new();
         let mut considered_domains = std::collections::HashSet::new();
+        // Spellings of one domain, such as `defined(hi - 1)`, its cast
+        // `defined((hi - 1) as int32)`, or `old(...)` in a pure proof, lower
+        // to the same fact. Once one spelling establishes it, cite that one
+        // and skip the rest. A spelling that declined leaves the fact open.
+        let mut established_kernels = std::collections::HashSet::new();
+        let mut pending: Option<(usize, Proposition)> = None;
         for domain in domain_candidates {
+            if let Some((count, kernel)) = pending.take()
+                && domains.len() > count
+            {
+                established_kernels.insert(kernel);
+            }
             if !considered_domains.insert(domain.clone()) {
                 continue;
             }
@@ -1498,6 +1539,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             else {
                 continue;
             };
+            if established_kernels.contains(&kernel) {
+                continue;
+            }
+            pending = Some((domains.len(), kernel.clone()));
             // The signed-definedness search below serves a range domain whose
             // operands owe nothing. A candidate whose operand is itself an
             // operation or a read is kept only when it closes directly: the
@@ -1541,7 +1586,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 && query
                     .bounds()
                     .iter()
-                    .all(|bound| prepared.facts().listed_premise_available(bound, &[], false))
+                    .all(|bound| range_bound_available(&prepared, bound))
             {
                 let conjuncts =
                     [left, right].map(|bound| prepared.conjunct_goal_spelling(bound).map(Arc::new));
@@ -1570,32 +1615,50 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             domains.push(domain);
         }
         if !domains.is_empty() {
-            domain_proofs.extend(
-                steps
-                    .into_iter()
-                    .map(|step| with_argument_domains(step, &domains)),
-            );
-            steps = domain_proofs;
+            steps = steps
+                .into_iter()
+                .map(|step| with_argument_domains(step, &domains))
+                .collect();
         }
-        let mut result = prepared;
-        for step in steps {
-            if result.focused_discharged() {
-                break;
-            }
-            let next = match step {
-                ProofStep::Have { proposition, proof } => {
-                    let scope = result.driver().open_have(proposition)?;
-                    run_scope(scope, proof.steps()).and_then(|scope| scope.join())
+        let apply =
+            |mut result: Proof<'a>, steps: Vec<ProofStep>| -> Result<Proof<'a>, ClickError> {
+                for step in steps {
+                    if result.focused_discharged() {
+                        break;
+                    }
+                    let next = match step {
+                        ProofStep::Have { proposition, proof } => {
+                            let scope = result.driver().open_have(proposition)?;
+                            run_scope(scope, proof.steps()).and_then(|scope| scope.join())
+                        }
+                        step => result.driver().apply_step(step),
+                    };
+                    #[cfg(test)]
+                    if let Err(error) = &next {
+                        LAST_FAILURE.with(|failure| {
+                            *failure.borrow_mut() = Some(error.raw_summary().to_owned());
+                        });
+                    }
+                    result = next?;
                 }
-                step => result.driver().apply_step(step),
+                Ok(result)
             };
-            #[cfg(test)]
-            if let Err(error) = &next {
-                LAST_FAILURE
-                    .with(|failure| *failure.borrow_mut() = Some(error.raw_summary().to_owned()));
-            }
-            result = next?;
+        let prepared = apply(prepared, domain_proofs)?;
+        if prepared.focused_discharged() {
+            return Ok(Some(prepared));
         }
+        let result = if uses_negated_goal {
+            let (proof, split, ids) = prepared.split_focused_if(surface_goal.clone())?;
+            let marker = proof.checkpoint();
+            let positive = proof
+                .focus_branch(ids[0])?
+                .driver()
+                .apply_step(ProofStep::Known)?;
+            let negative = apply(positive.focus_branch(ids[1])?, steps)?;
+            negative.join_focused_if(&marker, split, ids, surface_goal.clone())?
+        } else {
+            apply(prepared, steps)?
+        };
         if !result.focused_discharged() {
             return Err(result.step_error("Integer composition did not close the written goal"));
         }
@@ -1970,6 +2033,30 @@ mod tests {
             assert!(!expanded.contains("normalize("), "{expanded}");
             without_implicit_solve(|| verify_c_sources(&expanded, &[])).unwrap();
         }
+    }
+
+    #[test]
+    fn an_argument_domain_cites_its_established_bounds_once() {
+        // `defined(hi - 1)` asks for `to_integer(hi) - 1 >= -2147483648`;
+        // the composition proved it as `-2147483648 <= ...`. The domain
+        // cites that fact instead of deriving the bound again. Its other
+        // spellings, `defined((hi - 1) as int32)` and `old(...)`, are the
+        // same fact here and are not proved again.
+        let source = "theorem domain(lo: int32, hi: int32) { requires 0 <= lo; requires lo < hi; requires hi <= 1073741823; ensures 0 <= to_integer(hi - 1) by { solve(); } }";
+        let expanded = expand_c_claim_source_by_label(source, &[], "domain.ensures_0")
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+        let (_, domain) = expanded
+            .split_once("have defined((hi - 1)) by {")
+            .unwrap_or_else(|| panic!("{expanded}"));
+        let domain = domain.split("have ").next().unwrap();
+        assert!(domain.contains(">= -2147483648 => {"), "{expanded}");
+        assert!(
+            !expanded.contains("have -2147483648 <= (to_integer(hi) - to_integer(1))"),
+            "{expanded}"
+        );
+        assert_eq!(expanded.matches("have defined(").count(), 1, "{expanded}");
+        without_implicit_solve(|| verify_c_sources(&expanded, &[]))
+            .unwrap_or_else(|error| panic!("{}\n{expanded}", error.report()));
     }
 
     #[test]

@@ -381,7 +381,7 @@ pub(super) fn plan_explicit_forall_instantiation(
                 instantiation_guard_tactics(surface, &argument, &instantiated, &pairs)?;
             tactics.push(ProofTactic::Instantiate {
                 quantified: surface.clone(),
-                argument,
+                arguments: vec![argument],
             });
             tactics.push(ProofTactic::Known);
             return Some(tactics);
@@ -539,7 +539,7 @@ fn plan_explicit_universal_conclusion_discharge(
         instantiation_guard_tactics(premise_surface, argument_expression, &instantiated, &pairs)?;
     tactics.push(ProofTactic::Instantiate {
         quantified: premise_surface.clone(),
-        argument: argument_expression.clone(),
+        arguments: vec![argument_expression.clone()],
     });
     if let Some((source, target)) = transport_closure {
         if let Some((historical, current)) = comparison_state_expression_pair(&source, &target) {
@@ -2302,6 +2302,9 @@ pub(super) fn plan_explicit_loadability_transport(
                 ),
             );
             continue;
+        }
+        if source == goal && surface_source == surface_goal {
+            return Some(vec![ProofTactic::Known]);
         }
         let mut index = 0;
         while index < selected.len() {
@@ -5019,17 +5022,7 @@ mod selected_premise_tests {
                 candidate
             },
         );
-        assert_eq!(
-            candidate,
-            Some(vec![
-                ProofTactic::TransportUsing {
-                    source: surface.clone(),
-                    target: surface.clone(),
-                    premises: vec![surface],
-                },
-                ProofTactic::Known,
-            ])
-        );
+        assert_eq!(candidate, Some(vec![ProofTactic::Known]));
     }
 }
 

@@ -197,6 +197,7 @@ fn naming_a_load_after_a_call_is_flat_in_its_address_read_depth() {
         let read = |address: &Address| {
             let ProgramValue::Pointer(value) = canonicalized_symbolic_load_value_with_identity(
                 &base,
+                None,
                 address,
                 ProgramType::Int32Pointer,
                 &mut Vec::new().into(),
@@ -241,7 +242,7 @@ fn naming_a_load_after_a_call_is_flat_in_its_address_read_depth() {
                 &empty,
                 Some(&kept),
             );
-            let load = MachineTerm::MemoryLoad(
+            let load = MachineTerm::read_named(
                 ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
                 Box::new(cell.clone()),
                 LoadKind::Int32,
@@ -281,6 +282,7 @@ fn pointer_read_observations_check_frames_scope_and_scaling() {
     let read = |memory: &SymbolicMemory, address: &Address, purpose| {
         let ProgramValue::Pointer(value) = canonicalized_symbolic_load_value_with_identity(
             memory,
+            None,
             address,
             ProgramType::Int32Pointer,
             &mut Vec::new().into(),
@@ -345,7 +347,7 @@ fn pointer_read_observations_check_frames_scope_and_scaling() {
     assert!(latest_pointer_read_observation(&volatile).is_none());
     assert!(decode(&volatile).is_none());
     assert!(!equal(&left, &volatile, &facts));
-    let scalar = MachineTerm::MemoryLoad(
+    let scalar = MachineTerm::read_named(
         ProgramPoint::at(&(intern_memory(base.clone()))),
         Box::new(address.clone()),
         LoadKind::Int32,
@@ -355,9 +357,11 @@ fn pointer_read_observations_check_frames_scope_and_scaling() {
     assert!(decode(&scalar).is_none());
     assert!(!equal(&left, &scalar, &facts));
     restore_load_variable_registry(&saved);
-    assert_eq!(decode(&left), Some(original));
+    assert_eq!(decode(&left), Some(original.clone()));
+    // The load carries its point and cell, so clearing the interner leaves
+    // the term's own definition in place (`design/loads.md`, "Terms").
     clear_load_variable_registry();
-    assert!(decode(&left).is_none());
+    assert_eq!(decode(&left), Some(original));
 }
 
 // Model arms can share a canonical word but have different live DAGs.
@@ -369,7 +373,7 @@ fn wide_observations_preserve_width_scope_and_selected_query_scaling() {
     let other = Address::symbolic(Variable(940_001));
     let base = intern_memory(SymbolicMemory::new());
     let load = |memory: &SharedMemory, pointer: &Address, kind| {
-        MachineTerm::MemoryLoad(ProgramPoint::at(memory), Box::new(pointer.clone()), kind)
+        MachineTerm::read_named(ProgramPoint::at(memory), Box::new(pointer.clone()), kind)
     };
     let first = load(&base, &pointer, LoadKind::Bits64);
     let (word, _) = load_variable_for_term(&first).unwrap();
@@ -1464,7 +1468,7 @@ fn complete_pointer_domains_across_cached_observations_scale_with_new_cells() {
         let address = Address::symbolic(Variable(199_101));
         let mut memory = SymbolicMemory::new();
         let ProgramValue::Pointer(original) =
-            symbolic_load_value(&memory, &address, ProgramType::Int64Pointer).unwrap()
+            symbolic_load_value(&memory, None, &address, ProgramType::Int64Pointer).unwrap()
         else {
             panic!("pointer read")
         };
@@ -1476,7 +1480,8 @@ fn complete_pointer_domains_across_cached_observations_scale_with_new_cells() {
                         .clone()
                         .materialize_symbolic_cell(cell, ProgramType::Int32);
                     let ProgramValue::Pointer(read) =
-                        symbolic_load_value(&memory, &address, ProgramType::Int64Pointer).unwrap()
+                        symbolic_load_value(&memory, None, &address, ProgramType::Int64Pointer)
+                            .unwrap()
                     else {
                         panic!("pointer read")
                     };
@@ -1535,7 +1540,7 @@ fn cached_raw_pointer_names_ignore_unrelated_read_definitions() {
             true,
         );
         let canonical = |field: &Address| {
-            Address::loaded(&canonical_term(&MachineTerm::MemoryLoad(
+            Address::loaded(&canonical_term(&MachineTerm::read_named(
                 ProgramPoint::at(&origin),
                 Box::new(field.clone()),
                 LoadKind::Int32,
@@ -1767,7 +1772,7 @@ fn naming_an_unsigned_32_bit_read_costs_what_naming_its_word_costs() {
         // reaches `994_000`.
         let cell = Address::symbolic(Variable(995_000));
         let load =
-            |kind| MachineTerm::MemoryLoad(ProgramPoint::at(&memory), Box::new(cell.clone()), kind);
+            |kind| MachineTerm::read_named(ProgramPoint::at(&memory), Box::new(cell.clone()), kind);
         let ((signed, _), signed_units) =
             crate::instrumentation::measure_deterministic_work(|| {
                 load_variable_for_term(&load(LoadKind::Int32)).unwrap()
@@ -2078,7 +2083,7 @@ fn structural_read_definitions_scale_across_cache_only_records() {
         let address = Address::symbolic(Variable(299_101));
         let mut memory = SymbolicMemory::new();
         let raw = |memory: &SymbolicMemory| {
-            MachineTerm::MemoryLoad(
+            MachineTerm::read_named(
                 ProgramPoint::at(&(intern_memory_ref(memory))),
                 Box::new(address.clone()),
                 LoadKind::Int32,
@@ -2330,7 +2335,7 @@ fn narrow_read_selection_ignores_unrelated_wide_observations() {
                 8,
             );
         }
-        let raw = MachineTerm::MemoryLoad(
+        let raw = MachineTerm::read_named(
             ProgramPoint::at(&memory),
             Box::new(pointer),
             LoadKind::UInt8,
@@ -2352,4 +2357,147 @@ fn narrow_read_selection_ignores_unrelated_wide_observations() {
         samples.iter().all(|&work| work <= samples[0] * 2 + 64),
         "{samples:?}"
     );
+}
+
+/// A pointer load's identity is its version point and cell, never the
+/// pointee type it is decoded at (`design/loads.md`, "Pointers"). Reading
+/// one cell at N object-pointer types interns one `Load`, and the
+/// next differently typed read costs the same whatever N is.
+#[test]
+fn differently_typed_reads_of_one_pointer_cell_intern_one_load() {
+    const TYPES: [ProgramType; 8] = [
+        ProgramType::Int32Pointer,
+        ProgramType::UInt8Pointer,
+        ProgramType::VoidPointer,
+        ProgramType::Pointer,
+        ProgramType::Int64Pointer,
+        ProgramType::UInt16Pointer,
+        ProgramType::Float64Pointer,
+        ProgramType::Int32PointerPointer,
+    ];
+    let registry_len = crate::kernel::interned_load_count;
+    let mut samples = Vec::new();
+    for reads in [4, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let entry = ExecutionState::new().begin_function_entry_memory();
+        let point = entry.program_point();
+        let cell = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Constant(0),
+        };
+        let read = |ty: ProgramType| {
+            let version = point
+                .ordinary_typed_version(&cell, ty)
+                .expect("entry version of the pointer cell");
+            Pointer::from_point_read(version, ty, &cell)
+        };
+        let before = registry_len();
+        let first = read(TYPES[0]);
+        for n in 1..reads {
+            let ty = TYPES[n % TYPES.len()];
+            let value = read(ty);
+            assert_eq!(value.address(), first.address(), "read at {ty:?}");
+            assert_eq!(value.provenance(), first.provenance(), "read at {ty:?}");
+            assert_eq!(value.program_type(), ty, "the term keeps its own type");
+        }
+        assert_eq!(
+            registry_len() - before,
+            1,
+            "one cell at one point is one load"
+        );
+        let (next, work) =
+            crate::instrumentation::measure_deterministic_work(|| read(ProgramType::Int16Pointer));
+        assert_eq!(next.address(), first.address());
+        assert_eq!(registry_len() - before, 1);
+        samples.push(work);
+    }
+    // Interning is one hash probe, charged only on a slot collision, so the
+    // next read's work is the same at every N: the earlier reads at other
+    // types left one entry, not N.
+    assert!(
+        samples.iter().all(|&work| work == samples[0]),
+        "{samples:?}"
+    );
+}
+
+/// A store at one object-pointer type answers a load of exactly its cell at
+/// any other, across sibling writes, with selection work flat in their
+/// number. A function-pointer store answers no object-pointer load, nor the
+/// reverse, and a partial store still ends the cell's version.
+#[test]
+fn a_pointer_store_answers_loads_of_its_category_at_any_pointee_type() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let object = slot_cell(0);
+    let callback = slot_cell(8);
+    let sibling = slot_cell(16);
+    let target = Address::symbolic(Variable(983_001));
+    let pointer = Pointer::new(target.clone(), ProgramType::Int32Pointer);
+    let function = Pointer::new(
+        Address::function("callback_target"),
+        ProgramType::FunctionPointer(CallbackSignature::UNSPECIFIED),
+    );
+    let start = ExecutionState::new()
+        .with_memory(SymbolicMemory::new().with_block(object.base.clone(), 20));
+    let written = start.clone().with_memory(
+        start
+            .memory()
+            .clone()
+            .store(object.clone(), ProgramValue::Pointer(pointer.clone()))
+            .store(callback.clone(), ProgramValue::Pointer(function.clone())),
+    );
+    let mut samples = Vec::new();
+    for count in [4, 64, 256] {
+        let mut state = written.clone();
+        for value in 0..count {
+            state = state.clone().with_memory(state.memory().clone().store(
+                sibling.clone(),
+                ProgramValue::Int32(MachineTerm::constant(value)),
+            ));
+        }
+        let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+            let point = state.program_point();
+            let byte_view = point
+                .indexed_typed_version(&object, ProgramType::UInt8Pointer)
+                .expect("the int32 * store answers a uint8 * load");
+            assert_eq!(byte_view.read_version_id(), written.program_point_id());
+            let read = Pointer::from_point_read(byte_view, ProgramType::UInt8Pointer, &object);
+            let stored = crate::kernel::eval::pointer_read_over_write_program_value(read.address())
+                .expect("the stored pointer");
+            assert_eq!(stored.address(), &target);
+            assert!(
+                point
+                    .indexed_typed_version(&object, function.program_type())
+                    .is_none(),
+                "an object-pointer store answers no function-pointer load"
+            );
+            assert!(
+                point
+                    .indexed_typed_version(&callback, ProgramType::VoidPointer)
+                    .is_none(),
+                "a function-pointer store answers no object-pointer load"
+            );
+        });
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|&work| work == samples[0]),
+        "{samples:?}"
+    );
+    let partial = written.clone().with_memory(written.memory().clone().store(
+        object.offset_by_bytes(4),
+        ProgramValue::Int32(MachineTerm::constant(0)),
+    ));
+    assert!(
+        partial
+            .program_point()
+            .indexed_typed_version(&object, ProgramType::UInt8Pointer)
+            .is_none()
+    );
+}
+
+fn slot_cell(offset: u32) -> Address {
+    Address {
+        base: "local:pointer-categories".into(),
+        offset: AddressOffset::Constant(i64::from(offset)),
+    }
 }

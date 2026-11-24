@@ -63,7 +63,7 @@ int caller(int scale) {
     step();
     step();
     step();
-    let { __object_object: packed } = step(Square__click_pack_const__Shape);
+    let { object_resource(): packed } = step(Square__click_pack_const__Shape);
 }
 ```
 

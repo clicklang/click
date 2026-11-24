@@ -36,6 +36,7 @@ pub(super) fn verify_execution_theorem(
     let error = |message: &str| {
         ClickError::new(format!("theorem `{}` executes: {message}", theorem.name()))
             .at_declaration(theorem.name())
+            .with_proof_refusal(ProofRefusal::Contract)
     };
     let environment = environment.ok_or_else(|| error("requires a C contract environment"))?;
     let [ensure] = theorem.ensures() else {

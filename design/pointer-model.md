@@ -38,7 +38,7 @@ one creating event produced, such as a variable instance, a `malloc` or
 
 A provenance whose creation the kernel did not see, such as a parameter or a
 pointer loaded from memory, is opaque. It is named by where the pointer came
-from, as `ExternalObject` and `LoadedPointer` names are today. Two opaque
+from, as `ExternalObject` and `AddressBase::Load` names are today. Two opaque
 provenances may or may not be the same allocation.
 
 ### Types belong to terms, not values
@@ -51,14 +51,28 @@ compares equal to the original (6.3.2.3p7), and TS 6010 and Cerberus model a
 pointer value as an address and a provenance. Rust's `p as *const U` likewise
 changes the static type and keeps the value.
 
-So a kernel term keeps its type, as a C expression does, and the pointer
-value it denotes is the address and provenance. `(int *)p` and `(void *)p`
-are different terms denoting the same pointer value as `p`: a cast changes
-the term's type, not the value, and `*p` takes its access type from `p`'s
-type. Pointer equality and identity compare values, so they ignore the type;
-an equality used to replace one term by another keeps the replaced term's
-type. `const` and `volatile` qualify the lvalue type of an access, which each
-access states (step 3a). Step 3c removed the type from `Pointer::identity`.
+So a kernel pointer term is untyped, as LLVM's opaque `ptr` (LLVM 15),
+MiniRust's pointer values and Cerberus's are: it is the address and
+provenance, and nothing else. Types live on the operations and declarations
+that use a pointer:
+
+- a load or store states the type it decodes or encodes at
+  (`design/loads.md`), and its `const` and `volatile` (step 3a);
+- arithmetic is lowered to a byte offset;
+- a call through a function pointer states the signature it calls at;
+- a parameter, local, field or global has its declared type.
+
+`(int *)p` and `(void *)p` denote the same pointer as `p`, and the kernel
+holds one term for all three: a cast changes the type an operation uses,
+never the pointer. Step 3c removed the type from `Pointer::identity`; a later
+step removes it from `Pointer`.
+
+Click's Surface type for an untyped pointer is `Pointer`, capitalized like
+Click's other own types (`Integer`, `Bool`). The raiser spells a pointer
+through its derivation, at its declaration's type; `Pointer` is the spelling
+where no declaration names it, as in `load<Pointer>(address)` and
+`byte_offset(q, n)` on a `Pointer` `q`. There is no constructor from a
+pointer's parts (decision 5).
 
 One conversion has a meaning of its own in C: converting to a character
 pointer forms a view of the object's bytes (C11 6.3.2.3p7). In C provenance
@@ -199,8 +213,20 @@ Each step is one PR, measured with the gate and the raise-lower audit.
      from. It replaces the separate `bounds`, `bounds_known` and
      `bounds_owner` fields of `Pointer`, `SharedPointer` and `LValue`, and
      rules out bounds on an opaque array object. Identity is unchanged.
-   - 3b, remaining: one e-graph class for provenance and array object, the
-     comparisons that read only part of it, and memory ranges' carriers.
+   - The e-graph already keeps the two parts as the model needs: a pointer
+     node joins a provenance node and an array-object node, `same_allocation`
+     merges only provenance, and pointer equality merges both. No change.
+   - 3b, step 2: comparisons that read only part of a provenance compare it
+     whole (`Pointer::same_provenance_as`). Known value equality required
+     equal allocations, bounds and addresses but not the array object, so a
+     `same_allocation` fact and equal addresses made a parameter equal to a
+     block pointer though it may point into a member.
+   - 3b, step 3: a memory range's carrier, and a loop segment's, is the
+     carrying pointer's `ArrayObject` without bounds of its own, in place of
+     the separate `carrier_bounds_known` and `bounds_owner` fields. Range
+     identity still compares the carrier's owner and not whether its bounds
+     are known: a range carried by an opaque pointer and one carried by a
+     member of it hold the same bytes, which either pointer may access.
 4. **One identity per read**, with provenance derived from the read. This is
    coordinated with the program-point work, which names reads by program
    point.

@@ -207,3 +207,86 @@ fn prepared_call_children_do_not_cross_threads_with_equal_session_generations() 
             .same_source_payload(other.pointer_payload().unwrap())
     );
 }
+
+#[test]
+fn opaque_call_children_borrow_their_producers_exact_argument_slot() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let argument = PureFunctionArgument::Value(ProgramValue::Bool(MachineTerm::Constant {
+        format: MachineIntegerType::UInt8,
+        bits: 2,
+    }));
+    let name = "opaque_boolean_argument".to_string();
+    let first = SharedPureApplication::intern(name.clone(), vec![argument.clone()]);
+    let second = SharedPureApplication::intern(name, vec![argument.clone()]);
+    assert_eq!(first, second);
+    assert_ne!(first.payload_id(), second.payload_id());
+    let mut import = KernelTermImport::default();
+    assert!(first.common_argument(0).is_none());
+
+    let machine = import.machine_call(MachineIntegerType::Int32, &first);
+    let boolean = import.boolean_call(&first);
+    let integer = import.integer(&IntegerTerm::PureFunctionApplication(first.clone()).into());
+    let pointer = SharedPointer::import(&Pointer::new(
+        Address::symbolic(Variable(1008520)),
+        ProgramType::Int32Pointer,
+    ));
+    let pointer = import.pointer_call(&first, vec![None], pointer);
+    let KernelTermNode::PointerCall {
+        call: pointer_call, ..
+    } = pointer.node()
+    else {
+        panic!("pointer call");
+    };
+    for call in [&machine, &boolean, &integer, pointer_call] {
+        let [child] = call.children() else {
+            panic!("one exact argument");
+        };
+        let KernelTermNode::Legacy(payload) = child.node() else {
+            panic!("opaque argument slot");
+        };
+        assert!(std::ptr::eq(payload.value(), &first.arguments()[0]));
+        assert_eq!(
+            KernelTermExport::default().argument(child).unwrap(),
+            argument
+        );
+    }
+
+    let other = import.machine_call(MachineIntegerType::Int32, &second);
+    assert_ne!(machine.children(), other.children());
+    let other = import.integer(&IntegerTerm::PureFunctionApplication(second.clone()).into());
+    assert_ne!(integer.children(), other.children());
+    let [child] = other.children() else {
+        panic!("one exact argument");
+    };
+    let KernelTermNode::Legacy(payload) = child.node() else {
+        panic!("opaque argument slot");
+    };
+    assert!(std::ptr::eq(payload.value(), &second.arguments()[0]));
+    assert_eq!(
+        KernelTermExport::default().integer(&integer).unwrap(),
+        KernelTermExport::default().integer(&other).unwrap()
+    );
+}
+
+/// A null array views no memory, so a null array argument formed at
+/// different states is one term, while a non-null one keeps its states apart.
+#[test]
+fn a_null_array_argument_is_formed_at_no_state() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let empty = crate::kernel::ProgramPoint::of_memory(&SymbolicMemory::new());
+    let other =
+        crate::kernel::ProgramPoint::of_memory(&SymbolicMemory::new().with_block("local:x", 8));
+    let pointer = |address: Address| {
+        KernelTerm::shared_pointer_value(SharedPointer::import(&Pointer::new(
+            address,
+            ProgramType::Int32Pointer,
+        )))
+    };
+    let array = |point: &crate::kernel::ProgramPoint, pointer: &KernelTerm| {
+        KernelTerm::shared_array_reference(point.clone(), pointer.clone(), ProgramType::Int32)
+    };
+    let null = pointer(Address::null());
+    assert_eq!(array(&empty, &null), array(&other, &null));
+    let symbolic = pointer(Address::symbolic(Variable(1008601)));
+    assert_ne!(array(&empty, &symbolic), array(&other, &symbolic));
+}

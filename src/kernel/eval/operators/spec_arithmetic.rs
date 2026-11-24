@@ -218,7 +218,12 @@ fn apply_spec_shift_with_count_width(
             constant(width.format(), 0),
         ));
         domain.push(Proposition::condition_is(
-            ConditionTerm::signed_shift_result_fits(width.format(), left.clone(), count.clone()),
+            ConditionTerm::signed_shift_result_fits(
+                width.format(),
+                left.clone(),
+                count.clone(),
+                unsigned_count,
+            ),
             true,
         ));
     }

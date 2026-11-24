@@ -5,13 +5,10 @@ smaller argument, and that statement includes the span halves of every range
 it names: the theorem's proof assumed them, so a use of the theorem, including
 a use by its own induction, owes them.
 
-An application can use a range’s span halves where they are available. Here the range
-moves with the induction variable: the hypothesis names `v[lo..hi - 1]`, a
-range this proof narrowed to rather than one a clause stated, so its halves
-`0 <= hi - 1 - lo` and `hi - 1 - lo <= 1073741823` are facts nobody has
-established. Omitting them is refused, with the premise spelled in the
-reader's names. The positive, where the halves come with a stated range, is
-`induction_hypothesis_cites_a_listed_range_with_its_span.md`.
+Here the range moves with the induction variable: the hypothesis names
+`v[lo..hi - 1]`, a range this proof narrowed to rather than one a clause
+stated. The application asks the ordinary solver for the span facts
+`0 <= hi - 1 - lo` and `hi - 1 - lo <= 1073741823`.
 
 ```click
 theorem hypothesis_owes_the_range_span(v: int32[], lo: int32, hi: int32) {
@@ -40,5 +37,5 @@ theorem hypothesis_owes_the_range_span(v: int32[], lo: int32, hi: int32) {
 ```
 
 ```expect
-fail: instantiated premise `0 <= to_integer(hi - 1 - lo)` is not established by the available facts
+pass
 ```

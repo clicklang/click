@@ -1039,6 +1039,7 @@ pub(in crate::kernel) fn describe_certification_runtime_error(error: &RuntimeErr
         | RuntimeError::EnumVariant(message)
         | RuntimeError::FunctionContract(message)
         | RuntimeError::InvalidContractResource(message)
+        | RuntimeError::UnsupportedContractEntry(message)
         | RuntimeError::ContractEntryInvariant(message)
         | RuntimeError::UnsuppliedResourceValue(message) => {
             message.clone()
@@ -1399,21 +1400,20 @@ impl ContractEntry {
     }
 }
 
-/// A rule violation identified while establishing declared resources, or
-/// another reason the verifier could not construct the entry.
+/// Why Click could not construct a function's symbolic entry.
 #[derive(Debug)]
 pub(crate) enum ContractEntryRefusal {
     InvalidResource(String),
     Internal(String),
-    Setup(String),
+    Unsupported(String),
 }
 
 impl ContractEntryRefusal {
     pub(super) fn into_message(self) -> String {
         match self {
-            Self::InvalidResource(message) | Self::Internal(message) | Self::Setup(message) => {
-                message
-            }
+            Self::InvalidResource(message)
+            | Self::Internal(message)
+            | Self::Unsupported(message) => message,
         }
     }
 
@@ -1421,29 +1421,35 @@ impl ContractEntryRefusal {
         match self {
             Self::InvalidResource(message) => RuntimeError::InvalidContractResource(message),
             Self::Internal(message) => RuntimeError::ContractEntryInvariant(message),
-            Self::Setup(message) => RuntimeError::FunctionContract(message),
+            Self::Unsupported(message) => RuntimeError::UnsupportedContractEntry(message),
         }
     }
 
-    pub(super) fn from_resource_error(prefix: &str, error: &RuntimeError) -> Self {
+    pub(in crate::kernel) fn from_resource_error(prefix: &str, error: &RuntimeError) -> Self {
         let message = format!("{prefix}: {}", describe_certification_runtime_error(error));
-        if error.is_contract_entry_resource_error() {
-            Self::InvalidResource(message)
-        } else {
-            Self::Setup(message)
+        match error {
+            RuntimeError::UnsupportedContractEntry(_)
+            | RuntimeError::UnsupportedOpaqueFunctionContract(_) => Self::Unsupported(message),
+            _ if error.is_contract_entry_resource_error() => Self::InvalidResource(message),
+            _ => Self::Internal(message),
         }
     }
-}
 
-impl From<String> for ContractEntryRefusal {
-    fn from(message: String) -> Self {
-        Self::Setup(message)
-    }
-}
-
-impl From<&str> for ContractEntryRefusal {
-    fn from(message: &str) -> Self {
-        Self::Setup(message.to_owned())
+    pub(crate) fn from_limit(prefix: &str, limit: ExecutionLimit) -> Self {
+        use crate::kernel::ExecutionLimit::*;
+        let detail = super::describe_spec_lowering_limit("evaluation", limit);
+        let message = format!("{prefix}: {detail}");
+        match limit {
+            SymbolicPointerConditional
+            | GuardedConjunctionTooLong
+            | UnsupportedPureFunctionResult(_) => Self::Unsupported(message),
+            BoolComparedWithInteger
+            | BoolOrdered
+            | BoolArithmetic
+            | MixedBoolArms
+            | AuthorityCountNeedsOwnership => Self::InvalidResource(message),
+            _ => Self::Internal(message),
+        }
     }
 }
 
@@ -1592,11 +1598,10 @@ fn program_function_contract_entry_facts(
                 ));
             }
             Err(limit) => {
-                return Err(format!(
-                    "building the aggregate contract entry state stopped at {}",
-                    limit.describe()
-                )
-                .into());
+                return Err(ContractEntryRefusal::from_limit(
+                    "could not build the aggregate contract entry state",
+                    limit,
+                ));
             }
         };
     }
@@ -1689,6 +1694,7 @@ fn program_function_contract_entry_facts(
     }
     let mut requirement_obligations = Vec::new();
     for (requirement_index, requirement) in function.contract_requires().iter().enumerate() {
+        budget.dropped_symbolic_pointer_conditional = false;
         let lowering_assumptions = assumptions
             .clone()
             .allow_symbolic_contract_loads()
@@ -1712,62 +1718,33 @@ fn program_function_contract_entry_facts(
                         )),
                     );
                 }
-                return Err(format!(
-                    "lowering `requires` clause {} stopped at {}",
-                    requirement_index + 1,
-                    limit.describe()
-                )
-                .into());
+                return Err(ContractEntryRefusal::from_limit(
+                    &format!(
+                        "could not lower `requires` clause {}",
+                        requirement_index + 1
+                    ),
+                    limit,
+                ));
             }
         };
-        let path = if let [path] = paths.as_slice() {
-            path
-        } else {
-            let proposition_matches = paths
-                .iter()
-                .filter(|path| assumptions.proves_exact(&path.proposition))
-                .collect::<Vec<_>>();
-            if let [path] = proposition_matches.as_slice() {
-                *path
-            } else {
-                let consistent = paths
-                    .iter()
-                    .filter(|path| {
-                        !assumptions_with_propositions(
-                            &assumptions,
-                            &path
-                                .facts
-                                .iter()
-                                .map(|fact| fact.proposition().clone())
-                                .collect::<Vec<_>>(),
-                        )
-                        .is_inconsistent()
-                    })
-                    .collect::<Vec<_>>();
-                let [path] = consistent.as_slice() else {
-                    if crate::instrumentation::enabled() {
-                        crate::instrumentation::emit(
-                            crate::instrumentation::VerificationEvent::Diagnostic(format!(
-                                "contract requirement for {} lowered to {} paths; {} are already stated and {} remained consistent",
-                                function.name(),
-                                paths.len(),
-                                proposition_matches.len(),
-                                consistent.len(),
-                            )),
-                        );
-                    }
-                    return Err(format!(
-                        "`requires` clause {} lowered to {} paths, of which {} are already \
-                         stated and {} stayed consistent; the contract entry needs exactly one",
-                        requirement_index + 1,
-                        paths.len(),
-                        proposition_matches.len(),
-                        consistent.len(),
-                    )
-                    .into());
-                };
-                *path
+        let [path] = paths.as_slice() else {
+            if paths.is_empty()
+                && budget.dropped_symbolic_pointer_conditional
+                && budget.dropped_runtime_error().is_none()
+            {
+                return Err(ContractEntryRefusal::from_limit(
+                    &format!(
+                        "could not lower `requires` clause {}",
+                        requirement_index + 1
+                    ),
+                    ExecutionLimit::SymbolicPointerConditional,
+                ));
             }
+            return Err(ContractEntryRefusal::Internal(format!(
+                "could not lower `requires` clause {} to one symbolic proposition ({} lowering results)",
+                requirement_index + 1,
+                paths.len(),
+            )));
         };
         for obligation in &path.obligations {
             if !requirement_obligations.contains(obligation) {
@@ -1802,12 +1779,10 @@ fn program_function_contract_entry_facts(
             ));
         }
         Err(limit) => {
-            return Err(format!(
-                "evaluating the declared resource quantities of the contract entry resources \
-                 stopped at {}",
-                limit.describe()
-            )
-            .into());
+            return Err(ContractEntryRefusal::from_limit(
+                "could not evaluate the declared contract entry resource quantities",
+                limit,
+            ));
         }
     };
     for proposition in quantity_assumptions {
@@ -1842,11 +1817,10 @@ fn program_function_contract_entry_facts(
                 ));
             }
             Err(limit) => {
-                return Err(format!(
-                    "evaluating the contract entry resources stopped at {}",
-                    limit.describe()
-                )
-                .into());
+                return Err(ContractEntryRefusal::from_limit(
+                    "could not evaluate the contract entry resources",
+                    limit,
+                ));
             }
         };
     let required_resources = crate::kernel::admit_declared_entry_resources(
@@ -1918,7 +1892,8 @@ fn program_function_contract_entry_facts(
                 function.contract_interface(),
                 segment,
                 range,
-            )?
+            )
+            .map_err(ContractEntryRefusal::Internal)?
         {
             assumptions = entry_facts.assume(
                 assumptions,
@@ -1978,16 +1953,13 @@ fn program_function_contract_entry_facts(
     }
     // A declared fact may read a tracked population (`count(...)`), which
     // only the entry state holds, so the facts are evaluated at the state.
-    let expanded =
-        super::super::functions::expand_all_composite_resource_facts_and_propositions_at_state(
+    let (expanded_resources, resource_definition_facts) =
+        super::super::functions::checked_expand_all_composite_resource_facts_and_propositions_at_state(
             &required_resources,
             function.composite_resource_definitions(),
             &entry_state,
             &assumptions,
-        );
-    let (expanded_resources, resource_definition_facts) = expanded.ok_or_else(|| {
-        "could not evaluate the composite resource facts required at the contract entry".to_string()
-    })?;
+        )?;
     // A composite's contained ranges are stated ranges too, and their
     // byte-count guards ride with the composite wherever it is held. Install
     // them here as well, so what the certified entry context knows about an
@@ -2019,41 +1991,32 @@ fn program_function_contract_entry_facts(
             proposition,
         );
     }
-    let population_facts = evaluate_resource_population_fact_propositions(
-        &required_resources,
-        function.composite_resource_definitions(),
-        &entry_state,
-        &assumptions,
-    )
-    .ok_or_else(|| {
-        "could not evaluate the tracked populations of the contract entry resources".to_string()
-    })?;
-    for fact in population_facts {
-        assumptions =
-            entry_facts.assume(assumptions, ContractEntryFactOrigin::PopulationFact, fact);
-    }
-    let expanded_required_resources = ({
-        super::super::functions::expand_all_composite_resource_facts_at_state(
+    let population_facts =
+        super::super::functions::checked_evaluate_resource_population_fact_propositions(
             &required_resources,
             function.composite_resource_definitions(),
             &entry_state,
             &assumptions,
-        )
-    })
-    .ok_or_else(|| {
-        "could not expand the composite resource ownership required at the contract entry"
-            .to_string()
-    })?;
-    let mut entry_resources = {
-        super::super::functions::expand_all_composite_resource_facts_at_state(
+        )?;
+    for fact in population_facts {
+        assumptions =
+            entry_facts.assume(assumptions, ContractEntryFactOrigin::PopulationFact, fact);
+    }
+    let expanded_required_resources =
+        super::super::functions::checked_expand_all_composite_resource_facts_at_state(
+            &required_resources,
+            function.composite_resource_definitions(),
+            &entry_state,
+            &assumptions,
+        )?;
+    let mut entry_resources =
+        super::super::functions::checked_expand_all_composite_resource_facts_at_state(
             entry_state.resources(),
             function.composite_resource_definitions(),
             &entry_state,
             &assumptions,
-        )
-        .ok_or("could not project the checked authority control at contract entry")?
-    }
-    .normalized(&assumptions);
+        )?
+        .normalized(&assumptions);
     let mut missing = Vec::new();
     for (index, required) in expanded_required_resources.facts().iter().enumerate() {
         let exposed = expose_composite_resource_fact(
@@ -2138,7 +2101,7 @@ fn program_function_contract_entry_facts(
                 detail.clone(),
             ));
         }
-        return Err(detail.into());
+        return Err(ContractEntryRefusal::Internal(detail));
     }
     // An owned declared resource or authority witnesses its population's
     // count. Expose the count facts the checked ledger derives for it to
@@ -2265,11 +2228,10 @@ fn program_function_contract_entry_facts(
                 "contract entry resources do not certify requirement safety".to_string(),
             ));
         }
-        return Err(
-            "the contract entry resources do not show that every `requires` clause is safe to \
-             evaluate"
+        return Err(ContractEntryRefusal::Internal(
+            "the constructed entry does not justify evaluation of every checked `requires` clause"
                 .into(),
-        );
+        ));
     }
     for obligation in requirement_obligations {
         assumptions = entry_facts.assume(
@@ -3439,7 +3401,7 @@ fn names_of_one_cell_framed(
     if left_kind != right_kind {
         return false;
     }
-    if left_pointer == right_pointer {
+    if left_pointer.address() == right_pointer.address() {
         return crate::kernel::explicit_atomic_equality_from_memory_derivations(
             &left,
             &right,
@@ -3452,8 +3414,8 @@ fn names_of_one_cell_framed(
     pointers_proven_equal_for_memory_resolution(left_pointer, right_pointer, assumptions)
         && [left_pointer, right_pointer].into_iter().any(|pointer| {
             crate::kernel::explicit_atomic_equality_from_memory_derivations(
-                &MachineTerm::MemoryLoad(left_memory.clone(), pointer.clone(), *left_kind),
-                &MachineTerm::MemoryLoad(right_memory.clone(), pointer.clone(), *right_kind),
+                &MachineTerm::read_named(left_memory.clone(), pointer.clone(), *left_kind),
+                &MachineTerm::read_named(right_memory.clone(), pointer.clone(), *right_kind),
                 assumptions,
             )
         })
@@ -3537,9 +3499,9 @@ mod shared_contract_operand_tests {
         let load = |memory| {
             SharedMachineIntegerTerm::index(
                 MachineIntegerType::Int32,
-                MachineTerm::MemoryLoad(
+                crate::kernel::MachineTerm::read_named(
                     ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
-                    Box::new(pointer.clone()),
+                    pointer.clone(),
                     crate::kernel::LoadKind::Int32,
                 ),
             )
@@ -3580,9 +3542,9 @@ mod shared_contract_operand_tests {
                     pointer.clone(),
                     ProgramValue::Int32(MachineTerm::Variable(Variable(id))),
                 );
-            MachineTerm::MemoryLoad(
+            crate::kernel::MachineTerm::read_named(
                 ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
-                Box::new(pointer.clone()),
+                pointer.clone(),
                 crate::kernel::LoadKind::Int32,
             )
         };
@@ -3662,6 +3624,57 @@ mod scaling_tests {
 #[cfg(test)]
 mod prepared_entry_cases_tests {
     use super::*;
+
+    pub(super) fn ternary_requirement() -> SpecProposition {
+        let expression = ProgramExpression::Ternary {
+            condition: Box::new(crate::kernel::program_expression::variable("flag")),
+            then_branch: Box::new(crate::kernel::program_expression::int32_literal(1)),
+            else_branch: Box::new(crate::kernel::program_expression::variable("y")),
+        };
+        SpecProposition::Comparison {
+            left: SpecExpression::ProgramExpression(expression),
+            operator: ComparisonOperator::Equal,
+            right: SpecExpression::Value(crate::kernel::int32(1u32)),
+        }
+    }
+
+    #[test]
+    fn ternary_requirement_keeps_both_inputs_possible_at_entry() {
+        let function = program_function(
+            ProgramType::Int32,
+            "entry_selector",
+            vec![
+                program_parameter("flag", ProgramType::Int32),
+                program_parameter("y", ProgramType::Int32),
+            ],
+            program_return(crate::kernel::program_expression::int32_literal(0)),
+        )
+        .with_contract(vec![ternary_requirement()], vec![], vec![], vec![], true);
+        let state = ExecutionState::new();
+        let flag = MachineTerm::Variable(Variable(100));
+        let open_entry = |flag, y| {
+            program_function_contract_entry(
+                &state,
+                &function,
+                &[
+                    ProgramExpression::Value(crate::kernel::int32(flag)),
+                    ProgramExpression::Value(crate::kernel::int32(y)),
+                ],
+            )
+        };
+        open_entry(MachineTerm::constant(0), MachineTerm::constant(1))
+            .expect("flag = 0, y = 1 satisfies the precondition");
+        let entry = open_entry(flag.clone(), MachineTerm::Variable(Variable(101)))
+            .expect("a symbolic conditional is a single entry requirement");
+        let flag_is_zero = ConditionTerm::equal(flag.clone(), MachineTerm::constant(0));
+        assert!(!entry.states(&Proposition::condition_is(flag_is_zero.clone(), false)));
+        assert!(!entry.states(&Proposition::condition_is(flag_is_zero, true)));
+        assert!(entry.facts().iter().any(|fact| {
+            fact.origin() == ContractEntryFactOrigin::Requirement(0)
+                && !PureFactContext::new().proves_exact(fact.proposition())
+        }));
+        open_entry(flag, MachineTerm::constant(1)).expect("both possible arms return 1");
+    }
 
     pub(super) fn fixture(
         guards: usize,

@@ -1,5 +1,4 @@
 import click::integer;
-import click::separation;
 
 verifying "quad.rs";
 
@@ -27,27 +26,7 @@ fn quad::load(bytes: &[u8]) -> quad::Quad {
  apply(quad_byte_observation(bytes[1]));
  apply(quad_byte_observation(bytes[2]));
  apply(quad_byte_observation(bytes[3]));
- step_until(read(3).entry);
- step();
- // Restrict the result object's separation from the input to each lane store.
- have separate(memory((((&result as (void *)) as (uint32 *)) + 1u64)[0..1]), memory(bytes[0..4])) by {
-  apply(separation::separate_restrict(
-   memory(result[0..1]), memory(bytes[0..4]),
-   memory((((&result as (void *)) as (uint32 *)) + 1u64)[0..1]), memory(bytes[0..4])
-  ));
- }
- have separate(memory((((&result as (void *)) as (uint32 *)) + 2u64)[0..1]), memory(bytes[0..4])) by {
-  apply(separation::separate_restrict(
-   memory(result[0..1]), memory(bytes[0..4]),
-   memory((((&result as (void *)) as (uint32 *)) + 2u64)[0..1]), memory(bytes[0..4])
-  ));
- }
- have separate(memory((((&result as (void *)) as (uint32 *)) + 3u64)[0..1]), memory(bytes[0..4])) by {
-  apply(separation::separate_restrict(
-   memory(result[0..1]), memory(bytes[0..4]),
-   memory((((&result as (void *)) as (uint32 *)) + 3u64)[0..1]), memory(bytes[0..4])
-  ));
- }
+ // The aggregate stores use fresh storage. Read the bound result at return.
  step_until(function.exit);
  have result.lanes[0] == old(bytes[0] as uint32);
  have to_integer(result.lanes[0]) == old(to_integer(bytes[0] as int32)) by { rewrite(result.lanes[0], old(bytes[0] as uint32)); known(); }

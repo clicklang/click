@@ -1497,7 +1497,8 @@ fn reject_address_escaped_measure(
         return Err(error(format!(
             "termination measure `{measure}` in `{function_name}` has its address taken; a store \
              through that pointer could change the measure without a ranked update"
-        )));
+        ))
+        .with_invalid_measure(function_name));
     }
     Ok(())
 }
@@ -1589,7 +1590,8 @@ fn reject_address_escaped_ranking_component(
             "the `decreases` component `{source}` in `{function_name}` reads a resource binder's \
              model and also {read}; a measure over a model may read only the loop's resource \
              binders' models and fields, constants, and pure functions of them"
-        )));
+        ))
+        .with_invalid_measure(function_name));
     }
     for variable in reads.variables {
         reject_address_escaped_measure(function_name, &variable, addressed)?;
@@ -3250,7 +3252,7 @@ pub(super) fn program_function_recursion_anchor(
     entry_state: &ExecutionState,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> Result<Option<RecursionAnchor>, String> {
+) -> Result<Option<RecursionAnchor>, TerminationError> {
     let interface = function.contract_interface();
     if let Some(requirement) = interface.recursion_resource() {
         let descent = resource_descent::ResourceDescent::open(
@@ -3259,7 +3261,8 @@ pub(super) fn program_function_recursion_anchor(
             requirement,
             assumptions,
             budget,
-        )?;
+        )
+        .map_err(error)?;
         return Ok(Some(RecursionAnchor {
             function: function.name().to_string(),
             components: Vec::new(),
@@ -3274,22 +3277,24 @@ pub(super) fn program_function_recursion_anchor(
         // A structural measure is the instance the binder holds at entry; the
         // descent at each call compares the instance it passes with this one.
         let identity = interface.resource_binder_identity(binder).ok_or_else(|| {
-            format!(
+            error(format!(
                 "the `decreases {binder}` measure of `{}` names no resource binder of its \
                  contract",
                 function.name()
-            )
+            ))
+            .with_invalid_measure(function.name())
         })?;
         let entry = entry_state
             .resources()
             .owned_instance(identity)
             .cloned()
             .ok_or_else(|| {
-                format!(
+                error(format!(
                     "the `decreases {binder}` measure of `{}` names a binder with no owned \
                      instance at the function's entry",
                     function.name()
-                )
+                ))
+                .with_invalid_measure(function.name())
             })?;
         return Ok(Some(RecursionAnchor {
             function: function.name().to_string(),
@@ -3312,13 +3317,43 @@ pub(super) fn program_function_recursion_anchor(
     let measure = components
         .iter()
         .map(|component| {
-            ranking_measure_term(component, entry_state, &mut reader).map_err(|error| {
-                format!(
-                    "the `decreases` measure `{}` of `{}` could not be read at its own entry \
-                     state: {error}",
+            ranking_measure_term(component, entry_state, &mut reader).map_err(|cause| {
+                let mut reads = MeasureReads::default();
+                match component {
+                    RankingComponent::ProgramExpression(expression) => {
+                        collect_program_expression_variables(expression, &mut reads.variables);
+                    }
+                    RankingComponent::Pure { expression, .. } => {
+                        let _ = collect_spec_program_variables(
+                            SpecNode::Expression(expression),
+                            &mut reads,
+                        );
+                    }
+                    RankingComponent::PureInteger { expression, .. } => {
+                        let _ = collect_spec_program_variables(
+                            SpecNode::Integer(expression),
+                            &mut reads,
+                        );
+                    }
+                }
+                let message = format!(
+                    "the `decreases` measure `{}` of `{}` could not be read at its own entry state",
                     ranking_measure_display(component),
-                    function.name()
-                )
+                    function.name(),
+                );
+                if let Some(name) = reads.variables.iter().find(|name| {
+                    (name.named().is_some()
+                        || name.local_id().is_some_and(|local| !local.is_parameter()))
+                        && entry_state.locals().object_type(*name).is_none()
+                        && entry_state.locals().get(*name).is_none()
+                }) {
+                    error(format!(
+                        "{message}: `{name}` is not available at function entry"
+                    ))
+                    .with_invalid_measure(function.name())
+                } else {
+                    error(format!("{message}: {cause}"))
+                }
             })
         })
         .collect::<Result<Vec<_>, _>>()?;

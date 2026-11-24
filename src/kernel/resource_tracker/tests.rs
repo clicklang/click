@@ -686,7 +686,7 @@ fn a_version_mismatch_names_the_resource_and_both_points() {
         .clone()
         .store(at(AddressBase::Symbolic(Variable(80)), 0), one());
     let load = |memory: &SymbolicMemory| {
-        MachineTerm::MemoryLoad(
+        MachineTerm::read_named(
             ProgramPoint::at(&(intern_memory(memory.clone()))),
             Box::new(cell.clone()),
             crate::kernel::LoadKind::Int32,
@@ -1457,7 +1457,7 @@ fn a_forgotten_observation_retains_only_its_complete_typed_value() {
         assert_eq!(stop, CellWalkStop::Affected);
         assert_eq!(cell.resolved_value(&pointer, LoadKind::Int32), Some(one()));
         let load =
-            |memory| MachineTerm::MemoryLoad(memory, Box::new(pointer.clone()), LoadKind::Int32);
+            |memory| MachineTerm::read_named(memory, Box::new(pointer.clone()), LoadKind::Int32);
         assert!(
             crate::kernel::explicit_atomic_equality_from_memory_derivations(
                 &load(ProgramPoint::at(&source)),
@@ -1557,7 +1557,7 @@ fn retained_boolean_dependencies_keep_read_order_and_opaque_calls() {
     };
     let memory = intern_memory(entry_memory());
     let read = |name| {
-        MachineTerm::MemoryLoad(
+        MachineTerm::read_named(
             ProgramPoint::at(&memory),
             Box::new(at(block(name), 0)),
             LoadKind::Int32,
@@ -1600,7 +1600,7 @@ fn shared_offset_condition_resource_reads_keep_native_right_first_order() {
     let memory = intern_memory(entry_memory());
     let offset = |name| {
         AddressOffset::scaled_int32_node(
-            MachineTerm::MemoryLoad(
+            MachineTerm::read_named(
                 ProgramPoint::at(&memory),
                 Box::new(at(block(name), 0)),
                 LoadKind::Int32,
@@ -1630,7 +1630,7 @@ fn raw_pointer_condition_reads_keep_block_and_displacement_order() {
     let memory = intern_memory(entry_memory());
     let offset = |name| {
         AddressOffset::scaled_int32_node(
-            MachineTerm::MemoryLoad(
+            MachineTerm::read_named(
                 ProgramPoint::at(&memory),
                 Box::new(at(block(name), 0)),
                 LoadKind::Int32,
@@ -1658,7 +1658,7 @@ fn complete_pointer_conditions_keep_read_order() {
     let memory = intern_memory(entry_memory());
     let offset = |name| {
         AddressOffset::scaled_int32_node(
-            MachineTerm::MemoryLoad(
+            MachineTerm::read_named(
                 ProgramPoint::at(&memory),
                 Box::new(at(block(name), 0)),
                 LoadKind::Int32,
@@ -1690,7 +1690,7 @@ fn boolean_reads_report_only_the_one_byte_cell() {
     let pointer = Address {
         base: AddressBase::Symbolic(Variable(999350)),
         offset: AddressOffset::scaled_int32_node(
-            MachineTerm::MemoryLoad(
+            MachineTerm::read_named(
                 ProgramPoint::at(&memory),
                 Box::new(at(block("global:g"), 0)),
                 LoadKind::Int32,
@@ -1848,7 +1848,7 @@ fn contract_offset_reads_keep_order_and_distinct_versions() {
     }
     let scaled = |point| {
         AddressOffset::scaled_int32_node(
-            MachineTerm::MemoryLoad(point, Box::new(pointer.clone()), LoadKind::Int32),
+            MachineTerm::read_named(point, Box::new(pointer.clone()), LoadKind::Int32),
             4,
         )
     };

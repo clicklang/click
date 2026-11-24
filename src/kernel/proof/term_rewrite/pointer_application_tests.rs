@@ -27,7 +27,7 @@ fn rewriting_an_exact_scalar_read_keeps_its_named_point() {
     let source = Address::symbolic(Variable(1008322));
     let target = Address::symbolic(Variable(1008323));
     let read = |point: &ProgramPoint, address: &Address| {
-        MachineTerm::MemoryLoad(point.clone(), Box::new(address.clone()), LoadKind::Bits64)
+        MachineTerm::read_named(point.clone(), Box::new(address.clone()), LoadKind::Bits64)
     };
     let original = read(&point, &source);
     let expected = read(&point, &target);
@@ -49,7 +49,7 @@ fn rewriting_an_exact_scalar_index_keeps_its_named_point() {
     let point = ProgramPoint::starting_at(&SymbolicMemory::new()).for_exact_read();
     let pointer = Address::symbolic(Variable(1008324));
     let read = |address: Address| {
-        MachineTerm::MemoryLoad(point.clone(), Box::new(address), LoadKind::UInt32)
+        MachineTerm::read_named(point.clone(), Box::new(address), LoadKind::UInt32)
     };
     let from = AddressOffset::Constant(0);
     let to = AddressOffset::Constant(4);
@@ -92,7 +92,7 @@ fn rewriting_a_scalar_store_read_keeps_its_program_point() {
         .indexed_integer_version(&source, kind)
         .unwrap();
     assert!(version.indexed_stored_value().is_some());
-    let original = MachineTerm::MemoryLoad(version.clone(), Box::new(source.clone()), kind);
+    let original = MachineTerm::read_named(version.clone(), Box::new(source.clone()), kind);
 
     let source_pointer = Pointer::new(source.clone(), ProgramType::Int32Pointer);
     let target_pointer = Pointer::new(target.clone(), ProgramType::Int32Pointer);
@@ -130,7 +130,7 @@ fn rewriting_a_scalar_caller_store_read_keeps_its_program_point() {
         .indexed_integer_version(&source, kind)
         .expect("indexed caller store");
     assert!(version.indexed_stored_value().is_some());
-    let original = MachineTerm::MemoryLoad(version.clone(), Box::new(source.clone()), kind);
+    let original = MachineTerm::read_named(version.clone(), Box::new(source.clone()), kind);
     let rewritten = TermRewrite::for_pointer_exact(&source, &target).bits(&original);
     let MachineTerm::MemoryLoad(point, address, load_kind) = rewritten else {
         panic!("the rewritten term is a read");
@@ -422,8 +422,11 @@ fn memory_relationship_rewrite_transports_only_a_complete_pointer_carrier() {
     };
     assert_eq!(range.base(), target.address());
     assert_eq!(range.provenance.as_ref(), source.provenance());
-    assert_eq!(range.bounds_owner.as_deref(), source.bounds_owner());
-    assert!(!range.carrier_bounds_known);
+    assert_eq!(
+        range.carrier_owner().map(|owner| &**owner),
+        source.bounds_owner()
+    );
+    assert!(!range.carrier_known());
 }
 
 #[test]
@@ -472,8 +475,11 @@ fn a_full_pointer_rewrite_does_not_adopt_another_read_carrier_at_the_same_addres
     };
     assert_eq!(range.base(), target.address());
     assert_eq!(range.provenance.as_ref(), unrelated.provenance());
-    assert_eq!(range.bounds_owner.as_deref(), unrelated.bounds_owner());
-    assert!(!range.carrier_bounds_known);
+    assert_eq!(
+        range.carrier_owner().map(|owner| &**owner),
+        unrelated.bounds_owner()
+    );
+    assert!(!range.carrier_known());
 }
 
 #[test]

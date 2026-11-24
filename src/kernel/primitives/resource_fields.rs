@@ -533,7 +533,7 @@ mod tests {
     }
 
     #[test]
-    fn logical_field_storage_releases_native_integer_children() {
+    fn logical_field_storage_keeps_integer_children_retained() {
         for algebraic in [false, true] {
             let _session = VerificationSession::enter();
             let child: SharedIntegerTerm = IntegerTerm::Add(
@@ -565,7 +565,11 @@ mod tests {
             let fields = ResourceFieldValues::from_minted(vec![value]);
             let schema = ResourceFieldSchema::new(vec![("value".into(), ty)]).unwrap();
             assert!(fields.matches_schema(&schema));
-            assert!(weak.upgrade().is_none(), "algebraic={algebraic}");
+            assert!(
+                weak.upgrade()
+                    .is_some_and(|root| !root.has_cached_native_argument()),
+                "algebraic={algebraic}"
+            );
         }
     }
 

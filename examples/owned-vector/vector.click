@@ -192,8 +192,14 @@ int32 vector_copy(
                         have at(region(4).entry, k) < at(region(4).entry, (i as int32)) by {
                             known();
                         }
-                        intro();
-                        solve() using { at(region(4).entry, k) < at(region(4).entry, (i as int32)); at(region(4).entry, k) == at(region(4).entry, (i as int32)); };
+                        if at(region(4).entry, k) == at(region(4).entry, (i as int32)) {
+                            have false by {
+                                solve() using { at(region(4).entry, k) < at(region(4).entry, (i as int32)); at(region(4).entry, k) == at(region(4).entry, (i as int32)); };
+                            }
+                            contradiction();
+                        } else {
+                            known();
+                        }
                     }
                     have 0 <= k and k < i;
                     instantiate(at(region(3).entry, forall (k: int32) { 0 <= k and k < i implies dst[k] == old(src[k]) }), k);
@@ -436,10 +442,16 @@ int32 vector_grow(struct vector* owner) {
                                 have at(function.entry, owner->cap) < (at(function.entry, 1073741823) as int32) by {
                                     known();
                                 }
-                                intro();
-                                solve() using { at(function.entry, owner->cap) < (at(function.entry,
-                                        1073741823) as int32); at(function.entry, owner->cap) == (at(function.entry,
-                                        1073741823) as int32); };
+                                if at(function.entry, owner->cap) == (at(function.entry, 1073741823) as int32) {
+                                    have false by {
+                                        solve() using { at(function.entry, owner->cap) < (at(function.entry,
+                                                1073741823) as int32); at(function.entry, owner->cap) == (at(function.entry,
+                                                1073741823) as int32); };
+                                    }
+                                    contradiction();
+                                } else {
+                                    known();
+                                }
                             }
                             solve() using { (at(function.entry, owner->cap) as int32) < (at(function.entry,
                                     536870910) as int32); (at(function.entry, 1) as int32) <= (at(function.entry,
@@ -519,12 +531,15 @@ int32 vector_push(struct vector* owner, int32 value) {
         have k < old(owner->len);
         // The append writes at the old length, beyond this prefix element.
         have old(owner->len) != k by {
-            intro();
-            have not (k < old(owner->len)) by {
-                rewrite(old(owner->len), k);
+            if old(owner->len) == k {
+                have not (k < old(owner->len)) by {
+                    rewrite(old(owner->len), k);
+                    known();
+                }
+                contradiction(k < old(owner->len));
+            } else {
                 known();
             }
-            contradiction(k < old(owner->len));
         }
         have separate(memory(old(owner->data)[old(owner->len)]), memory(old(owner->data)[k])) by {
             apply(click::separation::separate_elements(old(owner->data), old(owner->len), k));
@@ -537,7 +552,7 @@ int32 vector_push(struct vector* owner, int32 value) {
         }
         // Restrict the struct/array separation to the length field and element.
         have k < old(owner->cap) by {
-            solve() using { k < old(owner->len); old(owner->len) <= old(owner->cap); };
+            apply(click::integer::int32_less_than_less_equal_transitive(k, old(owner->len), old(owner->cap)));
         }
         have contains(memory(*owner), memory(owner->len)) by { normalize(); }
         have contains(memory(old(owner->data)[0..old(owner->cap)]), memory(old(owner->data)[k])) by {

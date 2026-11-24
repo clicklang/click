@@ -1677,6 +1677,19 @@ fn divide_decoded_floats(
     )
 }
 
+pub(in crate::kernel) fn float_binary_bits_at(
+    format: crate::kernel::KernelFloatType,
+    left: u64,
+    right: u64,
+    operator: FloatBinaryOperator,
+) -> u64 {
+    let (exponent, fraction) = match format {
+        crate::kernel::KernelFloatType::Float32 => (8, 23),
+        crate::kernel::KernelFloatType::Float64 => (11, 52),
+    };
+    float_binary_bits(left, right, exponent, fraction, operator)
+}
+
 fn float_binary_bits(
     left: u64,
     right: u64,
@@ -3823,11 +3836,7 @@ impl ConditionTerm {
         match self {
             Self::AddressOffsetEqual(a, b) => Some((a, b)),
             Self::AddressEqual(a, b) if a.base == b.base => Some((&a.offset, &b.offset)),
-            Self::PointerEqual(a, b)
-                if a.base == b.base
-                    && a.provenance() == b.provenance()
-                    && a.bounds() == b.bounds() =>
-            {
+            Self::PointerEqual(a, b) if a.base == b.base && a.same_provenance_as(b) => {
                 Some((&a.offset, &b.offset))
             }
             _ => None,
@@ -3856,10 +3865,7 @@ impl ConditionTerm {
         if left.is_null() || right.is_null() {
             return Self::address_equal(left.address().clone(), right.address().clone());
         }
-        if (left.provenance() == right.provenance()
-            && left.bounds() == right.bounds()
-            && left.bounds_are_known() == right.bounds_are_known()
-            && (left.bounds_are_known() || left.bounds_owner() == right.bounds_owner()))
+        if left.same_provenance_as(&right)
             || (matches!(left.program_type(), ProgramType::FunctionPointer(_))
                 && matches!(right.program_type(), ProgramType::FunctionPointer(_)))
         {
@@ -3900,7 +3906,7 @@ impl ConditionTerm {
             if left.base == right.base
                 && let Self::Constant(value) =
                     Self::address_offset_equal(left.offset.clone(), right.offset.clone())
-                && !(value && matches!(left.base, AddressBase::LoadedPointer(_)))
+                && !(value && matches!(left.base, AddressBase::Load(_)))
             {
                 return Self::Constant(value);
             }
@@ -4142,7 +4148,10 @@ impl ProgramType {
                     | ProgramType::Float32Array(_)
                     | ProgramType::Float64Array(_)
                     | ProgramType::PointerArray(_, _)
-                    | ProgramType::VoidPointerPointer => {
+                    | ProgramType::VoidPointerPointer
+                    // Click's untyped pointer is a specification type; no
+                    // callback signature names it.
+                    | ProgramType::Pointer => {
                         return None;
                     }
                 } + if constant { 23 } else { 0 },
@@ -4175,18 +4184,25 @@ impl ProgramType {
 
     pub fn is_pointer(self) -> bool {
         self.pointee_type().is_some()
-            || matches!(self, Self::VoidPointer | Self::FunctionPointer(_))
+            || matches!(
+                self,
+                Self::VoidPointer | Self::Pointer | Self::FunctionPointer(_)
+            )
     }
 
     pub(crate) fn is_object_pointer(self) -> bool {
         self.is_pointer() && !matches!(self, Self::FunctionPointer(_))
     }
 
+    /// Whether a pointer of type `self` is a value of type `other`. `void *`
+    /// converts to and from any object pointer type; so does Click's
+    /// untyped [`Self::Pointer`], which states no pointee type at all.
     pub(crate) fn pointer_types_compatible(self, other: Self) -> bool {
+        let untyped = |ty| matches!(ty, Self::VoidPointer | Self::Pointer);
         self == other
             || (self.is_object_pointer()
                 && other.is_object_pointer()
-                && (self == Self::VoidPointer || other == Self::VoidPointer))
+                && (untyped(self) || untyped(other)))
     }
 
     pub(crate) fn pointer_to(self) -> Option<Self> {
@@ -4220,6 +4236,9 @@ impl ProgramType {
             Self::Float64Pointer => Some(Self::Float64PointerPointer),
             Self::VoidPointer => Some(Self::VoidPointerPointer),
             Self::Int8PointerPointer | Self::Int8Array(_) => None,
+            // A pointer to a `Pointer` cell is itself a `Pointer`, not a
+            // type of its own; no pointer-to-`Pointer` type exists.
+            Self::Pointer => None,
             Self::Void
             | Self::VoidPointerPointer
             | Self::Int16PointerPointer
@@ -4410,6 +4429,7 @@ impl ProgramType {
             Self::Bool => 1,
             Self::VoidPointer => C_POINTER_BYTE_WIDTH,
             Self::VoidPointerPointer => C_POINTER_BYTE_WIDTH,
+            Self::Pointer => C_POINTER_BYTE_WIDTH,
             Self::Int8 => 1,
             Self::Int16 => 2,
             Self::Int32 => 4,
@@ -4970,13 +4990,35 @@ impl Address {
     /// Name an eight-byte pointer read as a typed graph application. The
     /// caller supplies the assumption-free defining state and address.
     /// Access observations are retained separately from this identity.
+    /// A memory-named load (`ReadKey::Memory`): for a caller that holds only
+    /// a memory state. A caller with a program point uses
+    /// [`Self::loaded_value_at`].
     pub(crate) fn loaded_value(memory: &SharedMemory, address: &Address) -> Self {
-        Self {
-            base: AddressBase::LoadedPointer(crate::kernel::eval::pointer_load_identity(
-                memory, address,
-            )),
-            offset: AddressOffset::Constant(0),
-        }
+        crate::kernel::Load::at(ProgramPoint::at(memory), address).address()
+    }
+
+    /// [`Self::loaded_value`] of `point`'s memory, recording `point` as the
+    /// read site (`ProgramPoint::at_read_site`). The selection is legacy and
+    /// the point has no path of its own, so the load's identity, the
+    /// memory's read key, is the one `loaded_value` gives
+    /// (`design/point-named-reads.md`, stage 1: a point everywhere).
+    pub(crate) fn loaded_value_at(point: &ProgramPoint, address: &Address) -> Self {
+        Self::loaded_memory_value_at(point.shared_memory(), point, address)
+    }
+
+    /// [`Self::loaded_value_at`] of the unchanged-bytes source of `point`'s
+    /// memory, the state a memory-named read is keyed by, read at `point`.
+    pub(crate) fn loaded_source_value_at(point: &ProgramPoint, address: &Address) -> Self {
+        let source = point.shared_memory().unchanged_bytes_source();
+        Self::loaded_memory_value_at(&source, point, address)
+    }
+
+    fn loaded_memory_value_at(
+        memory: &SharedMemory,
+        site: &ProgramPoint,
+        address: &Address,
+    ) -> Self {
+        crate::kernel::Load::at(ProgramPoint::at_read_site(memory, site), address).address()
     }
 
     /// The read of the pointer cell at `address` in `memory`, identified by
@@ -4993,9 +5035,9 @@ impl Address {
             address,
             crate::kernel::C_POINTER_BYTE_WIDTH,
         );
-        let read = MachineTerm::MemoryLoad(
+        let read = crate::kernel::MachineTerm::read_named(
             ProgramPoint::at(memory),
-            Box::new(address.clone()),
+            address.clone(),
             LoadKind::Bits64,
         );
         named_pointer_read(
@@ -5015,9 +5057,9 @@ impl Address {
             address,
             crate::kernel::C_POINTER_BYTE_WIDTH,
         );
-        let read = MachineTerm::MemoryLoad(
+        let read = crate::kernel::MachineTerm::read_named(
             ProgramPoint::at(memory),
-            Box::new(address.clone()),
+            address.clone(),
             LoadKind::Bits64,
         );
         match canonical_pointer_read(&read) {
@@ -5030,17 +5072,14 @@ impl Address {
     /// The defining address is never reconstructed from this value's block or
     /// from its pointee width.
     pub(crate) fn as_loaded_value(&self) -> Option<LoadedPointerView> {
-        let AddressBase::LoadedPointer(identity) = self.base else {
+        let AddressBase::Load(load) = &self.base else {
             return None;
         };
-        let (point, defining_address, value_type) =
-            crate::kernel::eval::registered_pointer_load_point(identity)?;
         Some(LoadedPointerView {
-            identity,
-            defining_memory: point.shared_memory().clone(),
-            point,
-            value_type,
-            defining_address,
+            identity: load.clone(),
+            defining_memory: load.point().shared_memory().clone(),
+            point: load.point().clone(),
+            defining_address: load.cell().clone(),
             displacement: self.offset.clone(),
         })
     }
@@ -5054,13 +5093,10 @@ impl Address {
         if let Some(named) = canonical_pointer_read(bits) {
             return Some(named_pointer_read(named));
         }
-        let MachineTerm::MemoryLoad(memory, address, _) = bits else {
+        let MachineTerm::MemoryLoad(point, address, _) = bits else {
             return None;
         };
-        Some(Self::loaded_value(
-            &memory.shared_memory().unchanged_bytes_source(),
-            address,
-        ))
+        Some(Self::loaded_source_value_at(point, address))
     }
 
     /// The pointer a logical read of `address` in `memory` reads, named by
@@ -5121,9 +5157,9 @@ impl Address {
         }
         // Pointer values retain the selected read directly. Observation metadata
         // records the live source independently of the term's identity.
-        let bits = MachineTerm::MemoryLoad(
+        let bits = crate::kernel::MachineTerm::read_named(
             ProgramPoint::at(memory),
-            Box::new(address.clone()),
+            address.clone(),
             LoadKind::Int32,
         );
         Err(Self::loaded(&bits).expect("a pointer read has a structural descriptor"))
@@ -5147,7 +5183,7 @@ impl Address {
             self.base,
             AddressBase::ExternalArgument
                 | AddressBase::Symbolic(_)
-                | AddressBase::LoadedPointer(_)
+                | AddressBase::Load(_)
                 | AddressBase::PureFunctionApplication(_)
         )
     }
@@ -6442,12 +6478,12 @@ fn canonical_pointer_read(bits: &MachineTerm) -> Option<MachineTerm> {
 }
 
 fn named_pointer_read(read: MachineTerm) -> Address {
-    let MachineTerm::MemoryLoad(memory, address, _) = &read else {
+    let MachineTerm::MemoryLoad(point, address, _) = &read else {
         unreachable!("selected pointer read");
     };
-    let value = Address::loaded_value(&memory.shared_memory().unchanged_bytes_source(), address);
-    if let AddressBase::LoadedPointer(identity) = value.base {
-        crate::kernel::eval::record_pointer_load_source(identity, &read);
+    let value = Address::loaded_source_value_at(point, address);
+    if let AddressBase::Load(load) = &value.base {
+        crate::kernel::eval::record_pointer_load_source(load, &read);
     }
     value
 }
@@ -6657,6 +6693,90 @@ mod format_range_premise_tests {
         use super::*;
         include!(
             "../../scaling_tests/kernel/primitives/term_operations/format_range_premise_tests.rs"
+        );
+    }
+}
+
+#[cfg(test)]
+mod untyped_pointer_type_tests {
+    use super::*;
+    use crate::kernel::effective_type::CAccessClass;
+
+    /// Click's untyped `Pointer` is a pointer-width object pointer with no
+    /// pointee, compatible with every object pointer type and with no C
+    /// `void *` meaning of its own.
+    #[test]
+    fn every_program_type_query_answers_for_the_untyped_pointer() {
+        let pointer = ProgramType::Pointer;
+        assert!(pointer.is_pointer());
+        assert!(pointer.is_object_pointer());
+        assert!(!pointer.is_function_pointer());
+        assert!(!pointer.is_character_pointer());
+        assert_eq!(pointer.pointee_type(), None);
+        assert_eq!(pointer.pointer_to(), None);
+        assert_eq!(pointer.array_element_type(), None);
+        assert_eq!(pointer.byte_width(), C_POINTER_BYTE_WIDTH);
+        assert_eq!(pointer.abi_alignment(), C_POINTER_BYTE_WIDTH);
+        assert!(!pointer.supports_scalar_array_write(false));
+        assert!(pointer.is_signedness_view_of(pointer));
+        assert!(!pointer.is_signedness_view_of(ProgramType::VoidPointer));
+        for object_pointer in [
+            ProgramType::VoidPointer,
+            ProgramType::Int32Pointer,
+            ProgramType::UInt8Pointer,
+            ProgramType::Int8PointerPointer,
+            ProgramType::Float64Pointer,
+        ] {
+            assert!(pointer.pointer_types_compatible(object_pointer));
+            assert!(object_pointer.pointer_types_compatible(pointer));
+        }
+        let function = ProgramType::FunctionPointer(CallbackSignature::from_encoded(1));
+        assert!(!pointer.pointer_types_compatible(function));
+        assert!(!function.pointer_types_compatible(pointer));
+        assert!(!pointer.pointer_types_compatible(ProgramType::UInt64));
+        // A callback signature names no `Pointer`.
+        assert_eq!(
+            ProgramType::function_pointer_signature(ProgramType::Pointer, &[]),
+            CallbackSignature::UNSPECIFIED
+        );
+        assert_eq!(
+            ProgramType::function_pointer_signature(ProgramType::Void, &[ProgramType::Pointer]),
+            CallbackSignature::UNSPECIFIED
+        );
+        // A load or store at `Pointer` may access any pointer cell, as one
+        // at `void *` may.
+        assert_eq!(
+            CAccessClass::of_kernel_type(pointer),
+            Some(CAccessClass::VOID_POINTER)
+        );
+        assert_eq!(crate::kernel::program_type_spelling(pointer), "Pointer");
+    }
+
+    /// A `Pointer` accepts and reads any object pointer value and a null one,
+    /// and keeps it as stored; it accepts no integer and no function address.
+    #[test]
+    fn the_untyped_pointer_accepts_object_pointer_values() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = ProgramType::Pointer;
+        let typed = ProgramValue::typed_pointer(
+            Address::symbolic(Variable(4_321)),
+            ProgramType::Int32Pointer,
+        );
+        assert!(pointer.accepts(&typed));
+        assert_eq!(pointer.read_cell(&typed), Some(typed.clone()));
+        assert!(ProgramType::Int32Pointer.accepts(&typed.clone().retag_pointer(pointer)));
+        assert!(pointer.accepts(&ProgramValue::typed_pointer(
+            Address::null(),
+            ProgramType::Int32Pointer
+        )));
+        assert!(!pointer.accepts(&ProgramValue::UInt64(MachineTerm::uint64_constant(0))));
+        assert!(!pointer.accepts(&ProgramValue::typed_pointer(
+            Address::symbolic_function(Variable(4_322)),
+            ProgramType::Pointer
+        )));
+        assert_eq!(
+            typed.clone().resource_argument_at_type(pointer),
+            typed.retag_pointer(pointer)
         );
     }
 }

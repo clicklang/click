@@ -81,7 +81,7 @@ fn bridges_without_executing(tactic: &ProofTactic) -> bool {
 fn if_ensuring_arm_did_not_end() -> ClickError {
     ClickError::new(
         "an arm of this proof `if` did not end at a program point the other arm can rejoin: with `ensuring`, both arms must stop before function exit, at the same statement",
-    )
+    ).with_failed_tactic("if").with_proof_refusal(ProofRefusal::Tactic)
 }
 
 /// The refusal for a proof `if` whose arms are both live and end apart.
@@ -93,7 +93,7 @@ fn proof_if_arms_do_not_rejoin(nothing_written_after: bool) -> ClickError {
         "the arms of this proof `if` do not rejoin: nothing is written after the `if`, but the implicit tail that ends the proof follows it and is checked once, so each arm must reach the function exit or end where the other does, in the same state. End each arm with `step_until(function.exit);`, or say what the arms agree on with `if P ensuring { ... } then { ... } else { ... }`"
     } else {
         "the arms of this proof `if` do not rejoin: with tactics written after the `if`, both arms must end at the same program point in the same state. Say what the arms agree on with `if P ensuring { ... } then { ... } else { ... }`, or move the tactics after the `if` into the arms"
-    })
+    }).with_failed_tactic("if").with_proof_refusal(ProofRefusal::Tactic)
 }
 
 /// The refusal for a `cases` whose arms are live and end apart, worded as
@@ -103,7 +103,7 @@ fn cases_arms_do_not_rejoin(nothing_written_after: bool) -> ClickError {
         "the arms of this `cases` do not rejoin: nothing is written after the `cases`, but the implicit tail that ends the proof follows it and is checked once, so each arm must reach the function exit or end where the others do, in the same state. End each arm with `step_until(function.exit);`"
     } else {
         "the arms of this `cases` do not rejoin: with tactics written after the `cases`, every arm must end at the same program point in the same state. Move the tactics after the `cases` into its arms"
-    })
+    }).with_failed_tactic("cases").with_proof_refusal(ProofRefusal::Tactic)
 }
 
 /// The refusal for a proof `if` after execution whose condition is open on
@@ -112,7 +112,7 @@ fn cases_arms_do_not_rejoin(nothing_written_after: bool) -> ClickError {
 fn post_execution_if_forks_the_proof() -> ClickError {
     ClickError::new(
         "the arms of this proof `if` after execution do not rejoin: its condition is not decided on every outcome path, so the tactics written after the `if` would be checked once per arm. Move those tactics into the arms",
-    )
+    ).with_failed_tactic("if").with_proof_refusal(ProofRefusal::Tactic)
 }
 
 /// Whether nothing is written after a split: the script ends there, or only
@@ -208,11 +208,14 @@ fn defer_post_execution_case_split<'a>(
         // What follows a case split is checked once, after execution as
         // before it: a split that forks paths would check it once per arm.
         if outcome_path_count(&proof) > before && !ends_after_split(continuation) {
-            return Err(if disjunction {
+            let error = if disjunction {
                 post_execution_cases_forks_the_proof()
             } else {
                 post_execution_if_forks_the_proof()
-            });
+            };
+            return Err(proof
+                .at_source_tactic(source_index)
+                .attach_step_diagnostic(error));
         }
     }
     Ok(Ok(proof.defer_post_execution_source_tactic(
@@ -273,7 +276,7 @@ fn defer_post_execution_match<'a>(
 fn post_execution_cases_forks_the_proof() -> ClickError {
     ClickError::new(
         "the arms of this `cases` after execution do not rejoin: no disjunct is decided on some outcome path, so the tactics written after the `cases` would be checked once per arm. Move those tactics into the arms",
-    )
+    ).with_failed_tactic("cases").with_proof_refusal(ProofRefusal::Tactic)
 }
 
 /// The refusal for a `match` after execution with more than one live arm
@@ -281,7 +284,7 @@ fn post_execution_cases_forks_the_proof() -> ClickError {
 fn post_execution_match_forks_the_proof() -> ClickError {
     ClickError::new(
         "the arms of this proof `match` after execution do not rejoin: each live arm is a separate outcome path, so the tactics written after the `match` would be checked once per arm. Move those tactics into the arms",
-    )
+    ).with_failed_tactic("match").with_proof_refusal(ProofRefusal::Tactic)
 }
 
 /// The number of checked outcome paths at function exit.
@@ -933,6 +936,9 @@ fn flat_post_execution_tactic(tactic: &ProofTactic) -> Option<PostExecutionTacti
             Some(PostExecutionTactic::Apply(application.clone()))
         }
         ProofTactic::Have(have) => Some(PostExecutionTactic::Have(have.clone())),
+        ProofTactic::IntroBlock { .. } | ProofTactic::Close => {
+            Some(PostExecutionTactic::Leaf(tactic.clone()))
+        }
         ProofTactic::Both(_) | ProofTactic::All(_) => {
             Some(PostExecutionTactic::Both(tactic.clone()))
         }
@@ -1623,6 +1629,7 @@ fn advance_case_split_arms<'a>(
     mut expansion_capture: Option<&mut ExpansionCapture>,
     proof_site: Option<&ProofSite>,
     owning_source_index: usize,
+    source_index: usize,
     depth: usize,
 ) -> Driven<(Proof<'a>, bool)> {
     let must_rejoin = ensuring.is_some();
@@ -1667,11 +1674,14 @@ fn advance_case_split_arms<'a>(
                 None => advanced
                     .try_join_focused_execution_if(record)?
                     .ok_or_else(|| {
-                        if record.is_cases() {
+                        let error = if record.is_cases() {
                             cases_arms_do_not_rejoin(ends_after_split(continuation))
                         } else {
                             proof_if_arms_do_not_rejoin(ends_after_split(continuation))
-                        }
+                        };
+                        advanced
+                            .at_source_tactic(source_index)
+                            .attach_step_diagnostic(error)
                     })?,
             };
             return Ok(Ok((joined, false)));
@@ -1893,6 +1903,7 @@ fn try_check_structural_function_proof_inner<'a>(
                     staged_expansion_capture.as_mut(),
                     proof_site.as_ref(),
                     owning_source_index,
+                    *source_index,
                     0,
                 ));
                 proof = joined;
@@ -2257,6 +2268,7 @@ fn try_check_structural_function_proof_inner<'a>(
                     staged_expansion_capture.as_mut(),
                     proof_site.as_ref(),
                     owning_source_index,
+                    *source_index,
                     0,
                 ));
                 proof = joined;
@@ -2822,7 +2834,7 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a, 'node>(
                         .unwrap_or_default();
                     return Err(ClickError::new(format!(
                         "`{claim_label}`: the tactics after a proof split in this loop body{after} are reached by more than one of its arms at the same program point, so they would be checked once per arm. Rejoin the arms where they end with `match value ensuring {{ ... }} {{ ... }}` or `if P ensuring {{ ... }} then {{ ... }} else {{ ... }}`, or move those tactics into each arm"
-                    )));
+                    )).with_proof_refusal(ProofRefusal::Tactic));
                 }
                 node = next;
                 pending = rest;
@@ -2878,7 +2890,10 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a, 'node>(
                     }
                     let handled_by_linear_driver = !matches!(
                         indexed.tactic,
-                        ProofTactic::Loop(_) | ProofTactic::Solve | ProofTactic::Step
+                        ProofTactic::Loop(_)
+                            | ProofTactic::Close
+                            | ProofTactic::Solve
+                            | ProofTactic::Step
                     );
                     if handled_by_linear_driver {
                         let segment = InternalProofNode::Linear {
@@ -2892,15 +2907,36 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a, 'node>(
                             proof_site,
                             owning_source_index,
                             Some(claim_label),
-                        )?
-                        .ok()
-                        .filter(|(_, unconsumed)| unconsumed.is_empty());
-                        let Some((advanced, _)) = advanced else {
-                            return Err(ClickError::new(format!(
-                                "`{claim_label}` tactic {}: `{}` did not verify as a checked preservation operation. The preservation driver declined it; this is a proof-shape limitation, not a failed proposition check. For proposition-only work, move the operation into `have proposition by {{ ... }}`.",
+                        )?;
+                        let advanced = match advanced {
+                            Ok((advanced, remaining)) if remaining.is_empty() => advanced,
+                            declined => {
+                                let diagnostic = ClickError::new(format!(
+                                "`{claim_label}` tactic {}: `{}` did not verify as a checked preservation operation",
                                 indexed.index,
                                 tactic_name(&indexed.tactic)
-                            )));
+                                )).with_failed_tactic(tactic_name(&indexed.tactic));
+                                let diagnostic = match declined {
+                                    Err(Decline::ShortOfExit) => diagnostic
+                                        .with_proof_refusal(ProofRefusal::IncompleteProof),
+                                    Err(Decline::RegionDepth) => diagnostic
+                                        .with_context(format!(
+                                            "the checked execution region nesting limit is {MAX_CHECKED_EXECUTION_REGION_DEPTH}",
+                                        ))
+                                        .with_kind(ClickErrorKind::Unsupported),
+                                    Ok(_) | Err(Decline::Shape)
+                                        if matches!(indexed.tactic, ProofTactic::Instantiate { .. }) =>
+                                    {
+                                        diagnostic
+                                            .with_context("For proposition-only work, move the operation into `have proposition by { ... }`.")
+                                            .with_kind(ClickErrorKind::Unsupported)
+                                    }
+                                    Ok(_) | Err(Decline::Shape) => {
+                                        diagnostic.with_kind(ClickErrorKind::Internal)
+                                    }
+                                };
+                                return Err(diagnostic);
+                            }
                         };
                         proof = advanced;
                         if matches!(
@@ -2958,6 +2994,26 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a, 'node>(
                                 indexed.index,
                                 indexed.source_index,
                             )?;
+                        }
+                        ProofTactic::Close => {
+                            // At the back edge, first try the whole bundle as
+                            // an explicit check. A miss can use the existing
+                            // deferred region solver.
+                            match proof.driver().apply_close_invariants_body(
+                                &[ProofTactic::Known], None, false,
+                            ) {
+                                Ok(closed) => {
+                                    proof = closed.record_invariant_closer(indexed.index, indexed.source_index)?;
+                                }
+                                Err(error) if error.verification_stopped()
+                                    || crate::surface::proof::implicit_solve_scope::checked_only() =>
+                                {
+                                    return Err(error.with_failed_tactic("close"));
+                                }
+                                Err(_) => {
+                                    proof = proof.defer_region_solve(indexed.index, indexed.source_index)?;
+                                }
+                            }
                         }
                         ProofTactic::Solve => {
                             // The region solve's semantic content is the bundle
@@ -3901,7 +3957,7 @@ fn advance_execution_match_group<'a>(
         let Some(joined) = proof.try_join_focused_execution_if(&record)? else {
             return Err(ClickError::new(
                 "the arms of this proof `match` do not rejoin: with tactics written after the `match`, every live arm must end at the same program point in the same state",
-            ));
+            ).with_proof_refusal(ProofRefusal::Tactic).with_failed_tactic("match"));
         };
         return Ok(Ok(joined));
     };
@@ -4289,6 +4345,7 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                     expansion_capture.as_deref_mut(),
                     proof_site,
                     owning_source_index,
+                    *source_index,
                     depth,
                 ));
                 proof = joined.restore_execution_tactic_attribution(&owner)?;
@@ -4798,7 +4855,7 @@ fn advance_checked_branch_arms<'a>(
             };
             return Err(ClickError::new(format!(
                 "the {name} `branch` arm's {keyword}, so the arms have no common successor to join; write this case as a proof `if` on the C condition, whose arms each reach the loop rule on their own"
-            )));
+            )).with_proof_refusal(ProofRefusal::Tactic).with_failed_tactic("branch"));
         }
     }
     let mut consumed_continuation = false;

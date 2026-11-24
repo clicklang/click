@@ -85,7 +85,10 @@ fn collect_offset_load_variables_from_term(
     match term {
         MachineTerm::ThreadHandle(_) => {}
         MachineTerm::Constant { .. } | MachineTerm::Variable(_) => {}
-        MachineTerm::MemoryLoad(_, pointer, _) | MachineTerm::IntegerAddress(pointer, _) => {
+        MachineTerm::MemoryLoad(_, pointer, _) => {
+            collect_offset_load_variables_from_offset(&pointer.offset, load_variables);
+        }
+        MachineTerm::IntegerAddress(pointer, _) => {
             collect_offset_load_variables_from_offset(&pointer.offset, load_variables);
         }
         crate::kernel::binary_bitvector32_term!(left, right) => {
@@ -350,7 +353,7 @@ fn pointer_loaded_from_an_opaque_cell_is_named_by_its_read() {
 
 fn unresolved_canonicalization_test_load() -> MachineTerm {
     let memory = SymbolicMemory::new().with_block("canonical-shapes", 8);
-    MachineTerm::MemoryLoad(
+    MachineTerm::read_named(
         ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
         Box::new(Address {
             base: "canonical-shapes".into(),
@@ -566,12 +569,12 @@ fn canonical_term_resolves_equal_loads_to_one_form() {
     // The same unresolved load, read from two states that differ only by
     // a block this load cannot observe.
     let drifted = base.clone().with_block("unrelated", 4);
-    let load_at_base = MachineTerm::MemoryLoad(
+    let load_at_base = MachineTerm::read_named(
         ProgramPoint::at(&(crate::kernel::intern_memory(base.clone()))),
         Box::new(pointer.clone()),
         crate::kernel::LoadKind::Int32,
     );
-    let load_at_drifted = MachineTerm::MemoryLoad(
+    let load_at_drifted = MachineTerm::read_named(
         ProgramPoint::at(&(crate::kernel::intern_memory(drifted))),
         Box::new(pointer.clone()),
         crate::kernel::LoadKind::Int32,
@@ -592,7 +595,7 @@ fn canonical_term_resolves_equal_loads_to_one_form() {
         pointer.clone(),
         ProgramValue::Int32(MachineTerm::constant(7)),
     );
-    let resolved = MachineTerm::MemoryLoad(
+    let resolved = MachineTerm::read_named(
         ProgramPoint::at(&(crate::kernel::intern_memory(stored))),
         Box::new(pointer),
         crate::kernel::LoadKind::Int32,
@@ -615,7 +618,7 @@ fn atomic_canonicalization_reaches_loads_in_every_condition_region() {
             pointer.clone(),
             ProgramValue::Int32(MachineTerm::constant(7)),
         );
-    let load = MachineTerm::MemoryLoad(
+    let load = MachineTerm::read_named(
         ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
         Box::new(pointer),
         crate::kernel::LoadKind::Int32,
@@ -668,12 +671,12 @@ fn representational_load_equality_holds_beyond_the_former_depth_preflight() {
     };
     let base = SymbolicMemory::new().with_block("deep-cells", 4);
     let drifted = base.clone().with_block("unrelated", 4);
-    let mut left = MachineTerm::MemoryLoad(
+    let mut left = MachineTerm::read_named(
         ProgramPoint::at(&(crate::kernel::intern_memory(base))),
         Box::new(pointer.clone()),
         crate::kernel::LoadKind::Int32,
     );
-    let mut right = MachineTerm::MemoryLoad(
+    let mut right = MachineTerm::read_named(
         ProgramPoint::at(&(crate::kernel::intern_memory(drifted))),
         Box::new(pointer),
         crate::kernel::LoadKind::Int32,
@@ -721,7 +724,7 @@ fn shared_offsets_retain_state_identity_through_canonicalization() {
     let drifted = base.clone().with_block("unrelated", 4);
     let scaled = |memory: SymbolicMemory| {
         AddressOffset::scaled_int32_node(
-            MachineTerm::MemoryLoad(
+            MachineTerm::read_named(
                 ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                 Box::new(pointer.clone()),
                 crate::kernel::LoadKind::Int32,
@@ -743,7 +746,7 @@ fn shared_offsets_retain_state_identity_through_canonicalization() {
         offset: AddressOffset::Constant(4),
     };
     let other_scaled = AddressOffset::scaled_int32_node(
-        MachineTerm::MemoryLoad(
+        MachineTerm::read_named(
             ProgramPoint::at(&(crate::kernel::intern_memory(base.clone()))),
             Box::new(other),
             crate::kernel::LoadKind::Int32,
@@ -805,7 +808,7 @@ fn load_variables_are_congruent_through_ground_index_equalities() {
     // equality graph identifies them only with the required index equality.
     let memory = crate::kernel::intern_memory(SymbolicMemory::new().with_block("data", 8));
     let index = MachineTerm::Variable(Variable(7));
-    let indexed = MachineTerm::MemoryLoad(
+    let indexed = MachineTerm::read_named(
         ProgramPoint::at(&memory),
         Box::new(Address {
             base: "data".into(),
@@ -813,7 +816,7 @@ fn load_variables_are_congruent_through_ground_index_equalities() {
         }),
         crate::kernel::LoadKind::Int32,
     );
-    let first = MachineTerm::MemoryLoad(
+    let first = MachineTerm::read_named(
         ProgramPoint::at(&memory),
         Box::new(Address {
             base: "data".into(),
@@ -867,7 +870,7 @@ fn load_variables_are_congruent_through_ground_index_equalities() {
         &PureFactContext::new(),
         None,
     ));
-    let other_epoch_load = crate::kernel::eval::canonical_term(&MachineTerm::MemoryLoad(
+    let other_epoch_load = crate::kernel::eval::canonical_term(&MachineTerm::read_named(
         ProgramPoint::at(&other_epoch),
         Box::new(Address {
             base: "data".into(),
@@ -887,7 +890,7 @@ fn load_variables_are_congruent_through_ground_index_equalities() {
         .is_none()
     );
 
-    let other_block_load = crate::kernel::eval::canonical_term(&MachineTerm::MemoryLoad(
+    let other_block_load = crate::kernel::eval::canonical_term(&MachineTerm::read_named(
         ProgramPoint::at(&memory),
         Box::new(Address {
             base: "other-data".into(),
@@ -917,7 +920,7 @@ fn substitution_reaches_through_a_load_variable_with_a_bound_index() {
     let memory = crate::kernel::intern_memory(SymbolicMemory::new().with_block("p", 12));
     let bound = Variable(3_000_000);
     let cell = |offset: AddressOffset| {
-        MachineTerm::MemoryLoad(
+        MachineTerm::read_named(
             ProgramPoint::at(&memory),
             Box::new(Address {
                 base: "p".into(),
@@ -958,7 +961,7 @@ fn load_variables_compare_as_loads_under_bounds_pinned_indices() {
     let memory = crate::kernel::intern_memory(SymbolicMemory::new().with_block("p", 12));
     let j = MachineTerm::Variable(Variable(7));
     let cell = |offset: AddressOffset| {
-        crate::kernel::eval::canonical_term(&MachineTerm::MemoryLoad(
+        crate::kernel::eval::canonical_term(&MachineTerm::read_named(
             ProgramPoint::at(&memory),
             Box::new(Address {
                 base: "p".into(),
@@ -1001,7 +1004,7 @@ fn load_variable_free_variables_include_its_state_cells() {
         },
         ProgramValue::Int32(MachineTerm::constant(5)),
     );
-    let load_variable = crate::kernel::eval::canonical_term(&MachineTerm::MemoryLoad(
+    let load_variable = crate::kernel::eval::canonical_term(&MachineTerm::read_named(
         ProgramPoint::at(&(crate::kernel::intern_memory(written))),
         Box::new(Address {
             base: "p".into(),
@@ -1086,7 +1089,7 @@ fn nested_state_load_named(depth: usize, name: impl Fn(MachineTerm) -> MachineTe
     let mut memory = level_memory(CellStore::new());
     for level in 0..depth {
         let offset = 8 * level as i64;
-        let load = MachineTerm::MemoryLoad(
+        let load = MachineTerm::read_named(
             ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
             Box::new(at(offset)),
             crate::kernel::LoadKind::Int32,
@@ -1097,7 +1100,7 @@ fn nested_state_load_named(depth: usize, name: impl Fn(MachineTerm) -> MachineTe
             (at(offset + 4), ProgramValue::Int32(load)),
         ]));
     }
-    MachineTerm::MemoryLoad(
+    MachineTerm::read_named(
         ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
         Box::new(at(8 * depth as i64)),
         crate::kernel::LoadKind::Int32,

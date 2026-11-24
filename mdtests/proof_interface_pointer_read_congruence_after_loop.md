@@ -54,7 +54,11 @@ void probe(struct node *p, struct node *q, struct node *value) {
         },
         Tag::At(id) => {
             unfold(a);
-            have parent->next == id->next;
+            have parent == id by known();
+            have parent->next == id->next by {
+                rewrite(parent, id);
+                known();
+            }
             have parent->next == successor;
             let b = fold(frame(p), {model: Tag::At(id)});
             have parent->next == successor;

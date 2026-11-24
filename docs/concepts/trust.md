@@ -158,7 +158,7 @@ theorem certification consumes checks that theorem once. A proved library
 theorem is trusted to the extent that the check of its proof is; a kernel
 standard theorem is trusted to the extent that its builder is.
 
-The library also declares 70 `axiom`s, which are trusted, not proved.
+The library also declares 93 `axiom`s, which are trusted, not proved.
 Seven are the laws of the primitive type `Vec<T>` in
 `library/rust/vec.click`, which relate its bodyless operations `vec::len`,
 `vec::get`, `vec::push` and `vec::set`
@@ -179,9 +179,9 @@ past one beyond an object is already undefined, so every such address is an
 object address. An empty range is excluded because C allows a null pointer
 with a zero length.
 
-The unsigned address-word library adds twelve elementary word axioms and twenty
-scalar-pointer offset axioms (ten pointee types, with `int32` and `int64`
-indices). They state bitwise identities and guarded low/high mask laws over
+The unsigned address-word library adds thirteen elementary word axioms and thirty
+scalar-pointer offset axioms (ten pointee types, with `int32`, `int64` and
+`uint64` indices). They state bitwise identities and guarded low/high mask laws over
 wrapping `uint64` arithmetic, and the element-width scaling of an address.
 Native additions on their right sides are explicitly cast to `uint64`;
 these laws do not assert an unbounded Integer sum. The parsed word declarations
@@ -213,6 +213,23 @@ are proved theorems. Addition, rounding, antisymmetry, and discreteness are
 new declarations. Their stated guards and conclusions have an independent
 BigInt oracle regression, including negative and arbitrary-width values.
 
+The six floating-point order axioms in `library/float_order.click` give
+transitivity for two non-strict comparisons and for either order of a strict
+and a non-strict comparison. Each premise is a true IEEE comparison, so the
+operands are ordered values. No separate finiteness hypothesis is needed.
+The same laws apply to infinities and to both zeros.
+
+The rounded addition axioms in the same module compare a sum with the sum
+of its two finite lower or upper endpoints. The ordered premises exclude
+NaNs. For an upper bound the finite endpoints rule out positive infinity
+in the inputs, and for a lower bound they rule out negative infinity.
+Neither case admits a sum of infinities of opposite sign. Each sum rounds
+at the law's stated precision.
+The float32 scaling axioms multiply both sides of an ordered comparison
+by one finite positive factor and round both products at float32 precision.
+A positive finite factor excludes both zero-times-infinity and
+infinity-times-zero.
+
 Only the built-in library modules may declare a primitive `type`, a bodyless
 `function` or an `axiom`; the parser refuses each in any other file. The
 kernel reads each instance of a primitive type as a rigid type, so no
@@ -237,7 +254,7 @@ proved. Each family is an assumption in the same sense:
 | C library | `C library` | `memcpy`, `memcmp`, `memset` and `strlen` meet their contracts | `library/c/string.interface.click` |
 | Allocator | `allocator` | `malloc`, `calloc`, `realloc` and `free` behave as the kernel's allocation model: a fresh block or null, released once | Built in, as a language primitive: the C front end and the kernel (`allocation` resource), documented in [heap allocation](../reference/language/c.md#heap-allocation) |
 | Formatted output | `snprintf` | One contract per `snprintf` format a program uses, written from the format ([formatted output](../reference/language/c.md#formatted-output)) | `src/languages/c/formatted_output.rs` |
-| Formatted stream output | `printf` | The literal request is recorded on the hosted stdout stream, with a full byte count on success or a negative error result | `library/c/stream_output.interface.click.in` |
+| Formatted stream output | `printf` | The `fprintf` transition on the hosted `stdout` stream | `library/c/printf.interface.click` |
 | Formatted stream output | `fprintf` | The same transition on the stream identified by the `FILE *` argument, for a format of ordinary characters and `%%`, stated with `click::c::stdio`'s format functions | `library/c/fprintf.interface.click` |
 | C++ standard library | `C++ std` | The catalog contract of each `std::span`, `std::array`, `std::as_writable_bytes` and selected `std::vector` function an import calls, plus the C++ `memcpy` interface, and the explicitly pinned opaque exception constructor in the `ios_failure` profile | `library/cpp/span.interface.click` (`std::span<T>` and static-extent `std::span<T, N>`), `library/cpp/span_state.click` (logical descriptor state), `library/cpp/span_state_contracts.interface.click` (logical copy construction and `empty()` for dynamic `std::span<int>`), `library/cpp/array.interface.click` (`std::array<T, N>`, its `const` and mutable overloads), and `library/cpp/as_writable_bytes.interface.click` (`std::as_writable_bytes<T, N>`), `library/cpp/vector.interface.click` and `library/cpp/vector_state.click` (logical descriptor, read-only queries, and const subscript of an existing byte vector), `library/cpp/memcpy.interface.click` (byte copy through native `void*` parameters), and Click templates written out at each called element type and extent; `src/languages/cpp/standard_library.rs` keeps the name table and the opaque exception factory contract |
 | Rust core library | `Rust core` | The contract of each core method an import calls: integer methods (`u32::min`), `Vec`, slice, and `Option`/`Result` unwrapping ([core library methods](../reference/rust.md#core-library-methods)), with the 7 `axiom`s above | `library/rust/core.interface.click` (`Vec`, `slice::swap<T>`, `Option`/`Result` unwrapping contracts, generic contracts written out at each called type, with only a name table in `src/languages/rust/standard_library.rs`) and `library/rust/integers.interface.click` (one contract per integer method and type, stating its result with the specification function of the same path in `library/rust/<type>.click`; only the called methods' lines are appended) |

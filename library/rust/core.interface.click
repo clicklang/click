@@ -70,6 +70,14 @@ fn Option::expect<T>(o: Option<T>) -> T {
     ensures o == Option<T>::Some(result);
 }
 
+// `Option::take(o)` is `mem::replace(o, None)`: the option moves out and
+// `None` is left in its place.
+fn Option::take<T>(o: &mut Option<T>) -> Option<T> {
+    owns *o;
+    ensures result == old(*o);
+    ensures *o == Option<T>::None;
+}
+
 // `Option::unwrap_or(o, d)` is the library's `option::unwrap_or`.
 fn Option::unwrap_or<T>(o: Option<T>, d: T) -> T {
     ensures result == click::rust::option::unwrap_or(o, d);

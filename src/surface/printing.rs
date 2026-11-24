@@ -6,8 +6,28 @@ use super::diagnostics::{
 use super::*;
 
 thread_local! {
+    static EXPANSION_CLOSE_OUTPUT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     static CONTRACT_VALUE_PARAMETERS: std::cell::RefCell<Option<std::sync::Arc<ContractValueParameters>>> =
         const { std::cell::RefCell::new(None) };
+}
+
+/// Use the trial spelling of a checked goal closure when rendering expansion
+/// output. Checked certificates still carry the same `Known` operation.
+pub fn with_expansion_close_output<R>(operation: impl FnOnce() -> R) -> R {
+    struct Restore(bool);
+
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            EXPANSION_CLOSE_OUTPUT.with(|output| output.set(self.0));
+        }
+    }
+
+    let _restore = Restore(EXPANSION_CLOSE_OUTPUT.with(|output| output.replace(true)));
+    operation()
+}
+
+pub(super) fn known_call() -> &'static str {
+    EXPANSION_CLOSE_OUTPUT.with(|output| if output.get() { "close();" } else { "known();" })
 }
 
 /// The contract declaration names available while writing a checked proof.
@@ -55,9 +75,15 @@ fn source_contract_application(name: &str, arguments: &[ContractExpression]) -> 
 /// Click source that parses back. Every spelling is chosen by its caller;
 /// no output depends on who else is printing.
 /// Diagnostic spelling for a kernel conjunction without complete Surface labels.
+pub(super) const COMPATIBILITY_NORMALIZATION: &str = "<verification-only normalization>";
 pub(super) const UNRAISED_CONJUNCT: &str = "<unraised conjunct>";
 
 pub(in crate::surface) fn source_click_proposition(proposition: &ClickProposition) -> String {
+    with_lexical_binder_names(|| identity_click_proposition(proposition))
+}
+
+/// Internal comparison spelling that preserves generated binder identities.
+pub(in crate::surface) fn identity_click_proposition(proposition: &ClickProposition) -> String {
     let _null_literals = NullLiteralSourceScope::enter();
     print_proposition(proposition, PropositionSpelling::Source)
 }
@@ -655,12 +681,128 @@ pub fn format_proof_tactics(tactics: &[ProofTactic]) -> Result<String, Certifica
     Ok(format_proof_certificate(&certificate))
 }
 
+#[derive(Default)]
+struct CertificateBinderNames {
+    reserved: BTreeSet<String>,
+    names: BTreeMap<crate::kernel::GeneratedBinderId, std::rc::Rc<str>>,
+    next: usize,
+}
+
+impl CertificateBinderNames {
+    fn reserve_source(&mut self, source: &str) {
+        for word in source.split(|ch: char| !ch.is_ascii_alphanumeric() && ch != '_') {
+            if word.starts_with(|ch: char| ch.is_ascii_alphabetic() || ch == '_') {
+                self.reserved.insert(word.to_owned());
+            }
+        }
+    }
+
+    fn assign(&mut self, id: crate::kernel::GeneratedBinderId) {
+        if self.names.contains_key(&id) {
+            return;
+        }
+        loop {
+            self.next += 1;
+            let candidate = if self.next == 1 {
+                "x".to_string()
+            } else {
+                format!("x{}", self.next)
+            };
+            if self.reserved.insert(candidate.clone()) {
+                self.names.insert(id, candidate.into());
+                return;
+            }
+        }
+    }
+}
+
+type SharedCertificateBinderNames = std::rc::Rc<std::cell::RefCell<CertificateBinderNames>>;
+
+thread_local! {
+    static CERTIFICATE_BINDER_NAMES: std::cell::RefCell<Option<SharedCertificateBinderNames>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Share spellings between edits of one source and reserve surrounding
+/// specification names and the program names its parser protects.
+pub(super) struct CertificateBinderScope(Option<SharedCertificateBinderNames>);
+
+impl CertificateBinderScope {
+    pub(super) fn enter<'a>(
+        source: &str,
+        blocks: impl IntoIterator<Item = &'a FunctionBlock>,
+    ) -> Self {
+        let mut names = CertificateBinderNames::default();
+        names.reserve_source(source);
+        for block in blocks {
+            names
+                .reserved
+                .extend(block.program_object_names.iter().cloned());
+            names.reserved.extend(
+                block
+                    .signature()
+                    .parameters()
+                    .iter()
+                    .map(|parameter| parameter.name().to_owned()),
+            );
+        }
+        Self(
+            CERTIFICATE_BINDER_NAMES
+                .with(|slot| slot.replace(Some(std::rc::Rc::new(std::cell::RefCell::new(names))))),
+        )
+    }
+}
+
+impl Drop for CertificateBinderScope {
+    fn drop(&mut self) {
+        CERTIFICATE_BINDER_NAMES.with(|slot| slot.replace(self.0.take()));
+    }
+}
+
+fn with_lexical_binder_names(render: impl Fn() -> String) -> String {
+    use crate::kernel::GeneratedBinderSpellingScope;
+    if GeneratedBinderSpellingScope::is_active() {
+        return render();
+    }
+    let encountered = std::rc::Rc::new(std::cell::RefCell::new((BTreeSet::new(), Vec::new())));
+    let observed = encountered.clone();
+    let draft = {
+        let _spelling = GeneratedBinderSpellingScope::enter(move |id| {
+            let mut observed = observed.borrow_mut();
+            if observed.0.insert(id) {
+                observed.1.push(id);
+            }
+            None
+        });
+        render()
+    };
+    let encountered = encountered.borrow();
+    if encountered.1.is_empty() {
+        return draft;
+    }
+    let names = CERTIFICATE_BINDER_NAMES
+        .with(|slot| slot.borrow().clone())
+        .unwrap_or_default();
+    {
+        let mut names = names.borrow_mut();
+        names.reserve_source(&draft);
+        for &id in &encountered.1 {
+            names.assign(id);
+        }
+    }
+    let _spelling =
+        GeneratedBinderSpellingScope::enter(move |id| names.borrow().names.get(&id).cloned());
+    render()
+}
+
 pub(super) fn format_partial_tactic_sequence(tactics: &[ProofTactic]) -> String {
-    let _null_literals = NullLiteralSourceScope::enter();
-    let mut output = String::new();
-    write_tactics(&mut output, tactics, 0);
-    output.pop();
-    output
+    with_lexical_binder_names(|| {
+        let _null_literals = NullLiteralSourceScope::enter();
+        let mut output = String::new();
+        write_tactics(&mut output, tactics, 0);
+        output.pop();
+        output
+    })
 }
 
 pub fn format_proof_certificate(certificate: &ProofCertificate) -> String {
@@ -670,11 +812,13 @@ pub fn format_proof_certificate(certificate: &ProofCertificate) -> String {
 /// A whole proof block holding `tactics`, as [`format_proof_certificate`]
 /// writes a certificate's.
 pub(in crate::surface) fn format_proof_block(tactics: &[ProofTactic]) -> String {
-    let _null_literals = NullLiteralSourceScope::enter();
-    let mut output = String::from("by {\n");
-    write_tactics(&mut output, tactics, 1);
-    output.push('}');
-    output
+    with_lexical_binder_names(|| {
+        let _null_literals = NullLiteralSourceScope::enter();
+        let mut output = String::from("by {\n");
+        write_tactics(&mut output, tactics, 1);
+        output.push('}');
+        output
+    })
 }
 
 /// The assertions of a join's `ensuring` block, one per line.
@@ -856,7 +1000,7 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
                 )
                 .collect::<Vec<_>>()
                 .join(", ");
-            let result = if binding.name.starts_with('#') {
+            let result = if binding.unnamed {
                 String::new()
             } else {
                 format!("let {} = ", binding.name)
@@ -1204,7 +1348,11 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             &prefix,
             &format!("apply({});", source_click_proposition(fact)),
         ),
-        ProofTactic::Known => line(output, &prefix, "known();"),
+        ProofTactic::Close => line(output, &prefix, "close();"),
+        ProofTactic::Known => line(output, &prefix, known_call()),
+        ProofTactic::CompatibilityNormalize(_) => {
+            line(output, &prefix, COMPATIBILITY_NORMALIZATION)
+        }
         ProofTactic::Normalize => line(output, &prefix, "normalize();"),
         ProofTactic::NormalizeUsing(premises) => {
             write_using_premises(output, "normalize()", premises, indent)
@@ -1212,10 +1360,21 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
         ProofTactic::ArithmeticUsing(premises) => {
             write_using_premises(output, "solve()", premises, indent)
         }
+        ProofTactic::IntroBlock { binder, body } => {
+            let name = binder.as_ref().map(ToString::to_string).unwrap_or_default();
+            line(output, &prefix, &format!("intro({name}) {{"));
+            write_tactics(output, body, indent + 1);
+            line(output, &prefix, "}");
+        }
         ProofTactic::Intro => line(output, &prefix, "intro();"),
         ProofTactic::IntroAs(name) => line(output, &prefix, &format!("let {name} = intro();")),
         ProofTactic::IntroBinder(name) => line(output, &prefix, &format!("let {name} = intro();")),
         ProofTactic::Enumerate => line(output, &prefix, "enumerate();"),
+        ProofTactic::Contradiction(ClickProposition::Value(value))
+            if bool_literal_value(value) == Some(false) =>
+        {
+            line(output, &prefix, "contradiction();")
+        }
         ProofTactic::Contradiction(fact) => line(
             output,
             &prefix,
@@ -1269,7 +1428,7 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
         }
         ProofTactic::Instantiate {
             quantified,
-            argument,
+            arguments,
         } => {
             line(
                 output,
@@ -1277,7 +1436,11 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
                 &format!(
                     "instantiate({}, {});",
                     source_click_proposition(quantified),
-                    describe_contract_expression(argument)
+                    arguments
+                        .iter()
+                        .map(describe_contract_expression)
+                        .collect::<Vec<_>>()
+                        .join(", ")
                 ),
             );
         }
@@ -1336,7 +1499,7 @@ fn write_proof(output: &mut String, proof: &SourceProof, indent: usize) {
         // such as the `initialize` phase of a loop with no invariant, keeps
         // `known();`, the step a phase with nothing to prove is
         // checked by.
-        line(output, &"    ".repeat(indent + 1), "known();");
+        line(output, &"    ".repeat(indent + 1), known_call());
     }
     write_tactics(output, tactics, indent + 1);
     output.push_str(&"    ".repeat(indent));
@@ -1372,7 +1535,7 @@ fn write_premise_list(output: &mut String, facts: &[ClickProposition], indent: u
 
 pub(in crate::surface) fn format_resource_call(resource: &ResourceClause) -> String {
     if let ResourceClause::Named { binding, resource } = resource {
-        return if binding.name.starts_with('#') {
+        return if binding.unnamed {
             format_resource_call(resource)
         } else {
             binding.name.clone()
@@ -1441,7 +1604,7 @@ pub(in crate::surface) fn format_resource_target(resource: &ResourceClause) -> S
             format_resource_target(resource)
         ),
         ResourceClause::Named { binding, resource } => {
-            if binding.name.starts_with('#') {
+            if binding.unnamed {
                 format_resource_target(resource)
             } else {
                 format!("{}: {}", binding.name, format_resource_target(resource))

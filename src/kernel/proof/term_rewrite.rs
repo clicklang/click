@@ -230,9 +230,10 @@ struct CarrierVariables {
     budgeted: bool,
     work_exhausted: bool,
     registered_loads: BTreeSet<Variable>,
-    pointer_loads: BTreeSet<crate::kernel::PointerLoadId>,
+    pointer_loads: BTreeSet<crate::kernel::Load>,
     pointer_applications: BTreeSet<u64>,
     shared_machine_operands: BTreeSet<u64>,
+    mathematical_integers: BTreeSet<u64>,
     pointer_terms: Option<Vec<Address>>,
     read_terms: Option<BTreeMap<((u32, u32), Address, LoadKind), MachineTerm>>,
 }
@@ -584,6 +585,63 @@ fn restore_mapping(
     }
 }
 
+pub(crate) fn mathematical_comparison(
+    condition: &StoredConditionTerm,
+) -> Option<(IntegerComparisonOperator, &[KernelTerm; 2])> {
+    let KernelTermNode::IntegerCompare {
+        operator,
+        arguments,
+    } = condition.root()?.node()
+    else {
+        return None;
+    };
+    arguments
+        .iter()
+        .all(KernelTerm::is_mathematical_integer)
+        .then_some((*operator, arguments))
+}
+
+fn collect_stored_condition_carriers(
+    condition: &StoredConditionTerm,
+    variables: &mut CarrierVariables,
+) {
+    if let Some((_, arguments)) = mathematical_comparison(condition) {
+        if variables.visit() {
+            for argument in arguments {
+                collect_mathematical_integer_carriers(argument, variables);
+            }
+        }
+    } else {
+        collect_condition_carriers(condition.native_compat(), variables);
+    }
+}
+
+fn collect_mathematical_integer_carriers(root: &KernelTerm, variables: &mut CarrierVariables) {
+    let mut pending = vec![root];
+    while let Some(term) = pending.pop() {
+        if !variables.mathematical_integers.insert(term.id()) {
+            continue;
+        }
+        if !variables.visit() {
+            return;
+        }
+        match term.node() {
+            KernelTermNode::IntegerLiteral(_) => {}
+            KernelTermNode::Variable(variable) => {
+                variables.integer.insert(*variable);
+            }
+            KernelTermNode::IntegerOperation { arguments, .. } => {
+                pending.extend(arguments.iter().rev());
+            }
+            KernelTermNode::Fold(fold) => {
+                variables.integer.extend([fold.accumulator, fold.item]);
+                pending.extend(fold.arguments.iter().rev());
+            }
+            _ => unreachable!("mathematical Integer operand"),
+        }
+    }
+}
+
 fn collect_integer_shared_carriers(
     term: &SharedIntegerTerm,
     variables: &mut CarrierVariables,
@@ -896,11 +954,8 @@ fn collect_address_base_carriers(block: &AddressBase, variables: &mut CarrierVar
         }
         // A loaded pointer carries whatever its defining read's address
         // carries, as a registered load variable's offset does.
-        AddressBase::LoadedPointer(identity) if variables.pointer_loads.insert(*identity) => {
-            if let Some((_, address)) = crate::kernel::eval::registered_pointer_load(*identity) {
-                collect_pointer_carriers(&address, variables);
-                if variables.exhausted() {}
-            }
+        AddressBase::Load(load) if variables.pointer_loads.insert(load.clone()) => {
+            collect_pointer_carriers(load.cell(), variables);
         }
         _ => {}
     }
@@ -1458,7 +1513,7 @@ fn collect_integer_substitution_variables_with_carriers(
                 collect_sequence_carriers(sequence, carriers);
             }
             Proposition::ConditionIs(condition, _) => {
-                collect_condition_carriers(condition.native_compat(), carriers);
+                collect_stored_condition_carriers(condition, carriers);
             }
             // Loadability obligations produced while lowering a symbolic array
             // read carry the selected pointer and byte-count terms directly.  The
@@ -1556,13 +1611,17 @@ fn collect_resource_carriers(resource: &Resource, carriers: &mut CarrierVariable
 fn collect_integer_substitution_term_variables(term: &Term, variables: &mut CarrierVariables) {
     match term {
         Term::Integer(value) => {
-            collect_integer_carriers(value.native_compat(), variables, &mut BTreeSet::new())
+            if let Some(root) = value.root().filter(|root| root.is_mathematical_integer()) {
+                collect_mathematical_integer_carriers(root, variables);
+            } else {
+                collect_integer_carriers(value.native_compat(), variables, &mut BTreeSet::new());
+            }
         }
         Term::Bitvector32(value) => collect_bitvector_carriers(value.native_compat(), variables),
         Term::ProgramValue(value) => {
             collect_program_value_carriers(value.native_compat(), variables)
         }
-        Term::Condition(value) => collect_condition_carriers(value.native_compat(), variables),
+        Term::Condition(value) => collect_stored_condition_carriers(value, variables),
         Term::PointerOffset(value) => {
             collect_pointer_offset_carriers(value.native_compat(), variables)
         }
@@ -1921,7 +1980,7 @@ pub(crate) struct TermRewrite<'a> {
     integer_cache: HashMap<(u64, u64, bool, bool), IntegerTerm>,
     fold_integer_bridge: KernelTermExport,
     pointer_application_cache: HashMap<(u64, u64, bool, bool), AddressBase>,
-    pointer_origin_cache: HashMap<(PointerLoadId, u64, bool, bool), AddressBase>,
+    pointer_origin_cache: HashMap<(crate::kernel::Load, u64, bool, bool), AddressBase>,
     scope_renaming_max: u64,
     integer_body_summaries: crate::kernel::prelude::RetainedIntegerScopeSummaries,
     integer_variables: Option<IntegerVariableRewrite<'a>>,
@@ -2051,6 +2110,22 @@ impl<'a> TermRewrite<'a> {
         rewrite
     }
 
+    pub(super) fn retained_arithmetic_comparison(
+        [left, right]: &[KernelTerm; 2],
+    ) -> Option<[KernelTerm; 2]> {
+        let mut rewrite = Self::for_arithmetic_comparison();
+        let result = (|| {
+            Some([
+                rewrite.rewrite_stored_integer_root(left)?,
+                rewrite.rewrite_stored_integer_root(right)?,
+            ])
+        })();
+        if rewrite.refusal().is_some() || crate::instrumentation::deadline_exceeded_with_work(0) {
+            return None;
+        }
+        result
+    }
+
     pub(crate) fn arithmetic_comparison(proposition: &Proposition) -> Option<Proposition> {
         if crate::instrumentation::deadline_exceeded_with_work(0) {
             return None;
@@ -2171,7 +2246,11 @@ impl<'a> TermRewrite<'a> {
                     unreachable!()
                 };
                 reads.insert(
-                    (memory.shared_memory().arena_id(), *pointer, kind),
+                    (
+                        memory.shared_memory().arena_id(),
+                        Address::from(pointer),
+                        kind,
+                    ),
                     (value, dependencies),
                 );
             } else if let MachineTerm::Variable(variable) = source {
@@ -2804,7 +2883,9 @@ impl<'a> TermRewrite<'a> {
         // strictly above the maximum.  Keeping the complete source set in
         // `reserved_variables` would add an uncharged linear copy here and
         // would not change any allocation decision.
-        if let Some(last) = variables.iter().next_back() {
+        // The greatest ordinary variable: the allocator mints ordinary
+        // variables, and other origins sort after them.
+        if let Some(last) = variables.range(..Variable::FIRST_NON_ORDINARY).next_back() {
             let Some(next) = last.0.checked_add(1) else {
                 self.integer_work_exhausted = true;
                 return;
@@ -3232,17 +3313,34 @@ impl<'a> TermRewrite<'a> {
         let mut seen = BTreeSet::new();
         for term in terms {
             match term {
+                Term::Condition(condition)
+                    if matches!(
+                        condition.root().map(KernelTerm::node),
+                        Some(KernelTermNode::IntegerCompare { arguments, .. })
+                            if arguments.iter().all(|root| self.can_rewrite_exact_observation(root))
+                    ) => {}
                 Term::Condition(condition) => {
-                    collect_condition_carriers(condition.native_compat(), &mut variables)
+                    collect_stored_condition_carriers(condition, &mut variables)
                 }
                 Term::Bitvector32(value) => {
                     collect_bitvector_carriers(value.native_compat(), &mut variables)
                 }
-                Term::Integer(value) => collect_integer_shared_carriers(
-                    &SharedIntegerTerm::from(value.native_compat().clone()),
-                    &mut variables,
-                    &mut seen,
-                ),
+                // This exact rewrite does not enter binders or freshen names.
+                Term::Integer(value)
+                    if value
+                        .root()
+                        .is_some_and(|root| self.can_rewrite_exact_observation(root)) => {}
+                Term::Integer(value) => {
+                    if let Some(root) = value.root().filter(|root| root.is_mathematical_integer()) {
+                        collect_mathematical_integer_carriers(root, &mut variables);
+                    } else {
+                        collect_integer_shared_carriers(
+                            &SharedIntegerTerm::from(value.native_compat().clone()),
+                            &mut variables,
+                            &mut seen,
+                        );
+                    }
+                }
                 Term::PointerOffset(offset) => {
                     if let Some(root) = offset.root() {
                         collect_retained_offset_carriers(root, &mut variables);
@@ -3277,11 +3375,7 @@ impl<'a> TermRewrite<'a> {
             return;
         }
         let mut variables = self.new_carrier_variables();
-        collect_integer_shared_carriers(
-            &SharedIntegerTerm::from(term.clone()),
-            &mut variables,
-            &mut BTreeSet::new(),
-        );
+        collect_integer_carriers(term, &mut variables, &mut BTreeSet::new());
         self.reserve_source_variables(variables);
     }
 
@@ -3347,8 +3441,8 @@ impl<'a> TermRewrite<'a> {
                 if let Some((from, to)) = self.pointer_value_exact
                     && !self.source_disabled
                     && range.provenance.as_ref() == from.provenance()
-                    && range.bounds_owner.as_deref() == from.bounds_owner()
-                    && range.carrier_bounds_known == from.bounds_are_known()
+                    && range.carrier_owner().map(|owner| &**owner) == from.bounds_owner()
+                    && range.carrier_known() == from.bounds_are_known()
                 {
                     // The footprint already fixed its admitted byte bounds.
                     // A complete equality transports its retained carrier,
@@ -3586,6 +3680,9 @@ impl<'a> TermRewrite<'a> {
                 }
             }
             Proposition::ConditionIs(condition, value) => {
+                if let Some(condition) = self.rewrite_stored_integer_comparison(condition) {
+                    return Proposition::condition_is(condition, *value);
+                }
                 // A closed float predicate has no occurrence of the Integer
                 // binder. Keep its arithmetic under structural substitution.
                 if self.integer_variables.is_some()
@@ -3786,9 +3883,12 @@ impl<'a> TermRewrite<'a> {
         let result = match term {
             Term::Algebraic(v) => Term::Algebraic(self.algebraic(v.native_compat()).into()),
             Term::Bitvector32(v) => Term::Bitvector32(v.map_native(|word| self.bits(word))),
-            Term::Integer(v) => Term::Integer(self.integer(v.native_compat()).into()),
+            Term::Integer(v) => Term::Integer(self.stored_integer(v)),
             Term::ProgramValue(v) => Term::ProgramValue(self.value(v.native_compat()).into()),
-            Term::Condition(v) => Term::Condition(self.condition(v.native_compat()).into()),
+            Term::Condition(v) => Term::Condition(
+                self.rewrite_stored_integer_comparison(v)
+                    .unwrap_or_else(|| self.condition(v.native_compat()).into()),
+            ),
             Term::PointerOffset(v) => Term::PointerOffset(self.contract_offset(v)),
             Term::Sequence(v)
                 if v.element_type
@@ -3806,6 +3906,80 @@ impl<'a> TermRewrite<'a> {
             result
         }
     }
+    fn rewrite_stored_integer_comparison(
+        &mut self,
+        condition: &StoredConditionTerm,
+    ) -> Option<StoredConditionTerm> {
+        let KernelTermNode::IntegerCompare {
+            operator,
+            arguments,
+        } = condition.root()?.node()
+        else {
+            return None;
+        };
+        let mathematical = self.retained_mathematical_rewrite()
+            && arguments.iter().all(KernelTerm::is_mathematical_integer);
+        if !mathematical
+            && !arguments
+                .iter()
+                .all(|root| self.can_rewrite_exact_observation(root))
+        {
+            return None;
+        }
+        if mathematical && !self.source_variables_reserved {
+            let mut variables = self.new_carrier_variables();
+            collect_stored_condition_carriers(condition, &mut variables);
+            self.reserve_source_variables(variables);
+        }
+        self.visit();
+        let rewritten = (|| {
+            let left = self.rewrite_stored_integer_root(&arguments[0])?;
+            let right = self.rewrite_stored_integer_root(&arguments[1])?;
+            KernelTerm::integer_comparison(*operator, [left, right]).ok()
+        })();
+        match rewritten {
+            Some(root) => StoredConditionTerm::from_root(root),
+            None if self.refusal_status().is_some() => Some(condition.clone()),
+            None => None,
+        }
+    }
+
+    fn retained_mathematical_rewrite(&self) -> bool {
+        self.integer_variables
+            .as_ref()
+            .is_some_and(|mapping| mapping.to.is_mathematical())
+            || self.integer_exact.is_some_and(|(source, replacement)| {
+                source.read_through_ref().mathematical_root().is_some()
+                    && replacement.mathematical_root().is_some()
+            })
+    }
+
+    fn stored_integer(&mut self, value: &StoredIntegerTerm) -> StoredIntegerTerm {
+        if let Some(root) = value.root() {
+            let mathematical =
+                root.is_mathematical_integer() && self.retained_mathematical_rewrite();
+            if mathematical && !self.source_variables_reserved {
+                let mut variables = self.new_carrier_variables();
+                collect_mathematical_integer_carriers(root, &mut variables);
+                self.reserve_source_variables(variables);
+            }
+            if mathematical || self.can_rewrite_exact_observation(root) {
+                if let Some(result) = self.rewrite_stored_integer_root(root) {
+                    return StoredIntegerTerm::from_root(result).expect("Integer rewrite result");
+                }
+                if self.refusal_status().is_some() {
+                    return IntegerTerm::constant_i64(0).into();
+                }
+            }
+        }
+        self.integer(value.native_compat()).into()
+    }
+
+    fn rewrite_stored_integer_root(&mut self, root: &KernelTerm) -> Option<KernelTerm> {
+        self.visit();
+        self.shared_fold_integer_child(root)
+    }
+
     fn rewrite_sequence_value(&mut self, value: &ExecutionValue) -> ExecutionValue {
         match value {
             ExecutionValue::Shared(root) => self
@@ -4309,12 +4483,17 @@ impl<'a> TermRewrite<'a> {
         if self.checked_work_exhausted() {
             return exhausted_integer(v);
         }
-        self.integer_shared_with_match_retention(&SharedIntegerTerm::from(v.clone()), retain_match)
+        self.integer_shared_with_match_retention(
+            &SharedIntegerTerm::from(v.clone()),
+            Some(v),
+            retain_match,
+        )
     }
 
     fn integer_shared(&mut self, shared: &SharedIntegerTerm) -> IntegerTerm {
         self.integer_shared_with_match_retention(
             shared,
+            None,
             MATCH_REDUCTION_SUSPENDED.with(std::cell::Cell::get),
         )
     }
@@ -4322,13 +4501,14 @@ impl<'a> TermRewrite<'a> {
     fn integer_shared_with_match_retention(
         &mut self,
         shared: &SharedIntegerTerm,
+        native_input: Option<&IntegerTerm>,
         retain_match: bool,
     ) -> IntegerTerm {
+        let input = || native_input.unwrap_or_else(|| shared.as_ref());
         if self.checked_work_exhausted() {
-            return exhausted_integer(shared.as_ref());
+            return exhausted_integer(input());
         }
-        let retain_match =
-            retain_match && matches!(shared.as_ref(), IntegerTerm::AlgebraicMatch { .. });
+        let retain_match = retain_match && matches!(shared.root().node(), KernelTermNode::Match(_));
         let cache_key = (
             shared.id(),
             self.scope_key(),
@@ -4340,7 +4520,7 @@ impl<'a> TermRewrite<'a> {
         }
         self.visit();
         if self.checked_work_exhausted() {
-            return exhausted_integer(shared.as_ref());
+            return exhausted_integer(input());
         }
         // An occurrence is matched up to its observations' value relations
         // (rule W): `to_integer(count as uint32 as int32)` occurs in a goal
@@ -4354,7 +4534,7 @@ impl<'a> TermRewrite<'a> {
             };
             self.charge_rewrite_work(work);
             if self.checked_work_exhausted() {
-                return exhausted_integer(shared.as_ref());
+                return exhausted_integer(input());
             }
             self.changed = true;
             // Do not recursively rewrite the replacement. Matching uses
@@ -4363,7 +4543,7 @@ impl<'a> TermRewrite<'a> {
             self.integer_cache.insert(cache_key, result.clone());
             return result;
         }
-        let result = match shared.as_ref() {
+        let result = match input() {
             IntegerTerm::Constant(value) => {
                 if self.integer_variables.is_some()
                     || self.typed_variables.is_some()
@@ -4374,10 +4554,10 @@ impl<'a> TermRewrite<'a> {
                             value.bits() as usize + 1,
                         );
                     if self.integer_work_exhausted {
-                        return exhausted_integer(shared.as_ref());
+                        return exhausted_integer(input());
                     }
                 }
-                shared.as_ref().clone()
+                input().clone()
             }
             IntegerTerm::Variable(variable) => self.rewrite_integer_variable(*variable),
             IntegerTerm::PureFunctionApplication(application) => {
@@ -4385,7 +4565,7 @@ impl<'a> TermRewrite<'a> {
                 for argument in application.arguments() {
                     arguments.push(self.argument(argument));
                     if self.checked_work_exhausted() {
-                        return exhausted_integer(shared.as_ref());
+                        return exhausted_integer(input());
                     }
                 }
                 IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
@@ -4435,11 +4615,11 @@ impl<'a> TermRewrite<'a> {
                     return result;
                 }
                 if self.refusal().is_some() {
-                    return exhausted_integer(shared.as_ref());
+                    return exhausted_integer(input());
                 }
                 let bits = self.bits(value.value());
                 if self.checked_work_exhausted() {
-                    return exhausted_integer(shared.as_ref());
+                    return exhausted_integer(input());
                 }
                 // The mathematical observation of a machine *constant* is that
                 // constant: `from_machine` folds it and keeps the carrier
@@ -4534,12 +4714,12 @@ impl<'a> TermRewrite<'a> {
                     folded_machine_condition(condition)
                 };
                 if self.checked_work_exhausted() {
-                    return exhausted_integer(shared.as_ref());
+                    return exhausted_integer(input());
                 }
                 if !preserve && let ConditionTerm::Constant(value) = condition {
                     let result = self.integer_shared(if value { then_term } else { else_term });
                     if self.checked_work_exhausted() {
-                        return exhausted_integer(shared.as_ref());
+                        return exhausted_integer(input());
                     }
                     self.integer_cache.insert(cache_key, result.clone());
                     return result;
@@ -4562,7 +4742,7 @@ impl<'a> TermRewrite<'a> {
             }
         };
         if self.checked_work_exhausted() {
-            return exhausted_integer(shared.as_ref());
+            return exhausted_integer(input());
         }
         self.integer_cache.insert(cache_key, result.clone());
         result
@@ -4595,9 +4775,16 @@ impl<'a> TermRewrite<'a> {
         if self.bitvector.is_some() && self.bitvector_replacement_variables.is_none() {
             self.ensure_replacement_carriers();
             if let Some(variables) = &self.replacement_carriers {
-                self.integer_replacement_variable_max = variables.integer.last().map(|v| v.0);
-                self.bitvector_replacement_variable_max =
-                    variables.program_values.last().map(|v| v.0);
+                self.integer_replacement_variable_max = variables
+                    .integer
+                    .range(..Variable::FIRST_NON_ORDINARY)
+                    .next_back()
+                    .map(|v| v.0);
+                self.bitvector_replacement_variable_max = variables
+                    .program_values
+                    .range(..Variable::FIRST_NON_ORDINARY)
+                    .next_back()
+                    .map(|v| v.0);
                 self.integer_replacement_variables = Some(variables.integer.clone());
                 self.bitvector_replacement_variables = Some(variables.program_values.clone());
             }
@@ -5327,7 +5514,7 @@ impl<'a> TermRewrite<'a> {
             && !self.source_disabled
             && p.base == from.base
             && from.offset == AddressOffset::Constant(0)
-            && matches!(from.base, AddressBase::LoadedPointer(_))
+            && matches!(from.base, AddressBase::Load(_))
         {
             self.changed = true;
             let displacement = self.offset(&p.offset);
@@ -6225,11 +6412,7 @@ impl<'a> TermRewrite<'a> {
         } else if self.equality_graph.is_some_and(|graph| match &result {
             ConditionTerm::PointerEqual(left, right) => {
                 let matches = self.pointer_context.map_or_else(
-                    || {
-                        left.provenance() == right.provenance()
-                            && left.bounds() == right.bounds()
-                            && left.bounds_are_known() == right.bounds_are_known()
-                    },
+                    || left.same_provenance_as(right),
                     |context| context.pointer_provenance_match(left, right),
                 );
                 matches && graph.are_equal(left.address(), right.address())
@@ -6585,8 +6768,11 @@ impl<'a> TermRewrite<'a> {
         if let Some(reads) = self.comparison_reads
             && let Some(MachineTerm::MemoryLoad(memory, pointer, kind)) =
                 crate::kernel::eval::viewed_as_memory_load(v)
-            && let Some((replacement, variables)) =
-                reads.get(&(memory.shared_memory().arena_id(), *pointer, kind))
+            && let Some((replacement, variables)) = reads.get(&(
+                memory.shared_memory().arena_id(),
+                Address::from(pointer),
+                kind,
+            ))
             && !variables.is_bound_in(&self.scope)
         {
             self.changed = true;
@@ -6872,7 +7058,7 @@ impl<'a> TermRewrite<'a> {
                     && memory.has_certified_read_view()
                 {
                     return crate::kernel::eval::scalar_read_for_exact_cell_at(
-                        &memory.clone().for_exact_read(),
+                        &memory.point().clone().for_exact_read(),
                         &rewritten,
                         *kind,
                         bytes,
@@ -6893,11 +7079,13 @@ impl<'a> TermRewrite<'a> {
                         &rewritten,
                         bytes,
                     );
-                    return crate::kernel::eval::canonical_term(&MachineTerm::MemoryLoad(
-                        ProgramPoint::at(&source),
-                        Box::new(rewritten),
-                        *kind,
-                    ));
+                    return crate::kernel::eval::canonical_term(
+                        &crate::kernel::MachineTerm::read_named(
+                            ProgramPoint::at(&source),
+                            rewritten,
+                            *kind,
+                        ),
+                    );
                 }
                 let memory = observation
                     .filter(|_| use_origin)
@@ -7796,9 +7984,9 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::MemoryLoad(
+                left: Box::new(crate::kernel::MachineTerm::read_named(
                     crate::kernel::ProgramPoint::of_memory(&memory),
-                    Box::new(pointer.clone()),
+                    pointer.clone(),
                     crate::kernel::LoadKind::Int32,
                 )),
                 right: Box::new(right),
@@ -9471,9 +9659,9 @@ mod comparison_read_batch_tests {
             (MachineIntegerType::Int64, LoadKind::Bits64),
             (MachineIntegerType::UInt64, LoadKind::Bits64),
         ] {
-            let read = MachineTerm::MemoryLoad(
+            let read = crate::kernel::MachineTerm::read_named(
                 ProgramPoint::at(&memory),
-                Box::new(Address::symbolic(Variable(401_020))),
+                Address::symbolic(Variable(401_020)),
                 kind,
             );
             let literal = |bits| {
@@ -9521,9 +9709,9 @@ mod comparison_read_batch_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let read = |index| {
-            MachineTerm::MemoryLoad(
+            crate::kernel::MachineTerm::read_named(
                 ProgramPoint::at(&memory),
-                Box::new(Address::symbolic(Variable(index))),
+                Address::symbolic(Variable(index)),
                 LoadKind::Int32,
             )
         };
@@ -9673,9 +9861,9 @@ mod comparison_read_batch_tests {
         let accumulator = Variable(403_002);
         let pointer = Address::symbolic(binder);
         let memory = crate::kernel::intern_memory(SymbolicMemory::new());
-        let raw = MachineTerm::MemoryLoad(
+        let raw = crate::kernel::MachineTerm::read_named(
             ProgramPoint::at(&memory),
-            Box::new(pointer.clone()),
+            pointer.clone(),
             LoadKind::Int32,
         );
         let named = MachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
@@ -9768,9 +9956,9 @@ mod comparison_read_batch_tests {
             pointer.clone(),
             ProgramValue::Int32(MachineTerm::Variable(source)),
         ));
-        let untouched = MachineTerm::MemoryLoad(
+        let untouched = crate::kernel::MachineTerm::read_named(
             ProgramPoint::at(&memory),
-            Box::new(pointer),
+            pointer,
             LoadKind::Int32,
         );
         let sealed = Resource::MutexGuard(MutexIdentity {

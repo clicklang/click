@@ -918,9 +918,13 @@ pub(in crate::kernel) fn cast_program_value_to_type(
 /// was formed from. A conversion between character types keeps the existing
 /// view, and every other conversion, including to `void *`, keeps the value
 /// (`design/pointer-model.md`).
+///
+/// Click's untyped [`ProgramType::Pointer`] is not a C type, so a cast to or
+/// from it is no C conversion: it keeps the value and forms no byte view.
 pub(in crate::kernel) fn cast_pointer_value(pointer: Pointer, target_type: ProgramType) -> Pointer {
-    let forms_byte_view =
-        is_character_pointer(target_type) && !is_character_pointer(pointer.program_type());
+    let forms_byte_view = is_character_pointer(target_type)
+        && !is_character_pointer(pointer.program_type())
+        && pointer.program_type() != ProgramType::Pointer;
     let pointer = pointer.with_type(target_type);
     if forms_byte_view {
         pointer.with_root_bounds()
@@ -2073,7 +2077,10 @@ fn evaluate_program_cast_paths(
                         ProgramValue::Pointer(pointer)
                             if target_type.is_pointer()
                                 && (integer_mode != IntegerCastMode::PointerCoercion
-                                    || target_type != ProgramType::VoidPointer
+                                    || !matches!(
+                                        target_type,
+                                        ProgramType::VoidPointer | ProgramType::Pointer
+                                    )
                                     || pointer.program_type().is_object_pointer()) =>
                         {
                             // Of C's implicit pointer conversions, only one
@@ -2821,9 +2828,10 @@ fn evaluate_program_conditional_paths(
                 &truthiness.facts,
                 &truthiness.obligations,
             );
-            for branch_path in
-                evaluate_program_expression_paths(state, branch, &branch_assumptions, budget)?
-            {
+            for mut branch_path in evaluate_conditional_operand(|| {
+                evaluate_program_expression_paths(state, branch, &branch_assumptions, budget)
+            })? {
+                guard_conditional_arithmetic(&truthiness.facts, &mut branch_path.obligations);
                 let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
                     &truthiness.facts,
                     &truthiness.obligations,
@@ -3635,7 +3643,7 @@ fn read_retained_lvalue_paths_without_ranges(
                         .is_some();
                 let may_use_loaded_entry_version = has_read_resource
                     && can_name_read
-                    && matches!(pointer.base, AddressBase::LoadedPointer(_))
+                    && matches!(pointer.base, AddressBase::Load(_))
                     && is_integer;
                 let may_use_recorded_integer_version = can_name_read
                     && ((is_integer && ProgramPoint::supports_local_call_output(pointer))
@@ -4062,7 +4070,21 @@ pub(in crate::kernel) fn condition_as_program_int32_paths_valued(
     negated: bool,
 ) -> Vec<ExpressionPath> {
     let value = |holds: bool| int32(u32::from(holds != negated));
-    match decide_with_facts(assumptions, &facts, &condition) {
+    let reading = if ConditionValueScope::is_active() {
+        None
+    } else {
+        checked_max_minus_comparison(assumptions, &condition)
+    };
+    let decision = decide_with_facts(assumptions, &facts, &condition).or_else(|| {
+        let reading = reading.as_ref()?;
+        [true, false].into_iter().find(|truth| {
+            let goal = Proposition::condition_is(reading.clone(), *truth);
+            crate::kernel::proof::fact_reasoning::order_claim_forms(&goal)
+                .iter()
+                .any(|form| assumptions.proves_exact(form))
+        })
+    });
+    match decision {
         Some(holds) => vec![ExpressionPath {
             outcome: ExpressionOutcome::Value(value(holds)),
             facts,
@@ -4082,6 +4104,7 @@ pub(in crate::kernel) fn condition_as_program_int32_paths_valued(
             obligations,
         }],
         None => {
+            let condition = reading.unwrap_or(condition);
             let mut true_facts = facts.clone();
             add_condition_path_fact(&mut true_facts, assumptions, condition.clone(), true)
                 .expect("unknown comparison fact should be consistent");
@@ -4103,6 +4126,67 @@ pub(in crate::kernel) fn condition_as_program_int32_paths_valued(
                 },
             ]
         }
+    }
+}
+
+/// The signed comparison against MAX - n can use the exact Integer
+/// difference once n is nonnegative. Check that one sign by its indexed
+/// comparison and leave the executed operands and returned term intact.
+fn checked_max_minus_comparison(
+    assumptions: &PureFactContext,
+    condition: &ConditionTerm,
+) -> Option<ConditionTerm> {
+    use crate::kernel::machine_integer::comparison::{
+        condition_for_operand_views, structural_comparison_view,
+    };
+    use crate::kernel::{CompareRelation as R, MachineOperandView as View};
+    let view = structural_comparison_view(condition)?;
+    let (maximum, zero) = match view.format {
+        MachineIntegerType::Int32 => (i64::from(i32::MAX), MachineTerm::constant(0)),
+        MachineIntegerType::Int64 => (i64::MAX, MachineTerm::int64_constant(0)),
+        _ => return None,
+    };
+    if view.negated {
+        return None;
+    }
+    let read = |operand: View<'_>| {
+        let (format, MachineBinaryOp::Subtract, [base, subtracted]) = operand.binary()? else {
+            return None;
+        };
+        if format != view.format
+            || format.constant_from_term(&base.literal()?)?.to_integer() != maximum.into()
+            || subtracted.variable().is_none()
+        {
+            return None;
+        }
+        let nonnegative =
+            condition_for_operand_views(format, R::GreaterEqual, [subtracted, View::Legacy(&zero)]);
+        if assumptions.known_condition_value(&nonnegative) != Some(true)
+            && !assumptions.proves_exact(&Proposition::condition_is(nonnegative, true))
+        {
+            return None;
+        }
+        Some(IntegerTerm::subtract(
+            IntegerTerm::constant_i64(maximum),
+            subtracted.observe(format)?,
+        ))
+    };
+    let [left, right] = view
+        .operands
+        .each_ref()
+        .map(|operand| operand.operand_view());
+    let (left_read, right_read) = (read(left), read(right));
+    if left_read.is_none() && right_read.is_none() {
+        return None;
+    }
+    let left = left_read.or_else(|| left.observe(view.format))?;
+    let right = right_read.or_else(|| right.observe(view.format))?;
+    match view.relation {
+        R::LessThan => Some(ConditionTerm::integer_less_than(left, right)),
+        R::LessEqual => Some(ConditionTerm::integer_less_equal(left, right)),
+        R::GreaterThan => Some(ConditionTerm::integer_greater_than(left, right)),
+        R::GreaterEqual => Some(ConditionTerm::integer_greater_equal(left, right)),
+        _ => None,
     }
 }
 

@@ -392,7 +392,7 @@ impl<'a> Proof<'a> {
                 &census::kind(fact),
                 self.claim_label(),
                 tactic,
-                &next.render_diagnostic_proposition(fact),
+                &next.render_kernel_proposition(fact),
             );
         }
         if let Some(goal) = next.goal() {
@@ -402,7 +402,7 @@ impl<'a> Proof<'a> {
                 &census::kind(goal),
                 self.claim_label(),
                 tactic,
-                &next.render_diagnostic_proposition(goal),
+                &next.render_kernel_proposition(goal),
             );
         }
     }
@@ -457,7 +457,7 @@ impl<'a> Proof<'a> {
                         RoundTrip::Differs => (
                             RoundTrip::Differs,
                             raised,
-                            next.render_diagnostic_proposition(&lowered),
+                            next.render_kernel_proposition(&lowered),
                         ),
                         outcome => (outcome, raised, String::new()),
                     },
@@ -470,7 +470,7 @@ impl<'a> Proof<'a> {
                 &kind(original),
                 self.claim_label(),
                 tactic,
-                &next.render_diagnostic_proposition(original),
+                &next.render_kernel_proposition(original),
                 &raised,
                 &lowered,
             );
@@ -709,7 +709,10 @@ impl<'a> Proof<'a> {
                 }
             }
         }
-        crate::surface::proof_trace::record(Arc::as_ptr(&next.node) as usize, detail);
+        crate::surface::proof_trace::record(
+            crate::surface::proof_trace::trace_node_key(&next.node),
+            detail,
+        );
     }
 
     /// Apply exact facts and the selected live-partition separation rule.
@@ -1120,10 +1123,9 @@ impl<'a> Proof<'a> {
         let mut machine_binding = None;
         let mut algebraic_binding = None;
         let mut antecedent_spelling = None;
-        let written_negation = matches!(self.surface_goal(), Some(ClickProposition::Not(_)));
         let state = self
             .state
-            .apply_intro_opening(|current, introduction, introduced| {
+            .apply_intro(|current, introduction, introduced| {
                 let mut surface_bindings = current.surface_bindings.clone();
                 let mut introduced_antecedents = current.introduced_antecedents.clone();
                 let renamed_recorded = match (rename.as_ref(), current.introductions.head()) {
@@ -1398,11 +1400,6 @@ impl<'a> Proof<'a> {
                             body.clone(),
                         )))
                     }
-                    // A negation's body becomes a fact and the goal `false`,
-                    // spelled so a later step that closes it can be retained.
-                    (_, PropositionIntroduction::Negation, _) => Some(Arc::new(
-                        ClickProposition::Value(crate::surface::bool_literal(false)),
-                    )),
                     _ => None,
                 };
                 PropositionPresentation {
@@ -1414,13 +1411,13 @@ impl<'a> Proof<'a> {
                     witness_refinement_kernel: current.witness_refinement_kernel.clone(),
                     generated_surface: current.generated_surface,
                 }
-            }, written_negation)
+            })
             .map_err(|error| match error {
                 PropositionCloseError::NotProposition => {
                     self.step_error("`intro` requires a proposition goal")
                 }
                 PropositionCloseError::ExpectedIntroduction(goal) => self.step_error(format!(
-                    "`intro` requires an implication, negation, or universal goal, got {}",
+                    "`intro` requires an implication or universal goal, got {}",
                     describe_known_goal(&goal)
                 )),
                 PropositionCloseError::IntegerFresheningExhausted => {
@@ -1631,7 +1628,8 @@ impl<'a> Proof<'a> {
                     return Err(self.step_error(format!(
                         "induction hypothesis `{hypothesis}` found no available fact for premise `{}`",
                         crate::surface::diagnostics::describe_click_proposition(&observed),
-                    )));
+                    ))
+                    .with_spelled_requirement(cited, observed, format!("induction hypothesis `{hypothesis}` premise")));
                 }
                 cited
             };
@@ -1711,18 +1709,24 @@ impl<'a> Proof<'a> {
                     self.step_error("induction hypothesis is not exactly available")
                 }
                 PropositionCloseError::InstantiateInvalid(error) => {
-                    // The kernel says which premise of the hypothesis it could
-                    // not discharge. Dropping that left "kernel rejected
-                    // induction application", which names nothing a reader can
-                    // act on — and a hypothesis premise is exactly what they
-                    // have to supply.
-                    self.step_error(format!(
+                    use crate::kernel::proof::fact_reasoning::ForallInstantiationError;
+                    let obligation = match &error {
+                        ForallInstantiationError::MissingGuard(guard) => {
+                            Some(ProofObligation::verification_condition(guard.clone()))
+                        }
+                        _ => None,
+                    };
+                    let error = self.step_error(format!(
                         "`apply` of the induction hypothesis failed: {}",
                         crate::surface::proof::format_forall_instantiation_error(
                             error,
                             &|missing| self.render_diagnostic_proposition(missing),
                         )
-                    ))
+                    ));
+                    match obligation {
+                        Some(obligation) => error.with_unresolved_requirement(&obligation),
+                        None => error,
+                    }
                 }
                 _ => unreachable!("kernel returned an unrelated induction error"),
             })
@@ -1735,14 +1739,21 @@ impl<'a> Proof<'a> {
     ) -> Result<CheckedFocusedTransition, ClickError> {
         let application = self.structural_induction_instance(hypothesis, arguments)?;
         let explicit_premises = &application.kernel_premises;
-        if let Some(missing) = explicit_premises
+        if let Some((missing, surface)) = explicit_premises
             .iter()
-            .find(|premise| !self.facts().listed_premise_available(premise, &[], true))
+            .zip(&application.surface_premises)
+            .find(|(premise, _)| !self.facts().listed_premise_available(premise, &[], true))
         {
-            return Err(self.step_error(format!(
-                "induction premise is not exactly available: {}",
-                self.render_diagnostic_proposition(missing)
-            )));
+            return Err(self
+                .step_error(format!(
+                    "induction premise is not exactly available: {}",
+                    self.render_diagnostic_proposition(missing)
+                ))
+                .with_spelled_requirement(
+                    missing.clone(),
+                    surface.clone(),
+                    format!("induction hypothesis `{hypothesis}` premise"),
+                ));
         }
         let instantiated = self
             .facts()
@@ -1750,6 +1761,18 @@ impl<'a> Proof<'a> {
         if !instantiated.contains(&application.conclusion)
             && !instantiated.contains_discharged_implication_consequent(&application.conclusion)
         {
+            if let Some(guard) = explicit_premises
+                .iter()
+                .flat_map(crate::kernel::stated_loadable_span_guards)
+                .find(|guard| !self.facts().listed_premise_available(guard, &[], true))
+            {
+                return Err(self
+                    .step_error(format!(
+                        "induction range needs an established span: {}",
+                        self.render_diagnostic_proposition(&guard),
+                    ))
+                    .with_unresolved_requirement(&ProofObligation::verification_condition(guard)));
+            }
             return Err(self.step_error("kernel rejected structural induction application"));
         }
         let added = (!self.facts().contains_top_level(&application.conclusion))

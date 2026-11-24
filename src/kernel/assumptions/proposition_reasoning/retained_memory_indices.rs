@@ -45,7 +45,7 @@ fn reads() -> [MachineTerm; 3] {
         ProgramValue::Int32(MachineTerm::constant(3)),
     );
     [memory, separate, overlap].map(|memory| {
-        MachineTerm::MemoryLoad(
+        MachineTerm::read_named(
             ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
             Box::new(pointer.clone()),
             LoadKind::Int32,
@@ -186,7 +186,7 @@ fn cached_state_syntax_never_caches_context_authority() {
         offset: AddressOffset::Variable(Variable(id)),
     });
     let roots = pointers.each_ref().map(|pointer| {
-        shared(&MachineTerm::MemoryLoad(
+        shared(&MachineTerm::read_named(
             ProgramPoint::at(&memory),
             Box::new(pointer.clone()),
             LoadKind::Int32,

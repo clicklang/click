@@ -295,7 +295,9 @@ fn input_arguments(
                     )),
                 ));
             }
-            InterfaceType::VoidPointer | InterfaceType::VoidPointerPointer => {
+            InterfaceType::VoidPointer
+            | InterfaceType::VoidPointerPointer
+            | InterfaceType::Pointer => {
                 arguments.push(initial_pointer_argument(
                     Address {
                         base: AddressBase::ExternalArgument,
@@ -832,7 +834,7 @@ pub(in crate::surface) fn memory_with_symbolic_loadable_cells(
     entry: &crate::kernel::ProgramPoint,
     loadable_ranges: &BTreeMap<String, ConcreteMemoryRangeSeed>,
 ) -> SymbolicMemory {
-    let legacy = crate::kernel::ProgramPoint::at(entry.shared_memory());
+    let legacy = crate::kernel::ProgramPoint::at_read_site(entry.shared_memory(), entry);
     for range in loadable_ranges.values() {
         if let Some(layout) = &range.struct_layout {
             let mut offset: u32 = 0;
@@ -1160,7 +1162,8 @@ pub(in crate::surface) fn check_resource_segment_base_loadability(
     };
     Err(ClickError::new(format!(
         "could not address resource clause `{segment}` ({note}): {message}"
-    )))
+    ))
+    .with_proof_refusal(crate::surface::ProofRefusal::Contract))
 }
 
 /// Checks the loads a segment base performs, innermost first, so a chain
@@ -3808,6 +3811,13 @@ pub(in crate::surface) fn declared_segment_observation_count(
     }
 }
 
+/// The element type of a contract segment's cells: a field's declared type,
+/// or the pointee of its base as this parameter list or the base's own form
+/// states it. `int32` otherwise, which is not a guess about a pointee-less
+/// base (validation refuses a `void *` or `Pointer` range) but a known gap:
+/// a struct object (`owns *obj`, `&first`) is seeded as `int32` words, and a
+/// base this list does not type, such as a static's address, `*slot` or
+/// `pp[0]`, gets no element type of its own.
 pub(in crate::surface) fn contract_segment_element_type(
     parameters: &[crate::languages::interface::ImportedParameter],
     segment: &ContractSegment,
@@ -4077,39 +4087,49 @@ fn requirement_proposition_and_facts_with_assumptions(
         spec_definitions,
     )
     .map_err(ClickError::new)?;
-    let (lowered, facts, obligations) = crate::kernel::program_lower_spec_proposition_at_state(
-        lowering_state,
-        &spec,
-        None,
-        assumptions,
-    )
-    .map_err(|message| {
-        ClickError::new(format!(
-            "could not lower requirement `{}`: {message}",
-            crate::surface::diagnostics::describe_click_proposition(proposition)
-        ))
-    })?;
+    let (lowered, facts, obligations, _) =
+        crate::kernel::program_lower_spec_proposition_with_checked_obligations(
+            lowering_state,
+            &spec,
+            None,
+            assumptions,
+        )
+        .map_err(|error| {
+            let clause = crate::surface::diagnostics::describe_click_proposition(proposition);
+            let refusal = match error.limit {
+                Some(limit) => crate::kernel::ContractEntryRefusal::from_limit(
+                    &format!("could not lower requirement `{clause}`"),
+                    limit,
+                ),
+                None => crate::kernel::ContractEntryRefusal::Internal(format!(
+                    "could not lower requirement `{clause}`: {}",
+                    error.message,
+                )),
+            };
+            crate::surface::proof::contract_entry_refusal(refusal)
+        })?;
     // A requirement may read only memory the function's entry justifies:
     // cells the entry holds, a resource it views or owns, or a loadability
     // the requirements state.
     if let Some(obligation) = obligations.iter().find(|obligation| {
         !crate::kernel::execution_state_justifies_loadability_obligation(
             lowering_state,
-            obligation,
+            obligation.proposition(),
             assumptions,
         )
     }) {
         return Err(ClickError::new(format!(
             "{}{}",
             crate::surface::diagnostics::describe_missing_pure_fact(
-                obligation,
+                obligation.proposition(),
                 &[],
                 &[],
                 parameter_binding,
                 &[],
             ),
             folded_matched_instance_note(lowering_state, parameter_binding, assumptions)
-        )));
+        ))
+        .with_proof_refusal(crate::surface::ProofRefusal::Contract));
     }
     // The kernel selected this lowering path, and every outstanding read
     // obligation was checked above. Its auxiliary facts include the checked
@@ -4490,7 +4510,7 @@ mod entry_cell_tests {
                 installed
                     .program_point()
                     .ordinary_typed_version(&symbolic_element, ProgramType::Int32),
-                Some(integer),
+                Some(crate::kernel::ProgramPoint::from(integer)),
             );
             work.push(cost);
         }

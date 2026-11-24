@@ -1,33 +1,29 @@
-//! Literal-format calls in the C `printf` family. A checked format fixes
-//! the call's argument types and selects a fixed-arity `extern` contract.
-//! Stream writes use the template in `library/c/stream_output.interface.click.in`.
-//! The `snprintf` contract renders conversions with `click::c::stdio`.
+//! Literal-format calls to C `snprintf`. A checked format fixes the call's
+//! argument types and selects a fixed-arity `extern` contract, which renders
+//! conversions with `click::c::stdio`. `printf` and `fprintf` have Click
+//! contracts in `library/c/`.
 
 use std::fmt::Write as _;
 
 /// The prefix of a formatted-output function's name.
 const SNPRINTF_PREFIX: &str = "__click_snprintf_";
-const PRINTF_PREFIX: &str = "__click_printf_";
 
 /// The standard function behind a checked, fixed-arity call.
 #[derive(Clone, Copy)]
 pub(crate) enum FormattedOutput {
     Snprintf,
-    Printf,
 }
 
 impl FormattedOutput {
     pub(crate) fn source_name(self) -> &'static str {
         match self {
             Self::Snprintf => "snprintf",
-            Self::Printf => "printf",
         }
     }
 
     fn prefix(self) -> &'static str {
         match self {
             Self::Snprintf => SNPRINTF_PREFIX,
-            Self::Printf => PRINTF_PREFIX,
         }
     }
 
@@ -38,29 +34,6 @@ impl FormattedOutput {
         }
         name
     }
-}
-
-/// Stream requests use Click byte string literals in the generated contract.
-const MAX_STREAM_OUTPUT_BYTES: usize = crate::source::BYTE_STRING_MAX_BYTES;
-
-pub(crate) fn stream_output_bytes(
-    function: FormattedOutput,
-    format: &[u8],
-) -> Result<Vec<u8>, String> {
-    let mut bytes = Vec::new();
-    for piece in parse_format(format)? {
-        let FormatPiece::Literal(literal) = piece else {
-            return Err("Click models only literal text and `%%`".to_string());
-        };
-        bytes.extend(literal);
-    }
-    if bytes.len() > MAX_STREAM_OUTPUT_BYTES {
-        return Err(format!(
-            "Click models at most {MAX_STREAM_OUTPUT_BYTES} output bytes in one `{}`",
-            function.source_name()
-        ));
-    }
-    Ok(bytes)
 }
 
 /// The widest field a conversion may request. It only keeps a field's
@@ -170,7 +143,7 @@ pub(crate) fn parse_format(format: &[u8]) -> Result<Vec<FormatPiece>, String> {
 
 /// The format of the formatted-output function `name`, when it is one.
 pub(crate) fn function_format(name: &str) -> Option<(FormattedOutput, Vec<u8>)> {
-    let (function, hex) = [FormattedOutput::Snprintf, FormattedOutput::Printf]
+    let (function, hex) = [FormattedOutput::Snprintf]
         .into_iter()
         .find_map(|function| Some((function, name.strip_prefix(function.prefix())?)))?;
     let format = (0..hex.len())
@@ -185,10 +158,6 @@ pub(crate) fn contract_for_function(name: &str) -> Option<String> {
     let (function, format) = function_format(name)?;
     match function {
         FormattedOutput::Snprintf => Some(contract_source(name, &parse_format(&format).ok()?)),
-        FormattedOutput::Printf => {
-            let bytes = stream_output_bytes(function, &format).ok()?;
-            Some(stream_contract(name, &bytes))
-        }
     }
 }
 
@@ -200,14 +169,6 @@ pub(crate) fn describe_function(name: &str) -> Option<String> {
         function.source_name(),
         String::from_utf8_lossy(&format).escape_default()
     ))
-}
-
-fn stream_contract(name: &str, bytes: &[u8]) -> String {
-    let message = crate::source::click_byte_string(bytes);
-    include_str!("../../../library/c/stream_output.interface.click.in")
-        .replace("@function@", name)
-        .replace("@length@", &bytes.len().to_string())
-        .replace("@message@", &message)
 }
 
 /// The `extern` contract of the formatted-output function `name` for a

@@ -85,7 +85,7 @@ fn unsigned_congruence_keeps_load_states_and_widths_distinct() {
         pointer.clone(),
         ProgramValue::UInt32(MachineTerm::constant(9)),
     ));
-    let load = |memory, kind| MachineTerm::MemoryLoad(memory, Box::new(pointer.clone()), kind);
+    let load = |memory, kind| MachineTerm::read_named(memory, Box::new(pointer.clone()), kind);
     let old = load(ProgramPoint::at(&before), LoadKind::Int32);
     let value = var(90_012);
     let mut graph = EqualityGraph::default();
@@ -602,7 +602,7 @@ fn int32_load_identity_keeps_states_separate() {
         ProgramValue::Int32(MachineTerm::constant(9)),
     ));
     let load = |memory: &SharedMemory| {
-        MachineTerm::MemoryLoad(
+        MachineTerm::read_named(
             ProgramPoint::at(memory),
             Box::new(pointer.clone()),
             crate::kernel::LoadKind::Int32,

@@ -35,7 +35,7 @@ fn checked_index_substitution_reprojects_the_selected_scalar_read() {
     let read = |index: MachineTerm| {
         let pointer = address(index);
         crate::kernel::eval::record_load_access_width(memory.memory(), &pointer, 4);
-        crate::kernel::eval::canonical_term(&MachineTerm::MemoryLoad(
+        crate::kernel::eval::canonical_term(&MachineTerm::read_named(
             ProgramPoint::at(&memory),
             Box::new(pointer),
             LoadKind::Int32,
@@ -392,7 +392,7 @@ fn structural_read_replacement_matches_retained_name_at_native_value_boundary() 
     let address = Address::symbolic(Variable(3_219_001));
     let name = exact_load(&memory, &address);
     let named = MachineTerm::Variable(name);
-    let read = MachineTerm::MemoryLoad(
+    let read = MachineTerm::read_named(
         ProgramPoint::at(&memory),
         Box::new(address.clone()),
         LoadKind::Int32,
@@ -417,7 +417,7 @@ fn structural_read_replacement_matches_retained_name_at_native_value_boundary() 
     let result = rewrite.integer(&observed);
     assert_eq!(rewrite.refusal(), None);
     assert_eq!(result, expected);
-    let other = MachineTerm::MemoryLoad(
+    let other = MachineTerm::read_named(
         ProgramPoint::at(&memory),
         Box::new(address.offset_by_bytes(8)),
         LoadKind::Int32,
@@ -451,7 +451,7 @@ fn resource_comparison_forms_reach_structural_scalar_read_arguments() {
         }
     };
     let read =
-        |memory, pointer| MachineTerm::MemoryLoad(memory, Box::new(pointer), LoadKind::Int32);
+        |memory, pointer| MachineTerm::read_named(memory, Box::new(pointer), LoadKind::Int32);
     let goal = relation(read(ProgramPoint::at(&memory), address.clone()));
     let expected = relation(MachineTerm::constant(37));
     assert_eq!(

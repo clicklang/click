@@ -211,7 +211,6 @@ pub(crate) enum PropositionIntroduction {
         object_class: Option<crate::kernel::effective_type::CAccessClass>,
         algebraic: Option<crate::kernel::AlgebraicType>,
     },
-    Negation,
 }
 
 impl<'a, S> ProofExecutionView<'a, S> {
@@ -1417,21 +1416,6 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         &self,
         presentation: impl FnOnce(&P, PropositionIntroduction, Option<&Proposition>) -> P,
     ) -> Result<Self, PropositionCloseError> {
-        self.apply_intro_opening(presentation, false)
-    }
-
-    /// `intro` on a goal. A disequality (`a != b`) is the negation of its
-    /// equality, so it opens like `not (a == b)`: the equality becomes a
-    /// fact and the goal `false`. `written_negation` says the author wrote
-    /// the goal as `not P` though lowering spelled `P`'s negation as one
-    /// comparison (`not (x < y)` as `x >= y`); the complement then opens the
-    /// same way. Assuming a condition's complement and refuting it proves the
-    /// condition, so either opening is sound for every condition.
-    pub(crate) fn apply_intro_opening(
-        &self,
-        presentation: impl FnOnce(&P, PropositionIntroduction, Option<&Proposition>) -> P,
-        written_negation: bool,
-    ) -> Result<Self, PropositionCloseError> {
         let (goal, facts) = self
             .focused_proposition()
             .ok_or(PropositionCloseError::NotProposition)?;
@@ -1480,57 +1464,6 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
                         object_class: sort.pointer_object_class(),
                         algebraic,
                     },
-                )
-            }
-            // A written `not forall` lowers to a defined counterexample.
-            // Preserve contradiction-style introduction by assuming the exact
-            // complement of that existential, including every domain conjunct.
-            Proposition::Exists {
-                name,
-                var,
-                sort,
-                body,
-            } if written_negation => {
-                let complement = match body.as_ref() {
-                    Proposition::ConditionIs(condition, value) => {
-                        Proposition::condition_is(condition.clone(), !value)
-                    }
-                    Proposition::Not(inner) => inner.as_ref().clone(),
-                    body => Proposition::Not(Box::new(body.clone())),
-                };
-                (
-                    Proposition::condition_is(crate::kernel::ConditionTerm::Constant(false), true),
-                    Some(Proposition::ForAll {
-                        name: crate::kernel::BinderName::written(name),
-                        var: *var,
-                        sort: sort.clone(),
-                        body: Box::new(complement),
-                    }),
-                    PropositionIntroduction::Negation,
-                )
-            }
-            Proposition::Not(body) => (
-                Proposition::condition_is(crate::kernel::ConditionTerm::Constant(false), true),
-                Some(body.as_ref().clone()),
-                PropositionIntroduction::Negation,
-            ),
-            Proposition::ConditionIs(condition, value)
-                if written_negation
-                    || condition_is_disequality(condition.native_compat(), *value) =>
-            {
-                let complement = match condition.native_compat() {
-                    crate::kernel::ConditionTerm::IntegerNotEqual(left, right) => {
-                        Proposition::condition_is(
-                            crate::kernel::ConditionTerm::IntegerEqual(left.clone(), right.clone()),
-                            *value,
-                        )
-                    }
-                    _ => Proposition::condition_is(condition.clone(), !*value),
-                };
-                (
-                    Proposition::condition_is(crate::kernel::ConditionTerm::Constant(false), true),
-                    Some(complement),
-                    PropositionIntroduction::Negation,
                 )
             }
             other => {
@@ -1743,7 +1676,7 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         &self,
         quantified: Proposition,
         argument: super::fact_reasoning::InstanceArgument,
-    ) -> Result<Self, PropositionCloseError> {
+    ) -> Result<(Self, Proposition), PropositionCloseError> {
         let (_, facts) = self
             .focused_proposition()
             .ok_or(PropositionCloseError::NotProposition)?;
@@ -1761,20 +1694,23 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
             .then(|| conclusion.clone())
             .into_iter()
             .collect::<Vec<_>>();
-        let facts = facts.with_fact(conclusion);
-        Ok(Self::new(
-            ProofState {
-                termination: self.state.termination.clone(),
-                termination_root: self.state.termination_root,
-                locals: self.state.locals.clone(),
-                open_branches: self
-                    .state
-                    .open_branches
-                    .with_facts_at(self.focused_branch, facts),
-                checked_facts: Arc::new(added_facts.clone()),
-                added_facts: Arc::new(added_facts),
-            },
-            self.focused_branch,
+        let facts = facts.with_fact(conclusion.clone());
+        Ok((
+            Self::new(
+                ProofState {
+                    termination: self.state.termination.clone(),
+                    termination_root: self.state.termination_root,
+                    locals: self.state.locals.clone(),
+                    open_branches: self
+                        .state
+                        .open_branches
+                        .with_facts_at(self.focused_branch, facts),
+                    checked_facts: Arc::new(added_facts.clone()),
+                    added_facts: Arc::new(added_facts),
+                },
+                self.focused_branch,
+            ),
+            conclusion,
         ))
     }
 
@@ -3025,25 +2961,6 @@ impl<P: Clone, O: Clone, E: Clone> ProofBranches<ProofBranch<ProofObligation<P, 
     }
 }
 
-/// Whether `condition` at `value` states that two values differ: an equality
-/// at `false`, or an `Integer` disequality at `true`.
-fn condition_is_disequality(condition: &crate::kernel::ConditionTerm, value: bool) -> bool {
-    use crate::kernel::ConditionTerm::*;
-    match condition {
-        IntegerNotEqual(..) => value,
-        Compare {
-            relation: crate::kernel::CompareRelation::Equal,
-            ..
-        }
-        | IntegerEqual(..)
-        | AlgebraicEqual(..)
-        | AddressEqual(..)
-        | PointerEqual(..)
-        | AddressOffsetEqual(..) => !value,
-        _ => false,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3711,57 +3628,6 @@ mod tests {
             let wrong_body = Proposition::Implies(Box::new(truth.clone()), Box::new(falsehood));
             assert!(checked.with_implication_prefix(&wrong_body, 1).is_none());
         }
-    }
-
-    #[test]
-    fn negated_universal_intro_keeps_the_counterexample_domain() {
-        let variable = Variable(186);
-        let domain = Proposition::Predicate {
-            name: "defined".into(),
-            arguments: vec![Term::Bitvector32(MachineTerm::Variable(variable).into())],
-        };
-        let truth = Proposition::condition_is(crate::kernel::ConditionTerm::Constant(true), true);
-        let body = Proposition::And(Box::new(domain), Box::new(truth));
-        let goal = crate::kernel::quantifiers::test_exists(
-            "x".into(),
-            variable,
-            Sort::ProgramInt32,
-            body.clone(),
-        );
-        let proof: ProofObject<(), ProofObligation<(), Arc<OutcomeProofState<()>>>, ()> =
-            ProofObject::root(
-                (),
-                ProofBranch::new(
-                    ProofObligation::Proposition(PropositionObligation::new(goal, ())),
-                    ProofBranchState {
-                        facts: PureFactStore::from_ordered(&[]),
-                        execution: None,
-                    },
-                ),
-            );
-        assert!(proof.apply_intro(|_, _, _| ()).is_err());
-        let next = proof
-            .apply_intro_opening(
-                |_, introduction, introduced| {
-                    assert!(matches!(introduction, PropositionIntroduction::Negation));
-                    assert_eq!(
-                        introduced,
-                        Some(&crate::kernel::quantifiers::test_forall(
-                            crate::kernel::BinderName::written("x"),
-                            variable,
-                            Sort::ProgramInt32,
-                            Proposition::Not(Box::new(body.clone()))
-                        ))
-                    );
-                },
-                true,
-            )
-            .unwrap_or_else(|_| panic!("written negation opens by contradiction"));
-        assert_eq!(
-            next.focused_proposition().unwrap().0.proposition(),
-            &Proposition::condition_is(crate::kernel::ConditionTerm::Constant(false), true)
-        );
-        assert!(next.apply_normalize().is_err());
     }
 
     #[test]

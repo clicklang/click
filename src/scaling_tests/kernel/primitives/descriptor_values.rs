@@ -194,3 +194,88 @@ fn condition_proposition_storage_clones_growing_logical_dags_without_exports() {
         assert_eq!(work, *baseline.get_or_insert(work), "size={size}");
     }
 }
+
+#[test]
+fn mixed_integer_descriptor_identity_survives_handle_drop_without_exports() {
+    use crate::kernel::{KernelFold, KernelFoldIndex, SharedMachineIntegerTerm};
+    let format = MachineIntegerType::Int32;
+    let variable = Variable(10993710);
+    let guard = Variable(10993711);
+    let make_observation = |format| {
+        IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
+            format,
+            MachineTerm::Variable(variable),
+        ))
+    };
+    let mut measured = Vec::new();
+    for depth in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let source = make_observation(format);
+        let leaf = KernelTermImport::default().integer(&source.into());
+        let distinct = KernelTermImport::default()
+            .integer(&make_observation(MachineIntegerType::UInt32).into());
+        let zero = KernelTerm::integer_literal(0.into());
+        let wrap = |body: KernelTerm| {
+            let condition = KernelTerm::variable(KernelType::Bool, guard);
+            let body = KernelTerm::integer_if_raw([condition, body, zero.clone()]);
+            KernelFold::new(
+                KernelFoldIndex::Integer,
+                Variable(10993712),
+                Variable(10993713),
+                [zero.clone(), zero.clone(), zero.clone(), body],
+            )
+            .unwrap()
+            .into_term()
+        };
+        let exports = KernelTermExport::integer_export_count();
+        let ((root, last_hash), work) = crate::instrumentation::measure_deterministic_work(|| {
+            let mut root = leaf;
+            let mut last_hash = 0;
+            for _ in 0..depth {
+                root = KernelTerm::integer_operation(
+                    KernelIntegerOperator::Multiply,
+                    vec![root.clone(), root],
+                )
+                .unwrap();
+                let field = StoredIntegerTerm::from_root(root.clone()).unwrap();
+                last_hash = hash(&field);
+                assert_eq!(hash(&field), last_hash);
+            }
+            (root, last_hash)
+        });
+        let field = StoredIntegerTerm::from_root(root.clone()).unwrap();
+        assert_eq!(hash(&field), last_hash);
+        let folded = wrap(root.clone());
+        let retained = StoredIntegerTerm::from_root(folded.clone()).unwrap();
+        let native_id = retained
+            .root()
+            .unwrap()
+            .retained_integer_exact_id()
+            .unwrap();
+        let retained_hash = hash(&retained);
+        assert_ne!(
+            retained,
+            StoredIntegerTerm::from_root(wrap(distinct)).unwrap()
+        );
+        assert!(!root.has_cached_native_argument());
+        assert!(!folded.has_cached_native_argument());
+        assert_eq!(KernelTermExport::integer_export_count(), exports);
+        for _ in 0..2 {
+            let native = KernelTermExport::default().integer(&folded).unwrap();
+            assert_eq!(native.id(), native_id);
+            let input = StoredIntegerTerm::from(native.as_ref().clone());
+            assert_eq!(retained, input);
+            assert_eq!(retained.cmp(&input), std::cmp::Ordering::Equal);
+            assert_eq!(retained_hash, hash(&input));
+            drop(input);
+            let weak = native.downgrade();
+            drop(native);
+            assert_eq!(weak.upgrade().as_ref(), Some(&folded));
+        }
+        measured.push(work);
+    }
+    assert!(
+        measured.windows(2).all(|work| work[1] <= 5 * work[0]),
+        "{measured:?}"
+    );
+}

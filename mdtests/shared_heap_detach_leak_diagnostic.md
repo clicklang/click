@@ -60,15 +60,13 @@ resource parent(p: struct parent*) {
 verifying "shared_heap_detach_leak_diagnostic.c";
 
 void child_release_nonfinal(struct child* obj) {
-    requires 1 < obj->refs;
+    requires 1 <= obj->refs;
     owns child_control(obj);
-    owns child_ref(obj);
     consumes child_ref(obj);
 } by {
     unfold(child_control(obj));
     unfold(child_ref(obj));
-    have 1 < obj->refs;
-    have to_integer(obj->refs - 1) >= 1;
+    have to_integer(obj->refs - 1) >= 0;
     step();
     fold(child_control(obj));
 }
@@ -76,8 +74,8 @@ void child_release_nonfinal(struct child* obj) {
 void parent_detach(struct parent* p) {
     consumes link: parent(p);
     requires link.link != ParentLink::Empty;
+    requires to_integer(count(child_ref(p->kid))) == 1;
     consumes child_control(p->kid);
-    owns child_ref(p->kid);
     consumes child_ref(p->kid);
     produces out: parent(p);
 } by {
@@ -87,6 +85,10 @@ void parent_detach(struct parent* p) {
         },
         ParentLink::Linked(entry_child) => {
             unfold(link);
+            step_until(statement(1).entry);
+            step(child_release_nonfinal);
+            unfold(child_control(kid));
+            unfold(authority(child_ref(kid)));
             step_until(function.exit);
             let out = fold(parent(p), { link: ParentLink::Empty });
             solve();

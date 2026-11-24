@@ -114,6 +114,10 @@ impl KernelTerm {
                 continue;
             }
             crate::instrumentation::record_deterministic_work(1);
+            if left.is_mathematical_integer() && right.is_mathematical_integer() {
+                // Their exact syntax is the common interner key.
+                return false;
+            }
             match (left.node(), right.node()) {
                 (
                     KernelTermNode::IntegerOperation {
@@ -173,19 +177,19 @@ mod tests {
     use crate::kernel::VerificationSession;
 
     #[test]
-    fn integer_result_releases_native_source_and_keeps_its_common_children() {
+    fn integer_result_holds_the_same_root_as_its_source() {
         let _session = VerificationSession::enter();
-        let source: SharedIntegerTerm = IntegerTerm::Add(
-            IntegerTerm::var(Variable(1009701)).into(),
-            IntegerTerm::constant_i64(7).into(),
-        )
-        .into();
+        let observation = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
+            MachineIntegerType::Int32,
+            MachineTerm::Variable(Variable(1009701)),
+        ));
+        let expected = IntegerTerm::Add(observation.into(), IntegerTerm::constant_i64(7).into());
+        let source: SharedIntegerTerm = expected.clone().into();
         let weak = source.downgrade();
-        let expected = source.as_ref().clone();
         let value = IntegerResult::from(source.clone());
         drop(source);
-        assert!(weak.upgrade().is_none());
         let root = value.clone().into_kernel();
+        assert_eq!(weak.upgrade().as_ref(), Some(&root));
         assert!(matches!(
             root.node(),
             KernelTermNode::IntegerOperation {
@@ -252,11 +256,11 @@ mod conditional_contract_tests {
                 vec![PureFunctionArgument::Value(ProgramValue::Pointer(
                     pointer
                         .clone()
-                        .with_declared_object_class(constant.then(|| {
+                        .with_declared_object_class(constant.then_some(
                             crate::kernel::effective_type::CAccessClass::Scalar(
                                 crate::kernel::effective_type::CScalarClass::Int,
-                            )
-                        })),
+                            ),
+                        )),
                 ))],
             ))
         };

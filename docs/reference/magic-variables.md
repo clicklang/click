@@ -21,14 +21,10 @@ clause and, in a proof, once the frontier is at function exit, where
 refused, because the entry state has no return value. See
 [program binding references](language/index.md#program-binding-references).
 
-A Rust or C++ function that runs cleanup between computing its return value
-and returning, such as a Rust drop or a C++ destructor, holds that value in a
-local named `result` until it returns. Before the exit a proof reads that
-local as `result`, so `step_until(assignment(result, 0).entry)` stops where the
-value is written; at the exit it is the returned value. A function whose source
-already has a local named `result` names the holder `result_` in Rust and
-`result_1` in C++. Where nothing runs between computing the value and
-returning, as in C, there is no such local.
+A return expression can be evaluated before cleanup runs. Read the value at
+the region that computed it, such as `statement(0).read(0).result` for the
+load in a Rust function whose tail expression is `b.value` and whose box
+`b` is then dropped. Bare `result` denotes the completed function return.
 
 ## `iterations`
 

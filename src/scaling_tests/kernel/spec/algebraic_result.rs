@@ -20,7 +20,10 @@ fn algebraic_storage_imports_shared_integer_dags_once_and_hands_off_roots() {
         };
         let (value, cold) =
             crate::instrumentation::measure_deterministic_work(|| AlgebraicResult::from(source));
-        assert!(weak.upgrade().is_none());
+        assert!(
+            weak.upgrade()
+                .is_some_and(|root| !root.has_cached_native_argument())
+        );
         let root = value.clone().into_kernel();
         let field = AlgebraicFieldResult::from_algebraic(value.clone());
         let (_, warm) = crate::instrumentation::measure_deterministic_work(|| {

@@ -105,6 +105,25 @@ impl ExecutionState {
             .entry_count_population(variable)
             .cloned()
     }
+    /// Whether this state still counts exactly the imported population
+    /// total `variable`.
+    pub(crate) fn population_total_unchanged(&self, variable: crate::kernel::Variable) -> bool {
+        self.population_effects
+            .creation
+            .as_ref()
+            .is_some_and(|creation| creation.imported_total_unchanged(variable))
+    }
+    /// For a population total a lock acquired, the program point the lock
+    /// started from; `None` for a total that entered with the function.
+    pub(crate) fn population_count_acquired_point(
+        &self,
+        variable: crate::kernel::Variable,
+    ) -> Option<crate::kernel::program_point::ProgramPointId> {
+        self.population_effects
+            .creation
+            .as_ref()?
+            .entry_count_acquired_point(variable)
+    }
     pub(crate) fn population_body_is_open(
         &self,
         name: &str,

@@ -111,7 +111,9 @@ fn visit_machine_operand_carrier_leaves_selected(
             let range = crate::kernel::eval::LOAD_VARIABLE_RANGE;
             let mut previous = Variable(range.start - 1);
             while let Some(variable) = written.get_greater_than(&previous) {
-                if variable.0 >= range.end || checked_collection_checkpoint() {
+                if !crate::kernel::eval::is_load_variable(variable)
+                    || checked_collection_checkpoint()
+                {
                     break;
                 }
                 visit(MachineOperandView::Legacy(&MachineTerm::Variable(
@@ -2621,7 +2623,10 @@ fn collect_bitvector_integer_variables_seen(
     match term {
         MachineTerm::ThreadHandle(_) => {}
         MachineTerm::Constant { .. } | MachineTerm::Variable(_) => {}
-        MachineTerm::MemoryLoad(_, pointer, _) | MachineTerm::IntegerAddress(pointer, _) => {
+        MachineTerm::MemoryLoad(_, pointer, _) => {
+            collect_pointer_integer_variables(pointer.address(), variables, seen)
+        }
+        MachineTerm::IntegerAddress(pointer, _) => {
             collect_pointer_integer_variables(pointer, variables, seen)
         }
         MachineTerm::IntegerToMachine { value, .. } => {
@@ -3345,7 +3350,9 @@ fn collect_integer_variables_seen(
                         let range = crate::kernel::eval::LOAD_VARIABLE_RANGE;
                         let mut previous = Variable(range.start - 1);
                         while let Some(variable) = written.get_greater_than(&previous) {
-                            if variable.0 >= range.end || checked_collection_checkpoint() {
+                            if !crate::kernel::eval::is_load_variable(variable)
+                                || checked_collection_checkpoint()
+                            {
                                 break;
                             }
                             collect_bitvector_variables(
@@ -3702,7 +3709,10 @@ fn collect_bitvector_capture_variables_seen(
                 }
             }
         }
-        MachineTerm::MemoryLoad(_, pointer, _) | MachineTerm::IntegerAddress(pointer, _) => {
+        MachineTerm::MemoryLoad(_, pointer, _) => {
+            collect_pointer_capture_variables(pointer.address(), variables, integer_seen)
+        }
+        MachineTerm::IntegerAddress(pointer, _) => {
             collect_pointer_capture_variables(pointer, variables, integer_seen)
         }
         MachineTerm::IntegerToMachine { value, .. } => {
@@ -3892,7 +3902,7 @@ fn collect_pointer_capture_variables(
         | AddressBase::ExternalArgument
         // The identity is opaque here, like a scalar load name. The equality
         // graph separately indexes its defining address exactly once.
-        | AddressBase::LoadedPointer(_)
+        | AddressBase::Load(_)
         | AddressBase::Heap(_)
         | AddressBase::Temporary(_) => {}
     }
@@ -4535,13 +4545,15 @@ fn collect_machine_operand_scope_summary(
     {
         // The caller needs one maximum, not every arithmetic variable. Growing
         // prefixes must not repeatedly enumerate their complete variable sets.
-        if let Some(variable) = written.last() {
+        // The greatest ordinary variable: the fresh variables this maximum
+        // keeps clear of are ordinary, and other origins sort after them.
+        if let Some(variable) = written.get_less_than(&Variable::FIRST_NON_ORDINARY) {
             summary.reserve(*variable);
         }
         let range = crate::kernel::eval::LOAD_VARIABLE_RANGE;
         let mut previous = Variable(range.start - 1);
         while let Some(variable) = written.get_greater_than(&previous) {
-            if variable.0 >= range.end || checked_collection_checkpoint() {
+            if !crate::kernel::eval::is_load_variable(variable) || checked_collection_checkpoint() {
                 break;
             }
             summary.merge(collect_bitvector_scope_summary(
@@ -4793,7 +4805,10 @@ fn collect_bitvector_scope_summary(
             }
             summary
         }
-        MachineTerm::MemoryLoad(_, pointer, _) | MachineTerm::IntegerAddress(pointer, _) => {
+        MachineTerm::MemoryLoad(_, pointer, _) => {
+            collect_pointer_scope_summary(pointer.address(), summaries)
+        }
+        MachineTerm::IntegerAddress(pointer, _) => {
             collect_pointer_scope_summary(pointer, summaries)
         }
         MachineTerm::IntegerToMachine { value, .. } => {
@@ -6049,11 +6064,7 @@ fn collect_address_base_bitvector_variables(
         // A pointer read has no variable of its own, but it is the value at
         // the address it was read from, so it depends on that address's
         // variables, as a load term depends on its address's.
-        AddressBase::LoadedPointer(identity) => {
-            if let Some((_, address)) = crate::kernel::eval::registered_pointer_load(*identity) {
-                collect_pointer_bitvector_variables(&address, variables);
-            }
-        }
+        AddressBase::Load(load) => collect_pointer_bitvector_variables(load.cell(), variables),
         AddressBase::ContractResult
         | AddressBase::ContractException
         | AddressBase::AggregateReturn { .. }
@@ -6732,7 +6743,7 @@ fn block_variables(block: &AddressBase, contents: &MemoryBlock) -> BTreeSet<Vari
         | AddressBase::StringLiteral { .. }
         | AddressBase::Function(_)
         | AddressBase::ExternalArgument
-        | AddressBase::LoadedPointer(_)
+        | AddressBase::Load(_)
         | AddressBase::Heap(_)
         | AddressBase::Temporary(_) => {}
     }
@@ -7092,7 +7103,7 @@ pub(in crate::kernel) fn collect_memory_bitvector_variables_whole(
             | AddressBase::StringLiteral { .. }
             | AddressBase::Function(_)
             | AddressBase::ExternalArgument
-            | AddressBase::LoadedPointer(_)
+            | AddressBase::Load(_)
             | AddressBase::Heap(_)
             | AddressBase::Temporary(_) => {}
         }
@@ -7285,7 +7296,7 @@ mod shared_read_walker_tests {
             )),
             offset: AddressOffset::Constant(0),
         };
-        let native = MachineTerm::MemoryLoad(
+        let native = MachineTerm::read_named(
             ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
             Box::new(pointer),
             LoadKind::Int32,
@@ -7310,7 +7321,7 @@ mod shared_read_walker_tests {
             base: AddressBase::Symbolic(Variable(994100)),
             offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(994101)), 4),
         };
-        let raw = MachineTerm::MemoryLoad(
+        let raw = MachineTerm::read_named(
             ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
             Box::new(pointer),
             LoadKind::Int32,

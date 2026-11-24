@@ -42,6 +42,7 @@ const LIBRARY_FUNCTIONS: &[(&[&str], &str)] = &[
     (&["Option", "unwrap"], CORE_LIBRARY),
     (&["Option", "expect"], CORE_LIBRARY),
     (&["Option", "unwrap_or"], CORE_LIBRARY),
+    (&["Option", "take"], CORE_LIBRARY),
     (&["Result", "unwrap"], CORE_LIBRARY),
     (&["Result", "expect"], CORE_LIBRARY),
     (&["Result", "unwrap_or"], CORE_LIBRARY),
@@ -143,6 +144,10 @@ pub(super) const RESULT_UNWRAP_OR: &str = "click::rust::result::unwrap_or";
 /// The `core_method` of `Option::unwrap` and `Option::expect`, which Rust
 /// panics on at `None`.
 pub(super) const OPTION_UNWRAP: &str = "option::unwrap";
+
+/// The `core_method` of `Option::take`, which moves an option out of its
+/// place and leaves `None`.
+pub(super) const OPTION_TAKE: &str = "option::take";
 
 /// The `fn` contracts of the core methods `export` calls, with the
 /// name of each function they declare: the Click library files stating the

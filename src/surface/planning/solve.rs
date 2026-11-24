@@ -1,6 +1,8 @@
 //! Certificate and equality-rewrite planning for `solve`.
 
+#[cfg(test)]
 use crate::kernel::proof::equality_rewrite::rewrite_proposition_by_exact_equality;
+#[cfg(test)]
 use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::surface::*;
 
@@ -19,7 +21,7 @@ pub(in crate::surface) fn plan_context_free_closer(goal: &Proposition) -> Option
     if computes_with_known(goal) {
         Some(ProofTactic::Known)
     } else if normalizes_context_free(goal) {
-        Some(ProofTactic::Normalize)
+        Some(ProofTactic::CompatibilityNormalize(None))
     } else {
         None
     }
@@ -30,6 +32,7 @@ pub(in crate::surface) fn plan_context_free_closer(goal: &Proposition) -> Option
 /// post-execution outcome planner must call through here, so a named simple
 /// rule available to one is available to the other. `is_available` is the
 /// caller's judgment of when the current goal closes by `known`.
+#[cfg(test)]
 pub(in crate::surface) fn plan_explicit_equality_rewrites_from(
     goal: &Proposition,
     premises: &[(Proposition, ClickProposition)],

@@ -33,10 +33,8 @@ fn comparison_holds(
 /// The reduced comparison names a single premise for the exact-fact lookup.
 fn trivial_fold_comparison(condition: &ConditionTerm) -> Option<ConditionTerm> {
     super::computation::map_integer_comparison(condition, |operand| {
-        let IntegerTerm::Machine(machine) = operand.as_ref() else {
-            return None;
-        };
-        super::computation::observe_trivial_int32_fold(machine)
+        let machine = operand.root().exact_shared_integer_observation()?;
+        super::computation::observe_trivial_int32_fold(&machine)
     })
 }
 
@@ -123,31 +121,34 @@ fn guard_holds(
 }
 
 fn integer_arm(
-    value: &IntegerTerm,
-    other: &IntegerTerm,
+    value: &SharedIntegerTerm,
+    other: &SharedIntegerTerm,
     available: &impl Fn(&Proposition) -> bool,
 ) -> bool {
-    let (condition, arms) = match value {
-        IntegerTerm::If {
-            condition,
-            then_term,
-            else_term,
-        } => {
-            return [(true, then_term), (false, else_term)]
-                .into_iter()
-                .any(|(truth, arm)| {
-                    arm.as_ref() == other
-                        && guard_holds(BooleanOperandView::Native(condition), truth, available)
-                });
-        }
-        IntegerTerm::Machine(machine) => {
-            let Some((condition, arms)) = machine.operand_view().conditional_view() else {
-                return false;
-            };
-            (condition, arms.map(|arm| arm.observe(machine.ty())))
-        }
-        _ => return false,
+    if let KernelTermNode::IntegerIf {
+        arguments: [guard, then_term, else_term],
+    } = value.root().node()
+    {
+        let same_value = |arm: &KernelTerm| {
+            arm == other.root() || SharedIntegerTerm::from_root(arm.clone()) == *other
+        };
+        let then_matches = same_value(then_term);
+        let else_matches = same_value(else_term);
+        return (then_matches && else_matches)
+            || (then_matches && guard_holds(BooleanOperandView::Shared(guard), true, available))
+            || (else_matches && guard_holds(BooleanOperandView::Shared(guard), false, available));
+    }
+    let Some(machine) = value.root().exact_shared_integer_observation() else {
+        return false;
     };
+    let Some((condition, arms)) = machine.operand_view().conditional_view() else {
+        return false;
+    };
+    let arms = arms.map(|arm| arm.observe(machine.ty()));
+    let other = other.as_ref();
+    if arms.iter().all(|arm| arm.as_ref() == Some(other)) {
+        return true;
+    }
     [(true, &arms[0]), (false, &arms[1])]
         .into_iter()
         .any(|(truth, arm)| arm.as_ref() == Some(other) && guard_holds(condition, truth, available))
@@ -174,6 +175,12 @@ fn narrow_machine_arm(
         let Some(other) = other.observe(format) else {
             continue;
         };
+        if [then_arm, else_arm].into_iter().all(|arm| {
+            arm.observe(format)
+                .is_some_and(|arm| arm.value_read() == other.value_read())
+        }) {
+            return true;
+        }
         for (truth, arm) in [(true, then_arm), (false, else_arm)] {
             if arm
                 .observe(format)
@@ -213,9 +220,6 @@ fn identity(
                 }
             }
         }
-    }
-    if integer_arm(value, other, available) {
-        return true;
     }
     if let Some((ty, exact)) = identity::explicit_mathematical(value)
         && identity::same_exact_value(&exact, other)
@@ -565,6 +569,26 @@ pub(in crate::kernel) fn known_uint32_from_defined_bytes(
         })
 }
 
+/// The product's width, operands and bound name each possible guard. The
+/// number of sign cases and the number of lookups per case are fixed.
+fn signed_product_bound(goal: &Proposition, available: &impl Fn(&Proposition) -> bool) -> bool {
+    super::super::arithmetic_special::signed_product_guard_candidates(goal).any(|guards| {
+        guards.into_iter().all(|guard| {
+            guard.condition_native().is_some_and(|(condition, truth)| {
+                comparison_holds(condition.clone(), *truth, available)
+            })
+        })
+    })
+}
+
+fn exact_float_bound(goal: &Proposition, available: &impl Fn(&Proposition) -> bool) -> bool {
+    [false, true].into_iter().any(|strict| {
+        super::super::arithmetic_special::exact_float_bound_source(goal, strict).is_some_and(
+            |source| available(&source) || super::order_claim_forms(&source).iter().any(available),
+        )
+    })
+}
+
 pub(crate) fn known_bridge_leaf(
     goal: &Proposition,
     available: &impl Fn(&Proposition) -> bool,
@@ -575,7 +599,22 @@ pub(crate) fn known_bridge_leaf(
     {
         return true;
     }
+    use super::super::arithmetic_special::{
+        promoted_right_shift_bound, shift_count_mask_requirements,
+    };
+    if promoted_right_shift_bound(goal) == Some(true)
+        || shift_count_mask_requirements(goal).is_some_and(|bounds| {
+            bounds.iter().all(|bound| {
+                bound.condition_native().is_some_and(|(condition, truth)| {
+                    comparison_holds(condition.clone(), *truth, available)
+                })
+            })
+        })
+    {
+        return true;
+    }
     match goal {
+        Proposition::ConditionIs(_, true) if exact_float_bound(goal, available) => true,
         Proposition::ConditionIs(condition, true) if narrow_machine_arm(condition, available) => {
             true
         }
@@ -634,7 +673,12 @@ pub(crate) fn known_bridge_leaf(
             if let Some((ConditionTerm::IntegerEqual(a, b), _)) =
                 condition_source_0.condition_native() =>
         {
-            identity(a, b, available) || identity(b, a, available)
+            integer_arm(a, b, available)
+                || integer_arm(b, a, available)
+                || identity(a.as_ref(), b.as_ref(), available)
+                || identity(b.as_ref(), a.as_ref(), available)
+                || super::super::arithmetic_special::signed_max_shift_identity_count_bound(a, b)
+                    .is_some_and(|bound| holds(&bound, available))
         }
         condition_source_0 @ Proposition::ConditionIs(_, true)
             if let Some((
@@ -643,6 +687,9 @@ pub(crate) fn known_bridge_leaf(
             )) = condition_source_0.condition_native() =>
         {
             mask_bound(a, b, available)
+                || ((matches!(a.as_ref(), IntegerTerm::Multiply(..)) && b.as_const().is_some()
+                    || matches!(b.as_ref(), IntegerTerm::Multiply(..)) && a.as_const().is_some())
+                    && signed_product_bound(condition_source_0, available))
                 || unsigned_remainder_bound(a, b, available)
                 || signed_division_sign(a, b, available)
                 || condition_source_0
@@ -995,6 +1042,37 @@ mod tests {
             ));
             assert!(!known(&equality(value.clone(), wrong), &[premise]));
             assert!(!known(&equality(value.clone(), arm), &[]));
+        }
+    }
+    #[test]
+    fn known_identical_conditional_arms_do_constant_work() {
+        let _session = VerificationSession::enter();
+        let a = IntegerTerm::var(Variable(995708));
+        let value = IntegerTerm::If {
+            condition: Box::new(ConditionTerm::Variable(Variable(995707))),
+            then_term: a.clone().into(),
+            else_term: a.clone().into(),
+        };
+        let goal = equality(value, a.clone());
+        let mut expected_work = None;
+        for count in [0, 8, 128] {
+            let facts = PureFactStore::from_ordered(
+                &(0..count)
+                    .flat_map(|index| {
+                        let other = IntegerTerm::var(Variable(996000 + 2 * index));
+                        let unrelated = IntegerTerm::var(Variable(996001 + 2 * index));
+                        [
+                            equality(a.clone(), other.clone()),
+                            equality(other, unrelated),
+                        ]
+                    })
+                    .collect::<Vec<_>>(),
+            );
+            let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
+                known_bridge_leaf(&goal, &|fact| facts.pure_known_available(fact))
+            });
+            assert!(proved);
+            assert_eq!(work, *expected_work.get_or_insert(work));
         }
     }
     fn native_binary(ty: MachineIntegerType, op: MachineBinaryOp, count: i32) -> IntegerTerm {

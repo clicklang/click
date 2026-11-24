@@ -16,7 +16,7 @@ use super::special_arithmetic_planner::plan_special_arithmetic;
 use crate::kernel::proof::arithmetic_special::SpecialArithmeticPlan;
 use crate::kernel::proof::integer_arithmetic::{IntegerArithmeticNode, IntegerArithmeticPlan};
 use crate::kernel::proof::signed_arithmetic::SignedArithmeticPlan;
-use crate::kernel::{IntegerTerm, Proposition};
+use crate::kernel::{ConditionTerm, IntegerTerm, MachineBinaryOp, Proposition};
 
 /// One arithmetic proof planner.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -111,17 +111,41 @@ pub(in crate::surface) fn plan_arithmetic(
     }
 }
 
-/// Each machine value the goal and the premises observe, once.
+/// Each observed machine value, including the input of a fixed unsigned
+/// right shift whose operation bound may need the input's type range.
 pub(in crate::surface) fn machine_observations(
     goal: &Proposition,
     premises: &[Proposition],
 ) -> Vec<crate::kernel::IntegerTerm> {
     let mut seen = std::collections::HashSet::new();
-    std::iter::once(goal)
+    let values = std::iter::once(goal)
         .chain(premises)
         .flat_map(crate::kernel::proof::integer_arithmetic::integer_affine_machine_values)
+        .collect::<Vec<_>>();
+    let operands = values.iter().filter_map(|value| {
+        if value.ty().format().is_signed()
+            || !matches!(
+                value.operand_view().binary(),
+                Some((_, MachineBinaryOp::ShiftRight, _))
+            )
+        {
+            return None;
+        }
+        let bound = crate::kernel::machine_integer::bounds::operation_bound(value, false)?;
+        let (ConditionTerm::IntegerLessEqual(_, input), true) = bound.condition_native()? else {
+            return None;
+        };
+        let IntegerTerm::Machine(input) = input.as_ref() else {
+            return None;
+        };
+        Some(input.clone())
+    });
+    values
+        .iter()
+        .cloned()
+        .chain(operands)
         .filter(|value| seen.insert(value.id()))
-        .map(crate::kernel::IntegerTerm::Machine)
+        .map(IntegerTerm::Machine)
         .collect()
 }
 

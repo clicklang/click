@@ -14,6 +14,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::{Arc, OnceLock};
 
 mod bindings;
+pub(crate) use bindings::GeneratedBinderSpellingScope;
 pub use bindings::{
     BindingDeclaration, BindingName, GeneratedBinderId, LocalBindingId, LocalFunctionId,
     LocalStorageInstance, SliceLengthBinding, StaticBindingId, StaticBindingMetadata,
@@ -70,8 +71,18 @@ pub use symbolic_layout::{
     AccessExtent, LayoutOffset, LayoutSize, SymbolicField, SymbolicLayoutName, layout_term_spelling,
 };
 pub(in crate::kernel) mod float_conversion;
+mod load;
 #[cfg(test)]
 mod memory_construction_tests;
+#[cfg(test)]
+pub(crate) use load::allow_cross_arena_loads;
+#[cfg(test)]
+pub(crate) use load::interned_load_count;
+pub(crate) use load::read_operands;
+pub use load::{Load, LoadCell, ReadPoint};
+pub(crate) use load::{
+    LoadInternerState, capture_load_interner, clear_load_interner, restore_load_interner,
+};
 pub(crate) mod program_point;
 pub use program_point::ProgramPoint;
 mod statement_clone;
@@ -86,11 +97,11 @@ pub(crate) use contracts::{
     wide_loadable_element_count, wide_range_bounds,
 };
 mod integer;
-pub(crate) use integer::WeakIntegerTerm;
+pub(crate) use integer::clear_machine_observation_memo;
 mod kernel_term;
 pub(crate) use kernel_term::{
     BooleanOperandView, FloatOperandView, KernelConstructor, KernelFold, KernelFoldIndex,
-    KernelMatch, KernelTermExport, KernelTermImport, clear_integer_bridge_memo,
+    KernelMatch, KernelTermExport, KernelTermImport,
 };
 // Prepared rewrite interface for the following scoped consumers.
 pub(crate) use kernel_term::{
@@ -188,11 +199,11 @@ pub(super) use derivations::*;
 pub(crate) use memory_state::resource_context_has_symbolic_range_read;
 pub use memory_state::value_independent_click_memory;
 pub(super) use resource_algebra::*;
-pub(in crate::kernel) use term_operations::round_right_to_even;
 pub(crate) use term_operations::{
     first_unavailable_connective_side, listed_premise_holds, mirrored_equality,
     proposition_holds_without_facts, single_variable_of_program_value,
 };
+pub(in crate::kernel) use term_operations::{float_binary_bits_at, round_right_to_even};
 pub(in crate::kernel) use term_operations::{
     int64_add_interval_fits, int64_signed_order_by_width_views, int64_subtract_interval_fits,
 };
@@ -213,10 +224,15 @@ pub(crate) const HEAP_ALLOCATION_ALIGNMENT: u64 = 16;
 /// constructor below; a kernel-allocated fresh variable carries a private
 /// origin as well, so even a caller-constructed variable with the same number
 /// cannot capture it. Names in source text are separate from this identity.
-#[derive(Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
 pub struct Variable {
-    number: (u64,),
+    // The origin comes first, so variables order by producer: ordinary
+    // variables keep their numeric order ahead of every other origin, and
+    // each other origin is one contiguous run after them. A query for the
+    // greatest ordinary variable must bound itself by
+    // `Variable::FIRST_NON_ORDINARY` rather than read a set's last element.
     origin: VariableOrigin,
+    number: (u64,),
 }
 
 /// A quantifier's bound variable. Only closing a body over a free variable
@@ -300,6 +316,16 @@ pub(crate) enum Producer {
     AlgebraicBinder,
 }
 
+// Hash the number before the origin, as before the fields were reordered for
+// `Ord`: hashing does not need the order, and keeping it leaves every hashed
+// collection of variables laid out as it was.
+impl std::hash::Hash for Variable {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.number.hash(state);
+        self.origin.hash(state);
+    }
+}
+
 impl std::fmt::Debug for Variable {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.origin {
@@ -362,6 +388,19 @@ impl Variable {
         }
     }
 
+    /// The least variable of any origin other than `Ordinary`: every
+    /// ordinary variable orders before it and every other variable at or
+    /// after it.
+    pub(crate) const FIRST_NON_ORDINARY: Self = Self {
+        number: (0,),
+        origin: VariableOrigin::KernelFresh,
+    };
+
+    /// Whether this is an ordinary numbered variable, `Variable(n)`.
+    pub(crate) fn is_ordinary(&self) -> bool {
+        self.origin == VariableOrigin::Ordinary
+    }
+
     /// Whether this is a quantifier's bound variable.
     pub(crate) fn is_bound(&self) -> bool {
         self.origin == VariableOrigin::Bound
@@ -384,6 +423,7 @@ impl Variable {
     }
 
     /// Whether this is a specification fold's binder.
+    #[cfg(test)]
     pub(in crate::kernel) fn is_spec_fold_binder(&self) -> bool {
         self.origin == VariableOrigin::SpecFoldBinder
     }
@@ -630,9 +670,10 @@ impl LazyReservedVariables {
     }
 
     fn contains(&self, variable: &Variable) -> bool {
-        let execution_range = (crate::kernel::ExecutionBudget::KERNEL_VARIABLE_BASE
-            ..crate::kernel::ExecutionBudget::KERNEL_VARIABLE_CEILING)
-            .contains(&variable.0);
+        let execution_range = variable.is_ordinary()
+            && (crate::kernel::ExecutionBudget::KERNEL_VARIABLE_BASE
+                ..crate::kernel::ExecutionBudget::KERNEL_VARIABLE_CEILING)
+                .contains(&variable.0);
         if execution_range && self.execution_bound.is_none_or(|bound| *variable > bound) {
             #[cfg(debug_assertions)]
             if crate::instrumentation::lazy_reservation_cross_checks_enabled() {
@@ -1030,10 +1071,15 @@ pub enum MachineTerm {
         arms: Vec<AlgebraicBitvectorMatchArm>,
     },
     /// The value a read of `LoadKind` at the pointer returns in the state.
-    /// The kind is part of the load's identity: two reads of one address
-    /// that differ in width or, below four bytes, in signedness return
-    /// different values, so they are different terms. See [`LoadKind`].
-    MemoryLoad(ProgramPoint, Box<Address>, LoadKind),
+    /// Its identity is the interned [`Load`] its [`LoadCell`] holds, the
+    /// point's read key and the cell, and its kind (`design/loads.md`, step
+    /// 3a): the [`ReadPoint`] is the producer's selection, which consumers
+    /// branch on, and compares equal to every other. The kind is part of the
+    /// identity: two reads of one address that differ in width or, below
+    /// four bytes, in signedness return different values, so they are
+    /// different terms. See [`LoadKind`]. Built only by
+    /// [`MachineTerm::read_named`].
+    MemoryLoad(ReadPoint, LoadCell, LoadKind),
     /// The physical LP64 address bits of an object pointer. This numeric
     /// observation carries no provenance or selected bounds. Complete C
     /// integer copies retain that information separately in PointerInteger.
@@ -2520,11 +2566,31 @@ pub struct Address {
     pub offset: AddressOffset,
 }
 
-/// An assumption-free name for one pointer-valued, eight-byte load.
-/// It is a different sort from scalar load variables even when both reads
-/// use the same state and address.
+/// Which decodings of one pointer cell's bytes are one pointer value
+/// (`design/loads.md`, "Pointers"). Every object-pointer type decodes the
+/// same bytes to the same pointer, so the pointee type is no part of a
+/// pointer load's identity. A function pointer is a different value: its
+/// load has no object domain, and a store of one answers no object-pointer
+/// load, nor the reverse.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct PointerLoadId(pub(crate) u64);
+pub(crate) enum PointerLoadCategory {
+    Object,
+    Function,
+}
+
+impl PointerLoadCategory {
+    /// The category of an eight-byte pointer decoded at `value_type`, or
+    /// `None` for a type that is no single pointer cell.
+    pub(crate) fn of_type(value_type: ProgramType) -> Option<Self> {
+        match value_type {
+            ProgramType::FunctionPointer(_) => Some(Self::Function),
+            // An array of pointers is an aggregate, not one pointer cell.
+            ProgramType::PointerArray(_, _) => None,
+            value_type if value_type.is_pointer() => Some(Self::Object),
+            _ => None,
+        }
+    }
+}
 
 /// Semantic decoder for an opaque pointer value read from memory. The
 /// displacement belongs to later pointer arithmetic, not to the identity of
@@ -2535,10 +2601,11 @@ pub struct PointerLoadId(pub(crate) u64);
     reason = "the graph query names loads without decoding them in live consumers yet"
 )]
 pub(crate) struct LoadedPointerView {
-    pub(crate) identity: PointerLoadId,
+    /// The load itself. It has no category or pointee type: both belong
+    /// to the `Pointer` term that decodes it (`design/loads.md`).
+    pub(crate) identity: Load,
     pub(crate) defining_memory: SharedMemory,
     pub(crate) point: ProgramPoint,
-    pub(crate) value_type: Option<ProgramType>,
     pub(crate) defining_address: Address,
     pub(crate) displacement: AddressOffset,
 }
@@ -2929,18 +2996,12 @@ impl Pointer {
         cell: &Address,
     ) -> Self {
         if point.read_version_id().is_none() {
-            let memory = point.shared_memory();
-            let address = Address::loaded_value(&memory.unchanged_bytes_source(), cell);
-            return Self::from_read(address, program_type, memory, cell);
+            let address = Address::loaded_source_value_at(&point, cell);
+            return Self::from_read(address, program_type, point.shared_memory(), cell);
         }
-        let address = Address {
-            base: AddressBase::LoadedPointer(crate::kernel::eval::pointer_load_at_point(
-                point,
-                cell,
-                Some(program_type),
-            )),
-            offset: AddressOffset::Constant(0),
-        };
+        // One load per cell at one version point, whatever type decodes
+        // it: the category and pointee type are the term's.
+        let address = Load::at(point, cell).address();
         let value = Self::new(address.clone(), program_type);
         if matches!(program_type, ProgramType::FunctionPointer(_)) {
             return value;
@@ -3235,6 +3296,19 @@ impl Pointer {
     }
 }
 
+impl Pointer {
+    /// Whether the two have one C provenance, as identity compares it: the
+    /// same allocation and the same array object.
+    pub(crate) fn same_provenance_as(&self, other: &Self) -> bool {
+        let (_, provenance, known, owner, bounds) = self.identity();
+        let (_, other_provenance, other_known, other_owner, other_bounds) = other.identity();
+        provenance == other_provenance
+            && known == other_known
+            && owner == other_owner
+            && bounds == other_bounds
+    }
+}
+
 impl PartialEq for Pointer {
     fn eq(&self, other: &Self) -> bool {
         self.identity() == other.identity()
@@ -3342,9 +3416,10 @@ pub enum AddressBase {
     /// have been derived from the same caller object.
     ExternalObject(Variable),
     Symbolic(Variable),
-    /// The value read by a pointer-typed load, independent of the storage
-    /// block that held it and of the pointee type used after the read.
-    LoadedPointer(PointerLoadId),
+    /// The value a pointer-typed load decodes to, independent of the
+    /// storage block that held it and of the type that decodes it
+    /// (`design/loads.md`). Built only by [`Load::base`].
+    Load(Load),
     /// An opaque pointer-valued pure call. This is not an allocation identity
     /// and grants neither distinctness nor memory access.
     PureFunctionApplication(SharedPureApplication),
@@ -3450,9 +3525,9 @@ impl std::hash::Hash for AddressBase {
                 4u64.hash(state);
                 variable.hash(state);
             }
-            Self::LoadedPointer(identity) => {
+            Self::Load(load) => {
                 9u64.hash(state);
-                identity.hash(state);
+                load.hash(state);
             }
             Self::Heap(identity) => {
                 5u64.hash(state);
@@ -3583,7 +3658,7 @@ impl AddressBase {
             | Self::ExternalArgument
             | Self::ExternalObject(_)
             | Self::Symbolic(_)
-            | Self::LoadedPointer(_)
+            | Self::Load(_)
             | Self::PureFunctionApplication(_)
             | Self::Heap(_)
             | Self::Temporary(_) => None,
@@ -3615,7 +3690,7 @@ impl AddressBase {
             matches!(
                 value,
                 Self::Symbolic(_)
-                    | Self::LoadedPointer(_)
+                    | Self::Load(_)
                     | Self::FunctionSymbolic(_)
                     | Self::ExternalArgument
                     | Self::ExternalObject(_)
@@ -3633,8 +3708,8 @@ impl AddressBase {
                 crate::kernel::is_load_variable(variable)
                     && crate::kernel::eval::loaded_pointer_predates_block(variable, object)
             }
-            Self::LoadedPointer(identity) => {
-                crate::kernel::eval::loaded_pointer_read_predates_block(*identity, object)
+            Self::Load(load) => {
+                crate::kernel::eval::loaded_pointer_read_predates_block(load, object)
             }
             _ => false,
         };
@@ -3645,9 +3720,7 @@ impl AddressBase {
         // address (the read-over-write authority), so it lies in that
         // pointer's block. This reads memory, never facts.
         let stored_block = |block: &Self| match block {
-            Self::LoadedPointer(identity) => {
-                crate::kernel::eval::loaded_pointer_stored_block(*identity)
-            }
+            Self::Load(load) => crate::kernel::eval::loaded_pointer_stored_block(load),
             _ => None,
         };
         if stored_block(self).is_some_and(|stored| stored.proven_distinct(other))
@@ -3662,10 +3735,10 @@ impl AddressBase {
         // explicit disequality in the assumptions can separate it.
         if matches!(
             self,
-            Self::Symbolic(_) | Self::LoadedPointer(_) | Self::PureFunctionApplication(_)
+            Self::Symbolic(_) | Self::Load(_) | Self::PureFunctionApplication(_)
         ) || matches!(
             other,
-            Self::Symbolic(_) | Self::LoadedPointer(_) | Self::PureFunctionApplication(_)
+            Self::Symbolic(_) | Self::Load(_) | Self::PureFunctionApplication(_)
         ) {
             return false;
         }
@@ -3827,7 +3900,7 @@ impl std::fmt::Display for AddressBase {
             Self::ExternalArgument => formatter.write_str("arg-memory"),
             Self::ExternalObject(variable) => write!(formatter, "arg-object:{}", variable.0),
             Self::Symbolic(variable) => write!(formatter, "symbolic-pointer:{}", variable.0),
-            Self::LoadedPointer(identity) => write!(formatter, "loaded-pointer:{}", identity.0),
+            Self::Load(load) => write!(formatter, "loaded-pointer:{}", load.id()),
             Self::Heap(identity) => write!(formatter, "heap-allocation:{identity}"),
             Self::Temporary(identity) => write!(formatter, "temporary:{identity}"),
         }
@@ -3852,6 +3925,15 @@ pub struct PointerIntegerValue {
     pub(in crate::kernel) numeric: Box<ProgramValue>,
     pub(in crate::kernel) pointer: Box<Pointer>,
     pub(in crate::kernel) kind: PointerIntegerKind,
+}
+
+impl PointerIntegerValue {
+    /// Whether this is a complete word that was passed in or loaded, whose
+    /// identity is independent of its numeric value, rather than an address
+    /// (`address(p)`) or a tag on one (`address(p) + 1`) computed from it.
+    pub(crate) fn is_opaque_word(&self) -> bool {
+        matches!(self.kind, PointerIntegerKind::Word { .. })
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -3898,6 +3980,15 @@ pub enum ProgramType {
     /// Pointer to an opaque object-pointer slot, needed to retain the exact
     /// `pthread_join` result parameter type even in null-only calls.
     VoidPointerPointer,
+    /// Click's untyped pointer, spelled `Pointer`: an address and a
+    /// provenance with no pointee type, like LLVM's opaque `ptr`. An access,
+    /// cast or call through it states its own type (`load<T>(p)`, `p as
+    /// (T *)`), so it cannot be dereferenced, indexed or scaled. It is not a
+    /// C type: C's `void *` rules (implicit conversions, GNU byte
+    /// arithmetic, the character view a conversion forms) do not apply to
+    /// it, and a cast to or from it keeps the value. For now it designates
+    /// objects only; function pointers keep their own signature type.
+    Pointer,
     Int8,
     Int16,
     Int32,
@@ -5207,9 +5298,9 @@ impl AlgebraicTermNode {
         pointer: &Address,
         algebraic_type: &AlgebraicType,
     ) -> MachineTerm {
-        MachineTerm::MemoryLoad(
+        crate::kernel::MachineTerm::read_named(
             point.clone(),
-            Box::new(pointer.clone()),
+            pointer.clone(),
             LoadKind::of_algebraic(algebraic_type),
         )
     }
@@ -5224,8 +5315,8 @@ impl AlgebraicTermNode {
                 pointer,
                 LoadKind::Bits64 | LoadKind::Abstract(_),
             )) => Some(Self::MemoryLoad {
-                point: point.clone(),
-                pointer: pointer.clone(),
+                point: point.point().clone(),
+                pointer: pointer.boxed(),
             }),
             _ => None,
         }
@@ -6421,8 +6512,9 @@ pub struct MemoryRange {
     /// intervals ask only about physical authority; both retain supplier
     /// provenances through resource algebra and subsequent C access checks.
     pub(super) typed_carrier: bool,
-    pub(super) carrier_bounds_known: bool,
-    pub(super) bounds_owner: Option<Arc<Address>>,
+    /// The array object of the pointer that named the range. It has no
+    /// bounds of its own: the range's bytes are its bounds.
+    pub(super) carrier: ArrayObject,
     /// The bounds, in elements. Read them through [`MemoryRange::start`]
     /// and [`MemoryRange::end`], which hold only for an `Int32` range, or
     /// through [`MemoryRange::wide_bounds`]: a term carries no width, so a
@@ -6466,7 +6558,7 @@ impl MemoryRange {
         (
             &self.base,
             &self.provenance,
-            self.bounds_owner.as_deref(),
+            self.carrier.owner().map(|owner| &**owner),
             &self.start_bound,
             &self.end_bound,
             self.element_width,
@@ -8527,6 +8619,7 @@ pub enum RuntimeError {
     InvalidContractResource(String),
     /// An argument or state produced for opening a contract had the wrong representation.
     ContractEntryInvariant(String),
+    UnsupportedContractEntry(String),
     OverlappingContractInputView {
         owned: Box<ResourceFact>,
         viewed: Box<ResourceFact>,
@@ -8628,6 +8721,12 @@ pub enum RuntimeError {
     },
 }
 
+impl From<crate::kernel::BorrowRefusalDiagnostic> for RuntimeError {
+    fn from(diagnostic: crate::kernel::BorrowRefusalDiagnostic) -> Self {
+        Self::BorrowRefusal(Box::new(diagnostic))
+    }
+}
+
 /// The written clause of a refused composite assembly, with the parameter
 /// values at that call. Diagnostic metadata only; it supplies no evidence.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -8661,6 +8760,8 @@ pub enum ExecutionLimit {
     BoolArithmetic,
     /// A conditional with an `int32` arm and a `Bool` arm.
     MixedBoolArms,
+    /// A symbolic specification conditional whose pointer arms cannot share a value.
+    SymbolicPointerConditional,
     /// A conjunction whose right side owes evaluation domains read under
     /// more than [`GUARDED_CONJUNCTION_LIMIT`] earlier conjuncts. Each such
     /// domain carries its whole guard, so a longer chain is refused rather
@@ -8748,6 +8849,9 @@ impl ExecutionLimit {
             Self::BoolOrdered => "an order on `Bool`".to_string(),
             Self::BoolArithmetic => "arithmetic on a `Bool`".to_string(),
             Self::MixedBoolArms => "a conditional with an integer and a `Bool` arm".to_string(),
+            Self::SymbolicPointerConditional => {
+                "a symbolic choice between distinct pointer values".to_string()
+            }
             Self::GuardedConjunctionTooLong => format!(
                 "a conjunction guarding evaluation domains by more than {GUARDED_CONJUNCTION_LIMIT} conjuncts"
             ),
@@ -8922,6 +9026,7 @@ pub struct ExecutionBudget {
     pub(super) dropped_fold_body: Option<DroppedFoldBody>,
     /// A comparison the requested operator could not build for its operands.
     /// Diagnostic only; it never changes which paths or terms are produced.
+    pub(super) dropped_symbolic_pointer_conditional: bool,
     pub(super) dropped_comparison: Option<(ProgramType, ComparisonOperator, ProgramType)>,
     /// Set when a stated resource relation was dropped because this context
     /// already proves one of its memory ranges is not a valid byte span.
@@ -9368,6 +9473,7 @@ impl SymbolicMemory {
     /// cells whatever representation each cell store keeps them in
     /// ([`CellStore::same_cells_as`]). Everything but the cell cache's layout
     /// is compared exactly as `==` compares it.
+    #[cfg(test)]
     pub(in crate::kernel) fn same_contents_as(&self, other: &Self) -> bool {
         self == other
             || (self.blocks == other.blocks
@@ -10938,7 +11044,7 @@ impl StaticBlockVersions {
             | AddressBase::AggregateReturn { .. }
             | AddressBase::ContractResult
             | AddressBase::ContractException => {}
-            AddressBase::LoadedPointer(_) => self.end_at(produced, false),
+            AddressBase::Load(_) => self.end_at(produced, false),
             _ => self.end_at(produced, true),
         }
     }
@@ -12922,6 +13028,10 @@ impl ResourceBindings {
     /// Binds `binder` to `actual`, a caller resource of the same sort.
     /// Returns `Err` when the sorts differ, and otherwise whether the binder
     /// was already bound.
+    #[expect(
+        clippy::result_unit_err,
+        reason = "callers report the mismatched resource sorts"
+    )]
     pub fn insert(&mut self, binder: ResourceBinder, actual: ResourceBinder) -> Result<bool, ()> {
         match (binder, actual) {
             (ResourceBinder::Instance(binder), ResourceBinder::Instance(actual)) => {
@@ -15690,11 +15800,11 @@ pub(crate) enum PropositionDerivationRule {
         witness: Variable,
         proof: Box<PropositionDerivation>,
     },
-    /// Prove an existential by selecting the bound variable from an exact
-    /// existential fact and checking the target body under that witness's
-    /// conjuncts.
+    /// Open an exact existential fact and the goal at a fresh witness. The
+    /// opened fact supplies local assumptions to the proof of the goal body.
     ExistsFromFact {
         source: Box<Proposition>,
+        witness: Variable,
         body: Box<PropositionDerivation>,
     },
     /// Prove an existential by selecting a free witness term and checking the
@@ -16347,10 +16457,14 @@ pub struct ProofObligation {
     /// Producer metadata: emitted on the false arm of a C assertion.
     /// This tags the existing truthiness obligation, not a new proposition.
     pub(super) assertion_failure: bool,
+    /// A `held` observation could not be made in this state.
+    pub(super) invalid_mutex_held_observation: bool,
     /// Refuting this nonzero-divisor obligation is division by zero.
     pub(super) unsigned_divisor: bool,
     /// An ordered range bound for an executed float-to-integer conversion.
     pub(super) float_to_integer_bound: bool,
+    /// A representability bound for an executed signed operation.
+    pub(super) signed_arithmetic_bound: bool,
     /// This condition must be established before applying the statement.
     pub(super) statement_entry_required: bool,
     /// Diagnostic metadata only. The proposition itself carries both ranges.

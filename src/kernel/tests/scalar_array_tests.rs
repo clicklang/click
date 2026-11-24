@@ -255,32 +255,29 @@ fn compact_scalar_array_zero_length_needs_no_byte_authority() {
 #[test]
 fn compact_scalar_array_initialization_rejects_readonly_storage() {
     let target = pointer("local:array-target", 0);
-    for readonly_block in [true] {
-        let memory =
-            SymbolicMemory::new().with_block_or_read_only(target.base.clone(), 16, readonly_block);
-        let state = ExecutionState::new()
-            .with_memory(memory)
-            .with_resource_context(own_memory_context(target.clone(), 0, 4));
-        let pointer = Pointer::new(target.clone(), ProgramType::UInt32Pointer);
-        let theorem = prove_execution_statement_execution(
-            state,
-            program_initialize_scalar_array(
-                ProgramExpression::Value(ProgramValue::Pointer(pointer)),
-                crate::kernel::program_expression::uint32_literal(7),
-                ProgramType::UInt32,
-                4,
-                false,
-            ),
-        )
-        .unwrap();
-        assert!(matches!(
-            theorem.proposition(),
-            Proposition::ProgramStatementVerifies {
-                outcome: StatementOutcome::UndefinedBehavior(UndefinedBehavior::InvalidMemory),
-                ..
-            }
-        ));
-    }
+    let memory = SymbolicMemory::new().with_block_or_read_only(target.base.clone(), 16, true);
+    let state = ExecutionState::new()
+        .with_memory(memory)
+        .with_resource_context(own_memory_context(target.clone(), 0, 4));
+    let pointer = Pointer::new(target.clone(), ProgramType::UInt32Pointer);
+    let theorem = prove_execution_statement_execution(
+        state,
+        program_initialize_scalar_array(
+            ProgramExpression::Value(ProgramValue::Pointer(pointer)),
+            crate::kernel::program_expression::uint32_literal(7),
+            ProgramType::UInt32,
+            4,
+            false,
+        ),
+    )
+    .unwrap();
+    assert!(matches!(
+        theorem.proposition(),
+        Proposition::ProgramStatementVerifies {
+            outcome: StatementOutcome::UndefinedBehavior(UndefinedBehavior::InvalidMemory),
+            ..
+        }
+    ));
     let theorem = prove_execution_statement_execution(
         ExecutionState::new().with_memory(fresh(0)),
         program_initialize_scalar_array(

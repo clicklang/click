@@ -136,8 +136,8 @@ pub enum LoweringIntroduction {
 }
 
 /// The head chain of a lowered proposition, outermost first: one entry per
-/// node a proposition introduction can reach before any other step. A negation
-/// ends the chain: introducing it assumes its body and leaves a false goal.
+/// node reachable through introductions before any other step. A negation
+/// marks the end of that chain.
 pub type LoweringIntroductions = Vec<LoweringIntroduction>;
 
 pub(in crate::kernel) fn wrap_path_context(
@@ -1418,22 +1418,14 @@ fn add_condition_path_fact_with_visibility(
         }
     }
 
-    if let Some(existing) = facts
-        .iter()
-        .filter_map(|fact| match fact.proposition() {
-            Proposition::ConditionIs(existing_condition, existing_value)
-                if existing_condition.native_compat() == &condition =>
-            {
-                Some(*existing_value)
-            }
-            _ => None,
-        })
-        .next()
-    {
-        return (existing == value).then_some(());
-    }
-
+    let opposite = Proposition::condition_is(condition.clone(), !value);
     let proposition = Proposition::condition_is(condition, value);
+    if facts.contains_proposition(&proposition) {
+        return Some(());
+    }
+    if facts.contains_proposition(&opposite) {
+        return None;
+    }
     facts.push(if public {
         ExecutionPureFact::new(proposition)
     } else {
@@ -2151,6 +2143,7 @@ fn merge_facts_with_changes(
         let mut combined = prefix;
         let accepted = suffix.selected(&appended);
         combined.extend_shared(&accepted);
+        combined.retain_validated_membership(&facts);
         Some((combined, changed))
     } else {
         Some((facts, changed))

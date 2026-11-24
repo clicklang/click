@@ -191,7 +191,7 @@ fn pointer_index_keys_erase_states_only_for_candidate_selection() {
         ProgramValue::Int32(MachineTerm::constant(7)),
     );
     let make = |memory, kind| {
-        let load = MachineTerm::MemoryLoad(
+        let load = MachineTerm::read_named(
             crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
             Box::new(pointer.clone()),
             kind,

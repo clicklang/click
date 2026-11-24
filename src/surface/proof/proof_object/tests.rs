@@ -182,7 +182,8 @@ fn ordinary_arithmetic_work_size(steps: &[ProofStep]) -> Option<usize> {
                 pending.extend(then_proof.steps());
                 pending.extend(else_proof.steps());
             }
-            ProofStep::NormalizeUsing(premises) => {
+            ProofStep::NormalizeUsing(premises)
+            | ProofStep::CompatibilityNormalize(Some(premises)) => {
                 count += premises.len();
             }
             ProofStep::ApplyTheorem(application) => count += application.arguments.len(),
@@ -196,6 +197,7 @@ fn ordinary_arithmetic_work_size(steps: &[ProofStep]) -> Option<usize> {
             } => count += application.arguments.len() + premises.len(),
             ProofStep::Known
             | ProofStep::Normalize
+            | ProofStep::CompatibilityNormalize(None)
             | ProofStep::Rewrite(_)
             | ProofStep::Intro
             | ProofStep::Contradiction(_) => {}
@@ -1068,7 +1070,7 @@ fn both_and_preserves_exact_binders_and_saved_states() {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
-                    left: Box::new(MachineTerm::MemoryLoad(
+                    left: Box::new(MachineTerm::read_named(
                         crate::kernel::ProgramPoint::of_memory(&memory),
                         Box::new(pointer.clone()),
                         crate::kernel::LoadKind::Int32,
@@ -1913,7 +1915,7 @@ fn have_scope_accepts_matching_reported_goal_and_records_introductions() {
 }
 
 #[test]
-fn have_scope_negation_metadata_stops_at_the_contradiction_goal() {
+fn have_scope_does_not_expose_the_binder_of_a_negated_universal() {
     let surface = ClickProposition::Not(Box::new(ClickProposition::ForAll {
         click_type: ClickType::Program(InterfaceType::Int32),
         name: "k".into(),
@@ -1929,15 +1931,8 @@ fn have_scope_negation_metadata_stops_at_the_contradiction_goal() {
     let reported = scope.body().goal().unwrap().clone();
     let adapted = scope
         .with_reported_goal_introductions(&reported, Some(vec![]))
-        .expect("negation introduction assumes its body and leaves false, not its inner universal");
-    let introduced = adapted.driver().apply_step(ProofStep::Intro).unwrap();
-    assert_eq!(
-        introduced.body().goal(),
-        Some(&Proposition::condition_is(
-            ConditionTerm::Constant(false),
-            true,
-        ))
-    );
+        .expect("the lowered negated universal has no introductions");
+    assert!(adapted.driver().apply_step(ProofStep::Intro).is_err());
     assert!(
         scope
             .with_reported_goal_introductions(
@@ -3357,12 +3352,12 @@ fn fixed_state_witness_refines_existential_transactionally_with_constant_local_w
         },
         true,
     );
-    let goal = Proposition::Exists {
-        name: "chosen".to_string(),
-        var: variable,
-        sort: Sort::ProgramInt32,
-        body: Box::new(expected),
-    };
+    let goal = crate::kernel::quantifiers::test_exists(
+        "chosen".to_string(),
+        variable,
+        Sort::ProgramInt32,
+        expected,
+    );
     let witness = ProofWitness::single(ContractExpression::ProgramExpression(
         ProgramExpression::Value(int32(7)),
     ));
@@ -3563,11 +3558,11 @@ fn fixed_state_choose_uses_indexed_requirement_and_persistent_local_bindings() {
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
     let theorem_environment = TheoremEnvironment::new(&[]);
     let source_variable = Variable(9_200_000);
-    let source_fact = Proposition::Exists {
-        name: "source_value".to_string(),
-        var: source_variable,
-        sort: Sort::ProgramInt32,
-        body: Box::new(Proposition::condition_is(
+    let source_fact = crate::kernel::quantifiers::test_exists(
+        "source_value".to_string(),
+        source_variable,
+        Sort::ProgramInt32,
+        Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -3575,14 +3570,14 @@ fn fixed_state_choose_uses_indexed_requirement_and_persistent_local_bindings() {
                 right: Box::new(MachineTerm::constant(7)),
             },
             true,
-        )),
-    };
+        ),
+    );
     let goal_variable = Variable(9_200_001);
-    let goal = Proposition::Exists {
-        name: "witness".to_string(),
-        var: goal_variable,
-        sort: Sort::ProgramInt32,
-        body: Box::new(Proposition::condition_is(
+    let goal = crate::kernel::quantifiers::test_exists(
+        "witness".to_string(),
+        goal_variable,
+        Sort::ProgramInt32,
+        Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -3590,8 +3585,8 @@ fn fixed_state_choose_uses_indexed_requirement_and_persistent_local_bindings() {
                 right: Box::new(MachineTerm::constant(7)),
             },
             true,
-        )),
-    };
+        ),
+    );
 
     for size in LOCAL_PROOF_FACT_SIZES {
         let mut facts = vec![source_fact.clone()];
@@ -4341,22 +4336,40 @@ fn fixed_state_instantiate_uses_indexed_universal_and_only_named_guards() {
     let kernel_goal = lower(&goal_surface);
     let kernel_quantified = lower(&quantified_surface);
 
+    let quantified_prefixes = [2, 4].map(|arity| {
+        let mut surface = quantified_surface.clone();
+        for index in 1..arity {
+            surface = ClickProposition::ForAll {
+                click_type: ClickType::Program(InterfaceType::Int32),
+                name: format!("prefix_{index}").into(),
+                written_name: None,
+                body: Box::new(surface),
+            };
+        }
+        (arity, lower(&surface), surface)
+    });
+
     for size in LOCAL_PROOF_FACT_SIZES {
         let mut available = (0..size)
             .flat_map(|index| {
                 [
                     indexed_fact(index),
-                    Proposition::ForAll {
-                        name: Default::default(),
-                        var: Variable(9_000_000 + u64::from(index)),
-                        sort: Sort::ProgramInt32,
-                        body: Box::new(indexed_fact(100_000 + index)),
-                    },
+                    crate::kernel::quantifiers::test_forall(
+                        Default::default(),
+                        Variable(9_000_000 + u64::from(index)),
+                        Sort::ProgramInt32,
+                        indexed_fact(100_000 + index),
+                    ),
                 ]
             })
             .collect::<Vec<_>>();
         available.push(kernel_premise.clone());
         available.push(kernel_quantified.clone());
+        available.extend(
+            quantified_prefixes
+                .iter()
+                .map(|(_, kernel, _)| kernel.clone()),
+        );
         let root = Proof::for_fixed_state_goal(
             "indexed instantiate",
             0,
@@ -4459,7 +4472,7 @@ fn fixed_state_instantiate_uses_indexed_universal_and_only_named_guards() {
 
         let step = ProofStep::Instantiate {
             quantified: quantified_surface.clone(),
-            argument: value(7),
+            arguments: vec![value(7)],
         };
         let unavailable = ProofStep::Instantiate {
             quantified: ClickProposition::Comparison {
@@ -4467,7 +4480,7 @@ fn fixed_state_instantiate_uses_indexed_universal_and_only_named_guards() {
                 operator: ComparisonOperator::Equal,
                 right: value(1),
             },
-            argument: value(7),
+            arguments: vec![value(7)],
         };
         assert!(
             root.driver().apply_step(unavailable).is_err(),
@@ -4500,6 +4513,30 @@ fn fixed_state_instantiate_uses_indexed_universal_and_only_named_guards() {
             instantiated.certificate().steps(),
             std::slice::from_ref(&step)
         );
+        for (arity, _, surface) in &quantified_prefixes {
+            let step = ProofStep::Instantiate {
+                quantified: surface.clone(),
+                arguments: vec![value(7); *arity],
+            };
+            let before = fact_node_allocations();
+            let instantiated = root.driver().apply_step(step.clone()).unwrap();
+            let allocations = fact_node_allocations() - before;
+            assert!(
+                allocations <= arity * allocation_bound,
+                "size {size}, arity {arity}: {allocations} persistent nodes",
+            );
+            assert_eq!(
+                instantiated.certificate().steps(),
+                std::slice::from_ref(&step)
+            );
+            assert!(
+                instantiated
+                    .driver()
+                    .apply_step(ProofStep::Known)
+                    .unwrap()
+                    .is_complete()
+            );
+        }
         assert!(root.certificate().steps().is_empty());
     }
 }
@@ -11958,7 +11995,7 @@ fn generated_load_source_event_fixture(
             variable: Variable(variable.into()),
             retained_state: crate::kernel::MemoryStateIdentity::of(&SymbolicMemory::new()),
             pointer: pointer.clone(),
-            load: MachineTerm::MemoryLoad(
+            load: MachineTerm::read_named(
                 crate::kernel::ProgramPoint::of_memory(&SymbolicMemory::new()),
                 Box::new(pointer),
                 crate::kernel::LoadKind::Int32,
@@ -14771,7 +14808,7 @@ fn fixed_state_instantiation_retains_checked_spellings_for_rewrite() {
         let root = root.with_kernel_state(root.state.with_locals(locals));
         let step = |argument| ProofStep::Instantiate {
             quantified: quantified.clone(),
-            argument,
+            arguments: vec![argument],
         };
         let guarded = root
             .driver()

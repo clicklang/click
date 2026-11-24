@@ -16,7 +16,7 @@ use crate::kernel::{
 };
 use crate::kernel::{
     AlgebraicTerm, AlgebraicTermNode, AlgebraicValue, IntegerComparisonOperator, IntegerTerm,
-    MachineIntegerType, Pointer, ProgramType, ProgramValue, PureFunctionArgument,
+    KernelTermNode, MachineIntegerType, Pointer, ProgramType, ProgramValue, PureFunctionArgument,
     SharedIntegerTerm, SharedMemory, Sort, Term,
 };
 use crate::kernel::{MachineCastSpelling, cast_term};
@@ -104,6 +104,7 @@ pub(crate) enum MemoryErasedFloatConditionKey {
 
 mod fold_keys;
 pub(super) use fold_keys::alpha_equivalent as retained_folds_alpha_equivalent;
+pub(super) use fold_keys::integer_key as retained_integer_fold_alpha_key;
 mod match_keys;
 mod memory_operands;
 mod pointer_keys;
@@ -347,13 +348,29 @@ pub(crate) fn memory_erased_proposition_key(
 }
 
 fn memory_erased_proposition_key_one(proposition: &Proposition) -> MemoryErasedPropositionKey {
+    use crate::kernel::machine_integer::comparison::{
+        native_comparison_view, retained_integer_observation_comparison,
+    };
+    if let Proposition::ConditionIs(condition, value) = proposition
+        && let Some(root) = condition.root()
+        && let KernelTermNode::IntegerCompare {
+            operator,
+            arguments,
+        } = root.node()
+        && let Some(view) = retained_integer_observation_comparison(*operator, arguments, *value)
+    {
+        return view.map_or_else(
+            || MemoryErasedPropositionKey::Exact(proposition.clone()),
+            state_observation_key,
+        );
+    }
     match proposition {
         condition_source_0 @ Proposition::ConditionIs(_, value)
             if let Some((condition @ crate::kernel::integer_comparison_condition!(_, _), _)) =
                 condition_source_0.condition_native() =>
         {
-            state_observation_key(condition, *value)
-                .map(|(key, value)| MemoryErasedPropositionKey::Condition(key, value))
+            native_comparison_view(condition, *value)
+                .map(state_observation_key)
                 .unwrap_or_else(|| MemoryErasedPropositionKey::Exact(proposition.clone()))
         }
         // `Bool` values have no state-blind key yet: they are filed
@@ -423,15 +440,13 @@ pub(super) fn memory_erased_nonoverflow_key(
 }
 
 fn state_observation_key(
-    condition: &ConditionTerm,
-    value: bool,
-) -> Option<(MemoryErasedConditionKey, bool)> {
+    view: crate::kernel::machine_integer::comparison::NativeComparisonView<'_>,
+) -> MemoryErasedPropositionKey {
     use crate::kernel::CompareRelation as R;
     use crate::kernel::machine_integer::{
         Relation,
-        comparison::{FactOperand, fact_operand_identity, native_comparison_view},
+        comparison::{FactOperand, fact_operand_identity},
     };
-    let view = native_comparison_view(condition, value)?;
     let (relation, truth) = match view.relation {
         Relation::Equal => (R::Equal, true),
         Relation::NotEqual => (R::Equal, false),
@@ -451,14 +466,14 @@ fn state_observation_key(
             memory_erased_bitvector_key(&MachineTerm::narrow_constant(format, value as u128))
         }
     });
-    Some((
+    MemoryErasedPropositionKey::Condition(
         MemoryErasedConditionKey::Comparison(
             BitvectorComparisonOp::Compare(format, relation),
             left,
             right,
         ),
         truth,
-    ))
+    )
 }
 
 fn memory_erased_boolean_operand_key(
@@ -601,7 +616,7 @@ fn memory_erased_address_key(pointer: &Address) -> MemoryErasedAddressKey {
     // This candidate key forgets states, never proof authority. Bound
     // registry expansion across both defining addresses and their offsets.
     let read = match &pointer.base {
-        AddressBase::LoadedPointer(_) if depth < 3 => {
+        AddressBase::Load(_) if depth < 3 => {
             pointer.as_loaded_value().map(|read| read.defining_address)
         }
         AddressBase::Symbolic(variable) if depth < 3 => {
@@ -824,6 +839,41 @@ pub(crate) fn integer_condition_alpha_key(
     let Proposition::ConditionIs(condition, true) = proposition else {
         return None;
     };
+    if let Some(root) = condition.root() {
+        if let KernelTermNode::IntegerCompare {
+            operator,
+            arguments,
+        } = root.node()
+        {
+            if !arguments.iter().any(|operand| match operand.node() {
+                KernelTermNode::Fold(_) => true,
+                KernelTermNode::Legacy(payload) => matches!(
+                    payload.value(),
+                    PureFunctionArgument::Integer(value) if matches!(value.as_ref(), IntegerTerm::RangeFold { .. })
+                ),
+                _ => false,
+            }) {
+                return None;
+            }
+            if let Some(key) = fold_keys::unchanged_integer_comparison_key(*operator, arguments) {
+                return Some(key);
+            }
+            if crate::instrumentation::deadline_exceeded_with_work(0) {
+                return None;
+            }
+            if let Some(normalized) =
+                super::term_rewrite::TermRewrite::retained_arithmetic_comparison(arguments)
+                && let Some(key) = fold_keys::integer_comparison_key(*operator, &normalized, false)
+            {
+                return Some(key);
+            }
+            if crate::instrumentation::deadline_exceeded_with_work(0) {
+                return None;
+            }
+        } else {
+            return None;
+        }
+    }
     let (left, right) = match condition.native_compat() {
         crate::kernel::integer_comparison_condition!(left, right) => (left, right),
         _ => return None,
@@ -847,9 +897,21 @@ pub(crate) fn integer_condition_alpha_key(
 pub(crate) fn integer_equality_alpha_key(
     proposition: &Proposition,
 ) -> Option<IntegerEqualityAlphaKey> {
-    matches!(&proposition, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::IntegerEqual(_, _), _))))
-    .then(|| integer_condition_alpha_key(proposition))
-    .flatten()
+    let Proposition::ConditionIs(condition, true) = proposition else {
+        return None;
+    };
+    let is_equal = match condition.root().map(|root| root.node()) {
+        Some(KernelTermNode::IntegerCompare { operator, .. }) => {
+            *operator == IntegerComparisonOperator::Equal
+        }
+        None => {
+            matches!(condition.native_compat(), ConditionTerm::IntegerEqual(_, _))
+        }
+        _ => false,
+    };
+    is_equal
+        .then(|| integer_condition_alpha_key(proposition))
+        .flatten()
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -1067,13 +1129,13 @@ enum AlphaAddressBaseKey {
     ExternalArgument,
     ExternalObject(AlphaVariableKey),
     Symbolic(AlphaVariableKey),
-    LoadedPointer(crate::kernel::PointerLoadId),
+    Load(crate::kernel::Load),
     /// A pointer loaded from memory is its own block, named by the load
     /// variable; like a load at an offset position, it is keyed by the
     /// state and address it reads, so a binder inside that address
     /// renames.
     RegisteredLoad(AlphaRegisteredLoadId),
-    /// A pointer read named by its `PointerLoadId`, keyed like
+    /// A pointer read named by its `Load`, keyed like
     /// `RegisteredLoad` by the state and address it reads; a distinct
     /// variant so it never meets a scalar load's key.
     LoadedRead(AlphaRegisteredLoadId),
@@ -1149,7 +1211,6 @@ struct AlphaRegisteredLoadRecord {
     retained_state: AlphaStateKey,
     pointer: AlphaAddressKey,
     kind: LoadKind,
-    pointer_read_type: Option<(ProgramType, bool)>,
 }
 
 /// Weak entries by descriptor fingerprint. A record removes its own entry
@@ -1209,13 +1270,11 @@ fn alpha_registered_load_descriptor_fingerprint(
     retained_state: &AlphaStateKey,
     pointer: &AlphaAddressKey,
     kind: LoadKind,
-    pointer_read_type: Option<(ProgramType, bool)>,
 ) -> u64 {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     retained_state.hash(&mut hasher);
     pointer.hash(&mut hasher);
     kind.hash(&mut hasher);
-    pointer_read_type.hash(&mut hasher);
     hasher.finish()
 }
 
@@ -1224,14 +1283,8 @@ fn intern_alpha_registered_load(
     retained_state: AlphaStateKey,
     pointer: AlphaAddressKey,
     kind: LoadKind,
-    pointer_read_type: Option<(ProgramType, bool)>,
 ) -> Option<AlphaRegisteredLoadId> {
-    let fingerprint = alpha_registered_load_descriptor_fingerprint(
-        &retained_state,
-        &pointer,
-        kind,
-        pointer_read_type,
-    );
+    let fingerprint = alpha_registered_load_descriptor_fingerprint(&retained_state, &pointer, kind);
     let mut interner_state = interner.lock().ok()?;
     let bucket = interner_state.buckets.entry(fingerprint).or_default();
     if crate::instrumentation::deadline_exceeded_with_work(bucket.len().max(1)) {
@@ -1245,7 +1298,6 @@ fn intern_alpha_registered_load(
         if record.retained_state == retained_state
             && record.pointer == pointer
             && record.kind == kind
-            && record.pointer_read_type == pointer_read_type
         {
             return Some(AlphaRegisteredLoadId(record));
         }
@@ -1264,7 +1316,6 @@ fn intern_alpha_registered_load(
         retained_state,
         pointer,
         kind,
-        pointer_read_type,
     });
     bucket.push(Arc::downgrade(&record));
     Some(AlphaRegisteredLoadId(record))
@@ -1414,6 +1465,18 @@ fn alpha_machine_key<const ALLOW_LOADS: bool>(
                             bindings,
                             next_binder,
                         )?
+                    }
+                    V::Shared(root)
+                        if let N::IntegerToMachine {
+                            destination,
+                            operand,
+                        } = root.node() =>
+                    {
+                        alpha_work_checkpoint(bindings, 1)?;
+                        AlphaBitvectorKey::IntegerToMachine(
+                            *destination,
+                            fold_keys::integer_operand_key(operand, bindings, next_binder)?,
+                        )
                     }
                     V::Shared(root) if root.machine_conversion_leaf().is_some() => {
                         alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(
@@ -1740,9 +1803,9 @@ struct AlphaBindings {
     raw_state_load_seen: bool,
     registered_load_stack: BTreeSet<Variable>,
     registered_load_memo: HashMap<(Variable, u64, u64, usize), (AlphaRegisteredLoadId, usize)>,
-    pointer_load_stack: BTreeSet<crate::kernel::PointerLoadId>,
+    pointer_load_stack: BTreeSet<crate::kernel::Load>,
     pointer_load_memo:
-        HashMap<(crate::kernel::PointerLoadId, u64, u64, usize), (AlphaRegisteredLoadId, usize)>,
+        HashMap<(crate::kernel::Load, u64, u64, usize), (AlphaRegisteredLoadId, usize)>,
     load_interner: Option<Arc<std::sync::Mutex<AlphaRegisteredLoadInterner>>>,
     work_units: usize,
 }
@@ -1824,7 +1887,14 @@ fn alpha_integer_node(
         }
         IntegerTerm::Machine(value) => AlphaIntegerNode::Machine(
             value.ty(),
-            alpha_machine_key::<false>(value.operand_view(), bindings, next_binder)?,
+            alpha_machine_key::<false>(
+                value.shared_operand().map_or_else(
+                    || value.operand_view(),
+                    crate::kernel::MachineOperandView::Shared,
+                ),
+                bindings,
+                next_binder,
+            )?,
         ),
         IntegerTerm::Negate(value) => AlphaIntegerNode::Negate(alpha_integer_node(
             value,
@@ -2076,7 +2146,7 @@ fn alpha_registered_load_pointer_with_bindings<const ALLOW_LOADS: bool>(
             }
         };
         alpha_work_checkpoint(bindings, 1)?;
-        let load_id = intern_alpha_registered_load(&interner, retained_state, pointer, kind, None)?;
+        let load_id = intern_alpha_registered_load(&interner, retained_state, pointer, kind)?;
         Some((load_id, *next_binder))
     })();
     bindings.registered_load_stack.remove(&variable);
@@ -2092,12 +2162,12 @@ fn alpha_registered_load_pointer_with_bindings<const ALLOW_LOADS: bool>(
 /// load variable: a binder inside the address renames, and two reads match
 /// only when they read one state at alpha-equal addresses.
 fn alpha_pointer_load_with_bindings<const ALLOW_LOADS: bool>(
-    identity: crate::kernel::PointerLoadId,
+    load: &crate::kernel::Load,
     bindings: &mut AlphaBindings,
     next_binder: &mut usize,
 ) -> Option<AlphaRegisteredLoadId> {
     let cache_key = (
-        identity,
+        load.clone(),
         bindings.integer_scope,
         bindings.bitvector_scope,
         *next_binder,
@@ -2106,17 +2176,17 @@ fn alpha_pointer_load_with_bindings<const ALLOW_LOADS: bool>(
         *next_binder = *next_after;
         return Some(load_id.clone());
     }
-    if !bindings.pointer_load_stack.insert(identity) {
+    if !bindings.pointer_load_stack.insert(load.clone()) {
         return None;
     }
     let result = (|| {
-        let (point, address, value_type) =
-            crate::kernel::eval::registered_pointer_load_point(identity)?;
+        let point = load.point();
         let mut retained_state = alpha_retained_state_key(point.shared_memory(), bindings)?;
+        // Keyed like the load itself: its read key and cell, never a
+        // decoding category, pointee type or selection kind.
         retained_state.key = point.read_key();
-        let pointer_read_type = value_type.map(|ty| (ty, point.is_exact_read()));
         let address =
-            alpha_pointer_key_with_bindings::<ALLOW_LOADS>(&address, bindings, next_binder)?;
+            alpha_pointer_key_with_bindings::<ALLOW_LOADS>(load.cell(), bindings, next_binder)?;
         let interner = match bindings.load_interner.clone() {
             Some(interner) => interner,
             None => {
@@ -2126,16 +2196,11 @@ fn alpha_pointer_load_with_bindings<const ALLOW_LOADS: bool>(
             }
         };
         alpha_work_checkpoint(bindings, 1)?;
-        let load_id = intern_alpha_registered_load(
-            &interner,
-            retained_state,
-            address,
-            LoadKind::Bits64,
-            pointer_read_type,
-        )?;
+        let load_id =
+            intern_alpha_registered_load(&interner, retained_state, address, LoadKind::Bits64)?;
         Some((load_id, *next_binder))
     })();
-    bindings.pointer_load_stack.remove(&identity);
+    bindings.pointer_load_stack.remove(load);
     let (load_id, next_after) = result?;
     bindings
         .pointer_load_memo
@@ -2273,14 +2338,10 @@ fn alpha_address_base_key<const ALLOW_LOADS: bool>(
                 &bindings.bitvector,
             )?)
         }
-        AddressBase::LoadedPointer(identity) if bindings.state_aware => {
-            AlphaAddressBaseKey::LoadedRead(alpha_pointer_load_with_bindings::<ALLOW_LOADS>(
-                *identity,
-                bindings,
-                next_binder,
-            )?)
-        }
-        AddressBase::LoadedPointer(identity) => AlphaAddressBaseKey::LoadedPointer(*identity),
+        AddressBase::Load(load) if bindings.state_aware => AlphaAddressBaseKey::LoadedRead(
+            alpha_pointer_load_with_bindings::<ALLOW_LOADS>(load, bindings, next_binder)?,
+        ),
+        AddressBase::Load(load) => AlphaAddressBaseKey::Load(load.clone()),
         AddressBase::Heap(identity) => AlphaAddressBaseKey::Heap(*identity),
         AddressBase::Temporary(identity) => AlphaAddressBaseKey::Temporary(*identity),
     })
@@ -2711,7 +2772,6 @@ fn alpha_bitvector_key_with_bindings<const ALLOW_LOADS: bool>(
                 retained_state,
                 pointer,
                 *kind,
-                None,
             )?)
         }
         MachineTerm::MemoryLoad(point, pointer, kind) if point.read_version_id().is_some() => {
@@ -3330,7 +3390,7 @@ mod proposition_identity_tests {
             Variable(2_000_000),
             Sort::Algebraic(ty),
             equal(
-                MachineTerm::MemoryLoad(
+                MachineTerm::read_named(
                     crate::kernel::ProgramPoint::of_memory(
                         &SymbolicMemory::new().with_block("alpha-array", 8),
                     ),
@@ -3558,7 +3618,7 @@ mod proposition_identity_tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::MemoryLoad(
+                left: Box::new(MachineTerm::read_named(
                     crate::kernel::ProgramPoint::at(&load_memory),
                     Box::new(load_pointer),
                     crate::kernel::LoadKind::Int32,
@@ -3592,7 +3652,7 @@ mod proposition_identity_tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::MemoryLoad(
+                left: Box::new(MachineTerm::read_named(
                     crate::kernel::ProgramPoint::at(&changed_memory),
                     Box::new(changed_pointer),
                     crate::kernel::LoadKind::Int32,
@@ -3724,11 +3784,19 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
                             )?,
                         ),
                         Term::Integer(value) => {
-                            AlphaPredicateArgumentKey::Integer(alpha_integer_key_with_bindings(
-                                value.native_compat(),
-                                bindings,
-                                next_binder,
-                            )?)
+                            let key = if let Some(root) = value.root()
+                                && (root.is_mathematical_integer()
+                                    || root.is_integer_observation_arithmetic())
+                            {
+                                fold_keys::integer_operand_key(root, bindings, next_binder)?
+                            } else {
+                                alpha_integer_key_with_bindings(
+                                    value.native_compat(),
+                                    bindings,
+                                    next_binder,
+                                )?
+                            };
+                            AlphaPredicateArgumentKey::Integer(key)
                         }
                         Term::Algebraic(value) => AlphaPredicateArgumentKey::Algebraic(
                             alpha_algebraic_key_with_bindings::<ALLOW_LOADS>(
@@ -4471,7 +4539,7 @@ mod memory_state_alpha_tests {
     fn fold_body(memory: &SharedMemory, item: Variable) -> IntegerTerm {
         IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             MachineIntegerType::Int32,
-            MachineTerm::MemoryLoad(
+            MachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(memory),
                 Box::new(Address {
                     base: "retained_state-alpha".into(),
@@ -4588,7 +4656,7 @@ mod memory_state_alpha_tests {
             Variable(312_001),
             IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                 MachineIntegerType::Int32,
-                MachineTerm::MemoryLoad(
+                MachineTerm::read_named(
                     crate::kernel::ProgramPoint::at(&memory),
                     Box::new(Address {
                         base: "retained_state-alpha".into(),
@@ -4779,7 +4847,7 @@ mod memory_state_alpha_tests {
                 )),
             )
         };
-        let explicit_first: SharedIntegerTerm = fold_with_body(MachineTerm::MemoryLoad(
+        let explicit_first: SharedIntegerTerm = fold_with_body(MachineTerm::read_named(
             crate::kernel::ProgramPoint::at(&first_memory),
             Box::new(first_registered_pointer),
             crate::kernel::LoadKind::Int32,
@@ -4787,7 +4855,7 @@ mod memory_state_alpha_tests {
         .into();
         let registered_first: SharedIntegerTerm =
             fold_with_body(MachineTerm::Variable(first_load)).into();
-        let explicit_nested: SharedIntegerTerm = fold_with_body(MachineTerm::MemoryLoad(
+        let explicit_nested: SharedIntegerTerm = fold_with_body(MachineTerm::read_named(
             crate::kernel::ProgramPoint::at(&nested_memory),
             Box::new(nested_registered_pointer),
             crate::kernel::LoadKind::Int32,
@@ -5070,7 +5138,7 @@ mod memory_state_alpha_tests {
                 Variable(324_101 + index * 2),
                 IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                     MachineIntegerType::Int32,
-                    MachineTerm::MemoryLoad(
+                    MachineTerm::read_named(
                         crate::kernel::ProgramPoint::at(&memory),
                         Box::new(Address {
                             base: block.into(),
@@ -5105,7 +5173,7 @@ mod memory_state_alpha_tests {
                 Variable(325_001 + index * 2),
                 IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                     MachineIntegerType::Int32,
-                    MachineTerm::MemoryLoad(
+                    MachineTerm::read_named(
                         crate::kernel::ProgramPoint::at(&memory),
                         Box::new(Address {
                             base: block.into(),

@@ -860,7 +860,7 @@ fn quantified_fact_query_scales_near_linearly_with_unrelated_quantified_facts() 
                         )),
                         Box::new(Proposition::condition_is(
                             ConditionTerm::equal(
-                                MachineTerm::MemoryLoad(
+                                MachineTerm::read_named(
                                     ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
                                     Box::new(data.offset_by_int32_elements(MachineTerm::Variable(
                                         fact_index,
@@ -892,7 +892,7 @@ fn quantified_fact_query_scales_near_linearly_with_unrelated_quantified_facts() 
                         )),
                         Box::new(Proposition::condition_is(
                             ConditionTerm::equal(
-                                MachineTerm::MemoryLoad(
+                                MachineTerm::read_named(
                                     ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
                                     Box::new(unrelated.offset_by_int32_elements(
                                         MachineTerm::Variable(unrelated_index),
@@ -991,7 +991,7 @@ fn theory_capable_order_endpoints_scale_near_linearly() {
                     base: format!("arg-memory-{index}").into(),
                     offset: AddressOffset::Constant(0),
                 };
-                let load = MachineTerm::MemoryLoad(
+                let load = MachineTerm::read_named(
                     ProgramPoint::at(&(crate::kernel::intern_memory(SymbolicMemory::new()))),
                     Box::new(cell),
                     crate::kernel::LoadKind::Int32,
@@ -1222,7 +1222,7 @@ fn uint64_arithmetic_constant_queries_ignore_unrelated_context() {
     let mut prior = None;
     for size in [4, 16, 64] {
         // Keep term-bridge imports cold at every sample size.
-        crate::kernel::clear_integer_bridge_memo();
+        crate::kernel::clear_machine_observation_memo();
         let mut facts = PureFactContext::new()
             .assume_proposition(Proposition::condition_is(
                 ConditionTerm::uint64_equal(x.clone(), MachineTerm::uint64_constant(u64::MAX)),

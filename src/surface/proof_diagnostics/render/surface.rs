@@ -323,6 +323,7 @@ impl Printer<'_> {
     /// A placeholder in source mode; a refusal in the exact modes.
     fn placeholder(&mut self, text: impl FnOnce(&mut Self) -> String) -> Option<Spelled> {
         if self.source_mode() {
+            self.labels.count_placeholder();
             Some(atom(text(self)))
         } else {
             None
@@ -1567,6 +1568,11 @@ impl Printer<'_> {
                         depth,
                     );
                 }
+                if let Some(field) =
+                    crate::kernel::model_fields::entry_model_field_surface(*variable)
+                {
+                    return Some(atom(field));
+                }
                 if crate::kernel::model_fields::registered_model_field_origin(*variable).is_some() {
                     return self.placeholder(|printer| printer.unnamed_variable(*variable));
                 }
@@ -1800,6 +1806,14 @@ impl Printer<'_> {
                     initial.text,
                     body?.text
                 )))
+            }
+            B::PureFunctionApplication { name, arguments }
+                if name == "c_float32_to_float64" && arguments.len() == 1 =>
+            {
+                Some(cast(
+                    "double",
+                    self.float_operand(&arguments[0], true, depth)?,
+                ))
             }
             B::PureFunctionApplication { name, arguments }
                 if let Some(spelled) =
@@ -2803,6 +2817,7 @@ impl Printer<'_> {
                         .then(|| self.labels.current_algebraic_field_name(*variable, value))
                         .flatten()
                 })
+                .or_else(|| crate::kernel::model_fields::entry_model_field_surface(*variable))
                 .map(atom)
                 .or_else(|| self.placeholder(|printer| printer.unnamed_variable(*variable))),
             AlgebraicTermNode::PureFunctionApplication { name, arguments } => {
@@ -2929,7 +2944,10 @@ impl Printer<'_> {
                     && crate::kernel::model_fields::registered_model_field_origin(*variable)
                         .is_some() =>
             {
-                self.placeholder(|printer| printer.unnamed_variable(*variable))
+                match crate::kernel::model_fields::entry_model_field_surface(*variable) {
+                    Some(field) => Some(atom(field)),
+                    None => self.placeholder(|printer| printer.unnamed_variable(*variable)),
+                }
             }
             IntegerTerm::Variable(variable) => match self
                 .bound
@@ -3240,6 +3258,25 @@ mod tests {
             source(&fact, &mut labels),
             "f + float32_from_bits(0x3fc00000) < float32_from_bits(0x40000000)"
         );
+        let widened = Proposition::condition_is(
+            ConditionTerm::float64_compare(
+                MachineTerm::PureFunctionApplication {
+                    name: "c_float32_to_float64".into(),
+                    arguments: vec![MachineTerm::Float32Binary {
+                        operator: crate::kernel::FloatBinaryOperator::Multiply,
+                        left: Box::new(MachineTerm::Variable(Variable(8))),
+                        right: Box::new(MachineTerm::constant(2.0_f32.to_bits())),
+                    }],
+                },
+                MachineTerm::uint64_constant(16.0_f64.to_bits()),
+                crate::kernel::ComparisonOperator::LessThan,
+            ),
+            true,
+        );
+        assert_eq!(
+            source(&widened, &mut labels),
+            "(f * float32_from_bits(0x40000000)) as double < float64_from_bits(0x4030000000000000u64)"
+        );
         let integer = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
@@ -3304,6 +3341,39 @@ mod tests {
         assert_eq!(source(&second, &mut labels), "<unnamed B> == 0");
         assert_eq!(source(&first, &mut labels), "<unnamed A> == 0");
         assert!(render(&first, &mut labels).is_none());
+    }
+
+    /// A contract's entry model is spelled `old(owner.field)`, which always
+    /// denotes it. A model a call replaced has no point-free spelling and keeps
+    /// its placeholder.
+    #[test]
+    fn a_contract_entry_model_field_is_spelled_with_old() {
+        use crate::kernel::model_fields::{ModelFieldOrigin, ModelMint};
+        let _session = crate::kernel::VerificationSession::enter();
+        let instance = crate::kernel::InstanceId::from_variable(Variable(901_000));
+        let register = |variable, minted_by| {
+            crate::kernel::model_fields::register_model_field_variable(
+                Variable(variable),
+                ModelFieldOrigin {
+                    identity: instance,
+                    field: "count".into(),
+                    field_index: 0,
+                    minted_by,
+                },
+            )
+        };
+        register(901_001, ModelMint::ContractEntry { owner: "up".into() });
+        register(
+            901_002,
+            ModelMint::CallReturn {
+                callee: "refill".into(),
+            },
+        );
+        let mut labels = MemoryStateLabels::default();
+        let entry = equality(MachineTerm::Variable(Variable(901_001)));
+        let replaced = equality(MachineTerm::Variable(Variable(901_002)));
+        assert_eq!(source(&entry, &mut labels), "old(up.count) == 0");
+        assert_eq!(source(&replaced, &mut labels), "<unnamed A> == 0");
     }
 
     #[test]
@@ -3627,7 +3697,7 @@ mod tests {
         let mut labels = MemoryStateLabels::with_state(ParameterBinding::default(), &after);
         labels.source_state(&before, "pre".into());
         let load = |memory: &SymbolicMemory, kind| {
-            equality(MachineTerm::MemoryLoad(
+            equality(MachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(&(SharedMemory::from(memory.clone()))),
                 Box::new(pointer.clone()),
                 kind,
@@ -3680,7 +3750,7 @@ mod tests {
             ProgramType::Int32Pointer,
         )));
         let load = |memory: &SymbolicMemory| {
-            equality(MachineTerm::MemoryLoad(
+            equality(MachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(&(SharedMemory::from(memory.clone()))),
                 Box::new(heap.clone()),
                 LoadKind::Int32,
@@ -3746,7 +3816,7 @@ mod resource_tests {
         let resource = |memory: &SymbolicMemory| {
             ResourceFact::view_composite(
                 "sampled".into(),
-                vec![ProgramValue::Int32(MachineTerm::MemoryLoad(
+                vec![ProgramValue::Int32(MachineTerm::read_named(
                     crate::kernel::ProgramPoint::at(&(SharedMemory::from(memory.clone()))),
                     Box::new(pointer.clone()),
                     LoadKind::Int32,

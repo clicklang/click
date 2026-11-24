@@ -2991,6 +2991,7 @@ impl<'a> Proof<'a> {
             .collect();
         let mut spelled: Vec<(crate::kernel::IntegerTerm, ContractExpression)> = Vec::new();
         let mut ranges = Vec::with_capacity(wanted.len());
+        let mut operands = None;
         for (value, upper) in wanted {
             let crate::kernel::IntegerTerm::Machine(machine) = value else {
                 return Err(value.clone());
@@ -2998,7 +2999,14 @@ impl<'a> Proof<'a> {
             let spelling = match spelled.iter().find(|(observed, _)| observed == value) {
                 Some((_, spelling)) => spelling.clone(),
                 None => {
-                    let Some(spelling) = self.spell_integer_observation(value, written) else {
+                    let Some(spelling) =
+                        self.spell_integer_observation(value, written).or_else(|| {
+                            self.spell_integer_observation(
+                                value,
+                                operands.get_or_insert_with(|| with_operation_operands(written)),
+                            )
+                        })
+                    else {
                         return Err(value.clone());
                     };
                     spelled.push((value.clone(), spelling.clone()));
@@ -3820,7 +3828,7 @@ fn direct_logical_candidates(goal: Option<&Proposition>) -> Vec<ProofStep> {
         goal,
         Some(Proposition::Equal(Term::Algebraic(_), Term::Algebraic(_)))
     ) {
-        steps.push(ProofStep::Normalize);
+        steps.push(ProofStep::CompatibilityNormalize(None));
     }
     // Without a proposition goal, keep both candidate refusals in the trace.
     if matches!(goal, Some(Proposition::ForAll { .. }) | None) {
@@ -4709,15 +4717,34 @@ fn source_backed_call_requirement_surface(
                 | ProgramValue::UInt64(term) => term,
                 _ => return None,
             };
-            let local = execution
+            // A local holding the value names it; otherwise one of the
+            // caller's own parameters does, including a value parameter of
+            // its contract, which has no local in the execution state.
+            match execution
                 .core
                 .state
                 .locals()
                 .names_holding_integer(term)
-                .next()?;
-            ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                crate::kernel::program_local_source_name(local).to_owned(),
-            ))
+                .next()
+            {
+                Some(local) => ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                    crate::kernel::program_local_source_name(local).to_owned(),
+                )),
+                None => {
+                    let (parameter, _) = context
+                        .parsed_function
+                        .parameters()
+                        .iter()
+                        .zip(context.arguments.iter())
+                        .find(|(_, argument)| {
+                            matches!(argument, ProgramExpression::Value(held)
+                                if held.numeric_value() == value.numeric_value())
+                        })?;
+                    ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                        parameter.name().to_owned().into(),
+                    ))
+                }
+            }
         };
         substitutions.insert(name.clone().into(), expression);
     }
@@ -5364,6 +5391,7 @@ mod synthesized_literal_tests {
             introductions: Default::default(),
             call_site: None,
             assertion_condition: None,
+            theorem_source: None,
             statement_safety: false,
             surface: None,
         };
@@ -5406,7 +5434,7 @@ mod synthesized_literal_tests {
             pointer.clone(),
             ProgramValue::Int32(MachineTerm::constant(1)),
         ));
-        let read = |memory, pointer, kind| MachineTerm::MemoryLoad(memory, Box::new(pointer), kind);
+        let read = |memory, pointer, kind| MachineTerm::read_named(memory, Box::new(pointer), kind);
         let value = read(
             crate::kernel::ProgramPoint::at(&before),
             pointer.clone(),
@@ -5458,7 +5486,7 @@ mod synthesized_literal_tests {
                 .store(pointer.clone(), ProgramValue::Int32(sum.clone())),
         );
         let read =
-            |memory| MachineTerm::MemoryLoad(memory, Box::new(pointer.clone()), LoadKind::Int32);
+            |memory| MachineTerm::read_named(memory, Box::new(pointer.clone()), LoadKind::Int32);
         let retained = |relation, left: &MachineTerm, right: &MachineTerm| {
             let roots =
                 [left, right].map(|v| KernelTerm::retained_machine_operand(ty, V::Legacy(v)));

@@ -148,6 +148,11 @@ path = "mdtests/integer_exists_choose.md"
 needle = "let candidate = obtain(exists (k: Integer) { k == k });"
 
 [[form]]
+id = "close"
+path = "mdtests/close_tactic.md"
+needle = "close();"
+
+[[form]]
 id = "known"
 path = "mdtests/known_uses_equality_congruence.md"
 needle = "known();"
@@ -186,6 +191,11 @@ needle = "enumerate();"
 id = "contradiction"
 path = "src/surface/tests/surface_syntax.rs"
 needle = "contradiction(x == x);"
+
+[[form]]
+id = "contradiction-false"
+path = "mdtests/intro_opens_a_written_negation_and_a_disequality.md"
+needle = "contradiction();"
 
 [[form]]
 id = "rewrite"

@@ -14,8 +14,9 @@ fn integer_result_storage_keeps_growing_shared_dags_and_constant_handoffs() {
             IntegerResult::from(source.clone())
         });
         drop(source);
-        assert!(weak.upgrade().is_none(), "size={size}");
         let root = value.clone().into_kernel();
+        assert_eq!(weak.upgrade().as_ref(), Some(&root), "size={size}");
+        assert!(!root.has_cached_native_argument());
         let (_, warm) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..32 {
                 assert_eq!(value.clone().into_kernel(), root);

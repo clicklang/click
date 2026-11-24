@@ -92,37 +92,31 @@ pub(super) fn collect_common_memory_loads(
                 pending.push((&fold.arguments[1], endpoint_width));
                 pending.push((&fold.arguments[0], endpoint_width));
             }
-            KernelTermNode::Legacy(value) | KernelTermNode::LegacyBool(value) => {
-                match value.value() {
-                    PureFunctionArgument::Integer(value) => {
-                        collect_integer_memory_loads_with_width(
-                            value,
-                            current_memory,
-                            loads,
-                            width,
-                            seen_integers,
-                        )?
-                    }
-                    PureFunctionArgument::SharedMachine(value) => {
-                        collect_shared_machine_memory_loads(
-                            value,
-                            current_memory,
-                            loads,
-                            width,
-                            seen_integers,
-                        )?
-                    }
-                    PureFunctionArgument::Value(value) => {
-                        collect_cvalue_memory_loads(value, current_memory, loads, seen_integers)?
-                    }
-                    PureFunctionArgument::Algebraic(value) => {
-                        collect_algebraic_memory_loads(value, current_memory, loads, seen_integers)?
-                    }
-                    PureFunctionArgument::ArrayRef { .. } => {
-                        return Err("opaque fold operand may hide a current memory load".into());
-                    }
+            KernelTermNode::Legacy(value) => match value.value() {
+                PureFunctionArgument::Integer(value) => collect_integer_memory_loads_with_width(
+                    value,
+                    current_memory,
+                    loads,
+                    width,
+                    seen_integers,
+                )?,
+                PureFunctionArgument::SharedMachine(value) => collect_shared_machine_memory_loads(
+                    value,
+                    current_memory,
+                    loads,
+                    width,
+                    seen_integers,
+                )?,
+                PureFunctionArgument::Value(value) => {
+                    collect_cvalue_memory_loads(value, current_memory, loads, seen_integers)?
                 }
-            }
+                PureFunctionArgument::Algebraic(value) => {
+                    collect_algebraic_memory_loads(value, current_memory, loads, seen_integers)?
+                }
+                PureFunctionArgument::ArrayRef { .. } => {
+                    return Err("opaque fold operand may hide a current memory load".into());
+                }
+            },
             KernelTermNode::MachineObservation { format, operand } => {
                 pending.push((operand, Some(format.format().byte_width())));
             }
@@ -280,11 +274,11 @@ mod tests {
         let wide = Address::symbolic(Variable(999968));
         let offset = AddressOffset::Add(
             Box::new(AddressOffset::scaled_int32_node(
-                MachineTerm::MemoryLoad(point.clone(), Box::new(word.clone()), LoadKind::Int32),
+                MachineTerm::read_named(point.clone(), Box::new(word.clone()), LoadKind::Int32),
                 4,
             )),
             Box::new(AddressOffset::scaled_int64_node(
-                MachineTerm::MemoryLoad(point, Box::new(wide.clone()), LoadKind::Bits64),
+                MachineTerm::read_named(point, Box::new(wide.clone()), LoadKind::Bits64),
                 8,
                 true,
             )),
@@ -374,7 +368,7 @@ mod tests {
                     condition: Box::new(ConditionTerm::Compare {
                         format,
                         relation: CompareRelation::LessThan,
-                        left: Box::new(MachineTerm::MemoryLoad(
+                        left: Box::new(MachineTerm::read_named(
                             ProgramPoint::at(&(crate::kernel::intern_memory_ref(&current))),
                             Box::new(pointer.clone()),
                             LoadKind::Int32,
@@ -411,7 +405,7 @@ mod tests {
         let current = SymbolicMemory::new();
         let memory = crate::kernel::intern_memory_ref(&current);
         let pointer = Address::symbolic(Variable(991501));
-        let read = MachineTerm::MemoryLoad(
+        let read = MachineTerm::read_named(
             ProgramPoint::at(&memory),
             Box::new(pointer),
             LoadKind::Bits64,
@@ -487,7 +481,7 @@ mod offset_condition_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let current = SymbolicMemory::new();
         let read = |id, kind| {
-            MachineTerm::MemoryLoad(
+            MachineTerm::read_named(
                 ProgramPoint::at(&(crate::kernel::intern_memory_ref(&current))),
                 Box::new(Address::symbolic(Variable(id))),
                 kind,
@@ -535,7 +529,7 @@ mod boolean_read_tests {
         let address = Address {
             base: AddressBase::Symbolic(Variable(999360)),
             offset: AddressOffset::scaled_int32_node(
-                MachineTerm::MemoryLoad(
+                MachineTerm::read_named(
                     ProgramPoint::at(&memory),
                     Box::new(SymbolicMemory::global_pointer("bool-index")),
                     LoadKind::Int32,

@@ -105,7 +105,7 @@ pub(super) fn select_comparison_identity(
                 })
                 .filter(|held| {
                     matches!(held, MachineTerm::MemoryLoad(_, at, held_kind)
-                    if at == pointer && held_kind == kind)
+                    if at.address() == pointer.address() && held_kind == kind)
                 });
             held.unwrap_or(canonical)
         }
@@ -130,9 +130,9 @@ pub(super) fn select_comparison_identity(
         },
         &memory,
     )
-    .unwrap_or(memory);
+    .unwrap_or_else(|| memory.into());
     (
-        ScalarReadComparisonIdentity(MachineTerm::MemoryLoad(version, pointer, kind)),
+        ScalarReadComparisonIdentity(MachineTerm::read_named(version, pointer, kind)),
         recorded_bytes,
     )
 }

@@ -10083,6 +10083,7 @@ impl ExecutionProofCore {
     /// probe against a candidate identity must add the range base back before
     /// comparing: the identities this execution has issued are exactly
     /// `KERNEL_VARIABLE_BASE .. issued_kernel_variable_bound()`.
+    #[cfg(test)]
     pub(crate) fn issued_kernel_variable_bound(&self) -> u64 {
         ExecutionBudget::KERNEL_VARIABLE_BASE + self.next_kernel_variable
     }
@@ -11998,6 +11999,12 @@ impl ExecutionProofCore {
             .ok_or("the checked interface join did not report its fresh-variable counter")?;
         self.advance_kernel_variable_mark(join_mark)?;
         let source = parent.source_after_branch(function, &branch)?;
+        self.last_footprint = crate::kernel::RegionFootprint::shared_branch_write(
+            format!("region({}).footprint", parent.frontier.next_statement_index),
+            parent.reached_state(),
+            &joined_state,
+            arms.map(|arm| (arm.reached_state(), arm.last_footprint.as_ref())),
+        );
         let mut trace = parent_trace.clone();
         trace.push(CheckedExecutionEvent::Branch(Box::new(branch)));
         self.execution_evidence = vec![trace].into();

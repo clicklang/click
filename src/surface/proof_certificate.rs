@@ -36,12 +36,13 @@ pub struct CertificateConjunct {
     proof: ProofCertificate,
 }
 
-/// One explicit, surface-expressible step in a [`ProofCertificate`].
+/// One checked step in a [`ProofCertificate`].
 ///
 /// Unlike [`ProofTactic`], this representation has no smart-tactic variants.
 /// Structured steps own recursively explicit child certificates, so a
 /// certificate's checkable shape is enforced by the Rust type rather than
-/// recovered later from [`ProofTactic::class`].
+/// recovered later from [`ProofTactic::class`]. Compatibility normalization
+/// is retained for verification and is refused when exporting a proof.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ProofStep {
     Match {
@@ -121,11 +122,17 @@ pub enum ProofStep {
     Known,
     Normalize,
     NormalizeUsing(Vec<ClickProposition>),
+    /// A compatibility check used in verification. It has no expansion spelling.
+    CompatibilityNormalize(Option<Vec<ClickProposition>>),
     ArithmeticUsing(Vec<ClickProposition>),
 
     Intro,
     IntroAs(String),
     IntroBinder(SurfaceBinder),
+    IntroBlock {
+        binder: Option<SurfaceBinder>,
+        body: Box<ProofCertificate>,
+    },
     Enumerate,
     Contradiction(ClickProposition),
     Rewrite(ClickProposition),
@@ -135,10 +142,10 @@ pub enum ProofStep {
         target: ClickProposition,
         premises: Vec<ClickProposition>,
     },
-    /// Substitute one universal binder, preserving its whole body and guards.
+    /// Substitute consecutive universal binders, preserving the residual body and guards.
     Instantiate {
         quantified: ClickProposition,
-        argument: ContractExpression,
+        arguments: Vec<ContractExpression>,
     },
     Have {
         proposition: ClickProposition,
@@ -213,6 +220,7 @@ pub enum CertificatePathSegment {
     LoopPreserve,
     LoopOtherwise,
     StepBody,
+    IntroBody,
     StepRequirement(usize),
 }
 
@@ -438,6 +446,7 @@ pub(crate) fn proof_step_contains_arithmetic_using(step: &ProofStep) -> bool {
                     }
                 }
                 ProofStep::CloseInvariantsBy(proof)
+                | ProofStep::IntroBlock { body: proof, .. }
                 | ProofStep::Have { proof, .. }
                 | ProofStep::Open { proof, .. } => pending.extend(proof.steps.iter()),
                 ProofStep::StepProved { step, proof } => {
@@ -605,6 +614,12 @@ impl ProofStep {
             ProofTactic::CloseInvariants => {
                 unreachable!("bare invariant closure is smart")
             }
+            ProofTactic::IntroBlock { binder, body } => Self::IntroBlock {
+                binder: binder.clone(),
+                body: Box::new(ProofCertificate::from_validated_steps(
+                    body.iter().map(Self::from_validated_tactic).collect(),
+                )),
+            },
             ProofTactic::Have(proof_have) => Self::Have {
                 proposition: proof_have.proposition.clone(),
                 proof: Box::new(ProofCertificate::from_validated_proof(&proof_have.proof)),
@@ -783,6 +798,9 @@ impl ProofStep {
             ProofTactic::Known => Self::Known,
             ProofTactic::Normalize => Self::Normalize,
             ProofTactic::NormalizeUsing(premises) => Self::NormalizeUsing(premises.clone()),
+            ProofTactic::CompatibilityNormalize(premises) => {
+                Self::CompatibilityNormalize(premises.clone())
+            }
             ProofTactic::ArithmeticUsing(premises) => Self::ArithmeticUsing(premises.clone()),
 
             ProofTactic::Intro => Self::Intro,
@@ -803,10 +821,10 @@ impl ProofStep {
             },
             ProofTactic::Instantiate {
                 quantified,
-                argument,
+                arguments,
             } => Self::Instantiate {
                 quantified: quantified.clone(),
-                argument: argument.clone(),
+                arguments: arguments.clone(),
             },
             _ => return None,
         })
@@ -972,8 +990,15 @@ impl ProofStep {
             Self::Known => ProofTactic::Known,
             Self::Normalize => ProofTactic::Normalize,
             Self::NormalizeUsing(premises) => ProofTactic::NormalizeUsing(premises.clone()),
+            Self::CompatibilityNormalize(premises) => {
+                ProofTactic::CompatibilityNormalize(premises.clone())
+            }
             Self::ArithmeticUsing(premises) => ProofTactic::ArithmeticUsing(premises.clone()),
 
+            Self::IntroBlock { binder, body } => ProofTactic::IntroBlock {
+                binder: binder.clone(),
+                body: body.to_proof_tactics(),
+            },
             Self::Intro => ProofTactic::Intro,
             Self::IntroAs(name) => ProofTactic::IntroAs(name.clone()),
             Self::IntroBinder(name) => ProofTactic::IntroBinder(name.clone()),
@@ -992,10 +1017,10 @@ impl ProofStep {
             },
             Self::Instantiate {
                 quantified,
-                argument,
+                arguments,
             } => ProofTactic::Instantiate {
                 quantified: quantified.clone(),
-                argument: argument.clone(),
+                arguments: arguments.clone(),
             },
             Self::Have { proposition, proof } => ProofTactic::Have(ProofHave {
                 proposition: proposition.clone(),
@@ -1147,6 +1172,7 @@ impl CertificateError {
                 CertificatePathSegment::LoopInitialize => "loop `initialize`".to_string(),
                 CertificatePathSegment::LoopPreserve => "loop `maintain`".to_string(),
                 CertificatePathSegment::LoopOtherwise => "loop `otherwise`".to_string(),
+                CertificatePathSegment::IntroBody => "intro body".to_string(),
                 CertificatePathSegment::StepBody => "step `by` body".to_string(),
                 CertificatePathSegment::StepRequirement(index) => {
                     format!("step `requires` entry {index}")
@@ -1217,15 +1243,16 @@ pub(super) fn certificate_step_class(step: &ProofStep) -> TacticClass {
         | ProofStep::CheckTerminationComponent { .. }
         | ProofStep::CheckTerminationCallbacks => TacticClass::Simple(SimpleTactic::Termination),
         ProofStep::Known => TacticClass::Simple(SimpleTactic::Known),
-        ProofStep::Normalize | ProofStep::NormalizeUsing(_) => {
-            TacticClass::Simple(SimpleTactic::Normalize)
-        }
+        ProofStep::Normalize
+        | ProofStep::NormalizeUsing(_)
+        | ProofStep::CompatibilityNormalize(_) => TacticClass::Simple(SimpleTactic::Normalize),
         ProofStep::ArithmeticUsing(_) => TacticClass::smart(SmartTacticKind::Arithmetic),
 
         ProofStep::Preserve(_) => TacticClass::Simple(SimpleTactic::FactTransport),
         ProofStep::Intro | ProofStep::IntroAs(_) | ProofStep::IntroBinder(_) => {
             TacticClass::Simple(SimpleTactic::Intro)
         }
+        ProofStep::IntroBlock { .. } => TacticClass::Control(ControlTactic::Intro),
         ProofStep::Enumerate => TacticClass::Simple(SimpleTactic::Enumerate),
         ProofStep::Contradiction(_) => TacticClass::Simple(SimpleTactic::Contradiction),
         ProofStep::Rewrite(_) => TacticClass::Simple(SimpleTactic::Rewrite),
@@ -1333,6 +1360,15 @@ pub(super) fn validate_certificate_tactics(
                     result
                 }
                 TacticClass::Simple(_) => Ok(()),
+                TacticClass::Control(ControlTactic::Intro) => {
+                    let ProofTactic::IntroBlock { body, .. } = tactic else {
+                        unreachable!()
+                    };
+                    path.push(CertificatePathSegment::IntroBody);
+                    let result = validate_certificate_tactics(body, path);
+                    path.pop();
+                    result
+                }
                 TacticClass::Control(ControlTactic::StepProofs) => {
                     let ProofTactic::StepProved { proof, .. } = tactic else {
                         unreachable!("tactic class and variant must agree")
