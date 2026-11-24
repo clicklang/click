@@ -3027,8 +3027,8 @@ fn scalar_int32_profile_rejects_hostile_cleanup_proofs() {
         (
             "wrong_cleanup_order",
             sidecar_source.replacen(
-                "            step();\n            step();\n            step();\n            step();\n            have second_cell == old(second_cell);",
-                "            step();\n            step();\n            have first_cell == old(first_cell);\n            step();\n            step();\n            have second_cell == old(second_cell);",
+                "            step();\n            step();\n            step();\n            have second_cell == old(second_cell);",
+                "            step();\n            step();\n            have first_cell == old(first_cell);\n            step();\n            have second_cell == old(second_cell);",
                 1,
             ),
             "the first guard cannot be restored before the second cleanup",
@@ -3036,23 +3036,19 @@ fn scalar_int32_profile_rejects_hostile_cleanup_proofs() {
         (
             "omitted_cleanup",
             sidecar_source.replacen(
-                "            step();\n            step();\n            step();\n            step();\n            have second_cell == old(second_cell);",
                 "            step();\n            step();\n            step();\n            have second_cell == old(second_cell);",
+                "            step();\n            step();\n            have second_cell == old(second_cell);",
                 1,
             ),
             "a proof cannot omit a required destructor",
         ),
         // Each `step()` runs the next lowered statement, so a destructor runs
-        // once however many steps a proof writes. After the four written
-        // steps, the returning path has `second`'s lifetime end, `~first`,
-        // `first`'s lifetime end, and the return left: three more steps are
-        // a valid proof (the `have` still holds past `~first`), and the
-        // eighth reaches function exit. A ninth step has no statement to
-        // run, rather than running a destructor again, and is refused.
+        // once however many steps a proof writes. Stepping past the return
+        // is refused instead of executing a destructor again.
         (
             "duplicated_cleanup",
             sidecar_source.replacen(
-                "            step();\n            step();\n            step();\n            step();\n            have second_cell == old(second_cell);",
+                "            step();\n            step();\n            step();\n            have second_cell == old(second_cell);",
                 &format!(
                     "{}            have second_cell == old(second_cell);",
                     "            step();\n".repeat(9)
@@ -3064,8 +3060,8 @@ fn scalar_int32_profile_rejects_hostile_cleanup_proofs() {
         (
             "unconstructed_second_guard",
             sidecar_source.replacen(
-                "        threw => {\n            step();\n            have second_cell == old(second_cell);",
-                "        threw => {\n            step();\n            step();\n            have second_cell == 9;",
+                "        threw => {\n            have second_cell == old(second_cell);",
+                "        threw => {\n            step();\n            have second_cell == 9;",
                 1,
             ),
             "the exceptional path cannot destroy the skipped second guard",
@@ -15381,7 +15377,7 @@ fn condition_calls_preserve_inherited_receiver_and_sibling_frames() {
             r#"verifying "condition.cpp";
         bool Base::Empty() const {{ views this->value; ensures result == (if this->value == 0 {{ true }} else {{ false }}); }}
         int32 observe(const struct State& state) {{ views state.left.base.value; views state.sibling; requires state.left.base.value == {value}; ensures result == {expected}; ensures state.sibling == old(state.sibling); }} by {{
-            step();
+            step_until(call(0).entry);
             let {{ result: empty }} = step(Base::Empty, {{}});
             have empty == {empty} by {{
                 rewrite(empty, (if state.left.base.value == 0 {{ true }} else {{ false }}));
@@ -15588,7 +15584,6 @@ fn condition_calls_preserve_the_enclosing_catch_scope() {
     let sidecar = r#"verifying "condition.cpp";
         bool predicate(bool fail) throws int32 { ensures result == true; exceptional ensures exception == 7; }
         int32 choose(bool fail) { ensures result == 5 or result == 7; } by {
-            step();
             outcomes {
                 returned => { step_until(function.exit); solve(); }
                 threw => { step_until(function.exit); solve(); }
@@ -15715,7 +15710,7 @@ fn locked_header_graph_conditions_verify_offline_with_inherited_frames() {
         bool predicate(const struct Base& state) {{ views state.value; ensures result == (if state.value == 0 {{ true }} else {{ false }}); }}
         int32 Read(const struct Base& state) {{ views state.value; ensures result == state.value; }}
         int32 choose(const struct Box& state) {{ views state.left.base.value; views state.sibling; requires state.left.base.value == {value}; ensures result == {result}; ensures state.sibling == old(state.sibling); }} by {{
-            step();
+            step_until(call(0).entry);
             let {{ result: empty }} = step(predicate, {{}});
             have empty == {empty} by {{
                 rewrite(empty, (if state.left.base.value == 0 {{ true }} else {{ false }}));
@@ -16918,7 +16913,7 @@ fn check_converted_wide_call_results(initializer: bool) {
  requires {lo} <= to_integer(value); requires to_integer(value) <= {hi};
  ensures to_integer(result) == to_integer(value);
 }} by {{
- step();
+ step_until(call(0).entry);
  let {{ result: captured }} = step(echo, {{}});
  have {lo} <= to_integer(captured) by {{ close() using {{ {lo} <= to_integer(value); to_integer(captured) == to_integer(value); }} }}
  have to_integer(captured) <= {hi} by {{ close() using {{ to_integer(value) <= {hi}; to_integer(captured) == to_integer(value); }} }}
@@ -17018,7 +17013,8 @@ fn converted_wide_boolean_calls_observe_high_bits() {
             r#"verifying "wide.cpp";
 uint128 echo(uint128 value) {{ ensures result == value; }}
 bool relay(uint128 value) {{ requires to_integer(value) == {point}; ensures result == {answer}; }} by {{
- step(); let {{ result: captured }} = step(echo, {{}});
+ step_until(call(0).entry);
+ let {{ result: captured }} = step(echo, {{}});
  have to_integer(captured) == {point} by {{ close() using {{ to_integer(value) == {point}; to_integer(captured) == to_integer(value); }} }}
  {zero_fact}
  step_until(function.exit); solve();
@@ -20039,14 +20035,18 @@ fn cpp_project_unit_exports_several_functions_from_an_external_tree() {
             .output()
             .unwrap()
     };
-    let output = click(&[Path::new("import"), Path::new("lock"), &root.join("proofs")]);
+    let output = click(&[Path::new("capture"), &root.join("proofs")]);
     assert!(
         output.status.success(),
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
     assert_eq!(fs::read_dir(source.parent().unwrap()).unwrap().count(), 1);
-    let output = click(&[Path::new("verify"), &root.join("proofs/checks/pair.click")]);
+    let output = click(&[
+        Path::new("verify"),
+        Path::new("--locked"),
+        &root.join("proofs/checks/pair.click"),
+    ]);
     assert!(
         output.status.success(),
         "{}",
@@ -20057,7 +20057,7 @@ fn cpp_project_unit_exports_several_functions_from_an_external_tree() {
     let moved = base.join("moved");
     fs::rename(&root, &moved).unwrap();
     let sidecar = moved.join("proofs/checks/pair.click");
-    let output = click(&[Path::new("verify"), &sidecar]);
+    let output = click(&[Path::new("verify"), Path::new("--locked"), &sidecar]);
     assert!(
         output.status.success(),
         "{}",
@@ -20069,7 +20069,7 @@ fn cpp_project_unit_exports_several_functions_from_an_external_tree() {
         text.replace("+ 1", "+ 2"),
     )
     .unwrap();
-    let output = click(&[Path::new("verify"), &sidecar]);
+    let output = click(&[Path::new("verify"), Path::new("--locked"), &sidecar]);
     let error = String::from_utf8_lossy(&output.stderr);
     assert!(
         !output.status.success() && error.contains("pair.cpp") && error.contains("differs"),
@@ -20266,9 +20266,7 @@ fn bound_class_object_call_obligations_expand_and_cold_replay() {
         // solver proves its model-field bounds, without an extra written have.
         assert!(source.contains("object_resource(): packed"));
         assert!(!source.contains("have "));
-        let sidecar = project.directory.join("object.click");
-        fs::write(&sidecar, &source).unwrap();
-        let parsed = read_click_project(&sidecar, &source).unwrap();
+        let parsed = read_click_project(&path, &source).unwrap();
         let (session, verified) =
             ProgramVerificationSession::new_program_prepared_project(&parsed, &import).unwrap();
         let expanded = click::surface::expand_verified_function_claim_source_by_label(
@@ -21998,7 +21996,7 @@ int probe(int x, bool fail) noexcept(false) { return guarded(x, fail); }
 int32 leaf(int32 x) { ensures result == x; }
 int32 fallible(int32 x, bool fail) throws Error { ensures result == x; exceptional ensures fail == true; }
 int32 guarded(int32 x, bool fail) { requires fail == false; ensures result == x; } by {
-    step();
+    step_until(call(0).entry);
     outcomes {
         returned => { step_until(function.exit); solve(); }
         threw => { have fail == true; have false by { contradiction(fail); }; solve(); }

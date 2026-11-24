@@ -21177,7 +21177,7 @@ fn restricted_solve_does_not_borrow_the_ambient_equality_graph() {
             let selected = omitted.replace("using { a == b; }", "using { a == b; b == c; }");
             verify_c_sources(&selected, &[]).expect("the selected graph establishes transitivity");
             // The simple tactic deliberately has broader ambient semantics.
-            let ambient = omitted.replace("solve()", "normalize()");
+            let ambient = omitted.replace("close() using", "normalize() using");
             verify_c_sources(&ambient, &[])
                 .expect("explicit normalization may use the ambient graph");
         }
@@ -27095,6 +27095,7 @@ fn indexed_read_comparisons_expand_with_preservation() {
         ("p[i]", "!="),
         ("(p[i] & 2)", "<"),
         ("(p[i] | 2)", "<"),
+        ("(p[i] ^ 2)", "<"),
         ("*(p + i)", "<"),
     ] {
         let source = source
