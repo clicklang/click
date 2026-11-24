@@ -28,5 +28,5 @@ uint64 read_terminator(uint8 bytes[], uint64 known_len) {
 ```
 
 ```expect
-fail: known` requires the current goal as an available semantic fact
+fail: call to `strlen` needs a held `cstr_at` instance
 ```

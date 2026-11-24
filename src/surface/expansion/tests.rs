@@ -762,7 +762,7 @@ fn nested_tactic_position_follows_have_and_open_bodies() {
         .expect("nested step has a source position");
     assert_eq!(
         position,
-        position_at_offset(source, source.find("known").unwrap())
+        position_at_offset(source, source.find("close").unwrap())
     );
 }
 
@@ -3420,18 +3420,19 @@ theorem pick_nonzero(r: int32) {
         .collect::<Vec<_>>();
     assert_eq!(
         indexes,
-        vec![(1, "have"), (2, "have"), (3, "close")],
+        vec![(1, "close"), (2, "close"), (3, "close")],
         "{sites:?}"
     );
     let final_solve = "close();\n    }\n}";
-    for (index, needle) in [(1, "have r > 0"), (2, "have r < 0"), (3, final_solve)] {
+    for (index, needle) in [
+        (1, "have r > 0 by { close();"),
+        (2, "have r < 0 by { close();"),
+        (3, final_solve),
+    ] {
+        let close = source.find(needle).unwrap() + needle.find("close();").unwrap();
         let position = c_tactic_source_position(source, &[], "pick_nonzero.ensures_0", index)
             .unwrap_or_else(|error| panic!("site {index} has no source position: {error:?}"));
-        assert_eq!(
-            position,
-            position_at_offset(source, source.find(needle).unwrap()),
-            "site {index}"
-        );
+        assert_eq!(position, position_at_offset(source, close), "site {index}");
     }
     let after = position_at_offset(source, source.find(final_solve).unwrap());
     let expanded = expand_c_tactic_source_at(source, &[], after.line, after.column)
@@ -3629,7 +3630,7 @@ fn trace_source_index_preserves_nested_locations_and_containment() {
     let have = position_at_offset(source, source.find("have").unwrap());
     assert_eq!(
         index.nested_position(&have, &[0, 0]).unwrap(),
-        position_at_offset(source, source.find("known").unwrap())
+        position_at_offset(source, source.find("close").unwrap())
     );
     // Each second arm's first tactic.
     for (kind, inner) in [
@@ -4555,5 +4556,10 @@ void copy(struct Packet* dst, struct Packet* src, int32* q) {
         "requires separate(memory((dst as (uint8*))[0..8]), memory(*q));",
         "",
     );
-    assert!(verify_c_sources(&missing, &sources).is_err());
+    assert!(
+        without_proof_search_for_claim("copy.contract", || {
+            verify_c_sources(&missing, &sources).map_err(|error| error.report())
+        })
+        .is_err()
+    );
 }

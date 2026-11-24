@@ -11274,7 +11274,7 @@ impl ClickError {
                     context.push(legend);
                 }
             }
-            if self.failed_tactic == Some("close()")
+            if self.failed_tactic == Some("close")
                 && let Some(Proposition::Exists { .. }) = state.kernel_goal()
             {
                 context.push(

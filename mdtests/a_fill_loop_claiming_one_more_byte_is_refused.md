@@ -88,5 +88,5 @@ void fill(uint8* bytes, uint64 length, uint8 value) {
 ```
 
 ```expect
-fail: found no available fact or held instance
+fail: checked outcome `close` search did not retain a complete proof for `fill.ensures_0`
 ```

@@ -618,7 +618,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     tactic => tactic_name(tactic),
                 };
                 return Err(proof.step_error(format!(
-                    "`{name}` follows a goal-closing tactic: {closer} already closed this goal, so only `close()`, `close()`, a bare `close()`, or `normalize()` may follow it",
+                    "`{name}` follows a goal-closing tactic: {closer} already closed this goal, so only `close()` or `normalize()` may follow it",
                 )));
             }
             // A step that adds a fact can close the goal before a written

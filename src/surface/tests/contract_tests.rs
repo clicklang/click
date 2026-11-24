@@ -2464,7 +2464,7 @@ fn solve_rejects_loop_backed_claims() {
     assert!(
         error
             .message()
-            .contains("`solve` closes the outcome claims at function exit and does not execute"),
+            .contains("`close` closes the outcome claims at function exit and does not execute"),
         "{}",
         error.message()
     );

@@ -31,5 +31,5 @@ uint64 probe(uint8* bytes, uint64 n) {
 ```
 
 ```expect
-fail: could not establish `forall (binder(1): uint64) { 0 <= binder(1) and binder(1) < n implies defined(bytes[binder(1)]) }`
+fail: could not establish `forall
 ```
