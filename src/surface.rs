@@ -2292,6 +2292,9 @@ pub struct IteratedResourceClause {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ResourceInstanceBinding {
+    unnamed: bool,
+    /// The spelling of a lexical binder or, for an unnamed instance, its
+    /// resource application for presentation.
     name: String,
     /// What the binder names comes from its resource: an instance, or a
     /// mutex authority for a named mutex live, use or guard clause.

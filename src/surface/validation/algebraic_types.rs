@@ -622,7 +622,6 @@ pub(in crate::surface) fn resource_body_children<'b>(
             let source = match value {
                 ContractExpression::ResourceField(access)
                     if access.identity == crate::kernel::InstanceRef::Body
-                        && access.owner == "__body"
                         && access.children.is_empty() =>
                 {
                     let parent = definition
