@@ -59,6 +59,11 @@ pub(super) const COMPATIBILITY_NORMALIZATION: &str = "<verification-only normali
 pub(super) const UNRAISED_CONJUNCT: &str = "<unraised conjunct>";
 
 pub(in crate::surface) fn source_click_proposition(proposition: &ClickProposition) -> String {
+    with_lexical_binder_names(|| identity_click_proposition(proposition))
+}
+
+/// Internal comparison spelling that preserves generated binder identities.
+pub(in crate::surface) fn identity_click_proposition(proposition: &ClickProposition) -> String {
     let _null_literals = NullLiteralSourceScope::enter();
     print_proposition(proposition, PropositionSpelling::Source)
 }
@@ -736,6 +741,9 @@ impl Drop for CertificateBinderScope {
 
 fn with_lexical_binder_names(render: impl Fn() -> String) -> String {
     use crate::kernel::GeneratedBinderSpellingScope;
+    if GeneratedBinderSpellingScope::is_active() {
+        return render();
+    }
     let encountered = std::rc::Rc::new(std::cell::RefCell::new((BTreeSet::new(), Vec::new())));
     let observed = encountered.clone();
     let draft = {

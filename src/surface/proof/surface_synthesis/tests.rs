@@ -5433,9 +5433,7 @@ fn common_match_surface_preserves_typed_binders_and_relowers_nested_results() {
             synthesize_surface_proposition(&original, ParameterBinding::default(), &state)
                 .unwrap_or_else(|| panic!("match spelling: {original:?}"));
         let text = crate::surface::printing::source_click_proposition(&spelled);
-        if text.contains("match ") {
-            assert!(text.contains("Arm(binder("), "{requirement}: {text}");
-        }
+        assert!(!text.contains("binder("), "{requirement}: {text}");
         assert!(!text.contains('\0'));
         let parsed = parser::parse(&format!(
         "{declarations} theorem probe(payload: MatchScope, n: int32) {{ requires {text}; ensures true; }}"

@@ -668,6 +668,10 @@ thread_local! {
 pub(crate) struct GeneratedBinderSpellingScope(Option<BinderSpelling>);
 
 impl GeneratedBinderSpellingScope {
+    pub(crate) fn is_active() -> bool {
+        GENERATED_BINDER_SPELLING.with(|slot| slot.borrow().is_some())
+    }
+
     pub(crate) fn enter(
         spelling: impl Fn(GeneratedBinderId) -> Option<std::rc::Rc<str>> + 'static,
     ) -> Self {
