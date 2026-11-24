@@ -51,14 +51,17 @@ reproduced. To move a file off `unsound`, the reproduction must stop
 verifying. Narrowing the documented claim does not count. Re-check the label
 whenever the file's reproduction or scope changes.
 
-## P1: before launch (5)
+## P1: before launch (4)
 
 The launch strategy is to complete P1, deliver the minimum viable rbtree
 (MVR), and launch publicly with rbtree as the key demo. MVR is the smallest
 result that supports a public claim that Click verified the Linux kernel
-rbtree implementation. It verifies an unchanged, pinned upstream `lib/rbtree.c`
-and the public inline rbtree implementation in `rbtree.h` and
-`rbtree_augmented.h`, under one pinned compiler configuration and LP64 target.
+rbtree implementation. It verifies an unchanged, pinned upstream `lib/rbtree.c`,
+the inline helpers from `rbtree.h` and `rbtree_augmented.h` that it uses, and
+`rb_link_node`, under one pinned compiler configuration and LP64 target. By
+user direction (2026-11-24), the newer inline API built on that core
+(`rb_add`, `rb_find`, and the `*_cached` variants) is outside the launch
+claim.
 
 The proof must establish sequential memory safety and defined behavior;
 parent/child consistency and acyclicity; preservation of the red-black color
@@ -97,14 +100,15 @@ with no ranking among them, and four gaps that contradicted it were made
 P1. The C++ two, a released C++ front end and projects of several
 translation units, are delivered (2026-11-13; see
 [cpp-support.md](cpp-support.md#p1-front-end-delivered)). The Rust two, the
-Rust front end on every release host and crates with third-party
-dependencies, are in [rust-support.md](rust-support.md), which supersedes the
-Linux-only launch scope. Broader language, synchronization, and graph coverage remain
+Rust front end on the C++ front end's two hosts (Linux x86-64 GNU and macOS
+AArch64) and crates with third-party dependencies, are in
+[rust-support.md](rust-support.md). By user direction (2026-11-24), the other
+release hosts are P2 for both front ends. Broader language, synchronization, and graph coverage remain
 P2.
 
 Program import and execution:
 
-- [Rust support on every release host and for crates with dependencies](rust-support.md)
+- [Rust support on both launch hosts and for crates with dependencies](rust-support.md)
 
 The generic stack is complete: a recursive `Stack<T>` with `push`, `pop` and
 `size`, verified once for every type and imported unchanged, in Rust
@@ -145,10 +149,9 @@ Specification and proof:
 Proof tooling:
 
 - [Smart tactics: fast checking and enforceable search boundaries](smart-tactics.md)
-- [One fact-aware frame query instead of scattered history walks](fact-aware-frame-walks.md)
-- [KernelTerm / SurfaceTerm: finish the representation split](raise-lower-principle.md)
+- [KernelTerm / SurfaceTerm: finish the representation split](kernel-term-split.md)
 
-## P2: after launch (15)
+## P2: after launch (13)
 
 Worth doing, not worth blocking the rbtree claim on. Promote one to P1 when
 it turns out to block that claim: if P1 work exposes one of the tooling
@@ -160,7 +163,6 @@ C language coverage:
 - [Support general backward and irreducible goto](goto.md)
 - [Extend static-storage initializers and string-literal coverage](global-variables.md)
 - [Import kernel-scale preprocessed translation units](kernel-scale-preprocessing.md)
-- [Verify Linux rbtree inline helpers from the pinned headers](linux-rbtree-inline-helpers.md)
 - [Support multiple C compilers and target ABIs](multiple-compilers.md)
 - [Extend bounded control flow](control-flow.md)
 - [Model concurrency and atomics](concurrency-and-atomics.md)
@@ -175,6 +177,5 @@ Proof language and tooling:
 
 - [Extend modules and imports beyond the delivered rbtree slice](specification-imports.md)
 - [Scaling: stamp out quadratic work in simple checking](scaling.md)
-- [Reduce repeated work in deeply nested `Integer` quantifiers](deep-quantifier-scaling.md)
 - [Complete general-purpose algebraic data type support](algebraic-data-types.md)
 - [One source-tactic interpreter for every proof context](one-tactic-interpreter.md)

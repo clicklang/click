@@ -5,7 +5,7 @@ Priority: P2.
 Soundness: incomplete. Each listed generalization is refused today, and the
 listed regressions keep those refusals. No false acceptance is known.
 
-P2: general completeness, not a blanket MVR dependency. The core ADT feature
+This is general completeness, not a blanket MVR dependency. The core ADT feature
 set already supports ownership-backed tree models and a verified left rotation.
 MVR algorithm proofs and the specific integration gaps they expose belong in
 [rbtree-example.md](rbtree-example.md). Promote only
@@ -67,7 +67,9 @@ in-order node list. Unfold consumes the parent; no named open handle remains.
   transport. Reject a proof that reuses a witness outside its scope.
 - **Mutual induction.** Prove a property across a mutually recursive datatype
   group with correctly typed cross-datatype hypotheses. Reject hypotheses
-  for non-descending values. Mutually recursive pure functions already work.
+  for non-descending values. Mutually recursive pure functions already work,
+  proved through one joint hypothesis
+  (`mdtests/pure_induction_mutual_conjunction.md`).
 - **Sequence syntax unification.** Elaborate literals, `++`, and `in` to
   List, append, and membership instead of their separate representation.
   Preserve [sequence-transform](../examples/sequence-transform/README.md)
@@ -94,7 +96,4 @@ relation to concrete memory and owned children.
 - This issue closes when these generalizations are covered, not when MVR
   launches. It does not own additional tree algorithm deliverables.
 
-Integer specification coverage is landed and documented in
-[the mathematical-integer internals](../docs/internals/mathematical-integers.md);
-the remaining ADT generalizations do not depend on the retired Integer P1
-issue. Related: [rbtree-example.md](rbtree-example.md).
+Related: [rbtree-example.md](rbtree-example.md).

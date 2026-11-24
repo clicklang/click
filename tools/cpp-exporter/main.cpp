@@ -5021,6 +5021,11 @@ private:
       }
       result["kind"] = "dereference";
       result["pointer"] = std::move(*pointer);
+    } else if (source->isLValue() && llvm::isa<clang::CallExpr>(source)) {
+      fail(source->getExprLoc(),
+           "reading a C++ call's reference result inside a larger expression is unsupported; "
+           "use the call directly as a scalar initializer or return value");
+      return std::nullopt;
     } else {
       auto place = lower_place_reference(source, function);
       if (!place) {

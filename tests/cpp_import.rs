@@ -1589,6 +1589,23 @@ int32& probe(const struct View& view) { views view.pointer; views view.pointer[0
 }
 
 #[test]
+fn nested_reference_read_reports_the_unsupported_expression() {
+    let source = "struct Byte { unsigned char value; const unsigned char& get() const noexcept { return value; } }; bool probe(const Byte& byte) noexcept { return byte.get() == 67; }";
+    let project = Project::with_fixture("observe.cpp", "probe", source);
+    let error = refresh_import(&project.config()).unwrap_err();
+    assert!(
+        error.contains("reading a C++ call's reference result inside a larger expression"),
+        "{error}"
+    );
+    let supported = source.replace(
+        "return byte.get() == 67;",
+        "const unsigned char value = byte.get(); return value == 67;",
+    );
+    let project = Project::with_fixture("observe.cpp", "probe", &supported);
+    refresh_import(&project.config()).unwrap();
+}
+
+#[test]
 fn expression_observers_refuse_mutation_despite_a_matching_native_signature() {
     let project = Project::with_fixture(
         "observe.cpp",
@@ -6434,6 +6451,33 @@ fn cpp_sidecar_reports_source_and_signature_mismatches_without_c_fallback() {
         "{}",
         error.message()
     );
+}
+
+#[test]
+fn cpp_written_self_is_an_ordinary_parameter() {
+    for (selected, native, sidecar) in [
+        (
+            "probe",
+            "int probe(int self) noexcept { return self; }",
+            "int32 probe(int32 self) { ensures result == self; }",
+        ),
+        (
+            "Box::read",
+            "struct Box { int value; int read(int self) const noexcept { return self; } };",
+            "int32 Box::read(int32 self) const { ensures result == self; }",
+        ),
+    ] {
+        let project = Project::with_fixture("driver.cpp", selected, native);
+        refresh_import(&project.config()).unwrap();
+        fs::remove_file(&project.exporter).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let source = format!("verifying \"driver.cpp\";\n{sidecar}");
+        let path = project.directory.join("probe.click");
+        fs::write(&path, &source).unwrap();
+        let parsed = read_click_project(&path, &source).unwrap();
+        verify_program_prepared_project(&parsed, &import)
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+    }
 }
 
 /// A reference parameter is declared as a reference and named as its

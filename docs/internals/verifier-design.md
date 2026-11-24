@@ -90,7 +90,7 @@ for each element a full iteration visits (`src/kernel/fact_collections.rs`),
 so a scan shows up in scaling tests and tactic budgets wherever it is written.
 
 Remaining checking candidates and gaps in scaling evidence are organized by
-operation in [the smart-tactics roadmap item](https://github.com/clicklang/click/blob/master/roadmap/smart-tactics.md).
+operation in the [operation audit ledger](verification-efficiency.md#operation-audit-ledger).
 That inventory distinguishes source candidates, scoped regression evidence and
 unaudited routes; it is not a claim that the whole verifier already meets the
 contract.
@@ -373,7 +373,7 @@ the saved read first, then normalize using that equality and the saved value.
 This explicitly supplies the connection that an ambiguous constant endpoint
 bucket cannot choose. Build-time boundary checks reject the removed enumeration routes, and
 `condition_buckets` scaling regressions grow both related and unrelated state.
-Other remaining checking walks are tracked in `roadmap/smart-tactics.md`.
+Other remaining checking walks are tracked in the [operation audit ledger](verification-efficiency.md#operation-audit-ledger).
 
 ### Written literal and ownership queries
 

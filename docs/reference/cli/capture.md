@@ -2568,6 +2568,10 @@ The existing `std::span` and `std::array` interfaces still use layout-backed
 state accessors, as described below. This is an implementation dependency, listed
 among the [departures](../../concepts/library-interfaces.md#where-the-implementation-departs-from-this);
 the contract boundary above is the target for replacing it.
+When a caller uses these layouts from system headers, keep those headers
+inside the C++ unit root and list them as dependencies. A project with a
+separate sysroot can place it under that root and use its build's `--sysroot`
+and `-isystem` arguments.
 
 The pinned libc++ tests `libcxx_span_empty_checks_abstract_state` and
 `libcxx_span_assignment_carries_abstract_state` exercise this boundary with
@@ -2652,6 +2656,10 @@ does, as in `owns std_span_data(s);`. Diagnostics and expanded proofs print the
 accessor for its field path, so an expanded proof names no private field
 either.
 
+A contract that views a span's backing range reads the descriptor to name
+that range. For a borrowed dynamic span, grant `views std_span_data(s);`
+and `views std_span_size(s);` before the backing-range clause.
+
 A refused catalog precondition reached after execution also names reads by
 these accessors. Historical reads keep their `at(...)` qualification, for
 example `at(<state A>, std_span_size(s))`, rather than a carrier-cell index.
@@ -2682,7 +2690,10 @@ explicit step requirement; recovery still refuses unproved requirements.
 
 An element type outside that list matches no entry, so its calls are refused
 by name. Element accessors (`front`, `back`, `operator[]`) return native
-element references, which a caller may bind, read or write directly.
+element references. A caller can bind one and use it for reads or, for a
+mutable reference, writes. A caller can also read it as a direct scalar
+initializer or return value. A read of the returned reference inside a larger
+expression, such as `return s[0] == 67;`, is currently unsupported.
 A defaulted argument is imported as the constant Clang evaluates for it, so
 `subspan(1)` passes `std::dynamic_extent` as its count and verifies as the
 subview to the end.
