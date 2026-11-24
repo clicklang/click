@@ -1745,6 +1745,15 @@ impl ProgramPoint {
         self
     }
 
+    /// This point selected as an indexed cell read, as an unwritten static
+    /// cell's entry version is: for tests that build one cell's load from
+    /// two selection kinds of one point.
+    #[cfg(test)]
+    pub(in crate::kernel) fn for_indexed_cell_read(mut self) -> Self {
+        self.read = ReadSelection::IndexedCell;
+        self
+    }
+
     pub(crate) fn is_exact_read(&self) -> bool {
         matches!(self.read, ReadSelection::Exact) && self.id().is_some()
     }

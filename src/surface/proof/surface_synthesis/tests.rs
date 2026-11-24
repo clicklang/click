@@ -4498,9 +4498,12 @@ fn exact_read_raises_at_its_own_point_when_another_point_has_equal_memory() {
         &BTreeMap::new(),
     )
     .expect("the exact read has a recorded point");
+    // At `first` the place's ordinary read selects `first` itself, the same
+    // read key as the exact read, so the read is spelled plainly there: the
+    // spelling depends on the read's key, not on its selection kind.
     assert!(
         matches!(&raised, ContractExpression::At { selector: at, expression }
-        if at == &selector && matches!(expression.as_ref(), ContractExpression::Exact(_)))
+        if at == &selector && !matches!(expression.as_ref(), ContractExpression::Exact(_)))
     );
     let ClickProposition::Comparison { left, .. } = &mut claim else {
         unreachable!("test comparison");

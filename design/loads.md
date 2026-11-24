@@ -383,9 +383,10 @@ Design check
 2. **Exactness.** *Resolved in step 2:* a load's identity is its read key
    and cell, so an `Exact` and an indexed selection of one point are one
    `Load`, as integer reads compare only `read_key()`. The load keeps the
-   selection it was first built from; store lookups from either selection
-   return the same store, and raising spells the kept selection, which lowers
-   to the same read key
+   selection it was first built from, but nothing depends on which: a store
+   lookup asks the index at the load's version point whatever the selection
+   kind, and raising spells a read plainly where the place's ordinary read is
+   that read key, `exact(..)` only where it is not
    (`mdtests/an_exact_and_an_ordinary_read_of_one_pointer_cell_are_one_load.md`).
    Integer load equality compares only `read_key()`, so an
    `Exact` and an `IndexedCell` selection of one point are one term; pointer

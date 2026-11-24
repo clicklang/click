@@ -5662,8 +5662,11 @@ fn synthesize_spelled_point_read(
         if untyped && !version.is_exact_read() && !selects_at(state, ty) {
             return None;
         }
+        // The spelling depends on the load's read key, not on which selection
+        // built it first: where the place's ordinary read at `state` is this
+        // load, it is spelled plainly, and `exact` only where it is not.
         Some((
-            if version.is_exact_read() {
+            if version.is_exact_read() && !selects_at(state, ty) {
                 ContractExpression::Exact(Box::new(expression))
             } else {
                 expression
