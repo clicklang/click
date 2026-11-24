@@ -17407,9 +17407,14 @@ fn outcome_solve_preserves_viewability_after_a_call() {
     let verified = verify_c_sources(click_source, &sources);
     verified.expect("the call-preserved viewability should verify");
 
-    assert_compatibility_normalization_refusal(
-        expand_function_proof_source(click_source, &sources, "use_summary").unwrap_err(),
-    );
+    let expanded = expand_function_proof_source(click_source, &sources, "use_summary")
+        .expect("the call-preserved viewability should expand");
+    assert!(!expanded.contains("normalize()"), "{expanded}");
+    assert!(expanded.contains("preserve(memory(p[0..1]),"), "{expanded}");
+    crate::surface::check_audit_claim("use_summary.contract", true, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
 }
 
 #[test]
