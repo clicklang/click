@@ -1,14 +1,21 @@
 # Raise-lower principle
 
-The raise-lower principle requires raising followed by lowering to preserve
-every kernel term and proposition retained in a proof state.
-
-For every kernel term or proposition `x` retained in a proof state, raising
-constructs a Surface AST that lowers back to `x` in the same context:
+Every proof-visible `KernelProposition`, whether it is a fact or a goal,
+must raise to a whole `SurfaceProposition` that lowers back to the same
+checked proposition in the same proof context, up to renaming bound
+variables.
 
 ```text
-lower(raise(x)) = x
+KernelProposition → SurfaceProposition → same KernelProposition
 ```
+
+This includes the logical structure, binder scopes, guards, program points,
+and the identities of all terms the proposition contains. For example, raising
+the operands of a read under `forall` preserves that read as part of the
+quantified claim. The complete round trip also preserves the quantifier and
+its scope. The `KernelTerm` to `SurfaceTerm` round trip applies to those
+operands in their enclosing scopes and to standalone terms that expansion
+writes directly, such as witnesses or call arguments.
 
 Raising preserves types, bindings, value identity, and snapshot identity. It
 uses names and origins retained where values are introduced; it does not
@@ -392,8 +399,9 @@ it leaves focused, as goal presentation does
 (`Proof::structural_proposition_candidate`: the step's fixed state, its
 entry state and the path's recorded points, so `at(point, ..)`, `old(..)`
 and `<call>.result` forms are available), lowers that Surface form again,
-and records `same`, `polarity`
-(the same comparison at the other polarity), `differs`, `unlowered`,
+and compares the complete proposition up to bound-variable renaming. It records
+`same`, `polarity` (an equivalent comparison that changed representation),
+`differs`, `unlowered`,
 `unraised`, or `no-state`. It measures the raiser alone, not premise raising,
 which searches recorded Surface forms first and keeps only one that lowers
 back. It observes the steps the [census](#measuring-the-gap) does; a

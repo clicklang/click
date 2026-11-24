@@ -2404,16 +2404,16 @@ pub enum ResourceKind {
 }
 
 #[derive(Debug, Eq, PartialEq, Hash)]
-pub enum ClickProposition {
+pub enum SurfaceProposition {
     /// Assert a proposition-valued expression, such as a lambda application.
-    Value(ContractExpression),
+    Value(SurfaceTerm),
     Comparison {
-        left: ContractExpression,
+        left: SurfaceTerm,
         operator: ComparisonOperator,
-        right: ContractExpression,
+        right: SurfaceTerm,
     },
     FloatClassification {
-        expression: ContractExpression,
+        expression: SurfaceTerm,
         classification: syntax::CFloatClassification,
     },
     Separate {
@@ -2435,26 +2435,26 @@ pub enum ClickProposition {
     /// proposition, and it lowers `e` keeping native address checks
     /// (`checking_definedness`). See `docs/reference/glossary.md#special-forms`.
     Defined {
-        expression: ContractExpression,
+        expression: SurfaceTerm,
     },
     /// `at(point, P)`: the `at` special form in proposition position, the
     /// whole proposition `P` stated at `point`. `SurfaceTerm::At` is the term
     /// position.
     At {
         selector: ProgramPointSelector,
-        proposition: Box<ClickProposition>,
+        proposition: Box<SurfaceProposition>,
     },
-    And(Box<ClickProposition>, Box<ClickProposition>),
-    Or(Box<ClickProposition>, Box<ClickProposition>),
-    Not(Box<ClickProposition>),
-    Implies(Box<ClickProposition>, Box<ClickProposition>),
+    And(Box<SurfaceProposition>, Box<SurfaceProposition>),
+    Or(Box<SurfaceProposition>, Box<SurfaceProposition>),
+    Not(Box<SurfaceProposition>),
+    Implies(Box<SurfaceProposition>, Box<SurfaceProposition>),
     ForAll {
         click_type: ClickType,
         /// The hygienic name used while lowering the body.
         name: SurfaceBinder,
         /// The source spelling retained when hygiene changes `name`.
         written_name: Option<String>,
-        body: Box<ClickProposition>,
+        body: Box<SurfaceProposition>,
     },
     Exists {
         click_type: ClickType,
@@ -2462,40 +2462,43 @@ pub enum ClickProposition {
         name: SurfaceBinder,
         /// The source spelling retained when hygiene changes `name`.
         written_name: Option<String>,
-        body: Box<ClickProposition>,
+        body: Box<SurfaceProposition>,
     },
     RangeAll {
-        start: ContractExpression,
-        end: ContractExpression,
+        start: SurfaceTerm,
+        end: SurfaceTerm,
         /// The hygienic name used while lowering the body.
         item: SurfaceBinder,
         /// The source spelling retained when hygiene changes `item`.
         written_item: Option<String>,
-        body: Box<ClickProposition>,
+        body: Box<SurfaceProposition>,
     },
     RangeAny {
-        start: ContractExpression,
-        end: ContractExpression,
+        start: SurfaceTerm,
+        end: SurfaceTerm,
         /// The hygienic name used while lowering the body.
         item: SurfaceBinder,
         /// The source spelling retained when hygiene changes `item`.
         written_item: Option<String>,
-        body: Box<ClickProposition>,
+        body: Box<SurfaceProposition>,
     },
     PredicateCall {
         name: String,
-        arguments: Vec<ContractExpression>,
+        arguments: Vec<SurfaceTerm>,
     },
     /// `is_a<T>(p)`: the object `p` points to is a `T`. It holds exactly
     /// where the proof has type evidence for `p`, such as a resource body's
     /// typed call or a typed parameter, and lowers to that evidence's fact.
     IsA {
         class: crate::kernel::effective_type::CAccessClass,
-        pointer: ContractExpression,
+        pointer: SurfaceTerm,
     },
 }
 
-impl Clone for ClickProposition {
+/// Compatibility name for [`SurfaceProposition`].
+pub use self::SurfaceProposition as ClickProposition;
+
+impl Clone for SurfaceProposition {
     fn clone(&self) -> Self {
         clone_click_proposition_iteratively(self)
     }
@@ -2936,7 +2939,7 @@ fn clone_ensure_clause_iteratively(clause: &EnsureClause) -> EnsureClause {
     }
 }
 
-impl ClickProposition {
+impl SurfaceProposition {
     fn written_quantifier_name(&self) -> Option<&str> {
         match self {
             Self::ForAll { written_name, .. } | Self::Exists { written_name, .. } => {
