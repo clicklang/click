@@ -132,8 +132,8 @@ For one recorded transition, write
 `preserve(B, region);` under a read-equality goal.
 The execution-produced footprint includes stores, call effects and releases;
 no free-specific rule is needed. Establish footprint separation with explicitly
-selected premises in `normalize() using`. Compose transitions with `have`, `rewrite` and `known`;
-do not replace the explicit sequence with a walk over a whole region. Read the limits in
+selected premises in `normalize() using`. Compose transitions with
+`have`, `rewrite`, and `close()`. Spell out each transition in the proof. Read the limits in
 `docs/reference/tactics/index.md#preservation`; unsupported resource
 effects are not grounds for silently falling back to a history search.
 
@@ -147,7 +147,7 @@ walk, while an explicit certificate can contain several primitive steps.
 
 A refusal lists `refused by:` when Click can identify the tactic.
 An `incomplete proof` names the requirement to establish before closing.
-A failed `solve` does not tell you whether the argument is primitive. Split a link that
+A failed `close()` leaves the question of which primitive rules apply open. Split a link that
 needs several rules into links justified by those rules. Stop when all the
 premises of a documented primitive are written. If a concrete, justified
 inference has expressible premises and conclusion but no supported primitive,
@@ -167,7 +167,7 @@ For a successful proof that still walks history, follow verifier-design and
 retain a deterministic scaling reproduction instead of calling the cost fixed.
 
 To split a link a smart tactic proved part of, read its trace. A step marked
-``(from `implicit tail`)``, ``(from `step_until`)``, ``(from `solve`)`` or
+``(from `implicit tail`)``, ``(from `step_until`)``, ``(from `close`)`` or
 ``(from `implicit closer`)`` is one that smart work took (the implicit tail's
 execution or its closer, a written `step_until`, a written `close()`, or the
 closer of a step's requirement), and a `chosen:` line is the written form of an argument its
@@ -182,7 +182,7 @@ or write the `using` form it names. Only the written form's refusal can be
 
 Before each run, state in one line which link is new and why it holds. A new
 tactic, written form, or position for the same link is not a new attempt. Never
-edit `solve` or the implicit closer, raise a budget, or change the C to get
+edit proof search or the implicit closer, raise a budget, or change the C to get
 past a link.
 
 ## 6. Shrink a refused simple link
