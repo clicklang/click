@@ -28,6 +28,5 @@ The current support is intentionally narrow:
 - `views obj[0..1]` or `consumes obj[0..1]` as the memory access resource
   (ownership bounds the field writes; no effect clause)
 
-This is a regression example, not a launch target. Current development
-priorities are the P1 work and rbtree demo described in
-[the launch roadmap](../../docs/internals/roadmap.md).
+This example provides regression coverage. The
+[launch roadmap](../../docs/internals/roadmap.md) describes the rbtree demonstration.

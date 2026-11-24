@@ -1,6 +1,4 @@
-# P1: Rust support on the launch hosts and for crates with dependencies
-
-Priority: P1.
+# Rust support on the launch hosts and for crates with dependencies
 
 Soundness: incomplete. Click refuses Rust projects it should accept: on macOS
 arm64 the Rust front end cannot be installed, and a crate that uses a
@@ -22,8 +20,8 @@ Maintainer direction, 2026-11-24, settles the scope of both:
   `.github/workflows/cpp-frontend.yml`). The other release hosts in the
   `targets` of `[workspace.metadata.dist]` in `Cargo.toml` (Linux musl on
   x86-64 and AArch64, Linux GNU on AArch64, Windows on x86-64 and AArch64,
-  and macOS x86-64) are P2 for both front ends; they keep the
-  unavailable-platform diagnostic. The C++ side is recorded in
+  and macOS x86-64) keep the unavailable-platform diagnostic for both front
+  ends. The C++ side is recorded in
   [C++ installation](../docs/reference/cli/versions.md#languages).
 - **Dependencies.** A third-party crate is a library under the
   [library-interface rule](../docs/concepts/library-interfaces.md): Click

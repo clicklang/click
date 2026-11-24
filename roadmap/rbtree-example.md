@@ -1,7 +1,5 @@
 # Verify the Linux rbtree example on the recursive structure models
 
-Priority: P1.
-
 Soundness: not soundness. This is example delivery. Soundness defects found
 along the way were fixed when they were found; none is open against this item.
 

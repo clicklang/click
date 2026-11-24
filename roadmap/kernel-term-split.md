@@ -1,13 +1,11 @@
 # KernelTerm / SurfaceTerm: finish the representation split
 
-Priority: P1.
-
 Soundness: incomplete. Native expression bridges can preserve proof rules that
 the common representation does not yet handle directly. Removing a bridge
 before its callers move can lose proofs or prevent checked expansion.
 
-P1 by maintainer direction (2026-11-24): recurring verifier bugs keep tracing
-back to the unfinished split.
+The maintainer made this launch work on 2026-11-24 because recurring verifier
+bugs trace back to the unfinished split.
 
 ## Goal
 

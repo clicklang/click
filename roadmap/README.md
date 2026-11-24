@@ -1,30 +1,24 @@
 # Roadmap
 
-## P1: before launch (5)
+## Active work
 
 The launch covers C, C++, and Rust, with Linux rbtree as the main
-demonstration. Reproduced false acceptances are P1.
+demonstration. Reproduced false acceptances block launch.
 
 - [Verify the pinned Linux rbtree implementation](rbtree-example.md)
 - [Ship Rust on both launch hosts and support crates with dependencies](rust-support.md)
 - [Deliver a Rust language baseline that ordinary small crates meet](rust-language-baseline.md)
 - [Finish the smart-tactic checking and search boundaries](smart-tactics.md)
 - [Finish the KernelTerm / SurfaceTerm split](kernel-term-split.md)
-
-## P2: after launch (1)
-
 - [Eliminate quadratic work in simple checking](scaling.md)
 
 Use feedback from real projects to prioritize additional work after launch.
 
 ## Maintaining the roadmap
 
-Each file here is one roadmap item: a missing feature, design gap, deferred
-work, or milestone. Agents must not create new roadmap items unless the user
-explicitly asks them to. Discovering a roadmap gap during other work is not
-authorization; report it to the user instead. This applies to missing
-features, design gaps, deferred work, and new milestones, even when another
-document recommends filing one. Defects with a reproduction are not roadmap
+Keep an item here while we intend to work on it actively. Remove it when work
+is deferred, and keep durable constraints and evidence in the relevant design
+or reference docs. Add an item only on explicit user request. Defects with a reproduction are not roadmap
 items. Defects found through the proof-repair skill go to GitHub issues
 after user approval, including during internal development. Other internally
 discovered defects go in [`bugs/`](../bugs/README.md), which also requires
@@ -48,9 +42,8 @@ the complexity contract and scaling-regression policy. Proposals without a
 failing deterministic curve are not open roadmap items; when the user requests
 one, scope it narrowly to the evidence.
 
-Every roadmap item states `Priority: P1.` or `Priority: P2.` directly under its
-title. Directly under that, a `Soundness:` paragraph gives one label and a
-written argument for it. A bug in [`bugs/`](../bugs/README.md) puts the
+Under each roadmap title, put a `Soundness:` paragraph with one label and
+a written argument for it. A bug in [`bugs/`](../bugs/README.md) puts the
 `Soundness:` paragraph directly under its title. The labels are:
 
 - `unsound`: Click can verify a claim that is false for the program built for
