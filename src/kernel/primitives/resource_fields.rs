@@ -1,6 +1,10 @@
 //! Immutable resource fields. Producers keep their common roots;
 //! native input lists and selected compatibility readers stay explicit.
+use super::integer::IntegerShallowKey;
 use super::*;
+use crate::kernel::execution_value::storage_keys::{
+    AlgebraicStorageKey, ProgramStorageKey, algebraic_for_root,
+};
 use crate::kernel::{ExecutionValue, RetainedProgramValue};
 use std::borrow::Cow;
 
@@ -37,6 +41,23 @@ impl<'a> ResourceFieldValue<'a> {
     }
 }
 
+#[derive(Eq, PartialEq, Hash, Ord, PartialOrd)]
+enum FieldKey {
+    Program(ProgramStorageKey),
+    Integer(IntegerShallowKey),
+    Algebraic(AlgebraicStorageKey),
+}
+
+impl FieldKey {
+    fn native(value: &AlgebraicValue) -> Self {
+        match value {
+            AlgebraicValue::Program(value) => Self::Program(ProgramStorageKey::native(value)),
+            AlgebraicValue::Integer(value) => Self::Integer(value.shallow_key()),
+            AlgebraicValue::Algebraic(value) => Self::Algebraic(AlgebraicStorageKey::native(value)),
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub(crate) enum StoredResourceField {
     Input(AlgebraicValue),
@@ -66,6 +87,17 @@ impl StoredResourceField {
             value => Self::Program(value.into()),
         }
     }
+    fn key(&self) -> FieldKey {
+        match self {
+            Self::Input(value) => FieldKey::native(value),
+            Self::Program(value) => FieldKey::Program(value.storage_key().clone()),
+            Self::Integer(root) => {
+                FieldKey::Integer(root.integer_exact_key().expect("Integer field"))
+            }
+            Self::Algebraic(root) => FieldKey::Algebraic(algebraic_for_root(root)),
+        }
+    }
+
     fn native(&self) -> ResourceFieldValue<'_> {
         match self {
             Self::Input(value) => value.into(),
@@ -238,6 +270,13 @@ impl ResourceFieldValues {
             }
         })
     }
+    fn keys(&self) -> impl Iterator<Item = FieldKey> + '_ {
+        (0..self.len()).map(|index| match self.0.as_ref() {
+            FieldStorage::Input(values) => FieldKey::native(&values[index]),
+            FieldStorage::Retained(values) => values[index].key(),
+        })
+    }
+
     pub(crate) fn shares_storage_with(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.0, &other.0)
     }
@@ -278,13 +317,16 @@ impl std::fmt::Debug for ResourceFieldValues {
 impl PartialEq for ResourceFieldValues {
     fn eq(&self, other: &Self) -> bool {
         self.shares_storage_with(other)
-            || (self.len() == other.len() && self.iter().eq(other.iter()))
+            || (self.len() == other.len() && self.keys().eq(other.keys()))
     }
 }
 impl Eq for ResourceFieldValues {}
 impl Ord for ResourceFieldValues {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.iter().cmp(other.iter())
+        if self.shares_storage_with(other) {
+            return std::cmp::Ordering::Equal;
+        }
+        self.keys().cmp(other.keys())
     }
 }
 impl PartialOrd for ResourceFieldValues {
@@ -295,14 +337,14 @@ impl PartialOrd for ResourceFieldValues {
 impl Hash for ResourceFieldValues {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.len().hash(state);
-        for value in self.iter() {
-            value.hash(state);
+        for key in self.keys() {
+            key.hash(state);
         }
     }
 }
 impl PartialEq<[AlgebraicValue]> for ResourceFieldValues {
     fn eq(&self, other: &[AlgebraicValue]) -> bool {
-        self.len() == other.len() && self.iter().eq(other.iter().map(ResourceFieldValue::from))
+        self.len() == other.len() && self.keys().eq(other.iter().map(FieldKey::native))
     }
 }
 impl<const N: usize> PartialEq<[AlgebraicValue; N]> for ResourceFieldValues {
@@ -423,7 +465,9 @@ mod tests {
         for a in &values {
             let native: NativeResourceArguments = vec![a.clone()].into();
             let fields = ResourceFieldValues::from(native.clone());
-            assert_eq!(hash(&fields), hash(&native));
+            let minted = ResourceFieldValues::from_minted(vec![a.clone()]);
+            assert_eq!(fields, minted);
+            assert_eq!(hash(&fields), hash(&minted));
             assert_eq!(format!("{fields:?}"), format!("{native:?}"));
             assert_eq!(fields.get(0).unwrap().into_native(), *a);
             for b in &values {
@@ -433,12 +477,6 @@ mod tests {
                 assert_eq!(fields.cmp(&stored), native.cmp(&other));
             }
         }
-        let fields = ResourceFieldValues::from_minted(vec![AlgebraicValue::Program(
-            ProgramValue::UInt32(MachineTerm::Variable(Variable(10993305))),
-        )]);
-        let native: NativeResourceArguments = fields.to_vec().into();
-        assert_eq!(hash(&fields), hash(&native));
-        assert_eq!(fields, ResourceFieldValues::from(native));
     }
 
     #[test]

@@ -84,7 +84,9 @@ pub(in crate::kernel) use memory_reasoning::parameter_partition_root;
 pub(in crate::kernel) use memory_reasoning::parameter_partition_variable;
 pub(in crate::kernel) use memory_reasoning::read_candidate_byte_width;
 pub(in crate::kernel) use memory_reasoning::signed_byte_sum_is_nonwrapping_views;
-pub(in crate::kernel) use memory_reasoning::{AccessExtent, access_extent_of_value};
+pub(in crate::kernel) use memory_reasoning::{
+    AccessExtent, access_extent_of_type, access_extent_of_value,
+};
 pub(in crate::kernel) use memory_reasoning::{
     frame_composite_definitions, owned_instances_naming_access_base,
 };

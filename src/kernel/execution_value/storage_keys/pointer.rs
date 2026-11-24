@@ -17,21 +17,21 @@ struct PointerIdentity {
     provenance: AddressKey,
     bounds_known: bool,
     bounds_owner: Option<AddressKey>,
-    bounds: Option<(AddressKey, MachineTerm)>,
+    bounds: Option<(AddressKey, ScalarStorageKey)>,
 }
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-struct AddressKey {
+pub(in crate::kernel) struct AddressKey {
     block: AddressBase,
     offset: OffsetKey,
 }
 impl AddressKey {
-    fn native(pointer: &Address) -> Self {
+    pub(in crate::kernel) fn native(pointer: &Address) -> Self {
         Self {
             block: pointer.base.clone(),
             offset: OffsetKey::native(&pointer.offset),
         }
     }
-    fn shared(pointer: &SharedAddress) -> Self {
+    pub(in crate::kernel) fn shared(pointer: &SharedAddress) -> Self {
         Self {
             block: pointer.node().base.native_atom().clone(),
             offset: offset_for_root(&pointer.node().offset),
@@ -56,26 +56,25 @@ impl PointerStorageKey {
             bounds_owner: (!value.bounds_are_known())
                 .then(|| value.bounds_owner().map(AddressKey::native))
                 .flatten(),
-            bounds: value
-                .bounds()
-                .map(|e| (AddressKey::native(&e.start), e.width.clone())),
+            bounds: value.bounds().map(|e| {
+                (
+                    AddressKey::native(&e.start),
+                    ScalarStorageKey::native(&e.width),
+                )
+            }),
         })
     }
-    fn shared(value: &SharedPointer) -> Self {
+    pub(super) fn shared(value: &SharedPointer) -> Self {
         let value = value.node();
         Self::new(PointerIdentity {
             address: AddressKey::shared(&value.address),
             provenance: AddressKey::shared(&value.provenance),
             bounds_known: value.array.is_known(),
             bounds_owner: value.array.opaque_owner().map(AddressKey::shared),
-            // Widths have native MachineTerm structural identity, unlike offset
-            // index handles. Keep this selected scalar adapter explicit.
-            bounds: value.array.bounds().map(|e| {
-                (
-                    AddressKey::shared(&e.start),
-                    KernelTermExport::machine(&e.width).expect("selected subobject width"),
-                )
-            }),
+            bounds: value
+                .array
+                .bounds()
+                .map(|e| (AddressKey::shared(&e.start), e.width.scalar_storage_key())),
         })
     }
 }
@@ -283,7 +282,7 @@ thread_local! {
     static OFFSETS: std::cell::RefCell<std::collections::HashMap<SharedAddressOffset, OffsetKey>> = Default::default();
     static POINTERS: std::cell::RefCell<crate::id_hash::U64Map<PointerStorageKey>> = Default::default();
 }
-fn offset_for_root(source: &SharedAddressOffset) -> OffsetKey {
+pub(in crate::kernel) fn offset_for_root(source: &SharedAddressOffset) -> OffsetKey {
     OFFSETS.with(|keys| {
         let mut pending = vec![(source, false)];
         while let Some((root, finish)) = pending.pop() {
@@ -304,17 +303,6 @@ fn offset_for_root(source: &SharedAddressOffset) -> OffsetKey {
             .clone()
     })
 }
-pub(in crate::kernel) fn compare_offsets(
-    left: &SharedAddressOffset,
-    right: &SharedAddressOffset,
-) -> Ordering {
-    if left == right {
-        Ordering::Equal
-    } else {
-        offset_for_root(left).cmp(&offset_for_root(right))
-    }
-}
-
 pub(in crate::kernel) fn for_root(source: &KernelTerm) -> PointerStorageKey {
     POINTERS.with(|keys| {
         if let Some(key) = keys.borrow().get(&source.id()) {

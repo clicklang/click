@@ -15,7 +15,28 @@ pub(crate) enum FactOperand<'a> {
 pub(crate) fn fact_operand_identity<'a>(
     format: MachineIntegerType,
     relation: CompareRelation,
+    operands: [View<'a>; 2],
+) -> (MachineIntegerType, [FactOperand<'a>; 2]) {
+    identity(format, relation, operands, View::word32_constant)
+}
+
+/// Stored conditions preserve a written arithmetic node. Only a literal may
+/// become a comparison identity value, even if a DAG node caches its result.
+pub(crate) fn stored_operand_identity<'a>(
+    format: MachineIntegerType,
+    relation: CompareRelation,
+    operands: [View<'a>; 2],
+) -> (MachineIntegerType, [FactOperand<'a>; 2]) {
+    identity(format, relation, operands, |view| {
+        view.literal()?.constant32()
+    })
+}
+
+fn identity<'a>(
+    format: MachineIntegerType,
+    relation: CompareRelation,
     [mut left, mut right]: [View<'a>; 2],
+    word32_literal: impl Fn(View<'a>) -> Option<u32>,
 ) -> (MachineIntegerType, [FactOperand<'a>; 2]) {
     let format = ConditionTerm::fact_format(format, relation);
     if relation == CompareRelation::Equal && format.format().bits() == 32 {
@@ -85,7 +106,7 @@ pub(crate) fn fact_operand_identity<'a>(
         // converting or exporting the surrounding operand.
         if relation == CompareRelation::Equal
             && format.format().bits() == 32
-            && let Some(bits) = term.word32_constant()
+            && let Some(bits) = word32_literal(term)
         {
             FactOperand::Value(i128::from(bits as i32))
         } else {

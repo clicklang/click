@@ -75,6 +75,14 @@ impl StoredMachineTerm {
     pub(crate) fn root(&self) -> Option<&KernelTerm> {
         self.0.root()
     }
+    fn storage_key(&self) -> &crate::kernel::execution_value::storage_keys::ScalarStorageKey {
+        use crate::kernel::execution_value::storage_keys::ProgramStorageKey;
+        let ProgramStorageKey::Scalar(_, key) = self.0.storage_key() else {
+            unreachable!("machine descriptor");
+        };
+        key
+    }
+
     pub(crate) fn native_compat(&self) -> &MachineTerm {
         match self.0.native_compat() {
             ProgramValue::Bool(v)
@@ -100,7 +108,7 @@ impl std::fmt::Debug for StoredMachineTerm {
 impl PartialEq for StoredMachineTerm {
     fn eq(&self, other: &Self) -> bool {
         matches!((self.root(), other.root()), (Some(a), Some(b)) if a == b)
-            || self.native_compat() == other.native_compat()
+            || self.storage_key() == other.storage_key()
     }
 }
 impl Eq for StoredMachineTerm {}
@@ -114,7 +122,7 @@ impl Ord for StoredMachineTerm {
         if matches!((self.root(), other.root()), (Some(a), Some(b)) if a == b) {
             std::cmp::Ordering::Equal
         } else {
-            self.native_compat().cmp(other.native_compat())
+            self.storage_key().cmp(other.storage_key())
         }
     }
 }
@@ -350,78 +358,76 @@ impl StoredConditionTerm {
 #[derive(Clone)]
 pub struct StoredPointerOffset(Arc<PointerOffsetStorage>);
 
-enum PointerOffsetStorage {
+struct PointerOffsetStorage {
+    key: crate::kernel::execution_value::storage_keys::OffsetKey,
+    value: PointerOffsetValue,
+}
+
+enum PointerOffsetValue {
     Native(AddressOffset),
     Shared {
         root: SharedAddressOffset,
-        // The machine interner is weak. Keep the original index handles alive
-        // for native ordering and hashing without retaining the offset tree.
-        _index_identities: Vec<SharedMachineIntegerTerm>,
         native: OnceLock<AddressOffset>,
     },
 }
 
 impl From<AddressOffset> for StoredPointerOffset {
     fn from(written: AddressOffset) -> Self {
-        Self(Arc::new(
-            Self::retain(&written).unwrap_or_else(|| PointerOffsetStorage::Native(written)),
-        ))
+        Self::from_input(KernelAddressOffset::try_import(&written), || written)
     }
 }
 
 impl StoredPointerOffset {
     pub(in crate::kernel) fn from_rewritten_root(root: SharedAddressOffset) -> Self {
-        let mut indices = Vec::new();
-        root.visit_root_in_order(false, |node| {
-            if let Some(index) = node.index() {
-                indices.push(SharedAddressOffset::exact_index(index));
-            }
-        });
-        Self(Arc::new(PointerOffsetStorage::Shared {
-            root,
-            _index_identities: indices,
-            native: OnceLock::new(),
+        let key = crate::kernel::execution_value::storage_keys::offset_for_root(&root);
+        Self(Arc::new(PointerOffsetStorage {
+            key,
+            value: PointerOffsetValue::Shared {
+                root,
+                native: OnceLock::new(),
+            },
         }))
     }
 
     #[cfg(test)]
     pub(crate) fn has_cached_native_offset(&self) -> bool {
-        matches!(&*self.0, PointerOffsetStorage::Shared { native, .. } if native.get().is_some())
+        matches!(&self.0.value, PointerOffsetValue::Shared { native, .. } if native.get().is_some())
     }
 
     pub(in crate::kernel) fn from_written(written: &AddressOffset) -> Self {
-        Self(Arc::new(Self::retain(written).unwrap_or_else(|| {
-            PointerOffsetStorage::Native(written.clone())
-        })))
+        Self::from_input(KernelAddressOffset::try_import(written), || written.clone())
     }
 
-    fn retain(written: &AddressOffset) -> Option<PointerOffsetStorage> {
-        let root = KernelAddressOffset::try_import(written).ok()?;
-        let mut indices = Vec::new();
-        written.any_scaled_operand(|value| {
-            indices.push(value.clone());
-            false
-        });
-        Some(PointerOffsetStorage::Shared {
-            root,
-            _index_identities: indices,
-            native: OnceLock::new(),
-        })
+    fn from_input(
+        root: Result<SharedAddressOffset, &'static str>,
+        native: impl FnOnce() -> AddressOffset,
+    ) -> Self {
+        match root {
+            Ok(root) => Self::from_rewritten_root(root),
+            Err(_) => {
+                let value = native();
+                let key = crate::kernel::execution_value::storage_keys::OffsetKey::native(&value);
+                Self(Arc::new(PointerOffsetStorage {
+                    key,
+                    value: PointerOffsetValue::Native(value),
+                }))
+            }
+        }
     }
 
     pub(crate) fn native_compat(&self) -> &AddressOffset {
-        match &*self.0 {
-            PointerOffsetStorage::Native(written) => written,
-            PointerOffsetStorage::Shared { root, native, .. } => {
+        match &self.0.value {
+            PointerOffsetValue::Native(written) => written,
+            PointerOffsetValue::Shared { root, native } => {
                 native.get_or_init(|| KernelAddressOffset::export(root).expect("stored offset"))
             }
         }
     }
 
     pub(crate) fn root(&self) -> Option<&SharedAddressOffset> {
-        match &*self.0 {
-            PointerOffsetStorage::Native(_) => None,
-            PointerOffsetStorage::Shared { root, .. } => Some(root),
+        match &self.0.value {
+            PointerOffsetValue::Native(_) => None,
+            PointerOffsetValue::Shared { root, .. } => Some(root),
         }
     }
 }
@@ -444,25 +450,10 @@ impl PartialOrd for StoredProgramValue {
 }
 impl Ord for StoredProgramValue {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        if let (Some(left), Some(right)) = (self.root(), other.root()) {
-            if left == right {
-                return std::cmp::Ordering::Equal;
-            }
-            if left.pointer_payload().is_some() && right.pointer_payload().is_some() {
-                use crate::kernel::execution_value::storage_keys::pointer_for_root;
-                return pointer_for_root(left).cmp(&pointer_for_root(right));
-            }
-            let is_float_arithmetic = |root: &KernelTerm| {
-                matches!(
-                    root.node(),
-                    KernelTermNode::FloatBinary { .. } | KernelTermNode::FloatNegate { .. }
-                )
-            };
-            if left.ty() == right.ty() && is_float_arithmetic(left) && is_float_arithmetic(right) {
-                return left.float_storage_key().cmp(&right.float_storage_key());
-            }
+        if matches!((self.root(), other.root()), (Some(left), Some(right)) if left == right) {
+            return std::cmp::Ordering::Equal;
         }
-        self.native_compat().cmp(other.native_compat())
+        self.0.storage_key().cmp(other.0.storage_key())
     }
 }
 impl std::hash::Hash for StoredProgramValue {
@@ -529,18 +520,17 @@ impl PartialOrd for StoredAlgebraicTerm {
 }
 impl Ord for StoredAlgebraicTerm {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        if let (Some(left), Some(right)) = (self.root(), other.root()) {
-            if left == right {
-                return std::cmp::Ordering::Equal;
-            }
-            if matches!(left.node(), KernelTermNode::Constructor(_))
-                && matches!(right.node(), KernelTermNode::Constructor(_))
-            {
-                use crate::kernel::execution_value::storage_keys::algebraic_for_root;
-                return algebraic_for_root(left).cmp(&algebraic_for_root(right));
-            }
+        if matches!((self.root(), other.root()), (Some(left), Some(right)) if left == right) {
+            return std::cmp::Ordering::Equal;
         }
-        self.native_compat().cmp(other.native_compat())
+        use crate::kernel::execution_value::storage_keys::{
+            AlgebraicStorageKey, algebraic_for_root,
+        };
+        let key = |value: &Self| match value.root() {
+            Some(root) => algebraic_for_root(root),
+            None => AlgebraicStorageKey::native(value.native_compat()),
+        };
+        key(self).cmp(&key(other))
     }
 }
 impl std::hash::Hash for StoredAlgebraicTerm {
@@ -554,27 +544,17 @@ impl std::fmt::Debug for StoredConditionTerm {
     }
 }
 impl StoredConditionTerm {
-    fn connective_roots<'a>(&'a self, other: &'a Self) -> Option<(&'a KernelTerm, &'a KernelTerm)> {
-        let connective = |root: &KernelTerm| {
-            matches!(
-                root.node(),
-                KernelTermNode::BoolIf { .. } | KernelTermNode::BoolEqual { .. }
-            )
-        };
-        let left = self.root().filter(|root| connective(root))?;
-        let right = other.root().filter(|root| connective(root))?;
-        Some((left, right))
+    fn storage_key(&self) -> crate::kernel::execution_value::storage_keys::ConditionStorageKey {
+        use crate::kernel::execution_value::storage_keys::ConditionStorageKey;
+        match self.root() {
+            Some(root) => root.condition_storage_key(),
+            None => ConditionStorageKey::native(self.native_compat()),
+        }
     }
 }
 impl PartialEq for StoredConditionTerm {
     fn eq(&self, other: &Self) -> bool {
-        if matches!((self.root(), other.root()), (Some(left), Some(right)) if left == right) {
-            return true;
-        }
-        if let Some((left, right)) = self.connective_roots(other) {
-            return left.condition_storage_key() == right.condition_storage_key();
-        }
-        self.native_compat() == other.native_compat()
+        self.cmp(other).is_eq()
     }
 }
 impl Eq for StoredConditionTerm {}
@@ -588,12 +568,7 @@ impl Ord for StoredConditionTerm {
         if matches!((self.root(), other.root()), (Some(left), Some(right)) if left == right) {
             return std::cmp::Ordering::Equal;
         }
-        if let Some((left, right)) = self.connective_roots(other) {
-            return left
-                .condition_storage_key()
-                .cmp(&right.condition_storage_key());
-        }
-        self.native_compat().cmp(other.native_compat())
+        self.storage_key().cmp(&other.storage_key())
     }
 }
 impl std::hash::Hash for StoredConditionTerm {
@@ -608,10 +583,7 @@ impl std::fmt::Debug for StoredPointerOffset {
 }
 impl PartialEq for StoredPointerOffset {
     fn eq(&self, other: &Self) -> bool {
-        match (self.root(), other.root()) {
-            (Some(left), Some(right)) => left == right || left.syntax_equal(right),
-            _ => self.native_compat() == other.native_compat(),
-        }
+        self.0.key == other.0.key
     }
 }
 impl Eq for StoredPointerOffset {}
@@ -622,17 +594,12 @@ impl PartialOrd for StoredPointerOffset {
 }
 impl Ord for StoredPointerOffset {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        match (self.root(), other.root()) {
-            (Some(left), Some(right)) => {
-                crate::kernel::execution_value::storage_keys::compare_offsets(left, right)
-            }
-            _ => self.native_compat().cmp(other.native_compat()),
-        }
+        self.0.key.cmp(&other.0.key)
     }
 }
 impl std::hash::Hash for StoredPointerOffset {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.native_compat().hash(state);
+        self.0.key.hash(state);
     }
 }
 
@@ -677,11 +644,11 @@ mod protocol_value_tests {
         let second =
             AddressOffset::scaled_int64_node(MachineTerm::Variable(Variable(998982)), 8, true);
         let input = AddressOffset::Add(Box::new(first), Box::new(second));
-        let expected_hash = hash(&input);
         let expected_debug = format!("{input:?}");
         let stored = StoredPointerOffset::from(input);
         assert!(stored.root().is_some());
-        assert_eq!(hash(&stored), expected_hash);
+        let _ = hash(&stored);
+        assert!(!stored.has_cached_native_offset());
         assert_eq!(format!("{stored:?}"), expected_debug);
 
         let same = StoredPointerOffset::from(stored.native_compat().clone());

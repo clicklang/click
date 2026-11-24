@@ -2846,7 +2846,11 @@ fn memory_states_match_for_resolution(
 /// to read and stands in the widest scalar: over-stating a width can only
 /// shrink the separated set.
 pub(in crate::kernel) fn cell_access_byte_width(value: &ProgramValue) -> u32 {
-    match value.byte_width() {
+    nonzero_cell_access_width(value.byte_width())
+}
+
+pub(in crate::kernel) fn nonzero_cell_access_width(bytes: u32) -> u32 {
+    match bytes {
         0 => crate::kernel::resource_tracker::widest_scalar_access_bytes(),
         bytes => bytes,
     }

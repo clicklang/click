@@ -986,10 +986,10 @@ impl KernelTerm {
         WeakKernelTerm(Arc::downgrade(&self.0))
     }
 
-    pub(in crate::kernel) fn float_storage_key(
+    pub(in crate::kernel) fn scalar_storage_key(
         &self,
-    ) -> crate::kernel::execution_value::storage_keys::FloatStorageKey {
-        crate::kernel::execution_value::storage_keys::float_for_root(self)
+    ) -> crate::kernel::execution_value::storage_keys::ScalarStorageKey {
+        crate::kernel::execution_value::storage_keys::scalar_for_root(self)
     }
     pub(in crate::kernel) fn condition_storage_key(
         &self,
