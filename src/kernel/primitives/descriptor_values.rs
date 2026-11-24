@@ -426,32 +426,50 @@ impl StoredPointerOffset {
     }
 }
 
-macro_rules! native_descriptor_identity {
-    ($carrier:ty) => {
-        impl std::fmt::Debug for $carrier {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { self.native_compat().fmt(f) }
-        }
-        impl PartialEq for $carrier {
-            fn eq(&self, other: &Self) -> bool {
-                matches!((self.root(), other.root()), (Some(a), Some(b)) if a == b) || self.native_compat() == other.native_compat()
-            }
-        }
-        impl Eq for $carrier {}
-        impl PartialOrd for $carrier {
-            fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> { Some(self.cmp(other)) }
-        }
-        impl Ord for $carrier {
-            fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-                if matches!((self.root(), other.root()), (Some(a), Some(b)) if a == b) { std::cmp::Ordering::Equal }
-                else { self.native_compat().cmp(other.native_compat()) }
-            }
-        }
-        impl std::hash::Hash for $carrier {
-            fn hash<H: std::hash::Hasher>(&self, state: &mut H) { self.native_compat().hash(state); }
-        }
-    };
+impl std::fmt::Debug for StoredProgramValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.native_compat().fmt(f)
+    }
 }
-native_descriptor_identity!(StoredProgramValue);
+impl PartialEq for StoredProgramValue {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other).is_eq()
+    }
+}
+impl Eq for StoredProgramValue {}
+impl PartialOrd for StoredProgramValue {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for StoredProgramValue {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        if let (Some(left), Some(right)) = (self.root(), other.root()) {
+            if left == right {
+                return std::cmp::Ordering::Equal;
+            }
+            if left.pointer_payload().is_some() && right.pointer_payload().is_some() {
+                use crate::kernel::execution_value::storage_keys::pointer_for_root;
+                return pointer_for_root(left).cmp(&pointer_for_root(right));
+            }
+            let is_float_arithmetic = |root: &KernelTerm| {
+                matches!(
+                    root.node(),
+                    KernelTermNode::FloatBinary { .. } | KernelTermNode::FloatNegate { .. }
+                )
+            };
+            if left.ty() == right.ty() && is_float_arithmetic(left) && is_float_arithmetic(right) {
+                return left.float_storage_key().cmp(&right.float_storage_key());
+            }
+        }
+        self.native_compat().cmp(other.native_compat())
+    }
+}
+impl std::hash::Hash for StoredProgramValue {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.native_compat().hash(state);
+    }
+}
 impl std::fmt::Debug for StoredIntegerTerm {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.native_compat().fmt(f)
@@ -770,6 +788,42 @@ mod protocol_value_tests {
             }
         }
     }
+    #[test]
+    fn retained_program_values_compare_pointers_and_float_trees_without_export() {
+        use crate::kernel::effective_type::{CAccessClass, CScalarClass};
+
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = Pointer::new(
+            Address::symbolic(Variable(998991)),
+            ProgramType::Int32Pointer,
+        );
+        let pointers = [CScalarClass::Int, CScalarClass::Char].map(|class| {
+            pointer
+                .clone()
+                .with_declared_object_class(Some(CAccessClass::Scalar(class)))
+        });
+        let [left, right] = pointers.each_ref().map(|pointer| {
+            let root = KernelTerm::shared_pointer_value(SharedPointer::import(pointer));
+            StoredProgramValue::from(ExecutionValue::Shared(root))
+        });
+        assert_ne!(left.root(), right.root());
+        assert_eq!(left == right, pointers[0] == pointers[1]);
+        assert_eq!(left.cmp(&right), pointers[0].cmp(&pointers[1]));
+        assert!(!left.root().unwrap().has_cached_native_argument());
+        assert!(!right.root().unwrap().has_cached_native_argument());
+
+        let floats = [0x3f800000, 0x40000000]
+            .map(|bits| MachineTerm::Float32Negate(Box::new(MachineTerm::uint32_constant(bits))));
+        let [left, right] = floats.each_ref().map(|term| {
+            let root = KernelTermImport::default().float(KernelFloatType::Float32, term);
+            StoredProgramValue::from(ExecutionValue::Shared(root))
+        });
+        assert!(left != right);
+        assert_eq!(left.cmp(&right), floats[0].cmp(&floats[1]));
+        assert!(!left.root().unwrap().has_cached_native_argument());
+        assert!(!right.root().unwrap().has_cached_native_argument());
+    }
+
     #[test]
     fn retained_algebraic_ordering_keeps_constructor_fields_unboxed() {
         let _session = crate::kernel::VerificationSession::enter();
