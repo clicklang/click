@@ -600,16 +600,23 @@ pub(crate) fn known_bridge_leaf(
         return true;
     }
     use super::super::arithmetic_special::{
-        promoted_right_shift_bound, shift_count_mask_requirements,
+        promoted_right_shift_bound, shift_count_mask_requirements, shifted_one_bounds,
     };
     if promoted_right_shift_bound(goal) == Some(true)
-        || shift_count_mask_requirements(goal).is_some_and(|bounds| {
-            bounds.iter().all(|bound| {
-                bound.condition_native().is_some_and(|(condition, truth)| {
-                    comparison_holds(condition.clone(), *truth, available)
+        || shift_count_mask_requirements(goal)
+            .into_iter()
+            .chain(
+                [false, true]
+                    .into_iter()
+                    .filter_map(|signed| shifted_one_bounds(goal, signed)),
+            )
+            .any(|bounds| {
+                bounds.iter().all(|bound| {
+                    bound.condition_native().is_some_and(|(condition, truth)| {
+                        comparison_holds(condition.clone(), *truth, available)
+                    })
                 })
             })
-        })
     {
         return true;
     }

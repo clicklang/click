@@ -1784,7 +1784,9 @@ when the count is known in range. It also checks the equality of the signed
 and unsigned right shifts of the positive signed maximum at the same in-range
 count. A constant right shift of a zero-extended unsigned byte or halfword
 has a range computed from its source width and count, including after a
-signed widening of the result.
+signed widening of the result. An unsigned left shift of one is nonzero
+when its count is below the width. A signed count reading also needs a
+nonnegative bound.
 
 A root conditional equals its selected arm when its written guard is available.
 A root Integer or machine conditional with identical arms equals that shared

@@ -83,3 +83,48 @@ axiom float32_scale_upper(factor: float, x: float, bound: float) {
     requires float32_from_bits(0) < factor;
     ensures factor * x <= factor * bound;
 }
+
+// Rounded subtraction is monotone in the left operand and reverses order
+// in the right. Finite endpoints exclude same-sign infinity subtraction.
+axiom float32_sub_lower(x: float, y: float, a: float, b: float) {
+    requires x >= a;
+    requires y <= b;
+    requires isfinite(a);
+    requires isfinite(b);
+    ensures x - y >= a - b;
+}
+
+axiom float32_sub_upper(x: float, y: float, a: float, b: float) {
+    requires x <= a;
+    requires y >= b;
+    requires isfinite(a);
+    requires isfinite(b);
+    ensures x - y <= a - b;
+}
+
+axiom float64_sub_lower(x: double, y: double, a: double, b: double) {
+    requires x >= a;
+    requires y <= b;
+    requires isfinite(a);
+    requires isfinite(b);
+    ensures x - y >= a - b;
+}
+
+axiom float64_sub_upper(x: double, y: double, a: double, b: double) {
+    requires x <= a;
+    requires y >= b;
+    requires isfinite(a);
+    requires isfinite(b);
+    ensures x - y <= a - b;
+}
+
+// A strict double bound may round to equality after narrowing.
+axiom float64_narrow_le(a: double, b: double) {
+    requires a <= b;
+    ensures (a as float) <= (b as float);
+}
+
+axiom float64_narrow_lt(a: double, b: double) {
+    requires a < b;
+    ensures (a as float) <= (b as float);
+}
