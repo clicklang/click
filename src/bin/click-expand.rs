@@ -997,16 +997,12 @@ int32 identity(int32 x) {
             "{generated}"
         );
 
-        let hidden = directory.path().join("mirror.click");
-        fs::write(
-            &hidden,
-            "theorem integer_mirror(i: Integer, j: Integer) {\n\
-                requires i < j;\n\
-                ensures (if j > i { 1 } else { 2 }) == 1 by { close() using { i < j; }; }\n\
-            }\n",
-        )
-        .unwrap();
-        let compatibility = check(&hidden, "integer_mirror.ensures_0").unwrap_err();
+        let guard_spellings = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("mdtests/normalize_using_reads_every_spelling_of_a_cited_premise.md");
+        check(&guard_spellings, "integer_mirror.ensures_0").unwrap();
+
+        let hidden = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("mdtests/normalize_using.md");
+        let compatibility = check(&hidden, "nested.ensures_0").unwrap_err();
         assert!(
             compatibility.contains("used legacy normalization"),
             "{compatibility}"
