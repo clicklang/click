@@ -2196,6 +2196,26 @@ fn unchanged_machine_fold_expands_to_known() {
 }
 
 #[test]
+fn disjunctive_divisor_bounds_expand_and_cold_replay() {
+    let (source, inputs) = mdtest_sources("mdtests/arithmetic_division_under_disjunctive_bound.md");
+    let sources = crate::cli::source_refs(&inputs);
+    for claim in [
+        "divide.ensures_0",
+        "remainder.ensures_0",
+        "safe_divisor.ensures_0",
+    ] {
+        let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
+            .unwrap_or_else(|error| panic!("{claim}: {}", error.report()));
+        assert!(!expanded.contains("normalize()"), "{claim}: {expanded}");
+        assert!(expanded.contains("contradiction("), "{claim}: {expanded}");
+        crate::surface::check_audit_claim(claim, true, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{claim}: {error}"));
+    }
+}
+
+#[test]
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: three selected interval exclusions expand and replay in 3.7s"]
 fn selected_interval_exclusion_expands_and_rechecks() {

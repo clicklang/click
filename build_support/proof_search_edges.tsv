@@ -473,6 +473,8 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_arit
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_constant_bound_weakening	driver	5
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_constant_bound_weakening	try_direct_logical_closure	3
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_disjunction_cases	driver	5
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_disjunction_cases	try_word_order_exclusion_case	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_word_order_exclusion_case	driver	3
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_disjunction_cases	try_direct_logical_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_disjunction_cases	try_solve_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_entry_existential_closure	driver	2

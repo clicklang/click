@@ -11609,6 +11609,72 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         })
     }
 
+    /// Refute equality with the excluded literal under a selected case bound.
+    /// The hypothetical equality rewrites the opposite bound to a constant.
+    fn try_word_order_exclusion_case(
+        input: &Proof<'a>,
+        assumed: &ClickProposition,
+    ) -> Option<Proof<'a>> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_word_order_exclusion_case");
+        use crate::kernel::machine_integer::comparison::comparison_view;
+
+        let goal = input
+            .surface_goal()
+            .cloned()
+            .or_else(|| input.structural_proposition_candidate(input.goal()?))?;
+        let ClickProposition::Comparison {
+            left,
+            operator: ComparisonOperator::NotEqual,
+            right,
+        } = surface_comparison_with_anchored_operands(&goal)
+        else {
+            return None;
+        };
+        let comparison = |left, right| ClickProposition::Comparison {
+            left,
+            operator: ComparisonOperator::Equal,
+            right,
+        };
+        let equality = comparison(left.clone(), right.clone());
+        let lowered = input
+            .lower_surface_proposition_direct(&equality, "excluded word equality")
+            .ok()?;
+        let (condition, truth) = lowered.condition_native()?;
+        let view = comparison_view(condition, *truth)?;
+        let rewrite = match view
+            .operands
+            .map(|operand| operand.operand_view().literal().is_some())
+        {
+            [false, true] => equality.clone(),
+            [true, false] => comparison(right, left),
+            _ => return None,
+        };
+        let (proof, split, ids) = input.split_focused_if(equality.clone()).ok()?;
+        let marker = proof.checkpoint();
+        let equal = proof.focus_branch(ids[0]).ok()?;
+        let negated = ClickProposition::Not(Box::new(assumed.clone()));
+        let certificate =
+            ProofCertificate::from_steps(vec![ProofStep::Rewrite(rewrite), ProofStep::Known])
+                .expect("ordinary proof of the opposite comparison");
+        let equal_done = equal
+            .driver()
+            .apply_have_step(&negated, &certificate)
+            .ok()?
+            .driver()
+            .apply_step(ProofStep::Contradiction(assumed.clone()))
+            .ok()?;
+        let unequal_done = equal_done
+            .focus_branch(ids[1])
+            .ok()?
+            .driver()
+            .apply_step(ProofStep::Known)
+            .ok()?;
+        unequal_done
+            .join_focused_if(&marker, split, ids, equality)
+            .ok()
+    }
+
     /// Eliminates one disjunction selected by the kernel derivation and
     /// proves both arms on their branch-local `Proof`s. The disjunction is
     /// never reopened once either disjunct is already available, which makes
@@ -11668,19 +11734,19 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     break;
                 };
                 let assumed = if index == 0 { left } else { right };
-                let step = if focused_branch.goal().is_some_and(|goal| {
+                let branch = if focused_branch.goal().is_some_and(|goal| {
                     crate::kernel::proof::arithmetic_special::word_order_excludes_literal(
                         goal, assumed,
                     )
                 }) {
-                    ProofStep::NormalizeUsing(vec![assumed_surface.clone()])
+                    Self::try_word_order_exclusion_case(&focused_branch, assumed_surface)
                 } else {
-                    ProofStep::Contradiction(assumed_surface.clone())
+                    focused_branch
+                        .driver()
+                        .apply_step(ProofStep::Contradiction(assumed_surface.clone()))
+                        .ok()
                 };
-                let selected = focused_branch
-                    .driver()
-                    .apply_step(step)
-                    .ok()
+                let selected = branch
                     .or_else(|| {
                         crate::kernel::search::ProofSearch::try_solve_closure(&(focused_branch))
                             .ok()
