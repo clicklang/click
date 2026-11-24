@@ -250,7 +250,7 @@ pub fn expand_c_claim_source(
     let target = position_at_offset(click_source, edit.selector());
     let verified = verify_c_sources_at(click_source, c_sources, target.line, target.column)?;
     let theorem = select_expansion_theorem(&verified, function_name, claim)?;
-    let replacement = claim_expansion_source(theorem)?;
+    let replacement = claim_expansion_source(click_source, theorem)?;
     let span = edit.span();
     let replacement = indent_replacement(click_source, span.start, &replacement);
     let replacement = match edit {
@@ -313,7 +313,7 @@ pub fn expand_verified_function_claim_source_by_label(
         find_claim_proof_edit(&tokens, &function, function_block, claim)?
     };
     let theorem = select_expansion_theorem(verified, function_name, claim)?;
-    let replacement = claim_expansion_source(theorem)?;
+    let replacement = claim_expansion_source(click_source, theorem)?;
     let span = edit.span();
     let replacement = indent_replacement(click_source, span.start, &replacement);
     let replacement = match edit {
@@ -360,7 +360,7 @@ fn expand_project_claim_source(
     let target = position_at_offset(click_source, edit.selector());
     let verified = verify_project_at(project, inputs, target.line, target.column)?;
     let theorem = select_expansion_theorem(&verified, function_name, claim)?;
-    let replacement = claim_expansion_source(theorem)?;
+    let replacement = claim_expansion_source(click_source, theorem)?;
     let span = edit.span();
     let replacement = indent_replacement(click_source, span.start, &replacement);
     let replacement = match edit {
@@ -416,7 +416,7 @@ fn expand_c_prepared_claim_source(
         target.column,
     )?;
     let theorem = select_expansion_theorem(&verified, function_name, claim)?;
-    let replacement = claim_expansion_source(theorem)?;
+    let replacement = claim_expansion_source(click_source, theorem)?;
     let span = edit.span();
     let replacement = indent_replacement(click_source, span.start, &replacement);
     let replacement = match edit {
@@ -686,7 +686,7 @@ fn expand_program_prepared_claim_source_context(
         target.column,
     )?;
     let theorem = select_expansion_theorem(&verified, function_name, claim)?;
-    let replacement = claim_expansion_source(theorem)?;
+    let replacement = claim_expansion_source(click_source, theorem)?;
     let span = edit.span();
     let replacement = indent_replacement(click_source, span.start, &replacement);
     let replacement = match edit {
@@ -752,6 +752,8 @@ pub fn expand_claim_by_label(
         None => parse_source_with_program_layouts_context(click_source, &sources)?,
     };
     if claim_label == "program.termination" {
+        let _binder_names =
+            printing::CertificateBinderScope::enter(click_source, file.function_blocks());
         let (result, certificate) = capture_termination_certificate(|| {
             crate::surface::verification::verify_program_with_context(
                 click_source,
@@ -2037,6 +2039,7 @@ fn rewrite_verified_pure_theorem(
         click_source,
         &theorem.theorem_definition.parsed_body().implicit_proofs,
     )?;
+    let _binder_names = printing::CertificateBinderScope::enter(click_source, []);
     let replacement = theorem.expanded_proof_source()?;
     let source = DeclarationSources::new(&tokens).theorem(&theorem.theorem_definition)?;
     let edit = find_ensure_proof_edit(&tokens, &source, ensure_index)?;
@@ -2061,7 +2064,12 @@ fn rewrite_verified_pure_theorem(
 /// Spells the checked certificate that replaces a whole claim proof.
 /// Written nesting is not a driver bound: terminal cases can be processed
 /// iteratively. As with tactic expansion, the caller verifies the rewrite.
-fn claim_expansion_source(theorem: &VerifiedProgramTheorem) -> Result<String, ClickError> {
+fn claim_expansion_source(
+    click_source: &str,
+    theorem: &VerifiedProgramTheorem,
+) -> Result<String, ClickError> {
+    let _binder_names =
+        printing::CertificateBinderScope::enter(click_source, [theorem.function_block.as_ref()]);
     let _contract_value_parameters = theorem.contract_value_parameter_scope();
     let _reference_result_source = super::diagnostics::ReferenceResultSourceScope::enter(
         theorem.function_block.signature().returns_reference(),
@@ -3568,6 +3576,7 @@ fn expand_selected_tactics_context(
         Some(project) => resolve_click_project_context(project, inputs)?,
         None => parse_source_with_program_layouts_context(source, inputs)?,
     };
+    let _binder_names = printing::CertificateBinderScope::enter(source, file.function_blocks());
     let wanted = positions
         .iter()
         .map(|p| (p.line, p.column))
@@ -3904,6 +3913,8 @@ impl LocatedSourceTactic {
         file: &ClickFile,
         replacement_tactics: &[ProofTactic],
     ) -> Result<(Range<usize>, String), ClickError> {
+        let _binder_names =
+            printing::CertificateBinderScope::enter(click_source, file.function_blocks());
         let _contract_value_parameters = printing::ContractValueParameterScope::for_file(file);
         let certificate = || {
             ProofCertificate::from_proof_tactics(replacement_tactics)

@@ -2089,23 +2089,6 @@ impl Parser {
             } else {
                 language
             };
-        // Reserve written binder identities before desugaring allocates any names.
-        for window in tokens.windows(4) {
-            if let [Token::Ident(name), Token::LParen, number, Token::RParen] = window
-                && name == "binder"
-            {
-                let number = match number {
-                    Token::Number(n) => Some(u64::from(*n)),
-                    Token::UnsuffixedUInt64(n) | Token::UInt64Number(n) => Some(*n),
-                    Token::UnsuffixedInt64(n) | Token::Int64Number(n) => u64::try_from(*n).ok(),
-                    Token::RustInteger(n) => n.digits.parse::<u64>().ok(),
-                    _ => None,
-                };
-                if let Some(number) = number {
-                    crate::kernel::GeneratedBinderId::from_spelling(number);
-                }
-            }
-        }
         let mut tokens = tokens;
         if language == SourceLanguage::Rust {
             rust_literals::normalize_tokens(&mut tokens);
@@ -9647,7 +9630,6 @@ impl Parser {
                 self.peek_ident(),
                 Some(
                     "address"
-                        | "binder"
                         | "byte_offset"
                         | "sizeof"
                         | "float32_from_bits"
@@ -10050,18 +10032,9 @@ impl Parser {
         self.expect(Token::LParen)?;
         // An untyped item binder is contextual sugar for a predicate lambda.
         // A typed literal or another expression is an ordinary predicate value.
-        // The item may be a generated binder, spelled `binder(N)`.
-        let binder_end = if self.tokens.get(self.position + 1)
-            == Some(&Token::Ident("binder".into()))
-            && self.tokens.get(self.position + 2) == Some(&Token::LParen)
-        {
-            self.position + 5
-        } else {
-            self.position + 2
-        };
         let untyped_binder = self.peek() == Some(&Token::Pipe)
             && matches!(self.peek_next(), Some(Token::Ident(_)))
-            && self.tokens.get(binder_end) == Some(&Token::Pipe);
+            && self.tokens.get(self.position + 2) == Some(&Token::Pipe);
         if !untyped_binder {
             let predicate = self.parse_contract_expression()?;
             self.expect(Token::RParen)?;
@@ -10870,19 +10843,6 @@ impl Parser {
     // common tactic dispatcher so nested proof bodies fit the bounded stack.
     #[inline(never)]
     fn parse_let_proof_tactic(&mut self) -> Result<ProofTactic, ClickError> {
-        // Generated logical identities are valid intro outputs, while
-        // resource and call output patterns retain their written names.
-        if self.peek_ident() == Some("binder") && self.peek_next() == Some(&Token::LParen) {
-            let binder = self.expect_surface_binder("introduced variable")?;
-            self.expect(Token::Equal)?;
-            self.expect_ident_spelling("intro")?;
-            if self.tactic_names.contains("intro") {
-                return Err(self.error("generated binder outputs require the built-in `intro`"));
-            }
-            self.expect_empty_tactic_args("intro")?;
-            self.expect(Token::Semicolon)?;
-            return self.named_intro(binder);
-        }
         if self.peek() == Some(&Token::LParen) {
             self.position += 1;
             let mut names = vec![self.expect_ident("existential witness name")?];
@@ -16910,9 +16870,6 @@ impl Parser {
         if let Some(literal) = self.parse_struct_value_literal()? {
             return Ok(literal);
         }
-        if self.peek_ident() == Some("binder") && self.peek_next() == Some(&Token::LParen) {
-            return Ok(self.expect_surface_binder("binder reference")?.reference());
-        }
         if let Some(binding) = self.take_local_binding_reference()? {
             return Ok(binding);
         }
@@ -17675,43 +17632,6 @@ impl Parser {
     }
 
     fn parse_contract_value_let_expression(&mut self) -> Result<ContractExpression, ClickError> {
-        if self.tokens.get(self.position + 1) == Some(&Token::Ident("binder".into()))
-            && self.tokens.get(self.position + 2) == Some(&Token::LParen)
-        {
-            self.expect_ident_spelling("let")?;
-            let name = self.expect_surface_binder("let binding")?;
-            let click_type = if self.peek() == Some(&Token::Colon) {
-                self.position += 1;
-                Some(self.parse_click_type()?.0)
-            } else {
-                None
-            };
-            self.expect(Token::Equal)?;
-            let previous_integer = std::mem::replace(
-                &mut self.integer_literal_context,
-                click_type == Some(ClickType::Integer),
-            );
-            let value = self.parse_contract_expression();
-            self.integer_literal_context = previous_integer;
-            let value = value?;
-            let value = match &click_type {
-                Some(ClickType::Integer) => self.at_integer_position(value),
-                Some(ClickType::Program(ty)) => {
-                    self.typed_let_literal("generated binder", *ty, value)?
-                }
-                _ => value,
-            };
-            self.expect(Token::Semicolon)?;
-            let shadowed = self.bind_let_operand(&name, click_type.as_ref(), Some(&value));
-            let body = self.parse_branch_value(self.bool_value_context);
-            self.unbind_let_operands(vec![shadowed]);
-            return Ok(ContractExpression::Let {
-                name,
-                click_type,
-                value: Box::new(value),
-                body: Box::new(body?),
-            });
-        }
         let bool_body = std::mem::take(&mut self.bool_value_context);
         let mut bindings = Vec::new();
         let mut shadowed_lets = Vec::new();
@@ -18185,17 +18105,9 @@ impl Parser {
         self.expect(Token::Comma)?;
         // The untyped two-name spelling is contextual lambda sugar.
         // A typed literal or any other expression is an ordinary step value.
-        let binder_end = if self.tokens.get(self.position + 1)
-            == Some(&Token::Ident("binder".into()))
-            && self.tokens.get(self.position + 2) == Some(&Token::LParen)
-        {
-            self.position + 5
-        } else {
-            self.position + 2
-        };
         let untyped_binder = self.peek() == Some(&Token::Pipe)
             && matches!(self.peek_next(), Some(Token::Ident(_)))
-            && self.tokens.get(binder_end) == Some(&Token::Comma);
+            && self.tokens.get(self.position + 2) == Some(&Token::Comma);
         if !untyped_binder {
             let step = self.parse_contract_expression()?;
             self.expect(Token::RParen)?;
@@ -18621,15 +18533,7 @@ impl Parser {
     }
 
     fn expect_surface_binder(&mut self, expected: &str) -> Result<SurfaceBinder, ClickError> {
-        if self.peek_ident() == Some("binder") && self.peek_next() == Some(&Token::LParen) {
-            self.position += 2;
-            let number = self.expect_u64("binder identity")?;
-            self.expect(Token::RParen)?;
-            let id = crate::kernel::GeneratedBinderId::from_spelling(number);
-            Ok(SurfaceBinder::Generated(id))
-        } else {
-            self.expect_ident(expected).map(Into::into)
-        }
+        self.expect_ident(expected).map(Into::into)
     }
 
     fn expect_number(&mut self, expected: &str) -> Result<u32, ClickError> {
@@ -19663,12 +19567,7 @@ mod tactic_classification_tests {
 
     #[test]
     fn logical_bindings_use_let_and_round_trip() {
-        for source in [
-            "intro();",
-            "let x = intro();",
-            "let binder(7) = intro();",
-            "let ih = induct(n);",
-        ] {
+        for source in ["intro();", "let x = intro();", "let ih = induct(n);"] {
             let tactic = Parser::new(source).unwrap().parse_proof_tactic().unwrap();
             let printed = super::super::printing::format_partial_tactic_sequence(
                 std::slice::from_ref(&tactic),
@@ -19678,7 +19577,6 @@ mod tactic_classification_tests {
             match (source, &tactic) {
                 ("intro();", ProofTactic::Intro) => {}
                 ("let x = intro();", ProofTactic::IntroAs(name)) => assert_eq!(name, "x"),
-                ("let binder(7) = intro();", ProofTactic::IntroBinder(_)) => {}
                 (
                     "let ih = induct(n);",
                     ProofTactic::Induct {
@@ -19695,6 +19593,7 @@ mod tactic_classification_tests {
         for source in [
             "intro() as x;",
             "intro() as binder(7);",
+            "let binder(7) = intro();",
             "induct(n) as ih;",
             "let x = intro(3);",
             "let ih = induct(n, m);",

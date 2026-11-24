@@ -657,9 +657,39 @@ impl GeneratedBinderId {
         BindingName::Generated(self)
     }
 }
+type BinderSpelling = std::rc::Rc<dyn Fn(GeneratedBinderId) -> Option<std::rc::Rc<str>>>;
+
+thread_local! {
+    static GENERATED_BINDER_SPELLING: std::cell::RefCell<Option<BinderSpelling>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Gives a generated binder a lexical spelling while emitting a certificate.
+pub(crate) struct GeneratedBinderSpellingScope(Option<BinderSpelling>);
+
+impl GeneratedBinderSpellingScope {
+    pub(crate) fn enter(
+        spelling: impl Fn(GeneratedBinderId) -> Option<std::rc::Rc<str>> + 'static,
+    ) -> Self {
+        Self(GENERATED_BINDER_SPELLING.with(|slot| slot.replace(Some(std::rc::Rc::new(spelling)))))
+    }
+}
+
+impl Drop for GeneratedBinderSpellingScope {
+    fn drop(&mut self) {
+        GENERATED_BINDER_SPELLING.with(|slot| slot.replace(self.0.take()));
+    }
+}
+
 impl std::fmt::Display for GeneratedBinderId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "binder({})", self.0)
+        let spelling = GENERATED_BINDER_SPELLING
+            .with(|slot| slot.borrow().as_ref().and_then(|spell| spell(*self)));
+        if let Some(spelling) = spelling {
+            f.write_str(&spelling)
+        } else {
+            write!(f, "binder({})", self.0)
+        }
     }
 }
 
