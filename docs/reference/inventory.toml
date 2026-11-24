@@ -2843,6 +2843,14 @@ id = "library.rust.u32::max"
 path = "reference/library/index.md#integer-min-and-max"
 
 [[item]]
+id = "library.rust.str::is_empty"
+path = "reference/library/index.md#rust-string-slice-methods"
+
+[[item]]
+id = "library.rust.str::len"
+path = "reference/library/index.md#rust-string-slice-methods"
+
+[[item]]
 id = "library.rust.u32::min"
 path = "reference/library/index.md#integer-min-and-max"
 

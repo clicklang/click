@@ -30,9 +30,12 @@ current subset: integer scalars except 128-bit, `bool`, structs, enums and
 ranges, slices and a few iterators, closures and trait objects of scalars,
 crate traits, and generics whose type parameters are bound by nothing but
 `Copy`. The standard library has interfaces in `library/rust/` for the
-integers, `Option`, `Result`, slices and `Vec` only. Strings are not
-supported: there is no `String` or `str` ("Strings" row of the coverage
-matrix).
+integers, `Option`, `Result`, slices and `Vec`, and for `str::len` and
+`str::is_empty`. A `&str` parameter is read as a shared byte slice
+([string slices](../docs/reference/rust.md#string-slices)); `String`, string
+literals, `as_bytes` and `==` are not supported yet. `as_bytes` needs a
+function that returns a slice, which no Rust function can yet, and `==` a
+call of the core `PartialEq` trait on a non-scalar type.
 
 ## Requirements
 

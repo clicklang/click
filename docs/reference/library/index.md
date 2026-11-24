@@ -58,6 +58,7 @@ how far it is trusted:
 | [`click::rust::vec`](#clickrustvec) | `import click::rust::vec;` | specification, with trusted axioms |
 | [`click::rust::slice`](#clickrustslice) | `import click::rust::slice;` | specification |
 | [Rust core interfaces](#rust-core-interfaces), `library/rust/core.interface.click` (not a module) | when a Rust import calls one of its methods | Rust library interface |
+| [Rust string slice methods](#rust-string-slice-methods), `library/rust/str.interface.click` (not a module) | when a Rust import calls one of its methods | Rust library interface |
 | [`click::separation`](#clickseparation) | `import click::separation;` | specification |
 
 `click::primitives` and `click::c::builtins` are implicit too; they hold the
@@ -8344,6 +8345,22 @@ width.
 **Kind:** Rust core model. Each declaration is an explicit verification assumption, reported as `Rust core`.
 
 **Verified use:** [`tests/rust_import/core_methods.rs`](https://github.com/clicklang/click/blob/master/tests/rust_import/core_methods.rs) verifies `distance` and `magnitude` in [`design/charon-trial/core-methods/methods.rs`](https://github.com/clicklang/click/blob/master/design/charon-trial/core-methods/methods.rs).
+
+## Rust string slice methods
+
+Source: `library/rust/str.interface.click`, one contract per Rust `str` core
+method, each on one line. This file is not a module: the Rust importer
+appends to a sidecar the line of each method an import calls, and only those.
+A `&str` is a shared slice of the UTF-8 bytes it refers to
+([string slices](../rust.md#string-slices)), so each contract states its
+method over the slice's length.
+
+```click
+fn str::len(s: &str) -> usize { ensures result == s.len(); }
+fn str::is_empty(s: &str) -> bool { ensures result == (s.len() == 0u64); }
+```
+
+**Verified use:** [`tests/rust_import.rs`](https://github.com/clicklang/click/blob/master/tests/rust_import.rs) verifies `byte_len`, `blank`, `longer` and `width` in [`tests/fixtures/rust-verification/str-views/strs.rs`](https://github.com/clicklang/click/blob/master/tests/fixtures/rust-verification/str-views/strs.rs) in `charon_str_views_read_as_byte_slices`, and refuses claims about a length the calls do not give.
 
 ## `click::separation`
 

@@ -5053,7 +5053,7 @@ fn named_by_extern_head(
                 .signature()
                 .parameters()
                 .iter()
-                .map(|parameter| parameter.name()),
+                .map(|parameter| (parameter.name(), parameter.binding_name())),
         )
         .unwrap_or_else(|| function.clone()))
 }

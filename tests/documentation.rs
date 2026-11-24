@@ -885,6 +885,7 @@ const SIDECAR_LIBRARY_FILES: &[(&str, &str)] = &[
     ("library/cpp/", "cpp"),
     ("library/rust/core.interface.click", "rust"),
     ("library/rust/integers.interface.click", "rust"),
+    ("library/rust/str.interface.click", "rust"),
 ];
 
 fn library_identity(path: &Path) -> String {
