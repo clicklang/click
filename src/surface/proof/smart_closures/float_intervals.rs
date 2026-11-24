@@ -3,6 +3,7 @@ use super::super::surface_certificates::surface_strict_parts;
 use super::*;
 use crate::kernel::proof::arithmetic_special::{
     FloatBoundWeakening, float_corner_bound_weakening, float_positive_product_bound,
+    float_square_bound, float_zero_product_from_bounds,
 };
 use crate::kernel::{FloatBinaryOperator, KernelFloatType};
 
@@ -88,6 +89,23 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let Some(intermediate) = input.structural_proposition_candidate(&plan.intermediate) else {
             return Ok(None);
         };
+        let Some(proof) =
+            Self::try_retain_float_interval_fact(input, &intermediate, name, arguments, premises)?
+        else {
+            return Ok(None);
+        };
+        Self::try_float_bound_weakening(&proof, plan, intermediate)
+    }
+
+    fn try_retain_float_interval_fact(
+        input: &Proof<'a>,
+        intermediate: &ClickProposition,
+        name: &str,
+        arguments: Vec<ContractExpression>,
+        premises: Vec<ClickProposition>,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_retain_float_interval_fact");
         let application = ProofStep::ApplyPlannedTheorem {
             application: TheoremApplication {
                 name: format!("click::float_order::{name}"),
@@ -95,13 +113,93 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             },
             premises,
         };
-        let Some(proof) = attempt::candidate_outcome(input.driver().apply_step(
-            super::super::wide_arithmetic::have(intermediate.clone(), vec![application]),
-        ))?
+        attempt::candidate_outcome(
+            input
+                .driver()
+                .apply_step(super::super::wide_arithmetic::have(
+                    intermediate.clone(),
+                    vec![application],
+                )),
+        )
+    }
+
+    pub(in crate::surface::proof) fn try_float_zero_product_bound(
+        input: &Proof<'a>,
+        goal: &Proposition,
+        bounds: &[Proposition; 2],
+        introduced_surfaces: &[ClickProposition],
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_float_zero_product_bound");
+        let Some((format, classification)) = float_zero_product_from_bounds(goal, bounds) else {
+            return Ok(None);
+        };
+        let [Some((first, (lo, x))), Some((second, (_, hi)))] = bounds
+            .each_ref()
+            .map(|bound| Self::resolve_float_interval_bound(input, bound, introduced_surfaces))
         else {
             return Ok(None);
         };
-        Self::try_float_bound_weakening(&proof, plan, intermediate)
+        let Some(finite_x) = input.structural_proposition_candidate(&classification) else {
+            return Ok(None);
+        };
+        let premises = vec![first, second, finite(&lo), finite(&hi)];
+        let name = match format {
+            KernelFloatType::Float32 => "float32_finite_between",
+            KernelFloatType::Float64 => "float64_finite_between",
+        };
+        let Some(proof) = Self::try_retain_float_interval_fact(
+            input,
+            &finite_x,
+            name,
+            vec![x, lo, hi],
+            premises,
+        )?
+        else {
+            return Ok(None);
+        };
+        attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Known))
+    }
+
+    pub(in crate::surface::proof) fn try_float_square_bound(
+        input: &Proof<'a>,
+        goal: &Proposition,
+        bounds: &[Proposition; 2],
+        introduced_surfaces: &[ClickProposition],
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_float_square_bound");
+        let Some((plan, upper)) = float_square_bound(goal, bounds) else {
+            return Ok(None);
+        };
+        let [Some((first, (lo, x))), Some((second, (_, hi)))] = bounds
+            .each_ref()
+            .map(|bound| Self::resolve_float_interval_bound(input, bound, introduced_surfaces))
+        else {
+            return Ok(None);
+        };
+        let upper = literal(plan.format, upper);
+        let square_bound = |endpoint: &ContractExpression| ClickProposition::Comparison {
+            left: ContractExpression::Multiply(
+                Box::new(endpoint.clone()),
+                Box::new(endpoint.clone()),
+            ),
+            operator: ComparisonOperator::LessEqual,
+            right: upper.clone(),
+        };
+        let premises = vec![
+            first,
+            second,
+            finite(&lo),
+            finite(&hi),
+            square_bound(&lo),
+            square_bound(&hi),
+        ];
+        let name = match plan.format {
+            KernelFloatType::Float32 => "float32_square_interval",
+            KernelFloatType::Float64 => "float64_square_interval",
+        };
+        Self::try_apply_float_interval_bound(input, &plan, name, vec![x, lo, hi, upper], premises)
     }
 
     pub(in crate::surface::proof) fn try_positive_float_product_bound(

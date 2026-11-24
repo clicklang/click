@@ -390,3 +390,44 @@ axiom float64_strictly_positive_minimum(z: double, y: double) {
     requires z < y;
     ensures float64_from_bits(1u64) <= y;
 }
+
+// Finite ordered endpoints exclude infinities and NaNs. A square attains
+// its maximum at an endpoint, and rounding preserves these orders.
+
+axiom float32_finite_between(x: float, lo: float, hi: float) {
+    requires x >= lo;
+    requires x <= hi;
+    requires isfinite(lo);
+    requires isfinite(hi);
+    ensures isfinite(x);
+}
+
+axiom float32_square_interval(x: float, lo: float, hi: float, upper: float) {
+    requires x >= lo;
+    requires x <= hi;
+    requires isfinite(lo);
+    requires isfinite(hi);
+    requires lo * lo <= upper;
+    requires hi * hi <= upper;
+    ensures x * x >= float32_from_bits(0);
+    ensures x * x <= upper;
+}
+
+axiom float64_finite_between(x: double, lo: double, hi: double) {
+    requires x >= lo;
+    requires x <= hi;
+    requires isfinite(lo);
+    requires isfinite(hi);
+    ensures isfinite(x);
+}
+
+axiom float64_square_interval(x: double, lo: double, hi: double, upper: double) {
+    requires x >= lo;
+    requires x <= hi;
+    requires isfinite(lo);
+    requires isfinite(hi);
+    requires lo * lo <= upper;
+    requires hi * hi <= upper;
+    ensures x * x >= float64_from_bits(0u64);
+    ensures x * x <= upper;
+}

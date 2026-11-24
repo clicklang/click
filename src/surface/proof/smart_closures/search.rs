@@ -4481,6 +4481,24 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             {
                 return Ok(Some(closed));
             }
+            if let Ok(pair_bounds) = bounds.as_slice().try_into() {
+                if let Some(closed) = Self::try_float_zero_product_bound(
+                    search_input,
+                    goal,
+                    pair_bounds,
+                    introduced_surfaces,
+                )? {
+                    return Ok(Some(closed));
+                }
+                if let Some(closed) = Self::try_float_square_bound(
+                    search_input,
+                    goal,
+                    pair_bounds,
+                    introduced_surfaces,
+                )? {
+                    return Ok(Some(closed));
+                }
+            }
             if let Ok(corners) = bounds.as_slice().try_into()
                 && let Some(closed) =
                     Self::try_float_corner_bound(search_input, goal, corners, introduced_surfaces)?

@@ -4388,6 +4388,49 @@ pub(crate) fn float_literal_subtraction_bound(
     ))
 }
 
+/// A selected finite interval establishes the operand classification needed
+/// by the exact zero-product bridge.
+pub(crate) fn float_zero_product_from_bounds(
+    goal: &Proposition,
+    [first, second]: &[Proposition; 2],
+) -> Option<(KernelFloatType, Proposition)> {
+    let pair = FloatPairBound::new(goal)?;
+    if !pair.zero_product || float_bound(first)?.strict || float_bound(second)?.strict {
+        return None;
+    }
+    pair.operand_endpoint(0, first)?;
+    pair.operand_endpoint(1, second)?;
+    Some((pair.goal.format, float_zero_product_premise(goal)?))
+}
+
+/// A finite square is bounded below by zero and above by the larger rounded
+/// endpoint square.
+pub(crate) fn float_square_bound(
+    goal: &Proposition,
+    [first, second]: &[Proposition; 2],
+) -> Option<(FloatBoundWeakening, u64)> {
+    use crate::kernel::FloatBinaryOperator::Multiply;
+    let pair = FloatPairBound::new(goal)?;
+    if !pair.square || float_bound(first)?.strict || float_bound(second)?.strict {
+        return None;
+    }
+    let format = pair.goal.format;
+    let square =
+        |bits| crate::kernel::primitives::float_binary_bits_at(format, bits, bits, Multiply);
+    let low = square(pair.operand_endpoint(0, first)?);
+    let high = square(pair.operand_endpoint(2, second)?);
+    let upper = if float_endpoint_compare(format, low, high, ComparisonOperator::LessThan) {
+        high
+    } else {
+        low
+    };
+    let endpoint = if pair.goal.lower { 0 } else { upper };
+    Some((
+        FloatBoundWeakening::from_goal(goal, endpoint, false)?,
+        upper,
+    ))
+}
+
 /// The positive product's two lower bounds suffice even without upper bounds.
 pub(crate) fn float_positive_product_bound(
     goal: &Proposition,
