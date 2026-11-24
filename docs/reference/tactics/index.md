@@ -1964,13 +1964,19 @@ A product's lower bound can instead cite two strictly positive lower
 endpoints. Multiplication by a literal signed zero can cite a finite
 operand or its two finite bounds. `close()` accepts the exact
 `isfinite` premise for the zero product. Negation and exact widening
-from `float` to `double` preserve finiteness.
+from `float` to `double` preserve finiteness. A finiteness goal
+can cite two ordered bounds that exclude both infinities. An integer
+of up to 64 bits always converts to a finite `float` or `double`.
 For an integer converted to `float` or `double`, `close()` can check
 the rounded limits of the source type. A tighter bound can cite a constant
 integer endpoint. The check rounds that endpoint at the destination precision.
 `close()` can select these float bounds and expand to `normalize() using`
 with the selected premises.
 
+
+For a positive signed divisor `y`, cite `y > 0` and `x <= MAX / y`
+to bound `x * y` above by `MAX`. Cite `y > 0` and `x >= MIN / y`
+to bound it below by `MIN`. Either bound applies to any sign of `x`.
 
 For two negative signed operands, `x < 0`, `y < 0`, and
 `x >= MAX / y` bound their product by `MAX`. This guard permits
@@ -1980,7 +1986,10 @@ using `MIN / y` with a negative divisor still needs `y < -1`.
 For an unsigned left shift of one, citing the count bound proves the result
 is nonzero. For example, `normalize() using { d < 32u32; }` proves
 `(1u32 << d) != 0u32`. This also discharges the divisor obligation for
-C division and remainder.
+C division and remainder. An odd literal multiplier also preserves nonzero
+in a wrapping unsigned word. For example,
+`normalize() using { x != 0u32; }` proves `((x * 3u32) as uint32) != 0u32`.
+The cast names the wrapping multiplication used by C.
 
 An in-range operation or cast identity also accepts exactly two ordered
 Integer bounds on its exact result: the lower bound, then the upper bound.

@@ -634,12 +634,24 @@ pub(crate) fn known_bridge_leaf(
     {
         return true;
     }
-    use super::super::arithmetic_special::{float_finiteness_source, rounded_integer_float_bound};
+    use super::super::arithmetic_special::{
+        finite_integer_conversion, float_finiteness_source, odd_product_nonzero_requirement,
+        rounded_integer_float_bound,
+    };
     let finite_holds = |premise: &Proposition| {
         holds(premise, available)
+            || finite_integer_conversion(premise)
             || float_finiteness_source(premise).is_some_and(|source| holds(&source, available))
     };
     if rounded_integer_float_bound(goal, None)
+        || finite_integer_conversion(goal)
+        || odd_product_nonzero_requirement(goal).is_some_and(|premise| {
+            premise
+                .condition_native()
+                .is_some_and(|(condition, truth)| {
+                    comparison_holds(condition.clone(), *truth, available)
+                })
+        })
         || float_finiteness_source(goal).is_some_and(|source| holds(&source, available))
         || super::super::arithmetic_special::float_zero_product_premise(goal)
             .as_ref()

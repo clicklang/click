@@ -70,10 +70,10 @@ fn signed_product_bound_checks_only_the_exact_guards() {
         IntegerTerm::Multiply(x.clone().into(), y.into()),
         maximum.clone(),
     );
-    let guards = crate::kernel::proof::arithmetic_special::signed_product_guard_candidates(&goal)
-        .next()
-        .unwrap();
-    assert_eq!(guards.len(), 3);
+    let guards =
+        crate::kernel::proof::arithmetic_special::positive_divisor_product_guards(&goal, false)
+            .unwrap();
+    assert_eq!(guards.len(), 2);
     for related in [false, true] {
         let mut cost = Vec::new();
         for size in [8, 32, 128] {
@@ -85,9 +85,9 @@ fn signed_product_bound_checks_only_the_exact_guards() {
                     )
                 })
                 .collect::<Vec<_>>();
-            facts.extend(guards[..2].iter().cloned());
+            facts.push(guards[0].clone());
             let missing = PureFactStore::from_ordered(&facts);
-            facts.push(guards[2].clone());
+            facts.push(guards[1].clone());
             let present = PureFactStore::from_ordered(&facts);
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 assert!(known_bridge_leaf(&goal, &|p| present.pure_known_available(p)));
@@ -491,4 +491,62 @@ fn non_numeric_arm_equations_use_only_the_written_guard() {
         costs.push(work);
     }
     assert!(costs.windows(2).all(|p| p[1] <= 2 * p[0]), "{costs:?}");
+}
+
+#[test]
+fn odd_wrapping_product_reads_only_the_operand_disequality() {
+    let _session = VerificationSession::enter();
+    let format = MachineIntegerType::UInt32;
+    let word = |id| MachineTerm::Variable(Variable(id));
+    let x = word(996901);
+    let differs = |operand, literal| {
+        Proposition::condition_is(
+            ConditionTerm::machine_compare(
+                format,
+                CompareRelation::Equal,
+                operand,
+                MachineTerm::constant(literal),
+            ),
+            false,
+        )
+    };
+    let product = |factor| {
+        MachineTerm::machine_binary(
+            format,
+            MachineBinaryOp::Multiply,
+            x.clone(),
+            MachineTerm::constant(factor),
+        )
+    };
+    let odd = differs(product(3), 0);
+    let even = differs(product(2), 0);
+    for related in [false, true] {
+        let work = [4, 16, 64].map(|size| {
+            let mut facts = (0..size)
+                .map(|index| {
+                    differs(
+                        if related {
+                            x.clone()
+                        } else {
+                            word(996910 + u64::from(index))
+                        },
+                        index + 1,
+                    )
+                })
+                .collect::<Vec<_>>();
+            let missing = PureFactStore::from_ordered(&facts);
+            facts.push(differs(x.clone(), 0));
+            let present = PureFactStore::from_ordered(&facts);
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                assert!(known_bridge_leaf(&odd, &|p| present.pure_known_available(p)));
+                assert!(!known_bridge_leaf(&odd, &|p| missing.pure_known_available(p)));
+                assert!(!known_bridge_leaf(&even, &|p| present.pure_known_available(p)));
+            });
+            work
+        });
+        assert!(
+            work.windows(2).all(|pair| pair[1] <= 2 * pair[0]),
+            "{related}: {work:?}"
+        );
+    }
 }

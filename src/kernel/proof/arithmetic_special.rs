@@ -3169,6 +3169,56 @@ pub(crate) fn word_order_excludes_literal(goal: &Proposition, premise: &Proposit
         })
 }
 
+/// An odd multiplier is invertible modulo 2^width. Match the native
+/// product, since an Integer product is a different expression.
+pub(crate) fn odd_product_nonzero_requirement(goal: &Proposition) -> Option<Proposition> {
+    use crate::kernel::MachineOperandView as View;
+    use crate::kernel::machine_integer::{
+        Relation,
+        comparison::{comparison_view, condition_for_operand_views},
+    };
+
+    let (condition, truth) = goal.condition_native()?;
+    let view = comparison_view(condition, *truth)?;
+    let format = view.format;
+    if view.relation != Relation::NotEqual
+        || !matches!(
+            format,
+            MachineIntegerType::UInt32 | MachineIntegerType::UInt64
+        )
+    {
+        return None;
+    }
+    let [left, right] = view
+        .operands
+        .each_ref()
+        .map(|operand| operand.operand_view());
+    let constant = |operand: View<'_>| format.constant_from_term(&operand.literal()?);
+    for (product, zero) in [(left, right), (right, left)] {
+        if !constant(zero).is_some_and(|value| value.bits() == 0) {
+            continue;
+        }
+        let (operation_format, operation, [a, b]) = product.binary()?;
+        if operation_format != format || operation != MachineBinaryOp::Multiply {
+            return None;
+        }
+        for (operand, multiplier) in [(a, b), (b, a)] {
+            if constant(multiplier).is_some_and(|value| value.bits() & 1 == 1) {
+                let zero = zero.literal()?;
+                return Some(Proposition::condition_is(
+                    condition_for_operand_views(
+                        format,
+                        CompareRelation::Equal,
+                        [operand, View::Legacy(&zero)],
+                    ),
+                    false,
+                ));
+            }
+        }
+    }
+    None
+}
+
 /// Test only the root operands and their named word comparisons. OR is
 /// nonzero when either operand is nonzero. OR and XOR have clear sign bits
 /// when both input sign bits are clear.
@@ -3317,6 +3367,7 @@ pub(crate) fn signed_quotient_bridge_requirement(goal: &Proposition) -> Option<P
 
 #[derive(Clone, Copy)]
 enum SignedProductSigns {
+    PositiveRight,
     Nonnegative,
     NonpositiveLeft,
     NegativeRight,
@@ -3329,6 +3380,7 @@ pub(crate) fn signed_product_guard_candidates(
 ) -> impl Iterator<Item = Vec<Proposition>> + '_ {
     use SignedProductSigns::*;
     [
+        PositiveRight,
         Nonnegative,
         NonpositiveLeft,
         NegativeRight,
@@ -3340,10 +3392,17 @@ pub(crate) fn signed_product_guard_candidates(
     .filter_map(|(signs, swap)| signed_product_guard_requirements(goal, swap, signs))
 }
 
+pub(crate) fn positive_divisor_product_guards(
+    goal: &Proposition,
+    swap: bool,
+) -> Option<Vec<Proposition>> {
+    signed_product_guard_requirements(goal, swap, SignedProductSigns::PositiveRight)
+}
+
 /// Check one exact signed product bound from named signs and a quotient guard.
 /// The signs give the bound on the opposite side of zero. For the guarded
 /// bound, MAX/y with positive y rounds down and MIN/y with positive y rounds
-/// up. With negative y, MIN/y rounds down and multiplication reverses the
+/// up, independently of the sign of x. With negative y, MIN/y rounds down and multiplication reverses the
 /// comparison. Requiring y < -1 excludes the overflow of that quotient.
 /// MAX/y with negative y rounds up and is a lower bound on the other
 /// negative factor, again because multiplication reverses the comparison.
@@ -3380,17 +3439,8 @@ fn signed_product_guard_requirements(
     }
     use SignedProductSigns::*;
     let zero = || IntegerTerm::constant_i64(0);
-    let x_sign = match signs {
-        Nonnegative | NegativeRight => {
-            ConditionTerm::integer_greater_equal(a.as_ref().clone(), zero())
-        }
-        NonpositiveLeft => ConditionTerm::integer_less_equal(a.as_ref().clone(), zero()),
-        BothNegative | BothNegativeStrictDivisor => {
-            ConditionTerm::integer_less_than(a.as_ref().clone(), zero())
-        }
-    };
     let y_sign = match signs {
-        Nonnegative | NonpositiveLeft => {
+        PositiveRight | Nonnegative | NonpositiveLeft => {
             ConditionTerm::integer_greater_than(b.as_ref().clone(), zero())
         }
         NegativeRight | BothNegativeStrictDivisor => {
@@ -3398,11 +3448,26 @@ fn signed_product_guard_requirements(
         }
         BothNegative => ConditionTerm::integer_less_than(b.as_ref().clone(), zero()),
     };
-    let mut premises = vec![
-        Proposition::condition_is(x_sign, true),
-        Proposition::condition_is(y_sign, true),
-    ];
+    let mut premises = vec![Proposition::condition_is(y_sign, true)];
+    let x_sign = match signs {
+        PositiveRight => None,
+        Nonnegative | NegativeRight => Some(ConditionTerm::integer_greater_equal(
+            a.as_ref().clone(),
+            zero(),
+        )),
+        NonpositiveLeft => Some(ConditionTerm::integer_less_equal(
+            a.as_ref().clone(),
+            zero(),
+        )),
+        BothNegative | BothNegativeStrictDivisor => {
+            Some(ConditionTerm::integer_less_than(a.as_ref().clone(), zero()))
+        }
+    };
+    if let Some(x_sign) = x_sign {
+        premises.push(Proposition::condition_is(x_sign, true));
+    }
     let needs_quotient_guard = match signs {
+        PositiveRight => true,
         Nonnegative | BothNegative | BothNegativeStrictDivisor => upper,
         NonpositiveLeft | NegativeRight => !upper,
     };
@@ -3419,8 +3484,9 @@ fn signed_product_guard_requirements(
         let observe = |value| IntegerTerm::from_machine(width, value);
         let (x, quotient) = (observe(x)?, observe(quotient)?);
         let rejected_branch = match signs {
+            PositiveRight if upper => ConditionTerm::integer_greater_than(x, quotient),
             Nonnegative | NegativeRight => ConditionTerm::integer_greater_than(x, quotient),
-            NonpositiveLeft | BothNegative | BothNegativeStrictDivisor => {
+            PositiveRight | NonpositiveLeft | BothNegative | BothNegativeStrictDivisor => {
                 ConditionTerm::integer_less_than(x, quotient)
             }
         };
@@ -3750,18 +3816,33 @@ fn float_reciprocal_endpoint(premise: &FloatBound<'_>, goal: &FloatBound<'_>) ->
     })
 }
 
-/// Check float bounds using only the cited comparisons and constant rounding.
+/// Check float bounds and finiteness using only cited facts.
 pub(crate) fn checks_selected_float_bounds(goal: &Proposition, premises: &[Proposition]) -> bool {
     match premises {
         [premise] => {
-            (float_bound_weakens(premise, goal) || rounded_integer_float_bound(goal, Some(premise)))
+            float_bound_weakens(premise, goal)
+                || rounded_integer_float_bound(goal, Some(premise))
                 || float_zero_product_premise(goal).as_ref() == Some(premise)
+                || float_finiteness_source(goal).as_ref() == Some(premise)
         }
-        [_, _] | [_, _, _, _] => {
-            FloatPairBound::new(goal).is_some_and(|bound| bound.check(premises))
+        [a, b] => {
+            float_finiteness_bounds(goal).is_some_and(|[lower, upper]| {
+                (finite_endpoint_bound(a, &lower) && finite_endpoint_bound(b, &upper))
+                    || (finite_endpoint_bound(b, &lower) && finite_endpoint_bound(a, &upper))
+            }) || FloatPairBound::new(goal).is_some_and(|bound| bound.check(premises))
         }
+        [_, _, _, _] => FloatPairBound::new(goal).is_some_and(|bound| bound.check(premises)),
         _ => false,
     }
+}
+
+fn finite_endpoint_bound(premise: &Proposition, limit: &Proposition) -> bool {
+    let (Some(bound), Some(limit)) = (float_bound(premise), float_bound(limit)) else {
+        return false;
+    };
+    bound.lower == limit.lower
+        && same_float_operand(bound.operand, limit.operand)
+        && float_endpoint_establishes(&limit, bound.endpoint, bound.strict)
 }
 
 /// An integer-to-float conversion is monotone at its destination precision.
@@ -4003,7 +4084,7 @@ fn zero_product_operand<'a>(
 
 /// Zero times a finite value is a signed zero, which compares equal to
 /// either zero. A finite premise excludes the NaN and infinity cases.
-pub(super) fn float_zero_product_premise(goal: &Proposition) -> Option<Proposition> {
+pub(crate) fn float_zero_product_premise(goal: &Proposition) -> Option<Proposition> {
     let bound = float_bound(goal)?;
     let (operator, operands) = bound.operand.binary()?;
     let operand = zero_product_operand(operator, operands)?;
@@ -4035,8 +4116,7 @@ fn finite_float_requirement(
     ))
 }
 
-/// One sign flip or exact widening preserves finiteness.
-pub(super) fn float_finiteness_source(goal: &Proposition) -> Option<Proposition> {
+fn float_finiteness_operand(goal: &Proposition) -> Option<FloatOperandView<'_>> {
     let Proposition::ConditionIs(condition, true) = goal else {
         return None;
     };
@@ -4045,8 +4125,38 @@ pub(super) fn float_finiteness_source(goal: &Proposition) -> Option<Proposition>
     else {
         return None;
     };
+    Some(operand)
+}
+
+pub(crate) fn finite_integer_conversion(goal: &Proposition) -> bool {
+    float_finiteness_operand(goal)
+        .and_then(|operand| operand.conversion())
+        .and_then(|conversion| MachineIntegerType::from_program_type(conversion.source_type()))
+        .is_some_and(|format| format.format().bits() <= 64)
+}
+
+/// One sign flip or exact widening preserves finiteness.
+pub(crate) fn float_finiteness_source(goal: &Proposition) -> Option<Proposition> {
+    let operand = float_finiteness_operand(goal)?;
     let source = operand.negate().or_else(|| operand.widened_float32())?;
     finite_float_requirement(source.format(), retained_float(source))
+}
+
+/// Ordered strict bounds inside both infinities exclude NaNs and infinities.
+pub(crate) fn float_finiteness_bounds(goal: &Proposition) -> Option<[Proposition; 2]> {
+    let operand = float_finiteness_operand(goal)?;
+    let format = operand.format();
+    let infinity = float_infinity(format);
+    Some([
+        float_bound_proposition(
+            format,
+            operand,
+            infinity | float_sign_bit(format),
+            true,
+            true,
+        )?,
+        float_bound_proposition(format, operand, infinity, false, true)?,
+    ])
 }
 
 /// Finite self-subtraction gives zero. Finite, nonzero self-division gives
