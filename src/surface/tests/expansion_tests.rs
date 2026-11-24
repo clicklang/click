@@ -27139,6 +27139,7 @@ fn indexed_read_comparisons_expand_with_preservation() {
         ("(p[i] | 2)", "<"),
         ("(p[i] ^ 2)", "<"),
         ("~p[i]", "<"),
+        ("(p[i] >> 1)", "<"),
         ("*(p + i)", "<"),
     ] {
         let source = source
@@ -27164,6 +27165,36 @@ fn indexed_read_comparisons_expand_with_preservation() {
             .is_err()
         );
     }
+}
+
+#[test]
+fn indexed_left_shift_comparison_expands_with_preservation() {
+    let c_source = "void keep(unsigned int *p, int i, int j, unsigned int limit) { p[j] = 10; }";
+    let source = r#"
+        verifying "read_order.c";
+        void keep(uint32 *p, int32 i, int32 j, uint32 limit) {
+            owns p[0..8];
+            requires 0 <= i and i < 8 and 0 <= j and j < 8;
+            requires i != j;
+            requires (p[i] << 1) < limit;
+            ensures (p[i] << 1) < limit;
+        } by {
+            step();
+            have (p[i] << 1) < limit by { solve(); }
+        }
+    "#;
+    let sources = [("read_order.c", c_source)];
+    let expanded = expand_c_claim_source_by_label(source, &sources, "keep.contract").unwrap();
+    assert!(
+        expanded.contains("preserve(memory(p[i]), region(0))"),
+        "{expanded}"
+    );
+    assert!(expanded.contains("rewrite(p[i],"), "{expanded}");
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim("keep.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
 }
 
 #[test]
