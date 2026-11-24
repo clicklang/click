@@ -74,6 +74,8 @@ mod load;
 #[cfg(test)]
 mod memory_construction_tests;
 #[cfg(test)]
+pub(crate) use load::allow_cross_arena_loads;
+#[cfg(test)]
 pub(crate) use load::interned_load_count;
 pub(crate) use load::read_operands;
 pub use load::{Load, LoadCell, ReadPoint};

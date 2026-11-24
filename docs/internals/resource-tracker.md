@@ -671,8 +671,10 @@ conversion.
 3a). `MachineTerm::MemoryLoad(point, cell, kind)` holds a `ReadPoint`, the
 point its producer selected, and a `LoadCell`, the address as the producer
 spelled it together with its interned `Load` (`src/kernel/primitives/load.rs`),
-keyed by the point's read key and the cell. Equality, hashing and ordering
-compare the load's id and the kind: the `ReadPoint` compares equal to every
+keyed by the point's read key and the cell. Equality and hashing compare the
+load's id and the kind, and ordering compares the load by content (its stored
+content hash, then point and cell) and then the kind, so iteration order does
+not depend on interning order: the `ReadPoint` compares equal to every
 other, and the address is not compared, since the load's identity holds it.
 Within one memory arena this is the equivalence the term had when it compared
 point, address and kind, because `ProgramPoint` equality is read-key equality
