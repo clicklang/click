@@ -5942,6 +5942,22 @@ fn whole_claim_expansion_of_a_user_tactic_omits_the_supplied_ending() {
 }
 
 #[test]
+fn whole_claim_expansion_of_a_tactic_without_ensures_omits_the_supplied_ending() {
+    let (source, sources) = mdtest_sources("mdtests/user_tactic_requires_obligations.md");
+    let sources = crate::cli::source_refs(&sources);
+    let claim = "discard_counter.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    let declaration = &expanded[expanded.find("tactic discard_counter(").unwrap()..];
+    let proof = &declaration[..declaration.find("\n}\n").unwrap()];
+    assert!(proof.ends_with("by {\n    unfold(input);"), "{proof}");
+    without_implicit_solve_for_claim(claim, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
 fn user_tactic_call_obligations_expand_and_recheck() {
     let (source, sources) = mdtest_sources("mdtests/user_tactic_requires_obligations.md");
     let sources = crate::cli::source_refs(&sources);
