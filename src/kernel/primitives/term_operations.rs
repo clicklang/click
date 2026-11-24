@@ -5035,11 +5035,7 @@ impl Address {
             address,
             crate::kernel::C_POINTER_BYTE_WIDTH,
         );
-        let read = crate::kernel::MachineTerm::read_named(
-            ProgramPoint::at(memory),
-            address.clone(),
-            LoadKind::Bits64,
-        );
+        let read = crate::kernel::legacy_pointer_word_read(memory, address);
         named_pointer_read(
             canonical_pointer_read(&read).expect("a memory load has a canonical read"),
         )
@@ -5057,11 +5053,7 @@ impl Address {
             address,
             crate::kernel::C_POINTER_BYTE_WIDTH,
         );
-        let read = crate::kernel::MachineTerm::read_named(
-            ProgramPoint::at(memory),
-            address.clone(),
-            LoadKind::Bits64,
-        );
+        let read = crate::kernel::legacy_pointer_word_read(memory, address);
         match canonical_pointer_read(&read) {
             Some(named) => named_pointer_read(named),
             None => Self::loaded_value(memory, address),

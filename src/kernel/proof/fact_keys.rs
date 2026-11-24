@@ -1210,7 +1210,17 @@ struct AlphaRegisteredLoadRecord {
     fingerprint: u64,
     retained_state: AlphaStateKey,
     pointer: AlphaAddressKey,
-    kind: LoadKind,
+    decoding: AlphaLoadDecoding,
+}
+
+/// How a registered-load node is read. A pointer load is keyed by its load
+/// alone, its read key and cell (`design/loads.md`, "Terms"): the type that
+/// decodes it is no part of it, and it is never an integer read of its cell.
+/// An integer or float read keeps its kind.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum AlphaLoadDecoding {
+    Pointer,
+    Read(LoadKind),
 }
 
 /// Weak entries by descriptor fingerprint. A record removes its own entry
@@ -1269,12 +1279,12 @@ fn alpha_registered_load_interner() -> Option<Arc<std::sync::Mutex<AlphaRegister
 fn alpha_registered_load_descriptor_fingerprint(
     retained_state: &AlphaStateKey,
     pointer: &AlphaAddressKey,
-    kind: LoadKind,
+    decoding: AlphaLoadDecoding,
 ) -> u64 {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     retained_state.hash(&mut hasher);
     pointer.hash(&mut hasher);
-    kind.hash(&mut hasher);
+    decoding.hash(&mut hasher);
     hasher.finish()
 }
 
@@ -1282,9 +1292,10 @@ fn intern_alpha_registered_load(
     interner: &Arc<std::sync::Mutex<AlphaRegisteredLoadInterner>>,
     retained_state: AlphaStateKey,
     pointer: AlphaAddressKey,
-    kind: LoadKind,
+    decoding: AlphaLoadDecoding,
 ) -> Option<AlphaRegisteredLoadId> {
-    let fingerprint = alpha_registered_load_descriptor_fingerprint(&retained_state, &pointer, kind);
+    let fingerprint =
+        alpha_registered_load_descriptor_fingerprint(&retained_state, &pointer, decoding);
     let mut interner_state = interner.lock().ok()?;
     let bucket = interner_state.buckets.entry(fingerprint).or_default();
     if crate::instrumentation::deadline_exceeded_with_work(bucket.len().max(1)) {
@@ -1297,7 +1308,7 @@ fn intern_alpha_registered_load(
         };
         if record.retained_state == retained_state
             && record.pointer == pointer
-            && record.kind == kind
+            && record.decoding == decoding
         {
             return Some(AlphaRegisteredLoadId(record));
         }
@@ -1315,7 +1326,7 @@ fn intern_alpha_registered_load(
         fingerprint,
         retained_state,
         pointer,
-        kind,
+        decoding,
     });
     bucket.push(Arc::downgrade(&record));
     Some(AlphaRegisteredLoadId(record))
@@ -2146,7 +2157,12 @@ fn alpha_registered_load_pointer_with_bindings<const ALLOW_LOADS: bool>(
             }
         };
         alpha_work_checkpoint(bindings, 1)?;
-        let load_id = intern_alpha_registered_load(&interner, retained_state, pointer, kind)?;
+        let load_id = intern_alpha_registered_load(
+            &interner,
+            retained_state,
+            pointer,
+            AlphaLoadDecoding::Read(kind),
+        )?;
         Some((load_id, *next_binder))
     })();
     bindings.registered_load_stack.remove(&variable);
@@ -2196,8 +2212,12 @@ fn alpha_pointer_load_with_bindings<const ALLOW_LOADS: bool>(
             }
         };
         alpha_work_checkpoint(bindings, 1)?;
-        let load_id =
-            intern_alpha_registered_load(&interner, retained_state, address, LoadKind::Bits64)?;
+        let load_id = intern_alpha_registered_load(
+            &interner,
+            retained_state,
+            address,
+            AlphaLoadDecoding::Pointer,
+        )?;
         Some((load_id, *next_binder))
     })();
     bindings.pointer_load_stack.remove(load);
@@ -2771,7 +2791,7 @@ fn alpha_bitvector_key_with_bindings<const ALLOW_LOADS: bool>(
                 &interner,
                 retained_state,
                 pointer,
-                *kind,
+                AlphaLoadDecoding::Read(*kind),
             )?)
         }
         MachineTerm::MemoryLoad(point, pointer, kind) if point.read_version_id().is_some() => {
@@ -3219,6 +3239,47 @@ pub(crate) fn propositions_are_alpha_equal(left: &Proposition, right: &Propositi
 /// The structural comparison used when the indexed identity declines.
 pub(crate) fn proposition_with_canonical_binders(proposition: &Proposition) -> Proposition {
     crate::kernel::quantifiers::canonical_binders(proposition)
+}
+
+#[cfg(test)]
+mod pointer_load_key_tests {
+    use super::*;
+    use crate::kernel::{Address, Load, ProgramPoint, SymbolicMemory, Variable};
+
+    /// A state-aware key of `load` built with fresh bindings, so equal keys
+    /// come from the interner, not from one walk's memo.
+    fn key(load: &Load) -> AlphaRegisteredLoadId {
+        let mut bindings = fold_keys::bindings();
+        bindings.state_aware = true;
+        alpha_pointer_load_with_bindings::<true>(load, &mut bindings, &mut 0)
+            .expect("a pointer load has a state-aware key")
+    }
+
+    /// A pointer load is keyed by its load, its read key and cell: two loads
+    /// of one cell share a key, two cells do not, and the key is not the one
+    /// an eight-byte integer read of the cell gets.
+    #[test]
+    fn pointer_loads_are_keyed_by_their_load_and_not_by_an_integer_read() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let memory = crate::kernel::intern_memory(SymbolicMemory::new());
+        let cell = Address::symbolic(Variable(998_611));
+        let other = Address::symbolic(Variable(998_612));
+        let first = key(&Load::at(ProgramPoint::at(&memory), &cell));
+        let again = key(&Load::at(ProgramPoint::at(&memory), &cell));
+        let elsewhere = key(&Load::at(ProgramPoint::at(&memory), &other));
+        assert_eq!(first, again);
+        assert_ne!(first, elsewhere);
+
+        let mut bindings = fold_keys::bindings();
+        bindings.state_aware = true;
+        let word = MachineTerm::read_named(ProgramPoint::at(&memory), cell, LoadKind::Bits64);
+        let Some(AlphaBitvectorKey::RegisteredLoad(word)) =
+            alpha_bitvector_key_with_bindings::<true>(&word, &mut bindings, &mut 0)
+        else {
+            panic!("a state-aware integer read keys as a registered load");
+        };
+        assert_ne!(first, word);
+    }
 }
 
 #[cfg(test)]
