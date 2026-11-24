@@ -5672,7 +5672,9 @@ fn materialize_composite_resource_cells_from_state(
         {
             naming_point.clone()
         } else {
-            crate::kernel::ProgramPoint::at(naming_point.shared_memory())
+            // Named by the memory, as a legacy read is, and recording the
+            // point the cells are read at.
+            crate::kernel::ProgramPoint::at_read_site(naming_point.shared_memory(), naming_point)
         };
         match memory.with_named_cell_run(
             range.base().clone(),
