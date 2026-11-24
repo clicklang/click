@@ -2033,7 +2033,7 @@ int32 identity(int32 x) {
     )
     .expect("grouped solve should expand");
 
-    assert!(expanded.contains("intro();"), "{expanded}");
+    assert!(expanded.contains("intro()"), "{expanded}");
     assert!(expanded.ends_with("\n    close();\n}\n"), "{expanded}");
     verify_c_sources(&expanded, &sources)
         .expect("the second solve should still have its goal after expansion");
@@ -3111,7 +3111,7 @@ theorem set_one_is_make_positive() {
     let theorem = &expanded[expanded
         .find("theorem set_one_is_make_positive")
         .expect("expanded source should retain the theorem")..];
-    assert!(theorem.contains("intro();"), "{theorem}");
+    assert!(theorem.contains("intro()"), "{theorem}");
     assert!(!theorem.contains("extract("), "{theorem}");
     assert!(!theorem.contains("solve();"), "{theorem}");
     verify_c_sources(&expanded, &sources)

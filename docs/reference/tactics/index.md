@@ -1765,9 +1765,11 @@ when the count is known in range. It also checks the equality of the signed
 and unsigned right shifts of the positive signed maximum at the same in-range
 count. A constant right shift of a zero-extended unsigned byte or halfword
 has a range computed from its source width and count, including after a
-signed widening of the result.
-For a positive literal left operand, a count bound below the point where
-the result would reach the sign bit establishes that the shift fits.
+signed widening of the result. An unsigned left shift of one is nonzero
+when its count is below the width. A signed count reading also needs a
+nonnegative bound. For a positive literal left operand, a count bound below
+the point where the result would reach the sign bit establishes that the shift
+fits.
 
 A root conditional equals its selected arm when its written guard is available.
 A root Integer or machine conditional with identical arms equals that shared
@@ -1966,8 +1968,9 @@ from `float` to `double` preserve finiteness.
 For an integer converted to `float` or `double`, `close()` can check
 the rounded limits of the source type. A tighter bound can cite a constant
 integer endpoint. The check rounds that endpoint at the destination precision.
-`close()` can select these float bounds and expand to `normalize() using`
-with the selected premises.
+`close()` prefers named library laws when they cover the selected bounds.
+For other supported shapes it can still expand to `normalize() using` with
+those premises.
 
 
 For two negative signed operands, `x < 0`, `y < 0`, and
@@ -2665,8 +2668,9 @@ access in a proof; it is not parsed as the shadowed-binder qualifier.
 **Failure, checking, and tools:**
 
 A refusal names the goal's shape, such as "got a condition fact" or "got a
-conjunction". Click checks the introduction and the proof of its body. Expansion preserves
-the written block and expands any smart steps inside it.
+conjunction". Click checks the introduction and the proof of its body. Expansion preserves a written block and expands any smart steps inside it.
+When search introduces a written binder or premise and finishes its goal,
+expansion can retain that proof as an `intro` block.
 
 **Checked examples:** [`scoped_intro.md`](https://github.com/clicklang/click/blob/master/mdtests/scoped_intro.md), [`copy_n_segment_invariant.md`](https://github.com/clicklang/click/blob/master/mdtests/copy_n_segment_invariant.md), [`quantifier_intro_nested_connectives.md`](https://github.com/clicklang/click/blob/master/mdtests/quantifier_intro_nested_connectives.md), [`integer_forall_intro.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_forall_intro.md), [`an_introduced_variable_hides_a_parameter_of_its_name.md`](https://github.com/clicklang/click/blob/master/mdtests/an_introduced_variable_hides_a_parameter_of_its_name.md)
 

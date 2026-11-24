@@ -278,14 +278,16 @@ int fill_parallel(int output[4]) {
             have forall (k: int32) {
                 first_job.begin <= k and k < first_job.end implies first_job.output[k] == first_job.value
             } by {
-                let k = intro();
-                intro();
-                have 0 <= k by { rewrite(0, first_job.begin); close(); }
-                have k < 2 by { rewrite(2, first_job.end); close(); }
-                instantiate(forall (j: int32) { 0 <= j and j < 2 implies output[j] == 11 }, k);
-                rewrite(first_job.output, output);
-                rewrite(first_job.value, 11);
-                close();
+                intro(k) {
+                    intro() {
+                        have 0 <= k by { rewrite(0, first_job.begin); close(); }
+                        have k < 2 by { rewrite(2, first_job.end); close(); }
+                        instantiate(forall (j: int32) { 0 <= j and j < 2 implies output[j] == 11 }, k);
+                        rewrite(first_job.output, output);
+                        rewrite(first_job.value, 11);
+                        close();
+                    }
+                }
             }
             have first_job.output[0] == first_job.value by {
                 have first_job.begin <= 0 and 0 < first_job.end;
@@ -317,14 +319,16 @@ int fill_parallel(int output[4]) {
     have forall (k: int32) {
         first_job.begin <= k and k < first_job.end implies first_job.output[k] == first_job.value
     } by {
-        let k = intro();
-        intro();
-        have 0 <= k by { rewrite(0, first_job.begin); close(); }
-        have k < 2 by { rewrite(2, first_job.end); close(); }
-        instantiate(forall (j: int32) { 0 <= j and j < 2 implies output[j] == 11 }, k);
-        rewrite(first_job.output, output);
-        rewrite(first_job.value, 11);
-        close();
+        intro(k) {
+            intro() {
+                have 0 <= k by { rewrite(0, first_job.begin); close(); }
+                have k < 2 by { rewrite(2, first_job.end); close(); }
+                instantiate(forall (j: int32) { 0 <= j and j < 2 implies output[j] == 11 }, k);
+                rewrite(first_job.output, output);
+                rewrite(first_job.value, 11);
+                close();
+            }
+        }
     }
     have first_job.output[0] == first_job.value by {
         have first_job.begin <= 0 and 0 < first_job.end;

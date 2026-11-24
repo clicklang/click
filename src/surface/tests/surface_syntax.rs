@@ -2428,40 +2428,32 @@ theorem false_guard(x: int32) {
     let verified =
         verify_click_theorems(source).expect("smart context-free implication proofs should verify");
 
-    assert_eq!(
-        verified[0]
-            .proof_tactics()
-            .expect("expected reflexive implication certificate"),
-        &[ProofTactic::Intro, ProofTactic::Known]
-    );
-    // `known` closes an implication whose consequent is available, here by
-    // computation, without introducing the antecedent.
+    for theorem in [&verified[0], &verified[2], &verified[3]] {
+        assert_eq!(
+            theorem
+                .proof_tactics()
+                .expect("expected scoped implication certificate"),
+            [ProofTactic::IntroBlock {
+                binder: None,
+                body: vec![ProofTactic::Known],
+            }]
+        );
+    }
+    // The direct check closes this implication because its consequent
+    // computes to true.
     assert_eq!(
         verified[1]
             .proof_tactics()
             .expect("expected true-consequent certificate"),
-        &[ProofTactic::Known]
+        [ProofTactic::Known]
     );
-    assert!(matches!(
-        verified[2]
-            .proof_tactics()
-            .expect("expected nested disjunction certificate")
-            .as_slice(),
-        [ProofTactic::Intro, ProofTactic::Known]
-    ));
-    assert!(matches!(
-        verified[3]
-            .proof_tactics()
-            .expect("expected conjunctive-guard certificate")
-            .as_slice(),
-        [ProofTactic::Intro, ProofTactic::Known]
-    ));
     assert!(matches!(
         verified[4]
             .proof_tactics()
             .expect("expected false-guard certificate")
             .as_slice(),
-        [ProofTactic::Intro, ProofTactic::Contradiction(_)]
+        [ProofTactic::IntroBlock { binder: None, body }]
+            if matches!(body.as_slice(), [ProofTactic::Contradiction(_)])
     ));
     verify_click_theorems(
         r#"

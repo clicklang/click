@@ -14,11 +14,12 @@ int32 refine(int32 x, int32 y) {
     ensures result == y;
 } by {
     step_until(function.exit);
-    let k = intro();
-    rewrite(y, x);
-    all {
-        result == x => { close(); }
-        k == k => { close(); }
+    intro(k) {
+        rewrite(y, x);
+        all {
+            result == x => { close(); }
+            k == k => { close(); }
+        }
     }
     rewrite(y, x);
     close();
