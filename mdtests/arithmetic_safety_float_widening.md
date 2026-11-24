@@ -15,9 +15,7 @@ int32 convert(float x) {
 
 theorem strict_bound(x: float) {
     requires float32_from_bits(0x3f800000) > x;
-    ensures x as double < float64_from_bits(0x3ff0000000000000) by {
-        normalize() using { float32_from_bits(0x3f800000) > x; };
-    }
+    ensures x as double < float64_from_bits(0x3ff0000000000000) by known();
 }
 ```
 

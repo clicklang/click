@@ -562,6 +562,14 @@ fn signed_product_bound(goal: &Proposition, available: &impl Fn(&Proposition) ->
     })
 }
 
+fn exact_float_bound(goal: &Proposition, available: &impl Fn(&Proposition) -> bool) -> bool {
+    [false, true].into_iter().any(|strict| {
+        super::super::arithmetic_special::exact_float_bound_source(goal, strict).is_some_and(
+            |source| available(&source) || super::order_claim_forms(&source).iter().any(available),
+        )
+    })
+}
+
 pub(crate) fn known_bridge_leaf(
     goal: &Proposition,
     available: &impl Fn(&Proposition) -> bool,
@@ -573,6 +581,7 @@ pub(crate) fn known_bridge_leaf(
         return true;
     }
     match goal {
+        Proposition::ConditionIs(_, true) if exact_float_bound(goal, available) => true,
         Proposition::ConditionIs(condition, true) if narrow_machine_arm(condition, available) => {
             true
         }

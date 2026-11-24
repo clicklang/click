@@ -1,6 +1,64 @@
 use super::*;
 
 #[test]
+fn exact_float_bound_checks_only_the_input_endpoint() {
+    let _session = VerificationSession::enter();
+    let ty = KernelType::Program(ProgramType::Float32);
+    let input = KernelTerm::variable(ty.clone(), Variable(995728));
+    let other = KernelTerm::variable(ty, Variable(995729));
+    let narrow = KernelFloatType::Float32;
+    let wide = KernelFloatType::Float64;
+    let upper = |format, operand, endpoint: MachineTerm| {
+        let literal = KernelTermImport::default().float(format, &endpoint);
+        let condition =
+            KernelTerm::float_compare(format, ComparisonOperator::LessThan, [operand, literal])
+                .unwrap();
+        Proposition::condition_is(StoredConditionTerm::from_root(condition).unwrap(), true)
+    };
+    let widened = KernelTerm::float_convert(wide, ProgramType::Float32, input.clone()).unwrap();
+    let goal = upper(
+        wide,
+        widened,
+        MachineTerm::uint64_constant(1.0f64.to_bits()),
+    );
+    let required = upper(
+        narrow,
+        input.clone(),
+        MachineTerm::constant(1.0f32.to_bits()),
+    );
+    for related in [false, true] {
+        let mut cost = Vec::new();
+        for size in [8, 32, 128] {
+            let mut facts = (0..size)
+                .map(|index| {
+                    upper(
+                        narrow,
+                        if related {
+                            input.clone()
+                        } else {
+                            other.clone()
+                        },
+                        MachineTerm::constant((index as f32 + 2.0).to_bits()),
+                    )
+                })
+                .collect::<Vec<_>>();
+            let missing = PureFactStore::from_ordered(&facts);
+            facts.push(required.clone());
+            let present = PureFactStore::from_ordered(&facts);
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                assert!(known_bridge_leaf(&goal, &|p| present.pure_known_available(p)));
+                assert!(!known_bridge_leaf(&goal, &|p| missing.pure_known_available(p)));
+            });
+            cost.push(work);
+        }
+        assert!(
+            cost.windows(2).all(|pair| pair[1] <= 2 * pair[0]),
+            "{cost:?}"
+        );
+    }
+}
+
+#[test]
 fn signed_product_bound_checks_only_the_exact_guards() {
     let _session = VerificationSession::enter();
     let ty = MachineIntegerType::Int32;

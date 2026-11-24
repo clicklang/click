@@ -1974,7 +1974,11 @@ none selects premises or expands a polynomial.
 For a reflexive `float` or `double` comparison, `solve` expands to
 `known()` when the exact `isfinite(x)` fact is available for the common
 operand. Restricted `solve() using` must select that fact. For example,
-`isfinite(x)` establishes `x == x`, `x <= x` and `not(x < x)`.
+`isfinite(x)` establishes `x == x`, `x <= x` and `not(x < x)`. An ordered
+bound on an exact float widening or sign negation also closes with
+`known()` from the corresponding input comparison at the same endpoint.
+Negation reverses the order and flips the endpoint's sign. The widening
+check requires the endpoint to be exactly representable in the input width.
 
 For supported native unsigned address words, `solve` emits ordinary `have`
 goals, `apply(click::integer::...)`, rewrites, and `known()`: alignment

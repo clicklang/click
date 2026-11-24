@@ -3250,6 +3250,33 @@ pub(crate) fn is_float_bound(proposition: &Proposition) -> bool {
     float_bound(proposition).is_some()
 }
 
+/// Pull an ordered bound backwards through exact widening or sign negation.
+pub(super) fn exact_float_bound_source(goal: &Proposition, strict: bool) -> Option<Proposition> {
+    use crate::kernel::primitives::float_conversion::{
+        float32_to_float64_bits, float64_to_float32_bits,
+    };
+
+    let goal = float_bound(goal)?;
+    if goal.strict && !strict {
+        return None;
+    }
+    let (operand, endpoint, lower) = if let Some(operand) = goal.operand.negate() {
+        (
+            operand,
+            goal.endpoint ^ float_sign_bit(goal.format),
+            !goal.lower,
+        )
+    } else {
+        let operand = goal.operand.widened_float32()?;
+        let endpoint = float64_to_float32_bits(goal.endpoint);
+        if float32_to_float64_bits(endpoint) != goal.endpoint {
+            return None;
+        }
+        (operand, u64::from(endpoint), goal.lower)
+    };
+    float_bound_proposition(operand.format(), operand, endpoint, lower, strict)
+}
+
 /// The monotone operations for which one selected bound suffices.
 #[derive(Clone, Copy)]
 enum FloatBoundOperation {
