@@ -133,9 +133,7 @@ impl ObjectSuppliers {
         };
         let suppliers = if read_span(fact).is_some() {
             &mut self.nonempty
-        } else if RangeSupports::symbolic(range)
-            && fact.owned_quantity_term().and_then(MachineTerm::as_const) != Some(0)
-        {
+        } else if RangeSupports::symbolic(range) && fact.owned_quantity() != Some(0) {
             &mut self.symbolic
         } else {
             return;
@@ -221,9 +219,7 @@ impl RangeSupports {
             let class = graph.address_class_root(class);
             if read_span(fact).is_some() {
                 self.nonempty_objects.update(entry, insert, class, graph);
-            } else if Self::symbolic(range)
-                && fact.owned_quantity_term().and_then(MachineTerm::as_const) != Some(0)
-            {
+            } else if Self::symbolic(range) && fact.owned_quantity() != Some(0) {
                 self.symbolic_objects.update(entry, insert, class, graph);
             }
         }

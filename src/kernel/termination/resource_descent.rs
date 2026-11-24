@@ -422,7 +422,7 @@ impl ResourceContext {
             if name != &witnesses.descent.family {
                 continue;
             }
-            if child.owned_quantity_term().and_then(MachineTerm::as_const) == Some(0) {
+            if child.owned_quantity() == Some(0) {
                 continue;
             }
             if !child.has_proven_positive_quantity(assumptions) {

@@ -2732,8 +2732,7 @@ impl MemoryRange {
     pub(crate) fn has_symbolic_bounds(&self) -> bool {
         match self.kind {
             RangeIndexKind::Int32 => {
-                self.start_bound.native_compat().as_const().is_none()
-                    || self.end_bound.native_compat().as_const().is_none()
+                self.start_bound.as_const().is_none() || self.end_bound.as_const().is_none()
             }
             RangeIndexKind::UInt64 => {
                 self.start_bound.native_compat().uint64_as_const().is_none()

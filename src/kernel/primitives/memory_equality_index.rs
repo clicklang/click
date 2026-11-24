@@ -807,11 +807,7 @@ impl MemoryAccessCandidates {
                     let Some(fact) = self.index.resources.facts.get(entry) else {
                         return false;
                     };
-                    if fact
-                        .owned_quantity_term()
-                        .and_then(|quantity| quantity.as_const())
-                        == Some(0)
-                    {
+                    if fact.owned_quantity() == Some(0) {
                         return false;
                     }
                     let in_span = || {
@@ -1770,8 +1766,7 @@ impl ResourceContext {
             return Unsupported;
         };
         if !fact
-            .owned_quantity_term()
-            .and_then(MachineTerm::as_const)
+            .owned_quantity()
             .is_some_and(|quantity| (quantity as i32) > 0)
         {
             return Unsupported;

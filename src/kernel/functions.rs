@@ -6311,7 +6311,7 @@ fn prepare_verified_function_call<'a>(
                 .resources
                 .exact_resource_facts(&member)
                 .into_iter()
-                .filter_map(|fact| fact.owned_quantity_term().and_then(MachineTerm::as_const))
+                .filter_map(|fact| fact.owned_quantity())
                 .try_fold(0u32, u32::checked_add)
             else {
                 return Ok(Err(resource_call_failure(
@@ -14419,11 +14419,7 @@ fn produced_composite_frontier_conflict<'a>(
         // one range, and a symbolic count is not a quantity the check below
         // could compare against the destination at all. Refuse rather than
         // check one unit and call the rest checked.
-        if produced
-            .owned_quantity_term()
-            .and_then(MachineTerm::as_const)
-            != Some(1)
-        {
+        if produced.owned_quantity() != Some(1) {
             return Some(RuntimeError::FunctionContract(format!(
                 "a produced quantity of `{name}` other than one owns memory in its \
                  body, so its units would own the same range more than once"
@@ -22362,7 +22358,7 @@ pub(crate) fn check_acquired_control_member_effects(
                 continue;
             };
             if arguments != description.arguments()
-                || fact.owned_quantity_term().and_then(MachineTerm::as_const) != Some(1)
+                || fact.owned_quantity() != Some(1)
                 || declared.replace(produce).is_some()
             {
                 return Ok(Err(RuntimeError::FunctionContract(format!(
