@@ -448,7 +448,7 @@ is one PR, measured with the gate harnesses, the raise-lower audit and
        (`build_support/read_construction.rs`): none remains in
        `primitives.rs` or the retained fold collector, and one fewer in
        `eval/memory_loads.rs`.
-     - **Selection state by cell and width.** *Blocked; not implemented.*
+     - **Selection state by cell and width.** *Deferred; not implemented.*
        Replacing the pointer-word bridge in `Address::canonical_read` and
        `canonical_loaded_value` needs the state `canonical_scalar_read`
        selects through keyed by the load's cell and width instead of its
@@ -505,11 +505,14 @@ is one PR, measured with the gate harnesses, the raise-lower audit and
        of the cell beside the bridge's: 32 of 7,456 paired selections of one
        cell differ between the two, so merging them is not neutral either.
 
-       Before the re-keying, the program-point session decides whether a
-       read's `selected` flag and live origin belong to the cell (one answer
-       for every decoding of a load, changing the case above) or stay per
-       decoding (then pointer and 64-bit reads need a shared decoding class
-       in the key, which `Bits64` is today). Until then the bridge stays.
+       *Decided (program-point session, 2026-11-24):* in the end state,
+       selection takes the `Load` and a decoding class with a pointer member,
+       and a read's `selected` flag and live origin move to the load; the
+       case above is then answered by the sign relation σ. Because it changes
+       about half of the shared lookups, it is scheduled after the
+       expandability census, by the program-point session, once measurement
+       shows the selections agree. Until then the bridge stays, and PR 4
+       (the `Bits64` split) is parked behind it rather than worked around.
      - **PR 3** adds the e-graph sign relation at 16 and 128 bits.
      - **PR 4** splits `Bits64` into `Int64` and `UInt64`. The remaining
        spellings are genuine 64-bit integer reads: their construction from a
