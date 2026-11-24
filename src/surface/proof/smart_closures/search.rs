@@ -10786,6 +10786,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // from the exact aliases of its pointer operand, and cite the
         // allocation by the region that produced it. After the rewrite the
         // ordinary alignment check reads the intrinsic heap alignment.
+        let mut allocation_equalities = Vec::new();
         if let Some((condition, _)) = goal.condition_native()
             && let Some((pointer, _)) =
                 crate::kernel::proof::arithmetic_special::checked_pointer_alignment(condition)
@@ -10808,16 +10809,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 {
                     continue;
                 }
-                let equality = Proposition::condition_is(
+                allocation_equalities.push(Proposition::condition_is(
                     ConditionTerm::AddressEqual(Box::new(pointer.clone()), Box::new(alias.clone())),
                     true,
-                );
-                if let Some(surface) = Self::available_rewrite_equality(proof, &equality)
-                    && let Ok(rewritten) = proof.driver().apply_step(ProofStep::Rewrite(surface))
-                    && let Ok(closed) = rewritten.driver().apply_step(ProofStep::Known)
-                {
-                    return Break(Some(closed));
-                }
+                ));
             }
         }
         // Pointer equalities between scaled offsets are candidates too:
@@ -10866,8 +10861,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
             _ => proof.facts().load_equalities_mentioning(&goal),
         };
-        let equalities = equality_candidates
+        let equalities = allocation_equalities
             .into_iter()
+            .chain(equality_candidates)
             .chain(proof.facts().algebraic_equalities_mentioning(&goal));
         let mut has_source_candidate = false;
         for equality in equalities {
