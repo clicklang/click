@@ -4,6 +4,19 @@ use click::surface::{
 };
 
 #[test]
+fn theorem_replay_with_a_partial_expression_in_an_unselected_theorem() {
+    let path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests/retained_equality_conditionals.md");
+    let arguments = parse_arguments([
+        "--claim".to_string(),
+        "closed_int64_equality_guards.ensures_0".to_string(),
+        path.display().to_string(),
+    ])
+    .unwrap();
+    run_audit(arguments).unwrap();
+}
+
+#[test]
 #[ignore = "nightly: generic Rust claim expansion and retained/cold audit rechecks"]
 fn generic_rust_clause_proofs_stay_on_the_generic_function() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));

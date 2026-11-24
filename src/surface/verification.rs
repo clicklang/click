@@ -534,76 +534,6 @@ fn theorem_has_certification_binders(theorem: &TheoremDefinition) -> bool {
     })
 }
 
-/// Records verified pure theorems over supported kernel binders as closed
-/// universally-quantified facts with their kernel authority, so kernel
-/// contract certification can discharge obligations the surface proof
-/// established by `apply`.
-fn record_theorem_certification_authority(
-    verified_theorems: &[VerifiedPureTheorem],
-    facts: &mut BTreeMap<String, Vec<Proposition>>,
-    authorities: &mut BTreeMap<String, Vec<KernelVerifiedPureTheorem>>,
-) {
-    for theorem in verified_theorems.iter().filter(|theorem| {
-        theorem.kernel_authority.is_some()
-            && theorem_has_certification_binders(&theorem.theorem_definition)
-    }) {
-        let implication = theorem
-            .requires
-            .iter()
-            .rev()
-            .fold(theorem.conclusion.clone(), |body, requirement| {
-                Proposition::Implies(Box::new(requirement.clone()), Box::new(body))
-            });
-        let fact = theorem
-            .theorem_definition
-            .parameters()
-            .iter()
-            .enumerate()
-            .map(|(index, parameter)| {
-                let sort = match parameter.interface_type() {
-                    InterfaceType::Int32 => crate::kernel::Sort::ProgramInt32,
-                    InterfaceType::FunctionPointer(_) => crate::kernel::Sort::ProgramPointer(
-                        parameter.interface_type().to_kernel_type(),
-                    ),
-                    _ => unreachable!("the theorem binder filter admits only supported types"),
-                };
-                (
-                    crate::kernel::BinderName::written(parameter.name()),
-                    crate::kernel::Variable(index as u64),
-                    sort,
-                )
-            })
-            .collect::<Vec<_>>();
-        let fact = crate::kernel::quantifiers::close_foralls(&fact, &implication);
-        let Some(fact) = fact else {
-            continue;
-        };
-        facts
-            .entry(theorem.theorem_definition.name().to_string())
-            .or_default()
-            .push(fact);
-        let authority = theorem
-            .kernel_authority
-            .as_ref()
-            .expect("theorem certification facts require kernel authority");
-        authorities
-            .entry(theorem.theorem_definition.name().to_string())
-            .or_default()
-            .push(authority.clone());
-    }
-}
-
-fn record_assumed_theorem_certification_authority(
-    assumed: Vec<(String, Proposition, KernelVerifiedPureTheorem)>,
-    facts: &mut BTreeMap<String, Vec<Proposition>>,
-    authorities: &mut BTreeMap<String, Vec<KernelVerifiedPureTheorem>>,
-) {
-    for (name, fact, authority) in assumed {
-        facts.entry(name.clone()).or_default().push(fact);
-        authorities.entry(name).or_default().push(authority);
-    }
-}
-
 /// The entry module's theorem proofs selected by the CLI scope. Imported
 /// theorem statements and unselected local statements are interfaces; using
 /// one does not recursively select its proof body.
@@ -2238,8 +2168,6 @@ fn verify_program_in_context(
         click_function_environment,
         resource_environment,
         mut function_environment,
-        mut theorem_certification_facts,
-        mut theorem_certification_authorities,
         theorem_environment,
         program_contracts,
     ) = {
@@ -2391,7 +2319,7 @@ fn verify_program_in_context(
             )
         })?;
         drop(_timing);
-        let verified_theorems = verify_theorem_definitions(
+        verify_theorem_definitions(
             theorem_dependencies,
             &theorem_definitions,
             spec_definitions,
@@ -2404,22 +2332,6 @@ fn verify_program_in_context(
                 .map_or(error.clone(), |identity| error.with_context(identity))
         })?;
         let _timing = VerificationTimingPhase::new("environment");
-        let mut theorem_certification_facts = BTreeMap::<String, Vec<Proposition>>::new();
-        let mut theorem_certification_authorities =
-            BTreeMap::<String, Vec<KernelVerifiedPureTheorem>>::new();
-        record_theorem_certification_authority(
-            &verified_theorems,
-            &mut theorem_certification_facts,
-            &mut theorem_certification_authorities,
-        );
-        record_assumed_theorem_certification_authority(
-            assumed_theorem_certification_authorities(
-                &unselected_theorem_definitions,
-                spec_definitions,
-            )?,
-            &mut theorem_certification_facts,
-            &mut theorem_certification_authorities,
-        );
         let theorem_environment =
             TheoremEnvironment::with_standard_library(file.theorem_definitions())?
                 .with_discovery_library(&file)?;
@@ -2429,8 +2341,6 @@ fn verify_program_in_context(
             click_function_environment,
             resource_environment,
             function_environment,
-            theorem_certification_facts,
-            theorem_certification_authorities,
             theorem_environment,
             program_contracts,
         )
@@ -2852,12 +2762,11 @@ fn verify_program_in_context(
             }
         }
         for name in dependencies {
-            if !theorem_certification_facts.contains_key(&name)
-                && checked_standard_library_theorems.insert(name.clone())
+            if checked_standard_library_theorems.insert(name.clone())
                 && let Some(index) = standard_library_theorem_index(&name)
                 && theorem_has_certification_binders(&standard_library_theorems[index])
             {
-                let dependency = verify_theorem_definitions(
+                verify_theorem_definitions(
                     TheoremEnvironment::with_full_library_prefix(index, &[])?,
                     &standard_library_theorems[index..=index],
                     spec_definitions,
@@ -2865,11 +2774,6 @@ fn verify_program_in_context(
                     &resource_environment,
                     function_source_registry.clone(),
                 )?;
-                record_theorem_certification_authority(
-                    &dependency,
-                    &mut theorem_certification_facts,
-                    &mut theorem_certification_authorities,
-                );
             }
         }
         // The parent is an ordinary proof root opened with the entry. Child
