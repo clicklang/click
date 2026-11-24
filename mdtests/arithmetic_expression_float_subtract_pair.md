@@ -26,7 +26,32 @@ theorem lower(x: float, y: float) {
     requires x >= float32_from_bits(0x40800000);
     requires y <= float32_from_bits(0x40000000);
     ensures x - y >= float32_from_bits(0x40000000) by {
-        normalize() using { y <= float32_from_bits(0x40000000); x >= float32_from_bits(0x40800000); };
+        apply(click::float_order::float32_sub_lower(
+            x, y, float32_from_bits(0x40800000), float32_from_bits(0x40000000)
+        ));
+        known();
+    }
+}
+
+theorem lower64(x: double, y: double) {
+    requires x >= float64_from_bits(0x4010000000000000u64);
+    requires y <= float64_from_bits(0x4000000000000000u64);
+    ensures x - y >= float64_from_bits(0x4000000000000000u64) by {
+        apply(click::float_order::float64_sub_lower(
+            x, y, float64_from_bits(0x4010000000000000u64), float64_from_bits(0x4000000000000000u64)
+        ));
+        known();
+    }
+}
+
+theorem upper64(x: double, y: double) {
+    requires x <= float64_from_bits(0x4010000000000000u64);
+    requires y >= float64_from_bits(0x4000000000000000u64);
+    ensures x - y <= float64_from_bits(0x4000000000000000u64) by {
+        apply(click::float_order::float64_sub_upper(
+            x, y, float64_from_bits(0x4010000000000000u64), float64_from_bits(0x4000000000000000u64)
+        ));
+        known();
     }
 }
 ```

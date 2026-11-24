@@ -28146,11 +28146,12 @@ fn arithmetic_certificates_cold_replay_without_generated_normalization() {
         ("guarded_signed_ring", &["sum", "product"][..]),
         (
             "float_bound_composition",
-            &["negate_scaled", "widen_scaled"][..],
+            &["negate_scaled", "widen_scaled", "subtract_two"][..],
         ),
         ("signed_odd_divisor", &["divide"][..]),
         ("negative_signed_product", &["product"][..]),
         ("float_add_pair", &["sum"][..]),
+        ("float_subtract_pair", &["cast_difference", "upper"][..]),
         ("unsigned_masked_divisor", &["divide", "remainder"][..]),
     ] {
         let (source, sources) =

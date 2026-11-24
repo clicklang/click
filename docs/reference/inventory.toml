@@ -5557,3 +5557,19 @@ path = "reference/library/index.md#float_orderfloat32_scale_lower"
 [[item]]
 id = "library.theorem.float_order::float32_scale_upper"
 path = "reference/library/index.md#float_orderfloat32_scale_upper"
+
+[[item]]
+id = "library.theorem.float_order::float32_sub_lower"
+path = "reference/library/index.md#float_orderfloat32_sub_lower"
+
+[[item]]
+id = "library.theorem.float_order::float32_sub_upper"
+path = "reference/library/index.md#float_orderfloat32_sub_upper"
+
+[[item]]
+id = "library.theorem.float_order::float64_sub_lower"
+path = "reference/library/index.md#float_orderfloat64_sub_lower"
+
+[[item]]
+id = "library.theorem.float_order::float64_sub_upper"
+path = "reference/library/index.md#float_orderfloat64_sub_upper"

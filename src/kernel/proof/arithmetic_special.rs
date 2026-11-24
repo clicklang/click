@@ -3926,13 +3926,14 @@ impl<'a> FloatPairBound<'a> {
 }
 
 /// Plan the exact rounded endpoint from two selected finite ordered bounds.
-/// The ordinary addition law takes non-strict input comparisons.
-pub(crate) fn float_sum_bound_weakening(
+/// The ordinary addition and subtraction laws take non-strict comparisons.
+pub(crate) fn float_pair_bound_weakening(
     goal: &Proposition,
     [first, second]: &[Proposition; 2],
-) -> Option<FloatBoundWeakening> {
+) -> Option<(FloatBoundWeakening, bool)> {
+    use crate::kernel::FloatBinaryOperator::{Add, Subtract};
     let pair = FloatPairBound::new(goal)?;
-    if pair.operator != crate::kernel::FloatBinaryOperator::Add
+    if !matches!(pair.operator, Add | Subtract)
         || float_bound(first)?.strict
         || float_bound(second)?.strict
     {
@@ -3944,7 +3945,38 @@ pub(crate) fn float_sum_bound_weakening(
         pair.operand_endpoint(1, second)?,
         pair.operator,
     );
-    FloatBoundWeakening::from_goal(goal, endpoint, false)
+    Some((
+        FloatBoundWeakening::from_goal(goal, endpoint, false)?,
+        pair.operator == Subtract,
+    ))
+}
+
+/// Select the same subtraction law when one of its two bounds is reflexive.
+pub(crate) fn float_literal_subtraction_bound(
+    source: &Proposition,
+    goal: &Proposition,
+) -> Option<(FloatBoundWeakening, u64, bool)> {
+    let input = float_bound(source)?;
+    let result = float_bound(goal)?;
+    let (_, operation) = float_literal_operation(result.operand)?;
+    let FloatBoundOperation::Binary {
+        operator: crate::kernel::FloatBinaryOperator::Subtract,
+        literal,
+        literal_on_left,
+        ..
+    } = operation
+    else {
+        return None;
+    };
+    if input.strict || !float_bound_weakens(source, goal) {
+        return None;
+    }
+    let (endpoint, strict) = operation.apply(result.format, input.endpoint, false);
+    Some((
+        FloatBoundWeakening::from_goal(goal, endpoint, strict)?,
+        literal,
+        literal_on_left,
+    ))
 }
 
 /// Rounded float32 multiplication by a positive finite literal on the left.
