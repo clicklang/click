@@ -3778,6 +3778,8 @@ fn expand_selected_tactics_context(
                 )));
             }
         };
+        let certificate = ProofCertificate::from_proof_tactics(&tactics)
+            .map_err(|error| ClickError::new(error.message().to_string()))?;
         let (mut span, replacement) = match target.edit {
             TacticSourceEdit::Partial(span) => (
                 span,
@@ -3789,16 +3791,10 @@ fn expand_selected_tactics_context(
             }
             TacticSourceEdit::PartialProofClause(span) => (
                 span,
-                super::printing::format_proof_certificate(
-                    &ProofCertificate::from_proof_tactics(&tactics)
-                        .map_err(|error| ClickError::new(error.message().to_string()))?,
-                ),
+                super::printing::format_proof_certificate(&certificate),
             ),
             TacticSourceEdit::WholeProof(edit) => {
-                let replacement = super::printing::format_proof_certificate(
-                    &ProofCertificate::from_proof_tactics(&tactics)
-                        .map_err(|error| ClickError::new(error.message().to_string()))?,
-                );
+                let replacement = super::printing::format_proof_certificate(&certificate);
                 let span = edit.span().clone();
                 let replacement = match edit {
                     ProofSourceEdit::Explicit(_) => replacement,

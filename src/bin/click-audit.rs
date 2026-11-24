@@ -2344,6 +2344,15 @@ struct ClaimAuditReport {
     work_increase: Option<String>,
 }
 
+fn requires_expansion_in_replay(tactic: &str) -> bool {
+    // A direct closure is printed as `close()`. The source index can also
+    // attribute that closure to the enclosing checked `step` proof.
+    !matches!(
+        tactic,
+        "close" | "step" | click::instrumentation::IMPLICIT_TAIL_TACTIC
+    )
+}
+
 /// Audits every smart site of one claim in a single expansion.
 ///
 /// The claim is expanded once with all its sites, the expanded claim must
@@ -2396,7 +2405,10 @@ fn audit_claim_rewrite(
         &site.claim,
     )
     .map_err(|error| audit_phase_error("expansion fixed point", error))?;
-    remaining.retain(|name| name != click::instrumentation::IMPLICIT_TAIL_TACTIC);
+    // A written `close()` can be a direct check, including inside an
+    // explicit step proof whose source site is attributed to `step`.
+    // Cold replay below disables search and checks those sites in context.
+    remaining.retain(|name| requires_expansion_in_replay(name));
     if !remaining.is_empty() {
         return Err(format!(
             "the expanded claim `{}` still holds {} smart tactic(s): {}",
@@ -2491,6 +2503,9 @@ fn audit_selected_claim_rewrite(
                 smart_sites_for_source(&artifact.source, &source.inputs, source.project.as_ref())?;
             let positions = remaining
                 .into_iter()
+                // Selected expansion admits the emitted tactics as checked
+                // certificates before printing their source spellings.
+                .filter(|site| requires_expansion_in_replay(&site.tactic_name))
                 .map(|site| ((site.position.line, site.position.column), site.tactic_name))
                 .collect::<BTreeMap<_, _>>();
             let (mut line, mut column, mut region) = (1, 1, 0);
@@ -2529,9 +2544,6 @@ fn audit_selected_claim_rewrite(
     } else {
         expanded_click.clone()
     };
-    if expanded == source.container_source {
-        return Err("expansion returned the original sidecar unchanged".into());
-    }
     let original_cost = cold_verify(
         &source.container_source,
         source,

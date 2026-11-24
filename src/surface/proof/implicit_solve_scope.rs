@@ -150,13 +150,19 @@ pub fn without_implicit_solve_for_claim<R>(
 }
 
 /// Cold-checks an audit claim and measures time spent inside its proof scope.
-/// Complete rewrites also reject implicit solving and monitored discovery.
+/// Complete rewrites also reject search and monitored discovery.
 pub fn check_audit_claim<R>(
     claim_label: &str,
     complete_rewrite: bool,
     operation: impl FnOnce() -> Result<R, String>,
 ) -> Result<(R, Duration), String> {
-    check_selected_claim(claim_label, complete_rewrite, true, false, operation)
+    check_selected_claim(
+        claim_label,
+        complete_rewrite,
+        true,
+        complete_rewrite,
+        operation,
+    )
 }
 
 fn check_selected_claim<R>(
@@ -219,17 +225,21 @@ mod tests {
         let replay = |strict, inside| {
             {
                 let _neighbor = ClaimScope::enter("neighbor.contract");
+                assert!(!checked_only());
                 assert_eq!(query(), 0);
             }
             {
                 let _selected = ClaimScope::enter("selected.contract");
                 assert_eq!(selected_claim_is_strict(), strict);
+                assert_eq!(checked_only(), strict);
                 if inside {
                     let _nested = ClaimScope::enter("nested.ensures_0");
+                    assert_eq!(checked_only(), strict);
                     assert_eq!(query(), 0);
                 }
             }
             assert!(!selected_claim_is_strict());
+            assert!(!checked_only());
             assert_eq!(query(), 0);
             Ok(())
         };
