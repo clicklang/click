@@ -100,7 +100,7 @@ a parameter, the binder prints as `k`, `k1`, ... instead, so the printed
 proposition never captures. A binder Click introduced itself has no written
 name and always prints that way.
 
-Missing `known` sides and bare-instantiation guards in step refusals and
+Missing conjuncts in a direct closure and the guards of a bare instantiation in step refusals and
 search-candidate details use the goal's source and recorded-point names. They are retained
 as propositions and named when the report is rendered.
 
@@ -336,7 +336,7 @@ before reading this location.
 ## Classifying smart versus simple tactics
 
 [Smart and simple tactics](smart-and-simple-tactics.md) defines the classes:
-written `solve` and `step_until`, the implicit tail and closer, and elided
+the fallback search in `close()`, `step_until`, the implicit tail and closer, and elided
 forms, which are smart while an argument is elided and simple once it is
 written. Classify tactics by whether they select or plan proof operations,
 not by whether the user listed every contextual input. A tactic that receives

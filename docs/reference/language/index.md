@@ -1060,7 +1060,7 @@ signedness and owe nothing
 a theorem's typed `let` names that native operation in its clauses and in
 every proof step
 (`mdtests/a_theorem_let_names_its_native_operation_in_a_proof_step.md`),
-and `solve` relates its observation to its operands' by the in-range
+and `close()` relates its observation to its operands' by the in-range
 identity, as at 32 and 64 bits, where bounds keep it from wrapping
 (`mdtests/solve_plans_a_narrow_comparison_through_its_operation_identity.md`);
 arithmetic there over an operand of another machine type is refused, naming
@@ -1207,7 +1207,7 @@ outside the type's range, or observations of two different types, have no
 native form. An equality between a machine value and an Integer sum, such as
 `to_integer(refs) == 1 + to_integer(amount)`, is not the C equality
 `refs == 1 + amount`: the two agree only where the C sum is defined, which
-`solve` proves through the operation identity.
+`close()` proves through the operation identity.
 
 An Integer equality over `+`, `-`, `*` and negation of 32-bit (`int32` or
 `uint32`) observations and constants also establishes the equality of the
@@ -1223,13 +1223,13 @@ orders establish no word fact. A term of more than 64 nodes establishes
 nothing.
 
 A population count is an `int32` value like any other, observed as
-`to_integer(count(R(p)))` whatever expression reaches it; `solve` relates
+`to_integer(count(R(p)))` whatever expression reaches it; `close()` relates
 `to_integer(entry + quantity)` to `to_integer(entry) + to_integer(quantity)`
 by the in-range operation identity. A signed definedness fact
 `defined(a + b)` (or `-`, `*`) is exactly the two bounds
-`to_integer(a) + to_integer(b) <= MAX` and `>= MIN`, and `solve` may cite it as
+`to_integer(a) + to_integer(b) <= MAX` and `>= MIN`, and `close()` may cite it as
 either bound
-(`mdtests/solve_reads_a_definedness_premise_as_integer_bounds.md`). `solve`
+(`mdtests/solve_reads_a_definedness_premise_as_integer_bounds.md`). `close()`
 selects Integer equalities over machine observations as rewrite candidates,
 as it selects native equalities. An Integer count premise at entry serves a
 `fold` over the grown count as its machine form does
@@ -2820,7 +2820,7 @@ declared resources. Declared `fact` clauses are pure facts.
 Before `fold(uncalled(flag));`, the declared pure body facts must be exact facts
 in the current proof context (or normalize to true without context). `fold`
 then consumes the contained resource facts and returns the abstract token
-resource fact. It does not invoke `solve`; use an explicit `have` first when a
+resource fact. It does not invoke `close()`; use an explicit `have` first when a
 body fact needs derivation. The end of the `by { ... }` block checks the overall
 claim.
 
@@ -4505,7 +4505,7 @@ match xs {
 Constructor arities and exhaustiveness are checked, arm bindings are lexical,
 and multiple recursive fields each receive an induction-hypothesis instance.
 Mutual induction across different datatype families is not generated.
-`solve` does not invent induction, and a pure function's `decreases` clause
+`close()` does not invent induction, and a pure function's `decreases` clause
 remains definition-totality evidence rather than a theorem about the result.
 
 Function contracts may also use contract-level `let` bindings:
@@ -4892,7 +4892,7 @@ After function bodies have been proved, program closing has an ordinary goal
 combining the selected return promises, divergence policies, and callback safety.
 An optional top-level `termination by { ... }` block supplies its proof. With no
 block, or with proofs omitted at its end, the implicit solver runs on that goal.
-Ordinary `have`, logical tactics, `known`, and `solve` work inside the block.
+Ordinary `have`, logical tactics, and `close()` work inside the block.
 
 The propositions are `termination_returns("f")`, `termination_divergence("f")`,
 and `termination_callbacks()`. Checked steps also expose `termination_local("f")`,

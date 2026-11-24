@@ -58,7 +58,7 @@ tail alone. The tail runs the C that is left from where the script stopped,
 checking declared loops as it reaches them. At each C branch the facts do not
 decide, it splits into paths that each run to function exit. It then closes
 every open goal on every path with the implicit closer, which tries direct
-closure and then `solve`'s search. On a returned path that holds the body of a
+closure and then bounded proof search. On a returned path that holds the body of a
 resource the contract `produces`, the closer also folds that resource. Folds
 of other resources and theorem applications stay written.
 
@@ -114,8 +114,8 @@ expanded proof does not depend on proof search. The
 [tactic reference](../reference/tactics/index.md#automation-and-search) gives
 the order of the implicit closer's searches.
 
-`solve` is the written smart tactic: a contextual simplifier. It is useful for
-straight-line postconditions and unfolded predicate goals. It simplifies logical connectives,
+`close()` first checks whether the available facts prove the goal. If that
+check misses, it searches for a proof. The search simplifies logical connectives,
 constant/reflexive integer comparisons, small arithmetic forms, concrete folds,
 and several kernel equality patterns. For order goals, it also rewrites through
 known equalities, evaluates equality-linked constant arithmetic, and uses the
@@ -189,7 +189,7 @@ expansion output.
   conclusions and leaves the resource context intact.
 - `have proposition by { ... }`: run a scoped fixed-state proof and add its proposition
   to the current pure facts. The nested proof accepts
-  `unfold`, `apply`, `obtain`, `witness`, `solve`, nested `have`, and proof-level
+  `unfold`, `apply`, `obtain`, `witness`, `close()`, nested `have`, and proof-level
   `if` case analysis; it cannot execute C or transform resources. Both `if`
   branches prove the local proposition, after which the surrounding proof
   continues. At function exit, the `have` is proved on the current path, where
@@ -570,7 +570,7 @@ on every proof branch. It can use ordinary tactics, including `have`,
 resource operations, proof-level `if`, and branch execution.
 
 An explicit initialization proof is an ordinary pure proof at the actual loop
-entry. It can use `apply`, nested `have`, proof-level `if`, `unfold`, and `solve`,
+entry. It can use `apply`, nested `have`, proof-level `if`, `unfold`, and `close()`,
 but it cannot execute C or transform resources. A named loop's entry point
 is bound while this proof runs. The facts it proves are checked against the
 kernel invariant instances before rule construction.
@@ -632,7 +632,7 @@ Failure messages usually include:
 - pure facts
 - resource facts, when the failing tactic has a current resource context
 - remaining proof obligations
-- the goal a failed `solve` could not establish, in source form
+- the goal a failed `close()` could not establish, in source form
 
 Practical approach:
 

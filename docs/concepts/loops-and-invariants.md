@@ -932,7 +932,7 @@ strictly less than the value at this head. Both are ordinary goals. The kernel
 does not unfold the function or search for a proof. The usual route is to match
 on the model so that its parts have names. State each side with `have`, by
 `unfold` and `rewrite`. Apply a lemma for nonnegativity, typically one proved
-once by structural `induct`. Then let `solve` close the comparison before
+once by structural `induct`. Then let `close()` close the comparison before
 the back edge.
 
 A `Nat`-valued function of the model ranks by its Integer image `to_integer`,

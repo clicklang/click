@@ -3110,7 +3110,7 @@ fn selected_tactic_batch_preserves_checked_loop_and_branch_routing() {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_08")]
 fn selected_tactic_batch_retains_the_unselected_prefix_and_suffix() {
     let c = [("identity.c", "int32 identity(int32 x) { return x; }")];
-    let source = "verifying \"identity.c\";\nint32 identity(int32 x) { ensures result == x; } by {\nstep_until(function.exit);\nhave x == x by close();\nhave x + 0 == x by close();\nhave x - 0 == x by close();\nclose();\n}\n";
+    let source = "verifying \"identity.c\";\nint32 identity(int32 x) { ensures result == x; } by {\nstep_until(function.exit);\nhave x == 0 implies x == 0 by close();\nhave x == 1 implies x == 1 by close();\nhave x - 0 == x by close();\nclose();\n}\n";
     verify_c_sources(source, &c).unwrap();
     let sites = c_smart_tactic_source_sites(source, &c).unwrap();
     let selected = sites[1..3]
@@ -3121,12 +3121,16 @@ fn selected_tactic_batch_retains_the_unselected_prefix_and_suffix() {
     assert!(expanded.source.contains("step_until(function.exit);"));
     assert!(expanded.source.contains("have x - 0 == x by close();"));
     assert!(
-        !expanded.source.contains("have x == x by close();"),
+        !expanded
+            .source
+            .contains("have x == 0 implies x == 0 by close();"),
         "{}",
         expanded.source
     );
     assert!(
-        !expanded.source.contains("have x + 0 == x by close();"),
+        !expanded
+            .source
+            .contains("have x == 1 implies x == 1 by close();"),
         "{}",
         expanded.source
     );

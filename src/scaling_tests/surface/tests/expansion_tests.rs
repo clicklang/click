@@ -56,7 +56,9 @@ fn partial_tactic_capture_runs_once_as_selected_sites_grow() {
 
 #[test]
 fn smart_inventory_positions_are_compatible_and_scale() {
-    use crate::surface::{c_select_smart_tactic, c_smart_tactic_source_sites, c_tactic_source_position};
+    use crate::surface::{
+        c_select_smart_tactic, c_smart_tactic_source_sites, c_tactic_source_position,
+    };
     let source = "// Unicode: λ\ntheorem named() { ensures 0 == 0 by { have 1 == 1 by { close(); } close(); } }\ntheorem implicit() { ensures 0 == 0; }\ntheorem short() { ensures 0 == 0 by close(); }\n";
     for site in c_smart_tactic_source_sites(source, &[]).unwrap() {
         let owner =

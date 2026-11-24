@@ -18,10 +18,10 @@ An omitted proof closes the statement where it holds:
 
 - `ensures P;` on a C function holds at function exit, so the implicit tail
   runs the C to it first, then closes the claim on each path with the
-  implicit closer: direct closure, then `solve`'s search. A script that ends
+  implicit closer: direct closure, then bounded proof search. A script that ends
   with the claim still open closes it the same way.
 - `have P;` holds where it is written. It is `have P by close();` and never
-  executes C. On a linear `Integer` bound, `solve` refutes its integer
+  executes C. On a linear `Integer` bound, `close()` refutes its integer
   negation from the facts connected to it
   (`mdtests/have_by_solve_refutes_a_linear_bound.md`), and its last strategy
   is a short chain of `rewrite` steps by the connected equalities
@@ -310,7 +310,7 @@ let { result: r } = step(classify);
 ```
 
 `r` is then an ordinary value name in `have`, `rewrite`, `normalize() using`,
-and `solve` premises, on both sides of the `branch` written at the C `if`. It
+and `close() using` premises, on both sides of the `branch` written at the C `if`. It
 denotes the value the call returned, so it keeps its meaning after later
 statements. Naming the result of a call whose result the C discards is an
 error, as is reusing a name that is already a C local or a proof-local

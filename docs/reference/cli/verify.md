@@ -94,7 +94,7 @@ A C parsing stop at the whole-run work budget reports `work limit reached`.
 The report identifies the budget and parsing phase. Audit reports use the
 same error kind.
 
-A `solve` that exhausts its own work budget reports `unsuccessful search` and
+A `close()` that exhausts its own work budget reports `unsuccessful search` and
 retains its already-checked prefix, including
 accepted steps inside nested `have` blocks and loop bodies. An unfinished
 claim contributes no accepted fact to that trace.
