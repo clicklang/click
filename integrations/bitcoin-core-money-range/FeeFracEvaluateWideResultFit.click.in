@@ -17,8 +17,8 @@ int64 FeeFrac::EvaluateFee<@INSTANCE@>(int32 at_size) const {
     ensures @CALLER_BOUND_1@;
     ensures @CALLER_BOUND_2@;
 } by {
-    have 1 <= this->size by { solve() using { this->size > 0; } }
-    have -2147483648 <= to_integer(at_size) by { solve() using { 0 <= to_integer(at_size); } }
+    have 1 <= this->size by { close() using { this->size > 0; } }
+    have -2147483648 <= to_integer(at_size) by { close() using { 0 <= to_integer(at_size); } }
     step_until(call(0).entry);
     mark denominator;
     let { result: product } = step(FeeFrac::Mul, { });

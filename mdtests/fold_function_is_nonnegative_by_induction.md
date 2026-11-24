@@ -30,14 +30,14 @@ theorem marks_nonnegative(lo: int32, hi: int32) {
             solve();
         } else {
             have lo < hi;
-            have 0 <= to_integer(hi - 1) by { solve() using { 0 <= lo; lo < hi; }; }
-            have to_integer(hi - 1) < to_integer(hi) by { solve() using { 0 <= lo; lo < hi; }; }
+            have 0 <= to_integer(hi - 1) by { close() using { 0 <= lo; lo < hi; }; }
+            have to_integer(hi - 1) < to_integer(hi) by { close() using { 0 <= lo; lo < hi; }; }
             apply(ih(hi - 1));
-            have to_integer(lo) <= to_integer(hi - 1) by { solve() using { 0 <= lo; lo < hi; }; }
-            have to_integer(hi - 1) < 2147483647 by { solve() using { 0 <= lo; lo < hi; }; }
+            have to_integer(lo) <= to_integer(hi - 1) by { close() using { 0 <= lo; lo < hi; }; }
+            have to_integer(hi - 1) < 2147483647 by { close() using { 0 <= lo; lo < hi; }; }
             unfold(marks(lo, hi));
             have 0 <= to_integer(if (hi - 1) as int32 == 0 { 1 } else { 0 });
-            solve() using {
+            close() using {
                 0 <= marks(lo, hi - 1);
                 0 <= to_integer(if (hi - 1) as int32 == 0 { 1 } else { 0 });
             };

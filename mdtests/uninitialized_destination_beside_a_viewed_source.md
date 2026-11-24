@@ -78,7 +78,7 @@ int32 copy_n_segment_invariant(int32 dst[], int32 src[], int32 n) {
                     apply(click::separation::separate_restrict(memory(dst[i]), memory(src[0..n]), memory(dst[i]), memory(src[k])));
                 }
                 have separate(statement(2).statement(0).footprint, memory(src[k])) by {
-                    solve() using { separate(memory(dst[i]), memory(src[k])); };
+                    close() using { separate(memory(dst[i]), memory(src[k])); };
                 }
                 have src[k] == at(iteration, src[k]) by {
                     preserve(memory(src[k]), statement(2).statement(0));
@@ -91,24 +91,24 @@ int32 copy_n_segment_invariant(int32 dst[], int32 src[], int32 n) {
                 if k < at(iteration, i) {
                     have 0 <= k and k < i;
                     instantiate(at(iteration, forall (k: int32) { 0 <= k and k < i implies dst[k] == old(src[k]) }), k);
-                    have k != at(iteration, i) by { solve() using { k < at(iteration, i); }; }
+                    have k != at(iteration, i) by { close() using { k < at(iteration, i); }; }
                     have at(iteration, separate(memory(dst[i]), memory(dst[k]))) by {
                         apply(click::separation::separate_elements(dst, at(iteration, i), k));
                     }
                     have separate(statement(2).statement(0).footprint, memory(dst[k])) by {
-                        solve() using { at(iteration, separate(memory(dst[i]), memory(dst[k]))); };
+                        close() using { at(iteration, separate(memory(dst[i]), memory(dst[k]))); };
                     }
                     have at(statement(2).statement(0).exit, dst[k]) == at(iteration, dst[k]) by {
                         preserve(memory(dst[k]), statement(2).statement(0));
                     }
-                    have separate(statement(2).statement(1).footprint, memory(dst[k])) by { solve() using { }; }
+                    have separate(statement(2).statement(1).footprint, memory(dst[k])) by { close() using { }; }
                     have dst[k] == at(statement(2).statement(1).entry, dst[k]) by {
                         preserve(memory(dst[k]), statement(2).statement(1));
                     }
                     known();
                 } else {
-                    have k == at(iteration, i) by { solve() using { k < i; not k < at(iteration, i); 0 <= at(iteration, i); at(iteration, i) < n; }; }
-                    have k < n by { solve() using { k == at(iteration, i); at(iteration, i) < n; }; }
+                    have k == at(iteration, i) by { close() using { k < i; not k < at(iteration, i); 0 <= at(iteration, i); at(iteration, i) < n; }; }
+                    have k < n by { close() using { k == at(iteration, i); at(iteration, i) < n; }; }
                     instantiate(at(iteration, forall (k: int32) { 0 <= k and k < n implies src[k] == old(src[k]) }), k);
                     rewrite(k, at(iteration, i));
                     known();
@@ -123,7 +123,7 @@ int32 copy_n_segment_invariant(int32 dst[], int32 src[], int32 n) {
         at(loop(0).exit, n)
     ));
     have result == n by {
-        solve() using {
+        close() using {
             at(loop(0).exit, i) == at(loop(0).exit, n);
         };
     }

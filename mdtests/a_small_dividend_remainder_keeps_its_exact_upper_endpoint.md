@@ -10,7 +10,7 @@ theorem rejected(n: Integer, d: Integer) {
     requires d <= 8;
     requires d != 0;
     ensures truncating_remainder(n, d) <= 2 by {
-        solve() using { 2 <= n; n <= 3; 5 <= d; d <= 8; };
+        close() using { 2 <= n; n <= 3; 5 <= d; d <= 8; };
     }
 }
 ```

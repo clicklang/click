@@ -42,7 +42,7 @@ void probe(struct node *p, struct node *q) {
             mark before;
             step();
             have separate(statement(1).footprint, memory(p->other)) by {
-                solve() using { separate(memory(p->other), memory(q->tag)); };
+                close() using { separate(memory(p->other), memory(q->tag)); };
             }
             have p->other == at(before, p->other) by {
                 preserve(memory(p->other), statement(1));
@@ -50,7 +50,7 @@ void probe(struct node *p, struct node *q) {
             mark after_call;
             step();
             have separate(statement(2).footprint, memory(p->other)) by {
-                solve() using { separate(memory(p->other), memory(q->other)); };
+                close() using { separate(memory(p->other), memory(q->other)); };
             }
             have p->other == at(after_call, p->other) by {
                 preserve(memory(p->other), statement(2));

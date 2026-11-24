@@ -21,7 +21,7 @@ void beside_call(int *p, int *q, int *r) {
         requires separate(memory(q[0..1]), memory(r[0..1])) by known();
     }
     have separate(statement(0).footprint, memory(*r)) by {
-        solve() using {
+        close() using {
             separate(memory(*p), memory(*r));
             separate(memory(*q), memory(*r));
         };

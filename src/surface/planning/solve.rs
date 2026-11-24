@@ -28,7 +28,7 @@ pub(in crate::surface) fn plan_context_free_closer(goal: &Proposition) -> Option
 }
 
 /// The single explicit-certificate search shared by every smart-simplification
-/// construction path. Both the fixed-state proof `solve() using` chain and the
+/// construction path. Both the fixed-state proof `close() using` chain and the
 /// post-execution outcome planner must call through here, so a named simple
 /// rule available to one is available to the other. `is_available` is the
 /// caller's judgment of when the current goal closes by `known`.

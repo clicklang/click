@@ -1,4 +1,4 @@
-# `solve() using` does not consume omitted ambient facts
+# `close() using` does not consume omitted ambient facts
 
 The explicit-premise form is a restricted smart tactic. Facts in the ambient
 theorem context are unavailable unless the `using` block names them.
@@ -9,7 +9,7 @@ theorem omitted_fact_is_not_ambient(x: int32, y: int32, z: int32) {
     requires x == z;
 
     ensures x == z by {
-        solve() using {
+        close() using {
             x == y;
         };
     }
@@ -17,5 +17,5 @@ theorem omitted_fact_is_not_ambient(x: int32, y: int32, z: int32) {
 ```
 
 ```expect
-fail: `solve() using` could not prove the current goal from only its listed premises
+fail: `close() using` could not prove the current goal from only its listed premises
 ```

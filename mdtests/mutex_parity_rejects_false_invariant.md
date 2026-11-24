@@ -36,7 +36,7 @@ verifying "mutex_parity_rejects_false_invariant.c";
 theorem bounded_one(r: int32) {
     requires 1 <= r;
     requires r <= 1;
-    ensures r == 1 by { solve() using { 1 <= r; r <= 1; }; }
+    ensures r == 1 by { close() using { 1 <= r; r <= 1; }; }
 }
 
 resource loop_guard(object: struct parity_mutex*) {
@@ -73,7 +73,7 @@ int32 alternate_mutex(struct parity_mutex *object, int32 n) {
             invariant guard.parity == (i + 1) % 2;
             initialize by solve();
             maintain by {
-                have i < 2147483647 by { solve() using { i < n; }; }
+                have i < 2147483647 by { close() using { i < n; }; }
                 if i % 2 == 0 {
                     have (i + 1) % 2 == 1 by apply(even_successor(i));
                     have guard.parity == 0 by solve();
@@ -84,9 +84,9 @@ int32 alternate_mutex(struct parity_mutex *object, int32 n) {
                     let guard = fold(loop_guard(object), { parity: 1 });
                 } else {
                     have (i + 1) % 2 == 0 by apply(odd_successor(i));
-                    have 0 <= i % 2 by { solve() using { 0 <= i; }; }
+                    have 0 <= i % 2 by { close() using { 0 <= i; }; }
                     have 1 <= i % 2 by apply(nonzero_nonnegative(i % 2));
-                    have i % 2 <= 1 by { solve() using { 0 <= i; }; }
+                    have i % 2 <= 1 by { close() using { 0 <= i; }; }
                     have i % 2 == 1 by apply(bounded_one(i % 2));
                     have guard.parity == 1 by solve();
                     unfold(guard);
@@ -101,9 +101,9 @@ int32 alternate_mutex(struct parity_mutex *object, int32 n) {
             have guard.parity == 0 by solve();
             unfold(guard);
         } else {
-            have 0 <= i % 2 by { solve() using { 0 <= i; }; }
+            have 0 <= i % 2 by { close() using { 0 <= i; }; }
             have 1 <= i % 2 by apply(nonzero_nonnegative(i % 2));
-            have i % 2 <= 1 by { solve() using { 0 <= i; }; }
+            have i % 2 <= 1 by { close() using { 0 <= i; }; }
             have i % 2 == 1 by apply(bounded_one(i % 2));
             have guard.parity == 1 by solve();
             unfold(guard);

@@ -1,7 +1,7 @@
 # the automatic preservation planner ranks a body that ends in a branch
 
 Arithmetic search expands to ordinary proof steps, with the selected premises
-stated explicitly in `solve() using { ... }`.
+stated explicitly in `close() using { ... }`.
 
 ```c filename=loop_ranks_a_body_ending_in_a_branch.c
 int32 flip_to_n(int32 n) {

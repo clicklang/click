@@ -1,7 +1,7 @@
 # Exact product bounds over narrow observations
 
 Arithmetic search expands to ordinary proof steps, with the selected premises
-stated explicitly in `solve() using { ... }`.
+stated explicitly in `close() using { ... }`.
 
 ```click
 theorem unsigned_byte_product(a: uint8, b: uint8) {
@@ -10,7 +10,7 @@ theorem unsigned_byte_product(a: uint8, b: uint8) {
         have to_integer(a) <= 255 by { solve(); }
         have 0 <= to_integer(b) by { solve(); }
         have to_integer(b) <= 255 by { solve(); }
-        solve() using { 0 <= to_integer(a); to_integer(a) <= 255; 0 <= to_integer(b); to_integer(b) <= 255; };
+        close() using { 0 <= to_integer(a); to_integer(a) <= 255; 0 <= to_integer(b); to_integer(b) <= 255; };
     }
 }
 
@@ -24,10 +24,10 @@ theorem short_product_identity(a: int16, b: int16) {
         have -32768 <= to_integer(b) by { solve(); }
         have to_integer(b) <= 32767 by { solve(); }
         have to_integer(a) * to_integer(b) <= 1073741824 by {
-            solve() using { -32768 <= to_integer(a); to_integer(a) <= 32767; -32768 <= to_integer(b); to_integer(b) <= 32767; };
+            close() using { -32768 <= to_integer(a); to_integer(a) <= 32767; -32768 <= to_integer(b); to_integer(b) <= 32767; };
         }
         have to_integer(r) == to_integer(a) * to_integer(b) by {
-            solve() using { 0 <= to_integer(a) * to_integer(b); to_integer(a) * to_integer(b) <= 32767; };
+            close() using { 0 <= to_integer(a) * to_integer(b); to_integer(a) * to_integer(b) <= 32767; };
         }
         known();
     }

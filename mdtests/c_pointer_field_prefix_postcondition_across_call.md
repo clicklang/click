@@ -78,14 +78,14 @@ int32 vector_push(struct vector* owner, int32 value) {
             apply(click::separation::separate_elements(old(owner->data), old(owner->len), k));
         }
         have separate(statement(4).footprint, memory(old(owner->data)[k])) by {
-            solve() using { separate(memory(old(owner->data)[old(owner->len)]), memory(old(owner->data)[k])); };
+            close() using { separate(memory(old(owner->data)[old(owner->len)]), memory(old(owner->data)[k])); };
         }
         have at(statement(4).exit, owner->data[k]) == at(statement(4).entry, owner->data[k]) by {
             preserve(memory(old(owner->data)[k]), statement(4));
         }
         // Restrict the struct/array separation to the length field and element.
         have k < old(owner->cap) by {
-            solve() using { k < old(owner->len); old(owner->len) <= old(owner->cap); };
+            close() using { k < old(owner->len); old(owner->len) <= old(owner->cap); };
         }
         have contains(memory(*owner), memory(owner->len)) by { normalize(); }
         have contains(memory(old(owner->data)[0..old(owner->cap)]), memory(old(owner->data)[k])) by {
@@ -95,7 +95,7 @@ int32 vector_push(struct vector* owner, int32 value) {
             apply(click::separation::separate_restrict(memory(*owner), memory(old(owner->data)[0..old(owner->cap)]), memory(owner->len), memory(old(owner->data)[k])));
         }
         have separate(statement(5).footprint, memory(old(owner->data)[k])) by {
-            solve() using { separate(memory(owner->len), memory(old(owner->data)[k])); };
+            close() using { separate(memory(owner->len), memory(old(owner->data)[k])); };
         }
         have at(statement(5).exit, owner->data[k]) == at(statement(5).entry, owner->data[k]) by {
             preserve(memory(old(owner->data)[k]), statement(5));

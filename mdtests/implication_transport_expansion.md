@@ -17,10 +17,10 @@ void keep(int32* p, int32* q, int32* r) {
 } by {
     step();
     have separate(statement(0).footprint, memory(*q)) by {
-        solve() using { separate(memory(*p), memory(*q)); };
+        close() using { separate(memory(*p), memory(*q)); };
     }
     have separate(statement(0).footprint, memory(*r)) by {
-        solve() using { separate(memory(*p), memory(*r)); };
+        close() using { separate(memory(*p), memory(*r)); };
     }
     have *q == 7 implies *r == 8 by {
         transport(at(statement(0).entry, *q == 7 implies *r == 8), *q == 7 implies *r == 8);

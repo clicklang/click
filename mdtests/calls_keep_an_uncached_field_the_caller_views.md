@@ -56,7 +56,7 @@ int32 keep(int32* flags, int32* data, int32 n, struct box* b) {
     }
     have b->v == old(b->v) by {
         have b->v == old(b->v) by {
-            solve() using {
+            close() using {
                 at(m0, b->v) == old(b->v);
             };
         }

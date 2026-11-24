@@ -48,13 +48,13 @@ void fill(uint8* bytes, uint64 length, uint8 value) {
                 if k < at(before, i) {
                     instantiate(forall (k: uint64) { k < at(before, i) implies at(before, bytes[k]) == at(before, value) }, k);
                     have at(before, i) != k by {
-                        solve() using { k < at(before, i); };
+                        close() using { k < at(before, i); };
                     }
                     have at(before, separate(memory(bytes[i]), memory(bytes[k]))) by {
                         apply(separation::separate_elements(bytes, at(before, i), k));
                     }
                     have separate(loop(0).statement(0).footprint, memory(bytes[k])) by {
-                        solve() using {
+                        close() using {
                             at(before, separate(memory(bytes[i]), memory(bytes[k])));
                         };
                     }
@@ -73,7 +73,7 @@ void fill(uint8* bytes, uint64 length, uint8 value) {
                 } else {
                     have k < at(before, i) + 1;
                     have k <= at(before, i) by {
-                        solve() using { k < at(before, i) + 1; };
+                        close() using { k < at(before, i) + 1; };
                     }
                     have k == at(before, i);
                     rewrite(k, at(before, i));

@@ -16,7 +16,7 @@ int32 first(int32* p, int32 n, int32 a, int32 b) {
     ensures result == p[0];
 } by {
     have viewable(p[a..b]) by {
-        solve() using { viewable(p[0..n]); 0 <= a; a <= b; b <= n; };
+        close() using { viewable(p[0..n]); 0 <= a; a <= b; b <= n; };
     }
     step();
     known();

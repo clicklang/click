@@ -202,7 +202,7 @@ void child_release(struct child* obj) {
     } else {
         unfold(child_ref(obj));
         have 1 < obj->refs by {
-            solve() using { 1 <= obj->refs; obj->refs != 1; };
+            close() using { 1 <= obj->refs; obj->refs != 1; };
         }
         have to_integer(obj->refs - 1) >= 1;
         step();
@@ -351,7 +351,7 @@ int32 run_first_destroyed(int32 payload) {
     have exact(first->kid->refs) == exact(kid->refs) by { rewrite(first->kid, kid); known(); }
     have exact(kid->refs) == 2 by { known(); }
     have exact(first->kid->refs) == 2 by { known(); }
-    have exact(first->kid->refs) > 1 by { solve() using { exact(first->kid->refs) == 2; }; }
+    have exact(first->kid->refs) > 1 by { close() using { exact(first->kid->refs) == 2; }; }
     have kid->payload == payload;
     have first->kid->payload == payload by { rewrite(first->kid, kid); solve(); }
     mark detaching;
@@ -364,13 +364,13 @@ int32 run_first_destroyed(int32 payload) {
     }
     have at(detaching, first->kid->payload) == payload by known();
     have at(detaching, first->kid)->payload == payload by {
-        solve() using {
+        close() using {
             at(detaching, first->kid)->payload == at(detaching, first->kid->payload);
             at(detaching, first->kid->payload) == payload;
         };
     }
     have kid->payload == payload by {
-        have kid == at(detaching, first->kid) by { solve() using { at(detaching, first->kid) == kid; }; }
+        have kid == at(detaching, first->kid) by { close() using { at(detaching, first->kid) == kid; }; }
         rewrite(kid, at(detaching, first->kid));
         known();
     }
@@ -409,7 +409,7 @@ int32 run_first_destroyed(int32 payload) {
             have at(after_read, exact(second->kid->refs)) == second->kid->refs by { known(); }
             rewrite(exact(second->kid->refs), at(after_read, exact(second->kid->refs)));
             rewrite(at(after_read, exact(second->kid->refs)), second->kid->refs);
-            solve() using { second->kid->refs == 1; };
+            close() using { second->kid->refs == 1; };
         }
     }
     step(parent_detach, { link: second_link });
@@ -443,7 +443,7 @@ int32 run_second_destroyed(int32 payload) {
     have exact(second->kid->refs) == exact(kid->refs) by { rewrite(second->kid, kid); known(); }
     have exact(kid->refs) == 2 by { known(); }
     have exact(second->kid->refs) == 2 by { known(); }
-    have exact(second->kid->refs) > 1 by { solve() using { exact(second->kid->refs) == 2; }; }
+    have exact(second->kid->refs) > 1 by { close() using { exact(second->kid->refs) == 2; }; }
     have kid->payload == payload;
     have second->kid->payload == payload by { rewrite(second->kid, kid); solve(); }
     mark detaching;
@@ -456,13 +456,13 @@ int32 run_second_destroyed(int32 payload) {
     }
     have at(detaching, second->kid->payload) == payload by known();
     have at(detaching, second->kid)->payload == payload by {
-        solve() using {
+        close() using {
             at(detaching, second->kid)->payload == at(detaching, second->kid->payload);
             at(detaching, second->kid->payload) == payload;
         };
     }
     have kid->payload == payload by {
-        have kid == at(detaching, second->kid) by { solve() using { at(detaching, second->kid) == kid; }; }
+        have kid == at(detaching, second->kid) by { close() using { at(detaching, second->kid) == kid; }; }
         rewrite(kid, at(detaching, second->kid));
         known();
     }
@@ -501,7 +501,7 @@ int32 run_second_destroyed(int32 payload) {
             have at(after_read, exact(first->kid->refs)) == first->kid->refs by { known(); }
             rewrite(exact(first->kid->refs), at(after_read, exact(first->kid->refs)));
             rewrite(at(after_read, exact(first->kid->refs)), first->kid->refs);
-            solve() using { first->kid->refs == 1; };
+            close() using { first->kid->refs == 1; };
         }
     }
     step(parent_detach, { link: first_link });

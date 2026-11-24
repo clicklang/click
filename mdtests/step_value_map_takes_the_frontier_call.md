@@ -35,7 +35,7 @@ int32 f(char buf[], int32 len, uint32 flags) {
 } by {
     have 0 <= len and len <= 2147483647 by solve();
     have to_integer(len as uint64) == to_integer(len) by {
-        solve() using { 0 <= to_integer(len); to_integer(len) <= 2147483647; };
+        close() using { 0 <= to_integer(len); to_integer(len) <= 2147483647; };
     }
     step();
     step();

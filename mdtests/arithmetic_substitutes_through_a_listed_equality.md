@@ -1,4 +1,4 @@
-# `solve() using` substitutes an atom through a listed equality
+# `close() using` substitutes an atom through a listed equality
 
 `y == x` and `0 <= x` give `0 <= y`: the certificate weakens the equality to
 the direction `x - y <= 0` and adds it to `-x <= 0`, both steps the kernel's
@@ -21,9 +21,9 @@ int32 same(int32 x, int32 y) {
     requires x < 10;
     ensures result == 0;
 } by {
-    have 0 <= y by { solve() using { y == x; 0 <= x; }; }
-    have y >= 0 by { solve() using { x == y; 0 <= x; }; }
-    have y < 10 by { solve() using { x < 10; y == x; }; }
+    have 0 <= y by { close() using { y == x; 0 <= x; }; }
+    have y >= 0 by { close() using { x == y; 0 <= x; }; }
+    have y < 10 by { close() using { x < 10; y == x; }; }
     step();
     solve();
 }

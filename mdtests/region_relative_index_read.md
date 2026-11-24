@@ -34,13 +34,13 @@ int32 region_read(struct region* region, int32 index) {
 } by {
     unfold(live_region(region));
     have defined(region->start + index) by {
-        solve() using {
+        close() using {
             defined(region->start + index) and
                 to_integer(region->start + index) < to_integer(region->end);
         };
     }
     have to_integer(region->start + index) < to_integer(region->end) by {
-        solve() using {
+        close() using {
             defined(region->start + index) and
                 to_integer(region->start + index) < to_integer(region->end);
         };

@@ -129,7 +129,7 @@ int32 owned_string_init(
         memory(*owner),
         memory(owner->data[0..owner->cap])
     ) by {
-        solve() using {
+        close() using {
             separate(memory(*owner), memory(data[0..capacity]));
             owner->data == data;
             owner->cap == capacity;
@@ -213,7 +213,7 @@ int32 owned_string_push(struct owned_string* owner, int32 value) {
     have owner->len == at(region(4).entry, (index + 1));
     step();
     have 0 <= old(owner->len) + 1 by {
-        solve() using {
+        close() using {
             0 <= old(owner->len);
             old(owner->len) < old(owner->cap);
             old(owner->cap) <= 1073741823;
@@ -316,7 +316,7 @@ int32 owned_string_clear(struct owned_string* owner) {
 } by {
     unfold(owned_string(owner));
     have 0 < owner->cap by {
-        solve() using { 0 <= owner->len; owner->len < owner->cap; };
+        close() using { 0 <= owner->len; owner->len < owner->cap; };
     }
     step();
     step();

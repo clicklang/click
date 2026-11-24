@@ -1414,16 +1414,16 @@ fn tactic_form_inventory_is_bidirectional() {
             "apply-induction" => surface == "`apply(ih(m))`",
             "apply-fact" => surface == "`apply(fact)`",
             "apply-theorem" => surface == "`apply(theorem(args))`",
-            "arithmetic" => surface == "`solve() using {}`",
+            "arithmetic" => surface == "`close() using {}`",
             "normalize" => surface == "`normalize()`",
             "normalize-using" => surface == "`normalize() using { P; ... }`",
-            "arithmetic-using" => surface == "`solve() using { P; ... }`",
+            "arithmetic-using" => surface == "`close() using { P; ... }`",
             "transport" => surface == "`transport(P, Q)`",
             "transport-using" => surface == "`transport(P, Q) using { R; ... }`",
             "instantiate" => surface == format!("`{}`", form.syntax),
             "intro" => surface == "`intro()`",
-            "solve" => surface == "`solve()`",
-            "solve-using" => surface == "`solve() using { P; ... }`",
+            "close" | "solve" => surface == format!("`{}`", form.syntax),
+            "close-using" => surface == "`close() using { P; ... }`",
             "unfold-function" => surface == "`unfold(function(args))`",
             "fold-slot" | "fold-iterated-clause" => surface == format!("`{}`", form.syntax),
             _ => surface.contains(form.syntax),
@@ -1575,7 +1575,7 @@ fn every_tactic_form_has_a_checked_positive_fixture() {
 /// Proof-object operations with a canonical name but no surface spelling:
 /// the implicit tail's closer, the loop back edge's closer
 /// (`close_invariants`), `choose`, and the arithmetic engine that
-/// `solve() using` runs last.
+/// `close() using` runs last.
 const INTERNAL_TACTICS: &[&str] = &["arithmetic", "choose", "close_invariants", "implicit tail"];
 
 #[test]

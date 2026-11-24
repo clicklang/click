@@ -35,7 +35,7 @@ int32 inc(int32 x) {
     ensures result >= 1 by {
         step_until(function.exit);
         have result >= 1 by {
-            solve() using { x <= 100; x >= 0; };
+            close() using { x <= 100; x >= 0; };
         }
         known();
     }

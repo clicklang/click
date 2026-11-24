@@ -344,7 +344,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     }
                     have (gparent->__rb_parent_color & 1) == 0 by {
                         rewrite(gparent->__rb_parent_color, address(node));
-                        solve() using { aligned(node, 8); };
+                        close() using { aligned(node, 8); };
                     }
                     have gparent->__rb_parent_color == address(node) + (gparent->__rb_parent_color & 1) by {
                         rewrite(gparent->__rb_parent_color, address(node));

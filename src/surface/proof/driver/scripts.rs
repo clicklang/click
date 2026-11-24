@@ -611,10 +611,10 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     .map_or("an earlier tactic".to_string(), |closer| {
                         format!("`{}`", tactic_name(closer))
                     });
-                // `solve() using` is refused here where a bare `solve()`
+                // `close() using` is refused here where a bare `solve()`
                 // is not, so it is named by its whole spelling.
                 let name = match tactic {
-                    ProofTactic::SolveUsing(_) => "solve() using",
+                    ProofTactic::SolveUsing(_) => "close() using",
                     tactic => tactic_name(tactic),
                 };
                 return Err(proof.step_error(format!(
@@ -701,7 +701,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     proof = closed;
                 }
                 ProofTactic::SolveUsing(solve) => {
-                    let mut search = attempt::search_scope("written solve using");
+                    let mut search = attempt::search_scope("written close using");
                     let (selected, checks) =
                         crate::surface::proof_diagnostics::capture_check_observations(|| {
                             crate::kernel::search::ProofSearch::try_restricted_solve_closure(
@@ -715,7 +715,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                             matches!(previous, ProofTactic::Witness(_) | ProofTactic::Choose(_))
                         }) {
                             return Err(proof.step_error(
-                                "checked `solve` after witness/choose could not close the remaining witness obligations; split conjunctions and discharge each definedness condition explicitly",
+                                "checked `close() using` after witness/choose could not close the remaining witness obligations; split conjunctions and discharge each definedness condition explicitly",
                             ).with_proof_refusal(crate::surface::ProofRefusal::UnsuccessfulSearch).with_search_failures(search.finish()));
                         }
                         // Preserve arithmetic's own refusal alongside theorem
@@ -745,7 +745,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                             Ok(_) => String::new(),
                         };
                         check_verification_deadline()?;
-                        return Err(proof.step_error(format!("`solve() using` could not prove the current goal from only its listed premises{arithmetic}")).with_check_observations(checks).with_proof_refusal(crate::surface::ProofRefusal::UnsuccessfulSearch).with_search_failures(search.finish()));
+                        return Err(proof.step_error(format!("`close() using` could not prove the current goal from only its listed premises{arithmetic}")).with_check_observations(checks).with_proof_refusal(crate::surface::ProofRefusal::UnsuccessfulSearch).with_search_failures(search.finish()));
                     };
                     search.succeed();
                     proof = closed;

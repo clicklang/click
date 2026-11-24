@@ -50,14 +50,14 @@ int32 even(int32 n) {
         true => {
             have 0 <= level(n - 1) by {
                 unfold(level(n - 1));
-                solve() using {
+                close() using {
                     n > 0;
                 };
             }
             have level(n - 1) < level(n) by {
                 unfold(level(n - 1));
                 unfold(level(n));
-                solve() using {
+                close() using {
                     n > 0;
                 };
             }
@@ -82,14 +82,14 @@ int32 odd(int32 n) {
         true => {
             have 0 <= level(n - 1) by {
                 unfold(level(n - 1));
-                solve() using {
+                close() using {
                     n > 0;
                 };
             }
             have level(n - 1) < level(n) by {
                 unfold(level(n - 1));
                 unfold(level(n));
-                solve() using {
+                close() using {
                     n > 0;
                 };
             }

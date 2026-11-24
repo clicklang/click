@@ -20,8 +20,8 @@ fn adler_incremental::incremental(bytes: &[u8], split: usize) -> u32 {
  have to_integer(state.b) == old(adler_spec_b_u64(bytes, split, 1, 0)) by { rewrite(1, at(initial_seed, to_integer((state.a as u32)))); rewrite(0, at(initial_seed, to_integer((state.b as u32)))); known(); }
  apply(adler_u16_observation(state.a));
  apply(adler_u16_observation(state.b));
- have to_integer((state.a as u32)) == old(adler_spec_a_u64(bytes, split, 1)) by solve() using { to_integer((state.a as u32)) == to_integer(state.a); to_integer(state.a) == old(adler_spec_a_u64(bytes, split, 1)); };
- have to_integer((state.b as u32)) == old(adler_spec_b_u64(bytes, split, 1, 0)) by solve() using { to_integer((state.b as u32)) == to_integer(state.b); to_integer(state.b) == old(adler_spec_b_u64(bytes, split, 1, 0)); };
+ have to_integer((state.a as u32)) == old(adler_spec_a_u64(bytes, split, 1)) by close() using { to_integer((state.a as u32)) == to_integer(state.a); to_integer(state.a) == old(adler_spec_a_u64(bytes, split, 1)); };
+ have to_integer((state.b as u32)) == old(adler_spec_b_u64(bytes, split, 1, 0)) by close() using { to_integer((state.b as u32)) == to_integer(state.b); to_integer(state.b) == old(adler_spec_b_u64(bytes, split, 1, 0)); };
  mark prefix_done;
  have forall (k: uint64) { to_integer(k) < to_integer(bytes.len() - split) implies suffix[k] == old((bytes + split)[k]) } by {
   intro(); intro();
@@ -46,7 +46,7 @@ fn adler_incremental::incremental(bytes: &[u8], split: usize) -> u32 {
  }
  // Compose the two updates over the uint64 specification at the split.
  have to_integer((bytes.len()) - split) == to_integer((bytes.len())) - to_integer(split);
- have to_integer(split) + to_integer(bytes.len() - split) <= 18446744073709551615 by solve() using {
+ have to_integer(split) + to_integer(bytes.len() - split) <= 18446744073709551615 by close() using {
   to_integer(bytes.len() - split) == to_integer(bytes.len()) - to_integer(split);
   to_integer(bytes.len()) <= 18446744073709551615;
  };
@@ -78,7 +78,7 @@ fn adler_incremental::incremental(bytes: &[u8], split: usize) -> u32 {
   normalize();
  }
  step();
- have to_integer(statement(4).call(0).result) == old(adler_spec_checksum_u64(bytes, bytes.len(), 1, 0)) by solve() using {
+ have to_integer(statement(4).call(0).result) == old(adler_spec_checksum_u64(bytes, bytes.len(), 1, 0)) by close() using {
   to_integer(statement(4).call(0).result) == 65536 * to_integer(state.b) + to_integer(state.a);
   65536 * to_integer(state.b) + to_integer(state.a) == old(adler_spec_checksum_u64(bytes, bytes.len(), 1, 0));
  };

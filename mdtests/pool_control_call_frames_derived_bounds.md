@@ -1,7 +1,7 @@
 # A pool control call frames bounds derived inside an open scope
 
 Arithmetic search expands to ordinary proof steps, with the selected premises
-stated explicitly in `solve() using { ... }`.
+stated explicitly in `close() using { ... }`.
 
 ```c filename=pool_control_call_frames.c
 struct pool { int32 used; int32 capacity; };
@@ -24,7 +24,7 @@ theorem spare_slot_bound(capacity: int32, used: int32, slots: int32) {
     requires to_integer(capacity) <= 2147483647;
     requires 1 <= to_integer(used);
     ensures to_integer(slots) + 1 <= 2147483647 by {
-        solve() using { to_integer(capacity) == to_integer(used) + to_integer(slots); to_integer(capacity) <= 2147483647; 1 <= to_integer(used); };
+        close() using { to_integer(capacity) == to_integer(used) + to_integer(slots); to_integer(capacity) <= 2147483647; 1 <= to_integer(used); };
     }
 }
 verifying "pool_control_call_frames.c";

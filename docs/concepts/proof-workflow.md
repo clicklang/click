@@ -87,7 +87,7 @@ on its path, with `step_until(function.exit)` or inside one arm of a proof
 `if`, the tactics that follow act on that path. Its open goals are the
 contract's claims in contract order, resource claims included. `fold`,
 `apply`, and `have` transform the current path. A closer such as `solve()`,
-`known()`, `normalize() using` or `solve() using` acts on the first open
+`known()`, `normalize() using` or `close() using` acts on the first open
 goal, the last two from exactly their listed premises when the explicit closer
 is preferable to search, and the implicit tail closes every goal still open.
 A later fact or fold does not retroactively affect an earlier closing step.
@@ -227,9 +227,9 @@ expansion output.
   this bare form is smart.
 - `transport(source, target) using { P; ... }`: the simple, exact-premise
   form of the same rule.
-- `solve() using { Q; ... }`: smart simplification restricted to exactly the
+- `close() using { Q; ... }`: smart simplification restricted to exactly the
   listed proposition facts. It tries arithmetic over them last, and a miss
-  adds arithmetic's reason. `solve() using {}` reads no facts from the
+  adds arithmetic's reason. `close() using {}` reads no facts from the
   context. Expansion must produce named simple rules; if no
   explicit tactic vocabulary covers the selected proof, expansion fails
   locally instead of retaining a hidden search step.

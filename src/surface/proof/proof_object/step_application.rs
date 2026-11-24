@@ -129,10 +129,10 @@ fn signed_term_constant_value(term: &crate::kernel::MachineTerm) -> Option<i64> 
     }
     values.pop().flatten()
 }
-/// What arithmetic over the empty list of `solve() using {}` says in place of
+/// What arithmetic over the empty list of `close() using {}` says in place of
 /// "the listed premises": it listed none, and it never reads the context for
 /// them.
-const BARE_ARITHMETIC_HINT: &str = "`solve() using {}` reads no facts from the context, so list the facts the goal depends on in its `using { ... }`";
+const BARE_ARITHMETIC_HINT: &str = "`close() using {}` reads no facts from the context, so list the facts the goal depends on in its `using { ... }`";
 
 /// How `arithmetic` read each listed premise while planning over the Integer
 /// linear fragment, written in the reader's own spelling.
@@ -857,12 +857,12 @@ impl<'a> Proof<'a> {
         };
         let premises = anchored_surface_premises
             .iter()
-            .map(|premise| self.lower_cited_surface_proposition(premise, "`solve() using` premise"))
+            .map(|premise| self.lower_cited_surface_proposition(premise, "`close() using` premise"))
             .collect::<Result<Vec<_>, _>>()?;
         for (index, premise) in premises.iter().enumerate() {
             if !self.facts().listed_premise_available(premise, &[], false) {
                 return Err(self.step_error(format!(
-                    "`solve() using` premise {index} is not exactly available"
+                    "`close() using` premise {index} is not exactly available"
                 )));
             }
         }

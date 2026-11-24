@@ -71,7 +71,7 @@ void countdown(int32 n) {
                         known();
                     }
                     have to_integer(chain_nat(rest_model)) < to_integer(chain_nat(c.model)) by {
-                        solve() using {
+                        close() using {
                             to_integer(chain_nat(c.model)) == to_integer(chain_nat(rest_model)) + 1;
                         };
                     }

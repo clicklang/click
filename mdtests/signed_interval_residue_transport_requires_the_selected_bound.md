@@ -10,7 +10,7 @@ theorem omitted(x: int32) {
     requires 0 <= x % 8;
     requires x % 8 <= 2;
     ensures to_integer(((x + 1) % 8) as int32) <= 3 by {
-        solve() using { 0 <= x; x <= 100; 0 <= x % 8; };
+        close() using { 0 <= x; x <= 100; 0 <= x % 8; };
     }
 }
 ```

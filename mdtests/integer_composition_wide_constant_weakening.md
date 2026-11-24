@@ -14,7 +14,7 @@ theorem widen(z: Integer) {
 
 theorem neighboring_small_bound(z: Integer) {
     requires z <= 4000;
-    ensures z <= 5000 by { solve() using { z <= 4000; }; }
+    ensures z <= 5000 by { close() using { z <= 4000; }; }
 }
 ```
 

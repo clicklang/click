@@ -835,7 +835,7 @@ commit that closed it. Reproductions live in the named fixtures.
 | 64 | `old(t.model)` after a pre-loop unfold hit `Paths` | 3893e6b5 |
 | 65, 66 | Smart `have`s and helpers inside `initialize by { }` did not expand | 54d0f136 |
 | 67 | Load through a proof-arm binding with a pure call: arm bindings were untyped in proof arms | 9a49463d |
-| 68 | `solve() using` premise in a `have` body could not name an arm binding | 99a07d5c |
+| 68 | `close() using` premise in a `have` body could not name an arm binding | 99a07d5c |
 | 69 | Consumed instance's arm equation cited by a spelling that no longer lowered | 44acfb0c |
 | 70 | `static inline` locals had no layouts (map keyed by the `#inline:` name) | ca8b75f8 |
 | 71 | `contradiction` in a `preserve` arm only as its sole tactic | ccf9a340 |

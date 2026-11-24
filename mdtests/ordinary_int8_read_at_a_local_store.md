@@ -27,7 +27,7 @@ int8 read(int8 value) {
     have *p == value by solve();
     have separate(memory(*q), memory(*p)) by known();
     have separate(statement(5).footprint, memory(*p)) by {
-        solve() using { separate(memory(*q), memory(*p)); };
+        close() using { separate(memory(*q), memory(*p)); };
     }
     have *p == at(written, *p) by {
         preserve(memory(*p), statement(5));

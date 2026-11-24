@@ -13,7 +13,7 @@ theorem by_two_is_zero(n: int32) {
         let ih = induct(n);
         if n <= 1 {
             unfold(by_two(n));
-            solve() using { n <= 1; };
+            close() using { n <= 1; };
         } else {
             have 0 <= to_integer(n - 2);
             have to_integer(n - 2) < to_integer(n);

@@ -685,7 +685,7 @@ fn grouped_arithmetic_using_expands_to_checked_certificate() {
     let click = fixture.click_source.unwrap();
     let verified = verify_c_sources(&click, &sources).unwrap();
     let expanded = expand_checked_grouped_claim(&click, &verified, "bump").unwrap();
-    assert!(!expanded.contains("solve() using"), "{expanded}");
+    assert!(!expanded.contains("close() using"), "{expanded}");
     let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
         verify_c_sources(&expanded, &sources)
     });
@@ -895,7 +895,7 @@ fn explicit_swap_loop_fixture(include_entry_bounds: bool) -> (&'static str, Stri
                 initialize by solve();
                 maintain by {{
                     have j == 0 by {{
-                        solve() using {{ j < 1; j >= 0; }}
+                        close() using {{ j < 1; j >= 0; }}
                     }}
                     mark before_swap;
                     if p[j + 1] < p[j] {{
@@ -1691,7 +1691,7 @@ fn frontier_local_loop_checks_an_optional_decreases_measure() {
                     initialize by solve();
                     maintain by {
                         have 0 <= to_integer(n - 1) by {
-                            solve() using { n > 0; }
+                            close() using { n > 0; }
                         }
                         step();
                     }
@@ -1994,7 +1994,7 @@ fn frontier_local_loop_at_function_entry_keeps_initialization_capture_separate()
                     initialize by solve();
                     maintain by {
                         have 0 <= to_integer(n - 1) by {
-                            solve() using { n > 0; }
+                            close() using { n > 0; }
                         }
                         step();
                     }

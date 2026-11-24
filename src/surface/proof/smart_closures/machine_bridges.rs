@@ -1169,7 +1169,7 @@ mod widened_sum_tests {
                 .filter(|p| !p.trim().is_empty())
                 .map(|p| format!("requires {p};"))
                 .collect::<String>();
-            for tactic in [format!("solve() using {{ {bounds} }};"), "solve();".into()] {
+            for tactic in [format!("close() using {{ {bounds} }};"), "solve();".into()] {
                 let source = format!(
                     "theorem widened({parameters}) {{ {requires} ensures {goal} by {{ {tactic} }} }}"
                 );
@@ -1182,7 +1182,7 @@ mod widened_sum_tests {
                 requires sum <= 4294967040u32;
                 ensures result <= 4294967295i64 by {
                     step_until(function.exit);
-                    solve() using { (byte as uint32) <= 255u32; sum <= 4294967040u32; };
+                    close() using { (byte as uint32) <= 255u32; sum <= 4294967040u32; };
                 }
             }"#;
         replay(source, &[("wide.c", c)], "add_byte.ensures_0");
@@ -1206,7 +1206,7 @@ mod widened_sum_tests {
             ("", "a as int64 + b as int64 <= 8589934589i64", ""),
         ] {
             let source = format!(
-                "theorem bad(a: uint32,b: uint32) {{ {bounds} ensures {goal} by {{ solve() using {{ {selected} }}; }} }}"
+                "theorem bad(a: uint32,b: uint32) {{ {bounds} ensures {goal} by {{ close() using {{ {selected} }}; }} }}"
             );
             assert!(verify_c_sources(&source, &[]).is_err(), "{source}");
         }
@@ -1292,7 +1292,7 @@ mod nested_conditional_tests {
                 .filter(|p| !p.trim().is_empty())
                 .map(|p| format!("requires {p};"))
                 .collect::<String>();
-            for tactic in [format!("solve() using {{ {bounds} }};"), "solve();".into()] {
+            for tactic in [format!("close() using {{ {bounds} }};"), "solve();".into()] {
                 let source = format!(
                     "theorem nested({parameters}) {{ {requirements} ensures {goal} by {{ {tactic} }} }}"
                 );
@@ -1318,10 +1318,10 @@ mod nested_conditional_tests {
     #[ignore = "nightly: nested conditional guard and type refusal controls"]
     fn nested_conditionals_preserve_selected_guards_and_arm_domains() {
         for source in [
-            "theorem bad(flag: Bool,x: Integer,y: Integer) {requires flag; requires x<=5; ensures (if flag{x}else{y})+3<=8 by {solve() using {x<=5;};}}",
-            "theorem bad(flag: Bool,inner: Bool,x: Integer,y: Integer) {requires flag; requires inner; requires x<=5; ensures (if flag{if inner{x}else{y}}else{0})+3<=8 by {solve() using {flag;x<=5;};}}",
-            "theorem bad(flag: Bool) {requires flag; ensures to_integer((if flag{4294967295u32}else{0u32}) as int64)==-1 by {solve() using {flag;};}}",
-            "theorem bad(flag: Bool) {requires flag; ensures (if flag{1}else{3})+3==6 by {solve() using {flag;};}}",
+            "theorem bad(flag: Bool,x: Integer,y: Integer) {requires flag; requires x<=5; ensures (if flag{x}else{y})+3<=8 by {close() using {x<=5;};}}",
+            "theorem bad(flag: Bool,inner: Bool,x: Integer,y: Integer) {requires flag; requires inner; requires x<=5; ensures (if flag{if inner{x}else{y}}else{0})+3<=8 by {close() using {flag;x<=5;};}}",
+            "theorem bad(flag: Bool) {requires flag; ensures to_integer((if flag{4294967295u32}else{0u32}) as int64)==-1 by {close() using {flag;};}}",
+            "theorem bad(flag: Bool) {requires flag; ensures (if flag{1}else{3})+3==6 by {close() using {flag;};}}",
         ] {
             crate::surface::parse(source).unwrap();
             assert!(verify_c_sources(source, &[]).is_err(), "{source}");
@@ -1329,7 +1329,7 @@ mod nested_conditional_tests {
         let source = r#"theorem bad(flag: Bool, a: uint64, d: uint64) {
             requires flag; requires d == 64u64;
             ensures to_integer(if flag {a << d} else {0u64}) == 0 by {
-                solve() using {flag; d == 64u64;};
+                close() using {flag; d == 64u64;};
             }
         }"#;
         crate::surface::parse(source).unwrap();
@@ -1396,7 +1396,7 @@ fn non_numeric_conditional_arms_expand_without_normalize() {
             .map(|p| format!("requires {};", p.trim()))
             .collect::<String>();
         for tactic in [
-            format!("solve() using {{ {premises} }};"),
+            format!("close() using {{ {premises} }};"),
             "solve();".into(),
         ] {
             let source = format!(
@@ -1412,8 +1412,8 @@ fn non_numeric_conditional_arms_expand_without_normalize() {
     }
 
     for claim in [
-        "theorem omitted(g: Bool, a: Bool, b: Bool) { requires g == true; ensures (if g { a } else { b }) == a by { solve() using {}; } }",
-        "theorem omitted(g: Bool, x: int32) { requires g == true; ensures (if g { Choice::Present(x) } else { Choice::Missing }) == Choice::Present(x) by { solve() using {}; } }",
+        "theorem omitted(g: Bool, a: Bool, b: Bool) { requires g == true; ensures (if g { a } else { b }) == a by { close() using {}; } }",
+        "theorem omitted(g: Bool, x: int32) { requires g == true; ensures (if g { Choice::Present(x) } else { Choice::Missing }) == Choice::Present(x) by { close() using {}; } }",
         "theorem wrong(g: Bool, x: int32) { requires g == true; ensures (if g { Choice::Present(x) } else { Choice::Missing }) == Choice::Missing by known(); }",
     ] {
         let source = format!("{prelude} {claim}");

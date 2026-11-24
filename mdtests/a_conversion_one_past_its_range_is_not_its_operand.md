@@ -1,7 +1,7 @@
 # A conversion one past its range is not its operand
 
 Arithmetic search expands to ordinary proof steps, with the selected premises
-stated explicitly in `solve() using { ... }`.
+stated explicitly in `close() using { ... }`.
 
 ```c filename=a_conversion_one_past_its_range_is_not_its_operand.c
 int next_byte(int x) { unsigned char y = x + 1; return y; }
@@ -18,7 +18,7 @@ int32 next_byte(int32 x) {
     step();
     step();
     have result == (x + 1) by {
-        solve() using { at(function.entry, x < 256); at(function.entry, 0 <= x); };
+        close() using { at(function.entry, x < 256); at(function.entry, 0 <= x); };
     }
     known();
 }

@@ -11,7 +11,7 @@ verifying "integer_observed_arguments_states.c";
 
 theorem observed_identity(n: Integer) {
     requires n == 10;
-    ensures n <= 10 by { solve() using { n == 10; }; }
+    ensures n <= 10 by { close() using { n == 10; }; }
 }
 
 void decrement(int32 a) {

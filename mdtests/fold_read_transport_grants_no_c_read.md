@@ -59,7 +59,7 @@ int32 set_then_read(int32 *v, int32 i) {
     step();
     have forall (k: int32) { 0 <= k and k < i implies v[k] == at(entry, v[k]) } by {
         intro(); intro();
-        have i != k by { solve() using { k < i; }; }
+        have i != k by { close() using { k < i; }; }
         have separate(memory(v[i]), memory(v[k])) by {
             apply(click::separation::separate_elements(v, i, k));
         }
@@ -68,7 +68,7 @@ int32 set_then_read(int32 *v, int32 i) {
         }
         preserve(memory(v[k]), statement(0));
     }
-    have 0 <= i by { solve() using { 0 < i; }; }
+    have 0 <= i by { close() using { 0 < i; }; }
     have zeros(v, 0, i) == at(entry, zeros(v, 0, i)) by {
         apply(same_zeros(v, at(entry, v), 0, i, i));
     }

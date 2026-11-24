@@ -15,11 +15,11 @@ theorem last_cell(p: int32[], lo: int32, hi: int32) {
     requires lo < hi;
     requires hi >= 0 and viewable(p[lo..hi]);
     ensures lo < hi by {
-        have 0 < hi by { solve() using { 0 <= lo; lo < hi; }; }
-        have hi - 1 < hi by { solve() using { 0 < hi; }; }
+        have 0 < hi by { close() using { 0 <= lo; lo < hi; }; }
+        have hi - 1 < hi by { close() using { 0 < hi; }; }
         have 0 <= hi by {
-            have lo <= hi - 1 by { solve() using { lo < hi; 0 < hi; }; }
-            solve() using { 0 <= lo; 0 < hi; };
+            have lo <= hi - 1 by { close() using { lo < hi; 0 < hi; }; }
+            close() using { 0 <= lo; 0 < hi; };
         }
         have viewable(p[hi - 1..hi]);
         known();

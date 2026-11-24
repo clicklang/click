@@ -10,7 +10,7 @@ theorem rejected(n: Integer, d: Integer) {
     requires d <= -2;
     requires d != 0;
     ensures -3 <= truncating_quotient(n, d) by {
-        solve() using { -8 <= n; n <= 9; -5 <= d; d <= -2; };
+        close() using { -8 <= n; n <= 9; -5 <= d; d <= -2; };
     }
 }
 ```

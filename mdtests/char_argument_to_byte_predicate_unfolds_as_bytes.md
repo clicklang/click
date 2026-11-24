@@ -21,7 +21,7 @@ void copy_u(uint8* dst, const uint8* src) {
     ensures bytes::equal(dst, 0u64, src, 0u64, 4u64) by {
         step();
         have separate(statement(0).footprint, memory(src[0..4])) by {
-            solve() using { separate(memory(dst[0..4]), memory(src[0..4])); };
+            close() using { separate(memory(dst[0..4]), memory(src[0..4])); };
         }
         have contains(statement(0).footprint, statement(0).footprint) by {
             apply(click::separation::contains_refl(statement(0).footprint));
@@ -64,7 +64,7 @@ void copy_c(char* dst, const char* src) {
     ensures bytes::equal(dst, 0u64, src, 0u64, 4u64) by {
         step();
         have separate(statement(0).footprint, memory(src[0..4])) by {
-            solve() using { separate(memory(dst[0..4]), memory(src[0..4])); };
+            close() using { separate(memory(dst[0..4]), memory(src[0..4])); };
         }
         have contains(statement(0).footprint, statement(0).footprint) by {
             apply(click::separation::contains_refl(statement(0).footprint));

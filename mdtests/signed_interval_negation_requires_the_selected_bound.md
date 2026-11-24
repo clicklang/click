@@ -7,7 +7,7 @@ from the ambient context.
 theorem omitted(a: int64) {
     requires a > -9223372036854775808i64;
     ensures defined(-a) by {
-        solve() using {};
+        close() using {};
     }
 }
 ```

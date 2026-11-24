@@ -6,11 +6,11 @@ theorem divide_int32(flag: Bool, x: int32, z: int32, y: int32) {
     ensures flag implies (if flag { x } else { 3 }) == (z / 3) by {
         intro();
         rewrite(x, z / 3);
-        solve() using { flag; };
+        close() using { flag; };
     }
     ensures ((z / 3) < y) implies (if (z / 3) < y { z } else { 3 }) == z by {
         intro();
-        solve() using { (z / 3) < y; };
+        close() using { (z / 3) < y; };
     }
 }
 theorem remainder_int32(flag: Bool, x: int32, z: int32, y: int32) {
@@ -18,11 +18,11 @@ theorem remainder_int32(flag: Bool, x: int32, z: int32, y: int32) {
     ensures flag implies (if flag { x } else { 3 }) == (z % -7) by {
         intro();
         rewrite(x, z % -7);
-        solve() using { flag; };
+        close() using { flag; };
     }
     ensures ((z % -7) < y) implies (if (z % -7) < y { z } else { 3 }) == z by {
         intro();
-        solve() using { (z % -7) < y; };
+        close() using { (z % -7) < y; };
     }
 }
 theorem divide_int64(flag: Bool, x: int64, z: int64, y: int64) {
@@ -30,11 +30,11 @@ theorem divide_int64(flag: Bool, x: int64, z: int64, y: int64) {
     ensures flag implies (if flag { x } else { 3i64 }) == (z / 3i64) by {
         intro();
         rewrite(x, z / 3i64);
-        solve() using { flag; };
+        close() using { flag; };
     }
     ensures ((z / 3i64) < y) implies (if (z / 3i64) < y { z } else { 3i64 }) == z by {
         intro();
-        solve() using { (z / 3i64) < y; };
+        close() using { (z / 3i64) < y; };
     }
 }
 theorem remainder_int64(flag: Bool, x: int64, z: int64, y: int64) {
@@ -42,11 +42,11 @@ theorem remainder_int64(flag: Bool, x: int64, z: int64, y: int64) {
     ensures flag implies (if flag { x } else { 3i64 }) == (z % -7i64) by {
         intro();
         rewrite(x, z % -7i64);
-        solve() using { flag; };
+        close() using { flag; };
     }
     ensures ((z % -7i64) < y) implies (if (z % -7i64) < y { z } else { 3i64 }) == z by {
         intro();
-        solve() using { (z % -7i64) < y; };
+        close() using { (z % -7i64) < y; };
     }
 }
 ```

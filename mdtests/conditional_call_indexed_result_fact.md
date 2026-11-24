@@ -49,7 +49,7 @@ int32 caller(int32 *next, int32 *visited, int32 n, int32 cur) {
             apply(click::separation::separate_restrict(memory(visited[cur]), memory(next[0..n]), memory(visited[cur]), memory(next[cur])));
         }
         have separate(statement(0).footprint, memory(next[cur])) by {
-            solve() using { separate(memory(visited[cur]), memory(next[cur])); };
+            close() using { separate(memory(visited[cur]), memory(next[cur])); };
         }
         preserve(memory(next[cur]), statement(0));
     }

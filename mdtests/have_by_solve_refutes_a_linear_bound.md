@@ -1,7 +1,7 @@
 # `have P` without a proof proves a linear bound with the solver
 
 Arithmetic search expands to ordinary proof steps, with the selected premises
-stated explicitly in `solve() using { ... }`.
+stated explicitly in `close() using { ... }`.
 
 ```click
 theorem solver_chains_bounds(i: Integer, n: Integer, total: Integer) {

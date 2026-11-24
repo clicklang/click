@@ -26,7 +26,7 @@ int32 caller(char buffer[]) {
             apply(stdio::decimal_length_2(42u64));
         }
         have result == 3 by {
-            solve() using { result == stdio::decimal_length(42u64) as int32; stdio::decimal_length(42u64) == 2u64; };
+            close() using { result == stdio::decimal_length(42u64) as int32; stdio::decimal_length(42u64) == 2u64; };
         }
     }
 }

@@ -82,13 +82,13 @@ int32 write_then_read(int32* a, int32* b, int32 s, int32 e, int32 i) {
     step();
     step();
     have a[0] == 1 by { known(); }
-    have s <= e by { solve() using { s <= i; i < e; }; }
+    have s <= e by { close() using { s <= i; i < e; }; }
     have separate(memory(a[0..2]), memory(b[s..e]));
     have contains(memory(a[0..2]), memory(a[0])) by { normalize(); }
-    have i <= 2147483646 by { solve() using { i < e; }; }
-    have defined(i + 1) by { solve() using { i <= 2147483646; }; }
-    have i <= ((i + 1) as int32) by { solve() using { i <= 2147483646; }; }
-    have ((i + 1) as int32) <= e by { solve() using { i < e; }; }
+    have i <= 2147483646 by { close() using { i < e; }; }
+    have defined(i + 1) by { close() using { i <= 2147483646; }; }
+    have i <= ((i + 1) as int32) by { close() using { i <= 2147483646; }; }
+    have ((i + 1) as int32) <= e by { close() using { i < e; }; }
     have contains(memory(b[s..e]), memory(b[i..i+1])) by {
         apply(separation::contains_subrange(b, s, e, i, i+1));
     }

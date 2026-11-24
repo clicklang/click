@@ -8,11 +8,11 @@ theorem selected_array_cell(whole: Resource, kept: Resource, p: int32*, lo: int3
     requires lo <= i;
     requires i < hi;
     ensures separate(kept, memory(p[i])) by {
-        have 0 <= i by { solve() using { 0 <= lo; lo <= i; }; }
-        have i <= 2147483646 by { solve() using { i < hi; }; }
-        have defined(i + 1) by { solve() using { 0 <= i; i <= 2147483646; }; }
-        have i <= ((i + 1) as int32) by { solve() using { 0 <= i; i < hi; }; }
-        have ((i + 1) as int32) <= hi by { solve() using { 0 <= i; i < hi; }; }
+        have 0 <= i by { close() using { 0 <= lo; lo <= i; }; }
+        have i <= 2147483646 by { close() using { i < hi; }; }
+        have defined(i + 1) by { close() using { 0 <= i; i <= 2147483646; }; }
+        have i <= ((i + 1) as int32) by { close() using { 0 <= i; i < hi; }; }
+        have ((i + 1) as int32) <= hi by { close() using { 0 <= i; i < hi; }; }
         have contains(memory(p[lo..hi]), memory(p[i..i + 1])) by {
             apply(separation::contains_subrange(p, lo, hi, i, i + 1));
         }
@@ -139,7 +139,7 @@ void *fill_range(void *argument) {
                     }
                     apply(at(before_write, job->begin) <= k and k < at(before_write, index) implies
                         at(before_write, job->output[k]) == at(before_write, job->value));
-                    have k != at(before_write, index) by { solve() using { k < index; }; }
+                    have k != at(before_write, index) by { close() using { k < index; }; }
                     have separate(at(before_write, memory(job->output[k])), at(before_write, memory(job->output[index]))) by {
                         apply(separation::separate_elements(at(before_write, job->output), k, at(before_write, index)));
                     }
@@ -213,7 +213,7 @@ void *fill_range(void *argument) {
                 apply(integer::int32_to_integer_less_equal_implies_less_equal(index, job->end));
             }
             have 0 <= to_integer(job->end) - to_integer(index) by {
-                solve() using { index <= job->end; };
+                close() using { index <= job->end; };
             }
             have to_integer(job->end) - to_integer(index) < at(before_write, to_integer(job->end) - to_integer(index)) by {
                 rewrite(to_integer(index), to_integer(at(before_write, index)) + 1);

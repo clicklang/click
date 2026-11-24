@@ -41,7 +41,7 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
     }
     have (old->__rb_parent_color & ~3) == address(new) by {
         rewrite(old->__rb_parent_color, address(new));
-        solve() using { aligned(new, 8); };
+        close() using { aligned(new, 8); };
     }
     have ((old->__rb_parent_color & ~3) as (struct rb_node *)) == new by { known(); }
     let demoted = fold(sized_root_rotation_parent_word(old, new), { bits: address(new) });

@@ -12,14 +12,14 @@ import click::integer;
 theorem unsigned_offset_sum(bytes: uint8[], prefix: uint64, suffix: uint64, total: uint64) {
     requires to_integer(total) == to_integer(prefix) + to_integer(suffix);
     ensures (bytes + prefix) + suffix == bytes + total by {
-        solve() using { to_integer(total) == to_integer(prefix) + to_integer(suffix); };
+        close() using { to_integer(total) == to_integer(prefix) + to_integer(suffix); };
     }
 }
 
 theorem signed_offset_sum(words: int32[], prefix: int32, suffix: int32, total: int32) {
     requires to_integer(suffix) + to_integer(prefix) == to_integer(total);
     ensures words + total == (words + prefix) + suffix by {
-        solve() using { to_integer(suffix) + to_integer(prefix) == to_integer(total); };
+        close() using { to_integer(suffix) + to_integer(prefix) == to_integer(total); };
     }
 }
 
@@ -34,7 +34,7 @@ theorem loads_agree(bytes: uint8[], prefix: uint64, suffix: uint64, total: uint6
     requires to_integer(total) == to_integer(prefix) + to_integer(suffix);
     ensures (bytes + prefix)[suffix] == bytes[total] by {
         have (bytes + prefix) + suffix == bytes + total by {
-            solve() using { to_integer(total) == to_integer(prefix) + to_integer(suffix); };
+            close() using { to_integer(total) == to_integer(prefix) + to_integer(suffix); };
         }
         rewrite((bytes + prefix) + suffix, bytes + total);
         solve();

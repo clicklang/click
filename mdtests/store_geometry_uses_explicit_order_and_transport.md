@@ -30,7 +30,7 @@ int32 wide_after(int32* a, int32 i, int32 middle, int32 j) {
     owns a[0..4];
     ensures result == 5;
 } by {
-    have i < j by solve() using { i < middle; middle < j; };
+    have i < j by close() using { i < middle; middle < j; };
     step_until(function.exit);
 }
 
@@ -47,7 +47,7 @@ int32 keep_first(int32* a, int32 i) {
             apply(click::separation::separate_elements(a, i, 0));
         }
         have separate(statement(0).footprint, memory(a[0])) by {
-            solve() using { separate(memory(a[i]), memory(a[0])); };
+            close() using { separate(memory(a[i]), memory(a[0])); };
         }
         preserve(memory(a[0]), statement(0));
     }

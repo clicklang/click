@@ -16,27 +16,27 @@ theorem derived_floor_from_remainder(n: Integer, d: Integer, q: Integer, r: Inte
             apply(integer::multiply_add(q, -1, d));
             rewrite(value, q + -1);
             rewrite((q + -1) * d, q * d + -1 * d);
-            solve() using { n == q * d + r; 1 - d <= r; };
+            close() using { n == q * d + r; 1 - d <= r; };
         } else {
-            have 0 <= r by { solve() using { not (r < 0); }; }
+            have 0 <= r by { close() using { not (r < 0); }; }
             have value == q;
             rewrite(value, q);
-            solve() using { n == q * d + r; 0 <= r; };
+            close() using { n == q * d + r; 0 <= r; };
         }
     }
     ensures n < (value + 1) * d by {
         if r < 0 {
             have value == q + -1;
-            have value + 1 == q by { solve() using { value == q + -1; }; }
+            have value + 1 == q by { close() using { value == q + -1; }; }
             rewrite(value + 1, q);
-            solve() using { n == q * d + r; r < 0; };
+            close() using { n == q * d + r; r < 0; };
         } else {
-            have 0 <= r by { solve() using { not (r < 0); }; }
+            have 0 <= r by { close() using { not (r < 0); }; }
             have value == q;
             apply(integer::multiply_add(q, 1, d));
             rewrite(value, q);
             rewrite((q + 1) * d, q * d + 1 * d);
-            solve() using { n == q * d + r; r <= d - 1; };
+            close() using { n == q * d + r; r <= d - 1; };
         }
     }
 }
@@ -54,27 +54,27 @@ theorem derived_ceiling_from_remainder(n: Integer, d: Integer, q: Integer, r: In
             apply(integer::multiply_add(q, 1, d));
             rewrite(value, q + 1);
             rewrite((q + 1) * d, q * d + 1 * d);
-            solve() using { n == q * d + r; r <= d - 1; };
+            close() using { n == q * d + r; r <= d - 1; };
         } else {
-            have r <= 0 by { solve() using { not (0 < r); }; }
+            have r <= 0 by { close() using { not (0 < r); }; }
             have value == q;
             rewrite(value, q);
-            solve() using { n == q * d + r; r <= 0; };
+            close() using { n == q * d + r; r <= 0; };
         }
     }
     ensures (value + -1) * d < n by {
         if 0 < r {
             have value == q + 1;
-            have value + -1 == q by { solve() using { value == q + 1; }; }
+            have value + -1 == q by { close() using { value == q + 1; }; }
             rewrite(value + -1, q);
-            solve() using { n == q * d + r; 0 < r; };
+            close() using { n == q * d + r; 0 < r; };
         } else {
-            have r <= 0 by { solve() using { not (0 < r); }; }
+            have r <= 0 by { close() using { not (0 < r); }; }
             have value == q;
             apply(integer::multiply_add(q, -1, d));
             rewrite(value, q);
             rewrite((q + -1) * d, q * d + -1 * d);
-            solve() using { n == q * d + r; 1 - d <= r; };
+            close() using { n == q * d + r; 1 - d <= r; };
         }
     }
 }

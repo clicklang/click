@@ -66,14 +66,14 @@ int32 peek(struct slot* s, struct slot* other) {
     have separate(memory(*other), memory(s->pool->data)) by { known(); }
     have separate(memory(other->at), memory(s->pool->data)) by { solve(); }
     have separate(statement(1).footprint, memory(s->pool->data)) by {
-        solve() using { separate(memory(other->at), memory(s->pool->data)); };
+        close() using { separate(memory(other->at), memory(s->pool->data)); };
     }
     have at(statement(1).exit, s->pool->data) == at(statement(1).entry, s->pool->data) by {
         preserve(memory(s->pool->data), statement(1));
     }
     have separate(memory(other->pool), memory(s->pool->data)) by { solve(); }
     have separate(statement(2).footprint, memory(s->pool->data)) by {
-        solve() using { separate(memory(other->pool), memory(s->pool->data)); };
+        close() using { separate(memory(other->pool), memory(s->pool->data)); };
     }
     have at(statement(2).exit, s->pool->data) == at(statement(2).entry, s->pool->data) by {
         preserve(memory(s->pool->data), statement(2));

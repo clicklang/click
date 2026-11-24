@@ -54,13 +54,13 @@ int32 spin(struct cell* node, int32 n) {
         initialize by solve();
         maintain by {
             have c.rank == i;
-            have i == 0 by { solve() using { c.rank == i; c.rank == old(c.rank); old(c.rank) == 0; }; }
-            have 0 <= n - i - 1 by { solve() using { i < n; 0 <= i; }; }
-            have n - i - 1 < n - i by { solve() using { i < n; 0 <= i; }; }
+            have i == 0 by { close() using { c.rank == i; c.rank == old(c.rank); old(c.rank) == 0; }; }
+            have 0 <= n - i - 1 by { close() using { i < n; 0 <= i; }; }
+            have n - i - 1 < n - i by { close() using { i < n; 0 <= i; }; }
             step();
         }
     }
-    have n <= 1 by { solve() using { i >= n; i <= 1; }; }
+    have n <= 1 by { close() using { i >= n; i <= 1; }; }
     step();
     solve();
 }

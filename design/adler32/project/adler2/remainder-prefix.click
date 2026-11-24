@@ -10,7 +10,7 @@ theorem adler_empty_remainder_position(total: int32, remaining: int32) {
   have remaining <= total by { rewrite(remaining, total); known(); }
   have to_integer(remaining) == to_integer(total) by { rewrite(remaining, total); known(); }
   have to_integer(total - remaining) == to_integer(total) - to_integer(remaining);
-  solve() using { to_integer(total - remaining) == to_integer(total) - to_integer(remaining); to_integer(remaining) == to_integer(total); };
+  close() using { to_integer(total - remaining) == to_integer(total) - to_integer(remaining); to_integer(remaining) == to_integer(total); };
  }
 }
 
@@ -22,7 +22,7 @@ theorem adler_complete_remainder_position(total: int32, remaining: int32) {
   have remaining <= total by { rewrite(remaining, 0); known(); }
   have to_integer(remaining) == 0 by { rewrite(remaining, 0); known(); }
   have to_integer(total - remaining) == to_integer(total) - to_integer(remaining);
-  solve() using { to_integer(total - remaining) == to_integer(total) - to_integer(remaining); to_integer(remaining) == 0; };
+  close() using { to_integer(total - remaining) == to_integer(total) - to_integer(remaining); to_integer(remaining) == 0; };
  }
 }
 
@@ -31,6 +31,6 @@ theorem adler_remainder_native_count_observation(count: uint64) {
  requires count <= 22204u64;
  ensures to_integer(count as uint32) == to_integer(count) by {
   have to_integer(count) <= 18446744073709551615;
-  solve() using { 0 <= to_integer(count); to_integer(count) <= 22204; };
+  close() using { 0 <= to_integer(count); to_integer(count) <= 22204; };
  }
 }

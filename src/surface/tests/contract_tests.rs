@@ -2935,41 +2935,41 @@ uint64 nested(uint64 total) {
     invariant 16u64 <= total;
     invariant total <= 64u64;
     initialize by {
-     have remaining <= total - 16u64 by solve() using {
+     have remaining <= total - 16u64 by close() using {
       at(before_subtract, remaining) <= total;
       16u64 <= at(before_subtract, remaining); total <= 64u64;
       remaining == at(before_subtract, remaining) - 16u64;
      };
-     have 16u64 <= total by solve() using { 16u64 <= at(before_subtract, remaining); at(before_subtract, remaining) <= total; };
+     have 16u64 <= total by close() using { 16u64 <= at(before_subtract, remaining); at(before_subtract, remaining) <= total; };
      solve();
     }
     maintain by {
      have remaining <= total - 16u64 by known();
-     have 1u32 <= n by solve() using { n > 0u32; n <= 2u32; };
+     have 1u32 <= n by close() using { n > 0u32; n <= 2u32; };
      have to_integer(n - 1u32) == to_integer(n) - 1;
      mark before_inner;
      step();
-     have to_integer(n) == at(before_inner, to_integer(n)) - 1 by solve() using {
+     have to_integer(n) == at(before_inner, to_integer(n)) - 1 by close() using {
       n == at(before_inner, n) - 1u32;
       at(before_inner, to_integer(n - 1u32)) == at(before_inner, to_integer(n)) - 1;
      };
-     have to_integer(n) <= 2 by solve() using {
+     have to_integer(n) <= 2 by close() using {
       to_integer(n) == at(before_inner, to_integer(n)) - 1;
       at(before_inner, to_integer(n)) <= 2;
      };
      have 0 <= to_integer(n);
-     have to_integer(n) < at(before_inner, to_integer(n)) by solve() using {
+     have to_integer(n) < at(before_inner, to_integer(n)) by close() using {
       to_integer(n) == at(before_inner, to_integer(n)) - 1;
      };
     }
    }
-   have remaining <= total by solve() using { remaining <= total - 16u64; 16u64 <= total; total <= 64u64; };
-   have to_integer(remaining) == at(before_subtract, to_integer(remaining)) - 16 by solve() using {
+   have remaining <= total by close() using { remaining <= total - 16u64; 16u64 <= total; total <= 64u64; };
+   have to_integer(remaining) == at(before_subtract, to_integer(remaining)) - 16 by close() using {
     remaining == at(before_subtract, remaining) - 16u64;
     at(before_subtract, to_integer(remaining - 16u64)) == at(before_subtract, to_integer(remaining)) - 16;
    };
    have 0 <= to_integer(remaining);
-   have to_integer(remaining) < at(before_subtract, to_integer(remaining)) by solve() using {
+   have to_integer(remaining) < at(before_subtract, to_integer(remaining)) by close() using {
     to_integer(remaining) == at(before_subtract, to_integer(remaining)) - 16;
    };
    solve();

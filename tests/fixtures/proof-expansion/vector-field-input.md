@@ -58,18 +58,18 @@ int32 composite_resource_vector_fill_loop_state(
             step();
             step();
             have i >= 0 by {
-                solve() using {
+                close() using {
                     at(region(3).entry, i) >= 0;
                     at(region(3).entry, i) < at(region(3).entry, owner->len);
                 };
             }
             have i <= owner->len by {
-                solve() using {
+                close() using {
                     at(region(3).entry, i) < at(region(3).entry, owner->len);
                 };
             }
             have 0 <= 0 - at(region(3).entry, i) + owner->len - 1 by {
-                solve() using {
+                close() using {
                     at(region(3).entry, i) >= 0;
                     at(region(3).entry, i) < at(region(3).entry, owner->len);
                     0 <= owner->len;
@@ -78,7 +78,7 @@ int32 composite_resource_vector_fill_loop_state(
             }
             have 0 - at(region(3).entry, i) + owner->len - 1
                 < 0 - at(region(3).entry, i) + owner->len by {
-                solve() using {
+                close() using {
                     at(region(3).entry, i) >= 0;
                     at(region(3).entry, i) < at(region(3).entry, owner->len);
                     0 <= owner->len;

@@ -54,36 +54,36 @@ int32 sum(int32 a[], int32 n) {
         known();
     }
     have 0 <= (0..0).fold(0, |acc, k| { (acc + to_integer(a[k])) }) by {
-        solve() using { (0..0).fold(0, |acc, k| { (acc + to_integer(a[k])) }) == 0; };
+        close() using { (0..0).fold(0, |acc, k| { (acc + to_integer(a[k])) }) == 0; };
     }
     have (0..0).fold(0, |acc, k| { (acc + to_integer(a[k])) }) <= 0 by {
-        solve() using { (0..0).fold(0, |acc, k| { (acc + to_integer(a[k])) }) == 0; };
+        close() using { (0..0).fold(0, |acc, k| { (acc + to_integer(a[k])) }) == 0; };
     }
     have forall (j: int32) { 0 <= j and j < n implies defined(a[j]) } by {
         intro(); intro();
         instantiate(forall (k: int32) { 0 <= k and k < n implies defined(old(a[k])) }, j);
         have separate(memory(total), memory(a[j])) by { known(); }
         have separate(statement(0).footprint, memory(a[j])) by {
-            solve() using { separate(memory(total), memory(a[j])); };
+            close() using { separate(memory(total), memory(a[j])); };
         }
         have at(statement(0).exit, defined(a[j])) by {
             preserve(memory(a[j]), statement(0));
         }
         have separate(memory(i), memory(a[j])) by { known(); }
         have separate(statement(1).footprint, memory(a[j])) by {
-            solve() using { separate(memory(i), memory(a[j])); };
+            close() using { separate(memory(i), memory(a[j])); };
         }
         have at(statement(1).exit, defined(a[j])) by {
             preserve(memory(a[j]), statement(1));
         }
         have separate(statement(2).footprint, memory(a[j])) by {
-            solve() using { separate(memory(total), memory(a[j])); };
+            close() using { separate(memory(total), memory(a[j])); };
         }
         have at(statement(2).exit, defined(a[j])) by {
             preserve(memory(a[j]), statement(2));
         }
         have separate(statement(3).footprint, memory(a[j])) by {
-            solve() using { separate(memory(i), memory(a[j])); };
+            close() using { separate(memory(i), memory(a[j])); };
         }
         have at(statement(3).exit, defined(a[j])) by {
             preserve(memory(a[j]), statement(3));
@@ -146,7 +146,7 @@ int32 sum(int32 a[], int32 n) {
             have to_integer(i) <= 1000 by {
                 have to_integer(i) <= to_integer(n);
                 have to_integer(n) <= 1000;
-                solve() using { to_integer(i) <= to_integer(n); to_integer(n) <= 1000; };
+                close() using { to_integer(i) <= to_integer(n); to_integer(n) <= 1000; };
             }
             have (-1000 * to_integer(i)) <= to_integer(total) by {
                 have (-1000 * to_integer(i)) == (-1000 * to_integer(i)) by { known(); }
@@ -157,16 +157,16 @@ int32 sum(int32 a[], int32 n) {
                 apply(click::integer::le_substitute((0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }), (1000 * to_integer(i)), to_integer(total), (1000 * to_integer(i))));
             }
             have ((-1000 * to_integer(i)) - 1000) <= (to_integer(total) + to_integer(a[i])) by {
-                solve() using { (-1000 * to_integer(i)) <= to_integer(total); -1000 <= to_integer(a[i]); };
+                close() using { (-1000 * to_integer(i)) <= to_integer(total); -1000 <= to_integer(a[i]); };
             }
             have (to_integer(total) + to_integer(a[i])) >= -2147483648 by {
-                solve() using { ((-1000 * to_integer(i)) - 1000) <= (to_integer(total) + to_integer(a[i])); to_integer(i) <= 1000; };
+                close() using { ((-1000 * to_integer(i)) - 1000) <= (to_integer(total) + to_integer(a[i])); to_integer(i) <= 1000; };
             }
             have (to_integer(total) + to_integer(a[i])) <= ((1000 * to_integer(i)) + 1000) by {
-                solve() using { to_integer(total) <= (1000 * to_integer(i)); to_integer(a[i]) <= 1000; };
+                close() using { to_integer(total) <= (1000 * to_integer(i)); to_integer(a[i]) <= 1000; };
             }
             have (to_integer(total) + to_integer(a[i])) <= 2147483647 by {
-                solve() using { (to_integer(total) + to_integer(a[i])) <= ((1000 * to_integer(i)) + 1000); to_integer(i) <= 1000; };
+                close() using { (to_integer(total) + to_integer(a[i])) <= ((1000 * to_integer(i)) + 1000); to_integer(i) <= 1000; };
             }
             have defined(a[i]) by {
                 instantiate(forall (j: int32) {
@@ -198,16 +198,16 @@ int32 sum(int32 a[], int32 n) {
             have defined((i + 1));
             have to_integer((i + 1)) == (to_integer(i) + to_integer(1));
             have (-1000 * to_integer((i + 1))) <= (to_integer(total) + to_integer(a[i])) by {
-                solve() using { ((-1000 * to_integer(i)) - 1000) <= (to_integer(total) + to_integer(a[i])); to_integer((i + 1)) == (to_integer(i) + to_integer(1)); };
+                close() using { ((-1000 * to_integer(i)) - 1000) <= (to_integer(total) + to_integer(a[i])); to_integer((i + 1)) == (to_integer(i) + to_integer(1)); };
             }
             have (-1000 * to_integer((i + 1))) <= to_integer((total + a[i])) by {
-                solve() using { (-1000 * to_integer((i + 1))) <= (to_integer(total) + to_integer(a[i])); to_integer((total + a[i])) == (to_integer(total) + to_integer(a[i])); };
+                close() using { (-1000 * to_integer((i + 1))) <= (to_integer(total) + to_integer(a[i])); to_integer((total + a[i])) == (to_integer(total) + to_integer(a[i])); };
             }
             have (to_integer(total) + to_integer(a[i])) <= (1000 * to_integer((i + 1))) by {
-                solve() using { (to_integer(total) + to_integer(a[i])) <= ((1000 * to_integer(i)) + 1000); to_integer((i + 1)) == (to_integer(i) + to_integer(1)); };
+                close() using { (to_integer(total) + to_integer(a[i])) <= ((1000 * to_integer(i)) + 1000); to_integer((i + 1)) == (to_integer(i) + to_integer(1)); };
             }
             have to_integer((total + a[i])) <= (1000 * to_integer((i + 1))) by {
-                solve() using { to_integer((total + a[i])) == (to_integer(total) + to_integer(a[i])); (to_integer(total) + to_integer(a[i])) <= (1000 * to_integer((i + 1))); };
+                close() using { to_integer((total + a[i])) == (to_integer(total) + to_integer(a[i])); (to_integer(total) + to_integer(a[i])) <= (1000 * to_integer((i + 1))); };
             }
             step();
             step();
@@ -216,14 +216,14 @@ int32 sum(int32 a[], int32 n) {
                 instantiate(at(iter, forall (j: int32) { 0 <= j and j < n implies defined(a[j]) }), j);
                 have separate(memory(total), memory(a[j])) by { known(); }
                 have separate(loop(0).statement(0).footprint, memory(a[j])) by {
-                    solve() using { separate(memory(total), memory(a[j])); };
+                    close() using { separate(memory(total), memory(a[j])); };
                 }
                 have at(loop(0).statement(0).exit, defined(a[j])) by {
                     preserve(memory(a[j]), loop(0).statement(0));
                 }
                 have separate(memory(i), memory(a[j])) by { known(); }
                 have separate(loop(0).statement(1).footprint, memory(a[j])) by {
-                    solve() using { separate(memory(i), memory(a[j])); };
+                    close() using { separate(memory(i), memory(a[j])); };
                 }
                 have at(loop(0).statement(1).exit, defined(a[j])) by {
                     preserve(memory(a[j]), loop(0).statement(1));
@@ -254,10 +254,10 @@ int32 sum(int32 a[], int32 n) {
                 known();
             }
             have (-1000 * to_integer(i)) <= (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) by {
-                solve() using { (-1000 * to_integer(i)) <= to_integer(total); to_integer(total) == (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }); };
+                close() using { (-1000 * to_integer(i)) <= to_integer(total); to_integer(total) == (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }); };
             }
             have (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) <= (1000 * to_integer(i)) by {
-                solve() using { to_integer(total) <= (1000 * to_integer(i)); to_integer(total) == (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }); };
+                close() using { to_integer(total) <= (1000 * to_integer(i)); to_integer(total) == (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }); };
             }
             have forall (k: int32) { k >= 0 and k < i implies defined(a[k]) } by {
                 intro();
@@ -270,7 +270,7 @@ int32 sum(int32 a[], int32 n) {
             }
             have to_integer(i) <= to_integer(n);
             have to_integer(i) == (to_integer(at(iter, i)) + 1) by {
-                solve() using {
+                close() using {
                     to_integer(i) == to_integer((at(iter, i) + 1));
                     to_integer((at(iter, i) + 1)) == (to_integer(at(iter, i)) + to_integer(1));
                 };

@@ -1066,8 +1066,8 @@ mod tests {
             "theorem bridge(x:Integer) { ensures 123456789012345678901234567890*x + x == 123456789012345678901234567891*x by solve(); }",
             "theorem bridge(x:int32) { ensures 3*to_integer(x)-to_integer(x) == 2*to_integer(x) by solve(); }",
             "function f(x:Integer)->Integer {x+1} theorem bridge(x:Integer) { ensures 3*f(x)-f(x) == 2*f(x) by solve(); }",
-            "theorem bridge(x:Integer,k:Integer) { requires 0<=x; requires 0<=k; ensures truncating_quotient(x+3*k,3)==truncating_quotient(x,3)+k by {solve() using {0<=x;0<=k;};} }",
-            "theorem bridge(x:Integer,k:Integer) { requires 0<=x; requires 0<=k; ensures k+truncating_quotient(x,3)==truncating_quotient(k*3+x,3) by {solve() using {0<=x;0<=k;};} }",
+            "theorem bridge(x:Integer,k:Integer) { requires 0<=x; requires 0<=k; ensures truncating_quotient(x+3*k,3)==truncating_quotient(x,3)+k by {close() using {0<=x;0<=k;};} }",
+            "theorem bridge(x:Integer,k:Integer) { requires 0<=x; requires 0<=k; ensures k+truncating_quotient(x,3)==truncating_quotient(k*3+x,3) by {close() using {0<=x;0<=k;};} }",
             "theorem bridge(x:Integer,k:Integer) { requires 0<=x; requires 0<=k; ensures k+truncating_quotient(x,3)==truncating_quotient(k*3+x,3) by solve(); }",
             "theorem bridge(x:Integer,k:Integer) { requires 0<=x; requires 0<=k; ensures truncating_quotient(x+3*k,3)==truncating_quotient(x,3)+k; }",
         ] {
@@ -1089,16 +1089,16 @@ mod tests {
         assert!(failures.is_empty(), "{}", failures.join("\n\n"));
         // Native bridge leaves retain their independent compatibility paths.
         // This regression checks that algebra analysis keeps their domains.
-        let native = "theorem bridge(i:int32,len:int32) { requires 0<=i; requires i<len; ensures to_integer(i)<=to_integer(i+1) by {solve() using {0<=i;i<len;};} }";
+        let native = "theorem bridge(i:int32,len:int32) { requires 0<=i; requires i<len; ensures to_integer(i)<=to_integer(i+1) by {close() using {0<=i;i<len;};} }";
         verify_c_sources(native, &[]).unwrap();
         let expanded = expand_c_claim_source_by_label(native, &[], "bridge.ensures_0").unwrap();
         without_implicit_solve(|| verify_c_sources(&expanded, &[])).unwrap();
 
         for source in [
             "theorem bad(x:Integer,y:Integer) { ensures (x+y)*(x-y)==x*x+y*y by solve(); }",
-            "theorem bad(x:Integer,y:Integer) { requires x==y; ensures 3*x==3*y by {solve() using {};} }",
-            "theorem bad(x:Integer,k:Integer) {requires 0<=x;requires 0<=k; ensures truncating_quotient(x+3*k,3)==truncating_quotient(x,3)+k by {solve() using {0<=k;};} }",
-            "theorem bad(x:Integer,k:Integer) {requires 0<=x;requires 0<=k; ensures truncating_quotient(x+3*k,3)==truncating_quotient(x,3)+k by {solve() using {0<=x;};} }",
+            "theorem bad(x:Integer,y:Integer) { requires x==y; ensures 3*x==3*y by {close() using {};} }",
+            "theorem bad(x:Integer,k:Integer) {requires 0<=x;requires 0<=k; ensures truncating_quotient(x+3*k,3)==truncating_quotient(x,3)+k by {close() using {0<=k;};} }",
+            "theorem bad(x:Integer,k:Integer) {requires 0<=x;requires 0<=k; ensures truncating_quotient(x+3*k,3)==truncating_quotient(x,3)+k by {close() using {0<=x;};} }",
         ] {
             assert!(verify_c_sources(source, &[]).is_err(), "{source}");
         }

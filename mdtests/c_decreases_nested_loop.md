@@ -52,7 +52,7 @@ int32 nested_count(int32 n, int32 m) {
             }
             have 0 <= to_integer(i - 1);
             step();
-            have i >= 0 by { solve() using { 0 <= i; }; }
+            have i >= 0 by { close() using { 0 <= i; }; }
         }
     }
     step();

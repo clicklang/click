@@ -13,7 +13,7 @@ theorem size_sum_defined(left: int32, right: int32) {
         have to_integer(0) <= to_integer(left);
         have to_integer(0) <= to_integer(right);
         have to_integer(1 + left) + to_integer(right) <= 2147483647 by {
-            solve() using {
+            close() using {
                 to_integer(2147483647 - right) == 2147483647 - to_integer(right);
                 to_integer(1 + left) <= to_integer(2147483647 - right);
             };
@@ -29,7 +29,7 @@ theorem size_sum_as_integer(left: int32, right: int32) {
     ensures to_integer(1 + left + right) == 1 + to_integer(left) + to_integer(right) by {
         have to_integer(1 + left) == to_integer(1) + to_integer(left);
         have to_integer((1 + left) + right) == to_integer((1 + left)) + to_integer(right);
-        solve() using {
+        close() using {
             to_integer(1 + left) == 1 + to_integer(left);
             to_integer(1 + left + right) == to_integer(1 + left) + to_integer(right);
         };

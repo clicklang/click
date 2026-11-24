@@ -403,7 +403,7 @@ theorem count_step(n: uint64{parameters}) {{
         unfold(full_width_count(n));
         rewrite(full_width_count(n - 1u64), to_integer(n - 1u64));
         rewrite(to_integer(n - 1u64), to_integer(n) - to_integer(1u64));
-        solve() using {{}};
+        close() using {{}};
     }}
 }}"
         );
@@ -1300,7 +1300,7 @@ fn verified_call_ensure_premises_ignore_unrelated_ambient_facts() {
             .map(|index| {
                 format!(
                     "    have {index} <= count + {index} by {{\n        \
-                     solve() using {{\n            0 <= count;\n            \
+                     close() using {{\n            0 <= count;\n            \
                      count <= 1000;\n        }}\n    }}\n"
                 )
             })
@@ -2636,7 +2636,7 @@ fn ranked_loop_with_unrelated_inequalities(fact_count: usize) -> (String, String
          \x20       initialize by solve();\n\
          \x20       maintain by {\n\
          \x20           have 0 <= n - 1 by {\n\
-         \x20               solve() using { n > 0; }\n\
+         \x20               close() using { n > 0; }\n\
          \x20           }\n\
          \x20           step();\n\
          \x20       }\n\
@@ -2707,7 +2707,7 @@ fn model_ranked_loops(loop_count: usize) -> (String, String) {
          \x20           Chain::Link(rest) => {\n\
          \x20               apply(ih(rest));\n\
          \x20               unfold(chain_len(Chain::Link(rest)));\n\
-         \x20               solve() using { 0 <= chain_len(rest); }\n\
+         \x20               close() using { 0 <= chain_len(rest); }\n\
          \x20           }\n\
          \x20       }\n\
          \x20   }\n\
@@ -2753,7 +2753,7 @@ fn model_ranked_loops(loop_count: usize) -> (String, String) {
              \x20                   }}\n\
              \x20                   apply(chain_len_is_nonnegative(rest_model));\n\
              \x20                   have chain_len(rest_model) < chain_len(c.model) by {{\n\
-             \x20                       solve() using {{\n\
+             \x20                       close() using {{\n\
              \x20                           chain_len(c.model) == chain_len(rest_model) + 1;\n\
              \x20                       }}\n\
              \x20                   }}\n\
@@ -2887,7 +2887,7 @@ fn smart_ranked_loop_with_unrelated_inequalities(fact_count: usize) -> (String, 
          \x20       initialize by solve();\n\
          \x20       maintain by {\n\
          \x20           have 0 <= n - 1 by {\n\
-         \x20               solve() using { n > 0; }\n\
+         \x20               close() using { n > 0; }\n\
          \x20           }\n\
          \x20           step();\n\
          \x20       }\n\
@@ -2961,14 +2961,14 @@ fn guarded_member_bundle(conjuncts: usize) -> (String, String) {
          \x20           have 0 <= i and i <= n by {{ known(); }}\n\
          {facts}\
          \x20           have 0 <= n - at(iteration, i) - 1 by {{\n\
-         \x20               solve() using {{\n\
+         \x20               close() using {{\n\
          \x20                   0 <= at(iteration, i);\n\
          \x20                   at(iteration, i) < at(iteration, n);\n\
          \x20                   0 <= n;\n\
          \x20               }}\n\
          \x20           }}\n\
          \x20           have n - at(iteration, i) - 1 < n - at(iteration, i) by {{\n\
-         \x20               solve() using {{\n\
+         \x20               close() using {{\n\
          \x20                   0 <= at(iteration, i);\n\
          \x20                   at(iteration, i) < at(iteration, n);\n\
          \x20                   0 <= n;\n\
@@ -4363,18 +4363,18 @@ resource holder_state(h: struct holder*) {
     let { len: l } = unfold(st);
     let { start: s } = unfold(r);
     have defined(s + i) by {
-        solve() using {
+        close() using {
             defined(s + i) and s + i < l;
         }
     }
     have s + i < l by {
-        solve() using {
+        close() using {
             defined(s + i) and s + i < l;
         }
     }
     have s <= s + i;
     have s + i + 1 <= l by {
-        solve() using {
+        close() using {
             s + i < l;
         }
     }
@@ -4395,7 +4395,7 @@ resource holder_state(h: struct holder*) {
     }
     have 0 <= h->start + i by {
         rewrite(h->start, s);
-        solve() using { 0 <= s; s <= s + i; };
+        close() using { 0 <= s; s <= s + i; };
     }
     have h->start + i < l by {
         rewrite(h->start, s);
@@ -5489,7 +5489,7 @@ fn copy_loop_with_unrelated_requirements(fact_count: usize) -> String {
                          have k < i by known();\n                \
                          have i == 0 by {{\n                    normalize();\n                }}\n                \
                          have not (0 <= k) by {{\n                    \
-                             solve() using {{\n                        k < i;\n                        i == 0;\n                    }}\n                \
+                             close() using {{\n                        k < i;\n                        i == 0;\n                    }}\n                \
                          }}\n                \
                          contradiction(0 <= k);\n            \
                      }}\n        \
@@ -5498,7 +5498,7 @@ fn copy_loop_with_unrelated_requirements(fact_count: usize) -> String {
              }}\n    \
              have i == length by {{\n        \
                  have at(loop(0).exit, i) == at(loop(0).exit, length) by {{\n            \
-                     solve() using {{\n                \
+                     close() using {{\n                \
                          at(loop(0).exit, i) <= at(loop(0).exit, length);\n                \
                          not at(loop(0).exit, i) < at(loop(0).exit, length);\n            \
                      }}\n        \
@@ -6697,13 +6697,13 @@ fn entry_resource_clauses_do_not_rebuild_every_parameter() {
     }
 }
 
-/// `solve() using` over a chain of listed order facts adds the premises
+/// `close() using` over a chain of listed order facts adds the premises
 /// once each, so its work grows with the chain and not with its square.
 /// Both a signed and an unsigned chain are measured at several lengths. The
 /// Integer planner its arithmetic tries first searches premise triples only
 /// while a chain has at most `MAX_TRIPLE_CLAIMS` premises: a bounded cost
 /// both chains pay at short lengths. Past that bound each grows near-linearly.
-/// The closers `solve() using` tries before arithmetic cost an unsigned chain
+/// The closers `close() using` tries before arithmetic cost an unsigned chain
 /// more than a signed one, so the two chains' peaks are not compared.
 #[test]
 #[cfg(not(feature = "fast-gate"))]
@@ -6731,7 +6731,7 @@ fn listed_order_chain_arithmetic_is_near_linear_in_the_chain() {
                 .map(|fact| format!("{fact}; "))
                 .collect::<String>();
             let source = format!(
-                "theorem chained({parameters}) {{ {requires}ensures v0 < {bound} by {{ solve() using {{ {listed}}} }} }}"
+                "theorem chained({parameters}) {{ {requires}ensures v0 < {bound} by {{ close() using {{ {listed}}} }} }}"
             );
             let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
                 verify_c_sources(&source, &[])
@@ -8607,8 +8607,8 @@ void narrow(const uint8* bytes, int32 index) {
 } by {
  step_until(assignment(unrelated, 0).entry); step();
  have 0 <= index by { known(); }
- have to_integer(index + 4) <= 22208 by { solve() using { 0 <= index; index <= 22204; } }
- have to_integer(index) <= to_integer(index + 4) by { solve() using { 0 <= index; index <= 22204; to_integer(index + 4) <= 22208; } }
+ have to_integer(index + 4) <= 22208 by { close() using { 0 <= index; index <= 22204; } }
+ have to_integer(index) <= to_integer(index + 4) by { close() using { 0 <= index; index <= 22204; to_integer(index + 4) <= 22208; } }
  have viewable(bytes[0..22208]) by { transport(at(function.entry, viewable(bytes[0..22208])), viewable(bytes[0..22208])) using { at(function.entry, viewable(bytes[0..22208])); 0 <= 22208; } }
  have viewable(bytes[index..index + 4]) by {
   transport(viewable(bytes[0..22208]), viewable(bytes[index..index + 4])) using {
@@ -9772,7 +9772,7 @@ int32 count_once(int32 flag) {{
             mark before_increment;
             step();
             have 0 <= to_integer(i) by {{
-                solve() using {{
+                close() using {{
                     at(before_increment, i) >= 0;
                     at(before_increment, i) <= 1;
                 }};

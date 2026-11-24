@@ -14,8 +14,8 @@ theorem bounded_pointer_association(base: const uint8*, index: int32) {
  requires 0 <= index;
  requires index <= 22200;
  ensures (base + index) + 4 == base + (index + 4) by {
-  have defined(index + 4) by { solve() using { 0 <= index; index <= 22200; }; }
-  solve() using { defined(index + 4); };
+  have defined(index + 4) by { close() using { 0 <= index; index <= 22200; }; }
+  close() using { defined(index + 4); };
  }
 }
 ```

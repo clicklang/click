@@ -19,7 +19,7 @@ int64 add_byte(uint32 sum, uint8 byte) {
 } by {
     step_until(function.exit);
     have result <= 4294967294i64 by {
-        solve() using { (byte as uint32) <= 255u32; sum <= 4294967040u32; };
+        close() using { (byte as uint32) <= 255u32; sum <= 4294967040u32; };
     }
     solve();
 }

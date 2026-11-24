@@ -30,7 +30,7 @@ theorem one_layer() {
     requires steps(1) == 0;
     ensures steps(2) == 0 by {
         unfold(steps(2));
-        solve() using { steps(1) == 0; };
+        close() using { steps(1) == 0; };
     }
 }
 

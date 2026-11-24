@@ -384,9 +384,9 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
     requires d > 0;
     ensures 0 == 0;
 } by {
-    have 1 <= d by { solve() using { d > 0; } }
-    have to_integer(d) != 0 by { solve() using { 1 <= to_integer(d); }; }
-    have to_integer(d) != -1 by { solve() using { 1 <= to_integer(d); }; }
+    have 1 <= d by { close() using { d > 0; } }
+    have to_integer(d) != 0 by { close() using { 1 <= to_integer(d); }; }
+    have to_integer(d) != -1 by { close() using { 1 <= to_integer(d); }; }
     step_until(function.exit); solve();
 }"#;
         let parsed = read_click_project(&sidecar, guard_proof).unwrap();
@@ -799,8 +799,8 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
                     vec![source.replace(lower, ""), source.replace(upper, ""), source.replace(strict, &strict.replace(" < ", " <= "))]
                 }
                 RoundingPhase::TransportRejections => vec![
-                    source.replace("have 0 <= to_integer(this->fee) by { solve() using { this->fee >= 0i64; } }", "have to_integer(this->fee) < 0;"),
-                    source.replace("have to_integer(this->fee) <= 8589934591 by { solve() using { this->fee < 8589934592i64; } }", "have to_integer(this->fee) >= 8589934592;"),
+                    source.replace("have 0 <= to_integer(this->fee) by { close() using { this->fee >= 0i64; } }", "have to_integer(this->fee) < 0;"),
+                    source.replace("have to_integer(this->fee) <= 8589934591 by { close() using { this->fee < 8589934592i64; } }", "have to_integer(this->fee) >= 8589934592;"),
                 ],
                 RoundingPhase::RoundingRejections => vec![
                     source.replace(if down { "(to_integer(result) + 1) * to_integer(this->size)" } else { "(to_integer(result) + -1) * to_integer(this->size)" }, "to_integer(result) * to_integer(this->size)"),
@@ -872,7 +872,7 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
                         "to_integer(result) * to_integer(this->size)",
                     ),
                     source.replace(
-                        "have to_integer(this->fee) <= 8589934591 by { solve() using { this->fee < 8589934592i64; } }",
+                        "have to_integer(this->fee) <= 8589934591 by { close() using { this->fee < 8589934592i64; } }",
                         "have to_integer(this->fee) >= 8589934592;",
                     ),
                 ]
@@ -1142,7 +1142,7 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
                 .unwrap()
                 .strip_suffix(';')
                 .unwrap();
-            intrinsic_proofs.push_str(&format!("have {bound} by {{ solve() using {{  }}; }}\n"));
+            intrinsic_proofs.push_str(&format!("have {bound} by {{ close() using {{  }}; }}\n"));
         }
         full_domain = full_domain.replacen("} by {", &format!("}} by {{\n{intrinsic_proofs}"), 1);
         let parsed = read_click_project(&sidecar, &full_domain).unwrap();
@@ -3213,8 +3213,8 @@ contract int64 EmptyRate(const struct CFeeRate* this, int32 virtual_bytes) {
 }
 theorem empty_rate_application() executes CFeeRate::GetFee(const struct CFeeRate* this, int32 virtual_bytes) {
     ensures EmptyRate(&CFeeRate::GetFee) by {
-        have this->m_feerate.base.size >= 0 by { solve() using { this->m_feerate.base.size == 0; } }
-        have this->m_feerate.base.size <= 2147483647 by { solve() using { this->m_feerate.base.size == 0; } }
+        have this->m_feerate.base.size >= 0 by { close() using { this->m_feerate.base.size == 0; } }
+        have this->m_feerate.base.size <= 2147483647 by { close() using { this->m_feerate.base.size == 0; } }
         have this->m_feerate.base.size != 0 implies -9223372036854775808 <= to_integer(this->m_feerate.base.fee) by { solve(); }
         have this->m_feerate.base.size != 0 implies to_integer(this->m_feerate.base.fee) <= 9223372036854775807 by { solve(); }
         have this->m_feerate.base.size != 0 implies -9223372036854775809 * to_integer(this->m_feerate.base.size) < to_integer(this->m_feerate.base.fee) * to_integer(virtual_bytes) by { solve(); }
@@ -3627,7 +3627,7 @@ int32& {pop_back}(std::span<int>& span) {{
     step_until(assignment(size, 0).entry);
     step();
     have size - 1u64 <= std_span_size(span) by {{
-        solve() using {{ size == std_span_size(span); std_span_size(span) - 1u64 <= std_span_size(span); }}
+        close() using {{ size == std_span_size(span); std_span_size(span) - 1u64 <= std_span_size(span); }}
     }}
     have to_integer(size - 1u64) == to_integer(size) - 1;
     step_until(function.exit);
@@ -4714,7 +4714,7 @@ int32& {pop_back}(std::span<int>& span) {{
     step_until(assignment(size, 0).entry);
     step();
     have size - 1u64 <= std_span_size(span) by {{
-        solve() using {{ size == std_span_size(span); std_span_size(span) - 1u64 <= std_span_size(span); }}
+        close() using {{ size == std_span_size(span); std_span_size(span) - 1u64 <= std_span_size(span); }}
     }}
     have to_integer(size - 1u64) == to_integer(size) - 1;
     step_until(function.exit);

@@ -42,7 +42,7 @@ uint8 fill_byte_tail(uint8 p[], int32 n) {
             mark before_store;
             unfold(first_byte(p));
             have p[0] == old(first_byte(p)) by { known(); }
-            have i != 0 by { solve() using { i >= 1; }; }
+            have i != 0 by { close() using { i >= 1; }; }
             apply(click::separation::separate_elements(p, i, 0));
             step();
             have separate(loop(0).statement(0).footprint, memory(p[0])) by {

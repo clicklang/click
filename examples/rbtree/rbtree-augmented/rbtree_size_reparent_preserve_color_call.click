@@ -46,18 +46,18 @@ void insert::rb_set_parent_color(struct rb_node* rb, struct rb_node* p, int32 co
                     step();
                     have rb->__rb_parent_color == address(p) + 1 by {
                         rewrite(color, 1);
-                        solve() using { aligned(p, 8); };
+                        close() using { aligned(p, 8); };
                     }
                     have (rb->__rb_parent_color & ~3) == address(p) by {
                         rewrite(color, 1);
-                        solve() using { aligned(p, 8); };
+                        close() using { aligned(p, 8); };
                     }
                     have ((rb->__rb_parent_color & ~3) as (struct rb_node *)) == p by {
                         known();
                     }
                     have (rb->__rb_parent_color & 1) == 1 by {
                         rewrite(rb->__rb_parent_color, address(p) + 1);
-                        solve() using { aligned(p, 8); };
+                        close() using { aligned(p, 8); };
                     }
                     have rb->__rb_parent_color == address(p) + (rb->__rb_parent_color & 1) by {
                         rewrite((rb->__rb_parent_color & 1), 1);
@@ -86,14 +86,14 @@ void insert::rb_set_parent_color(struct rb_node* rb, struct rb_node* p, int32 co
                     }
                     have (rb->__rb_parent_color & ~3) == address(p) by {
                         rewrite(color, 0);
-                        solve() using { aligned(p, 8); };
+                        close() using { aligned(p, 8); };
                     }
                     have ((rb->__rb_parent_color & ~3) as (struct rb_node *)) == p by {
                         known();
                     }
                     have (rb->__rb_parent_color & 1) == 0 by {
                         rewrite(rb->__rb_parent_color, address(p) + 0);
-                        solve() using { aligned(p, 8); };
+                        close() using { aligned(p, 8); };
                     }
                     have rb->__rb_parent_color == address(p) + (rb->__rb_parent_color & 1) by {
                         rewrite((rb->__rb_parent_color & 1), 0);

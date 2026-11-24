@@ -44,7 +44,7 @@ void mark(int32 *next, int32 *visited) {
             apply(click::separation::separate_restrict(memory(visited[0..1]), memory(next[0..2]), memory(visited[0]), memory(next[k])));
         }
         have separate(statement(0).footprint, memory(next[k])) by {
-            solve() using { separate(memory(visited[0]), memory(next[k])); };
+            close() using { separate(memory(visited[0]), memory(next[k])); };
         }
         preserve(memory(next[k]), statement(0));
     }

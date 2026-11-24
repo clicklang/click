@@ -89,7 +89,7 @@ void child_release(struct child* obj) {
     } else {
         unfold(child_ref(obj));
         have 1 < obj->refs by {
-            solve() using { 1 <= obj->refs; obj->refs != 1; };
+            close() using { 1 <= obj->refs; obj->refs != 1; };
         }
         have to_integer(obj->refs - 1) >= 1;
         step();
@@ -221,7 +221,7 @@ int32 run_first_destroyed(int32 payload) {
     }
     have first->kid->refs > 1 by {
         rewrite(first->kid->refs, kid->refs);
-        solve() using { 2 <= to_integer(kid->refs); };
+        close() using { 2 <= to_integer(kid->refs); };
     }
     mark detaching;
     step(parent_detach, { link: first_link });
@@ -232,13 +232,13 @@ int32 run_first_destroyed(int32 payload) {
     }
     have at(detaching, first->kid->payload) == payload by known();
     have at(detaching, first->kid)->payload == payload by {
-        solve() using {
+        close() using {
             at(detaching, first->kid)->payload == at(detaching, first->kid->payload);
             at(detaching, first->kid->payload) == payload;
         };
     }
     have kid->payload == payload by {
-        have kid == at(detaching, first->kid) by { solve() using { at(detaching, first->kid) == kid; }; }
+        have kid == at(detaching, first->kid) by { close() using { at(detaching, first->kid) == kid; }; }
         rewrite(kid, at(detaching, first->kid));
         known();
     }
@@ -299,7 +299,7 @@ int32 run_second_destroyed(int32 payload) {
     }
     have second->kid->refs > 1 by {
         rewrite(second->kid->refs, kid->refs);
-        solve() using { 2 <= to_integer(kid->refs); };
+        close() using { 2 <= to_integer(kid->refs); };
     }
     mark detaching;
     step(parent_detach, { link: second_link });
@@ -310,13 +310,13 @@ int32 run_second_destroyed(int32 payload) {
     }
     have at(detaching, second->kid->payload) == payload by known();
     have at(detaching, second->kid)->payload == payload by {
-        solve() using {
+        close() using {
             at(detaching, second->kid)->payload == at(detaching, second->kid->payload);
             at(detaching, second->kid->payload) == payload;
         };
     }
     have kid->payload == payload by {
-        have kid == at(detaching, second->kid) by { solve() using { at(detaching, second->kid) == kid; }; }
+        have kid == at(detaching, second->kid) by { close() using { at(detaching, second->kid) == kid; }; }
         rewrite(kid, at(detaching, second->kid));
         known();
     }

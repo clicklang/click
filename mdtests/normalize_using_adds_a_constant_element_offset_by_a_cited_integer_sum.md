@@ -12,21 +12,21 @@ import click::integer;
 theorem byte_constant_suffix(bytes: uint8[], prefix: uint64, total: uint64) {
     requires to_integer(total) == to_integer(prefix) + 3;
     ensures (bytes + prefix) + 3 == bytes + total by {
-        solve() using { to_integer(total) == to_integer(prefix) + 3; };
+        close() using { to_integer(total) == to_integer(prefix) + 3; };
     }
 }
 
 theorem byte_constant_suffix_of_a_native_sum(bytes: uint8[], prefix: uint64) {
     requires to_integer(prefix + 3u64) == to_integer(prefix) + 3;
     ensures (bytes + prefix) + 3 == bytes + (prefix + 3u64) by {
-        solve() using { to_integer(prefix + 3u64) == to_integer(prefix) + 3; };
+        close() using { to_integer(prefix + 3u64) == to_integer(prefix) + 3; };
     }
 }
 
 theorem word_constant_suffix(words: int32[], prefix: uint64, total: uint64) {
     requires 1 + to_integer(prefix) == to_integer(total);
     ensures words + total == (words + prefix) + 1 by {
-        solve() using { 1 + to_integer(prefix) == to_integer(total); };
+        close() using { 1 + to_integer(prefix) == to_integer(total); };
     }
 }
 ```

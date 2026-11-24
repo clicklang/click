@@ -26,7 +26,7 @@ void walk(int32 *a, int32 *b, int32 n) {
     requires n <= 1073741823;
 } by {
     have 0 <= 0 by { known(); }
-    have 0 < n by { solve() using { 1 <= n; }; }
+    have 0 < n by { close() using { 1 <= n; }; }
     have contains(memory(b[0..n]), memory(b[0])) by {
         apply(click::separation::contains_element(b, 0, n, 0));
     }
@@ -48,8 +48,8 @@ void walk(int32 *a, int32 *b, int32 n) {
     } by {
         intro();
         intro();
-        have k <= k + 1 by { solve() using { 0 <= k; k < n; n <= 1073741823; }; }
-        have k + 1 <= n by { solve() using { 0 <= k; k < n; n <= 1073741823; }; }
+        have k <= k + 1 by { close() using { 0 <= k; k < n; n <= 1073741823; }; }
+        have k + 1 <= n by { close() using { 0 <= k; k < n; n <= 1073741823; }; }
         apply(click::separation::contains_subrange(a, 0, n, k, k + 1));
         apply(click::separation::viewable_restrict(memory(a[0..n]), memory(a[k..k + 1])));
     }

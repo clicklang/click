@@ -71,17 +71,17 @@ int32 read_literal() {
     step();
     have r[1] == 'k' by { known(); }
     have message == r by { known(); }
-    have message[1] == 'k' by { solve() using { message == r; r[1] == 'k'; }; }
+    have message[1] == 'k' by { close() using { message == r; r[1] == 'k'; }; }
     have separate(memory(guard), memory(message[1])) by { known(); }
     mark before;
     step();
     have separate(statement(3).footprint, memory(message[1])) by {
-        solve() using { separate(memory(guard), memory(message[1])); };
+        close() using { separate(memory(guard), memory(message[1])); };
     }
     have message[1] == at(before, message[1]) by {
         preserve(memory(message[1]), statement(3));
     }
-    have message[1] == 'k' by { solve() using { message[1] == at(before, message[1]); at(before, message[1]) == 'k'; }; }
+    have message[1] == 'k' by { close() using { message[1] == at(before, message[1]); at(before, message[1]) == 'k'; }; }
     step();
 }
 ```

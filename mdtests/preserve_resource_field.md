@@ -14,7 +14,7 @@ void keep(int *p) {
 } by {
     step();
     have separate(statement(0).footprint, m) by {
-        solve() using { separate(memory(*p), m); };
+        close() using { separate(memory(*p), m); };
     }
     have m.value == at(statement(0).entry, m.value) by {
         preserve(m, statement(0));

@@ -16,8 +16,8 @@ theorem spellings(x: int32, y: int32, a: uint64, b: uint64, n: int32) {
     requires x < y;
     requires a < b;
     requires n == 0;
-    ensures not (x >= y) by { solve() using { x < y; }; }
-    ensures b > a by { solve() using { a < b; }; }
+    ensures not (x >= y) by { close() using { x < y; }; }
+    ensures b > a by { close() using { a < b; }; }
     ensures n != 1 by { normalize() using { n == 0; }; }
 }
 

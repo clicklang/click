@@ -63,7 +63,7 @@ void holder_drop(struct holder* h) {
 } by {
     have 2 <= to_integer(count(child_ref(h->kid)));
     have to_integer(count(child_ref(h->kid))) > 1 by {
-        solve() using { 2 <= to_integer(count(child_ref(h->kid))); };
+        close() using { 2 <= to_integer(count(child_ref(h->kid))); };
     }
 }
 void share_then_drop(struct holder* h, struct child* kid) {

@@ -27,7 +27,7 @@ void update(struct node* p, const struct callbacks* cb) {
         mark before;
         step();
         have separate(statement(0).footprint, memory(cb->invoke)) by {
-            solve() using { separate(memory(cb->invoke), memory(p->value)); };
+            close() using { separate(memory(cb->invoke), memory(p->value)); };
         }
         have cb->invoke == at(before, cb->invoke) by {
             preserve(memory(cb->invoke), statement(0));

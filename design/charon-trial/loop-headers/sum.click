@@ -17,7 +17,7 @@ fn sum(bytes: &[u8]) -> i32 {
         solve();
     }
     have to_integer(total) == prefix(bytes, ((i as uint32) as int32)) by {
-        solve() using {
+        close() using {
             to_integer(total) == 0;
             prefix(bytes, ((i as uint32) as int32)) == 0;
         }
@@ -43,14 +43,14 @@ fn sum(bytes: &[u8]) -> i32 {
                 apply(integer::int32_less_equal_to_integer(((i as uint32) as int32), 1000));
             }
             have to_integer(total) <= 255000 by {
-                solve() using {
+                close() using {
                     to_integer(total) <= 255 * to_integer(((i as uint32) as int32));
                     to_integer(((i as uint32) as int32)) <= 1000;
                 }
             }
             step_until(region(18).entry);
             have (((i as uint32) as int32)) < ((bytes.len() as uint32) as int32) by {
-                solve() using {
+                close() using {
                     i < bytes.len();
                     bytes.len() <= 2147483647u64;
                 }
@@ -79,13 +79,13 @@ fn sum(bytes: &[u8]) -> i32 {
                 apply(integer::int32_less_equal_to_integer((bytes[((i as uint32) as int32)] as int32), 255));
             }
             have to_integer(total) + to_integer((bytes[((i as uint32) as int32)] as int32)) >= -2147483648 by {
-                solve() using {
+                close() using {
                     0 <= to_integer(total);
                     0 <= to_integer((bytes[((i as uint32) as int32)] as int32));
                 }
             }
             have to_integer(total) + to_integer((bytes[((i as uint32) as int32)] as int32)) <= 2147483647 by {
-                solve() using {
+                close() using {
                     to_integer(total) <= 255000;
                     to_integer((bytes[((i as uint32) as int32)] as int32)) <= 255;
                 }
@@ -104,7 +104,7 @@ fn sum(bytes: &[u8]) -> i32 {
                 solve();
             }
             have to_integer(total + (bytes[((i as uint32) as int32)] as int32)) == prefix(bytes, ((i as uint32) as int32) + 1) by {
-                solve() using {
+                close() using {
                     to_integer(total + (bytes[((i as uint32) as int32)] as int32)) == to_integer(total) + to_integer((bytes[((i as uint32) as int32)] as int32));
                     to_integer(total) == prefix(bytes, ((i as uint32) as int32));
                     prefix(bytes, ((i as uint32) as int32) + 1) == prefix(bytes, ((i as uint32) as int32)) + to_integer((bytes[((i as uint32) as int32)] as int32));
@@ -117,31 +117,31 @@ fn sum(bytes: &[u8]) -> i32 {
                 apply(integer::int32_add_to_integer(((i as uint32) as int32), 1));
             }
             have 0 <= to_integer(total) + to_integer((bytes[((i as uint32) as int32)] as int32)) by {
-                solve() using {
+                close() using {
                     0 <= to_integer(total);
                     0 <= to_integer((bytes[((i as uint32) as int32)] as int32));
                 }
             }
             have 0 <= to_integer(total + (bytes[((i as uint32) as int32)] as int32)) by {
-                solve() using {
+                close() using {
                     0 <= to_integer(total) + to_integer((bytes[((i as uint32) as int32)] as int32));
                     to_integer(total + (bytes[((i as uint32) as int32)] as int32)) == to_integer(total) + to_integer((bytes[((i as uint32) as int32)] as int32));
                 }
             }
             have to_integer(total) + to_integer((bytes[((i as uint32) as int32)] as int32)) <= 255 * (to_integer(((i as uint32) as int32)) + 1) by {
-                solve() using {
+                close() using {
                     to_integer(total) <= 255 * to_integer(((i as uint32) as int32));
                     to_integer((bytes[((i as uint32) as int32)] as int32)) <= 255;
                 }
             }
             have to_integer(total) + to_integer((bytes[((i as uint32) as int32)] as int32)) <= 255 * to_integer(((i as uint32) as int32) + 1) by {
-                solve() using {
+                close() using {
                     to_integer(total) + to_integer((bytes[((i as uint32) as int32)] as int32)) <= 255 * (to_integer(((i as uint32) as int32)) + 1);
                     to_integer(((i as uint32) as int32) + 1) == to_integer(((i as uint32) as int32)) + 1;
                 }
             }
             have to_integer(total + (bytes[((i as uint32) as int32)] as int32)) <= 255 * to_integer(((i as uint32) as int32) + 1) by {
-                solve() using {
+                close() using {
                     to_integer(total) + to_integer((bytes[((i as uint32) as int32)] as int32)) <= 255 * to_integer(((i as uint32) as int32) + 1);
                     to_integer(total + (bytes[((i as uint32) as int32)] as int32)) == to_integer(total) + to_integer((bytes[((i as uint32) as int32)] as int32));
                 }
@@ -175,7 +175,7 @@ fn sum(bytes: &[u8]) -> i32 {
         }
     }
     have i == bytes.len() by {
-        solve() using {
+        close() using {
             i <= bytes.len();
             not i < bytes.len();
         }
@@ -190,7 +190,7 @@ fn sum(bytes: &[u8]) -> i32 {
         solve();
     }
     have to_integer(total) == prefix(bytes, ((bytes.len() as uint32) as int32)) by {
-        solve() using {
+        close() using {
             to_integer(total) == prefix(bytes, ((i as uint32) as int32));
             prefix(bytes, ((i as uint32) as int32)) == prefix(bytes, ((bytes.len() as uint32) as int32));
         }

@@ -61,7 +61,7 @@ int32 peek(struct node* n, int32 x) {
                     mark before_assignment;
                     step();
                     have separate(statement(2).footprint, memory(n->next)) by {
-                        solve() using {};
+                        close() using {};
                     }
                     have n->next == at(before_assignment, n->next) by {
                         preserve(memory(n->next), statement(2));
@@ -74,13 +74,13 @@ int32 peek(struct node* n, int32 x) {
                     mark before_assignment;
                     step();
                     have separate(statement(2).footprint, memory(n->next)) by {
-                        solve() using {};
+                        close() using {};
                     }
                     have n->next == at(before_assignment, n->next) by {
                         preserve(memory(n->next), statement(2));
                     }
                     have separate(statement(2).footprint, memory(n->next->next)) by {
-                        solve() using {};
+                        close() using {};
                     }
                     have n->next->next == at(before_assignment, n->next->next) by {
                         preserve(memory(n->next->next), statement(2));

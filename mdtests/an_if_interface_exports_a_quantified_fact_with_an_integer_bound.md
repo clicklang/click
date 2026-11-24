@@ -37,8 +37,8 @@ int32 q(int32 j) {
             known();
         }
     } else {
-        have 1 <= j by { solve() using { 0 <= j; j != 0; }; }
-        have j == 1 by { solve() using { 1 <= j; j <= 1; }; }
+        have 1 <= j by { close() using { 0 <= j; j != 0; }; }
+        have j == 1 by { close() using { 1 <= j; j <= 1; }; }
         have forall (k: uint64) { 0u64 <= k and k < 2u64 implies tmp[k] != 0u8 } by { enumerate(); }
         have forall (k: uint64) { 0u64 <= k and k < j as uint64 + 1u64 implies tmp[k] != 0u8 } by {
             intro();

@@ -16,43 +16,43 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
     ensures to_integer(n) <= to_integer(result) * to_integer(d);
     ensures (to_integer(result) + -1) * to_integer(d) < to_integer(n);
 } by {
-    have 1 <= d by { solve() using { d > 0; }; }
-    have -19807040619342712363678695422 <= to_integer(n) by { solve() using {
+    have 1 <= d by { close() using { d > 0; }; }
+    have -19807040619342712363678695422 <= to_integer(n) by { close() using {
         -9223372036854775809 * to_integer(d) < to_integer(n); to_integer(d) <= 2147483647;
     }; }
-    have to_integer(n) <= 19807040619342712359383728129 by { solve() using {
+    have to_integer(n) <= 19807040619342712359383728129 by { close() using {
         to_integer(n) <= 9223372036854775807 * to_integer(d); to_integer(d) <= 2147483647;
     }; }
-    have to_integer(d) != 0 by { solve() using { 1 <= to_integer(d); }; }
-    have to_integer(d) != -1 by { solve() using { 1 <= to_integer(d); }; }
+    have to_integer(d) != 0 by { close() using { 1 <= to_integer(d); }; }
+    have to_integer(d) != -1 by { close() using { 1 <= to_integer(d); }; }
     step();
     step();
     have -9223372036854775808 <= truncating_quotient(to_integer(n), to_integer(d)) by {
         apply(integer::positive_divisor_quotient_strict_lower(to_integer(n), to_integer(d), -9223372036854775809));
-        solve() using { -9223372036854775809 < truncating_quotient(to_integer(n), to_integer(d)); };
+        close() using { -9223372036854775809 < truncating_quotient(to_integer(n), to_integer(d)); };
     }
     have truncating_quotient(to_integer(n), to_integer(d)) <= 9223372036854775807 by {
         apply(integer::positive_divisor_quotient_upper(to_integer(n), to_integer(d), 9223372036854775807));
     }
-    have -9223372036854775808 <= to_integer(n / d as int128) by { solve() using { to_integer(n / d as int128) == truncating_quotient(to_integer(n), to_integer(d)); -9223372036854775808 <= truncating_quotient(to_integer(n), to_integer(d)); }; }
-    have to_integer(n / d as int128) <= 9223372036854775807 by { solve() using { to_integer(n / d as int128) == truncating_quotient(to_integer(n), to_integer(d)); truncating_quotient(to_integer(n), to_integer(d)) <= 9223372036854775807; }; }
-    have to_integer(quot) == to_integer(n / d as int128) by { solve() using { -9223372036854775808 <= to_integer(n / d as int128); to_integer(n / d as int128) <= 9223372036854775807; }; }
-    have -9223372036854775808 <= to_integer(quot) by { solve() using { to_integer(quot) == to_integer(n / d as int128); -9223372036854775808 <= to_integer(n / d as int128); }; }
-    have to_integer(quot) <= 9223372036854775807 by { solve() using { to_integer(quot) == to_integer(n / d as int128); to_integer(n / d as int128) <= 9223372036854775807; }; }
+    have -9223372036854775808 <= to_integer(n / d as int128) by { close() using { to_integer(n / d as int128) == truncating_quotient(to_integer(n), to_integer(d)); -9223372036854775808 <= truncating_quotient(to_integer(n), to_integer(d)); }; }
+    have to_integer(n / d as int128) <= 9223372036854775807 by { close() using { to_integer(n / d as int128) == truncating_quotient(to_integer(n), to_integer(d)); truncating_quotient(to_integer(n), to_integer(d)) <= 9223372036854775807; }; }
+    have to_integer(quot) == to_integer(n / d as int128) by { close() using { -9223372036854775808 <= to_integer(n / d as int128); to_integer(n / d as int128) <= 9223372036854775807; }; }
+    have -9223372036854775808 <= to_integer(quot) by { close() using { to_integer(quot) == to_integer(n / d as int128); -9223372036854775808 <= to_integer(n / d as int128); }; }
+    have to_integer(quot) <= 9223372036854775807 by { close() using { to_integer(quot) == to_integer(n / d as int128); to_integer(n / d as int128) <= 9223372036854775807; }; }
     step();
-    have -2147483646 <= truncating_remainder(to_integer(n), to_integer(d)) by { solve() using { -19807040619342712363678695422 <= to_integer(n); to_integer(n) <= 19807040619342712359383728129; 1 <= to_integer(d); to_integer(d) <= 2147483647; }; }
-    have truncating_remainder(to_integer(n), to_integer(d)) <= 2147483646 by { solve() using { -19807040619342712363678695422 <= to_integer(n); to_integer(n) <= 19807040619342712359383728129; 1 <= to_integer(d); to_integer(d) <= 2147483647; }; }
-    have -2147483646 <= to_integer(n % d as int128) by { solve() using { to_integer(n % d as int128) == truncating_remainder(to_integer(n), to_integer(d)); -2147483646 <= truncating_remainder(to_integer(n), to_integer(d)); }; }
-    have to_integer(n % d as int128) <= 2147483646 by { solve() using { to_integer(n % d as int128) == truncating_remainder(to_integer(n), to_integer(d)); truncating_remainder(to_integer(n), to_integer(d)) <= 2147483646; }; }
-    have to_integer(mod) == to_integer(n % d as int128) by { solve() using { -2147483646 <= to_integer(n % d as int128); to_integer(n % d as int128) <= 2147483646; }; }
-    have -2147483646 <= to_integer(mod) by { solve() using { to_integer(mod) == to_integer(n % d as int128); -2147483646 <= to_integer(n % d as int128); }; }
-    have to_integer(mod) <= 2147483646 by { solve() using { to_integer(mod) == to_integer(n % d as int128); to_integer(n % d as int128) <= 2147483646; }; }
-    have 0 < to_integer(d) by { solve() using { 1 <= to_integer(d); }; }
+    have -2147483646 <= truncating_remainder(to_integer(n), to_integer(d)) by { close() using { -19807040619342712363678695422 <= to_integer(n); to_integer(n) <= 19807040619342712359383728129; 1 <= to_integer(d); to_integer(d) <= 2147483647; }; }
+    have truncating_remainder(to_integer(n), to_integer(d)) <= 2147483646 by { close() using { -19807040619342712363678695422 <= to_integer(n); to_integer(n) <= 19807040619342712359383728129; 1 <= to_integer(d); to_integer(d) <= 2147483647; }; }
+    have -2147483646 <= to_integer(n % d as int128) by { close() using { to_integer(n % d as int128) == truncating_remainder(to_integer(n), to_integer(d)); -2147483646 <= truncating_remainder(to_integer(n), to_integer(d)); }; }
+    have to_integer(n % d as int128) <= 2147483646 by { close() using { to_integer(n % d as int128) == truncating_remainder(to_integer(n), to_integer(d)); truncating_remainder(to_integer(n), to_integer(d)) <= 2147483646; }; }
+    have to_integer(mod) == to_integer(n % d as int128) by { close() using { -2147483646 <= to_integer(n % d as int128); to_integer(n % d as int128) <= 2147483646; }; }
+    have -2147483646 <= to_integer(mod) by { close() using { to_integer(mod) == to_integer(n % d as int128); -2147483646 <= to_integer(n % d as int128); }; }
+    have to_integer(mod) <= 2147483646 by { close() using { to_integer(mod) == to_integer(n % d as int128); to_integer(n % d as int128) <= 2147483646; }; }
+    have 0 < to_integer(d) by { close() using { 1 <= to_integer(d); }; }
     apply(integer::positive_divisor_remainder_lower(to_integer(n), to_integer(d)));
     apply(integer::positive_divisor_remainder_upper(to_integer(n), to_integer(d)));
     apply(integer::truncation_identity(to_integer(n), to_integer(d)));
-    have to_integer(quot) == truncating_quotient(to_integer(n), to_integer(d)) by { solve() using { to_integer(quot) == to_integer(n / d as int128); to_integer(n / d as int128) == truncating_quotient(to_integer(n), to_integer(d)); }; }
-    have to_integer(mod) == truncating_remainder(to_integer(n), to_integer(d)) by { solve() using { to_integer(mod) == to_integer(n % d as int128); to_integer(n % d as int128) == truncating_remainder(to_integer(n), to_integer(d)); }; }
+    have to_integer(quot) == truncating_quotient(to_integer(n), to_integer(d)) by { close() using { to_integer(quot) == to_integer(n / d as int128); to_integer(n / d as int128) == truncating_quotient(to_integer(n), to_integer(d)); }; }
+    have to_integer(mod) == truncating_remainder(to_integer(n), to_integer(d)) by { close() using { to_integer(mod) == to_integer(n % d as int128); to_integer(n % d as int128) == truncating_remainder(to_integer(n), to_integer(d)); }; }
     have to_integer(n) == to_integer(quot) * to_integer(d) + to_integer(mod) by {
         rewrite(to_integer(quot), truncating_quotient(to_integer(n), to_integer(d)));
         rewrite(to_integer(mod), truncating_remainder(to_integer(n), to_integer(d)));
@@ -61,11 +61,11 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
 
     have defined(quot + 0i64);
     have to_integer(quot + 0i64) == to_integer(quot) + 0;
-    have -9223372036854775808 <= to_integer(quot + 0i64) by { solve() using {
+    have -9223372036854775808 <= to_integer(quot + 0i64) by { close() using {
         to_integer(quot + 0i64) == to_integer(quot) + 0;
         -9223372036854775808 <= to_integer(quot); to_integer(quot) <= 9223372036854775807;
     }; }
-    have to_integer(quot + 0i64) <= 9223372036854775807 by { solve() using {
+    have to_integer(quot + 0i64) <= 9223372036854775807 by { close() using {
         to_integer(quot + 0i64) == to_integer(quot) + 0;
         -9223372036854775808 <= to_integer(quot); to_integer(quot) <= 9223372036854775807;
     }; }
@@ -76,13 +76,13 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
     if 0 < mod {
         apply(integer::upper_correction_bound(to_integer(n), to_integer(d), to_integer(quot), to_integer(mod), 9223372036854775807));
         have quot <= 9223372036854775806i64 by {
-            solve() using { to_integer(quot) <= 9223372036854775806; };
+            close() using { to_integer(quot) <= 9223372036854775806; };
         }
         have to_integer(quot) + 1 <= 9223372036854775807 by {
-            solve() using { to_integer(quot) <= 9223372036854775806; };
+            close() using { to_integer(quot) <= 9223372036854775806; };
         }
         have -9223372036854775808 <= to_integer(quot) + 1 by {
-            solve() using { -9223372036854775808 <= to_integer(quot); };
+            close() using { -9223372036854775808 <= to_integer(quot); };
         }
         have defined(quot + 1i64) by {
             all {
@@ -91,11 +91,11 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
             }
         }
         have to_integer(quot + 1i64) == to_integer(quot) + to_integer(1i64);
-        have -9223372036854775808 <= to_integer(quot + 1i64) by { solve() using {
+        have -9223372036854775808 <= to_integer(quot + 1i64) by { close() using {
             to_integer(quot + 1i64) == to_integer(quot) + 1;
             -9223372036854775808 <= to_integer(quot); to_integer(quot) <= 9223372036854775806;
         }; }
-        have to_integer(quot + 1i64) <= 9223372036854775807 by { solve() using {
+        have to_integer(quot + 1i64) <= 9223372036854775807 by { close() using {
             to_integer(quot + 1i64) == to_integer(quot) + 1;
             -9223372036854775808 <= to_integer(quot); to_integer(quot) <= 9223372036854775806;
         }; }
@@ -107,19 +107,19 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
 
         have not (truncating_remainder(to_integer(n), to_integer(d)) < 0) by {
             rewrite(truncating_remainder(to_integer(n), to_integer(d)), to_integer(mod));
-            solve() using { 0 < to_integer(mod); };
+            close() using { 0 < to_integer(mod); };
         }
         have 0 <= truncating_remainder(to_integer(n), to_integer(d)) by {
             rewrite(truncating_remainder(to_integer(n), to_integer(d)), to_integer(mod));
-            solve() using { 0 < to_integer(mod); };
+            close() using { 0 < to_integer(mod); };
         }
         have 0 < truncating_remainder(to_integer(n), to_integer(d)) by {
             rewrite(truncating_remainder(to_integer(n), to_integer(d)), to_integer(mod));
-            solve() using { 0 < to_integer(mod); };
+            close() using { 0 < to_integer(mod); };
         }
         have not (truncating_remainder(to_integer(n), to_integer(d)) <= 0) by {
             rewrite(truncating_remainder(to_integer(n), to_integer(d)), to_integer(mod));
-            solve() using { 0 < to_integer(mod); };
+            close() using { 0 < to_integer(mod); };
         }
         step_until(function.exit);
         have -9223372036854775808 <= to_integer(result);
@@ -140,19 +140,19 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
 
             have truncating_remainder(to_integer(n), to_integer(d)) < 0 by {
                 rewrite(truncating_remainder(to_integer(n), to_integer(d)), to_integer(mod));
-                solve() using { to_integer(mod) < 0; };
+                close() using { to_integer(mod) < 0; };
             }
             have not (0 <= truncating_remainder(to_integer(n), to_integer(d))) by {
                 rewrite(truncating_remainder(to_integer(n), to_integer(d)), to_integer(mod));
-                solve() using { to_integer(mod) < 0; };
+                close() using { to_integer(mod) < 0; };
             }
             have not (0 < truncating_remainder(to_integer(n), to_integer(d))) by {
                 rewrite(truncating_remainder(to_integer(n), to_integer(d)), to_integer(mod));
-                solve() using { to_integer(mod) < 0; };
+                close() using { to_integer(mod) < 0; };
             }
             have truncating_remainder(to_integer(n), to_integer(d)) <= 0 by {
                 rewrite(truncating_remainder(to_integer(n), to_integer(d)), to_integer(mod));
-                solve() using { to_integer(mod) < 0; };
+                close() using { to_integer(mod) < 0; };
             }
             step_until(function.exit);
             have -9223372036854775808 <= to_integer(result);
@@ -171,19 +171,19 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
         } else {
             have not (truncating_remainder(to_integer(n), to_integer(d)) < 0) by {
                 rewrite(truncating_remainder(to_integer(n), to_integer(d)), to_integer(mod));
-                solve() using { 0 <= to_integer(mod); to_integer(mod) <= 0; };
+                close() using { 0 <= to_integer(mod); to_integer(mod) <= 0; };
             }
             have 0 <= truncating_remainder(to_integer(n), to_integer(d)) by {
                 rewrite(truncating_remainder(to_integer(n), to_integer(d)), to_integer(mod));
-                solve() using { 0 <= to_integer(mod); to_integer(mod) <= 0; };
+                close() using { 0 <= to_integer(mod); to_integer(mod) <= 0; };
             }
             have not (0 < truncating_remainder(to_integer(n), to_integer(d))) by {
                 rewrite(truncating_remainder(to_integer(n), to_integer(d)), to_integer(mod));
-                solve() using { 0 <= to_integer(mod); to_integer(mod) <= 0; };
+                close() using { 0 <= to_integer(mod); to_integer(mod) <= 0; };
             }
             have truncating_remainder(to_integer(n), to_integer(d)) <= 0 by {
                 rewrite(truncating_remainder(to_integer(n), to_integer(d)), to_integer(mod));
-                solve() using { 0 <= to_integer(mod); to_integer(mod) <= 0; };
+                close() using { 0 <= to_integer(mod); to_integer(mod) <= 0; };
             }
             step_until(function.exit);
             have -9223372036854775808 <= to_integer(result);

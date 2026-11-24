@@ -46,7 +46,7 @@ void contribute(struct counter* p) {
     step();
     unfold(state);
     have (3 - count(remaining(p))) + 1 == 3 - (count(remaining(p)) - 1) by {
-        solve() using { count(remaining(p)) > 1; count(remaining(p)) <= 3; };
+        close() using { count(remaining(p)) > 1; count(remaining(p)) <= 3; };
     }
     unfold(remaining(p));
     step();

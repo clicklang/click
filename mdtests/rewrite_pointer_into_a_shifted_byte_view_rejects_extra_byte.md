@@ -42,7 +42,7 @@ void keep(const uint8* p, int32 n, int32 i) {
             }
             have viewable(q[0..5]) by {
                 rewrite(q, p + i);
-                solve() using { viewable(p[i..i + 4]); };
+                close() using { viewable(p[i..i + 4]); };
             }
             let h = fold(Cell(p, n, i), { model: Link::Node(q) });
         },
@@ -51,5 +51,5 @@ void keep(const uint8* p, int32 n, int32 i) {
 ```
 
 ```expect
-fail: `solve() using` could not prove the current goal from only its listed premises
+fail: `close() using` could not prove the current goal from only its listed premises
 ```

@@ -46,7 +46,7 @@ theorem sized_model_unique(a: SizedTree, b: SizedTree) {
                         have to_integer(sized_value(al)) == to_integer(sized_value(bl)) by { rewrite(al, bl); known(); }
                         have to_integer(sized_value(ar)) == to_integer(sized_value(br)) by { rewrite(ar, br); known(); }
                         have to_integer(av) == to_integer(bv) by {
-                            solve() using {
+                            close() using {
                                 to_integer(av) == 1 + to_integer(sized_value(al)) + to_integer(sized_value(ar));
                                 to_integer(bv) == 1 + to_integer(sized_value(bl)) + to_integer(sized_value(br));
                                 to_integer(sized_value(al)) == to_integer(sized_value(bl));

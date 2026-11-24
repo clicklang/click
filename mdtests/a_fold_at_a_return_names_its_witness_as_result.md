@@ -4,7 +4,7 @@
 function returns that pointer, so at the closing `fold` the witness is the
 returned value, and the fold's open body facts are spelled with `result`:
 `aligned(result, 8)` and `node->word == address(result) + (node->word & 1)`.
-The `solve() using` after the fold cites exactly those spellings.
+The `close() using` after the fold cites exactly those spellings.
 
 ```c filename=a_fold_at_a_return_names_its_witness_as_result.c
 struct node {
@@ -34,7 +34,7 @@ struct node* unpack(struct node* node) {
     step_until(function.exit);
     fold(packed(node));
     known();
-    solve() using {
+    close() using {
         aligned(result, 8);
         node->word == address(result) + (node->word & 1);
     };

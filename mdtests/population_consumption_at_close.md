@@ -59,49 +59,49 @@ uint32 contribute_early(struct counter* p) {
     }
     with(control(p)) {
         have (to_integer(count(remaining(p))) - 1) >= 1 by {
-            solve() using { to_integer(count(remaining(p))) > 1; };
+            close() using { to_integer(count(remaining(p))) > 1; };
         }
         have (to_integer(count(remaining(p))) - 1) <= 3 by {
-            solve() using { to_integer(count(remaining(p))) <= 3; };
+            close() using { to_integer(count(remaining(p))) <= 3; };
         }
         unfold(remaining(p));
         step();
         have to_integer(p->value) == (3 - to_integer(count(remaining(p)))) by {
             have 0 <= (to_integer(old(p->value)) + 1) by {
-                solve() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) <=
+                close() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) <=
                         at(function.entry, 3); at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
                         to_integer(count(remaining(p))))); };
             }
             have (to_integer(old(p->value)) + 1) <= 4294967295 by {
-                solve() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) >=
+                close() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) >=
                         at(function.entry, 1); at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
                         to_integer(count(remaining(p))))); };
             }
             have to_integer(p->value) == (to_integer(old(p->value)) + 1) by {
-                solve() using { 0 <= (to_integer(old(p->value)) + 1); (to_integer(old(p->value)) + 1) <= 4294967295; };
+                close() using { 0 <= (to_integer(old(p->value)) + 1); (to_integer(old(p->value)) + 1) <= 4294967295; };
             }
             have -2147483648 <= (to_integer(old(count(remaining(p)))) - 1) by {
-                solve() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) >=
+                close() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) >=
                         at(function.entry, 1); };
             }
             have (to_integer(old(count(remaining(p)))) - 1) <= 2147483647 by {
-                solve() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) <=
+                close() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) <=
                         at(function.entry, 3); };
             }
             have to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) - 1) by {
-                solve() using { -2147483648 <= (to_integer(old(count(remaining(p)))) - 1); (to_integer(old(count(remaining(p)))) - 1) <= 2147483647; };
+                close() using { -2147483648 <= (to_integer(old(count(remaining(p)))) - 1); (to_integer(old(count(remaining(p)))) - 1) <= 2147483647; };
             }
             have to_integer(p->value) <= (3 - to_integer(count(remaining(p)))) by {
-                solve() using { at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
+                close() using { at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
                         to_integer(count(remaining(p))))); to_integer(count(remaining(p))) ==
                         (to_integer(old(count(remaining(p)))) - 1); to_integer(p->value) == (to_integer(old(p->value)) + 1); };
             }
             have (3 - to_integer(count(remaining(p)))) <= to_integer(p->value) by {
-                solve() using { at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
+                close() using { at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
                         to_integer(count(remaining(p))))); to_integer(count(remaining(p))) ==
                         (to_integer(old(count(remaining(p)))) - 1); to_integer(p->value) == (to_integer(old(p->value)) + 1); };
             }
-            solve() using { to_integer(p->value) <= (3 - to_integer(count(remaining(p)))); (3 - to_integer(count(remaining(p)))) <= to_integer(p->value); };
+            close() using { to_integer(p->value) <= (3 - to_integer(count(remaining(p)))); (3 - to_integer(count(remaining(p)))) <= to_integer(p->value); };
         }
     }
     with(control(p)) {
@@ -110,15 +110,15 @@ uint32 contribute_early(struct counter* p) {
     known();
     have to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) - 1) by {
         have -2147483648 <= (to_integer(old(count(remaining(p)))) - 1) by {
-            solve() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) >=
+            close() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) >=
                     at(function.entry, 1); };
         }
         have (to_integer(old(count(remaining(p)))) - 1) <= 2147483647 by {
-            solve() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) <=
+            close() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) <=
                     at(function.entry, 3); };
         }
         have to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) - 1) by {
-            solve() using { -2147483648 <= (to_integer(old(count(remaining(p)))) - 1); (to_integer(old(count(remaining(p)))) - 1) <= 2147483647; };
+            close() using { -2147483648 <= (to_integer(old(count(remaining(p)))) - 1); (to_integer(old(count(remaining(p)))) - 1) <= 2147483647; };
         }
         known();
     }
@@ -148,49 +148,49 @@ uint32 contribute_nested(struct counter* p) {
 } by {
     with(control(p)) {
         have (to_integer(count(remaining(p))) - 1) >= 1 by {
-            solve() using { to_integer(count(remaining(p))) > 1; };
+            close() using { to_integer(count(remaining(p))) > 1; };
         }
         have (to_integer(count(remaining(p))) - 1) <= 3 by {
-            solve() using { to_integer(count(remaining(p))) <= 3; };
+            close() using { to_integer(count(remaining(p))) <= 3; };
         }
         unfold(remaining(p));
         step();
         have to_integer(p->value) == (3 - to_integer(count(remaining(p)))) by {
             have 0 <= (to_integer(old(p->value)) + 1) by {
-                solve() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) <=
+                close() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) <=
                         at(function.entry, 3); at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
                         to_integer(count(remaining(p))))); };
             }
             have (to_integer(old(p->value)) + 1) <= 4294967295 by {
-                solve() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) >=
+                close() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) >=
                         at(function.entry, 1); at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
                         to_integer(count(remaining(p))))); };
             }
             have to_integer(p->value) == (to_integer(old(p->value)) + 1) by {
-                solve() using { 0 <= (to_integer(old(p->value)) + 1); (to_integer(old(p->value)) + 1) <= 4294967295; };
+                close() using { 0 <= (to_integer(old(p->value)) + 1); (to_integer(old(p->value)) + 1) <= 4294967295; };
             }
             have -2147483648 <= (to_integer(old(count(remaining(p)))) - 1) by {
-                solve() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) >=
+                close() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) >=
                         at(function.entry, 1); };
             }
             have (to_integer(old(count(remaining(p)))) - 1) <= 2147483647 by {
-                solve() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) <=
+                close() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) <=
                         at(function.entry, 3); };
             }
             have to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) - 1) by {
-                solve() using { -2147483648 <= (to_integer(old(count(remaining(p)))) - 1); (to_integer(old(count(remaining(p)))) - 1) <= 2147483647; };
+                close() using { -2147483648 <= (to_integer(old(count(remaining(p)))) - 1); (to_integer(old(count(remaining(p)))) - 1) <= 2147483647; };
             }
             have to_integer(p->value) <= (3 - to_integer(count(remaining(p)))) by {
-                solve() using { at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
+                close() using { at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
                         to_integer(count(remaining(p))))); to_integer(count(remaining(p))) ==
                         (to_integer(old(count(remaining(p)))) - 1); to_integer(p->value) == (to_integer(old(p->value)) + 1); };
             }
             have (3 - to_integer(count(remaining(p)))) <= to_integer(p->value) by {
-                solve() using { at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
+                close() using { at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
                         to_integer(count(remaining(p))))); to_integer(count(remaining(p))) ==
                         (to_integer(old(count(remaining(p)))) - 1); to_integer(p->value) == (to_integer(old(p->value)) + 1); };
             }
-            solve() using { to_integer(p->value) <= (3 - to_integer(count(remaining(p)))); (3 - to_integer(count(remaining(p)))) <= to_integer(p->value); };
+            close() using { to_integer(p->value) <= (3 - to_integer(count(remaining(p)))); (3 - to_integer(count(remaining(p)))) <= to_integer(p->value); };
         }
     }
     step();
@@ -198,51 +198,51 @@ uint32 contribute_nested(struct counter* p) {
         have to_integer(p->value) == (to_integer(old(p->value)) + 1) by {
             have to_integer(p->value) <= (to_integer(old(p->value)) + 1) by {
                 have -2147483648 <= (to_integer(old(count(remaining(p)))) - 1) by {
-                    solve() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) >=
+                    close() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) >=
                             at(function.entry, 1); };
                 }
                 have (to_integer(old(count(remaining(p)))) - 1) <= 2147483647 by {
-                    solve() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) <=
+                    close() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) <=
                             at(function.entry, 3); };
                 }
                 have to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) - 1) by {
-                    solve() using { -2147483648 <= (to_integer(old(count(remaining(p)))) - 1); (to_integer(old(count(remaining(p)))) - 1) <= 2147483647; };
+                    close() using { -2147483648 <= (to_integer(old(count(remaining(p)))) - 1); (to_integer(old(count(remaining(p)))) - 1) <= 2147483647; };
                 }
-                solve() using { at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
+                close() using { at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
                         to_integer(count(remaining(p))))); to_integer(count(remaining(p))) ==
                         (to_integer(old(count(remaining(p)))) - 1); to_integer(p->value) == (3 - to_integer(count(remaining(p)))); };
             }
             have (to_integer(old(p->value)) + 1) <= to_integer(p->value) by {
                 have -2147483648 <= (to_integer(old(count(remaining(p)))) - 1) by {
-                    solve() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) >=
+                    close() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) >=
                             at(function.entry, 1); };
                 }
                 have (to_integer(old(count(remaining(p)))) - 1) <= 2147483647 by {
-                    solve() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) <=
+                    close() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) <=
                             at(function.entry, 3); };
                 }
                 have to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) - 1) by {
-                    solve() using { -2147483648 <= (to_integer(old(count(remaining(p)))) - 1); (to_integer(old(count(remaining(p)))) - 1) <= 2147483647; };
+                    close() using { -2147483648 <= (to_integer(old(count(remaining(p)))) - 1); (to_integer(old(count(remaining(p)))) - 1) <= 2147483647; };
                 }
-                solve() using { at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
+                close() using { at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
                         to_integer(count(remaining(p))))); to_integer(count(remaining(p))) ==
                         (to_integer(old(count(remaining(p)))) - 1); to_integer(p->value) == (3 - to_integer(count(remaining(p)))); };
             }
-            solve() using { to_integer(p->value) <= (to_integer(old(p->value)) + 1); (to_integer(old(p->value)) + 1) <= to_integer(p->value); };
+            close() using { to_integer(p->value) <= (to_integer(old(p->value)) + 1); (to_integer(old(p->value)) + 1) <= to_integer(p->value); };
         }
     }
     step();
     known();
     have to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) - 1) by {
         have to_integer(count(remaining(p))) <= (to_integer(old(count(remaining(p)))) - 1) by {
-            solve() using { at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
+            close() using { at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
                     to_integer(count(remaining(p))))); to_integer(p->value) == (3 - to_integer(count(remaining(p)))); to_integer(p->value) == (to_integer(old(p->value)) + 1); };
         }
         have (to_integer(old(count(remaining(p)))) - 1) <= to_integer(count(remaining(p))) by {
-            solve() using { at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
+            close() using { at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
                     to_integer(count(remaining(p))))); to_integer(p->value) == (3 - to_integer(count(remaining(p)))); to_integer(p->value) == (to_integer(old(p->value)) + 1); };
         }
-        solve() using { to_integer(count(remaining(p))) <= (to_integer(old(count(remaining(p)))) - 1); (to_integer(old(count(remaining(p)))) - 1) <= to_integer(count(remaining(p))); };
+        close() using { to_integer(count(remaining(p))) <= (to_integer(old(count(remaining(p)))) - 1); (to_integer(old(count(remaining(p)))) - 1) <= to_integer(count(remaining(p))); };
     }
     have to_integer(p->value) == (to_integer(old(p->value)) + 1) by {
         known();
@@ -259,49 +259,49 @@ uint32 contribute_branch(struct counter* p, int32 report) {
 } by {
     with(control(p)) {
         have (to_integer(count(remaining(p))) - 1) >= 1 by {
-            solve() using { to_integer(count(remaining(p))) > 1; };
+            close() using { to_integer(count(remaining(p))) > 1; };
         }
         have (to_integer(count(remaining(p))) - 1) <= 3 by {
-            solve() using { to_integer(count(remaining(p))) <= 3; };
+            close() using { to_integer(count(remaining(p))) <= 3; };
         }
         unfold(remaining(p));
         step();
         have to_integer(p->value) == (3 - to_integer(count(remaining(p)))) by {
             have 0 <= (to_integer(old(p->value)) + 1) by {
-                solve() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) <=
+                close() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) <=
                         at(function.entry, 3); at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
                         to_integer(count(remaining(p))))); };
             }
             have (to_integer(old(p->value)) + 1) <= 4294967295 by {
-                solve() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) >=
+                close() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) >=
                         at(function.entry, 1); at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
                         to_integer(count(remaining(p))))); };
             }
             have to_integer(p->value) == (to_integer(old(p->value)) + 1) by {
-                solve() using { 0 <= (to_integer(old(p->value)) + 1); (to_integer(old(p->value)) + 1) <= 4294967295; };
+                close() using { 0 <= (to_integer(old(p->value)) + 1); (to_integer(old(p->value)) + 1) <= 4294967295; };
             }
             have -2147483648 <= (to_integer(old(count(remaining(p)))) - 1) by {
-                solve() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) >=
+                close() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) >=
                         at(function.entry, 1); };
             }
             have (to_integer(old(count(remaining(p)))) - 1) <= 2147483647 by {
-                solve() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) <=
+                close() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) <=
                         at(function.entry, 3); };
             }
             have to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) - 1) by {
-                solve() using { -2147483648 <= (to_integer(old(count(remaining(p)))) - 1); (to_integer(old(count(remaining(p)))) - 1) <= 2147483647; };
+                close() using { -2147483648 <= (to_integer(old(count(remaining(p)))) - 1); (to_integer(old(count(remaining(p)))) - 1) <= 2147483647; };
             }
             have to_integer(p->value) <= (3 - to_integer(count(remaining(p)))) by {
-                solve() using { at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
+                close() using { at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
                         to_integer(count(remaining(p))))); to_integer(count(remaining(p))) ==
                         (to_integer(old(count(remaining(p)))) - 1); to_integer(p->value) == (to_integer(old(p->value)) + 1); };
             }
             have (3 - to_integer(count(remaining(p)))) <= to_integer(p->value) by {
-                solve() using { at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
+                close() using { at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
                         to_integer(count(remaining(p))))); to_integer(count(remaining(p))) ==
                         (to_integer(old(count(remaining(p)))) - 1); to_integer(p->value) == (to_integer(old(p->value)) + 1); };
             }
-            solve() using { to_integer(p->value) <= (3 - to_integer(count(remaining(p)))); (3 - to_integer(count(remaining(p)))) <= to_integer(p->value); };
+            close() using { to_integer(p->value) <= (3 - to_integer(count(remaining(p)))); (3 - to_integer(count(remaining(p)))) <= to_integer(p->value); };
         }
     }
     if report != 0 {
@@ -312,15 +312,15 @@ uint32 contribute_branch(struct counter* p, int32 report) {
         known();
         have to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) - 1) by {
             have -2147483648 <= (to_integer(old(count(remaining(p)))) - 1) by {
-                solve() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) >=
+                close() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) >=
                         at(function.entry, 1); };
             }
             have (to_integer(old(count(remaining(p)))) - 1) <= 2147483647 by {
-                solve() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) <=
+                close() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) <=
                         at(function.entry, 3); };
             }
             have to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) - 1) by {
-                solve() using { -2147483648 <= (to_integer(old(count(remaining(p)))) - 1); (to_integer(old(count(remaining(p)))) - 1) <= 2147483647; };
+                close() using { -2147483648 <= (to_integer(old(count(remaining(p)))) - 1); (to_integer(old(count(remaining(p)))) - 1) <= 2147483647; };
             }
             known();
         }
@@ -339,15 +339,15 @@ uint32 contribute_branch(struct counter* p, int32 report) {
         known();
         have to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) - 1) by {
             have -2147483648 <= (to_integer(old(count(remaining(p)))) - 1) by {
-                solve() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) >=
+                close() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) >=
                         at(function.entry, 1); };
             }
             have (to_integer(old(count(remaining(p)))) - 1) <= 2147483647 by {
-                solve() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) <=
+                close() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) <=
                         at(function.entry, 3); };
             }
             have to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) - 1) by {
-                solve() using { -2147483648 <= (to_integer(old(count(remaining(p)))) - 1); (to_integer(old(count(remaining(p)))) - 1) <= 2147483647; };
+                close() using { -2147483648 <= (to_integer(old(count(remaining(p)))) - 1); (to_integer(old(count(remaining(p)))) - 1) <= 2147483647; };
             }
             known();
         }
@@ -371,30 +371,30 @@ uint32 sequential_early(struct counter* p) {
     fold(3 of remaining(p));
     have to_integer(p->value) == (3 - to_integer(count(remaining(p)))) by {
         have -2147483648 <= (to_integer(old(count(remaining(p)))) + 3) by {
-            solve() using { 0 <= to_integer(old(count(remaining(p)))); };
+            close() using { 0 <= to_integer(old(count(remaining(p)))); };
         }
         have (to_integer(old(count(remaining(p)))) + 3) <= 2147483647 by {
-            solve() using { to_integer(old(count(remaining(p)))) == 0; };
+            close() using { to_integer(old(count(remaining(p)))) == 0; };
         }
         have to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) + 3) by {
-            solve() using { -2147483648 <= (to_integer(old(count(remaining(p)))) + 3); (to_integer(old(count(remaining(p)))) + 3) <= 2147483647; };
+            close() using { -2147483648 <= (to_integer(old(count(remaining(p)))) + 3); (to_integer(old(count(remaining(p)))) + 3) <= 2147483647; };
         }
         have to_integer(p->value) <= (3 - to_integer(count(remaining(p)))) by {
-            solve() using { to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p))))
+            close() using { to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p))))
                     + 3); to_integer(old(count(remaining(p)))) == 0; to_integer(p->value) == 0; };
         }
         have (3 - to_integer(count(remaining(p)))) <= to_integer(p->value) by {
-            solve() using { to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p))))
+            close() using { to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p))))
                     + 3); 0 <= to_integer(old(count(remaining(p)))); to_integer(p->value) == 0; };
         }
-        solve() using { to_integer(p->value) <= (3 - to_integer(count(remaining(p)))); (3 - to_integer(count(remaining(p)))) <= to_integer(p->value); };
+        close() using { to_integer(p->value) <= (3 - to_integer(count(remaining(p)))); (3 - to_integer(count(remaining(p)))) <= to_integer(p->value); };
     }
     fold(control(p));
     step() by {
-        solve() using { old((count(remaining(p)) as int32)) >= at(function.entry, 0); at(function.entry, to_integer(count(remaining(p)))) == at(function.entry, 0); };
+        close() using { old((count(remaining(p)) as int32)) >= at(function.entry, 0); at(function.entry, to_integer(count(remaining(p)))) == at(function.entry, 0); };
     }
     step() by {
-        solve() using { old((count(remaining(p)) as int32)) >= at(function.entry, 0); at(function.entry, to_integer(count(remaining(p)))) == at(function.entry, 0); };
+        close() using { old((count(remaining(p)) as int32)) >= at(function.entry, 0); at(function.entry, to_integer(count(remaining(p)))) == at(function.entry, 0); };
     }
     unfold(control(p));
     unfold(remaining(p));

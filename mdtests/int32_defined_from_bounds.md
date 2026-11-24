@@ -1,7 +1,7 @@
 # `int32` definedness from the operands' bounds is an explicit step
 
 Arithmetic search expands to ordinary proof steps, with the selected premises
-stated explicitly in `solve() using { ... }`.
+stated explicitly in `close() using { ... }`.
 
 ```c filename=int32_defined_from_bounds.c
 struct box {
@@ -57,7 +57,7 @@ int32 sum(int32 a, int32 b) {
     ensures to_integer(result) == to_integer(a + b);
 } by {
     have defined(a + b) by {
-        solve() using { a < 100; b == 1; };
+        close() using { a < 100; b == 1; };
     }
 }
 
@@ -68,7 +68,7 @@ int32 difference(int32 a, int32 b) {
     ensures to_integer(result) == to_integer(a - b);
 } by {
     have defined(a - b) by {
-        solve() using { -5 <= a; 0 <= b; not (b > 7); };
+        close() using { -5 <= a; 0 <= b; not (b > 7); };
     }
 }
 
@@ -99,7 +99,7 @@ int32 sum_by_listed_solve(int32 a, int32 b) {
     ensures to_integer(result) == to_integer(a + b);
 } by {
     have defined(a + b) by {
-        solve() using {
+        close() using {
             a < 100;
             b == 1;
         };
@@ -112,7 +112,7 @@ int32 sum_by_arithmetic(int32 a, int32 b) {
     ensures to_integer(result) == to_integer(a + b);
 } by {
     have defined(a + b) by {
-        solve() using {
+        close() using {
             a < 100;
             b == 1;
         };

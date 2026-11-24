@@ -136,7 +136,7 @@ int32 probe_contract(struct job *j) {
                     }
                     apply(at(region(3).entry, j->lo) <= k and k < at(before_write, i) implies
                         at(before_write, j->p[k]) == at(before_write, j->v));
-                    have k != at(before_write, i) by { solve() using { k < i; }; }
+                    have k != at(before_write, i) by { close() using { k < i; }; }
                     have separate(at(before_write, memory(j->p[k])), at(before_write, memory(j->p[i]))) by {
                         apply(separation::separate_elements(at(before_write, j->p), k, at(before_write, i)));
                     }
@@ -208,7 +208,7 @@ int32 probe_contract(struct job *j) {
                 apply(integer::int32_to_integer_less_equal_implies_less_equal(i, j->hi));
             }
             have 0 <= to_integer(j->hi) - to_integer(i) by {
-                solve() using { i <= j->hi; };
+                close() using { i <= j->hi; };
             }
             have to_integer(j->hi) - to_integer(i) < at(before_write, to_integer(j->hi) - to_integer(i)) by {
                 rewrite(to_integer(i), to_integer(at(before_write, i)) + 1);

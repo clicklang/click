@@ -66,7 +66,7 @@ void consume_population(struct owner* owner, int32 amount) {
             rewrite(to_integer(old(owner->capacity)),
                 to_integer(old(owner->used)) + to_integer(old(count(slot(owner)))));
             rewrite(to_integer(owner->used), to_integer(old(owner->used)));
-            solve() using {
+            close() using {
                 0 <= amount;
                 amount <= old(count(slot(owner)));
             };

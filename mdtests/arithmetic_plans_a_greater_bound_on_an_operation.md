@@ -1,4 +1,4 @@
-# `solve() using` plans a `>=` goal over an int32 operation
+# `close() using` plans a `>=` goal over an int32 operation
 
 `n - 1 >= 0` follows from `n >= 1`, and `n - 1 < n` from `n >= 0`; the second
 already verified while the first failed as unable to establish definedness.
@@ -20,8 +20,8 @@ int32 predecessor(int32 n) {
     requires n >= 1;
     ensures result == 0;
 } by {
-    have n - 1 >= 0 by { solve() using { n >= 1; }; }
-    have n > n - 1 by { solve() using { n >= 1; }; }
+    have n - 1 >= 0 by { close() using { n >= 1; }; }
+    have n > n - 1 by { close() using { n >= 1; }; }
     step();
     solve();
 }

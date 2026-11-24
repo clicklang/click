@@ -1042,7 +1042,7 @@ int32 bad(int32 x) {
             .expect("fixture should contain the nested smart have")
             + 1;
         let solve = markdown.lines().nth(have_line).unwrap();
-        assert_eq!(solve.trim(), "solve() using {", "{solve}");
+        assert_eq!(solve.trim(), "close() using {", "{solve}");
         let run_at = |line: usize, column: usize| {
             run(&Arguments {
                 click_path: path.clone(),
@@ -1056,12 +1056,12 @@ int32 bad(int32 x) {
             })
         };
 
-        let from_solve = run_at(have_line + 1, solve.find("solve").unwrap() + 1)
+        let from_solve = run_at(have_line + 1, solve.find("close").unwrap() + 1)
             .expect("the nested solve should select its smart have");
         let from_have = run_at(have_line, 13).expect("the have keyword should select it");
 
         assert_eq!(from_solve, from_have);
-        // The selected have's `solve() using` becomes an explicit closer.
+        // The selected have's `close() using` becomes an explicit closer.
         assert!(
             from_solve
                 .lines()
@@ -1070,13 +1070,13 @@ int32 bad(int32 x) {
                     && body.trim() == "close();"),
             "{from_solve}"
         );
-        // The written `solve() using` is replaced, at whatever indentation.
+        // The written `close() using` is replaced, at whatever indentation.
         assert!(
             !from_solve
                 .lines()
                 .zip(from_solve.lines().skip(1))
                 .any(|(solve, premise)| {
-                    solve.trim() == "solve() using {"
+                    solve.trim() == "close() using {"
                         && premise.trim()
                             == "to_integer(st.live) == to_integer(at(m, st.live) + got);"
                 }),

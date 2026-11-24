@@ -10,7 +10,7 @@ theorem successor_below(a: int32, b: int32) {
     requires not (a >= b);
 
     ensures a + 1 <= b by {
-        solve() using {
+        close() using {
             not (a >= b);
         };
     }

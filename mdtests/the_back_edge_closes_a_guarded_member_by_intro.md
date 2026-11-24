@@ -66,7 +66,7 @@ int32 count_run(int32 n) {
                 have i <= 2 and run == 0;
                 have (i <= 2 and run == 0) or (2 <= i and to_integer(2 + run) == to_integer(i)) by known();
                 have 0 <= to_integer(n) - to_integer(i) by {
-                    solve() using { i <= n; };
+                    close() using { i <= n; };
                 }
                 have to_integer(n) - to_integer(i) < to_integer(n) - to_integer(at(iteration, i)) by {
                     have to_integer(i) == to_integer(at(iteration, i)) + 1;
@@ -74,14 +74,14 @@ int32 count_run(int32 n) {
                     known();
                 }
             } else {
-                have 2 <= i by { solve() using { not (i < 2); }; }
+                have 2 <= i by { close() using { not (i < 2); }; }
                 have to_integer(2 + run) == to_integer(i) by {
                     cases {
                         (i <= 2 and run == 0) => {
                             have i == 2;
                             rewrite(run, 0);
                             rewrite(i, 2);
-                            solve() using { i <= 2; };
+                            close() using { i <= 2; };
                         }
                         (2 <= i and to_integer(2 + run) == to_integer(i)) => {
                             have to_integer(2 + run) == to_integer(i);
@@ -90,7 +90,7 @@ int32 count_run(int32 n) {
                     }
                 }
                 have run < n by {
-                    solve() using {
+                    close() using {
                         run <= i;
                         i < n;
                     };
@@ -119,7 +119,7 @@ int32 count_run(int32 n) {
                     known();
                 }
                 have 0 <= to_integer(n) - to_integer(i) by {
-                    solve() using { i <= n; };
+                    close() using { i <= n; };
                 }
                 have to_integer(n) - to_integer(i) < to_integer(n) - to_integer(at(iteration, i)) by {
                     have to_integer(i) == to_integer(at(iteration, i)) + 1;

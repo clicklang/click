@@ -11,7 +11,7 @@ theorem one_step_proofs(x: int32) {
     ensures x + 0 == x + 0 by known();
     ensures 0 <= x by {
         have x == x by known();
-        have 0 <= x by solve() using { 0 <= x; };
+        have 0 <= x by close() using { 0 <= x; };
         known();
     }
 }

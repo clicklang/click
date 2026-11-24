@@ -23,7 +23,7 @@ int32 answer() { ensures result == 2; } by {
                 have -2147483648 <= to_integer(i) + 1 by { solve(); }
                 have to_integer(i) + 1 <= 2147483647 by { solve(); }
                 have to_integer(i + 1) == to_integer(i) + 1 by {
-                    solve() using {
+                    close() using {
                         -2147483648 <= to_integer(i) + 1;
                         to_integer(i) + 1 <= 2147483647;
                     };

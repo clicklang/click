@@ -794,7 +794,7 @@ Supported C surface includes:
   conversion is the operand. The conversion term itself never depends on what
   the proof knows; the identity is reasoning: `normalize using` the two
   bounds, a decision that decides them, and the `signed_int32` certificate
-  step `interval_narrowed_cast` (planned by `solve` and `solve() using`) apply
+  step `interval_narrowed_cast` (planned by `solve` and `close() using`) apply
   it, and the conversion of a known constant folds to its residue. A fact
   equating a value with a conversion whose operand the context already places
   in range, such as a callee's guarantee about a narrowed argument, also

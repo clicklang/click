@@ -167,9 +167,9 @@ void __rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
             have old->__rb_parent_color == address(new) + color by {
                 rewrite(old->__rb_parent_color, (address(new) | color));
                 if color == 0 { rewrite(color, 0); normalize(); } else {
-                    have color == 1 by { solve() using { 0 <= color; color <= 1; not(color == 0); }; }
+                    have color == 1 by { close() using { 0 <= color; color <= 1; not(color == 0); }; }
                     rewrite(color, 1);
-                    solve() using { aligned(new, 8); };
+                    close() using { aligned(new, 8); };
                 }
             }
             mark words;
@@ -188,7 +188,7 @@ void __rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
             have ctx_parent_word(d.model, old->__rb_parent_color) == 1 by { rewrite(d.model, Context::Left(id, above, pc, sibling, up)); rewrite(Context::Left(id, above, pc, sibling, up), old(c.model)); known(); }
             have (old->__rb_parent_color & ~3) == address(id) by {
                 if old->__rb_parent_color == address(id) {
-                    solve() using { old->__rb_parent_color == address(id); aligned(id, 8); };
+                    close() using { old->__rb_parent_color == address(id); aligned(id, 8); };
                 } else {
                     have old->__rb_parent_color == address(id) + 1 by {
                         if old->__rb_parent_color == address(id) + 1 { known(); } else {
@@ -200,7 +200,7 @@ void __rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                             contradiction(ctx_parent_word(d.model, old->__rb_parent_color) == 1);
                         }
                     }
-                    solve() using { old->__rb_parent_color == address(id) + 1; aligned(id, 8); };
+                    close() using { old->__rb_parent_color == address(id) + 1; aligned(id, 8); };
                 }
             }
             step(); step();
@@ -211,9 +211,9 @@ void __rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
             have old->__rb_parent_color == address(new) + color by {
                 rewrite(old->__rb_parent_color, (address(new) | color));
                 if color == 0 { rewrite(color, 0); normalize(); } else {
-                    have color == 1 by { solve() using { 0 <= color; color <= 1; not(color == 0); }; }
+                    have color == 1 by { close() using { 0 <= color; color <= 1; not(color == 0); }; }
                     rewrite(color, 1);
-                    solve() using { aligned(new, 8); };
+                    close() using { aligned(new, 8); };
                 }
             }
             mark words;
@@ -232,7 +232,7 @@ void __rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
             have ctx_parent_word(d.model, old->__rb_parent_color) == 1 by { rewrite(d.model, Context::Right(id, above, pc, sibling, up)); rewrite(Context::Right(id, above, pc, sibling, up), old(c.model)); known(); }
             have (old->__rb_parent_color & ~3) == address(id) by {
                 if old->__rb_parent_color == address(id) {
-                    solve() using { old->__rb_parent_color == address(id); aligned(id, 8); };
+                    close() using { old->__rb_parent_color == address(id); aligned(id, 8); };
                 } else {
                     have old->__rb_parent_color == address(id) + 1 by {
                         if old->__rb_parent_color == address(id) + 1 { known(); } else {
@@ -244,7 +244,7 @@ void __rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                             contradiction(ctx_parent_word(d.model, old->__rb_parent_color) == 1);
                         }
                     }
-                    solve() using { old->__rb_parent_color == address(id) + 1; aligned(id, 8); };
+                    close() using { old->__rb_parent_color == address(id) + 1; aligned(id, 8); };
                 }
             }
             step(); step();
@@ -255,9 +255,9 @@ void __rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
             have old->__rb_parent_color == address(new) + color by {
                 rewrite(old->__rb_parent_color, (address(new) | color));
                 if color == 0 { rewrite(color, 0); normalize(); } else {
-                    have color == 1 by { solve() using { 0 <= color; color <= 1; not(color == 0); }; }
+                    have color == 1 by { close() using { 0 <= color; color <= 1; not(color == 0); }; }
                     rewrite(color, 1);
-                    solve() using { aligned(new, 8); };
+                    close() using { aligned(new, 8); };
                 }
             }
             mark words;

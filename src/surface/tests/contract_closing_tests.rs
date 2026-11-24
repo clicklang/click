@@ -147,7 +147,7 @@ fn expansion_closes_each_rewritten_postcondition() {
 fn proposition_closers_name_the_pending_closing_goal() {
     for closer in [
         "normalize();",
-        "solve() using {};",
+        "close() using {};",
         "all { true => { known(); } true => { known(); } }",
     ] {
         let source = proof(&format!("normalize(); {closer}"));

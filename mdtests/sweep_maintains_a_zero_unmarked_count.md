@@ -54,7 +54,7 @@ void sweep(int32 visited[], int32 n) {
         maintain by {
             mark iter;
             have i < 2147483647 by {
-                solve() using { i < n; n <= 1073741823; };
+                close() using { i < n; n <= 1073741823; };
             }
             have viewable(visited[0..n]) by { observe(visited[0..n]); known(); }
             step();
@@ -63,13 +63,13 @@ void sweep(int32 visited[], int32 n) {
                     0 <= k and k < i implies visited[k] == at(iter, visited[k])
                 } by {
                     intro(); intro();
-                    have k < n by { solve() using { k < i; i < n; }; }
-                    have i != k by { solve() using { k < i; }; }
+                    have k < n by { close() using { k < i; i < n; }; }
+                    have i != k by { close() using { k < i; }; }
                     have separate(memory(visited[i]), memory(visited[k])) by {
                         apply(click::separation::separate_elements(visited, i, k));
                     }
                     have separate(loop(0).statement(0).footprint, memory(visited[k])) by {
-                        solve() using { separate(memory(visited[i]), memory(visited[k])); };
+                        close() using { separate(memory(visited[i]), memory(visited[k])); };
                     }
                     preserve(memory(visited[k]), loop(0).statement(0));
                 }

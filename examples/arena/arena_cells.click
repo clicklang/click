@@ -6,10 +6,10 @@ theorem selected_array_cell(whole: Resource, kept: Resource, p: int32*, len: int
     requires 0 <= i;
     requires i < len;
     ensures separate(kept, memory(p[i])) by {
-        have i <= 2147483646 by { solve() using { i < len; }; }
-        have defined(i + 1) by { solve() using { 0 <= i; i <= 2147483646; }; }
-        have i <= ((i + 1) as int32) by { solve() using { 0 <= i; i < len; }; }
-        have ((i + 1) as int32) <= len by { solve() using { 0 <= i; i < len; }; }
+        have i <= 2147483646 by { close() using { i < len; }; }
+        have defined(i + 1) by { close() using { 0 <= i; i <= 2147483646; }; }
+        have i <= ((i + 1) as int32) by { close() using { 0 <= i; i < len; }; }
+        have ((i + 1) as int32) <= len by { close() using { 0 <= i; i < len; }; }
         have contains(memory(p[0..len]), memory(p[i..i + 1])) by {
             apply(separation::contains_subrange(p, 0, len, i, i + 1));
         }
@@ -282,17 +282,17 @@ int32 arena_init(struct arena* arena, int32 capacity) {
                         }, k);
                         known();
                     }
-                    have at(iteration, i) != k by { solve() using { k < at(iteration, i); }; }
+                    have at(iteration, i) != k by { close() using { k < at(iteration, i); }; }
                     have at(iteration, separate(memory(occupied[i]), memory(occupied[k]))) by {
                         apply(separation::separate_elements(occupied, at(iteration, i), k));
                     }
                     have separate(loop(0).statement(0).footprint, memory(occupied[k])) by {
-                        solve() using { at(iteration, separate(memory(occupied[i]), memory(occupied[k]))); };
+                        close() using { at(iteration, separate(memory(occupied[i]), memory(occupied[k]))); };
                     }
                     have at(loop(0).statement(0).exit, occupied[k]) == at(iteration, occupied[k]) by {
                         preserve(memory(occupied[k]), loop(0).statement(0));
                     }
-                    have separate(loop(0).statement(1).footprint, memory(occupied[k])) by { solve() using {}; }
+                    have separate(loop(0).statement(1).footprint, memory(occupied[k])) by { close() using {}; }
                     have occupied[k] == at(loop(0).statement(1).entry, occupied[k]) by {
                         preserve(memory(occupied[k]), loop(0).statement(1));
                     }
@@ -314,7 +314,7 @@ int32 arena_init(struct arena* arena, int32 capacity) {
         apply(separation::separate_restrict(memory(occupied[0..capacity]), memory(*arena), memory(occupied[0..capacity]), memory(arena->live_regions)));
     }
     have separate(initialize_occupied.footprint, memory(arena->live_regions)) by {
-        solve() using { separate(memory(occupied[0..capacity]), memory(arena->live_regions)); };
+        close() using { separate(memory(occupied[0..capacity]), memory(arena->live_regions)); };
     }
     have arena->live_regions == at(initialize_entry, arena->live_regions) by {
         preserve(memory(arena->live_regions), initialize_occupied);
@@ -722,7 +722,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
     step();
     step();
     have 0 <= arena->capacity by {
-        solve() using { 0 < count; count <= arena->capacity; };
+        close() using { 0 < count; count <= arena->capacity; };
     }
     have forall (k: int32) { 0 <= k and k < 0 implies arena->occupied[k] == 0 } by {
         intro();
@@ -767,7 +767,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                         known();
                     }
                     run_length <= count => {
-                        solve() using { at(function.entry, 0) < at(function.entry, count); };
+                        close() using { at(function.entry, 0) < at(function.entry, count); };
                     }
                 }
             }
@@ -794,14 +794,14 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 known();
             }
             have 0 <= i by {
-                solve() using { 0 <= lo; at(function.entry, lo) <= at(function.entry, i); };
+                close() using { 0 <= lo; at(function.entry, lo) <= at(function.entry, i); };
             }
             have (to_integer(i) + 1) <= to_integer(arena->capacity) by {
-                solve() using { to_integer(i) < to_integer(arena->capacity); };
+                close() using { to_integer(i) < to_integer(arena->capacity); };
             }
             if arena->occupied[i] == 0 {
                 have (to_integer(run_length) + 1) <= to_integer(count) by {
-                    solve() using { to_integer(run_length) < to_integer(count); };
+                    close() using { to_integer(run_length) < to_integer(count); };
                 }
                 if at(region(13).entry, arena->occupied[i]) == at(region(13).entry, 0) {
                     step();
@@ -822,12 +822,12 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                         known();
                     } else {
                         have k <= at(iteration, i) by {
-                            solve() using { (at(region(13).entry, i) as int32) <
+                            close() using { (at(region(13).entry, i) as int32) <
                                     (at(region(13).entry, arena->capacity) as int32); (k as int32) < (i as int32); (0 as int32) <= (at(region(13).entry, i) as int32); (at(function.entry, arena->capacity) as int32) <=
                                     (at(function.entry, 536870911) as int32); };
                         }
                         have k == at(iteration, i) by {
-                            solve() using { k <= at(iteration, i); not k < at(region(13).entry, i); };
+                            close() using { k <= at(iteration, i); not k < at(region(13).entry, i); };
                         }
                         rewrite(k, at(iteration, i));
                         known();
@@ -837,25 +837,25 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     known();
                 }
                 have at(iteration, i) < i by {
-                    solve() using { (at(region(13).entry, i) as int32) < (at(region(13).entry,
+                    close() using { (at(region(13).entry, i) as int32) < (at(region(13).entry,
                             arena->capacity) as int32); };
                 }
                 have at(iteration, i) <= i by {
-                    solve() using { at(iteration, i) < i; };
+                    close() using { at(iteration, i) < i; };
                 }
                 have lo <= i by {
-                    solve() using { lo <= at(region(13).entry, i); at(iteration, i) < i; };
+                    close() using { lo <= at(region(13).entry, i); at(iteration, i) < i; };
                 }
                 have i <= arena->capacity by {
-                    solve() using { (at(region(13).entry, i) as int32) < (at(region(13).entry,
+                    close() using { (at(region(13).entry, i) as int32) < (at(region(13).entry,
                             arena->capacity) as int32); };
                 }
                 have to_integer(run_length) == (to_integer(at(iteration, run_length)) + 1) by {
                     have -2147483648 <= (to_integer(at(iteration, run_length)) + 1) by {
-                        solve() using { 0 <= to_integer(at(iteration, run_length)); };
+                        close() using { 0 <= to_integer(at(iteration, run_length)); };
                     }
                     have (to_integer(at(iteration, run_length)) + 1) <= 2147483647 by {
-                        solve() using { (let integer_value: Integer = to_integer(at(region(13).entry,
+                        close() using { (let integer_value: Integer = to_integer(at(region(13).entry,
                                 (i as int32))) + 1; integer_value) <= to_integer(at(region(0).entry,
                                 (arena->capacity as int32))); (let integer_value: Integer = to_integer((lo as int32)) +
                                 to_integer(at(region(13).entry, (run_length as int32)));
@@ -863,7 +863,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                                 <= 536870911; };
                     }
                     have to_integer(run_length) == (to_integer(at(iteration, run_length)) + 1) by {
-                        solve() using { -2147483648 <= (to_integer(at(iteration, run_length)) + 1); (to_integer(at(iteration, run_length)) + 1) <= 2147483647; };
+                        close() using { -2147483648 <= (to_integer(at(iteration, run_length)) + 1); (to_integer(at(iteration, run_length)) + 1) <= 2147483647; };
                     }
                     known();
                 }
@@ -872,16 +872,16 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 }
                 have (to_integer(lo) + to_integer(run_length)) == to_integer(i) by {
                     have (to_integer(lo) + to_integer(run_length)) <= to_integer(i) by {
-                        solve() using { (to_integer(lo) + to_integer(at(iteration, run_length))) ==
+                        close() using { (to_integer(lo) + to_integer(at(iteration, run_length))) ==
                                 to_integer(at(iteration, i)); to_integer(run_length) == (to_integer(at(iteration,
                                 run_length)) + 1); to_integer(at(iteration, i)) < to_integer(i); };
                     }
                     have to_integer(i) <= (to_integer(lo) + to_integer(run_length)) by {
                         have -2147483648 <= (to_integer(at(iteration, run_length)) + 1) by {
-                            solve() using { 0 <= to_integer(at(iteration, run_length)); };
+                            close() using { 0 <= to_integer(at(iteration, run_length)); };
                         }
                         have (to_integer(at(iteration, run_length)) + 1) <= 2147483647 by {
-                            solve() using { (let integer_value: Integer =
+                            close() using { (let integer_value: Integer =
                                     to_integer(at(region(13).entry, (i as int32))) + 1;
                                     integer_value) <= to_integer(at(region(0).entry,
                                     (arena->capacity as int32))); (to_integer(lo) + to_integer(at(iteration, run_length)))
@@ -889,32 +889,32 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                                     int32))) <= 536870911; };
                         }
                         have to_integer(run_length) == (to_integer(at(iteration, run_length)) + 1) by {
-                            solve() using { -2147483648 <= (to_integer(at(iteration, run_length)) +
+                            close() using { -2147483648 <= (to_integer(at(iteration, run_length)) +
                                     1); (to_integer(at(iteration, run_length)) + 1) <= 2147483647; };
                         }
                         have -2147483648 <= (to_integer(at(iteration, i)) + 1) by {
-                            solve() using { 0 <= to_integer(at(iteration, i)); };
+                            close() using { 0 <= to_integer(at(iteration, i)); };
                         }
                         have (to_integer(at(iteration, i)) + 1) <= 2147483647 by {
-                            solve() using { (let integer_value: Integer =
+                            close() using { (let integer_value: Integer =
                                     to_integer(at(region(13).entry, (i as int32))) + 1;
                                     integer_value) <= to_integer(at(region(0).entry,
                                     (arena->capacity as int32))); to_integer(at(region(0).entry, (arena->capacity as
                                     int32))) <= 536870911; };
                         }
                         have to_integer(i) == (to_integer(at(iteration, i)) + 1) by {
-                            solve() using { -2147483648 <= (to_integer(at(iteration, i)) + 1); (to_integer(at(iteration, i)) + 1) <= 2147483647; };
+                            close() using { -2147483648 <= (to_integer(at(iteration, i)) + 1); (to_integer(at(iteration, i)) + 1) <= 2147483647; };
                         }
-                        solve() using { (to_integer(lo) + to_integer(at(iteration, run_length))) ==
+                        close() using { (to_integer(lo) + to_integer(at(iteration, run_length))) ==
                                 to_integer(at(iteration, i)); to_integer(i) == (to_integer(at(iteration, i)) + 1); to_integer(run_length) == (to_integer(at(iteration,
                                 run_length)) + 1); };
                     }
-                    solve() using { (to_integer(lo) + to_integer(run_length)) <= to_integer(i); to_integer(i) <= (to_integer(lo) + to_integer(run_length)); };
+                    close() using { (to_integer(lo) + to_integer(run_length)) <= to_integer(i); to_integer(i) <= (to_integer(lo) + to_integer(run_length)); };
                 }
                 have 0 <= run_length and run_length <= count by {
                     all {
                         0 <= run_length => {
-                            solve() using { (at(region(13).entry, 0) as int32) <= (at(region(13).entry,
+                            close() using { (at(region(13).entry, 0) as int32) <= (at(region(13).entry,
                                     run_length) as int32); (at(region(13).entry, run_length) as int32) <
                                     (at(region(13).entry, count) as int32); };
                         }
@@ -938,21 +938,21 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 }
                 have to_integer((at(iteration, i) + 1)) == (to_integer(at(iteration, i)) + 1) by {
                     have -2147483648 <= (to_integer(at(iteration, i)) + 1) by {
-                        solve() using { 0 <= to_integer(at(iteration, i)); };
+                        close() using { 0 <= to_integer(at(iteration, i)); };
                     }
                     have (to_integer(at(iteration, i)) + 1) <= 2147483647 by {
-                        solve() using { (let integer_value: Integer = to_integer(at(region(13).entry,
+                        close() using { (let integer_value: Integer = to_integer(at(region(13).entry,
                                 (i as int32))) + 1; integer_value) <= to_integer(at(region(0).entry,
                                 (arena->capacity as int32))); to_integer(at(region(0).entry, (arena->capacity as int32)))
                                 <= 536870911; };
                     }
                     have to_integer((at(iteration, i) + 1)) == (to_integer(at(iteration, i)) + 1) by {
-                        solve() using { -2147483648 <= (to_integer(at(iteration, i)) + 1); (to_integer(at(iteration, i)) + 1) <= 2147483647; };
+                        close() using { -2147483648 <= (to_integer(at(iteration, i)) + 1); (to_integer(at(iteration, i)) + 1) <= 2147483647; };
                     }
                     known();
                 }
                 have 0 <= (to_integer(arena->capacity) - to_integer((at(iteration, i) + 1))) by {
-                    solve() using { (let integer_value: Integer = to_integer(at(region(13).entry, (i
+                    close() using { (let integer_value: Integer = to_integer(at(region(13).entry, (i
                             as int32))) + 1; integer_value) <= to_integer(at(region(0).entry,
                             (arena->capacity as int32))); to_integer((at(iteration, i) + 1)) == (to_integer(at(iteration,
                             i)) + 1); };
@@ -997,11 +997,11 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     contradiction(k < i);
                 }
                 have 0 <= i by {
-                    solve() using { (0 as int32) <= (at(region(13).entry, i) as int32); (at(region(13).entry, i) as int32) < (at(region(13).entry,
+                    close() using { (0 as int32) <= (at(region(13).entry, i) as int32); (at(region(13).entry, i) as int32) < (at(region(13).entry,
                             arena->capacity) as int32); };
                 }
                 have i <= arena->capacity by {
-                    solve() using { (at(region(13).entry, i) as int32) < (at(region(13).entry,
+                    close() using { (at(region(13).entry, i) as int32) < (at(region(13).entry,
                             arena->capacity) as int32); };
                 }
                 have viewable(arena->occupied[0..arena->capacity]) by {
@@ -1013,21 +1013,21 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 }
                 have to_integer((at(iteration, i) + 1)) == (to_integer(at(iteration, i)) + 1) by {
                     have -2147483648 <= (to_integer(at(iteration, i)) + 1) by {
-                        solve() using { 0 <= to_integer(at(iteration, i)); };
+                        close() using { 0 <= to_integer(at(iteration, i)); };
                     }
                     have (to_integer(at(iteration, i)) + 1) <= 2147483647 by {
-                        solve() using { (let integer_value: Integer = to_integer(at(region(13).entry,
+                        close() using { (let integer_value: Integer = to_integer(at(region(13).entry,
                                 (i as int32))) + 1; integer_value) <= to_integer(at(region(0).entry,
                                 (arena->capacity as int32))); to_integer(at(region(0).entry, (arena->capacity as int32)))
                                 <= 536870911; };
                     }
                     have to_integer((at(iteration, i) + 1)) == (to_integer(at(iteration, i)) + 1) by {
-                        solve() using { -2147483648 <= (to_integer(at(iteration, i)) + 1); (to_integer(at(iteration, i)) + 1) <= 2147483647; };
+                        close() using { -2147483648 <= (to_integer(at(iteration, i)) + 1); (to_integer(at(iteration, i)) + 1) <= 2147483647; };
                     }
                     known();
                 }
                 have 0 <= (to_integer(arena->capacity) - to_integer((at(iteration, i) + 1))) by {
-                    solve() using { (let integer_value: Integer = to_integer(at(region(13).entry, (i
+                    close() using { (let integer_value: Integer = to_integer(at(region(13).entry, (i
                             as int32))) + 1; integer_value) <= to_integer(at(region(0).entry,
                             (arena->capacity as int32))); to_integer((at(iteration, i) + 1)) == (to_integer(at(iteration,
                             i)) + 1); };
@@ -1059,7 +1059,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                             known();
                         }
                         run_length <= count => {
-                            solve() using { at(function.entry, 0) < at(function.entry, count); };
+                            close() using { at(function.entry, 0) < at(function.entry, count); };
                         }
                     }
                 }
@@ -1231,7 +1231,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
         step();
         have run_length == count by {
             have at(loop(0).exit, run_length) <= at(loop(0).exit, count);
-            solve() using { at(loop(0).exit, run_length) <= at(loop(0).exit, count); not run_length < count; };
+            close() using { at(loop(0).exit, run_length) <= at(loop(0).exit, count); not run_length < count; };
         }
         have count == run_length by {
             known();
@@ -1244,16 +1244,16 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
         }
         have defined((run_lo + count)) by {
             have (to_integer(run_lo) + to_integer(count)) >= -2147483648 by {
-                solve() using { 0 < to_integer(count); 0 <= to_integer(run_lo); };
+                close() using { 0 < to_integer(count); 0 <= to_integer(run_lo); };
             }
             have (to_integer(run_lo) + to_integer(count)) <= 2147483647 by {
-                solve() using { to_integer(count) <= to_integer(at(region(7).entry, arena->capacity)); to_integer(run_lo) <= to_integer(run_hi); to_integer(run_hi) <= to_integer(at(region(7).entry,
+                close() using { to_integer(count) <= to_integer(at(region(7).entry, arena->capacity)); to_integer(run_lo) <= to_integer(run_hi); to_integer(run_hi) <= to_integer(at(region(7).entry,
                         arena->capacity)); to_integer(at(region(7).entry, arena->capacity)) <= 536870911; };
             }
             known();
         }
         have to_integer(count) <= (to_integer(run_lo) + to_integer(count)) by {
-            solve() using { 0 <= to_integer(run_lo); };
+            close() using { 0 <= to_integer(run_lo); };
         }
         have to_integer(i) == (to_integer(run_lo) + to_integer(count)) by {
             known();
@@ -1268,13 +1268,13 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             have (let integer_value: Integer = to_integer((run_lo as int32)) + to_integer((count as int32)); integer_value) <= 2147483647;
             have (let integer_value: Integer = to_integer((run_lo as int32)) + to_integer((count as int32)); integer_value) >= -2147483648;
             have to_integer(at(function.entry, i)) <= 2147483647 by {
-                solve() using {  };
+                close() using {  };
             }
             have -2147483648 <= (to_integer(at(function.entry, i)) - to_integer(at(function.entry, count))) by {
-                solve() using { at(function.entry, count) <= at(function.entry, i); };
+                close() using { at(function.entry, count) <= at(function.entry, i); };
             }
             have (to_integer(at(function.entry, i)) - to_integer(at(function.entry, count))) <= 2147483647 by {
-                solve() using { at(function.entry, 0) <= at(function.entry, count); to_integer(at(function.entry, i)) <= 2147483647; };
+                close() using { at(function.entry, 0) <= at(function.entry, count); to_integer(at(function.entry, i)) <= 2147483647; };
             }
             known();
         }
@@ -1287,7 +1287,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 known();
             }
             have to_integer((i - count)) == (to_integer(i) - to_integer(count)) by {
-                solve() using { -2147483648 <= (to_integer(i) - to_integer(count)); (to_integer(i) - to_integer(count)) <= 2147483647; };
+                close() using { -2147483648 <= (to_integer(i) - to_integer(count)); (to_integer(i) - to_integer(count)) <= 2147483647; };
             }
             known();
         }
@@ -1303,10 +1303,10 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             known();
         }
         have run_lo <= arena->capacity by {
-            solve() using { run_lo <= run_hi; run_hi <= at(region(0).entry, arena->capacity); };
+            close() using { run_lo <= run_hi; run_hi <= at(region(0).entry, arena->capacity); };
         }
         have start < end by {
-            solve() using { (at(function.entry, 0) as int32) < (at(function.entry, count) as int32); (at(function.entry, count) as int32) <= (at(function.entry, i) as int32); (at(region(7).entry, count) as int32) <= (at(region(7).entry,
+            close() using { (at(function.entry, 0) as int32) < (at(function.entry, count) as int32); (at(function.entry, count) as int32) <= (at(function.entry, i) as int32); (at(region(7).entry, count) as int32) <= (at(region(7).entry,
                     arena->capacity) as int32); (at(function.entry, arena->capacity) as int32) <= (at(function.entry,
                     536870911) as int32); };
         }
@@ -1361,7 +1361,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 apply(click::integer::int32_less_equal_transitive(0, start, k));
             }
             have k < arena->capacity by {
-                solve() using { k < end; at(function.entry, end) <= at(function.entry, arena->capacity); };
+                close() using { k < end; at(function.entry, end) <= at(function.entry, arena->capacity); };
             }
             have old(arena->occupied[k]) == 0 by {
                 instantiate(forall (j: int32) { start <= j and j < end implies arena->occupied[j] == 0 }, k);
@@ -1409,7 +1409,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     known();
                 }
                 have m <= i by {
-                    solve() using { end == end; (at(region(24).entry, w.next) as int32) == (at(region(24).entry,
+                    close() using { end == end; (at(region(24).entry, w.next) as int32) == (at(region(24).entry,
                             i) as int32); };
                 }
                 have i < end by {
@@ -1431,7 +1431,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     apply(click::integer::int32_less_equal_transitive(0, start, i));
                 }
                 have i < arena->capacity by {
-                    solve() using { at(region(24).entry, i) < at(region(24).entry, end); at(function.entry, end) <= at(function.entry, arena->capacity); };
+                    close() using { at(region(24).entry, i) < at(region(24).entry, end); at(function.entry, end) <= at(function.entry, arena->capacity); };
                 }
                 mark opened;
                 have contains(memory(*arena), memory(arena->occupied)) by {
@@ -1490,11 +1490,11 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     have (to_integer(at(opened, i)) + 1) <= to_integer(k);
                     have k < end;
                     have at(opened, i) < k by {
-                        solve() using { (let integer_value: Integer = to_integer((i as int32)) + 1;
+                        close() using { (let integer_value: Integer = to_integer((i as int32)) + 1;
                                 integer_value) <= to_integer((k as int32)); };
                     }
                     have at(opened, i) <= k by {
-                        solve() using { at(opened, i) < k; };
+                        close() using { at(opened, i) < k; };
                     }
                     have m <= k by {
                         known();
@@ -1505,14 +1505,14 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                         known();
                     }
                     have 0 <= k by {
-                        solve() using { (at(function.entry, 0) as int32) <= (at(function.entry, i) as
+                        close() using { (at(function.entry, 0) as int32) <= (at(function.entry, i) as
                                 int32); (at(opened, i) as int32) <= (k as int32); };
                     }
                     have k < at(opened, arena->capacity) by {
-                        solve() using { k < end; at(function.entry, end) <= at(function.entry,
+                        close() using { k < end; at(function.entry, end) <= at(function.entry,
                                 arena->capacity); };
                     }
-                    have at(opened, i) != k by { solve() using { at(opened, i) < k; }; }
+                    have at(opened, i) != k by { close() using { at(opened, i) < k; }; }
                     have at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))) by {
                         apply(separation::separate_elements(at(opened, arena->occupied), at(opened, i), k));
                     }
@@ -1539,7 +1539,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                         have 0 <= k by {
                             apply(click::integer::int32_less_equal_transitive(0, start, k));
                         }
-                        have at(opened, i) != k by { solve() using { k < at(opened, i); }; }
+                        have at(opened, i) != k by { close() using { k < at(opened, i); }; }
                         have at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))) by {
                             apply(separation::separate_elements(at(opened, arena->occupied), at(opened, i), k));
                         }
@@ -1550,11 +1550,11 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                         known();
                     } else {
                         have k <= at(opened, i) by {
-                            solve() using { (let integer_value: Integer = to_integer((k as int32));
+                            close() using { (let integer_value: Integer = to_integer((k as int32));
                                     integer_value) < (to_integer((i as int32)) + 1); };
                         }
                         have k == at(opened, i) by {
-                            solve() using { k <= at(opened, i); not k < i; };
+                            close() using { k <= at(opened, i); not k < i; };
                         }
                         rewrite(k, at(opened, i));
                         normalize() using {
@@ -1574,9 +1574,9 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                         known();
                     }
                     have k < at(opened, i) by {
-                        solve() using { k < start; start <= at(region(24).entry, i); };
+                        close() using { k < start; start <= at(region(24).entry, i); };
                     }
-                    have at(opened, i) != k by { solve() using { k < at(opened, i); }; }
+                    have at(opened, i) != k by { close() using { k < at(opened, i); }; }
                     have at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))) by {
                         apply(separation::separate_elements(at(opened, arena->occupied), at(opened, i), k));
                     }
@@ -1600,15 +1600,15 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                         known();
                     }
                     have at(opened, i) < k by {
-                        solve() using { at(region(24).entry, i) < at(region(24).entry, end); end <= k; };
+                        close() using { at(region(24).entry, i) < at(region(24).entry, end); end <= k; };
                     }
                     have at(opened, i) <= k by {
-                        solve() using { (at(opened, i) as int32) < (k as int32); };
+                        close() using { (at(opened, i) as int32) < (k as int32); };
                     }
                     have 0 <= k by {
-                        solve() using { (0 as int32) <= (at(region(24).entry, i) as int32); (at(opened, i) as int32) <= (k as int32); };
+                        close() using { (0 as int32) <= (at(region(24).entry, i) as int32); (at(opened, i) as int32) <= (k as int32); };
                     }
-                    have at(opened, i) != k by { solve() using { at(opened, i) < k; }; }
+                    have at(opened, i) != k by { close() using { at(opened, i) < k; }; }
                     have at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))) by {
                         apply(separation::separate_elements(at(opened, arena->occupied), at(opened, i), k));
                     }
@@ -1625,10 +1625,10 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     have k < end;
                     have (to_integer(at(opened, i)) + 1) <= to_integer(k) by {
                         have -2147483648 <= (to_integer(at(opened, i)) + 1) by {
-                            solve() using { 0 <= to_integer(at(opened, i)); };
+                            close() using { 0 <= to_integer(at(opened, i)); };
                         }
                         have (to_integer(at(opened, i)) + 1) <= 2147483647 by {
-                            solve() using { (let integer_value: Integer = to_integer((run_lo as
+                            close() using { (let integer_value: Integer = to_integer((run_lo as
                                     int32)) + to_integer((count as int32)); integer_value) <=
                                     2147483647; (let integer_value: Integer = to_integer((end as int32));
                                     integer_value) == (to_integer((run_lo as int32)) +
@@ -1637,9 +1637,9 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                                     integer_value)); };
                         }
                         have to_integer((i as int32)) == (to_integer(at(opened, i)) + 1) by {
-                            solve() using { -2147483648 <= (to_integer(at(opened, i)) + 1); (to_integer(at(opened, i)) + 1) <= 2147483647; };
+                            close() using { -2147483648 <= (to_integer(at(opened, i)) + 1); (to_integer(at(opened, i)) + 1) <= 2147483647; };
                         }
-                        solve() using { to_integer((i as int32)) == (to_integer(at(opened, i)) + 1); to_integer((i as int32)) <= to_integer(k); };
+                        close() using { to_integer((i as int32)) == (to_integer(at(opened, i)) + 1); to_integer((i as int32)) <= to_integer(k); };
                     }
                     instantiate(forall (j: int32) { (to_integer(at(opened, i)) + 1) <= to_integer(j) and j < end implies arena->occupied[j] == 0 }, k);
                     known();
@@ -1651,10 +1651,10 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     have k < i;
                     have to_integer(k) < (to_integer(at(opened, i)) + 1) by {
                         have -2147483648 <= (to_integer(at(opened, i)) + 1) by {
-                            solve() using { 0 <= to_integer(at(opened, i)); };
+                            close() using { 0 <= to_integer(at(opened, i)); };
                         }
                         have (to_integer(at(opened, i)) + 1) <= 2147483647 by {
-                            solve() using { (let integer_value: Integer = to_integer((run_lo as
+                            close() using { (let integer_value: Integer = to_integer((run_lo as
                                     int32)) + to_integer((count as int32)); integer_value) <=
                                     2147483647; (let integer_value: Integer = to_integer((end as int32));
                                     integer_value) == (to_integer((run_lo as int32)) +
@@ -1663,9 +1663,9 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                                     integer_value)); };
                         }
                         have to_integer((i as int32)) == (to_integer(at(opened, i)) + 1) by {
-                            solve() using { -2147483648 <= (to_integer(at(opened, i)) + 1); (to_integer(at(opened, i)) + 1) <= 2147483647; };
+                            close() using { -2147483648 <= (to_integer(at(opened, i)) + 1); (to_integer(at(opened, i)) + 1) <= 2147483647; };
                         }
-                        solve() using { to_integer((i as int32)) == (to_integer(at(opened, i)) + 1); to_integer(k) < to_integer((i as int32)); };
+                        close() using { to_integer((i as int32)) == (to_integer(at(opened, i)) + 1); to_integer(k) < to_integer((i as int32)); };
                     }
                     instantiate(forall (j: int32) { start <= j and to_integer(j) < (to_integer(at(opened, i)) + 1) implies arena->occupied[j] == 1 }, k);
                     known();
@@ -1691,29 +1691,29 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 }
                 have to_integer(i) == (to_integer(at(opened, i)) + 1) by {
                     have -2147483648 <= (to_integer(at(opened, i)) + 1) by {
-                        solve() using { 0 <= to_integer(at(opened, i)); };
+                        close() using { 0 <= to_integer(at(opened, i)); };
                     }
                     have (to_integer(at(opened, i)) + 1) <= 2147483647 by {
-                        solve() using { (let integer_value: Integer = to_integer((run_lo as int32)) +
+                        close() using { (let integer_value: Integer = to_integer((run_lo as int32)) +
                                 to_integer((count as int32)); integer_value) <= 2147483647; (let integer_value: Integer = to_integer((end as int32));
                                 integer_value) == (to_integer((run_lo as int32)) + to_integer((count
                                 as int32))); to_integer(at(opened, i)) < to_integer((let integer_value:
                                 Integer = to_integer((end as int32)); integer_value)); };
                     }
                     have to_integer(i) == (to_integer(at(opened, i)) + 1) by {
-                        solve() using { -2147483648 <= (to_integer(at(opened, i)) + 1); (to_integer(at(opened, i)) + 1) <= 2147483647; };
+                        close() using { -2147483648 <= (to_integer(at(opened, i)) + 1); (to_integer(at(opened, i)) + 1) <= 2147483647; };
                     }
                     known();
                 }
                 have start <= i by {
-                    solve() using { start <= at(opened, i); to_integer(i) == to_integer(at(opened, i)) + 1; };
+                    close() using { start <= at(opened, i); to_integer(i) == to_integer(at(opened, i)) + 1; };
                 }
                 have i <= end by {
-                    solve() using { at(opened, i) < end; to_integer(i) == to_integer(at(opened, i)) + 1; };
+                    close() using { at(opened, i) < end; to_integer(i) == to_integer(at(opened, i)) + 1; };
                 }
                 let w = fold(arena_window(old(arena->data), old(arena->occupied), old(arena->capacity), start, end), { next: i });
                 have 0 <= (to_integer(end) - to_integer(i)) by {
-                    solve() using { to_integer(i) <= to_integer(end); };
+                    close() using { to_integer(i) <= to_integer(end); };
                 }
                 have (to_integer(end) - to_integer(i)) < (to_integer(end) - to_integer(at(opened, i))) by {
                     rewrite(to_integer(i), (to_integer(at(opened, i)) + 1));
@@ -1757,7 +1757,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             known();
         }
         have m == end by {
-            solve() using { at(function.entry, m) <= at(function.entry, end); not at(function.entry, m) < at(function.entry, end); };
+            close() using { at(function.entry, m) <= at(function.entry, end); not at(function.entry, m) < at(function.entry, end); };
         }
         have forall (k: int32) { start <= k and k < end implies arena->occupied[k] == 1 } by {
             intro();
@@ -1780,10 +1780,10 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 known();
             }
             have k < end by {
-                solve() using { k < start; at(function.entry, start) < at(function.entry, end); };
+                close() using { k < start; at(function.entry, start) < at(function.entry, end); };
             }
             have k < arena->capacity by {
-                solve() using { at(function.entry, k) < at(function.entry, end); at(function.entry, end) <= at(function.entry, arena->capacity); };
+                close() using { at(function.entry, k) < at(function.entry, end); at(function.entry, end) <= at(function.entry, arena->capacity); };
             }
             have at(mark_free_run.entry, 0) <= at(mark_free_run.entry, k) and at(mark_free_run.entry, k) < at(mark_free_run.entry, arena->capacity);
             instantiate(forall (j: int32) { at(mark_free_run.entry, 0) <= at(mark_free_run.entry, j) and at(mark_free_run.entry, j) < at(mark_free_run.entry, arena->capacity) implies at(mark_free_run.entry, arena->occupied[j]) == old(arena->occupied[j]) }, k);
@@ -1799,11 +1799,11 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 known();
             }
             have 0 <= end by {
-                solve() using { (at(function.entry, 0) as int32) <= (at(function.entry, count) as
+                close() using { (at(function.entry, 0) as int32) <= (at(function.entry, count) as
                         int32); (count as int32) <= (end as int32); };
             }
             have 0 <= k by {
-                solve() using { (at(function.entry, 0) as int32) <= (at(function.entry, end) as
+                close() using { (at(function.entry, 0) as int32) <= (at(function.entry, end) as
                         int32); (end as int32) <= (k as int32); };
             }
             have at(mark_free_run.entry, 0) <= at(mark_free_run.entry, k) and at(mark_free_run.entry, k) < at(mark_free_run.entry, arena->capacity);
@@ -1828,7 +1828,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             have (let integer_value: Integer = (to_integer((end as int32)) - to_integer((count as int32))); integer_value) <= 2147483647;
             have (let integer_value: Integer = to_integer((run_lo as int32)) + to_integer((count as int32)); integer_value) >= -2147483648;
             have (let integer_value: Integer = (to_integer((end as int32)) - to_integer((count as int32))); integer_value) >= -2147483648;
-            solve() using { at(function.entry, st.live) < at(function.entry, 2147483647); };
+            close() using { at(function.entry, st.live) < at(function.entry, 2147483647); };
         }
         step();
         have region->start == start by {
@@ -1853,7 +1853,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 apply(click::integer::int32_less_equal_transitive(0, start, k));
             }
             have k < arena->capacity by {
-                solve() using { at(function.entry, k) < at(function.entry, end); at(function.entry, end) <= at(function.entry, arena->capacity); };
+                close() using { at(function.entry, k) < at(function.entry, end); at(function.entry, end) <= at(function.entry, arena->capacity); };
             }
             have at(marked, start) <= at(marked, k) and at(marked, k) < at(marked, end);
             instantiate(forall (j: int32) { at(marked, start) <= at(marked, j) and at(marked, j) < at(marked, end) implies at(marked, arena->occupied[j]) == at(marked, 1) }, k);
@@ -1912,10 +1912,10 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 known();
             }
             have k < end by {
-                solve() using { at(function.entry, k) < at(function.entry, start); at(function.entry, start) < at(function.entry, end); };
+                close() using { at(function.entry, k) < at(function.entry, start); at(function.entry, start) < at(function.entry, end); };
             }
             have k < arena->capacity by {
-                solve() using { at(function.entry, k) < at(function.entry, end); at(function.entry, end) <= at(function.entry, arena->capacity); };
+                close() using { at(function.entry, k) < at(function.entry, end); at(function.entry, end) <= at(function.entry, arena->capacity); };
             }
             have at(marked, 0) <= at(marked, k) and at(marked, k) < at(marked, start);
             instantiate(forall (j: int32) { at(marked, 0) <= at(marked, j) and at(marked, j) < at(marked, start) implies at(marked, arena->occupied[j]) == old(arena->occupied[j]) }, k);
@@ -1974,11 +1974,11 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 known();
             }
             have 0 <= end by {
-                solve() using { (at(function.entry, 0) as int32) <= (at(function.entry, count) as
+                close() using { (at(function.entry, 0) as int32) <= (at(function.entry, count) as
                         int32); (count as int32) <= (end as int32); };
             }
             have 0 <= k by {
-                solve() using { (at(function.entry, 0) as int32) <= (at(function.entry, end) as
+                close() using { (at(function.entry, 0) as int32) <= (at(function.entry, end) as
                         int32); (at(function.entry, end) as int32) <= (at(function.entry, k) as
                         int32); };
             }
@@ -2075,7 +2075,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 known();
             }
             have to_integer(st.live) == (to_integer(old(st.live)) + 1) by {
-                solve() using { -2147483648 <= (to_integer(old(st.live)) + 1); (to_integer(old(st.live)) + 1) <= 2147483647; };
+                close() using { -2147483648 <= (to_integer(old(st.live)) + 1); (to_integer(old(st.live)) + 1) <= 2147483647; };
             }
             known();
         }
@@ -2221,76 +2221,76 @@ void arena_free(struct region* region) {
     mark unfolded;
     step();
     have separate(statement(0).footprint, memory(region->arena)) by {
-        solve() using {};
+        close() using {};
     }
     have region->arena == at(statement(0).entry, region->arena) by {
         preserve(memory(region->arena), statement(0));
     }
     have separate(statement(0).footprint, memory(region->arena->data)) by {
-        solve() using {};
+        close() using {};
     }
     have region->arena->data == at(statement(0).entry, region->arena->data) by {
         preserve(memory(region->arena->data), statement(0));
     }
     have separate(statement(0).footprint, memory(region->arena->occupied)) by {
-        solve() using {};
+        close() using {};
     }
     have region->arena->occupied == at(statement(0).entry, region->arena->occupied) by {
         preserve(memory(region->arena->occupied), statement(0));
     }
     step();
     have separate(statement(1).footprint, memory(region->arena)) by {
-        solve() using {};
+        close() using {};
     }
     have region->arena == at(statement(1).entry, region->arena) by {
         preserve(memory(region->arena), statement(1));
     }
     have separate(statement(1).footprint, memory(region->arena->data)) by {
-        solve() using {};
+        close() using {};
     }
     have region->arena->data == at(statement(1).entry, region->arena->data) by {
         preserve(memory(region->arena->data), statement(1));
     }
     have separate(statement(1).footprint, memory(region->arena->occupied)) by {
-        solve() using {};
+        close() using {};
     }
     have region->arena->occupied == at(statement(1).entry, region->arena->occupied) by {
         preserve(memory(region->arena->occupied), statement(1));
     }
     step();
     have separate(statement(2).footprint, memory(region->arena)) by {
-        solve() using {};
+        close() using {};
     }
     have region->arena == at(statement(2).entry, region->arena) by {
         preserve(memory(region->arena), statement(2));
     }
     have separate(statement(2).footprint, memory(region->arena->data)) by {
-        solve() using {};
+        close() using {};
     }
     have region->arena->data == at(statement(2).entry, region->arena->data) by {
         preserve(memory(region->arena->data), statement(2));
     }
     have separate(statement(2).footprint, memory(region->arena->occupied)) by {
-        solve() using {};
+        close() using {};
     }
     have region->arena->occupied == at(statement(2).entry, region->arena->occupied) by {
         preserve(memory(region->arena->occupied), statement(2));
     }
     step();
     have separate(statement(3).footprint, memory(region->arena)) by {
-        solve() using {};
+        close() using {};
     }
     have region->arena == at(statement(3).entry, region->arena) by {
         preserve(memory(region->arena), statement(3));
     }
     have separate(statement(3).footprint, memory(region->arena->data)) by {
-        solve() using {};
+        close() using {};
     }
     have region->arena->data == at(statement(3).entry, region->arena->data) by {
         preserve(memory(region->arena->data), statement(3));
     }
     have separate(statement(3).footprint, memory(region->arena->occupied)) by {
-        solve() using {};
+        close() using {};
     }
     have region->arena->occupied == at(statement(3).entry, region->arena->occupied) by {
         preserve(memory(region->arena->occupied), statement(3));
@@ -2326,25 +2326,25 @@ void arena_free(struct region* region) {
         have 0 <= k;
         have k < arena->capacity;
         have separate(statement(0).footprint, memory(at(unfolded, region->arena->occupied)[k])) by {
-            solve() using {};
+            close() using {};
         }
         have at(statement(0).exit, (let saved: int32* = at(unfolded, region->arena->occupied); saved[k])) == at(statement(0).entry, (let saved: int32* = at(unfolded, region->arena->occupied); saved[k])) by {
             preserve(memory(at(unfolded, region->arena->occupied)[k]), statement(0));
         }
         have separate(statement(1).footprint, memory(at(unfolded, region->arena->occupied)[k])) by {
-            solve() using {};
+            close() using {};
         }
         have at(statement(1).exit, (let saved: int32* = at(unfolded, region->arena->occupied); saved[k])) == at(statement(1).entry, (let saved: int32* = at(unfolded, region->arena->occupied); saved[k])) by {
             preserve(memory(at(unfolded, region->arena->occupied)[k]), statement(1));
         }
         have separate(statement(2).footprint, memory(at(unfolded, region->arena->occupied)[k])) by {
-            solve() using {};
+            close() using {};
         }
         have at(statement(2).exit, (let saved: int32* = at(unfolded, region->arena->occupied); saved[k])) == at(statement(2).entry, (let saved: int32* = at(unfolded, region->arena->occupied); saved[k])) by {
             preserve(memory(at(unfolded, region->arena->occupied)[k]), statement(2));
         }
         have separate(statement(3).footprint, memory(at(unfolded, region->arena->occupied)[k])) by {
-            solve() using {};
+            close() using {};
         }
         have at(statement(3).exit, (let saved: int32* = at(unfolded, region->arena->occupied); saved[k])) == at(statement(3).entry, (let saved: int32* = at(unfolded, region->arena->occupied); saved[k])) by {
             preserve(memory(at(unfolded, region->arena->occupied)[k]), statement(3));
@@ -2400,13 +2400,13 @@ void arena_free(struct region* region) {
                 known();
             }
             have 0 <= i by {
-                solve() using { at(function.entry, 0) <= at(function.entry, region->start); at(function.entry, region->start) <= at(function.entry, i); };
+                close() using { at(function.entry, 0) <= at(function.entry, region->start); at(function.entry, region->start) <= at(function.entry, i); };
             }
             have region->end <= arena->capacity by {
                 known();
             }
             have i < arena->capacity by {
-                solve() using { at(region(5).entry, i) < at(region(5).entry, region->end); at(function.entry, region->end) <= at(function.entry,
+                close() using { at(region(5).entry, i) < at(region(5).entry, region->end); at(function.entry, region->end) <= at(function.entry,
                         arena->capacity); };
             }
             mark opened;
@@ -2466,7 +2466,7 @@ void arena_free(struct region* region) {
                 preserve(at(opened, memory(region->end)), loop(0).statement(0));
             }
             have separate(statement(4).statement(0).footprint, memory(arena->occupied)) by {
-                solve() using {
+                close() using {
                     separate(memory(arena->occupied), memory(at(clear_occupied.entry,
                         arena->occupied)[i]));
                 };
@@ -2475,7 +2475,7 @@ void arena_free(struct region* region) {
                 preserve(memory(arena->occupied), statement(4).statement(0));
             }
             have separate(statement(4).statement(0).footprint, memory(arena->data)) by {
-                solve() using {
+                close() using {
                     separate(memory(arena->data), memory(at(clear_occupied.entry,
                         arena->occupied)[i]));
                 };
@@ -2490,7 +2490,7 @@ void arena_free(struct region* region) {
                 preserve(at(opened, memory(arena->capacity)), loop(0).statement(0));
             }
             have separate(statement(4).statement(0).footprint, memory(region->arena)) by {
-                solve() using {
+                close() using {
                     separate(memory(region->arena), memory(at(clear_occupied.entry,
                         arena->occupied)[i]));
                 };
@@ -2502,7 +2502,7 @@ void arena_free(struct region* region) {
             fold(at(opened, arena_clear_window(arena->data, arena->occupied, arena->capacity, region->start, region->end))[i]);
             step();
             have to_integer(region->start) <= (to_integer(at(opened, i)) + 1) by {
-                solve() using { to_integer(old(region->start)) <= to_integer(at(opened, i)); to_integer(region->start) == to_integer(old(region->start)); };
+                close() using { to_integer(old(region->start)) <= to_integer(at(opened, i)); to_integer(region->start) == to_integer(old(region->start)); };
             }
             have forall (k: int32) { region->start <= k and to_integer(k) < (to_integer(at(opened, i)) + 1) implies arena->occupied[k] == 0 } by {
                 intro();
@@ -2519,15 +2519,15 @@ void arena_free(struct region* region) {
                         known();
                     }
                     have 0 <= k by {
-                        solve() using { (at(function.entry, 0) as int32) <= (at(function.entry,
+                        close() using { (at(function.entry, 0) as int32) <= (at(function.entry,
                                 region->start) as int32); (region->start as int32) <= (k as int32); (region->start as int32) == (at(opened, region->start) as
                                 int32); };
                     }
                     have k < at(opened, arena->capacity) by {
-                        solve() using { at(region(5).entry, i) < at(region(5).entry, region->end); at(function.entry, region->end) <= at(function.entry,
+                        close() using { at(region(5).entry, i) < at(region(5).entry, region->end); at(function.entry, region->end) <= at(function.entry,
                                 arena->capacity); k < at(region(5).entry, i); };
                     }
-                    have at(opened, i) != k by { solve() using { k < at(opened, i); }; }
+                    have at(opened, i) != k by { close() using { k < at(opened, i); }; }
                     have at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))) by {
                         apply(separation::separate_elements(at(opened, arena->occupied), at(opened, i), k));
                     }
@@ -2538,7 +2538,7 @@ void arena_free(struct region* region) {
                     known();
                 } else {
                     have to_integer(k) == to_integer(at(opened, i)) by {
-                        solve() using { to_integer(k) < (to_integer(at(opened, i)) + 1); not k < at(opened, i); };
+                        close() using { to_integer(k) < (to_integer(at(opened, i)) + 1); not k < at(opened, i); };
                     }
                     rewrite(k, at(opened, i));
                     rewrite(arena->occupied, at(opened, arena->occupied));
@@ -2556,9 +2556,9 @@ void arena_free(struct region* region) {
                     known();
                 }
                 have k < at(opened, i) by {
-                    solve() using { at(region(3).exit, i) <= at(region(5).entry, i); region->start == at(opened, region->start); k < region->start; };
+                    close() using { at(region(3).exit, i) <= at(region(5).entry, i); region->start == at(opened, region->start); k < region->start; };
                 }
-                have at(opened, i) != k by { solve() using { k < at(opened, i); }; }
+                have at(opened, i) != k by { close() using { k < at(opened, i); }; }
                 have at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))) by {
                     apply(separation::separate_elements(at(opened, arena->occupied), at(opened, i), k));
                 }
@@ -2579,15 +2579,15 @@ void arena_free(struct region* region) {
                     known();
                 }
                 have at(opened, i) < k by {
-                    solve() using { region->end <= k; region->end == at(opened, region->end); at(region(5).entry, i) < at(region(5).entry, region->end); };
+                    close() using { region->end <= k; region->end == at(opened, region->end); at(region(5).entry, i) < at(region(5).entry, region->end); };
                 }
                 have at(opened, i) <= k by {
-                    solve() using { at(opened, i) < k; };
+                    close() using { at(opened, i) < k; };
                 }
                 have 0 <= k by {
-                    solve() using { (0 as int32) <= (at(region(5).entry, i) as int32); (at(opened, i) as int32) <= (k as int32); };
+                    close() using { (0 as int32) <= (at(region(5).entry, i) as int32); (at(opened, i) as int32) <= (k as int32); };
                 }
-                have at(opened, i) != k by { solve() using { at(opened, i) < k; }; }
+                have at(opened, i) != k by { close() using { at(opened, i) < k; }; }
                 have at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))) by {
                     apply(separation::separate_elements(at(opened, arena->occupied), at(opened, i), k));
                 }
@@ -2604,16 +2604,16 @@ void arena_free(struct region* region) {
                 have k < i;
                 have to_integer(k) < (to_integer(at(opened, i)) + 1) by {
                     have -2147483648 <= (to_integer(at(opened, i)) + 1) by {
-                        solve() using { 0 <= to_integer(at(opened, i)); };
+                        close() using { 0 <= to_integer(at(opened, i)); };
                     }
                     have (to_integer(at(opened, i)) + 1) <= 2147483647 by {
-                        solve() using { to_integer(at(opened, i)) < to_integer(at(region(5).entry,
+                        close() using { to_integer(at(opened, i)) < to_integer(at(region(5).entry,
                                 arena->capacity)); to_integer(at(region(5).entry, arena->capacity)) <= 536870911; };
                     }
                     have to_integer((i as int32)) == (to_integer(at(opened, i)) + 1) by {
-                        solve() using { -2147483648 <= (to_integer(at(opened, i)) + 1); (to_integer(at(opened, i)) + 1) <= 2147483647; };
+                        close() using { -2147483648 <= (to_integer(at(opened, i)) + 1); (to_integer(at(opened, i)) + 1) <= 2147483647; };
                     }
-                    solve() using { to_integer((i as int32)) == (to_integer(at(opened, i)) + 1); to_integer(k) < to_integer((i as int32)); };
+                    close() using { to_integer((i as int32)) == (to_integer(at(opened, i)) + 1); to_integer(k) < to_integer((i as int32)); };
                 }
                 instantiate(forall (j: int32) { region->start <= j and to_integer(j) < (to_integer(at(opened, i)) + 1) implies arena->occupied[j] == 0 }, k);
                 known();
@@ -2648,19 +2648,19 @@ void arena_free(struct region* region) {
             }
             have to_integer(i) == (to_integer(at(opened, i)) + 1) by {
                 have -2147483648 <= (to_integer(at(opened, i)) + 1) by {
-                    solve() using { 0 <= to_integer(at(opened, i)); };
+                    close() using { 0 <= to_integer(at(opened, i)); };
                 }
                 have (to_integer(at(opened, i)) + 1) <= 2147483647 by {
-                    solve() using { to_integer(at(opened, i)) < to_integer(at(region(5).entry,
+                    close() using { to_integer(at(opened, i)) < to_integer(at(region(5).entry,
                             arena->capacity)); to_integer(at(region(5).entry, arena->capacity)) <= 536870911; };
                 }
                 have to_integer(i) == (to_integer(at(opened, i)) + 1) by {
-                    solve() using { -2147483648 <= (to_integer(at(opened, i)) + 1); (to_integer(at(opened, i)) + 1) <= 2147483647; };
+                    close() using { -2147483648 <= (to_integer(at(opened, i)) + 1); (to_integer(at(opened, i)) + 1) <= 2147483647; };
                 }
                 known();
             }
             have 0 <= (to_integer(region->end) - to_integer(i)) by {
-                solve() using { to_integer(i) <= to_integer(old(region->end)); to_integer(region->end) == to_integer(old(region->end)); };
+                close() using { to_integer(i) <= to_integer(old(region->end)); to_integer(region->end) == to_integer(old(region->end)); };
             }
             have (to_integer(region->end) - to_integer(i)) < (to_integer(region->end) - to_integer(at(opened, i))) by {
                 rewrite(to_integer(i), (to_integer(at(opened, i)) + 1));
@@ -2712,13 +2712,13 @@ void arena_free(struct region* region) {
         known();
     }
     have m == region->end by {
-        solve() using { at(function.entry, m) <= at(function.entry, region->end); not at(function.entry, m) < at(function.entry, region->end); };
+        close() using { at(function.entry, m) <= at(function.entry, region->end); not at(function.entry, m) < at(function.entry, region->end); };
     }
     have region->start <= region->end by {
         known();
     }
     have 0 <= region->end by {
-        solve() using { at(region(3).exit, i) <= m; at(function.entry, m) <= at(function.entry, region->end); at(function.entry, 0) <= at(function.entry, region->start); };
+        close() using { at(region(3).exit, i) <= m; at(function.entry, m) <= at(function.entry, region->end); at(function.entry, 0) <= at(function.entry, region->start); };
     }
     have region->end <= arena->capacity by {
         known();
@@ -2744,14 +2744,14 @@ void arena_free(struct region* region) {
             known();
         }
         have k < region->end by {
-            solve() using { at(region(3).exit, i) <= m; at(function.entry, m) <= at(function.entry, region->end); k < at(region(3).exit, i); };
+            close() using { at(region(3).exit, i) <= m; at(function.entry, m) <= at(function.entry, region->end); k < at(region(3).exit, i); };
         }
         have k < arena->capacity by {
-            solve() using { at(function.entry, k) < at(function.entry, region->end); at(function.entry, region->end) <= at(function.entry, arena->capacity); };
+            close() using { at(function.entry, k) < at(function.entry, region->end); at(function.entry, region->end) <= at(function.entry, arena->capacity); };
         }
         have at(clear_occupied.entry, 0) <= at(clear_occupied.entry, k) and at(clear_occupied.entry, k) < at(clear_occupied.entry, arena->capacity);
         instantiate(forall (j: int32) { at(clear_occupied.entry, 0) <= at(clear_occupied.entry, j) and at(clear_occupied.entry, j) < at(clear_occupied.entry, arena->capacity) implies at(clear_occupied.entry, arena->occupied[j]) == old(region->arena->occupied[j]) }, k);
-        solve() using {
+        close() using {
             arena->occupied[k] == at(clear_occupied.entry, arena->occupied[k]);
             at(clear_occupied.entry, arena->occupied[k]) == old(region->arena->occupied[k]);
         };
@@ -2766,11 +2766,11 @@ void arena_free(struct region* region) {
             known();
         }
         have 0 <= k by {
-            solve() using { at(function.entry, 0) <= at(function.entry, region->end); at(region(0).entry, region->end) <= k; };
+            close() using { at(function.entry, 0) <= at(function.entry, region->end); at(region(0).entry, region->end) <= k; };
         }
         have at(clear_occupied.entry, 0) <= at(clear_occupied.entry, k) and at(clear_occupied.entry, k) < at(clear_occupied.entry, arena->capacity);
         instantiate(forall (j: int32) { at(clear_occupied.entry, 0) <= at(clear_occupied.entry, j) and at(clear_occupied.entry, j) < at(clear_occupied.entry, arena->capacity) implies at(clear_occupied.entry, arena->occupied[j]) == old(region->arena->occupied[j]) }, k);
-        solve() using {
+        close() using {
             arena->occupied[k] == at(clear_occupied.entry, arena->occupied[k]);
             at(clear_occupied.entry, arena->occupied[k]) == old(region->arena->occupied[k]);
         };
@@ -2790,7 +2790,7 @@ void arena_free(struct region* region) {
     }
     step();
     have separate(statement(5).footprint, memory(region->arena)) by {
-        solve() using {
+        close() using {
             at(cleared, separate(memory(arena->live_regions), memory(region->arena)));
         };
     }
@@ -2798,7 +2798,7 @@ void arena_free(struct region* region) {
         preserve(memory(region->arena), statement(5));
     }
     have separate(statement(5).footprint, memory(arena->data)) by {
-        solve() using {
+        close() using {
             at(cleared, separate(memory(arena->live_regions), memory(arena->data)));
         };
     }
@@ -2806,7 +2806,7 @@ void arena_free(struct region* region) {
         preserve(memory(arena->data), statement(5));
     }
     have separate(statement(5).footprint, memory(arena->occupied)) by {
-        solve() using {
+        close() using {
             at(cleared, separate(memory(arena->live_regions), memory(arena->occupied)));
         };
     }
@@ -2819,10 +2819,10 @@ void arena_free(struct region* region) {
         have region->start <= k;
         have k < region->end;
         have 0 <= k by {
-            solve() using { at(function.entry, 0) <= at(function.entry, region->start); at(region(3).exit, i) <= k; };
+            close() using { at(function.entry, 0) <= at(function.entry, region->start); at(region(3).exit, i) <= k; };
         }
         have k < arena->capacity by {
-            solve() using { k < at(region(0).entry, region->end); at(function.entry, region->end) <= at(function.entry, arena->capacity); };
+            close() using { k < at(region(0).entry, region->end); at(function.entry, region->end) <= at(function.entry, arena->capacity); };
         }
         have at(cleared, region->start) <= at(cleared, k) and at(cleared, k) < at(cleared, region->end);
         instantiate(forall (j: int32) { at(cleared, region->start) <= at(cleared, j) and at(cleared, j) < at(cleared, region->end) implies at(cleared, arena->occupied[j]) == at(cleared, 0) }, k);
@@ -2831,7 +2831,7 @@ void arena_free(struct region* region) {
             apply(selected_array_cell(memory(*arena), memory(arena->live_regions), arena->occupied, arena->capacity, k));
         }
         have separate(statement(5).footprint, memory(arena->occupied[k])) by {
-            solve() using { separate(memory(arena->live_regions), memory(arena->occupied[k])); };
+            close() using { separate(memory(arena->live_regions), memory(arena->occupied[k])); };
         }
         have arena->occupied[k] == at(cleared, arena->occupied[k]) by {
             preserve(memory(arena->occupied[k]), statement(5));
@@ -2845,10 +2845,10 @@ void arena_free(struct region* region) {
         have 0 <= k;
         have k < region->start;
         have k < region->end by {
-            solve() using { at(region(3).exit, i) <= m; at(function.entry, m) <= at(function.entry, region->end); k < at(region(3).exit, i); };
+            close() using { at(region(3).exit, i) <= m; at(function.entry, m) <= at(function.entry, region->end); k < at(region(3).exit, i); };
         }
         have k < arena->capacity by {
-            solve() using { at(function.entry, k) < at(function.entry, region->end); at(function.entry, region->end) <= at(function.entry, arena->capacity); };
+            close() using { at(function.entry, k) < at(function.entry, region->end); at(function.entry, region->end) <= at(function.entry, arena->capacity); };
         }
         have at(cleared, 0) <= at(cleared, k) and at(cleared, k) < at(cleared, region->start);
         instantiate(forall (j: int32) { at(cleared, 0) <= at(cleared, j) and at(cleared, j) < at(cleared, region->start) implies at(cleared, arena->occupied[j]) == old(region->arena->occupied[j]) }, k);
@@ -2857,7 +2857,7 @@ void arena_free(struct region* region) {
             apply(selected_array_cell(memory(*arena), memory(arena->live_regions), arena->occupied, arena->capacity, k));
         }
         have separate(statement(5).footprint, memory(arena->occupied[k])) by {
-            solve() using { separate(memory(arena->live_regions), memory(arena->occupied[k])); };
+            close() using { separate(memory(arena->live_regions), memory(arena->occupied[k])); };
         }
         have arena->occupied[k] == at(cleared, arena->occupied[k]) by {
             preserve(memory(arena->occupied[k]), statement(5));
@@ -2871,7 +2871,7 @@ void arena_free(struct region* region) {
         have region->end <= k;
         have k < arena->capacity;
         have 0 <= k by {
-            solve() using { at(function.entry, 0) <= at(function.entry, region->end); at(region(0).entry, region->end) <= k; };
+            close() using { at(function.entry, 0) <= at(function.entry, region->end); at(region(0).entry, region->end) <= k; };
         }
         have at(cleared, region->end) <= at(cleared, k) and at(cleared, k) < at(cleared, arena->capacity);
         instantiate(forall (j: int32) { at(cleared, region->end) <= at(cleared, j) and at(cleared, j) < at(cleared, arena->capacity) implies at(cleared, arena->occupied[j]) == old(region->arena->occupied[j]) }, k);
@@ -2880,7 +2880,7 @@ void arena_free(struct region* region) {
             apply(selected_array_cell(memory(*arena), memory(arena->live_regions), arena->occupied, arena->capacity, k));
         }
         have separate(statement(5).footprint, memory(arena->occupied[k])) by {
-            solve() using { separate(memory(arena->live_regions), memory(arena->occupied[k])); };
+            close() using { separate(memory(arena->live_regions), memory(arena->occupied[k])); };
         }
         have arena->occupied[k] == at(cleared, arena->occupied[k]) by {
             preserve(memory(arena->occupied[k]), statement(5));
@@ -2901,13 +2901,13 @@ void arena_free(struct region* region) {
     }
     have to_integer(after.live) == (to_integer(old(st.live)) - 1) by {
         have -2147483648 <= (to_integer(old(st.live)) - 1) by {
-            solve() using { 0 <= to_integer(old(st.live)); };
+            close() using { 0 <= to_integer(old(st.live)); };
         }
         have (to_integer(old(st.live)) - 1) <= 2147483647 by {
-            solve() using {  };
+            close() using {  };
         }
         have to_integer(after.live) == (to_integer(old(st.live)) - 1) by {
-            solve() using { -2147483648 <= (to_integer(old(st.live)) - 1); (to_integer(old(st.live)) - 1) <= 2147483647; };
+            close() using { -2147483648 <= (to_integer(old(st.live)) - 1); (to_integer(old(st.live)) - 1) <= 2147483647; };
         }
         known();
     }
@@ -3132,7 +3132,7 @@ int32 arena_read(struct region* region, int32 index) {
     have s + index < c;
     have region->start + index < region->arena->capacity;
     have 0 <= to_integer(s) + to_integer(index) by {
-        solve() using { 0 <= s; 0 <= index; };
+        close() using { 0 <= s; 0 <= index; };
     }
     have to_integer(region->start + index) == to_integer(s) + to_integer(index) by {
         rewrite(region->start, s);
@@ -3304,7 +3304,7 @@ int32 arena_pipeline(
     step();
     have separate(memory(allocated), memory(first->arena)) by { solve(); }
     have separate(statement(7).assignment(allocated, 0).footprint, memory(first->arena)) by {
-        solve() using { separate(memory(allocated), memory(first->arena)); };
+        close() using { separate(memory(allocated), memory(first->arena)); };
     }
     have first->arena == at(after_first_alloc, first->arena) by {
         preserve(memory(first->arena), statement(7).assignment(allocated, 0));
@@ -3454,7 +3454,7 @@ int32 arena_pipeline(
     step();
     have separate(memory(allocated), memory(second->arena)) by { solve(); }
     have separate(statement(9).assignment(allocated, 0).footprint, memory(second->arena)) by {
-        solve() using { separate(memory(allocated), memory(second->arena)); };
+        close() using { separate(memory(allocated), memory(second->arena)); };
     }
     have second->arena == at(after_second_alloc, second->arena) by {
         preserve(memory(second->arena), statement(9).assignment(allocated, 0));
@@ -3505,7 +3505,7 @@ int32 arena_pipeline(
             known();
         }
         have 1 <= s0.live by {
-            solve() using { (at(region(19).entry, s0.live) as int32) == (at(region(19).entry, 1) as
+            close() using { (at(region(19).entry, s0.live) as int32) == (at(region(19).entry, 1) as
                     int32); };
         }
         have first->arena == arena by {
@@ -3752,7 +3752,7 @@ int32 arena_pipeline(
                     normalize();
                 }
                 (to_integer(r1.start) + to_integer(0)) < to_integer(r1.end) => {
-                    solve() using { to_integer(r1.start) < to_integer(r1.end); };
+                    close() using { to_integer(r1.start) < to_integer(r1.end); };
                 }
             }
         }
@@ -3772,7 +3772,7 @@ int32 arena_pipeline(
         known();
     }
     have r1.start == at(z1, first->start) by {
-        solve() using {
+        close() using {
             r1.start == at(w1, r1.start);
             at(w1, r1.start) == at(z1, first->start);
         };
@@ -3784,7 +3784,7 @@ int32 arena_pipeline(
         known();
     }
     have r1.end == at(z1, first->end) by {
-        solve() using {
+        close() using {
             r1.end == at(w1, r1.end);
             at(w1, r1.end) == at(z1, first->end);
         };
@@ -3796,7 +3796,7 @@ int32 arena_pipeline(
         known();
     }
     have s0.live == 2 by {
-        solve() using {
+        close() using {
             s0.live == at(w1, s0.live);
             at(w1, s0.live) == 2;
         };
@@ -3808,7 +3808,7 @@ int32 arena_pipeline(
         known();
     }
     have r2.start == at(z2, second->start) by {
-        solve() using {
+        close() using {
             r2.start == at(w1, r2.start);
             at(w1, r2.start) == at(z2, second->start);
         };
@@ -3820,7 +3820,7 @@ int32 arena_pipeline(
         known();
     }
     have r2.end == at(z2, second->end) by {
-        solve() using {
+        close() using {
             r2.end == at(w1, r2.end);
             at(w1, r2.end) == at(z2, second->end);
         };
@@ -3935,7 +3935,7 @@ int32 arena_pipeline(
                     normalize();
                 }
                 (to_integer(r2.start) + to_integer(0)) < to_integer(r2.end) => {
-                    solve() using { to_integer(r2.start) < to_integer(r2.end); };
+                    close() using { to_integer(r2.start) < to_integer(r2.end); };
                 }
             }
         }
@@ -3955,7 +3955,7 @@ int32 arena_pipeline(
         known();
     }
     have r1.start == at(z1, first->start) by {
-        solve() using {
+        close() using {
             r1.start == at(w2, r1.start);
             at(w2, r1.start) == at(z1, first->start);
         };
@@ -3967,7 +3967,7 @@ int32 arena_pipeline(
         known();
     }
     have r1.end == at(z1, first->end) by {
-        solve() using {
+        close() using {
             r1.end == at(w2, r1.end);
             at(w2, r1.end) == at(z1, first->end);
         };
@@ -3988,7 +3988,7 @@ int32 arena_pipeline(
         known();
     }
     have r2.start == at(z2, second->start) by {
-        solve() using {
+        close() using {
             r2.start == at(w2, r2.start);
             at(w2, r2.start) == at(z2, second->start);
         };
@@ -4000,7 +4000,7 @@ int32 arena_pipeline(
         known();
     }
     have r2.end == at(z2, second->end) by {
-        solve() using {
+        close() using {
             r2.end == at(w2, r2.end);
             at(w2, r2.end) == at(z2, second->end);
         };
@@ -4131,7 +4131,7 @@ int32 arena_pipeline(
     }
     have ((first->start + 0) as int32) < (r1.end as int32) by {
         rewrite(first->start, r1.start);
-        solve() using { r1.start < r1.end; };
+        close() using { r1.start < r1.end; };
     }
     have contains(memory(at(w2_open, arena->data)[at(w2, first->start) + 0]), memory(at(w2_open, arena->data)[at(w2, first->start) + 0])) by { apply(separation::contains_refl(memory(at(w2_open, arena->data)[at(w2, first->start) + 0]))); }
     have separate(statement(12).footprint, memory(at(w2_open, arena->data)[at(w2, first->start) + 0])) by {
@@ -4490,7 +4490,7 @@ int32 arena_pipeline(
         known();
     }
     have 1 <= s0.live by {
-        solve() using { (at(region(30).entry, s0.live) as int32) == (at(region(30).entry, 2) as
+        close() using { (at(region(30).entry, s0.live) as int32) == (at(region(30).entry, 2) as
                 int32); };
     }
     have r2.end <= s0.capacity by {
@@ -4710,7 +4710,7 @@ int32 arena_pipeline(
         known();
     }
     have 1 <= g2.live by {
-        solve() using { (at(region(31).entry, g2.live) as int32) == (at(region(31).entry, 1) as
+        close() using { (at(region(31).entry, g2.live) as int32) == (at(region(31).entry, 1) as
                 int32); };
     }
     have g2.capacity == at(f2, s0.capacity) by {
@@ -4961,7 +4961,7 @@ int32 arena_pipeline(
             known();
         }
         have combined->start < 536870911 by {
-            solve() using { at(region(38).entry, combined->end) <= at(region(38).entry,
+            close() using { at(region(38).entry, combined->end) <= at(region(38).entry,
                     arena->capacity); at(region(38).entry, arena->capacity) <= at(region(38).entry, 536870911); at(region(38).entry, combined->start) < at(region(38).entry,
                     combined->end); };
         }
@@ -5028,18 +5028,18 @@ int32 arena_pipeline(
             known();
         }
         have r3.start < 2147483643 by {
-            solve() using { at(region(38).entry, combined->start) < at(region(38).entry, 536870911); };
+            close() using { at(region(38).entry, combined->start) < at(region(38).entry, 536870911); };
         }
         have r3.start <= 2147483643 by {
-            solve() using { (at(region(38).entry, combined->start) as int32) < (at(region(38).entry,
+            close() using { (at(region(38).entry, combined->start) as int32) < (at(region(38).entry,
                     536870911) as int32); };
         }
         have defined((r3.start + 4)) by {
             have (to_integer(r3.start) + to_integer(4)) >= -2147483648 by {
-                solve() using { 0 <= to_integer(r3.start); };
+                close() using { 0 <= to_integer(r3.start); };
             }
             have (to_integer(r3.start) + to_integer(4)) <= 2147483647 by {
-                solve() using { to_integer(r3.start) < 536870911; };
+                close() using { to_integer(r3.start) < 536870911; };
             }
             known();
         }
@@ -5054,7 +5054,7 @@ int32 arena_pipeline(
                 known();
             }
             have to_integer((at(z3, combined->start) + 4)) == (to_integer(at(z3, combined->start)) + 4) by {
-                solve() using { -2147483648 <= (to_integer(at(z3, combined->start)) + 4); (to_integer(at(z3, combined->start)) + 4) <= 2147483647; };
+                close() using { -2147483648 <= (to_integer(at(z3, combined->start)) + 4); (to_integer(at(z3, combined->start)) + 4) <= 2147483647; };
             }
             known();
         }
@@ -5076,15 +5076,15 @@ int32 arena_pipeline(
             known();
         }
         have r3.start <= 2147483644 by {
-            solve() using { (at(region(38).entry, combined->start) as int32) < (at(region(38).entry,
+            close() using { (at(region(38).entry, combined->start) as int32) < (at(region(38).entry,
                     536870911) as int32); };
         }
         have defined((r3.start + 3)) by {
             have (to_integer(r3.start) + to_integer(3)) >= -2147483648 by {
-                solve() using { 0 <= to_integer(r3.start); };
+                close() using { 0 <= to_integer(r3.start); };
             }
             have (to_integer(r3.start) + to_integer(3)) <= 2147483647 by {
-                solve() using { (let integer_value: Integer = to_integer((combined->start as int32))
+                close() using { (let integer_value: Integer = to_integer((combined->start as int32))
                         + 4; integer_value) <= 2147483647; };
             }
             known();
@@ -5524,7 +5524,7 @@ int32 arena_reuse(struct region* middle, struct region* reused) {
         have 0 <= k;
         have reused->end <= middle->arena->capacity;
         have k < at(allocating, middle->arena->capacity) by {
-            solve() using {
+            close() using {
                 k < reused->end;
                 reused->end <= middle->arena->capacity;
                 middle->arena->capacity == at(allocating, middle->arena->capacity);
@@ -5550,11 +5550,11 @@ int32 arena_reuse(struct region* middle, struct region* reused) {
                         2 <= k and k < 4
                 }, 4);
                 have not (4 < 4) by {
-                    solve() using {};
+                    close() using {};
                 }
                 contradiction(4 < 4);
             } else {
-                solve() using {
+                close() using {
                     not (4 < reused->end);
                 };
             }

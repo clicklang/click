@@ -7,7 +7,7 @@ theorem bridge(a: uint32, b: uint32) {
         have to_integer(b as int64) == to_integer(b) by known();
         rewrite(to_integer(a as int64), to_integer(a));
         rewrite(to_integer(b as int64), to_integer(b));
-        solve() using {};
+        close() using {};
 
     }
 }

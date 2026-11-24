@@ -116,7 +116,7 @@ int32 vector_copy(
                     normalize();
                 }
                 have not (0 <= k) by {
-                    solve() using {
+                    close() using {
                         k < i;
                         i == 0;
                     };
@@ -252,7 +252,7 @@ int32 vector_grow(struct vector* owner) {
         known();
     }
     have (new_capacity as uint32) <= 1073741823u32 by {
-        solve() using {
+        close() using {
             0 <= new_capacity;
             new_capacity <= 536870911;
         };
@@ -262,7 +262,7 @@ int32 vector_grow(struct vector* owner) {
             normalize();
         }
         rewrite(old_capacity, owner->cap);
-        solve() using {
+        close() using {
             1 <= owner->cap;
             owner->cap <= 536870910;
         };
@@ -272,7 +272,7 @@ int32 vector_grow(struct vector* owner) {
         known();
     }
     have (owner->len as uint32) <= 1073741823u32 by {
-        solve() using {
+        close() using {
             0 <= owner->len;
             owner->len <= 536870910;
         };
@@ -875,7 +875,7 @@ void* producer(void* argument) {
     have 1 <= slack;
     unfold(credit(log));
     have to_integer(1) <= to_integer(slack) by apply(integer::int32_less_equal_to_integer(1, slack));
-    have to_integer(cap) <= to_integer(536870909) by solve() using {
+    have to_integer(cap) <= to_integer(536870909) by close() using {
         to_integer(cap) + to_integer(slack) <= 536870910;
         to_integer(1) <= to_integer(slack);
         to_integer(1) == 1;
@@ -905,7 +905,7 @@ void* producer(void* argument) {
     have to_integer(cap + 1) == to_integer(cap) + to_integer(1) by apply(integer::int32_add_to_integer(cap, 1));
     have to_integer(slack - 1) == to_integer(slack) - to_integer(1) by apply(integer::int32_subtract_to_integer(slack, 1));
     have to_integer(pushed_cap) <= to_integer(cap + 1) by apply(integer::int32_less_equal_to_integer(pushed_cap, cap + 1));
-    have to_integer(pushed_cap) + to_integer(slack - 1) <= 536870910 by solve() using {
+    have to_integer(pushed_cap) + to_integer(slack - 1) <= 536870910 by close() using {
         to_integer(pushed_cap) <= to_integer(cap + 1);
         to_integer(cap + 1) == to_integer(cap) + to_integer(1);
         to_integer(slack - 1) == to_integer(slack) - to_integer(1);
@@ -936,7 +936,7 @@ int32 run_two_producers(struct shared_log* log) {
     fold(credit(log));
     fold(credit(log));
     have to_integer(before.cap) <= to_integer(536870908) by apply(integer::int32_less_equal_to_integer(before.cap, 536870908));
-    have to_integer(before.cap) + to_integer(2) <= 536870910 by solve() using {
+    have to_integer(before.cap) + to_integer(2) <= 536870910 by close() using {
         to_integer(before.cap) <= to_integer(536870908);
         to_integer(536870908) == 536870908;
         to_integer(2) == 2;

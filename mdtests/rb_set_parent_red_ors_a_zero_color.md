@@ -87,7 +87,7 @@ void set_parent_red(struct rb_node* node, struct rb_node* parent) {
             step_until(function.exit);
             have node->__rb_parent_color == address(parent) by solve();
             have (address(parent) & 1) == 0u64 by {
-                solve() using { aligned(parent, 8); };
+                close() using { aligned(parent, 8); };
             }
             have node->__rb_parent_color == address(parent) + (node->__rb_parent_color & 1) by {
                 rewrite(node->__rb_parent_color, address(parent));

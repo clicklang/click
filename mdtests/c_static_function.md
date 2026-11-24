@@ -40,7 +40,7 @@ int32 run(int32 value) {
 } by {
     let { result: r } = step();
     have to_integer(value + 1) <= to_integer(99);
-    have r < 100 by { solve() using { to_integer(r) == to_integer(value + 1); to_integer(value + 1) <= 99; }; }
+    have r < 100 by { close() using { to_integer(r) == to_integer(value + 1); to_integer(value + 1) <= 99; }; }
     step();
     step();
     solve();

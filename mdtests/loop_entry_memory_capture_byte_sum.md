@@ -53,13 +53,13 @@ int32 walk(const uint8* p, int32 n) {
   instantiate(forall (k: int32) { 0 <= k and k < n implies defined(old(p[k])) }, j);
   have separate(memory(total), memory(p[j])) by { known(); }
   have separate(statement(0).region(0).footprint, memory(p[j])) by {
-   solve() using { separate(memory(total), memory(p[j])); };
+   close() using { separate(memory(total), memory(p[j])); };
   }
   have at(statement(0).region(0).exit, defined(p[j])) by {
    preserve(memory(p[j]), statement(0).region(0));
   }
   have separate(statement(0).region(1).footprint, memory(p[j])) by {
-   solve() using { separate(memory(total), memory(p[j])); };
+   close() using { separate(memory(total), memory(p[j])); };
   }
   have defined(p[j]) by {
    preserve(memory(p[j]), statement(0).region(1));
@@ -76,9 +76,9 @@ int32 walk(const uint8* p, int32 n) {
   invariant forall (k: int32) { 0 <= k and k < n implies defined(p[k]) };
   invariant 0 <= total and total <= 255 * (old(n) - n);
   maintain by {
-   have 1 <= n by solve() using { n > 0; };
-   have 0 <= to_integer(old(n) - n) by solve() using { n <= old(n); 0 <= n; old(n) <= 15; };
-   have to_integer(old(n) - n + 1) <= to_integer(old(n)) by solve() using { 1 <= n; n <= old(n); 0 <= old(n); old(n) <= 15; };
+   have 1 <= n by close() using { n > 0; };
+   have 0 <= to_integer(old(n) - n) by close() using { n <= old(n); 0 <= n; old(n) <= 15; };
+   have to_integer(old(n) - n + 1) <= to_integer(old(n)) by close() using { 1 <= n; n <= old(n); 0 <= old(n); old(n) <= 15; };
    have defined(p[0]) by {
     instantiate(forall (k: int32) { 0 <= k and k < n implies defined(p[k]) }, 0);
     have 0 < n by { known(); }
@@ -88,7 +88,7 @@ int32 walk(const uint8* p, int32 n) {
    apply(separation::viewable_restrict(memory(p[0..n]), memory(p[0..1])));
    have separate(memory(total), memory(old(p)[0..old(n)])) by { known(); }
    have n <= old(n) - (old(n) - n) by {
-    solve() using { 0 <= n; n <= old(n); 0 <= old(n); old(n) <= 15; };
+    close() using { 0 <= n; n <= old(n); 0 <= old(n); old(n) <= 15; };
    }
    apply(contains_cursor_range(old(p), old(n) - n, old(n), n));
    have contains(memory(old(p)[0..old(n)]), memory(p[0..n])) by {
@@ -103,31 +103,31 @@ int32 walk(const uint8* p, int32 n) {
    have defined(at(before_pointer, p[0])) by solve();
    have at(before_pointer, viewable(p[0..1])) by { known(); }
    apply(byte_as_int32(at(before_pointer, p[0])));
-   have to_integer(old(n) - n) <= 14 by solve() using { 1 <= n; n <= old(n); 0 <= old(n); old(n) <= 15; };
-   have 255 * (old(n) - n) <= 3570 by solve() using { 1 <= n; n <= old(n); 0 <= old(n); old(n) <= 15; };
-   have total <= 3570 by solve() using { total <= 255 * (old(n) - n); 255 * (old(n) - n) <= 3570; };
+   have to_integer(old(n) - n) <= 14 by close() using { 1 <= n; n <= old(n); 0 <= old(n); old(n) <= 15; };
+   have 255 * (old(n) - n) <= 3570 by close() using { 1 <= n; n <= old(n); 0 <= old(n); old(n) <= 15; };
+   have total <= 3570 by close() using { total <= 255 * (old(n) - n); 255 * (old(n) - n) <= 3570; };
    have at(before_pointer, p[0] as int32) <= 255 by known();
-   have to_integer(total) <= to_integer(2147483647 - at(before_pointer, p[0] as int32)) by solve() using { total <= 3570; 0 <= at(before_pointer, p[0] as int32); at(before_pointer, p[0] as int32) <= 255; };
+   have to_integer(total) <= to_integer(2147483647 - at(before_pointer, p[0] as int32)) by close() using { total <= 3570; 0 <= at(before_pointer, p[0] as int32); at(before_pointer, p[0] as int32) <= 255; };
    have defined(total + (at(before_pointer, p[0] as int32)));
    have defined(total + at(before_pointer, p[0] as int32)) by solve();
    mark before_sum;
    step(); step();
    have to_integer(n) == to_integer(at(before_pointer, n) - 1) by solve();
    have n == at(before_pointer, n) - 1;
-   have 0 <= n by solve() using { to_integer(n) == to_integer(at(before_pointer, n) - 1); 1 <= at(before_pointer, n); };
-   have n <= old(n) by solve() using { to_integer(n) == to_integer(at(before_pointer, n) - 1); 1 <= at(before_pointer, n); at(before_pointer, n) <= old(n); };
-   have to_integer(old(n) - n) == to_integer((old(n) - at(before_pointer, n)) + 1) by solve() using { to_integer(n) == to_integer(at(before_pointer, n) - 1); 0 <= n; n <= old(n); 0 <= old(n); old(n) <= 15; 1 <= at(before_pointer, n); at(before_pointer, n) <= old(n); };
+   have 0 <= n by close() using { to_integer(n) == to_integer(at(before_pointer, n) - 1); 1 <= at(before_pointer, n); };
+   have n <= old(n) by close() using { to_integer(n) == to_integer(at(before_pointer, n) - 1); 1 <= at(before_pointer, n); at(before_pointer, n) <= old(n); };
+   have to_integer(old(n) - n) == to_integer((old(n) - at(before_pointer, n)) + 1) by close() using { to_integer(n) == to_integer(at(before_pointer, n) - 1); 0 <= n; n <= old(n); 0 <= old(n); old(n) <= 15; 1 <= at(before_pointer, n); at(before_pointer, n) <= old(n); };
    have p == at(before_pointer, p) + 1 by solve();
    have p == old(p) + (old(n) - n) by {
     rewrite(p, at(before_pointer, p) + 1);
     rewrite(to_integer(old(n) - n), to_integer((old(n) - at(before_pointer, n)) + 1));
-    solve() using { at(before_pointer, p) == old(p) + (old(n) - at(before_pointer, n)); 0 <= to_integer(old(n) - at(before_pointer, n)); to_integer(old(n) - at(before_pointer, n)) <= 14; };
+    close() using { at(before_pointer, p) == old(p) + (old(n) - at(before_pointer, n)); 0 <= to_integer(old(n) - at(before_pointer, n)); to_integer(old(n) - at(before_pointer, n)) <= 14; };
    }
-   have 0 <= to_integer(old(n) - n) by solve() using { 0 <= n; n <= old(n); 0 <= old(n); old(n) <= 15; 1 <= at(before_pointer, n); at(before_pointer, n) <= old(n); };
-   have to_integer(old(n) - n + n) == to_integer(old(n)) by solve() using { 0 <= n; n <= old(n); 0 <= old(n); old(n) <= 15; };
+   have 0 <= to_integer(old(n) - n) by close() using { 0 <= n; n <= old(n); 0 <= old(n); old(n) <= 15; 1 <= at(before_pointer, n); at(before_pointer, n) <= old(n); };
+   have to_integer(old(n) - n + n) == to_integer(old(n)) by close() using { 0 <= n; n <= old(n); 0 <= old(n); old(n) <= 15; };
    // Preserve the pre-increment span across the sum store, then take its suffix.
    have separate(loop(0).statement(0).region(1).footprint, at(before_pointer, memory(p[0..n]))) by {
-    solve() using { at(before_pointer, separate(memory(total), memory(p[0..n]))); };
+    close() using { at(before_pointer, separate(memory(total), memory(p[0..n]))); };
    }
    have viewable(at(before_pointer, memory(p[0..n]))) by {
     preserve(at(before_pointer, memory(p[0..n])), loop(0).statement(0).region(1));
@@ -140,17 +140,17 @@ int32 walk(const uint8* p, int32 n) {
      memory(at(before_pointer, p)[1..at(before_pointer, n)]), memory(p[0..n])));
    apply(separation::viewable_restrict(at(before_pointer, memory(p[0..n])), memory(p[0..n])));
    have total == at(before_sum, total) + at(before_pointer, p[0] as int32);
-   have 0 <= total by solve() using { total == at(before_sum, total) + at(before_pointer, p[0] as int32); 0 <= at(before_sum, total); 0 <= at(before_pointer, p[0] as int32); };
-   have total <= 255 * (old(n) - n) by solve() using { total == at(before_sum, total) + at(before_pointer, p[0] as int32); at(before_sum, total) <= 255 * (old(n) - at(before_sum, n)); n == at(before_pointer, n) - 1; at(before_sum, n) == at(before_pointer, n); at(before_pointer, p[0] as int32) <= 255; };
+   have 0 <= total by close() using { total == at(before_sum, total) + at(before_pointer, p[0] as int32); 0 <= at(before_sum, total); 0 <= at(before_pointer, p[0] as int32); };
+   have total <= 255 * (old(n) - n) by close() using { total == at(before_sum, total) + at(before_pointer, p[0] as int32); at(before_sum, total) <= 255 * (old(n) - at(before_sum, n)); n == at(before_pointer, n) - 1; at(before_sum, n) == at(before_pointer, n); at(before_pointer, p[0] as int32) <= 255; };
    // Byte k at the new cursor is byte k + 1 at the saved cursor.
    have forall (k: int32) { 0 <= k and k < n implies defined(p[k]) } by {
     intro(); intro();
-    have k < 2147483647 by { solve() using { k < n; n <= old(n); old(n) <= 15; }; }
+    have k < 2147483647 by { close() using { k < n; n <= old(n); old(n) <= 15; }; }
     apply(integer::int32_increment_below_max_is_defined(k));
     apply(integer::int32_add_to_integer(k, 1));
-    have 0 <= to_integer(k) + 1 by { solve() using { 0 <= k; }; }
+    have 0 <= to_integer(k) + 1 by { close() using { 0 <= k; }; }
     have to_integer(k) + 1 < to_integer(at(before_pointer, n)) by {
-     solve() using { k < n; n == at(before_pointer, n) - 1; };
+     close() using { k < n; n == at(before_pointer, n) - 1; };
     }
     have 0 <= (k + 1) and k + 1 < at(before_pointer, n) by {
      rewrite(to_integer(k + 1), to_integer(k) + 1);
@@ -171,17 +171,17 @@ int32 walk(const uint8* p, int32 n) {
      known();
     }
     have separate(loop(0).statement(0).region(1).footprint, memory(p[k])) by {
-     solve() using { separate(memory(total), memory(p[k])); };
+     close() using { separate(memory(total), memory(p[k])); };
     }
     have defined(p[k]) by { preserve(memory(p[k]), loop(0).statement(0).region(1)); }
    }
   }
  }
- have n == 0 by solve() using { 0 <= n; n <= 0; };
- have 0 <= to_integer(old(n) - n) by solve() using { 0 <= old(n); old(n) <= 15; 0 <= n; n <= 0; n == 0; };
- have to_integer(old(n) - n) <= 15 by solve() using { 0 <= old(n); old(n) <= 15; 0 <= n; n <= 0; n == 0; };
- have 255 * (old(n) - n) <= 3825 by solve() using { 0 <= old(n); old(n) <= 15; 0 <= n; n <= 0; n == 0; };
- have total <= 3825 by solve() using { 0 <= total; total <= 255 * (old(n) - n); 255 * (old(n) - n) <= 3825; 0 <= old(n); old(n) <= 15; 0 <= n; n <= 0; n == 0; };
+ have n == 0 by close() using { 0 <= n; n <= 0; };
+ have 0 <= to_integer(old(n) - n) by close() using { 0 <= old(n); old(n) <= 15; 0 <= n; n <= 0; n == 0; };
+ have to_integer(old(n) - n) <= 15 by close() using { 0 <= old(n); old(n) <= 15; 0 <= n; n <= 0; n == 0; };
+ have 255 * (old(n) - n) <= 3825 by close() using { 0 <= old(n); old(n) <= 15; 0 <= n; n <= 0; n == 0; };
+ have total <= 3825 by close() using { 0 <= total; total <= 255 * (old(n) - n); 255 * (old(n) - n) <= 3825; 0 <= old(n); old(n) <= 15; 0 <= n; n <= 0; n == 0; };
 }
 ```
 

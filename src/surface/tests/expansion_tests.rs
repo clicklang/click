@@ -14,13 +14,13 @@ fn compatibility_normalization_is_rejected_by_each_expansion_entry_point() {
         theorem shifted_one(d: uint32) {
             requires d < 32u32;
             ensures (1u32 << d) != 0u32 by {
-                solve() using { d < 32u32; };
+                close() using { d < 32u32; };
             }
         }
     "#;
     let sources = [];
     verify_c_sources(source, &sources).unwrap();
-    let offset = source.find("solve() using").unwrap();
+    let offset = source.find("close() using").unwrap();
     let position = expansion::position_at_offset(source, offset);
     let claim = "shifted_one.ensures_0";
     let errors = [
@@ -33,7 +33,7 @@ fn compatibility_normalization_is_rejected_by_each_expansion_entry_point() {
     }
 
     // Writing the compatibility tactic explicitly keeps the proof replayable.
-    let written = source.replacen("solve() using", "normalize() using", 1);
+    let written = source.replacen("close() using", "normalize() using", 1);
     let expanded = expand_c_claim_source_by_label(&written, &sources, claim).unwrap();
     assert_eq!(
         expanded.matches("normalize() using").count(),
@@ -1254,7 +1254,7 @@ fn viewable_requirement_supports_a_narrower_span_without_transport() {
             concat!(
                 "        have viewable(v[lo..hi]);\n",
                 "        have 0 <= to_integer(hi - lo) by {\n",
-                "            solve() using { lo == 0; hi == 1073741824; };\n",
+                "            close() using { lo == 0; hi == 1073741824; };\n",
                 "        }\n",
                 "        have 0 < hi",
             ),
@@ -1535,7 +1535,7 @@ fn negated_resource_fields_expand_and_cold_replay() {
 fn computational_solve_expansions_use_known_without_implicit_search() {
     for (parameters, requirement, goal, tactic) in [
         ("x: Integer", "", "x + 1 > x", "solve()"),
-        ("x: Integer", "", "x + 1 > x", "solve() using {}"),
+        ("x: Integer", "", "x + 1 > x", "close() using {}"),
         ("x: Integer, y: Integer", "", "x + y - y == x", "solve()"),
         ("x: uint32", "", "x - x == 0u32", "solve()"),
         (
@@ -2119,7 +2119,7 @@ fn selected_interval_exclusion_expands_and_rechecks() {
         })
         .unwrap();
     }
-    let omitted = source.replace("solve() using { x <= -1; }", "solve() using {}");
+    let omitted = source.replace("close() using { x <= -1; }", "close() using {}");
     assert!(verify_click_theorems(&omitted).is_err());
 }
 
@@ -2371,7 +2371,7 @@ fn established_false_expands_to_empty_contradiction() {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_03")]
 fn arithmetic_after_fold_rewrites_expands_and_rechecks() {
     let (source, _) = mdtest_sources("mdtests/pure_arithmetic_retains_a_rewritten_fold_goal.md");
-    let position = expansion::position_at_offset(&source, source.rfind("solve() using").unwrap());
+    let position = expansion::position_at_offset(&source, source.rfind("close() using").unwrap());
     let expanded = expand_c_tactic_source_at(&source, &[], position.line, position.column).unwrap();
     assert!(expanded.contains("known();"), "{expanded}");
     verify_click_theorems(&expanded).unwrap();
@@ -2410,7 +2410,7 @@ fn pointer_word_certificates_keep_address_arithmetic_when_printed() {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_03")]
 fn numeric_cast_certificates_keep_integer_default_arithmetic_when_printed() {
     let source = r#"theorem numeric_cast(word: uint64) {
-    ensures (word as uint64) + 1 > (word as uint64) by { solve() using {}; }
+    ensures (word as uint64) + 1 > (word as uint64) by { close() using {}; }
 }"#;
     let expanded = expand_c_claim_source_by_label(source, &[], "numeric_cast.ensures_0").unwrap();
     without_implicit_solve(|| verify_click_theorems(&expanded))
@@ -2495,7 +2495,7 @@ theorem mixed_observations(adler: uint64, seed: int64, value: uint64, specificat
     requires to_integer(adler) == to_integer(value);
     requires specification == to_integer(seed);
     ensures to_integer(value) == specification by {
-        solve() using {
+        close() using {
             to_integer(adler) == to_integer(seed as uint64);
             to_integer(adler) == to_integer(value);
             specification == to_integer(seed);
@@ -2761,12 +2761,12 @@ fn execution_theorem_expansion_preserves_imported_tactic_interfaces() {
 fn long_flat_integer_sum_expands_and_rechecks_without_parenthesis_growth() {
     let sum = std::iter::repeat_n("a", 24).collect::<Vec<_>>().join(" + ");
     let source = format!(
-        "theorem sum(a: Integer) {{ ensures {sum} == 24 * a by {{ have {sum} == 24 * a by {{ solve() using {{}}; }} known(); }} }}"
+        "theorem sum(a: Integer) {{ ensures {sum} == 24 * a by {{ have {sum} == 24 * a by {{ close() using {{}}; }} known(); }} }}"
     );
     verify_click_theorems(&source).unwrap();
-    let position = expansion::position_at_offset(&source, source.find("solve() using").unwrap());
+    let position = expansion::position_at_offset(&source, source.find("close() using").unwrap());
     let expanded = expand_c_tactic_source_at(&source, &[], position.line, position.column).unwrap();
-    assert!(!expanded.contains("solve() using"), "{expanded}");
+    assert!(!expanded.contains("close() using"), "{expanded}");
     assert!(
         expanded.contains("normalize();") || expanded.contains("known();"),
         "{expanded}"
@@ -4031,7 +4031,7 @@ theorem bounded(flag: Bool, a: Integer, b: Integer) {
     requires 0 <= a;
     requires 0 <= b;
     ensures 0 <= (if flag { a } else { b }) by {
-        solve() using { 0 <= a; 0 <= b; };
+        close() using { 0 <= a; 0 <= b; };
     }
 }
 "#;
@@ -5724,8 +5724,8 @@ int32 nested(int32 x) {
     ensures result == x;
 } by {
     step_until(function.exit);
-    have 0 <= to_integer(x) + 1 by solve() using { 0 <= to_integer(x); };
-    have 0 <= to_integer(x) + 2 by solve() using { 0 <= to_integer(x); };
+    have 0 <= to_integer(x) + 1 by close() using { 0 <= to_integer(x); };
+    have 0 <= to_integer(x) + 2 by close() using { 0 <= to_integer(x); };
     have x == x by normalize();
     solve();
 }
@@ -5733,7 +5733,7 @@ int32 nested(int32 x) {
     let sources = [("short.c", c)];
     verify_c_sources(source, &sources).expect("the short arithmetic proofs verify");
     let positions = source
-        .match_indices("solve() using")
+        .match_indices("close() using")
         .map(|(offset, _)| expansion::position_at_offset(source, offset))
         .collect::<Vec<_>>();
     let expanded = expansion::expand_tactics_source_at(
@@ -6550,7 +6550,7 @@ theorem unsigned_compound(n: int32) {
     requires 0 <= to_integer(n + 1);
     requires to_integer(n + 1) <= 536870911;
     ensures ((n + 1) as uint32) <= 1073741823u32 by {
-        solve() using {
+        close() using {
             0 <= to_integer(n + 1);
             to_integer(n + 1) <= 536870911;
         }
@@ -6598,7 +6598,7 @@ fn arithmetic_producers_retain_only_structural_certificates() {
     let pure = r#"
 theorem pure_arithmetic_producer(n: int32) {
     requires n <= 10;
-    ensures n <= 10 by { solve() using { n <= 10; } }
+    ensures n <= 10 by { close() using { n <= 10; } }
 }
 "#;
     let verified = verify_click_theorems(pure).expect("pure arithmetic should verify");
@@ -6643,7 +6643,7 @@ theorem pure_arithmetic_producer(n: int32) {
         let expanded = expand_function_proof_source(&click_source, &sources, claim)
             .unwrap_or_else(|error| panic!("{fixture_name}: {}", error.message()));
         assert!(
-            !expanded.contains("solve() using"),
+            !expanded.contains("close() using"),
             "{fixture_name}: {expanded}"
         );
         verify_c_sources(&expanded, &sources)
@@ -8062,7 +8062,7 @@ fn grouped_post_execution_arithmetic_rejects_unavailable_irrelevant_extra() {
             ensures result <= 101;
         } by {
             step_until(function.exit);
-            solve() using { 0 <= n; n <= 100; n <= 99; }
+            close() using { 0 <= n; n <= 100; n <= 99; }
         }
     "#;
     let error = verify_c_sources(click_source, &[("bump.c", c_source)])
@@ -9803,28 +9803,28 @@ fn post_execution_restricted_solve_retains_selected_premises_and_expansion() {
         } by {
             step_until(function.exit);
             have 0 <= result by { solve(); }
-            solve() using { 0 <= result; }
+            close() using { 0 <= result; }
         }
     "#;
     let sources = [("identity.c", c_source)];
     verify_c_sources(click_source, &sources)
         .expect("restricted exit solve should see the preceding have");
     let position =
-        expansion::position_at_offset(click_source, click_source.find("solve() using").unwrap());
+        expansion::position_at_offset(click_source, click_source.find("close() using").unwrap());
     let expanded =
         expand_c_tactic_source_at(click_source, &sources, position.line, position.column)
             .expect("restricted exit solve should retain its checked certificate");
-    assert!(!expanded.contains("solve() using"), "{expanded}");
+    assert!(!expanded.contains("close() using"), "{expanded}");
     verify_c_sources(&expanded, &sources).expect("the expansion should check independently");
     for replacement in [
-        "solve() using { x == x; }",
-        "solve() using { result < 0; }",
-        "solve() using { 0 <= result; x < 0; }",
+        "close() using { x == x; }",
+        "close() using { result < 0; }",
+        "close() using { 0 <= result; x < 0; }",
     ] {
-        let invalid = click_source.replace("solve() using { 0 <= result; }", replacement);
+        let invalid = click_source.replace("close() using { 0 <= result; }", replacement);
         let error = verify_c_sources(&invalid, &sources)
             .expect_err("only listed, available premises may be used");
-        assert!(error.message().contains("solve() using"), "{error:?}");
+        assert!(error.message().contains("close() using"), "{error:?}");
         assert!(
             error.message().contains("only the listed premises"),
             "{error:?}"
@@ -9850,11 +9850,11 @@ fn post_execution_restricted_solve_checks_each_return_path() {
             if flag != 0 {
                 step_until(function.exit);
                 have 0 <= result by { solve(); }
-                solve() using { 0 <= result; }
+                close() using { 0 <= result; }
             } else {
                 step_until(function.exit);
                 have 0 <= result by { solve(); }
-                solve() using { 0 <= result; }
+                close() using { 0 <= result; }
             }
         }
     "#;
@@ -9876,21 +9876,21 @@ fn post_execution_restricted_solve_continues_an_introduced_claim() {
                 step_until(function.exit);
                 intro();
                 intro();
-                solve() using { 0 <= k; }
+                close() using { 0 <= k; }
             }
         }
     "#;
     verify_c_sources(click_source, &sources)
         .expect("restricted solve must continue the claim's introduced binder");
     let position =
-        expansion::position_at_offset(click_source, click_source.find("solve() using").unwrap());
+        expansion::position_at_offset(click_source, click_source.find("close() using").unwrap());
     let expanded =
         expand_c_tactic_source_at(click_source, &sources, position.line, position.column).unwrap();
     verify_c_sources(&expanded, &sources)
         .expect("the closer's expansion must stay inside the introduced proof");
     assert!(
         verify_c_sources(
-            &click_source.replace("solve() using { 0 <= k; }", "solve() using { k == k; }"),
+            &click_source.replace("close() using { 0 <= k; }", "close() using { k == k; }"),
             &sources
         )
         .is_err()
@@ -9912,13 +9912,13 @@ fn post_execution_restricted_solve_checks_grouped_ownership_and_value_claims() {
             step_until(function.exit);
             have *p == x by { solve(); }
             have 0 <= *p by { solve(); }
-            solve() using { *p == x; 0 <= *p; }
+            close() using { *p == x; 0 <= *p; }
         }
     "#;
     verify_c_sources(click_source, &sources)
         .expect("the checked resource transition and restricted propositions must agree");
     let position =
-        expansion::position_at_offset(click_source, click_source.find("solve() using").unwrap());
+        expansion::position_at_offset(click_source, click_source.find("close() using").unwrap());
     let expanded =
         expand_c_tactic_source_at(click_source, &sources, position.line, position.column).unwrap();
     verify_c_sources(&expanded, &sources)
@@ -9940,7 +9940,7 @@ fn restricted_solve_expands_to_graph_known() {
                 requires x == y;
                 requires y == z;
                 ensures x == z by {
-                    solve() using {
+                    close() using {
                         x == y;
                         y == z;
                     }
@@ -9950,7 +9950,7 @@ fn restricted_solve_expands_to_graph_known() {
     let verified = verify_click_theorems(click_source);
     verified.expect("restricted equality solve should build its typed path through Proof");
     let offset = click_source
-        .find("solve() using")
+        .find("close() using")
         .expect("proof should contain restricted solve");
     let line = click_source[..offset]
         .bytes()
@@ -9968,7 +9968,7 @@ fn restricted_solve_expands_to_graph_known() {
         .expect("restricted solve should expand");
     assert!(expanded.contains("known();"), "{expanded}");
     assert!(!expanded.contains("normalize("), "{expanded}");
-    assert!(!expanded.contains("solve() using"), "{expanded}");
+    assert!(!expanded.contains("close() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     without_implicit_solve(|| verify_c_sources(&expanded, &[]))
         .expect("expanded equality should check");
@@ -10091,14 +10091,14 @@ fn restricted_solve_after_unfold_expands_explicit_conjunction_extraction() {
                 requires equality_chain(x, y, z);
                 ensures x == z by {
                     unfold(equality_chain(x, y, z));
-                    solve() using {
+                    close() using {
                         x == y;
                         y == z;
                     }
                 }
             }
         "#;
-    let offset = click_source.find("solve() using").unwrap();
+    let offset = click_source.find("close() using").unwrap();
     let line = click_source[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -10118,7 +10118,7 @@ fn restricted_solve_after_unfold_expands_explicit_conjunction_extraction() {
     assert!(expanded.contains("have y == z by"), "{expanded}");
     assert!(expanded.contains("known();"), "{expanded}");
     assert!(!expanded.contains("normalize("), "{expanded}");
-    assert!(!expanded.contains("solve() using"), "{expanded}");
+    assert!(!expanded.contains("close() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     without_implicit_solve(|| verify_c_sources(&expanded, &[]))
         .expect("explicit conjunction-elimination certificate should check");
@@ -10138,13 +10138,13 @@ fn restricted_solve_expands_strict_order_to_nonstrict_arithmetic() {
             theorem strict_order_implies_nonstrict(x: int32, y: int32) {
                 requires x < y;
                 ensures x <= y by {
-                    solve() using {
+                    close() using {
                         x < y;
                     }
                 }
             }
         "#;
-    let offset = click_source.find("solve() using").unwrap();
+    let offset = click_source.find("close() using").unwrap();
     let line = click_source[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -10164,7 +10164,7 @@ fn restricted_solve_expands_strict_order_to_nonstrict_arithmetic() {
         "{expanded}"
     );
     assert!(!expanded.contains("solve("), "{expanded}");
-    assert!(!expanded.contains("solve() using"), "{expanded}");
+    assert!(!expanded.contains("close() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded strict-order proof should check");
 }
@@ -10220,13 +10220,13 @@ fn restricted_solve_expands_negated_strict_order_to_greater_equal() {
         theorem not_negative_is_nonnegative(x: int32) {
             requires not (x < 0);
             ensures x >= 0 by {
-                solve() using {
+                close() using {
                     not (x < 0);
                 }
             }
         }
     "#;
-    let offset = click_source.find("solve() using").unwrap();
+    let offset = click_source.find("close() using").unwrap();
     let line = click_source[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -10796,7 +10796,7 @@ fn restricted_solve_composes_negated_successor_bound() {
         theorem not_below_two_is_at_least_one(value: int32) {
             requires not (value < 2);
             ensures value >= 1 by {
-                solve() using {
+                close() using {
                     not (value < 2);
                 }
             }
@@ -10804,7 +10804,7 @@ fn restricted_solve_composes_negated_successor_bound() {
     "#;
     let verified = verify_click_theorems(click_source);
     verified.expect("the restricted successor-bound Proof should verify");
-    let offset = click_source.find("solve() using").unwrap();
+    let offset = click_source.find("close() using").unwrap();
     let line = click_source[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -10823,7 +10823,7 @@ fn restricted_solve_composes_negated_successor_bound() {
         (expanded.contains("click::integer::") || expanded.contains("normalize")),
         "{expanded}"
     );
-    assert!(!expanded.contains("solve() using"), "{expanded}");
+    assert!(!expanded.contains("close() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded restricted successor proof should check");
 }
@@ -10933,13 +10933,13 @@ fn restricted_solve_expands_increment_upper_bound_to_ordinary_arithmetic() {
         theorem increment_stays_bounded(value: int32, upper: int32) {
             requires value < upper;
             ensures to_integer(value + 1) <= to_integer(upper) by {
-                solve() using {
+                close() using {
                     value < upper;
                 }
             }
         }
     "#;
-    let offset = click_source.find("solve() using").unwrap();
+    let offset = click_source.find("close() using").unwrap();
     let line = click_source[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -10956,7 +10956,7 @@ fn restricted_solve_expands_increment_upper_bound_to_ordinary_arithmetic() {
         .expect("increment upper-bound solve should expand");
     assert!(expanded.contains("value < upper;"), "{expanded}");
     assert!(!expanded.contains("solve("), "{expanded}");
-    assert!(!expanded.contains("solve() using"), "{expanded}");
+    assert!(!expanded.contains("close() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded theorem application should check");
 }
@@ -10985,7 +10985,7 @@ fn restricted_solve_expands_positive_to_nonnegative_arithmetic_steps() {
         theorem positive_is_nonnegative(value: int32) {
             requires 0 < value;
             ensures 0 <= value by {
-                solve() using {
+                close() using {
                     0 < value;
                 }
             }
@@ -10993,7 +10993,7 @@ fn restricted_solve_expands_positive_to_nonnegative_arithmetic_steps() {
     "#;
     let verified = verify_click_theorems(click_source);
     verified.expect("positive-to-nonnegative solve should verify through Proof");
-    let offset = click_source.find("solve() using").unwrap();
+    let offset = click_source.find("close() using").unwrap();
     let line = click_source[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -11014,7 +11014,7 @@ fn restricted_solve_expands_positive_to_nonnegative_arithmetic_steps() {
     );
     assert!(expanded.contains("0 < value;"), "{expanded}");
     assert!(!expanded.contains("solve("), "{expanded}");
-    assert!(!expanded.contains("solve() using"), "{expanded}");
+    assert!(!expanded.contains("close() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded theorem application should check");
 }
@@ -11026,7 +11026,7 @@ fn restricted_solve_expands_positive_predecessor_to_ordinary_arithmetic() {
         theorem positive_predecessor_is_nonnegative(value: int32) {
             requires 0 < value;
             ensures 0 <= to_integer(value - 1) by {
-                solve() using {
+                close() using {
                     0 < value;
                 }
             }
@@ -11034,7 +11034,7 @@ fn restricted_solve_expands_positive_predecessor_to_ordinary_arithmetic() {
     "#;
     let verified = verify_click_theorems(click_source);
     verified.expect("the typed predecessor-nonnegative rule should verify through the pure Proof");
-    let offset = click_source.find("solve() using").unwrap();
+    let offset = click_source.find("close() using").unwrap();
     let line = click_source[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -11051,7 +11051,7 @@ fn restricted_solve_expands_positive_predecessor_to_ordinary_arithmetic() {
         .expect("positive-predecessor solve should expand");
     assert!(expanded.contains("0 < value;"), "{expanded}");
     assert!(!expanded.contains("solve("), "{expanded}");
-    assert!(!expanded.contains("solve() using"), "{expanded}");
+    assert!(!expanded.contains("close() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded theorem application should check");
 }
@@ -11063,7 +11063,7 @@ fn restricted_solve_expands_positive_predecessor_decrease_to_ordinary_arithmetic
         theorem positive_predecessor_decreases(value: int32) {
             requires 0 < value;
             ensures to_integer(value - 1) < to_integer(value) by {
-                solve() using {
+                close() using {
                     0 < value;
                 }
             }
@@ -11071,7 +11071,7 @@ fn restricted_solve_expands_positive_predecessor_decrease_to_ordinary_arithmetic
     "#;
     let verified = verify_click_theorems(click_source);
     verified.expect("the typed predecessor-decrease rule should verify through the pure Proof");
-    let offset = click_source.find("solve() using").unwrap();
+    let offset = click_source.find("close() using").unwrap();
     let line = click_source[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -11088,7 +11088,7 @@ fn restricted_solve_expands_positive_predecessor_decrease_to_ordinary_arithmetic
         .expect("positive-predecessor decrease solve should expand");
     assert!(expanded.contains("0 < value;"), "{expanded}");
     assert!(!expanded.contains("solve("), "{expanded}");
-    assert!(!expanded.contains("solve() using"), "{expanded}");
+    assert!(!expanded.contains("close() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded theorem application should check");
 }
@@ -11101,7 +11101,7 @@ fn restricted_solve_expands_predecessor_upper_bound_to_ordinary_arithmetic() {
             requires 0 <= value;
             requires value <= bound;
             ensures to_integer(value - 1) <= to_integer(bound) by {
-                solve() using {
+                close() using {
                     0 <= value;
                     value <= bound;
                 }
@@ -11110,14 +11110,14 @@ fn restricted_solve_expands_predecessor_upper_bound_to_ordinary_arithmetic() {
     "#;
     let verified = verify_click_theorems(click_source);
     verified.expect("the typed predecessor-upper-bound rule should verify through the pure Proof");
-    let offset = click_source.find("solve() using").unwrap();
+    let offset = click_source.find("close() using").unwrap();
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("predecessor upper-bound solve should expand");
     assert!(expanded.contains("0 <= value;"), "{expanded}");
     assert!(expanded.contains("value <= bound;"), "{expanded}");
     assert!(!expanded.contains("solve("), "{expanded}");
-    assert!(!expanded.contains("solve() using"), "{expanded}");
+    assert!(!expanded.contains("close() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded predecessor theorem should check");
 }
@@ -11129,7 +11129,7 @@ fn restricted_solve_retains_nested_one_le_predecessor_nonnegative_proof() {
         theorem one_le_predecessor_is_nonnegative(value: int32) {
             requires 1 <= value;
             ensures 0 <= to_integer(value - 1) by {
-                solve() using {
+                close() using {
                     1 <= value;
                 }
             }
@@ -11137,11 +11137,11 @@ fn restricted_solve_retains_nested_one_le_predecessor_nonnegative_proof() {
     "#;
     let verified = verify_click_theorems(click_source);
     verified.expect("the nested predecessor proof should verify through the pure Proof");
-    let offset = click_source.find("solve() using").unwrap();
+    let offset = click_source.find("close() using").unwrap();
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("one-le predecessor proof should expand");
-    assert!(!expanded.contains("solve() using"), "{expanded}");
+    assert!(!expanded.contains("close() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded nested predecessor proof should check");
 }
@@ -11153,7 +11153,7 @@ fn restricted_solve_retains_nested_one_le_predecessor_decrease_proof() {
         theorem one_le_predecessor_decreases(value: int32) {
             requires 1 <= value;
             ensures to_integer(value - 1) < to_integer(value) by {
-                solve() using {
+                close() using {
                     1 <= value;
                 }
             }
@@ -11161,11 +11161,11 @@ fn restricted_solve_retains_nested_one_le_predecessor_decrease_proof() {
     "#;
     let verified = verify_click_theorems(click_source);
     verified.expect("the nested predecessor-decrease proof should verify through the pure Proof");
-    let offset = click_source.find("solve() using").unwrap();
+    let offset = click_source.find("close() using").unwrap();
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("one-le predecessor-decrease proof should expand");
-    assert!(!expanded.contains("solve() using"), "{expanded}");
+    assert!(!expanded.contains("close() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded)
         .expect("expanded nested predecessor-decrease proof should check");
@@ -11178,7 +11178,7 @@ fn restricted_solve_retains_equal_one_predecessor_path() {
         theorem equal_one_predecessor_is_nonnegative(value: int32) {
             requires 1 == value;
             ensures 0 <= to_integer(value - 1) by {
-                solve() using {
+                close() using {
                     1 == value;
                 }
             }
@@ -11186,13 +11186,13 @@ fn restricted_solve_retains_equal_one_predecessor_path() {
     "#;
     let verified = verify_click_theorems(click_source);
     verified.expect("the equal-one predecessor proof should verify through the pure Proof");
-    let offset = click_source.find("solve() using").unwrap();
+    let offset = click_source.find("close() using").unwrap();
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("equal-one predecessor proof should expand");
     assert!(expanded.contains("1 == value"), "{expanded}");
     assert!(!expanded.contains("normalize("), "{expanded}");
-    assert!(!expanded.contains("solve() using"), "{expanded}");
+    assert!(!expanded.contains("close() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     without_implicit_solve(|| verify_click_theorems(&expanded))
         .expect("expanded equal-one predecessor proof should check");
@@ -11205,7 +11205,7 @@ fn restricted_solve_retains_equal_one_predecessor_zero_path() {
         theorem equal_one_predecessor_is_zero(value: int32) {
             requires 1 == value;
             ensures to_integer(value - 1) == 0 by {
-                solve() using {
+                close() using {
                     1 == value;
                 }
             }
@@ -11213,14 +11213,14 @@ fn restricted_solve_retains_equal_one_predecessor_zero_path() {
     "#;
     let verified = verify_click_theorems(click_source);
     verified.expect("the predecessor-zero proof should verify through the pure Proof");
-    let offset = click_source.find("solve() using").unwrap();
+    let offset = click_source.find("close() using").unwrap();
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("equal-one predecessor-zero proof should expand");
     // The selected equality lets the graph close the goal directly.
     assert!(expanded.contains("known();"), "{expanded}");
     assert!(!expanded.contains("normalize("), "{expanded}");
-    assert!(!expanded.contains("solve() using"), "{expanded}");
+    assert!(!expanded.contains("close() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     without_implicit_solve(|| verify_click_theorems(&expanded))
         .expect("expanded predecessor-zero proof should check");
@@ -11233,13 +11233,13 @@ fn restricted_solve_expands_strict_increment_to_ordinary_arithmetic() {
             theorem increment_is_greater(value: int32, upper: int32) {
                 requires value < upper;
                 ensures to_integer(value) < to_integer(value + 1) by {
-                    solve() using {
+                    close() using {
                         value < upper;
                     }
                 }
             }
         "#;
-    let offset = click_source.find("solve() using").unwrap();
+    let offset = click_source.find("close() using").unwrap();
     let line = click_source[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -11255,7 +11255,7 @@ fn restricted_solve_expands_strict_increment_to_ordinary_arithmetic() {
     let expanded = expand_c_tactic_source_at(click_source, &[], line, column)
         .expect("strict increment should expand");
     assert!(expanded.contains("value < upper;"), "{expanded}");
-    assert!(!expanded.contains("solve() using"), "{expanded}");
+    assert!(!expanded.contains("close() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_c_sources(&expanded, &[]).expect("strict increment certificate should check");
 }
@@ -11294,14 +11294,14 @@ fn restricted_solve_expands_increment_lower_bound_to_ordinary_arithmetic() {
             requires lower <= value;
             requires value < upper;
             ensures to_integer(lower) <= to_integer(value + 1) by {
-                solve() using {
+                close() using {
                     lower <= value;
                     value < upper;
                 }
             }
         }
     "#;
-    let offset = click_source.find("solve() using").unwrap();
+    let offset = click_source.find("close() using").unwrap();
     let line = click_source[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -11319,7 +11319,7 @@ fn restricted_solve_expands_increment_lower_bound_to_ordinary_arithmetic() {
     assert!(expanded.contains("lower <= value;"), "{expanded}");
     assert!(expanded.contains("value < upper;"), "{expanded}");
     assert!(!expanded.contains("solve("), "{expanded}");
-    assert!(!expanded.contains("solve() using"), "{expanded}");
+    assert!(!expanded.contains("close() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded theorem application should check");
 }
@@ -11337,14 +11337,14 @@ fn restricted_solve_expands_increment_order_to_ordinary_arithmetic() {
             requires lower <= value;
             requires value < upper;
             ensures to_integer(lower + 1) <= to_integer(value + 1) by {
-                solve() using {
+                close() using {
                     lower <= value;
                     value < upper;
                 }
             }
         }
     "#;
-    let offset = click_source.find("solve() using").unwrap();
+    let offset = click_source.find("close() using").unwrap();
     let line = click_source[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -11362,7 +11362,7 @@ fn restricted_solve_expands_increment_order_to_ordinary_arithmetic() {
     assert!(expanded.contains("lower <= value;"), "{expanded}");
     assert!(expanded.contains("value < upper;"), "{expanded}");
     assert!(!expanded.contains("solve("), "{expanded}");
-    assert!(!expanded.contains("solve() using"), "{expanded}");
+    assert!(!expanded.contains("close() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded theorem application should check");
 }
@@ -11507,7 +11507,7 @@ fn restricted_solve_expands_adjacent_order_to_ordinary_arithmetic() {
         theorem two_at_most_implies_one_below(value: int32) {
             requires 2 <= value;
             ensures 1 < value by {
-                solve() using {
+                close() using {
                     2 <= value;
                 }
             }
@@ -11515,7 +11515,7 @@ fn restricted_solve_expands_adjacent_order_to_ordinary_arithmetic() {
     "#;
     let verified = verify_click_theorems(click_source);
     verified.expect("the typed adjacent-order rule should verify through the pure Proof");
-    let offset = click_source.find("solve() using").unwrap();
+    let offset = click_source.find("close() using").unwrap();
     let line = click_source[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -11536,7 +11536,7 @@ fn restricted_solve_expands_adjacent_order_to_ordinary_arithmetic() {
     );
     assert!(expanded.contains("2 <= value;"), "{expanded}");
     assert!(!expanded.contains("solve("), "{expanded}");
-    assert!(!expanded.contains("solve() using"), "{expanded}");
+    assert!(!expanded.contains("close() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded theorem application should check");
 }
@@ -11677,7 +11677,7 @@ fn unsigned_remainder_dividend_bound_expands_to_known() {
     let source = "
 theorem unsigned_tail(n: uint64, d: uint64) {
     requires 0u64 < d;
-    ensures n % d <= n by { solve() using { 0u64 < d; }; }
+    ensures n % d <= n by { close() using { 0u64 < d; }; }
 }";
     let label = "unsigned_tail.ensures_0";
     let expanded = expand_c_claim_source_by_label(source, &[], label)
@@ -11745,7 +11745,7 @@ fn signed_remainder_sign_expands_with_selected_domain() {
 theorem remainder_sign(n: int32, d: int32) {
     requires 0 <= n;
     requires d != 0;
-    ensures 0 <= n % d by { solve() using { 0 <= n; d != 0; }; }
+    ensures 0 <= n % d by { close() using { 0 <= n; d != 0; }; }
 }";
     let label = "remainder_sign.ensures_0";
     let expanded = expand_c_claim_source_by_label(source, &[], label)
@@ -11773,7 +11773,7 @@ theorem exact_integer_sign(n: Integer, d: Integer) {
     requires d <= 0;
     requires d != 0;
     ensures truncating_quotient(n, d) >= 0 by {
-        solve() using { n <= 0; d <= 0; d != 0; };
+        close() using { n <= 0; d <= 0; d != 0; };
     }
     ensures truncating_remainder(n, d) <= 0 by known();
 }";
@@ -11781,7 +11781,7 @@ theorem exact_integer_sign(n: Integer, d: Integer) {
     let label = "exact_integer_sign.ensures_0";
     let expanded = expand_c_claim_source_by_label(source, &[], label)
         .unwrap_or_else(|error| panic!("{}", error.report()));
-    assert!(!expanded.contains("solve() using"), "{expanded}");
+    assert!(!expanded.contains("close() using"), "{expanded}");
     assert!(!expanded.contains("normalize()"), "{expanded}");
     without_implicit_solve(|| verify_click_theorems(&expanded)).unwrap();
     let omitted = source.replace(
@@ -12159,7 +12159,7 @@ fn restricted_solve_expands_constant_order_weakening_to_ordinary_arithmetic() {
         theorem three_at_least_implies_nonnegative(value: int32) {
             requires 3 <= value;
             ensures 0 <= value by {
-                solve() using {
+                close() using {
                     3 <= value;
                 }
             }
@@ -12167,7 +12167,7 @@ fn restricted_solve_expands_constant_order_weakening_to_ordinary_arithmetic() {
     "#;
     let verified = verify_click_theorems(click_source);
     verified.expect("the constant lower-bound weakening should verify");
-    let offset = click_source.find("solve() using").unwrap();
+    let offset = click_source.find("close() using").unwrap();
     let line = click_source[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -12188,7 +12188,7 @@ fn restricted_solve_expands_constant_order_weakening_to_ordinary_arithmetic() {
     );
     assert!(expanded.contains("3 <= value;"), "{expanded}");
     assert!(!expanded.contains("solve("), "{expanded}");
-    assert!(!expanded.contains("solve() using"), "{expanded}");
+    assert!(!expanded.contains("close() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded theorem application should check");
 }
@@ -12200,7 +12200,7 @@ fn restricted_solve_expands_constant_strict_upper_bound_to_ordinary_arithmetic()
         theorem three_at_most_implies_below_five(value: int32) {
             requires value <= 3;
             ensures value < 5 by {
-                solve() using {
+                close() using {
                     value <= 3;
                 }
             }
@@ -12208,7 +12208,7 @@ fn restricted_solve_expands_constant_strict_upper_bound_to_ordinary_arithmetic()
     "#;
     let verified = verify_click_theorems(click_source);
     verified.expect("the constant strict upper-bound weakening should verify");
-    let offset = click_source.find("solve() using").unwrap();
+    let offset = click_source.find("close() using").unwrap();
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("constant strict upper-bound solve should expand");
@@ -12218,7 +12218,7 @@ fn restricted_solve_expands_constant_strict_upper_bound_to_ordinary_arithmetic()
     );
     assert!(expanded.contains("value <= 3;"), "{expanded}");
     assert!(!expanded.contains("solve("), "{expanded}");
-    assert!(!expanded.contains("solve() using"), "{expanded}");
+    assert!(!expanded.contains("close() using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded strict upper-bound proof should check");
 }
 
@@ -12229,18 +12229,18 @@ fn restricted_solve_retains_increment_under_a_larger_constant() {
         theorem increment_three_at_most_is_five_at_most(value: int32) {
             requires value <= 3;
             ensures to_integer(value + 1) <= 5 by {
-                solve() using {
+                close() using {
                     value <= 3;
                 }
             }
         }
     "#;
-    let offset = click_source.find("solve() using").unwrap();
+    let offset = click_source.find("close() using").unwrap();
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("increment constant-bound solve should expand");
     assert!(expanded.contains("value <= 3;"), "{expanded}");
-    assert!(!expanded.contains("solve() using"), "{expanded}");
+    assert!(!expanded.contains("close() using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded increment constant-bound proof should check");
 }
 
@@ -12252,7 +12252,7 @@ fn restricted_solve_retains_symbolic_add_definedness_theorem() {
             requires amount >= 0;
             requires to_integer(2147483647 - amount) >= to_integer(value);
             ensures defined(value + amount) by {
-                solve() using {
+                close() using {
                     amount >= 0;
                     to_integer(2147483647 - amount) >= to_integer(value);
                 }
@@ -12261,7 +12261,7 @@ fn restricted_solve_retains_symbolic_add_definedness_theorem() {
     "#;
     let verified = verify_click_theorems(click_source);
     verified.expect("the symbolic-add definedness rule should verify through Proof");
-    let offset = click_source.find("solve() using").unwrap();
+    let offset = click_source.find("close() using").unwrap();
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("symbolic-add definedness solve should expand");
@@ -12272,7 +12272,7 @@ fn restricted_solve_retains_symbolic_add_definedness_theorem() {
         "{expanded}"
     );
     assert!(!expanded.contains("have "), "{expanded}");
-    assert!(!expanded.contains("solve() using"), "{expanded}");
+    assert!(!expanded.contains("close() using"), "{expanded}");
     without_implicit_solve(|| verify_click_theorems(&expanded))
         .expect("the bare application should reuse the known evaluation evidence");
 }
@@ -12285,7 +12285,7 @@ fn restricted_solve_retains_symbolic_subtract_definedness_by_integer_bounds() {
             requires amount >= 0;
             requires value >= amount;
             ensures defined(value - amount) by {
-                solve() using {
+                close() using {
                     amount >= 0;
                     value >= amount;
                 }
@@ -12294,13 +12294,13 @@ fn restricted_solve_retains_symbolic_subtract_definedness_by_integer_bounds() {
     "#;
     let verified = verify_click_theorems(click_source);
     verified.expect("the symbolic-subtract definedness rule should verify through Proof");
-    let offset = click_source.find("solve() using").unwrap();
+    let offset = click_source.find("close() using").unwrap();
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("symbolic-subtract definedness solve should expand");
     assert!(expanded.contains("amount >= 0;"), "{expanded}");
     assert!(expanded.contains("value >= amount;"), "{expanded}");
-    assert!(!expanded.contains("solve() using"), "{expanded}");
+    assert!(!expanded.contains("close() using"), "{expanded}");
     verify_click_theorems(&expanded)
         .expect("expanded symbolic-subtract definedness proof should check");
 }
@@ -12314,7 +12314,7 @@ fn restricted_solve_retains_one_plus_operand_specific_certificates() {
                 theorem one_plus_is_defined(value: int32) {
                     requires 2147483647 > value;
                     ensures defined(1 + value) by {
-                        solve() using { 2147483647 > value; }
+                        close() using { 2147483647 > value; }
                     }
                 }
             "#,
@@ -12325,7 +12325,7 @@ fn restricted_solve_retains_one_plus_operand_specific_certificates() {
                 theorem one_plus_increases(value: int32) {
                     requires 2147483647 > value;
                     ensures to_integer(value) < to_integer(1 + value) by {
-                        solve() using { 2147483647 > value; }
+                        close() using { 2147483647 > value; }
                     }
                 }
             "#,
@@ -12335,7 +12335,7 @@ fn restricted_solve_retains_one_plus_operand_specific_certificates() {
     for (click_source, application) in cases {
         let verified = verify_click_theorems(click_source);
         verified.expect("the operand-order-specific one-plus rule should verify through Proof");
-        let offset = click_source.find("solve() using").unwrap();
+        let offset = click_source.find("close() using").unwrap();
         let position = expansion::position_at_offset(click_source, offset);
         let expanded = expand_c_tactic_source_at(click_source, &[], position.line, position.column)
             .expect("one-plus solve should expand");
@@ -12344,7 +12344,7 @@ fn restricted_solve_retains_one_plus_operand_specific_certificates() {
         }
         assert!(!expanded.contains("normalize("), "{expanded}");
         assert!(expanded.contains("2147483647 > value;"), "{expanded}");
-        assert!(!expanded.contains("solve() using"), "{expanded}");
+        assert!(!expanded.contains("close() using"), "{expanded}");
         without_implicit_solve(|| verify_click_theorems(&expanded))
             .expect("expanded one-plus proof should check");
     }
@@ -12363,7 +12363,7 @@ fn restricted_solve_composes_equalities_with_adjacent_order() {
             requires bound == length;
             requires position == 0;
             ensures position < bound by {
-                solve() using {
+                close() using {
                     1 <= length;
                     bound == length;
                     position == 0;
@@ -12371,7 +12371,7 @@ fn restricted_solve_composes_equalities_with_adjacent_order() {
             }
         }
     "#;
-    let offset = click_source.find("solve() using").unwrap();
+    let offset = click_source.find("close() using").unwrap();
     let line = click_source[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -12391,7 +12391,7 @@ fn restricted_solve_composes_equalities_with_adjacent_order() {
     for cited in ["bound == length;", "position == 0;", "1 <= length;"] {
         assert!(expanded.contains(cited), "{cited}\n{expanded}");
     }
-    assert!(!expanded.contains("solve() using"), "{expanded}");
+    assert!(!expanded.contains("close() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("composed explicit certificate should check");
 }
@@ -12413,7 +12413,7 @@ fn restricted_solve_inside_have_expands_to_graph_known() {
                 ensures result == x;
             } by {
                 have x == z by {
-                    solve() using {
+                    close() using {
                         x == y;
                         y == z;
                     }
@@ -12446,7 +12446,7 @@ fn restricted_solve_inside_have_expands_to_graph_known() {
         ..expanded.find("step_until(function.exit);").unwrap()];
     assert!(expanded_have.contains("known();"), "{expanded_have}");
     assert!(!expanded_have.contains("normalize("), "{expanded_have}");
-    assert!(!expanded_have.contains("solve() using"), "{expanded_have}");
+    assert!(!expanded_have.contains("close() using"), "{expanded_have}");
     assert!(!expanded_have.contains("derive using"), "{expanded_have}");
     verify_c_sources(&expanded, &[("identity.c", c_source)])
         .expect("explicit equality have certificate should check");
@@ -12475,7 +12475,7 @@ fn restricted_solve_expands_computed_subrange_to_ordinary_steps() {
             ensures result == old(data[index]);
         } by {
             have viewable(data[index..index + 1]) by {
-                solve() using {
+                close() using {
                     viewable(data[0..length]);
                     0 <= index;
                     index < length;
@@ -12520,7 +12520,7 @@ fn restricted_solve_expands_computed_subrange_to_ordinary_steps() {
         expanded_have.contains("int32_add_to_integer"),
         "{expanded_have}"
     );
-    assert!(!expanded_have.contains("solve() using"), "{expanded_have}");
+    assert!(!expanded_have.contains("close() using"), "{expanded_have}");
     assert!(!expanded_have.contains("derive using"), "{expanded_have}");
     verify_c_sources(&expanded, &sources).expect("ordinary view restriction should check");
     let fully_expanded = expand_function_proof_source(click_source, &sources, "read_at").unwrap();
@@ -12574,7 +12574,7 @@ fn restricted_solve_rewrites_pointer_aliases_inside_memory_loads() {
             unfold(valued_array(original, length, value));
             step();
             have alias[index] == value by {
-                solve() using {
+                close() using {
                     original[0] == value;
                     alias == original;
                     index == 0;
@@ -12617,7 +12617,7 @@ fn restricted_solve_rewrites_pointer_aliases_inside_memory_loads() {
     assert!(!expanded_have.contains("solve("), "{expanded_have}");
     assert!(!expanded_have.contains("normalize("), "{expanded_have}");
     verify_c_sources(&expanded, &sources).unwrap();
-    let (before_using, after_using) = click_source.split_once("solve() using").unwrap();
+    let (before_using, after_using) = click_source.split_once("close() using").unwrap();
     for (premise, clause) in [
         ("original[0] == value;", "fact data[0] == value;"),
         ("alias == original;", "requires alias == original;"),
@@ -12625,7 +12625,7 @@ fn restricted_solve_rewrites_pointer_aliases_inside_memory_loads() {
     ] {
         let omitted = after_using.replacen(premise, "", 1);
         assert_ne!(omitted, after_using);
-        let restricted = format!("{before_using}solve() using{omitted}");
+        let restricted = format!("{before_using}close() using{omitted}");
         assert!(
             verify_c_sources(&restricted, &sources).is_err(),
             "{premise}"
@@ -12655,7 +12655,7 @@ fn post_execution_restricted_solve_expands_without_derive() {
         } by {
             step_until(function.exit);
             have to_integer(x + 1) == to_integer(z) by {
-                solve() using {
+                close() using {
                     to_integer(x + 1) == to_integer(y);
                     y == z;
                 }
@@ -12764,7 +12764,7 @@ fn fixed_state_have_bare_apply_retains_and_checks_its_exact_premise() {
             theorem equality_symmetric(first: int32, second: int32) {
                 requires first == second;
                 ensures second == first by {
-                    solve() using { first == second; }
+                    close() using { first == second; }
                 }
             }
 
@@ -12832,7 +12832,7 @@ fn fixed_state_have_mixed_linear_smart_script_continues_on_checked_successors() 
             theorem equality_symmetric(first: int32, second: int32) {
                 requires first == second;
                 ensures second == first by {
-                    solve() using { first == second; }
+                    close() using { first == second; }
                 }
             }
 
@@ -18127,7 +18127,7 @@ fn source_expander_extracts_unfolded_conjuncts_inside_have() {
             } by {
                 have x == z by {
                     unfold(equality_chain(x, y, z));
-                    solve() using {
+                    close() using {
                         x == y;
                         y == z;
                     }
@@ -18154,7 +18154,7 @@ fn source_expander_extracts_unfolded_conjuncts_inside_have() {
             .expect("restricted solve should extract its unfolded conjunct premises");
     assert!(expanded.contains("have x == y by"), "{expanded}");
     assert!(expanded.contains("have y == z by"), "{expanded}");
-    assert!(!expanded.contains("solve() using"), "{expanded}");
+    assert!(!expanded.contains("close() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_c_sources(&expanded, &[("identity.c", c_source)])
         .expect("expanded fixed-state proof conjunction extraction should check");
@@ -20072,7 +20072,7 @@ struct node* unpack(struct node* node) {
     step_until(function.exit);
     fold(packed(node));
     known();
-    solve() using {
+    close() using {
         aligned(result, 8);
         node->word == address(result) + (node->word & 1);
     };
@@ -20088,7 +20088,7 @@ fn expansion_names_a_resource_witness_through_the_checked_return_pointer() {
         .expect("the witness fold/unfold proof should verify");
 
     let closer = WITNESS_RESOURCE_CLICK
-        .rfind("solve() using {")
+        .rfind("close() using {")
         .expect("proof should contain the closer");
     let position = expansion::position_at_offset(WITNESS_RESOURCE_CLICK, closer);
     let expanded = expand_c_tactic_source_at(
@@ -20380,7 +20380,7 @@ fn loop_initialization_duplicate_clauses_keep_distinct_bodies() {
         .replace("invariant i <= n;", "invariant i >= 0;")
         .replace(
             "            solve();",
-            r#"            have i >= 0 by { solve() using { n >= 0; } }
+            r#"            have i >= 0 by { close() using { n >= 0; } }
             have i >= 0 by { normalize(); }"#,
         );
     let sources = [("spin.c", LOOP_INITIALIZE_PHASE_C)];
@@ -20417,7 +20417,7 @@ fn loop_initialization_duplicate_clauses_keep_distinct_bodies() {
         .next()
         .unwrap();
     assert_eq!(initialize.matches("have i >= 0").count(), 2, "{expanded}");
-    assert!(!initialize.contains("solve() using"), "{expanded}");
+    assert!(!initialize.contains("close() using"), "{expanded}");
     let expanded_again = expand_function_proof_source(&expanded, &sources, "spin")
         .expect("explicit entry proof should remain checkable on a second expansion");
     assert_eq!(expanded_again, expanded);
@@ -21163,7 +21163,7 @@ fn restricted_solve_does_not_borrow_the_ambient_equality_graph() {
         theorem restricted(a: int32, b: int32, c: int32) {
             requires a == b;
             requires b == c;
-            ensures a == c by { solve() using { a == b; } }
+            ensures a == c by { close() using { a == b; } }
         }
     "#;
     for source in [source.to_string(), source.replace("int32", "int32*")] {
@@ -21211,7 +21211,7 @@ fn normalize_using_scaled_int32_expands_and_rechecks() {
     let false_goal = source.replace("ensures p + i == p + k;", "ensures p + i != p + k;");
     assert_ne!(false_goal, source);
     assert!(verify_c_sources(&false_goal, &c_sources).is_err());
-    let restricted = source.replacen("normalize() using { }", "solve() using { i == j; }", 1);
+    let restricted = source.replacen("normalize() using { }", "close() using { i == j; }", 1);
     assert_ne!(restricted, source);
     assert!(verify_c_sources(&restricted, &c_sources).is_err());
 }
@@ -21246,7 +21246,7 @@ fn normalize_using_int32_addition_expands_and_rechecks_without_proving_definedne
     assert!(verify_c_sources(&false_goal, &c_sources).is_err());
     let restricted = source.replacen(
         "normalize() using { }",
-        "solve() using { defined(a + c); defined(b + c); }",
+        "close() using { defined(a + c); defined(b + c); }",
         1,
     );
     assert_ne!(restricted, source);
@@ -21292,7 +21292,7 @@ fn normalize_using_int32_loads_expands_and_rechecks() {
     assert!(verify_c_sources(&false_goal, &c_sources).is_err());
     let restricted = source.replacen(
         "normalize() using { }",
-        "solve() using { 0 <= i; i < n; 0 <= j; j < n; }",
+        "close() using { 0 <= i; i < n; 0 <= j; j < n; }",
         1,
     );
     assert_ne!(restricted, source);
@@ -22043,11 +22043,11 @@ uint32 identity(uint32 a, uint32 b) {
 } by {
     have to_integer(a) * to_integer(b) == 0 by {
         rewrite(to_integer(b), 0);
-        solve() using {};
+        close() using {};
     }
     step_until(function.exit);
     rewrite(to_integer(b), 0);
-    solve() using {};
+    close() using {};
 }
 "#;
     let inputs = [("identity.c", c_source)];
@@ -22171,7 +22171,7 @@ fn check_symbolic_upper_expansion(name: &str, premise: &str, extra: &[&str]) {
     let source = format!(
         "theorem {name}(a: int32, b: int32) {{
         {requirements}
-        ensures a <= 999 by {{ solve() using {{ {listed}; }} }}
+        ensures a <= 999 by {{ close() using {{ {listed}; }} }}
     }}"
     );
     // Expansion verifies this source's sole theorem and claim.
@@ -22730,7 +22730,7 @@ theorem empty_difference(end: int32, x: int32, y: int32) {
  ensures marks(end, x) - marks(end, y) == 0 by {
   unfold(marks(end, x));
   unfold(marks(end, y));
-  solve() using { }
+  close() using { }
  }
 }
 theorem empty_product(end: int32, x: int32, y: int32, z: int32) {
@@ -22739,7 +22739,7 @@ theorem empty_product(end: int32, x: int32, y: int32, z: int32) {
   unfold(marks(end, x));
   unfold(marks(end, y));
   unfold(marks(end, z));
-  solve() using { }
+  close() using { }
  }
 }
 "#
@@ -22780,11 +22780,11 @@ theorem empty_order(end: int32) {
  requires end <= 0;
  ensures 0 <= marks(end) by {
   unfold(marks(end));
-  solve() using { marks(end) == 0; }
+  close() using { marks(end) == 0; }
  }
  ensures marks(end) <= 0 by {
   unfold(marks(end));
-  solve() using { }
+  close() using { }
  }
 }
 "#
@@ -24335,10 +24335,10 @@ fn arithmetic_in_each_both_arm_is_selected_at_its_location() {
  ensures 0 <= a and 0 <= b by {
   all {
       0 <= a => {
-       solve() using { 0 <= a; };
+       close() using { 0 <= a; };
       }
       0 <= b => {
-       solve() using { 0 <= b; };
+       close() using { 0 <= b; };
       }
   }
  }
@@ -24346,7 +24346,7 @@ fn arithmetic_in_each_both_arm_is_selected_at_its_location() {
 ";
     verify_click_theorems(source).unwrap();
     for premise in ["0 <= a;", "0 <= b;"] {
-        let written = format!("solve() using {{ {premise} }}");
+        let written = format!("close() using {{ {premise} }}");
         let at = expansion::position_at_offset(source, source.find(&written).unwrap());
         let expanded = expand_c_tactic_source_at(source, &[], at.line, at.column)
             .unwrap_or_else(|error| panic!("{premise}: {}", error.message()));
@@ -26620,7 +26620,7 @@ fn solve_discovered_theorem_expands_to_a_bare_application() {
         verify_click_theorems(&expanded).map_err(|error| error.report())
     })
     .unwrap();
-    let unlisted = source.replace("solve() using { 0 <= value; };", "solve() using {};");
+    let unlisted = source.replace("close() using { 0 <= value; };", "close() using {};");
     assert_ne!(unlisted, source);
     assert!(verify_click_theorems(&unlisted).is_err());
 }
@@ -26983,7 +26983,7 @@ fn native_byte_count_view_restrictions_expand_to_resource_laws() {
     for (element, proof) in [
         (
             "uint8",
-            "solve() using { viewable(p[0u64..length]); hi <= length; }",
+            "close() using { viewable(p[0u64..length]); hi <= length; }",
         ),
         ("uint32", "solve()"),
     ] {

@@ -45,9 +45,9 @@ void sweep(int32 visited[], int32 n) {
         maintain by {
             mark iter;
             have i < 1073741823 by {
-                solve() using { i < n; n <= 1073741823; };
+                close() using { i < n; n <= 1073741823; };
             }
-            have i < 2147483647 by { solve() using { i < 1073741823; }; }
+            have i < 2147483647 by { close() using { i < 1073741823; }; }
             step();
             have unmarked(visited, 0, i) == 0;
             have unmarked(visited, 0, i + 1) == 0 by {

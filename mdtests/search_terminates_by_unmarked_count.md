@@ -103,7 +103,7 @@ theorem walk_frame(a: int32[], b: int32[], n: int32, from: int32, fuel: Nat) {
                 }
                 unfold(walk(a, from, Nat::Succ(previous)));
                 unfold(walk(b, from, Nat::Succ(previous)));
-                solve() using {
+                close() using {
                     walk(a, from, previous) == walk(b, from, previous);
                     a[walk(a, from, previous)] == b[walk(a, from, previous)];
                 };
@@ -181,7 +181,7 @@ int32 search(int32 *next, int32 *visited, int32 n, int32 from, int32 to) {
                     apply(click::separation::separate_restrict(memory(visited[0..n]), memory(next[0..n]), memory(visited[cur]), memory(next[k])));
                 }
                 have separate(loop(0).statement(1).footprint, memory(next[k])) by {
-                    solve() using { separate(memory(visited[cur]), memory(next[k])); };
+                    close() using { separate(memory(visited[cur]), memory(next[k])); };
                 }
                 have next[k] == at(iter, next[k]) by {
                     preserve(memory(next[k]), loop(0).statement(1));
@@ -203,12 +203,12 @@ int32 search(int32 *next, int32 *visited, int32 n, int32 from, int32 to) {
             }
             have forall (k: int32) { 0 <= k and k < cur implies at(iter, visited[k]) == visited[k] } by {
                 intro(); intro();
-                have cur != k by { solve() using { k < cur; }; }
+                have cur != k by { close() using { k < cur; }; }
                 have separate(memory(visited[cur]), memory(visited[k])) by {
                     apply(click::separation::separate_elements(visited, cur, k));
                 }
                 have separate(loop(0).statement(1).footprint, memory(visited[k])) by {
-                    solve() using { separate(memory(visited[cur]), memory(visited[k])); };
+                    close() using { separate(memory(visited[cur]), memory(visited[k])); };
                 }
                 have visited[k] == at(iter, visited[k]) by {
                     preserve(memory(visited[k]), loop(0).statement(1));
@@ -217,12 +217,12 @@ int32 search(int32 *next, int32 *visited, int32 n, int32 from, int32 to) {
             }
             have forall (k: int32) { cur < k and k < n implies at(iter, visited[k]) == visited[k] } by {
                 intro(); intro();
-                have cur != k by { solve() using { cur < k; }; }
+                have cur != k by { close() using { cur < k; }; }
                 have separate(memory(visited[cur]), memory(visited[k])) by {
                     apply(click::separation::separate_elements(visited, cur, k));
                 }
                 have separate(loop(0).statement(1).footprint, memory(visited[k])) by {
-                    solve() using { separate(memory(visited[cur]), memory(visited[k])); };
+                    close() using { separate(memory(visited[cur]), memory(visited[k])); };
                 }
                 have visited[k] == at(iter, visited[k]) by {
                     preserve(memory(visited[k]), loop(0).statement(1));
@@ -233,7 +233,7 @@ int32 search(int32 *next, int32 *visited, int32 n, int32 from, int32 to) {
             apply(unmarked_point_update(at(iter, visited), visited, 0, n, n, cur));
             apply(unmarked_nonnegative(visited, 0, n, n));
             have unmarked(visited, 0, n) < unmarked(at(iter, visited), 0, n) by {
-                solve() using {
+                close() using {
                     to_integer(unmarked(visited, 0, n)) == to_integer(unmarked(at(iter, visited), 0, n) - 1);
                 };
             }
@@ -247,13 +247,13 @@ int32 search(int32 *next, int32 *visited, int32 n, int32 from, int32 to) {
             observe(next[0..n]);
             apply(walk_frame(at(iter, next), next, n, from, previous));
             have walk(next, from, previous) == at(iter, cur) by {
-                solve() using {
+                close() using {
                     at(iter, walk(next, from, previous)) == at(iter, cur);
                     walk(at(iter, next), from, previous) == walk(next, from, previous);
                 };
             }
             have next[walk(next, from, previous)] == next[at(iter, cur)] by {
-                solve() using { walk(next, from, previous) == at(iter, cur); };
+                close() using { walk(next, from, previous) == at(iter, cur); };
             }
             have exists (fuel: Nat) { walk(next, from, fuel) == cur } by {
                 witness(Nat::Succ(previous));

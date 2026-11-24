@@ -96,7 +96,7 @@ theorem prefix_bound(n: uint64) {
   unfold(prefix(to_integer(n)));
   all {
       0 <= to_integer(n) - truncating_remainder(to_integer(n), 4) => {
-       solve() using { 0 <= prefix(to_integer(n)); prefix(to_integer(n)) == to_integer(n) - truncating_remainder(to_integer(n), 4); };
+       close() using { 0 <= prefix(to_integer(n)); prefix(to_integer(n)) == to_integer(n) - truncating_remainder(to_integer(n), 4); };
       }
       to_integer(n) - truncating_remainder(to_integer(n), 4) <= 22204 => {
        known();
@@ -130,7 +130,7 @@ fn check_rewritten_integer_division_goal(quotient: bool) {
         "{prefix} {}\n}}",
         verified[0].expanded_proof_source().unwrap()
     );
-    assert!(!expanded.contains("solve() using"), "{expanded}");
+    assert!(!expanded.contains("close() using"), "{expanded}");
     verify_click_theorems(&expanded).expect("the explicit proof verifies independently");
     let false_bound = source.replacen("ensures 0 <=", "ensures 1 <=", 1);
     assert_ne!(source, false_bound);
@@ -201,7 +201,7 @@ fn integer_certificate_keeps_negative_observation_bounds_when_adding() {
  ensures -9223372036854775808 <= to_integer(q + 0i64) by {
   have defined(q + 0i64) by solve();
   have to_integer(q + 0i64) == to_integer(q) + 0;
-  solve() using {
+  close() using {
    to_integer(q + 0i64) == to_integer(q) + 0;
    -9223372036854775808 <= to_integer(q);
    to_integer(q) <= 9223372036854775807;
@@ -210,10 +210,10 @@ fn integer_certificate_keeps_negative_observation_bounds_when_adding() {
 }
 "#;
     verify_c_sources(source, &[]).expect("the native zero-add equality transports the lower bound");
-    let position = expansion::position_at_offset(source, source.find("solve() using").unwrap());
+    let position = expansion::position_at_offset(source, source.find("close() using").unwrap());
     let expanded = expand_c_tactic_source_at(source, &[], position.line, position.column)
         .expect("the arithmetic proof expands");
-    assert!(!expanded.contains("solve() using"), "{expanded}");
+    assert!(!expanded.contains("close() using"), "{expanded}");
     verify_c_sources(&expanded, &[])
         .expect("the explicit certificate preserves the negative bound");
     let false_claim = source.replace(

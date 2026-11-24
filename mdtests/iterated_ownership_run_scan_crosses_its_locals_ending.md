@@ -88,7 +88,7 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
                 solve();
             }
             have lo <= i by {
-                solve() using {
+                close() using {
                     lo <= hi;
                     hi == i;
                 };
@@ -97,7 +97,7 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
             have to_integer(i + 1) <= to_integer(capacity);
             if occupied[i] == 0 {
                 have run_length < capacity by {
-                    solve() using {
+                    close() using {
                         run_length <= i;
                         i < capacity;
                     };
@@ -118,7 +118,7 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
                     solve();
                 }
                 have lo <= at(iteration, i) by {
-                    solve() using {
+                    close() using {
                         lo <= hi;
                         hi == at(iteration, i);
                     };
@@ -160,7 +160,7 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
                     known();
                 }
                 have 0 <= to_integer(capacity - at(iteration, i) - 1) by {
-                    solve() using {
+                    close() using {
                         0 <= at(iteration, i);
                         at(iteration, i) < at(iteration, capacity);
                         0 <= capacity;
@@ -168,7 +168,7 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
                 }
                 have to_integer(capacity - at(iteration, i) - 1)
                     < to_integer(capacity - at(iteration, i)) by {
-                    solve() using {
+                    close() using {
                         0 <= at(iteration, i);
                         at(iteration, i) < at(iteration, capacity);
                         0 <= capacity;
@@ -193,7 +193,7 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
                     known();
                 }
                 have 0 <= to_integer(capacity - at(iteration, i) - 1) by {
-                    solve() using {
+                    close() using {
                         0 <= at(iteration, i);
                         at(iteration, i) < at(iteration, capacity);
                         0 <= capacity;
@@ -201,7 +201,7 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
                 }
                 have to_integer(capacity - at(iteration, i) - 1)
                     < to_integer(capacity - at(iteration, i)) by {
-                    solve() using {
+                    close() using {
                         0 <= at(iteration, i);
                         at(iteration, i) < at(iteration, capacity);
                         0 <= capacity;

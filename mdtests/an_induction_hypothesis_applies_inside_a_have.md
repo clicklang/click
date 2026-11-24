@@ -23,7 +23,7 @@ theorem block_have(n: int32) {
         let ih = induct(n);
         if n <= 0 {
             unfold(cd(n));
-            solve() using { n <= 0; };
+            close() using { n <= 0; };
         } else {
             have 0 <= to_integer(n - 1);
             have to_integer(n - 1) < to_integer(n);
@@ -41,7 +41,7 @@ theorem bare_have(n: int32) {
         let ih = induct(n);
         if n <= 0 {
             unfold(cd(n));
-            solve() using { n <= 0; };
+            close() using { n <= 0; };
         } else {
             have 0 <= to_integer(n - 1);
             have to_integer(n - 1) < to_integer(n);

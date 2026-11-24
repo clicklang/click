@@ -21,7 +21,7 @@ int32 sum(int32 a, int32 b) {
     ensures result == a + b;
 } by {
     have defined(a + b) by {
-        solve() using { 0 <= a; a < 100; };
+        close() using { 0 <= a; a < 100; };
     }
 }
 ```

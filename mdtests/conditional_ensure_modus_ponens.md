@@ -1,7 +1,7 @@
 # conditional call ensure discharged by explicit modus ponens
 
 A callee's conditional ensure reaches the caller as an implication fact.
-Once the caller's branch establishes the antecedent, `solve() using` with
+Once the caller's branch establishes the antecedent, `close() using` with
 exactly the antecedent and the implication must prove the consequent, and
 its certificate must lower to the explicit bounded rule (`apply(fact)`, then `known`) rather than reporting a missing
 simple proof rule.
@@ -42,7 +42,7 @@ int32 use_five(int32* cell) {
     step();
     if program::flag == 1 {
         have cell[0] == 5 by {
-            solve() using {
+            close() using {
                 program::flag == 1;
                 program::flag == 1 implies cell[0] == 5;
             };

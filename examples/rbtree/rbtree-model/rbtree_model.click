@@ -2063,7 +2063,7 @@ theorem ctx_consistent_left_frame(identity: struct rb_node*, grandparent: struct
         unfold(ctx_consistent(
             Context::Left(identity, grandparent, color, sibling_model, up_model),
             sub, root_parent));
-        solve() using {
+        close() using {
             rb_parent_consistent(sub, identity) == 1;
             rb_parent_consistent(sibling_model, identity) == 1;
             ctx_consistent(up_model,
@@ -2146,7 +2146,7 @@ theorem ctx_consistent_right_frame(identity: struct rb_node*, grandparent: struc
         unfold(ctx_consistent(
             Context::Right(identity, grandparent, color, sibling_model, up_model),
             sub, root_parent));
-        solve() using {
+        close() using {
             rb_parent_consistent(sub, identity) == 1;
             rb_parent_consistent(sibling_model, identity) == 1;
             ctx_consistent(up_model,
@@ -2737,7 +2737,7 @@ theorem ctx_rb_left_value(identity: struct rb_node*, grandparent: struct rb_node
             bh, focus_color) by {
         unfold(ctx_rb(Context::Left(identity, grandparent, color, sibling_model, up_model),
             bh, focus_color));
-        solve() using {
+        close() using {
             is_rb(sibling_model) == 1;
             bh == black_height(sibling_model);
             node_color_ok(color, focus_color, rb_color(sibling_model)) == 1;
@@ -2779,7 +2779,7 @@ theorem ctx_rb_left_frame(identity: struct rb_node*, grandparent: struct rb_node
         unfold(ctx_rb(Context::Left(identity, grandparent, color, sibling_model, up_model),
             bh, focus_color));
         rewrite(ctx_rb(up_model, frame_black_height(color, bh), color), 1);
-        solve() using {
+        close() using {
             is_rb(sibling_model) == 1;
             bh == black_height(sibling_model);
             node_color_ok(color, focus_color, rb_color(sibling_model)) == 1;
@@ -2930,7 +2930,7 @@ theorem ctx_rb_between_left_frame(id: struct rb_node*, parent: struct rb_node*,
             bh, focus_color, boundary_bh, boundary_color));
         rewrite(ctx_rb_between(up, frame_black_height(color, bh), color,
             boundary_bh, boundary_color), 1);
-        solve() using { is_rb(sibling) == 1; bh == black_height(sibling);
+        close() using { is_rb(sibling) == 1; bh == black_height(sibling);
             node_color_ok(color, focus_color, rb_color(sibling)) == 1; };
     }
 }
@@ -2950,7 +2950,7 @@ theorem ctx_rb_between_right_frame(id: struct rb_node*, parent: struct rb_node*,
             bh, focus_color, boundary_bh, boundary_color));
         rewrite(ctx_rb_between(up, frame_black_height(color, bh), color,
             boundary_bh, boundary_color), 1);
-        solve() using { is_rb(sibling) == 1; black_height(sibling) == bh;
+        close() using { is_rb(sibling) == 1; black_height(sibling) == bh;
             node_color_ok(color, rb_color(sibling), focus_color) == 1; };
     }
 }
@@ -3387,7 +3387,7 @@ theorem ctx_rb_left_red_up(identity: struct rb_node*, grandparent: struct rb_nod
                 Context::Left(identity, grandparent, Color::Red, sibling_model, up_model),
                 bh, focus_color));
             unfold(frame_black_height(Color::Red, bh));
-            solve() using {
+            close() using {
                 is_rb(sibling_model) == 1;
                 bh == black_height(sibling_model);
                 node_color_ok(Color::Red, focus_color, rb_color(sibling_model)) == 1;
@@ -3419,7 +3419,7 @@ theorem ctx_rb_left_black_up(identity: struct rb_node*, grandparent: struct rb_n
                 Context::Left(identity, grandparent, Color::Black, sibling_model, up_model),
                 bh, focus_color));
             unfold(frame_black_height(Color::Black, bh));
-            solve() using {
+            close() using {
                 is_rb(sibling_model) == 1;
                 bh == black_height(sibling_model);
                 node_color_ok(Color::Black, focus_color, rb_color(sibling_model)) == 1;
@@ -3484,7 +3484,7 @@ theorem ctx_rb_right_black_up(identity: struct rb_node*, grandparent: struct rb_
                 Context::Right(identity, grandparent, Color::Black, sibling_model, up_model),
                 bh, focus_color));
             unfold(frame_black_height(Color::Black, bh));
-            solve() using {
+            close() using {
                 is_rb(sibling_model) == 1;
                 black_height(sibling_model) == bh;
                 node_color_ok(Color::Black, rb_color(sibling_model), focus_color) == 1;

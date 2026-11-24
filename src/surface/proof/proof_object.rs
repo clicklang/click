@@ -3946,7 +3946,7 @@ fn proof_step_source_name(step: &ProofStep) -> &'static str {
         ProofStep::Known => "known()",
         ProofStep::Normalize | ProofStep::NormalizeUsing(_) => "normalize()",
         ProofStep::CompatibilityNormalize(_) => "compatibility normalization",
-        ProofStep::ArithmeticUsing(_) => "solve() using",
+        ProofStep::ArithmeticUsing(_) => "close() using",
         ProofStep::Preserve(_) => "preserve",
 
         ProofStep::Intro

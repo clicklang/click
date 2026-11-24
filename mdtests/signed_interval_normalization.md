@@ -6,7 +6,7 @@ theorem shift_interval(x: int32) {
     requires x <= 100;
     requires defined(x << 2);
     ensures 0 <= to_integer(x << 2) by {
-        solve() using { 0 <= x; x <= 100; };
+        close() using { 0 <= x; x <= 100; };
     }
 }
 ```

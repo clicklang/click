@@ -78,7 +78,7 @@ that returned state (`mdtests/resource_instance_fold_after_return_in_open.md`).
 this section shows how they appear in scripts.
 
 Smart tactics plan or search. The written smart tactic is `solve()`, with
-`solve() using { ... }`. The implicit tail, which runs the C a
+`close() using { ... }`. The implicit tail, which runs the C a
 script leaves and closes what is open, is smart work too, including the
 `solve()` closure of each loop-bundle member at a back edge, as are the
 searches behind elided arguments. An elided form
@@ -92,7 +92,7 @@ use `using` to mark that boundary:
 
 <!-- verified-example: mdtests/proof_script_execute_and_solve_using.md -->
 ```click
-solve() using {
+close() using {
     i >= 0;
     i < n;
 };
@@ -100,14 +100,14 @@ solve() using {
 
 An empty `using {}` block is valid on every tactic that takes a list. It means
 the tactic uses no pure premises, which is not the same as leaving `using`
-off: `solve()` searches the context while `solve() using {}` uses nothing.
+off: `solve()` searches the context while `close() using {}` uses nothing.
 `step()` is simple and executes the next statement with the whole proof
 context visible to the kernel. `step_until(...)` and the implicit tail's
 execution are its repetitions; expansion replaces them with the corresponding
 sequence of `step();` tactics, with the tail's splits written as `branch` or
 proof `if`.
 
-`solve() using { ... }` is still smart: the listed facts restrict its search,
+`close() using { ... }` is still smart: the listed facts restrict its search,
 it tries arithmetic over them last, and expansion replaces it with named
 simple rules. A miss adds arithmetic's reason. Common simple proposition
 tactics are `known()`, `normalize()`, `rewrite(...)`, `intro()`, and
@@ -223,7 +223,7 @@ at unchanged function entry, after executed statements, and inside a loop's
 
 An arm's bindings are in scope in every term the arm writes: `have` goals,
 theorem arguments and `using` premises, `instantiate`, `have`, `rewrite`,
-`normalize() using`, the premises of a `solve() using` or `normalize() using`
+`normalize() using`, the premises of a `close() using` or `normalize() using`
 inside a `have` body (`mdtests/have_body_solve_using_names_an_arm_binding.md`),
 the clauses of a `loop` written inside the arm
 (`mdtests/loop_clause_reads_arm_bindings.md`), and that loop's `initialize` and

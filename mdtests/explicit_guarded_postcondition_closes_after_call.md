@@ -78,7 +78,7 @@ int32 restricted(struct box* b) {
                 solve();
             }
             have st.live == 1 by {
-                solve() using {
+                close() using {
                     defined(at(m, st.live) + got) implies to_integer(st.live) == to_integer(at(m, st.live) + got);
                     got == 0;
                     at(m, st.live) == 1;

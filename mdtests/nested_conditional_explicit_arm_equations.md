@@ -7,7 +7,7 @@ theorem mathematical(flag: Bool, x: Integer, y: Integer) {
     ensures (if flag { x } else { y }) + 3 <= 8 by {
         have ((if flag { x } else { y }) : Integer) == x by known();
         rewrite(if flag { x } else { y }, x);
-        solve() using { x <= 5; };
+        close() using { x <= 5; };
     }
 }
 
@@ -17,7 +17,7 @@ theorem observed(flag: Bool, x: int32, y: int32) {
     ensures to_integer(if flag { x } else { y }) + 3 <= 8 by {
         have (if flag { x } else { y }) == x by known();
         rewrite(if flag { x } else { y }, x);
-        solve() using { x <= 5; };
+        close() using { x <= 5; };
     }
 }
 

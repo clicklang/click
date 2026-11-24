@@ -18,10 +18,10 @@ int64 FeeFrac::EvaluateFee<@INSTANCE@>(int32 at_size) const {
 } by {
     if this->fee >= 0i64 {
         if this->fee < 8589934592i64 {
-            have 0 <= to_integer(this->fee) by { solve() using { this->fee >= 0i64; } }
-            have to_integer(this->fee) <= 8589934591 by { solve() using { this->fee < 8589934592i64; } }
+            have 0 <= to_integer(this->fee) by { close() using { this->fee >= 0i64; } }
+            have to_integer(this->fee) <= 8589934591 by { close() using { this->fee < 8589934592i64; } }
 @FAST_PROOF@
-            have -9223372036854775808 <= to_integer(result) by { solve() using { 0 <= to_integer(result); } }
+            have -9223372036854775808 <= to_integer(result) by { close() using { 0 <= to_integer(result); } }
             solve();
         } else {
 @WIDE_POSITIVE_PROOF@

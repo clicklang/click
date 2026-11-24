@@ -1,7 +1,7 @@
 # Explicit tag arithmetic establishes a logical pointer comparison
 
 Arithmetic search expands to ordinary proof steps, with the selected premises
-stated explicitly in `solve() using { ... }`.
+stated explicitly in `close() using { ... }`.
 
 ```c filename=roundtrip.c
 struct node { unsigned long word; };
@@ -25,11 +25,11 @@ void tag(struct node* n, struct node* p, int32 color) {
     step();
     have n->word == address(p) + 1 by {
         rewrite(color, 1);
-        solve() using { aligned(p, 8); };
+        close() using { aligned(p, 8); };
     }
     have (n->word & ~3) == address(p) by {
         rewrite(color, 1);
-        solve() using { aligned(p, 8); };
+        close() using { aligned(p, 8); };
     }
     have ((n->word & ~3) as (struct node *)) == p by {
         known();

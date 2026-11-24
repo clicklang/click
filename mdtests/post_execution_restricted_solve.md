@@ -11,7 +11,7 @@ verifying "post_solve.c";
 int32 one() { ensures result == 1; } by {
  step_until(function.exit);
  have result == 1;
- solve() using { result == 1; };
+ close() using { result == 1; };
 }
 ```
 ```expect

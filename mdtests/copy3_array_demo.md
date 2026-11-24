@@ -83,7 +83,7 @@ int32 copy3(int32 dst[3], int32 src[3]) {
                     apply(click::separation::separate_restrict(memory(dst[i]), memory(src[0..3]), memory(dst[i]), memory(src[k])));
                 }
                 have separate(statement(2).statement(0).footprint, memory(src[k])) by {
-                    solve() using { separate(memory(dst[i]), memory(src[k])); };
+                    close() using { separate(memory(dst[i]), memory(src[k])); };
                 }
                 have src[k] == at(iteration, src[k]) by {
                     preserve(memory(src[k]), statement(2).statement(0));
@@ -96,24 +96,24 @@ int32 copy3(int32 dst[3], int32 src[3]) {
                 if k < at(iteration, i) {
                     have 0 <= k and k < i;
                     instantiate(at(iteration, forall (k: int32) { 0 <= k and k < i implies dst[k] == old(src[k]) }), k);
-                    have k != at(iteration, i) by { solve() using { k < at(iteration, i); }; }
+                    have k != at(iteration, i) by { close() using { k < at(iteration, i); }; }
                     have at(iteration, separate(memory(dst[i]), memory(dst[k]))) by {
                         apply(click::separation::separate_elements(dst, at(iteration, i), k));
                     }
                     have separate(statement(2).statement(0).footprint, memory(dst[k])) by {
-                        solve() using { at(iteration, separate(memory(dst[i]), memory(dst[k]))); };
+                        close() using { at(iteration, separate(memory(dst[i]), memory(dst[k]))); };
                     }
                     have at(statement(2).statement(0).exit, dst[k]) == at(iteration, dst[k]) by {
                         preserve(memory(dst[k]), statement(2).statement(0));
                     }
-                    have separate(statement(2).statement(1).footprint, memory(dst[k])) by { solve() using { }; }
+                    have separate(statement(2).statement(1).footprint, memory(dst[k])) by { close() using { }; }
                     have dst[k] == at(statement(2).statement(1).entry, dst[k]) by {
                         preserve(memory(dst[k]), statement(2).statement(1));
                     }
                     known();
                 } else {
-                    have k == at(iteration, i) by { solve() using { k < i; not k < at(iteration, i); 0 <= at(iteration, i); at(iteration, i) < 3; }; }
-                    have k < 3 by { solve() using { k == at(iteration, i); at(iteration, i) < 3; }; }
+                    have k == at(iteration, i) by { close() using { k < i; not k < at(iteration, i); 0 <= at(iteration, i); at(iteration, i) < 3; }; }
+                    have k < 3 by { close() using { k == at(iteration, i); at(iteration, i) < 3; }; }
                     instantiate(at(iteration, forall (k: int32) { 0 <= k and k < 3 implies src[k] == old(src[k]) }), k);
                     rewrite(k, at(iteration, i));
                     known();

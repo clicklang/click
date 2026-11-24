@@ -42,7 +42,7 @@ void* increment_counter(void* argument) {
     have slack == count(credit(counter));
     have 1 <= slack;
     have to_integer(1) <= to_integer(slack) by apply(integer::int32_less_equal_to_integer(1, slack));
-    have to_integer(done) <= to_integer(1) by solve() using {
+    have to_integer(done) <= to_integer(1) by close() using {
         to_integer(done) + to_integer(slack) == 2;
         to_integer(1) <= to_integer(slack);
     };
@@ -55,19 +55,19 @@ void* increment_counter(void* argument) {
     have to_integer(slack - 1) == to_integer(slack) - to_integer(1) by {
         apply(integer::int32_subtract_to_integer(slack, 1));
     }
-    have to_integer(done + 1) + to_integer(slack - 1) == 2 by solve() using {
+    have to_integer(done + 1) + to_integer(slack - 1) == 2 by close() using {
         to_integer(done + 1) == to_integer(done) + to_integer(1);
         to_integer(slack - 1) == to_integer(slack) - to_integer(1);
         to_integer(done) + to_integer(slack) == 2;
     };
-    have to_integer(counter->value) + to_integer(1u32) <= 4294967295 by solve() using {
+    have to_integer(counter->value) + to_integer(1u32) <= 4294967295 by close() using {
         to_integer(counter->value) == to_integer(done);
         to_integer(done) <= to_integer(1);
     };
     have to_integer(counter->value + 1u32) == to_integer(counter->value) + to_integer(1u32) by {
         apply(integer::uint32_add_to_integer(counter->value, 1u32));
     }
-    have to_integer(counter->value + 1u32) == to_integer(done + 1) by solve() using {
+    have to_integer(counter->value + 1u32) == to_integer(done + 1) by close() using {
         to_integer(counter->value + 1u32) == to_integer(counter->value) + to_integer(1u32);
         to_integer(counter->value) == to_integer(done);
         to_integer(done + 1) == to_integer(done) + to_integer(1);
@@ -149,18 +149,18 @@ int32 increment_twice(struct mutex_counter* counter) {
     have to_integer(done) <= to_integer(2) by apply(integer::int32_less_equal_to_integer(done, 2));
     have to_integer(2) <= to_integer(done) by apply(integer::int32_less_equal_to_integer(2, done));
     have to_integer(2) == 2;
-    have to_integer(done) == 2 by solve() using {
+    have to_integer(done) == 2 by close() using {
         to_integer(done) <= to_integer(2);
         to_integer(2) <= to_integer(done);
         to_integer(2) == 2;
     };
     have to_integer(counter->value) == to_integer(done);
-    have to_integer(counter->value) == 2 by solve() using {
+    have to_integer(counter->value) == 2 by close() using {
         to_integer(counter->value) == to_integer(done);
         to_integer(done) == 2;
     };
     have to_integer(2u32) == 2;
-    have to_integer(counter->value) == to_integer(2u32) by solve() using {
+    have to_integer(counter->value) == to_integer(2u32) by close() using {
         to_integer(counter->value) == 2;
         to_integer(2u32) == 2;
     };

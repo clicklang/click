@@ -31,7 +31,7 @@ maintainability, not a known wrong verdict.
   before each closer.
 - `known` and the normalizing closers (`normalize`, `normalize using`,
   `both`) close the main claim
-  through one arm of `finish_ordered_proof`, and `solve` and `solve() using`
+  through one arm of `finish_ordered_proof`, and `solve` and `close() using`
   through `close_post_execution_claims_with_solve`
   (`src/surface/proof/driver/claims.rs`). `finish_ordered_proof` is about
   2,800 lines, down from 3,900.

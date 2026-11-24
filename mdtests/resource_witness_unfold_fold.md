@@ -32,7 +32,7 @@ struct node* unpack(struct node* node) {
     let { next: saved_next } = unfold(packed(node));
     step_until(function.exit);
     have address(result) == (node->word & ~1) by {
-        solve() using {
+        close() using {
             aligned(result, 8);
             node->word == address(result) + (node->word & 1);
         }

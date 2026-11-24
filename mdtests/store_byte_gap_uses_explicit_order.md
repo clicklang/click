@@ -24,7 +24,7 @@ int32 wide_after(int32* a, int32 i, int32 middle, int32 j) {
     owns a[0..4];
     ensures result == 5;
 } by {
-    have i < j by solve() using { i < middle; middle < j; };
+    have i < j by close() using { i < middle; middle < j; };
     step_until(function.exit);
 }
 ```

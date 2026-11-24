@@ -1857,7 +1857,7 @@ fn begin_outcome_claim_proof<'a>(
 enum ClaimClosureSearch<'p> {
     /// Explain why the claim is open without searching.
     None,
-    /// `solve() using`: only the listed premises.
+    /// `close() using`: only the listed premises.
     Restricted(&'p [ClickProposition]),
     /// The direct logical closure, then `solve`.
     Solve,
@@ -2370,7 +2370,7 @@ fn apply_post_execution_arithmetic_using<'a>(
             .listed_premise_available(premise, &[], false)
         {
             return Err(focused.step_error(format!(
-                "post-execution `solve() using` premise {premise_index} is not exactly available"
+                "post-execution `close() using` premise {premise_index} is not exactly available"
             )));
         }
     }
@@ -2623,7 +2623,7 @@ fn fold_produced_resources<'a>(
 }
 
 /// Closes claims after execution with written or implicit `solve`, or
-/// with `solve() using`: a claim proof the
+/// with `close() using`: a claim proof the
 /// earlier tactics opened, a divergent path's claims, the claims of a
 /// grouped proof together, and then each claim on its own. `Ok(())` means
 /// the path's tactics continue after this closer; a closer that leaves a
@@ -2668,7 +2668,7 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
         _ => None,
     };
     let closer_name = if restricted_premises.is_some() {
-        "solve() using"
+        "close() using"
     } else if matches!(post_tactic, PostExecutionTactic::ImplicitSolve) {
         "implicit tail"
     } else if matches!(post_tactic, PostExecutionTactic::Leaf(ProofTactic::Close)) {
@@ -4534,7 +4534,7 @@ pub(super) fn finish_ordered_proof<'a>(
                             closing_input = None;
                         }
                         let proposition_closer = match post_tactic {
-                            PostExecutionTactic::SolveUsing(_) => Some("solve() using"),
+                            PostExecutionTactic::SolveUsing(_) => Some("close() using"),
                             PostExecutionTactic::Leaf(
                                 tactic @ (ProofTactic::Normalize
                                 | ProofTactic::NormalizeUsing(_)

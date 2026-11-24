@@ -1,4 +1,4 @@
-# `solve() using` sharpens a bound with a disequality
+# `close() using` sharpens a bound with a disequality
 
 `n >= 0` and `n != 0` say `0 < n`. The certificate had no step that combined
 a bound with a disequality, so the strict bound was out of reach even though
@@ -20,7 +20,7 @@ int32 sharpen(int32 n) {
     requires n != 0;
     ensures result == 0;
 } by {
-    have 0 < n by { solve() using { n >= 0; n != 0; }; }
+    have 0 < n by { close() using { n >= 0; n != 0; }; }
     step();
     solve();
 }

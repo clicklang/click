@@ -47,10 +47,10 @@ int32 probe_fill(int32 p[], int32 lo, int32 hi, int32 v) {
             have 0 <= i;
             have 0 <= hi;
             have 0 <= to_integer(hi - i - 1) by {
-                solve() using { i < hi; 0 <= i; 0 <= hi; hi <= 1000; };
+                close() using { i < hi; 0 <= i; 0 <= hi; hi <= 1000; };
             }
             have to_integer(hi - i - 1) < to_integer(hi - i) by {
-                solve() using { i < hi; 0 <= i; 0 <= hi; hi <= 1000; };
+                close() using { i < hi; 0 <= i; 0 <= hi; hi <= 1000; };
             }
             step();
             step();

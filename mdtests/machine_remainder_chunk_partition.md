@@ -10,7 +10,7 @@ import click::integer;
 
 theorem tail_bounds(n: uint64, size: uint64) {
     requires 0u64 < size;
-    ensures n % size <= n by { solve() using { 0u64 < size; }; }
+    ensures n % size <= n by { close() using { 0u64 < size; }; }
     ensures n % size < size by { normalize() using { 0u64 < size; }; }
 }
 theorem complete_prefix(n: uint64) {
@@ -42,7 +42,7 @@ theorem complete_prefix(n: uint64) {
         // Both narrowing casts preserve the nonnegative prefix.
         have to_integer(prefix) <= length by {
             rewrite(to_integer(prefix), length - to_integer(tail));
-            solve() using { 0 <= to_integer(tail); };
+            close() using { 0 <= to_integer(tail); };
         }
         have to_integer(prefix) <= 2147483647 by {
             apply(integer::le_transitive(to_integer(prefix), length, 2147483647));
@@ -78,7 +78,7 @@ theorem consume_chunk(n: int32) {
         have 0 <= to_integer(n) by {
             apply(integer::le_transitive(0, 4, to_integer(n)));
         }
-        have 0 <= shorter by { solve() using { 4 <= to_integer(n); }; }
+        have 0 <= shorter by { close() using { 4 <= to_integer(n); }; }
         apply(integer::truncation_identity(shorter, 4));
         apply(integer::nonnegative_dividend_remainder(shorter, 4));
         apply(integer::positive_divisor_remainder_upper(shorter, 4));

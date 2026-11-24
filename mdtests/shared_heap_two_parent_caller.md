@@ -169,7 +169,7 @@ void parent_detach(struct parent* p) {
             unfold(link);
             have 2 <= to_integer(old(count(child_ref(p->kid))));
             have to_integer(old(count(child_ref(p->kid)))) > 1 by {
-                solve() using { 2 <= to_integer(old(count(child_ref(p->kid)))); };
+                close() using { 2 <= to_integer(old(count(child_ref(p->kid)))); };
             }
             step();
             step();
@@ -235,7 +235,7 @@ int32 caller(struct parent* first, struct parent* second, struct child* kid) {
     have at(detaching, second->kid) == kid by known();
     have at(detaching, second->kid)->payload == at(detaching, second->kid->payload);
     have observed == at(detaching, second->kid->payload) by known();
-    have kid == at(detaching, second->kid) by { solve() using { at(detaching, second->kid) == kid; }; }
+    have kid == at(detaching, second->kid) by { close() using { at(detaching, second->kid) == kid; }; }
     have kid->payload == at(detaching, second->kid->payload) by {
         rewrite(kid, at(detaching, second->kid));
         known();

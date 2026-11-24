@@ -1358,7 +1358,7 @@ theorem uint64_product_bound_from_division(x: uint64, y: uint64) {
             rewrite(to_integer(18446744073709551615u64 / y), truncating_quotient(to_integer(18446744073709551615u64), to_integer(y)));
             known();
         }
-        solve() using {
+        close() using {
             to_integer(x) * to_integer(y) <= to_integer(18446744073709551615u64 / y) * to_integer(y);
             to_integer(18446744073709551615u64 / y) * to_integer(y) == truncating_quotient(to_integer(18446744073709551615u64), to_integer(y)) * to_integer(y);
             to_integer(18446744073709551615u64) == truncating_quotient(to_integer(18446744073709551615u64), to_integer(y)) * to_integer(y) + truncating_remainder(to_integer(18446744073709551615u64), to_integer(y));
@@ -2191,27 +2191,27 @@ theorem floor_from_remainder(n: Integer, d: Integer, q: Integer, r: Integer, val
             apply(integer::multiply_add(q, -1, d));
             rewrite(value, q + -1);
             rewrite((q + -1) * d, q * d + -1 * d);
-            solve() using { n == q * d + r; 1 - d <= r; };
+            close() using { n == q * d + r; 1 - d <= r; };
         } else {
-            have 0 <= r by { solve() using { not (r < 0); }; }
+            have 0 <= r by { close() using { not (r < 0); }; }
             have value == q;
             rewrite(value, q);
-            solve() using { n == q * d + r; 0 <= r; };
+            close() using { n == q * d + r; 0 <= r; };
         }
     }
     ensures n < (value + 1) * d by {
         if r < 0 {
             have value == q + -1;
-            have value + 1 == q by { solve() using { value == q + -1; }; }
+            have value + 1 == q by { close() using { value == q + -1; }; }
             rewrite(value + 1, q);
-            solve() using { n == q * d + r; r < 0; };
+            close() using { n == q * d + r; r < 0; };
         } else {
-            have 0 <= r by { solve() using { not (r < 0); }; }
+            have 0 <= r by { close() using { not (r < 0); }; }
             have value == q;
             apply(integer::multiply_add(q, 1, d));
             rewrite(value, q);
             rewrite((q + 1) * d, q * d + 1 * d);
-            solve() using { n == q * d + r; r <= d - 1; };
+            close() using { n == q * d + r; r <= d - 1; };
         }
     }
 }
@@ -2234,27 +2234,27 @@ theorem ceiling_from_remainder(n: Integer, d: Integer, q: Integer, r: Integer, v
             apply(integer::multiply_add(q, 1, d));
             rewrite(value, q + 1);
             rewrite((q + 1) * d, q * d + 1 * d);
-            solve() using { n == q * d + r; r <= d - 1; };
+            close() using { n == q * d + r; r <= d - 1; };
         } else {
-            have r <= 0 by { solve() using { not (0 < r); }; }
+            have r <= 0 by { close() using { not (0 < r); }; }
             have value == q;
             rewrite(value, q);
-            solve() using { n == q * d + r; r <= 0; };
+            close() using { n == q * d + r; r <= 0; };
         }
     }
     ensures (value + -1) * d < n by {
         if 0 < r {
             have value == q + 1;
-            have value + -1 == q by { solve() using { value == q + 1; }; }
+            have value + -1 == q by { close() using { value == q + 1; }; }
             rewrite(value + -1, q);
-            solve() using { n == q * d + r; 0 < r; };
+            close() using { n == q * d + r; 0 < r; };
         } else {
-            have r <= 0 by { solve() using { not (0 < r); }; }
+            have r <= 0 by { close() using { not (0 < r); }; }
             have value == q;
             apply(integer::multiply_add(q, -1, d));
             rewrite(value, q);
             rewrite((q + -1) * d, q * d + -1 * d);
-            solve() using { n == q * d + r; 1 - d <= r; };
+            close() using { n == q * d + r; 1 - d <= r; };
         }
     }
 }
@@ -2429,31 +2429,31 @@ theorem positive_divisor_quotient_strict_lower(n: Integer, d: Integer, bound: In
     requires bound < 0;
     requires bound * d < n;
     ensures bound < truncating_quotient(n, d) by {
-        have bound * d <= n by { solve() using { bound * d < n; }; }
+        have bound * d <= n by { close() using { bound * d < n; }; }
         apply(integer::positive_divisor_quotient_lower(n, d, bound));
         if bound < truncating_quotient(n, d) {
             known();
         } else {
-            have truncating_quotient(n, d) == bound by { solve() using {
+            have truncating_quotient(n, d) == bound by { close() using {
                 bound <= truncating_quotient(n, d); not (bound < truncating_quotient(n, d));
             }; }
             if n <= 0 {
-                have 0 < d by { solve() using { 1 <= d; }; }
+                have 0 < d by { close() using { 1 <= d; }; }
                 apply(integer::nonpositive_dividend_remainder(n, d));
                 apply(integer::truncation_identity(n, d));
                 have n == bound * d + truncating_remainder(n, d) by {
                     rewrite(bound, truncating_quotient(n, d));
                     known();
                 }
-                have not (bound * d < n) by { solve() using {
+                have not (bound * d < n) by { close() using {
                     n == bound * d + truncating_remainder(n, d); truncating_remainder(n, d) <= 0;
                 }; }
                 contradiction(bound * d < n);
             } else {
-                have 0 <= n by { solve() using { not (n <= 0); }; }
-                have 0 * d <= n by { solve() using { 0 <= n; }; }
+                have 0 <= n by { close() using { not (n <= 0); }; }
+                have 0 * d <= n by { close() using { 0 <= n; }; }
                 apply(integer::positive_divisor_quotient_lower(n, d, 0));
-                have not (bound < 0) by { solve() using {
+                have not (bound < 0) by { close() using {
                     0 <= truncating_quotient(n, d); truncating_quotient(n, d) == bound;
                 }; }
                 contradiction(bound < 0);
@@ -2472,31 +2472,31 @@ theorem positive_divisor_quotient_strict_upper(n: Integer, d: Integer, bound: In
     requires 0 < bound;
     requires n < bound * d;
     ensures truncating_quotient(n, d) < bound by {
-        have n <= bound * d by { solve() using { n < bound * d; }; }
+        have n <= bound * d by { close() using { n < bound * d; }; }
         apply(integer::positive_divisor_quotient_upper(n, d, bound));
         if truncating_quotient(n, d) < bound {
             known();
         } else {
-            have truncating_quotient(n, d) == bound by { solve() using {
+            have truncating_quotient(n, d) == bound by { close() using {
                 truncating_quotient(n, d) <= bound; not (truncating_quotient(n, d) < bound);
             }; }
             if 0 <= n {
-                have 0 < d by { solve() using { 1 <= d; }; }
+                have 0 < d by { close() using { 1 <= d; }; }
                 apply(integer::nonnegative_dividend_remainder(n, d));
                 apply(integer::truncation_identity(n, d));
                 have n == bound * d + truncating_remainder(n, d) by {
                     rewrite(bound, truncating_quotient(n, d));
                     known();
                 }
-                have not (n < bound * d) by { solve() using {
+                have not (n < bound * d) by { close() using {
                     n == bound * d + truncating_remainder(n, d); 0 <= truncating_remainder(n, d);
                 }; }
                 contradiction(n < bound * d);
             } else {
-                have n <= 0 by { solve() using { not (0 <= n); }; }
-                have n <= 0 * d by { solve() using { n <= 0; }; }
+                have n <= 0 by { close() using { not (0 <= n); }; }
+                have n <= 0 * d by { close() using { n <= 0; }; }
                 apply(integer::positive_divisor_quotient_upper(n, d, 0));
-                have not (0 < bound) by { solve() using {
+                have not (0 < bound) by { close() using {
                     truncating_quotient(n, d) <= 0; truncating_quotient(n, d) == bound;
                 }; }
                 contradiction(0 < bound);
@@ -2518,12 +2518,12 @@ theorem lower_correction_bound(n: Integer, d: Integer, q: Integer, r: Integer, l
         if lower + 1 <= q {
             known();
         } else {
-            have q == lower by { solve() using { lower <= q; not (lower + 1 <= q); }; }
+            have q == lower by { close() using { lower <= q; not (lower + 1 <= q); }; }
             have n == lower * d + r by {
                 rewrite(lower, q);
                 known();
             }
-            have not (r < 0) by { solve() using { lower * d <= n; n == lower * d + r; }; }
+            have not (r < 0) by { close() using { lower * d <= n; n == lower * d + r; }; }
             contradiction(r < 0);
         }
     }
@@ -2543,12 +2543,12 @@ theorem upper_correction_bound(n: Integer, d: Integer, q: Integer, r: Integer, u
         if q <= upper + -1 {
             known();
         } else {
-            have q == upper by { solve() using { q <= upper; not (q <= upper + -1); }; }
+            have q == upper by { close() using { q <= upper; not (q <= upper + -1); }; }
             have n == upper * d + r by {
                 rewrite(upper, q);
                 known();
             }
-            have not (0 < r) by { solve() using { n <= upper * d; n == upper * d + r; }; }
+            have not (0 < r) by { close() using { n <= upper * d; n == upper * d + r; }; }
             contradiction(0 < r);
         }
     }
@@ -4941,118 +4941,118 @@ theorem pow10_nonzero(e: uint64) {
     ensures stdio::pow10(e) != 0u64 by {
         if e == 19u64 {
             unfold(stdio::pow10(e));
-            solve() using { e == 19u64; };
+            close() using { e == 19u64; };
         } else {
-            have e < 19u64 by { solve() using { e < 20u64; not (e == 19u64); }; }
+            have e < 19u64 by { close() using { e < 20u64; not (e == 19u64); }; }
             if e == 18u64 {
                 unfold(stdio::pow10(e));
-                solve() using { e == 18u64; };
+                close() using { e == 18u64; };
             } else {
-                have e < 18u64 by { solve() using { e < 19u64; not (e == 18u64); }; }
+                have e < 18u64 by { close() using { e < 19u64; not (e == 18u64); }; }
                 if e == 17u64 {
                     unfold(stdio::pow10(e));
-                    solve() using { e == 17u64; };
+                    close() using { e == 17u64; };
                 } else {
-                    have e < 17u64 by { solve() using { e < 18u64; not (e == 17u64); }; }
+                    have e < 17u64 by { close() using { e < 18u64; not (e == 17u64); }; }
                     if e == 16u64 {
                         unfold(stdio::pow10(e));
-                        solve() using { e == 16u64; };
+                        close() using { e == 16u64; };
                     } else {
-                        have e < 16u64 by { solve() using { e < 17u64; not (e == 16u64); }; }
+                        have e < 16u64 by { close() using { e < 17u64; not (e == 16u64); }; }
                         if e == 15u64 {
                             unfold(stdio::pow10(e));
-                            solve() using { e == 15u64; };
+                            close() using { e == 15u64; };
                         } else {
-                            have e < 15u64 by { solve() using { e < 16u64; not (e == 15u64); }; }
+                            have e < 15u64 by { close() using { e < 16u64; not (e == 15u64); }; }
                             if e == 14u64 {
                                 unfold(stdio::pow10(e));
-                                solve() using { e == 14u64; };
+                                close() using { e == 14u64; };
                             } else {
-                                have e < 14u64 by { solve() using { e < 15u64; not (e == 14u64); }; }
+                                have e < 14u64 by { close() using { e < 15u64; not (e == 14u64); }; }
                                 if e == 13u64 {
                                     unfold(stdio::pow10(e));
-                                    solve() using { e == 13u64; };
+                                    close() using { e == 13u64; };
                                 } else {
-                                    have e < 13u64 by { solve() using { e < 14u64; not (e == 13u64); }; }
+                                    have e < 13u64 by { close() using { e < 14u64; not (e == 13u64); }; }
                                     if e == 12u64 {
                                         unfold(stdio::pow10(e));
-                                        solve() using { e == 12u64; };
+                                        close() using { e == 12u64; };
                                     } else {
-                                        have e < 12u64 by { solve() using { e < 13u64; not (e == 12u64); }; }
+                                        have e < 12u64 by { close() using { e < 13u64; not (e == 12u64); }; }
                                         if e == 11u64 {
                                             unfold(stdio::pow10(e));
-                                            solve() using { e == 11u64; };
+                                            close() using { e == 11u64; };
                                         } else {
-                                            have e < 11u64 by { solve() using { e < 12u64; not (e == 11u64); }; }
+                                            have e < 11u64 by { close() using { e < 12u64; not (e == 11u64); }; }
                                             if e == 10u64 {
                                                 unfold(stdio::pow10(e));
-                                                solve() using { e == 10u64; };
+                                                close() using { e == 10u64; };
                                             } else {
-                                                have e < 10u64 by { solve() using { e < 11u64; not (e == 10u64); }; }
+                                                have e < 10u64 by { close() using { e < 11u64; not (e == 10u64); }; }
                                                 if e == 9u64 {
                                                     rewrite(e, 9u64);
                                                     apply(stdio::pow10_9());
                                                     rewrite(stdio::pow10(9u64), 1000000000u64);
                                                     known();
                                                 } else {
-                                                    have e < 9u64 by { solve() using { e < 10u64; not (e == 9u64); }; }
+                                                    have e < 9u64 by { close() using { e < 10u64; not (e == 9u64); }; }
                                                     if e == 8u64 {
                                                         rewrite(e, 8u64);
                                                         apply(stdio::pow10_8());
                                                         rewrite(stdio::pow10(8u64), 100000000u64);
                                                         known();
                                                     } else {
-                                                        have e < 8u64 by { solve() using { e < 9u64; not (e == 8u64); }; }
+                                                        have e < 8u64 by { close() using { e < 9u64; not (e == 8u64); }; }
                                                         if e == 7u64 {
                                                             rewrite(e, 7u64);
                                                             apply(stdio::pow10_7());
                                                             rewrite(stdio::pow10(7u64), 10000000u64);
                                                             known();
                                                         } else {
-                                                            have e < 7u64 by { solve() using { e < 8u64; not (e == 7u64); }; }
+                                                            have e < 7u64 by { close() using { e < 8u64; not (e == 7u64); }; }
                                                             if e == 6u64 {
                                                                 rewrite(e, 6u64);
                                                                 apply(stdio::pow10_6());
                                                                 rewrite(stdio::pow10(6u64), 1000000u64);
                                                                 known();
                                                             } else {
-                                                                have e < 6u64 by { solve() using { e < 7u64; not (e == 6u64); }; }
+                                                                have e < 6u64 by { close() using { e < 7u64; not (e == 6u64); }; }
                                                                 if e == 5u64 {
                                                                     rewrite(e, 5u64);
                                                                     apply(stdio::pow10_5());
                                                                     rewrite(stdio::pow10(5u64), 100000u64);
                                                                     known();
                                                                 } else {
-                                                                    have e < 5u64 by { solve() using { e < 6u64; not (e == 5u64); }; }
+                                                                    have e < 5u64 by { close() using { e < 6u64; not (e == 5u64); }; }
                                                                     if e == 4u64 {
                                                                         rewrite(e, 4u64);
                                                                         apply(stdio::pow10_4());
                                                                         rewrite(stdio::pow10(4u64), 10000u64);
                                                                         known();
                                                                     } else {
-                                                                        have e < 4u64 by { solve() using { e < 5u64; not (e == 4u64); }; }
+                                                                        have e < 4u64 by { close() using { e < 5u64; not (e == 4u64); }; }
                                                                         if e == 3u64 {
                                                                             rewrite(e, 3u64);
                                                                             apply(stdio::pow10_3());
                                                                             rewrite(stdio::pow10(3u64), 1000u64);
                                                                             known();
                                                                         } else {
-                                                                            have e < 3u64 by { solve() using { e < 4u64; not (e == 3u64); }; }
+                                                                            have e < 3u64 by { close() using { e < 4u64; not (e == 3u64); }; }
                                                                             if e == 2u64 {
                                                                                 rewrite(e, 2u64);
                                                                                 apply(stdio::pow10_2());
                                                                                 rewrite(stdio::pow10(2u64), 100u64);
                                                                                 known();
                                                                             } else {
-                                                                                have e < 2u64 by { solve() using { e < 3u64; not (e == 2u64); }; }
+                                                                                have e < 2u64 by { close() using { e < 3u64; not (e == 2u64); }; }
                                                                                 if e == 1u64 {
                                                                                     rewrite(e, 1u64);
                                                                                     apply(stdio::pow10_1());
                                                                                     rewrite(stdio::pow10(1u64), 10u64);
                                                                                     known();
                                                                                 } else {
-                                                                                    have e < 1u64 by { solve() using { e < 2u64; not (e == 1u64); }; }
-                                                                                    have e == 0u64 by { solve() using { e < 1u64; }; }
+                                                                                    have e < 1u64 by { close() using { e < 2u64; not (e == 1u64); }; }
+                                                                                    have e == 0u64 by { close() using { e < 1u64; }; }
                                                                                     rewrite(e, 0u64);
                                                                                     apply(stdio::pow10_0());
                                                                                     rewrite(stdio::pow10(0u64), 1u64);
@@ -5112,43 +5112,43 @@ theorem decimal_length_1(v: uint64) {
         have v < 1000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10u64, 1000000000000000000u64)); }
         have v < 10000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10u64, 10000000000000000000u64)); }
         unfold(stdio::decimal_length(v));
-        have (if v < 10u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10u64; }; }
+        have (if v < 10u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10u64; }; }
         rewrite((if v < 10u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 100u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 100u64; }; }
+        have (if v < 100u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 100u64; }; }
         rewrite((if v < 100u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 1000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 1000u64; }; }
+        have (if v < 1000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 1000u64; }; }
         rewrite((if v < 1000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 10000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000u64; }; }
+        have (if v < 10000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000u64; }; }
         rewrite((if v < 10000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 100000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 100000u64; }; }
+        have (if v < 100000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 100000u64; }; }
         rewrite((if v < 100000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 1000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 1000000u64; }; }
+        have (if v < 1000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 1000000u64; }; }
         rewrite((if v < 1000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 10000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000u64; }; }
+        have (if v < 10000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000000u64; }; }
         rewrite((if v < 10000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 100000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 100000000u64; }; }
+        have (if v < 100000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 100000000u64; }; }
         rewrite((if v < 100000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 1000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 1000000000u64; }; }
+        have (if v < 1000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 1000000000u64; }; }
         rewrite((if v < 1000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 10000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000u64; }; }
+        have (if v < 10000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000000000u64; }; }
         rewrite((if v < 10000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 100000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 100000000000u64; }; }
+        have (if v < 100000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 100000000000u64; }; }
         rewrite((if v < 100000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 1000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 1000000000000u64; }; }
+        have (if v < 1000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 1000000000000u64; }; }
         rewrite((if v < 1000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 10000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000000u64; }; }
+        have (if v < 10000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000000000000u64; }; }
         rewrite((if v < 10000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 100000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 100000000000000u64; }; }
+        have (if v < 100000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 100000000000000u64; }; }
         rewrite((if v < 100000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 1000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 1000000000000000u64; }; }
+        have (if v < 1000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 1000000000000000u64; }; }
         rewrite((if v < 1000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 10000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000000000u64; }; }
+        have (if v < 10000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000000000000000u64; }; }
         rewrite((if v < 10000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 100000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 100000000000000000u64; }; }
+        have (if v < 100000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 100000000000000000u64; }; }
         rewrite((if v < 100000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 1000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 1000000000000000000u64; }; }
+        have (if v < 1000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 1000000000000000000u64; }; }
         rewrite((if v < 1000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000000000000u64; }; }
+        have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000000000000000000u64; }; }
         rewrite((if v < 10000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
         known();
     }
@@ -5188,43 +5188,43 @@ theorem decimal_length_2(v: uint64) {
         have v < 1000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100u64, 1000000000000000000u64)); }
         have v < 10000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100u64, 10000000000000000000u64)); }
         unfold(stdio::decimal_length(v));
-        have (if v < 10u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 10u64); }; }
+        have (if v < 10u64 { 0u64 } else { 1u64 }) == 1u64 by { close() using { not (v < 10u64); }; }
         rewrite((if v < 10u64 { 0u64 } else { 1u64 }), 1u64);
-        have (if v < 100u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 100u64; }; }
+        have (if v < 100u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 100u64; }; }
         rewrite((if v < 100u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 1000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 1000u64; }; }
+        have (if v < 1000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 1000u64; }; }
         rewrite((if v < 1000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 10000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000u64; }; }
+        have (if v < 10000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000u64; }; }
         rewrite((if v < 10000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 100000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 100000u64; }; }
+        have (if v < 100000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 100000u64; }; }
         rewrite((if v < 100000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 1000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 1000000u64; }; }
+        have (if v < 1000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 1000000u64; }; }
         rewrite((if v < 1000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 10000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000u64; }; }
+        have (if v < 10000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000000u64; }; }
         rewrite((if v < 10000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 100000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 100000000u64; }; }
+        have (if v < 100000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 100000000u64; }; }
         rewrite((if v < 100000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 1000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 1000000000u64; }; }
+        have (if v < 1000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 1000000000u64; }; }
         rewrite((if v < 1000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 10000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000u64; }; }
+        have (if v < 10000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000000000u64; }; }
         rewrite((if v < 10000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 100000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 100000000000u64; }; }
+        have (if v < 100000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 100000000000u64; }; }
         rewrite((if v < 100000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 1000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 1000000000000u64; }; }
+        have (if v < 1000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 1000000000000u64; }; }
         rewrite((if v < 1000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 10000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000000u64; }; }
+        have (if v < 10000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000000000000u64; }; }
         rewrite((if v < 10000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 100000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 100000000000000u64; }; }
+        have (if v < 100000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 100000000000000u64; }; }
         rewrite((if v < 100000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 1000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 1000000000000000u64; }; }
+        have (if v < 1000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 1000000000000000u64; }; }
         rewrite((if v < 1000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 10000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000000000u64; }; }
+        have (if v < 10000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000000000000000u64; }; }
         rewrite((if v < 10000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 100000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 100000000000000000u64; }; }
+        have (if v < 100000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 100000000000000000u64; }; }
         rewrite((if v < 100000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 1000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 1000000000000000000u64; }; }
+        have (if v < 1000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 1000000000000000000u64; }; }
         rewrite((if v < 1000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000000000000u64; }; }
+        have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000000000000000000u64; }; }
         rewrite((if v < 10000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
         known();
     }
@@ -5264,43 +5264,43 @@ theorem decimal_length_3(v: uint64) {
         have v < 1000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000u64, 1000000000000000000u64)); }
         have v < 10000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000u64, 10000000000000000000u64)); }
         unfold(stdio::decimal_length(v));
-        have (if v < 10u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 10u64); }; }
+        have (if v < 10u64 { 0u64 } else { 1u64 }) == 1u64 by { close() using { not (v < 10u64); }; }
         rewrite((if v < 10u64 { 0u64 } else { 1u64 }), 1u64);
-        have (if v < 100u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 100u64); }; }
+        have (if v < 100u64 { 0u64 } else { 1u64 }) == 1u64 by { close() using { not (v < 100u64); }; }
         rewrite((if v < 100u64 { 0u64 } else { 1u64 }), 1u64);
-        have (if v < 1000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 1000u64; }; }
+        have (if v < 1000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 1000u64; }; }
         rewrite((if v < 1000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 10000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000u64; }; }
+        have (if v < 10000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000u64; }; }
         rewrite((if v < 10000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 100000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 100000u64; }; }
+        have (if v < 100000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 100000u64; }; }
         rewrite((if v < 100000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 1000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 1000000u64; }; }
+        have (if v < 1000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 1000000u64; }; }
         rewrite((if v < 1000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 10000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000u64; }; }
+        have (if v < 10000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000000u64; }; }
         rewrite((if v < 10000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 100000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 100000000u64; }; }
+        have (if v < 100000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 100000000u64; }; }
         rewrite((if v < 100000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 1000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 1000000000u64; }; }
+        have (if v < 1000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 1000000000u64; }; }
         rewrite((if v < 1000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 10000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000u64; }; }
+        have (if v < 10000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000000000u64; }; }
         rewrite((if v < 10000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 100000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 100000000000u64; }; }
+        have (if v < 100000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 100000000000u64; }; }
         rewrite((if v < 100000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 1000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 1000000000000u64; }; }
+        have (if v < 1000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 1000000000000u64; }; }
         rewrite((if v < 1000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 10000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000000u64; }; }
+        have (if v < 10000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000000000000u64; }; }
         rewrite((if v < 10000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 100000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 100000000000000u64; }; }
+        have (if v < 100000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 100000000000000u64; }; }
         rewrite((if v < 100000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 1000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 1000000000000000u64; }; }
+        have (if v < 1000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 1000000000000000u64; }; }
         rewrite((if v < 1000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 10000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000000000u64; }; }
+        have (if v < 10000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000000000000000u64; }; }
         rewrite((if v < 10000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 100000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 100000000000000000u64; }; }
+        have (if v < 100000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 100000000000000000u64; }; }
         rewrite((if v < 100000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 1000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 1000000000000000000u64; }; }
+        have (if v < 1000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 1000000000000000000u64; }; }
         rewrite((if v < 1000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000000000000u64; }; }
+        have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000000000000000000u64; }; }
         rewrite((if v < 10000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
         known();
     }
@@ -5340,43 +5340,43 @@ theorem decimal_length_4(v: uint64) {
         have v < 1000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000u64, 1000000000000000000u64)); }
         have v < 10000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000u64, 10000000000000000000u64)); }
         unfold(stdio::decimal_length(v));
-        have (if v < 10u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 10u64); }; }
+        have (if v < 10u64 { 0u64 } else { 1u64 }) == 1u64 by { close() using { not (v < 10u64); }; }
         rewrite((if v < 10u64 { 0u64 } else { 1u64 }), 1u64);
-        have (if v < 100u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 100u64); }; }
+        have (if v < 100u64 { 0u64 } else { 1u64 }) == 1u64 by { close() using { not (v < 100u64); }; }
         rewrite((if v < 100u64 { 0u64 } else { 1u64 }), 1u64);
-        have (if v < 1000u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 1000u64); }; }
+        have (if v < 1000u64 { 0u64 } else { 1u64 }) == 1u64 by { close() using { not (v < 1000u64); }; }
         rewrite((if v < 1000u64 { 0u64 } else { 1u64 }), 1u64);
-        have (if v < 10000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000u64; }; }
+        have (if v < 10000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000u64; }; }
         rewrite((if v < 10000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 100000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 100000u64; }; }
+        have (if v < 100000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 100000u64; }; }
         rewrite((if v < 100000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 1000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 1000000u64; }; }
+        have (if v < 1000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 1000000u64; }; }
         rewrite((if v < 1000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 10000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000u64; }; }
+        have (if v < 10000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000000u64; }; }
         rewrite((if v < 10000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 100000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 100000000u64; }; }
+        have (if v < 100000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 100000000u64; }; }
         rewrite((if v < 100000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 1000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 1000000000u64; }; }
+        have (if v < 1000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 1000000000u64; }; }
         rewrite((if v < 1000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 10000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000u64; }; }
+        have (if v < 10000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000000000u64; }; }
         rewrite((if v < 10000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 100000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 100000000000u64; }; }
+        have (if v < 100000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 100000000000u64; }; }
         rewrite((if v < 100000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 1000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 1000000000000u64; }; }
+        have (if v < 1000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 1000000000000u64; }; }
         rewrite((if v < 1000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 10000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000000u64; }; }
+        have (if v < 10000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000000000000u64; }; }
         rewrite((if v < 10000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 100000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 100000000000000u64; }; }
+        have (if v < 100000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 100000000000000u64; }; }
         rewrite((if v < 100000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 1000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 1000000000000000u64; }; }
+        have (if v < 1000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 1000000000000000u64; }; }
         rewrite((if v < 1000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 10000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000000000u64; }; }
+        have (if v < 10000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000000000000000u64; }; }
         rewrite((if v < 10000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 100000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 100000000000000000u64; }; }
+        have (if v < 100000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 100000000000000000u64; }; }
         rewrite((if v < 100000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 1000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 1000000000000000000u64; }; }
+        have (if v < 1000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 1000000000000000000u64; }; }
         rewrite((if v < 1000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000000000000u64; }; }
+        have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000000000000000000u64; }; }
         rewrite((if v < 10000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
         known();
     }
@@ -5416,43 +5416,43 @@ theorem decimal_length_5(v: uint64) {
         have v < 1000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000u64, 1000000000000000000u64)); }
         have v < 10000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000u64, 10000000000000000000u64)); }
         unfold(stdio::decimal_length(v));
-        have (if v < 10u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 10u64); }; }
+        have (if v < 10u64 { 0u64 } else { 1u64 }) == 1u64 by { close() using { not (v < 10u64); }; }
         rewrite((if v < 10u64 { 0u64 } else { 1u64 }), 1u64);
-        have (if v < 100u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 100u64); }; }
+        have (if v < 100u64 { 0u64 } else { 1u64 }) == 1u64 by { close() using { not (v < 100u64); }; }
         rewrite((if v < 100u64 { 0u64 } else { 1u64 }), 1u64);
-        have (if v < 1000u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 1000u64); }; }
+        have (if v < 1000u64 { 0u64 } else { 1u64 }) == 1u64 by { close() using { not (v < 1000u64); }; }
         rewrite((if v < 1000u64 { 0u64 } else { 1u64 }), 1u64);
-        have (if v < 10000u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 10000u64); }; }
+        have (if v < 10000u64 { 0u64 } else { 1u64 }) == 1u64 by { close() using { not (v < 10000u64); }; }
         rewrite((if v < 10000u64 { 0u64 } else { 1u64 }), 1u64);
-        have (if v < 100000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 100000u64; }; }
+        have (if v < 100000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 100000u64; }; }
         rewrite((if v < 100000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 1000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 1000000u64; }; }
+        have (if v < 1000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 1000000u64; }; }
         rewrite((if v < 1000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 10000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000u64; }; }
+        have (if v < 10000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000000u64; }; }
         rewrite((if v < 10000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 100000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 100000000u64; }; }
+        have (if v < 100000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 100000000u64; }; }
         rewrite((if v < 100000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 1000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 1000000000u64; }; }
+        have (if v < 1000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 1000000000u64; }; }
         rewrite((if v < 1000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 10000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000u64; }; }
+        have (if v < 10000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000000000u64; }; }
         rewrite((if v < 10000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 100000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 100000000000u64; }; }
+        have (if v < 100000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 100000000000u64; }; }
         rewrite((if v < 100000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 1000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 1000000000000u64; }; }
+        have (if v < 1000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 1000000000000u64; }; }
         rewrite((if v < 1000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 10000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000000u64; }; }
+        have (if v < 10000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000000000000u64; }; }
         rewrite((if v < 10000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 100000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 100000000000000u64; }; }
+        have (if v < 100000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 100000000000000u64; }; }
         rewrite((if v < 100000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 1000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 1000000000000000u64; }; }
+        have (if v < 1000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 1000000000000000u64; }; }
         rewrite((if v < 1000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 10000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000000000u64; }; }
+        have (if v < 10000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000000000000000u64; }; }
         rewrite((if v < 10000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 100000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 100000000000000000u64; }; }
+        have (if v < 100000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 100000000000000000u64; }; }
         rewrite((if v < 100000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 1000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 1000000000000000000u64; }; }
+        have (if v < 1000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 1000000000000000000u64; }; }
         rewrite((if v < 1000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000000000000u64; }; }
+        have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000000000000000000u64; }; }
         rewrite((if v < 10000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
         known();
     }
@@ -5492,43 +5492,43 @@ theorem decimal_length_6(v: uint64) {
         have v < 1000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000u64, 1000000000000000000u64)); }
         have v < 10000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000u64, 10000000000000000000u64)); }
         unfold(stdio::decimal_length(v));
-        have (if v < 10u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 10u64); }; }
+        have (if v < 10u64 { 0u64 } else { 1u64 }) == 1u64 by { close() using { not (v < 10u64); }; }
         rewrite((if v < 10u64 { 0u64 } else { 1u64 }), 1u64);
-        have (if v < 100u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 100u64); }; }
+        have (if v < 100u64 { 0u64 } else { 1u64 }) == 1u64 by { close() using { not (v < 100u64); }; }
         rewrite((if v < 100u64 { 0u64 } else { 1u64 }), 1u64);
-        have (if v < 1000u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 1000u64); }; }
+        have (if v < 1000u64 { 0u64 } else { 1u64 }) == 1u64 by { close() using { not (v < 1000u64); }; }
         rewrite((if v < 1000u64 { 0u64 } else { 1u64 }), 1u64);
-        have (if v < 10000u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 10000u64); }; }
+        have (if v < 10000u64 { 0u64 } else { 1u64 }) == 1u64 by { close() using { not (v < 10000u64); }; }
         rewrite((if v < 10000u64 { 0u64 } else { 1u64 }), 1u64);
-        have (if v < 100000u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 100000u64); }; }
+        have (if v < 100000u64 { 0u64 } else { 1u64 }) == 1u64 by { close() using { not (v < 100000u64); }; }
         rewrite((if v < 100000u64 { 0u64 } else { 1u64 }), 1u64);
-        have (if v < 1000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 1000000u64; }; }
+        have (if v < 1000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 1000000u64; }; }
         rewrite((if v < 1000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 10000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000u64; }; }
+        have (if v < 10000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000000u64; }; }
         rewrite((if v < 10000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 100000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 100000000u64; }; }
+        have (if v < 100000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 100000000u64; }; }
         rewrite((if v < 100000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 1000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 1000000000u64; }; }
+        have (if v < 1000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 1000000000u64; }; }
         rewrite((if v < 1000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 10000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000u64; }; }
+        have (if v < 10000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000000000u64; }; }
         rewrite((if v < 10000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 100000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 100000000000u64; }; }
+        have (if v < 100000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 100000000000u64; }; }
         rewrite((if v < 100000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 1000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 1000000000000u64; }; }
+        have (if v < 1000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 1000000000000u64; }; }
         rewrite((if v < 1000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 10000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000000u64; }; }
+        have (if v < 10000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000000000000u64; }; }
         rewrite((if v < 10000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 100000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 100000000000000u64; }; }
+        have (if v < 100000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 100000000000000u64; }; }
         rewrite((if v < 100000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 1000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 1000000000000000u64; }; }
+        have (if v < 1000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 1000000000000000u64; }; }
         rewrite((if v < 1000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 10000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000000000u64; }; }
+        have (if v < 10000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000000000000000u64; }; }
         rewrite((if v < 10000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 100000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 100000000000000000u64; }; }
+        have (if v < 100000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 100000000000000000u64; }; }
         rewrite((if v < 100000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 1000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 1000000000000000000u64; }; }
+        have (if v < 1000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 1000000000000000000u64; }; }
         rewrite((if v < 1000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000000000000u64; }; }
+        have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000000000000000000u64; }; }
         rewrite((if v < 10000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
         known();
     }
@@ -5568,43 +5568,43 @@ theorem decimal_length_7(v: uint64) {
         have v < 1000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000000u64, 1000000000000000000u64)); }
         have v < 10000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000000u64, 10000000000000000000u64)); }
         unfold(stdio::decimal_length(v));
-        have (if v < 10u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 10u64); }; }
+        have (if v < 10u64 { 0u64 } else { 1u64 }) == 1u64 by { close() using { not (v < 10u64); }; }
         rewrite((if v < 10u64 { 0u64 } else { 1u64 }), 1u64);
-        have (if v < 100u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 100u64); }; }
+        have (if v < 100u64 { 0u64 } else { 1u64 }) == 1u64 by { close() using { not (v < 100u64); }; }
         rewrite((if v < 100u64 { 0u64 } else { 1u64 }), 1u64);
-        have (if v < 1000u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 1000u64); }; }
+        have (if v < 1000u64 { 0u64 } else { 1u64 }) == 1u64 by { close() using { not (v < 1000u64); }; }
         rewrite((if v < 1000u64 { 0u64 } else { 1u64 }), 1u64);
-        have (if v < 10000u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 10000u64); }; }
+        have (if v < 10000u64 { 0u64 } else { 1u64 }) == 1u64 by { close() using { not (v < 10000u64); }; }
         rewrite((if v < 10000u64 { 0u64 } else { 1u64 }), 1u64);
-        have (if v < 100000u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 100000u64); }; }
+        have (if v < 100000u64 { 0u64 } else { 1u64 }) == 1u64 by { close() using { not (v < 100000u64); }; }
         rewrite((if v < 100000u64 { 0u64 } else { 1u64 }), 1u64);
-        have (if v < 1000000u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 1000000u64); }; }
+        have (if v < 1000000u64 { 0u64 } else { 1u64 }) == 1u64 by { close() using { not (v < 1000000u64); }; }
         rewrite((if v < 1000000u64 { 0u64 } else { 1u64 }), 1u64);
-        have (if v < 10000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000u64; }; }
+        have (if v < 10000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000000u64; }; }
         rewrite((if v < 10000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 100000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 100000000u64; }; }
+        have (if v < 100000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 100000000u64; }; }
         rewrite((if v < 100000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 1000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 1000000000u64; }; }
+        have (if v < 1000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 1000000000u64; }; }
         rewrite((if v < 1000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 10000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000u64; }; }
+        have (if v < 10000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000000000u64; }; }
         rewrite((if v < 10000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 100000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 100000000000u64; }; }
+        have (if v < 100000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 100000000000u64; }; }
         rewrite((if v < 100000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 1000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 1000000000000u64; }; }
+        have (if v < 1000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 1000000000000u64; }; }
         rewrite((if v < 1000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 10000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000000u64; }; }
+        have (if v < 10000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000000000000u64; }; }
         rewrite((if v < 10000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 100000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 100000000000000u64; }; }
+        have (if v < 100000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 100000000000000u64; }; }
         rewrite((if v < 100000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 1000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 1000000000000000u64; }; }
+        have (if v < 1000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 1000000000000000u64; }; }
         rewrite((if v < 1000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 10000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000000000u64; }; }
+        have (if v < 10000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000000000000000u64; }; }
         rewrite((if v < 10000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 100000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 100000000000000000u64; }; }
+        have (if v < 100000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 100000000000000000u64; }; }
         rewrite((if v < 100000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 1000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 1000000000000000000u64; }; }
+        have (if v < 1000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 1000000000000000000u64; }; }
         rewrite((if v < 1000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000000000000u64; }; }
+        have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000000000000000000u64; }; }
         rewrite((if v < 10000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
         known();
     }
@@ -5644,43 +5644,43 @@ theorem decimal_length_8(v: uint64) {
         have v < 1000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000000u64, 1000000000000000000u64)); }
         have v < 10000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 100000000u64, 10000000000000000000u64)); }
         unfold(stdio::decimal_length(v));
-        have (if v < 10u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 10u64); }; }
+        have (if v < 10u64 { 0u64 } else { 1u64 }) == 1u64 by { close() using { not (v < 10u64); }; }
         rewrite((if v < 10u64 { 0u64 } else { 1u64 }), 1u64);
-        have (if v < 100u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 100u64); }; }
+        have (if v < 100u64 { 0u64 } else { 1u64 }) == 1u64 by { close() using { not (v < 100u64); }; }
         rewrite((if v < 100u64 { 0u64 } else { 1u64 }), 1u64);
-        have (if v < 1000u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 1000u64); }; }
+        have (if v < 1000u64 { 0u64 } else { 1u64 }) == 1u64 by { close() using { not (v < 1000u64); }; }
         rewrite((if v < 1000u64 { 0u64 } else { 1u64 }), 1u64);
-        have (if v < 10000u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 10000u64); }; }
+        have (if v < 10000u64 { 0u64 } else { 1u64 }) == 1u64 by { close() using { not (v < 10000u64); }; }
         rewrite((if v < 10000u64 { 0u64 } else { 1u64 }), 1u64);
-        have (if v < 100000u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 100000u64); }; }
+        have (if v < 100000u64 { 0u64 } else { 1u64 }) == 1u64 by { close() using { not (v < 100000u64); }; }
         rewrite((if v < 100000u64 { 0u64 } else { 1u64 }), 1u64);
-        have (if v < 1000000u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 1000000u64); }; }
+        have (if v < 1000000u64 { 0u64 } else { 1u64 }) == 1u64 by { close() using { not (v < 1000000u64); }; }
         rewrite((if v < 1000000u64 { 0u64 } else { 1u64 }), 1u64);
-        have (if v < 10000000u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 10000000u64); }; }
+        have (if v < 10000000u64 { 0u64 } else { 1u64 }) == 1u64 by { close() using { not (v < 10000000u64); }; }
         rewrite((if v < 10000000u64 { 0u64 } else { 1u64 }), 1u64);
-        have (if v < 100000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 100000000u64; }; }
+        have (if v < 100000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 100000000u64; }; }
         rewrite((if v < 100000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 1000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 1000000000u64; }; }
+        have (if v < 1000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 1000000000u64; }; }
         rewrite((if v < 1000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 10000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000u64; }; }
+        have (if v < 10000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000000000u64; }; }
         rewrite((if v < 10000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 100000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 100000000000u64; }; }
+        have (if v < 100000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 100000000000u64; }; }
         rewrite((if v < 100000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 1000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 1000000000000u64; }; }
+        have (if v < 1000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 1000000000000u64; }; }
         rewrite((if v < 1000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 10000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000000u64; }; }
+        have (if v < 10000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000000000000u64; }; }
         rewrite((if v < 10000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 100000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 100000000000000u64; }; }
+        have (if v < 100000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 100000000000000u64; }; }
         rewrite((if v < 100000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 1000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 1000000000000000u64; }; }
+        have (if v < 1000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 1000000000000000u64; }; }
         rewrite((if v < 1000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 10000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000000000u64; }; }
+        have (if v < 10000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000000000000000u64; }; }
         rewrite((if v < 10000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 100000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 100000000000000000u64; }; }
+        have (if v < 100000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 100000000000000000u64; }; }
         rewrite((if v < 100000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 1000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 1000000000000000000u64; }; }
+        have (if v < 1000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 1000000000000000000u64; }; }
         rewrite((if v < 1000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000000000000u64; }; }
+        have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000000000000000000u64; }; }
         rewrite((if v < 10000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
         known();
     }
@@ -5720,43 +5720,43 @@ theorem decimal_length_9(v: uint64) {
         have v < 1000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000000u64, 1000000000000000000u64)); }
         have v < 10000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 1000000000u64, 10000000000000000000u64)); }
         unfold(stdio::decimal_length(v));
-        have (if v < 10u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 10u64); }; }
+        have (if v < 10u64 { 0u64 } else { 1u64 }) == 1u64 by { close() using { not (v < 10u64); }; }
         rewrite((if v < 10u64 { 0u64 } else { 1u64 }), 1u64);
-        have (if v < 100u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 100u64); }; }
+        have (if v < 100u64 { 0u64 } else { 1u64 }) == 1u64 by { close() using { not (v < 100u64); }; }
         rewrite((if v < 100u64 { 0u64 } else { 1u64 }), 1u64);
-        have (if v < 1000u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 1000u64); }; }
+        have (if v < 1000u64 { 0u64 } else { 1u64 }) == 1u64 by { close() using { not (v < 1000u64); }; }
         rewrite((if v < 1000u64 { 0u64 } else { 1u64 }), 1u64);
-        have (if v < 10000u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 10000u64); }; }
+        have (if v < 10000u64 { 0u64 } else { 1u64 }) == 1u64 by { close() using { not (v < 10000u64); }; }
         rewrite((if v < 10000u64 { 0u64 } else { 1u64 }), 1u64);
-        have (if v < 100000u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 100000u64); }; }
+        have (if v < 100000u64 { 0u64 } else { 1u64 }) == 1u64 by { close() using { not (v < 100000u64); }; }
         rewrite((if v < 100000u64 { 0u64 } else { 1u64 }), 1u64);
-        have (if v < 1000000u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 1000000u64); }; }
+        have (if v < 1000000u64 { 0u64 } else { 1u64 }) == 1u64 by { close() using { not (v < 1000000u64); }; }
         rewrite((if v < 1000000u64 { 0u64 } else { 1u64 }), 1u64);
-        have (if v < 10000000u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 10000000u64); }; }
+        have (if v < 10000000u64 { 0u64 } else { 1u64 }) == 1u64 by { close() using { not (v < 10000000u64); }; }
         rewrite((if v < 10000000u64 { 0u64 } else { 1u64 }), 1u64);
-        have (if v < 100000000u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 100000000u64); }; }
+        have (if v < 100000000u64 { 0u64 } else { 1u64 }) == 1u64 by { close() using { not (v < 100000000u64); }; }
         rewrite((if v < 100000000u64 { 0u64 } else { 1u64 }), 1u64);
-        have (if v < 1000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 1000000000u64; }; }
+        have (if v < 1000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 1000000000u64; }; }
         rewrite((if v < 1000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 10000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000u64; }; }
+        have (if v < 10000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000000000u64; }; }
         rewrite((if v < 10000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 100000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 100000000000u64; }; }
+        have (if v < 100000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 100000000000u64; }; }
         rewrite((if v < 100000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 1000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 1000000000000u64; }; }
+        have (if v < 1000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 1000000000000u64; }; }
         rewrite((if v < 1000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 10000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000000u64; }; }
+        have (if v < 10000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000000000000u64; }; }
         rewrite((if v < 10000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 100000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 100000000000000u64; }; }
+        have (if v < 100000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 100000000000000u64; }; }
         rewrite((if v < 100000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 1000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 1000000000000000u64; }; }
+        have (if v < 1000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 1000000000000000u64; }; }
         rewrite((if v < 1000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 10000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000000000u64; }; }
+        have (if v < 10000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000000000000000u64; }; }
         rewrite((if v < 10000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 100000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 100000000000000000u64; }; }
+        have (if v < 100000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 100000000000000000u64; }; }
         rewrite((if v < 100000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 1000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 1000000000000000000u64; }; }
+        have (if v < 1000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 1000000000000000000u64; }; }
         rewrite((if v < 1000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000000000000u64; }; }
+        have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000000000000000000u64; }; }
         rewrite((if v < 10000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
         known();
     }
@@ -5796,43 +5796,43 @@ theorem decimal_length_10(v: uint64) {
         have v < 1000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000000000u64, 1000000000000000000u64)); }
         have v < 10000000000000000000u64 by { apply(integer::uint64_less_than_less_equal_transitive(v, 10000000000u64, 10000000000000000000u64)); }
         unfold(stdio::decimal_length(v));
-        have (if v < 10u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 10u64); }; }
+        have (if v < 10u64 { 0u64 } else { 1u64 }) == 1u64 by { close() using { not (v < 10u64); }; }
         rewrite((if v < 10u64 { 0u64 } else { 1u64 }), 1u64);
-        have (if v < 100u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 100u64); }; }
+        have (if v < 100u64 { 0u64 } else { 1u64 }) == 1u64 by { close() using { not (v < 100u64); }; }
         rewrite((if v < 100u64 { 0u64 } else { 1u64 }), 1u64);
-        have (if v < 1000u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 1000u64); }; }
+        have (if v < 1000u64 { 0u64 } else { 1u64 }) == 1u64 by { close() using { not (v < 1000u64); }; }
         rewrite((if v < 1000u64 { 0u64 } else { 1u64 }), 1u64);
-        have (if v < 10000u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 10000u64); }; }
+        have (if v < 10000u64 { 0u64 } else { 1u64 }) == 1u64 by { close() using { not (v < 10000u64); }; }
         rewrite((if v < 10000u64 { 0u64 } else { 1u64 }), 1u64);
-        have (if v < 100000u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 100000u64); }; }
+        have (if v < 100000u64 { 0u64 } else { 1u64 }) == 1u64 by { close() using { not (v < 100000u64); }; }
         rewrite((if v < 100000u64 { 0u64 } else { 1u64 }), 1u64);
-        have (if v < 1000000u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 1000000u64); }; }
+        have (if v < 1000000u64 { 0u64 } else { 1u64 }) == 1u64 by { close() using { not (v < 1000000u64); }; }
         rewrite((if v < 1000000u64 { 0u64 } else { 1u64 }), 1u64);
-        have (if v < 10000000u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 10000000u64); }; }
+        have (if v < 10000000u64 { 0u64 } else { 1u64 }) == 1u64 by { close() using { not (v < 10000000u64); }; }
         rewrite((if v < 10000000u64 { 0u64 } else { 1u64 }), 1u64);
-        have (if v < 100000000u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 100000000u64); }; }
+        have (if v < 100000000u64 { 0u64 } else { 1u64 }) == 1u64 by { close() using { not (v < 100000000u64); }; }
         rewrite((if v < 100000000u64 { 0u64 } else { 1u64 }), 1u64);
-        have (if v < 1000000000u64 { 0u64 } else { 1u64 }) == 1u64 by { solve() using { not (v < 1000000000u64); }; }
+        have (if v < 1000000000u64 { 0u64 } else { 1u64 }) == 1u64 by { close() using { not (v < 1000000000u64); }; }
         rewrite((if v < 1000000000u64 { 0u64 } else { 1u64 }), 1u64);
-        have (if v < 10000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000u64; }; }
+        have (if v < 10000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000000000u64; }; }
         rewrite((if v < 10000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 100000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 100000000000u64; }; }
+        have (if v < 100000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 100000000000u64; }; }
         rewrite((if v < 100000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 1000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 1000000000000u64; }; }
+        have (if v < 1000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 1000000000000u64; }; }
         rewrite((if v < 1000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 10000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000000u64; }; }
+        have (if v < 10000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000000000000u64; }; }
         rewrite((if v < 10000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 100000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 100000000000000u64; }; }
+        have (if v < 100000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 100000000000000u64; }; }
         rewrite((if v < 100000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 1000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 1000000000000000u64; }; }
+        have (if v < 1000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 1000000000000000u64; }; }
         rewrite((if v < 1000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 10000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000000000u64; }; }
+        have (if v < 10000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000000000000000u64; }; }
         rewrite((if v < 10000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 100000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 100000000000000000u64; }; }
+        have (if v < 100000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 100000000000000000u64; }; }
         rewrite((if v < 100000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 1000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 1000000000000000000u64; }; }
+        have (if v < 1000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 1000000000000000000u64; }; }
         rewrite((if v < 1000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000000000000u64; }; }
+        have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { close() using { v < 10000000000000000000u64; }; }
         rewrite((if v < 10000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
         known();
     }
@@ -5876,7 +5876,7 @@ theorem decimal_digit_of_length(v: uint64, n: uint64, k: uint64) {
     ensures stdio::decimal_digit(v, k) == (48u64 + v / stdio::pow10(n - 1u64 - k) % 10u64) as uint8 by {
         unfold(stdio::decimal_digit(v, k));
         rewrite(stdio::decimal_length(v), n);
-        solve() using { k < n; };
+        close() using { k < n; };
     }
 }
 ```
@@ -5899,7 +5899,7 @@ theorem decimal_digit_lower_bound(v: uint64, k: uint64) {
             solve();
         } else {
             unfold(stdio::decimal_digit(v, k));
-            solve() using { not (k < stdio::decimal_length(v)); };
+            close() using { not (k < stdio::decimal_length(v)); };
         }
     }
 }
@@ -5919,13 +5919,13 @@ theorem padded_digit_lower_bound(v: uint64, width: uint64, k: uint64) {
         unfold(stdio::padded_digit(v, width, 48u8, k));
         if to_integer(k) < to_integer(stdio::padded_length(v, width) - stdio::decimal_length(v)) {
             have (if to_integer(k) < to_integer(stdio::padded_length(v, width) - stdio::decimal_length(v)) { 48u8 } else { stdio::decimal_digit(v, k - (stdio::padded_length(v, width) - stdio::decimal_length(v))) }) == 48u8 by {
-                solve() using { to_integer(k) < to_integer(stdio::padded_length(v, width) - stdio::decimal_length(v)); };
+                close() using { to_integer(k) < to_integer(stdio::padded_length(v, width) - stdio::decimal_length(v)); };
             }
             rewrite((if to_integer(k) < to_integer(stdio::padded_length(v, width) - stdio::decimal_length(v)) { 48u8 } else { stdio::decimal_digit(v, k - (stdio::padded_length(v, width) - stdio::decimal_length(v))) }), 48u8);
             known();
         } else {
             apply(stdio::decimal_digit_lower_bound(v, k - (stdio::padded_length(v, width) - stdio::decimal_length(v))));
-            solve() using { not (to_integer(k) < to_integer(stdio::padded_length(v, width) - stdio::decimal_length(v))); 48u8 <= stdio::decimal_digit(v, k - (stdio::padded_length(v, width) - stdio::decimal_length(v))); };
+            close() using { not (to_integer(k) < to_integer(stdio::padded_length(v, width) - stdio::decimal_length(v))); 48u8 <= stdio::decimal_digit(v, k - (stdio::padded_length(v, width) - stdio::decimal_length(v))); };
         }
     }
 }

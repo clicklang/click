@@ -36,7 +36,7 @@ int32 ack(int32 m, int32 n) {
         false => {}
     }
     have m > 0 by {
-        solve() using {
+        close() using {
             m >= 0;
             m != 0;
         };
@@ -52,7 +52,7 @@ int32 ack(int32 m, int32 n) {
         false => {}
     }
     have n > 0 by {
-        solve() using {
+        close() using {
             n >= 0;
             n != 0;
         };

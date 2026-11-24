@@ -45,7 +45,7 @@ void mark(uint64 *values, int32 *visited, int32 n, int32 cur, uint64 stamp) {
             apply(click::separation::separate_restrict(memory(visited[cur]), memory(values[0..n]), memory(visited[cur]), memory(values[k])));
         }
         have separate(statement(0).footprint, memory(values[k])) by {
-            solve() using { separate(memory(visited[cur]), memory(values[k])); };
+            close() using { separate(memory(visited[cur]), memory(values[k])); };
         }
         have values[k] == at(before, values[k]) by {
             preserve(memory(values[k]), statement(0));

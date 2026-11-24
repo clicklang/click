@@ -39,7 +39,7 @@ verifying "mutex_held_parity.c";
 theorem bounded_one(r: int32) {
     requires 1 <= r;
     requires r <= 1;
-    ensures r == 1 by { solve() using { 1 <= r; r <= 1; }; }
+    ensures r == 1 by { close() using { 1 <= r; r <= 1; }; }
 }
 
 int32 alternate_mutex(struct parity_mutex *object, int32 n) {
@@ -69,7 +69,7 @@ int32 alternate_mutex(struct parity_mutex *object, int32 n) {
             invariant 0 <= i and i <= n;
             initialize by solve();
             maintain by {
-                have i < 2147483647 by { solve() using { i < n; }; }
+                have i < 2147483647 by { close() using { i < n; }; }
                 if i % 2 == 0 {
                     have (i + 1) % 2 == 1 by apply(even_successor(i));
                     step();
@@ -77,9 +77,9 @@ int32 alternate_mutex(struct parity_mutex *object, int32 n) {
                     step();
                 } else {
                     have (i + 1) % 2 == 0 by apply(odd_successor(i));
-                    have 0 <= i % 2 by { solve() using { 0 <= i; }; }
+                    have 0 <= i % 2 by { close() using { 0 <= i; }; }
                     have 1 <= i % 2 by apply(nonzero_nonnegative(i % 2));
-                    have i % 2 <= 1 by { solve() using { 0 <= i; }; }
+                    have i % 2 <= 1 by { close() using { 0 <= i; }; }
                     have i % 2 == 1 by apply(bounded_one(i % 2));
                     step();
                     step();
@@ -89,9 +89,9 @@ int32 alternate_mutex(struct parity_mutex *object, int32 n) {
         }
         if i % 2 == 0 {
         } else {
-            have 0 <= i % 2 by { solve() using { 0 <= i; }; }
+            have 0 <= i % 2 by { close() using { 0 <= i; }; }
             have 1 <= i % 2 by apply(nonzero_nonnegative(i % 2));
-            have i % 2 <= 1 by { solve() using { 0 <= i; }; }
+            have i % 2 <= 1 by { close() using { 0 <= i; }; }
             have i % 2 == 1 by apply(bounded_one(i % 2));
         }
     }

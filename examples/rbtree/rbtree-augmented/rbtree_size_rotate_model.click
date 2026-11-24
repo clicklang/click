@@ -148,7 +148,7 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                             rewrite(promoted_left, SizedTree::Node(identity, parent, color, value, left_model, right_model));
                             unfold(sized_shape(SizedTree::Node(identity, parent, color, value, left_model, right_model)));
                             unfold(rb_subtree_size(RbTree::Node(identity, parent, color, sized_shape(left_model), sized_shape(right_model))));
-                            solve() using {
+                            close() using {
                                 to_integer(value) == 2 + to_integer(sized_value(left_model)) + to_integer(sized_value(right_model)) + to_integer(sized_value(promoted_right));
                                 to_integer(sized_value(left_model)) == rb_subtree_size(sized_shape(left_model));
                                 to_integer(sized_value(right_model)) == rb_subtree_size(sized_shape(right_model));
@@ -229,7 +229,7 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                             unfold(sized_value(SizedTree::Node(identity, parent, color, 1, left_model, right_model)));
                                             unfold(sized_shape(SizedTree::Node(identity, parent, color, 1, left_model, right_model)));
                                             unfold(rb_subtree_size(RbTree::Node(identity, parent, color, sized_shape(left_model), sized_shape(right_model))));
-                                            solve() using {
+                                            close() using {
                                                 to_integer(1) == 1 + to_integer(sized_value(left_model)) + to_integer(sized_value(right_model));
                                                 to_integer(sized_value(left_model)) == rb_subtree_size(sized_shape(left_model));
                                                 to_integer(sized_value(right_model)) == rb_subtree_size(sized_shape(right_model));
@@ -256,7 +256,7 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                         }
                                         have to_integer(value) == 1 + to_integer(sized_value(SizedTree::Node(identity, parent, color, 1, left_model, right_model))) + to_integer(sized_value(promoted_right)) by {
                                             unfold(sized_value(SizedTree::Node(identity, parent, color, 1, left_model, right_model)));
-                                            solve() using {
+                                            close() using {
                                                 to_integer(value) == 2 + to_integer(sized_value(left_model)) + to_integer(sized_value(right_model)) + to_integer(sized_value(promoted_right));
                                                 to_integer(1) == 1 + to_integer(sized_value(left_model)) + to_integer(sized_value(right_model));
                                             };
@@ -341,7 +341,7 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                             unfold(sized_value(SizedTree::Node(identity, parent, color, 1 + rv, left_model, right_model)));
                                             unfold(sized_shape(SizedTree::Node(identity, parent, color, 1 + rv, left_model, right_model)));
                                             unfold(rb_subtree_size(RbTree::Node(identity, parent, color, sized_shape(left_model), sized_shape(right_model))));
-                                            solve() using {
+                                            close() using {
                                                 to_integer(1 + rv) == 1 + to_integer(sized_value(left_model)) + to_integer(sized_value(right_model));
                                                 to_integer(sized_value(left_model)) == rb_subtree_size(sized_shape(left_model));
                                                 to_integer(sized_value(right_model)) == rb_subtree_size(sized_shape(right_model));
@@ -368,7 +368,7 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                         }
                                         have to_integer(value) == 1 + to_integer(sized_value(SizedTree::Node(identity, parent, color, 1 + rv, left_model, right_model))) + to_integer(sized_value(promoted_right)) by {
                                             unfold(sized_value(SizedTree::Node(identity, parent, color, 1 + rv, left_model, right_model)));
-                                            solve() using {
+                                            close() using {
                                                 to_integer(value) == 2 + to_integer(sized_value(left_model)) + to_integer(sized_value(right_model)) + to_integer(sized_value(promoted_right));
                                                 to_integer(1 + rv) == 1 + to_integer(sized_value(left_model)) + to_integer(sized_value(right_model));
                                             };
@@ -465,7 +465,7 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                             unfold(sized_value(SizedTree::Node(identity, parent, color, 1 + lv, left_model, right_model)));
                                             unfold(sized_shape(SizedTree::Node(identity, parent, color, 1 + lv, left_model, right_model)));
                                             unfold(rb_subtree_size(RbTree::Node(identity, parent, color, sized_shape(left_model), sized_shape(right_model))));
-                                            solve() using {
+                                            close() using {
                                                 to_integer(1 + lv) == 1 + to_integer(sized_value(left_model)) + to_integer(sized_value(right_model));
                                                 to_integer(sized_value(left_model)) == rb_subtree_size(sized_shape(left_model));
                                                 to_integer(sized_value(right_model)) == rb_subtree_size(sized_shape(right_model));
@@ -492,7 +492,7 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                         }
                                         have to_integer(value) == 1 + to_integer(sized_value(SizedTree::Node(identity, parent, color, 1 + lv, left_model, right_model))) + to_integer(sized_value(promoted_right)) by {
                                             unfold(sized_value(SizedTree::Node(identity, parent, color, 1 + lv, left_model, right_model)));
-                                            solve() using {
+                                            close() using {
                                                 to_integer(value) == 2 + to_integer(sized_value(left_model)) + to_integer(sized_value(right_model)) + to_integer(sized_value(promoted_right));
                                                 to_integer(1 + lv) == 1 + to_integer(sized_value(left_model)) + to_integer(sized_value(right_model));
                                             };
@@ -588,7 +588,7 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                             unfold(sized_value(SizedTree::Node(identity, parent, color, 1 + lv + rv, left_model, right_model)));
                                             unfold(sized_shape(SizedTree::Node(identity, parent, color, 1 + lv + rv, left_model, right_model)));
                                             unfold(rb_subtree_size(RbTree::Node(identity, parent, color, sized_shape(left_model), sized_shape(right_model))));
-                                            solve() using {
+                                            close() using {
                                                 to_integer(1 + lv + rv) == 1 + to_integer(sized_value(left_model)) + to_integer(sized_value(right_model));
                                                 to_integer(sized_value(left_model)) == rb_subtree_size(sized_shape(left_model));
                                                 to_integer(sized_value(right_model)) == rb_subtree_size(sized_shape(right_model));
@@ -615,7 +615,7 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                         }
                                         have to_integer(value) == 1 + to_integer(sized_value(SizedTree::Node(identity, parent, color, 1 + lv + rv, left_model, right_model))) + to_integer(sized_value(promoted_right)) by {
                                             unfold(sized_value(SizedTree::Node(identity, parent, color, 1 + lv + rv, left_model, right_model)));
-                                            solve() using {
+                                            close() using {
                                                 to_integer(value) == 2 + to_integer(sized_value(left_model)) + to_integer(sized_value(right_model)) + to_integer(sized_value(promoted_right));
                                                 to_integer(1 + lv + rv) == 1 + to_integer(sized_value(left_model)) + to_integer(sized_value(right_model));
                                             };
@@ -772,7 +772,7 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                             rewrite(promoted_right, SizedTree::Node(identity, parent, color, value, left_model, right_model));
                             unfold(sized_shape(SizedTree::Node(identity, parent, color, value, left_model, right_model)));
                             unfold(rb_subtree_size(RbTree::Node(identity, parent, color, sized_shape(left_model), sized_shape(right_model))));
-                            solve() using {
+                            close() using {
                                 to_integer(value) == 2 + to_integer(sized_value(left_model)) + to_integer(sized_value(right_model)) + to_integer(sized_value(promoted_left));
                                 to_integer(sized_value(left_model)) == rb_subtree_size(sized_shape(left_model));
                                 to_integer(sized_value(right_model)) == rb_subtree_size(sized_shape(right_model));
@@ -853,7 +853,7 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                             unfold(sized_value(SizedTree::Node(identity, parent, color, 1, left_model, right_model)));
                                             unfold(sized_shape(SizedTree::Node(identity, parent, color, 1, left_model, right_model)));
                                             unfold(rb_subtree_size(RbTree::Node(identity, parent, color, sized_shape(left_model), sized_shape(right_model))));
-                                            solve() using {
+                                            close() using {
                                                 to_integer(1) == 1 + to_integer(sized_value(left_model)) + to_integer(sized_value(right_model));
                                                 to_integer(sized_value(left_model)) == rb_subtree_size(sized_shape(left_model));
                                                 to_integer(sized_value(right_model)) == rb_subtree_size(sized_shape(right_model));
@@ -880,7 +880,7 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                         }
                                         have to_integer(value) == 1 + to_integer(sized_value(promoted_left)) + to_integer(sized_value(SizedTree::Node(identity, parent, color, 1, left_model, right_model))) by {
                                             unfold(sized_value(SizedTree::Node(identity, parent, color, 1, left_model, right_model)));
-                                            solve() using {
+                                            close() using {
                                                 to_integer(value) == 2 + to_integer(sized_value(left_model)) + to_integer(sized_value(right_model)) + to_integer(sized_value(promoted_left));
                                                 to_integer(1) == 1 + to_integer(sized_value(left_model)) + to_integer(sized_value(right_model));
                                             };
@@ -965,7 +965,7 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                             unfold(sized_value(SizedTree::Node(identity, parent, color, 1 + rv, left_model, right_model)));
                                             unfold(sized_shape(SizedTree::Node(identity, parent, color, 1 + rv, left_model, right_model)));
                                             unfold(rb_subtree_size(RbTree::Node(identity, parent, color, sized_shape(left_model), sized_shape(right_model))));
-                                            solve() using {
+                                            close() using {
                                                 to_integer(1 + rv) == 1 + to_integer(sized_value(left_model)) + to_integer(sized_value(right_model));
                                                 to_integer(sized_value(left_model)) == rb_subtree_size(sized_shape(left_model));
                                                 to_integer(sized_value(right_model)) == rb_subtree_size(sized_shape(right_model));
@@ -992,7 +992,7 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                         }
                                         have to_integer(value) == 1 + to_integer(sized_value(promoted_left)) + to_integer(sized_value(SizedTree::Node(identity, parent, color, 1 + rv, left_model, right_model))) by {
                                             unfold(sized_value(SizedTree::Node(identity, parent, color, 1 + rv, left_model, right_model)));
-                                            solve() using {
+                                            close() using {
                                                 to_integer(value) == 2 + to_integer(sized_value(left_model)) + to_integer(sized_value(right_model)) + to_integer(sized_value(promoted_left));
                                                 to_integer(1 + rv) == 1 + to_integer(sized_value(left_model)) + to_integer(sized_value(right_model));
                                             };
@@ -1089,7 +1089,7 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                             unfold(sized_value(SizedTree::Node(identity, parent, color, 1 + lv, left_model, right_model)));
                                             unfold(sized_shape(SizedTree::Node(identity, parent, color, 1 + lv, left_model, right_model)));
                                             unfold(rb_subtree_size(RbTree::Node(identity, parent, color, sized_shape(left_model), sized_shape(right_model))));
-                                            solve() using {
+                                            close() using {
                                                 to_integer(1 + lv) == 1 + to_integer(sized_value(left_model)) + to_integer(sized_value(right_model));
                                                 to_integer(sized_value(left_model)) == rb_subtree_size(sized_shape(left_model));
                                                 to_integer(sized_value(right_model)) == rb_subtree_size(sized_shape(right_model));
@@ -1116,7 +1116,7 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                         }
                                         have to_integer(value) == 1 + to_integer(sized_value(promoted_left)) + to_integer(sized_value(SizedTree::Node(identity, parent, color, 1 + lv, left_model, right_model))) by {
                                             unfold(sized_value(SizedTree::Node(identity, parent, color, 1 + lv, left_model, right_model)));
-                                            solve() using {
+                                            close() using {
                                                 to_integer(value) == 2 + to_integer(sized_value(left_model)) + to_integer(sized_value(right_model)) + to_integer(sized_value(promoted_left));
                                                 to_integer(1 + lv) == 1 + to_integer(sized_value(left_model)) + to_integer(sized_value(right_model));
                                             };
@@ -1212,7 +1212,7 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                             unfold(sized_value(SizedTree::Node(identity, parent, color, 1 + lv + rv, left_model, right_model)));
                                             unfold(sized_shape(SizedTree::Node(identity, parent, color, 1 + lv + rv, left_model, right_model)));
                                             unfold(rb_subtree_size(RbTree::Node(identity, parent, color, sized_shape(left_model), sized_shape(right_model))));
-                                            solve() using {
+                                            close() using {
                                                 to_integer(1 + lv + rv) == 1 + to_integer(sized_value(left_model)) + to_integer(sized_value(right_model));
                                                 to_integer(sized_value(left_model)) == rb_subtree_size(sized_shape(left_model));
                                                 to_integer(sized_value(right_model)) == rb_subtree_size(sized_shape(right_model));
@@ -1239,7 +1239,7 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                         }
                                         have to_integer(value) == 1 + to_integer(sized_value(promoted_left)) + to_integer(sized_value(SizedTree::Node(identity, parent, color, 1 + lv + rv, left_model, right_model))) by {
                                             unfold(sized_value(SizedTree::Node(identity, parent, color, 1 + lv + rv, left_model, right_model)));
-                                            solve() using {
+                                            close() using {
                                                 to_integer(value) == 2 + to_integer(sized_value(left_model)) + to_integer(sized_value(right_model)) + to_integer(sized_value(promoted_left));
                                                 to_integer(1 + lv + rv) == 1 + to_integer(sized_value(left_model)) + to_integer(sized_value(right_model));
                                             };

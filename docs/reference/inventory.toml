@@ -1577,7 +1577,7 @@ path = "reference/tactics/index.md#proposition-reasoning"
 id = "tactic-form.solve"
 path = "reference/tactics/index.md#proposition-reasoning"
 [[item]]
-id = "tactic-form.solve-using"
+id = "tactic-form.close-using"
 path = "reference/tactics/index.md#proposition-reasoning"
 
 [[item]]

@@ -21,7 +21,7 @@ theorem successor_nonnegative(i: int32, n: int32) {
     requires i <= n;
     requires defined(i + 1);
     ensures 0 <= to_integer(i + 1) by {
-        solve() using { 0 <= i; i <= n; };
+        close() using { 0 <= i; i <= n; };
     }
 }
 

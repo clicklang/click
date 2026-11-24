@@ -183,7 +183,7 @@ def order_chain(n):
     for i in range(1, n + 1):
         if i > 1:
             stores_proof.append(
-                f"    have x0 < x{i} by solve() using {{ x0 < x{i-1}; x{i-1} < x{i}; }};"
+                f"    have x0 < x{i} by close() using {{ x0 < x{i-1}; x{i-1} < x{i}; }};"
             )
         stores_proof.append("    step();")
     steps = "\n".join(stores_proof)

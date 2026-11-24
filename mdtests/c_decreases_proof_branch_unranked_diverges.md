@@ -27,7 +27,7 @@ int32 f(int32 n) diverges {
         solve();
     } else {
         have n > 0;
-        have n >= 0 by { solve() using { n > 0; }; }
+        have n >= 0 by { close() using { n > 0; }; }
         loop {
             invariant n >= 0;
         }

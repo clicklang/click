@@ -52,7 +52,7 @@ uint64 label_copy(char* dst, const char* src) {
                 apply(separation::separate_elements(dst as (uint8 *), n, k));
             }
             have separate(statement(2).footprint, memory((dst as (uint8 *))[k])) by {
-                solve() using { separate(memory((dst as (uint8 *))[n]), memory((dst as (uint8 *))[k])); };
+                close() using { separate(memory((dst as (uint8 *))[n]), memory((dst as (uint8 *))[k])); };
             }
             have (dst as (uint8 *))[k] == at(copied, (dst as (uint8 *))[k]) by {
                 preserve(memory((dst as (uint8 *))[k]), statement(2));
@@ -60,7 +60,7 @@ uint64 label_copy(char* dst, const char* src) {
             instantiate(at(copied, (0u64..n).all(|j| {
                 (dst as (uint8 *))[0u64 + j] == old((src as (uint8 *))[0u64 + j])
             })), k);
-            have k < len + 1u64 by solve() using { k < n; n <= len; };
+            have k < len + 1u64 by close() using { k < n; n <= len; };
             apply(separation::contains_element(src as (uint8 *), 0u64, len + 1u64, k));
             apply(separation::contains_subrange(dst as (uint8 *), 0u64, 32u64, 0u64, n));
             apply(separation::contains_refl(memory(src[0u64..len + 1u64])));
@@ -73,13 +73,13 @@ uint64 label_copy(char* dst, const char* src) {
             ));
             have separate(memory(n), memory((src as (uint8 *))[k])) by { known(); }
             have separate(region(0).footprint, memory((src as (uint8 *))[k])) by {
-                solve() using { separate(memory(n), memory((src as (uint8 *))[k])); };
+                close() using { separate(memory(n), memory((src as (uint8 *))[k])); };
             }
             have at(region(0).exit, exact((src as (uint8 *))[k])) == old(exact((src as (uint8 *))[k])) by {
                 preserve(memory((src as (uint8 *))[k]), region(0));
             }
             have separate(region(3).footprint, memory((src as (uint8 *))[k])) by {
-                solve() using { separate(memory(n), memory((src as (uint8 *))[k])); };
+                close() using { separate(memory(n), memory((src as (uint8 *))[k])); };
             }
             have at(region(3).exit, exact((src as (uint8 *))[k])) == at(region(3).entry, exact((src as (uint8 *))[k])) by {
                 preserve(memory((src as (uint8 *))[k]), region(3));
@@ -94,7 +94,7 @@ uint64 label_copy(char* dst, const char* src) {
                 memory((dst as (uint8 *))[n]), memory((src as (uint8 *))[k])
             ));
             have separate(statement(2).footprint, memory((src as (uint8 *))[k])) by {
-                solve() using { separate(memory((dst as (uint8 *))[n]), memory((src as (uint8 *))[k])); };
+                close() using { separate(memory((dst as (uint8 *))[n]), memory((src as (uint8 *))[k])); };
             }
             have (src as (uint8 *))[k] == at(copied, exact((src as (uint8 *))[k])) by {
                 preserve(memory((src as (uint8 *))[k]), statement(2));

@@ -10,7 +10,7 @@ theorem else_arm(b: uint8, x: uint64, y: uint64) {
     requires 48u8 <= b;
     requires not (x < y);
     ensures 48u8 <= (if x < y { 48u8 } else { b }) by {
-        solve() using { not (x < y); 48u8 <= b; };
+        close() using { not (x < y); 48u8 <= b; };
     }
 }
 
@@ -18,13 +18,13 @@ theorem strict(b: uint8, x: uint8, y: uint8) {
     requires 48u8 < b;
     requires not (x < y);
     ensures 48u8 < (if x < y { 49u8 } else { b }) by {
-        solve() using { not (x < y); 48u8 < b; };
+        close() using { not (x < y); 48u8 < b; };
     }
 }
 
 theorem weaker(b: uint8) {
     requires 50u8 <= b;
-    ensures 48u8 <= b by { solve() using { 50u8 <= b; }; }
+    ensures 48u8 <= b by { close() using { 50u8 <= b; }; }
 }
 ```
 

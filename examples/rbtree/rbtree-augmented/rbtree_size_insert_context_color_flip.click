@@ -406,7 +406,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                             have x->__rb_parent_color == address(parent) by known();
                             have aligned(parent, 8) by known();
                             have (address(parent) & 7u64) == 0u64 by {
-                                solve() using { aligned(parent, 8); };
+                                close() using { aligned(parent, 8); };
                             }
                             have (7u64 & 1u64) == 1u64 by normalize();
                             apply(click::integer::uint64_mask_subset(address(parent), 7u64, 1u64));
@@ -460,7 +460,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                                 rewrite(at(iteration,state.context), SizedContext::Left(y, x, Color::Red, old(state.parent_value), old(state.other), SizedContext::Left(x, sized_context_parent(at(iteration,state.outer),0), Color::Black, old(state.grand_value), old(state.uncle), at(iteration,state.outer))));
                                 unfold(sized_context_depth(SizedContext::Left(y, x, Color::Red, old(state.parent_value), old(state.other), SizedContext::Left(x, sized_context_parent(at(iteration,state.outer),0), Color::Black, old(state.grand_value), old(state.uncle), at(iteration,state.outer)))));
                                 unfold(sized_context_depth(SizedContext::Left(x, sized_context_parent(at(iteration,state.outer),0), Color::Black, old(state.grand_value), old(state.uncle), at(iteration,state.outer))));
-                                solve() using {};
+                                close() using {};
                             }
                             unfold(sized_context_flip_focus(SizedContextFlipPhase::After(x, y, z),old(node)));
                             unfold(sized_context_flip_parent(SizedContextFlipPhase::After(x, y, z),state.outer));

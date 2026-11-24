@@ -1381,7 +1381,7 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             &format!("contradiction({});", source_click_proposition(fact)),
         ),
         ProofTactic::SolveUsing(solve) => {
-            write_using_premises(output, "solve()", &solve.premises, indent)
+            write_using_premises(output, "close()", &solve.premises, indent)
         }
 
         ProofTactic::CloseInvariants => line(output, &prefix, "close_invariants();"),

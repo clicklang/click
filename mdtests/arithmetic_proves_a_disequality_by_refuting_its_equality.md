@@ -1,7 +1,7 @@
 # arithmetic proves a disequality by refuting its equality
 
 `a != b` holds when the premises refute `a == b`: `k < j` gives `k != j`,
-because `k == j` with `k < j` is a linear contradiction. `solve() using`
+because `k == j` with `k < j` is a linear contradiction. `close() using`
 proves it from the listed premises, and the omitted proof from the connected
 facts. Expansion splits on `k == j` and proves `false` in the equal arm.
 This holds for machine and `Integer` operands.
@@ -19,12 +19,12 @@ theorem integer_lt_neq(k: Integer, j: Integer) {
 
 theorem integer_lt_neq_arithmetic(k: Integer, j: Integer) {
     requires k < j;
-    ensures k != j by { solve() using { k < j; }; }
+    ensures k != j by { close() using { k < j; }; }
 }
 
 theorem native_lt_neq_arithmetic(k: int32, j: int32) {
     requires k < j;
-    ensures k != j by { solve() using { k < j; }; }
+    ensures k != j by { close() using { k < j; }; }
 }
 
 theorem observed_successor_neq(k: uint64, j: uint64) {

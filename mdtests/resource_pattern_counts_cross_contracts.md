@@ -91,7 +91,7 @@ void pool_return(struct pool* pool, int32 object) {
     unfold(at(function.entry, valid_pool(pool)));
     have 1 <= pool->checked_out by {
         rewrite(pool->checked_out, count(pool_object(pool, _)));
-        solve() using { count(pool_object(pool, _)) >= 1; };
+        close() using { count(pool_object(pool, _)) >= 1; };
     }
     unfold(pool_object(pool, object));
 }

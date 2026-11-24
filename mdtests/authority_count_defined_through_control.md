@@ -20,7 +20,7 @@ void inspect(struct pool* pool) {
 } by {
     with(control(pool)) {
         have pool->checked_out >= 0 by {
-            solve() using { 0 <= pool->checked_out; };
+            close() using { 0 <= pool->checked_out; };
         }
         have defined(count(item(pool, _)) + 1) by {
             rewrite(count(item(pool, _)), pool->checked_out);

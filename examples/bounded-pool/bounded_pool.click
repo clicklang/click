@@ -290,13 +290,13 @@ void pool_transfer(struct pool* source, struct pool* destination, struct object*
             mark before_source_write;
             step();
             have separate(statement(0).footprint, memory(destination->checked_out)) by {
-                solve() using { separate(memory(source->checked_out), memory(destination->checked_out)); };
+                close() using { separate(memory(source->checked_out), memory(destination->checked_out)); };
             }
             have destination->checked_out == at(before_source_write, destination->checked_out) by {
                 preserve(memory(destination->checked_out), statement(0));
             }
             have separate(statement(0).footprint, memory(destination->capacity)) by {
-                solve() using { separate(memory(source->checked_out), memory(destination->capacity)); };
+                close() using { separate(memory(source->checked_out), memory(destination->capacity)); };
             }
             have destination->capacity == at(before_source_write, destination->capacity) by {
                 preserve(memory(destination->capacity), statement(0));
@@ -304,7 +304,7 @@ void pool_transfer(struct pool* source, struct pool* destination, struct object*
             have separate(memory(destination->checked_out), memory(destination->capacity));
             step();
             have separate(statement(1).footprint, memory(destination->capacity)) by {
-                solve() using { separate(memory(destination->checked_out), memory(destination->capacity)); };
+                close() using { separate(memory(destination->checked_out), memory(destination->capacity)); };
             }
             have destination->capacity == at(statement(1).entry, destination->capacity) by {
                 preserve(memory(destination->capacity), statement(1));

@@ -40,14 +40,14 @@ int32 phase_count(int32 n) {
                 have 0 <= to_integer(j - 1);
                 step();
                 step();
-                have j >= 0 by { solve() using { 0 <= j; }; }
+                have j >= 0 by { close() using { 0 <= j; }; }
                 solve();
             } else {
                 have 0 <= to_integer(i - 1);
                 step();
                 step();
                 step();
-                have i >= 0 by { solve() using { 0 <= i; }; }
+                have i >= 0 by { close() using { 0 <= i; }; }
                 solve();
             }
         }

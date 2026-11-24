@@ -14,8 +14,8 @@ theorem array_fold_induction_bounds(lo: int32, hi: int32) {
             0 <= to_integer(hi - 1 - lo) and
             to_integer(hi - 1 - lo) <= 1073741823 and
             to_integer(hi - 1) < 2147483647 by {
-        have 1 <= hi by { solve() using { 0 <= lo; lo < hi; }; }
-        have lo <= hi by { solve() using { lo < hi; }; }
+        have 1 <= hi by { close() using { 0 <= lo; lo < hi; }; }
+        have lo <= hi by { close() using { lo < hi; }; }
         have defined(hi - 1) by {
             apply(integer::int32_nonnegative_subtract_within_value_is_defined(hi, 1));
         }
@@ -30,14 +30,14 @@ theorem array_fold_induction_bounds(lo: int32, hi: int32) {
         }
         have to_integer(lo) <= to_integer(hi - 1) by {
             rewrite(to_integer(hi - 1), to_integer(hi) - 1);
-            solve() using { lo < hi; };
+            close() using { lo < hi; };
         }
         have -2147483648 <= to_integer(hi - 1) - to_integer(lo) by {
-            solve() using { defined(hi - 1); to_integer(lo) <= to_integer(hi - 1); };
+            close() using { defined(hi - 1); to_integer(lo) <= to_integer(hi - 1); };
         }
         have to_integer(hi - 1) - to_integer(lo) <= 2147483647 by {
             rewrite(to_integer(hi - 1), to_integer(hi) - 1);
-            solve() using { 0 <= lo; hi <= 1073741823; };
+            close() using { 0 <= lo; hi <= 1073741823; };
         }
         have defined(hi - 1 - lo) by { known(); }
         have to_integer(hi - 1 - lo) == to_integer(hi - 1) - to_integer(lo) by {
@@ -45,7 +45,7 @@ theorem array_fold_induction_bounds(lo: int32, hi: int32) {
         }
         have 0 <= to_integer(hi - 1) by {
             rewrite(to_integer(hi - 1), to_integer(hi) - 1);
-            solve() using { 1 <= hi; };
+            close() using { 1 <= hi; };
         }
         have to_integer(hi - 1) < to_integer(hi) by {
             rewrite(to_integer(hi - 1), to_integer(hi) - 1);
@@ -53,26 +53,26 @@ theorem array_fold_induction_bounds(lo: int32, hi: int32) {
         }
         have 0 <= to_integer(hi - lo) by {
             rewrite(to_integer(hi - lo), to_integer(hi) - to_integer(lo));
-            solve() using { lo <= hi; };
+            close() using { lo <= hi; };
         }
         have to_integer(hi - 1) <= 1073741823 by {
             rewrite(to_integer(hi - 1), to_integer(hi) - 1);
-            solve() using { hi <= 1073741823; };
+            close() using { hi <= 1073741823; };
         }
         have to_integer(hi - lo) <= 1073741823 by {
             rewrite(to_integer(hi - lo), to_integer(hi) - to_integer(lo));
-            solve() using { 0 <= lo; hi <= 1073741823; };
+            close() using { 0 <= lo; hi <= 1073741823; };
         }
         have 0 <= to_integer(hi - 1 - lo) by {
             rewrite(to_integer(hi - 1 - lo), to_integer(hi - 1) - to_integer(lo));
-            solve() using { defined(hi - 1); to_integer(lo) <= to_integer(hi - 1); };
+            close() using { defined(hi - 1); to_integer(lo) <= to_integer(hi - 1); };
         }
         have to_integer(hi - 1 - lo) <= 1073741823 by {
             rewrite(to_integer(hi - 1 - lo), to_integer(hi - 1) - to_integer(lo));
-            solve() using { 0 <= lo; to_integer(hi - 1) <= 1073741823; };
+            close() using { 0 <= lo; to_integer(hi - 1) <= 1073741823; };
         }
         have to_integer(hi - 1) < 2147483647 by {
-            solve() using { to_integer(hi - 1) <= 1073741823; };
+            close() using { to_integer(hi - 1) <= 1073741823; };
         }
         known();
     }

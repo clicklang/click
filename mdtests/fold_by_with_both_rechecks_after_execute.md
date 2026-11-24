@@ -39,7 +39,7 @@ void bump(struct holder* h) {
             }
             h->count < 200 or p == 0 => {
                 have h->count < 200 by {
-                    solve() using { at(function.entry, h->count < 100); };
+                    close() using { at(function.entry, h->count < 100); };
                 }
                 known();
             }

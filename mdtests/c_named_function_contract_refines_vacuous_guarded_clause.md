@@ -57,7 +57,7 @@ theorem increment_is_guarded_progress() {
                 all {
                     (old(cell[0]) < 0 implies cell[0] == old(cell[0])) => {
                         have not (old(cell[0]) < 0) by {
-                            solve() using { 0 <= old(cell[0]); };
+                            close() using { 0 <= old(cell[0]); };
                         }
                         intro();
                         contradiction(not (old(cell[0]) < 0));

@@ -1,6 +1,6 @@
 # arithmetic checks explicit signed-affine consequences
 
-`solve() using` closes only the current goal. Its `using` block is the complete
+`close() using` closes only the current goal. Its `using` block is the complete
 premise universe for the linear certificate. When inequalities are combined,
 each selected inequality has coefficient one; repeating a fact explicitly
 permits a larger positive coefficient.
@@ -10,7 +10,7 @@ theorem subtract_two_is_nonnegative(n: int32) {
     requires 1 < n;
 
     ensures 0 <= n - 2 by {
-        solve() using {
+        close() using {
             1 < n;
         };
     }
@@ -21,7 +21,7 @@ theorem strict_order_is_transitive(a: int32, b: int32, c: int32) {
     requires b < c;
 
     ensures a < c by {
-        solve() using {
+        close() using {
             a <= b;
             b < c;
         };
@@ -33,7 +33,7 @@ theorem affine_normalization_cancels_x(x: int32) {
     requires x <= 1073741823;
 
     ensures 2 * x < x + (x + 1) by {
-        solve() using {
+        close() using {
             0 <= x;
             x <= 1073741823;
         };
@@ -44,7 +44,7 @@ theorem affine_equalities_normalize_both_sides(n: int32) {
     requires 1 < n;
 
     ensures n - 2 == (n - 1) - 1 by {
-        solve() using {
+        close() using {
             1 < n;
         };
     }

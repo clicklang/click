@@ -86,7 +86,7 @@ void release_run(int32* data, int32* occupied, int32 capacity, int32 start, int3
             mark opened;
             step();
             have start <= i by {
-                solve() using {
+                close() using {
                     start < at(opened, i);
                     0 <= start;
                 };
@@ -115,17 +115,17 @@ void release_run(int32* data, int32* occupied, int32 capacity, int32 start, int3
                     have k < capacity;
                     have i < capacity;
                     have separate(loop(0).statement(0).footprint, memory(occupied[k])) by {
-                        solve() using { };
+                        close() using { };
                     }
                     have at(loop(0).statement(0).exit, occupied[k]) == at(opened, occupied[k]) by {
                         preserve(memory(occupied[k]), loop(0).statement(0));
                     }
-                    have i != k by { solve() using { i < k; }; }
+                    have i != k by { close() using { i < k; }; }
                     have separate(memory(occupied[i]), memory(occupied[k])) by {
                         apply(click::separation::separate_elements(occupied, i, k));
                     }
                     have separate(loop(0).statement(1).footprint, memory(occupied[k])) by {
-                        solve() using { separate(memory(occupied[i]), memory(occupied[k])); };
+                        close() using { separate(memory(occupied[i]), memory(occupied[k])); };
                     }
                     have occupied[k] == at(loop(0).statement(1).entry, occupied[k]) by {
                         preserve(memory(occupied[k]), loop(0).statement(1));
@@ -146,14 +146,14 @@ void release_run(int32* data, int32* occupied, int32 capacity, int32 start, int3
             fold(arena_window(data, occupied, capacity, start, end)[i]);
             let w = fold(arena_window(data, occupied, capacity, start, end), { next: i });
             have 0 <= to_integer(0 - start + at(region(3).entry, i) - 1) by {
-                solve() using {
+                close() using {
                     start < at(region(3).entry, i);
                     0 <= start;
                 };
             }
             have to_integer(0 - start + at(region(3).entry, i) - 1)
                 < to_integer(0 - start + at(region(3).entry, i)) by {
-                solve() using {
+                close() using {
                     start < at(region(3).entry, i);
                     0 <= start;
                 };

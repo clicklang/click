@@ -11,7 +11,7 @@ theorem pointer_association(base: const uint8*, p: uint64, q: uint64) {
     requires to_integer(p) + to_integer(q) <= 18446744073709551615;
     ensures (base + p) + q == base + (p + q) by {
         apply(integer::uint64_add_to_integer(p, q));
-        solve() using { to_integer(p + q) == to_integer(p) + to_integer(q); };
+        close() using { to_integer(p + q) == to_integer(p) + to_integer(q); };
     }
 }
 fn sum(bytes: &[u8]) -> i32 {
@@ -43,7 +43,7 @@ fn sum(bytes: &[u8]) -> i32 {
             if 0u64 < iter.len() {
                 mark iteration;
                 have to_integer(total) <= 255000 by {
-                    solve() using {
+                    close() using {
                         to_integer(total) <= 255 * (to_integer(bytes.len()) - to_integer(iter.len()));
                         iter.len() <= bytes.len();
                         bytes.len() <= 1000u64;
@@ -62,12 +62,12 @@ fn sum(bytes: &[u8]) -> i32 {
                 apply(pointer_association(bytes, bytes.len() - at(iteration, iter.len()), 1u64));
                 have at(iteration, bytes[(bytes.len() - iter.len())]) == byte;
                 have defined(total + byte as i32) by {
-                    solve() using { 0 <= total; to_integer(total) <= 255000; };
+                    close() using { 0 <= total; to_integer(total) <= 255000; };
                 }
                 mark before_total_write;
                 have to_integer(total + byte as i32) == to_integer(total) + to_integer(byte as i32);
                 have 0 <= to_integer(at(before_total_write, total)) + to_integer(byte as i32) by {
-                    solve() using { 0 <= total; };
+                    close() using { 0 <= total; };
                 }
                 step_until(assignment(total, 1).entry); step();
                 step_until(loop.back_edge);
@@ -86,7 +86,7 @@ fn sum(bytes: &[u8]) -> i32 {
                 have iter.len() < at(iteration, iter.len());
                 have to_integer(total) == to_integer(at(before_total_write, total)) + to_integer(byte as i32) by { known(); }
                 have 0 <= total by {
-                    solve() using {
+                    close() using {
                         0 <= to_integer(at(before_total_write, total)) + to_integer(byte as i32);
                         to_integer(total) == to_integer(at(before_total_write, total)) + to_integer(byte as i32);
                     };

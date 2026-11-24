@@ -128,7 +128,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
         0 <= k and k < n and k != cur implies visited[k] == old(visited[k])
     } by {
         intro(); intro();
-        have cur != k by { solve() using { k != cur; }; }
+        have cur != k by { close() using { k != cur; }; }
         have separate(memory(visited[cur]), memory(visited[k])) by {
             apply(click::separation::separate_elements(visited, cur, k));
         }
@@ -182,7 +182,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
     apply(unmarked_point_update(at(before_mark, visited), visited, 0, n, n, cur));
     apply(unmarked_nonnegative(visited, 0, n, n));
     have unmarked(visited, 0, n) < unmarked(at(before_mark, visited), 0, n) by {
-        solve() using {
+        close() using {
             to_integer(unmarked(visited, 0, n)) == to_integer(unmarked(at(before_mark, visited), 0, n) - 1);
         };
     }
@@ -248,7 +248,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
     }
     have 0 <= to and to < n implies at(after_mark, visited[to]) == old(visited[to]) by {
         intro();
-        have to != cur by { solve() using { cur != to; }; }
+        have to != cur by { close() using { cur != to; }; }
         instantiate(forall (k: int32) {
             0 <= k and k < n and k != cur implies visited[k] == old(visited[k])
         }, to);
@@ -275,7 +275,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
     apply(marked_transitive(old(visited), at(after_mark, visited), visited, n));
 
     have unmarked(visited, 0, n) <= old(unmarked(visited, 0, n)) by {
-        solve() using {
+        close() using {
             unmarked(visited, 0, n) <= unmarked(at(after_mark, visited), 0, n);
             to_integer(unmarked(at(after_mark, visited), 0, n))
                 == to_integer(unmarked(at(before_mark, visited), 0, n) - 1);
@@ -302,7 +302,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
             apply(walk_frame(old(left), old(right), at(after_mark, left), at(after_mark, right), n, cur, Path::Left(rest)));
             have exists (path: Path) { walk(old(left), old(right), cur, path) == to } by {
                 witness(Path::Left(rest));
-                solve() using {
+                close() using {
                     walk(old(left), old(right), cur, Path::Left(rest)) == walk(at(after_mark, left), at(after_mark, right), cur, Path::Left(rest));
                     walk(at(after_mark, left), at(after_mark, right), cur, Path::Left(rest)) == to;
                 };
@@ -317,7 +317,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
     have viewable(visited[0..n]) by { observe(visited[0..n]); }
     apply(unmarked_nonnegative(visited, 0, n, n));
     have unmarked(visited, 0, n) < old(unmarked(visited, 0, n)) by {
-        solve() using {
+        close() using {
             unmarked(visited, 0, n) <= unmarked(at(after_mark, visited), 0, n);
             to_integer(unmarked(at(after_mark, visited), 0, n))
                 == to_integer(unmarked(at(before_mark, visited), 0, n) - 1);
@@ -416,7 +416,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
     apply(marked_transitive(old(visited), at(before_right, visited), visited, n));
 
     have unmarked(visited, 0, n) <= old(unmarked(visited, 0, n)) by {
-        solve() using {
+        close() using {
             unmarked(visited, 0, n)
                 <= unmarked(at(before_right, visited), 0, n);
             unmarked(at(before_right, visited), 0, n)
@@ -441,7 +441,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
         apply(walk_frame(old(left), old(right), at(before_right, left), at(before_right, right), n, cur, Path::Right(right_rest)));
         have exists (path: Path) { walk(old(left), old(right), cur, path) == to } by {
             witness(Path::Right(right_rest));
-            solve() using {
+            close() using {
                 walk(old(left), old(right), cur, Path::Right(right_rest)) == walk(at(before_right, left), at(before_right, right), cur, Path::Right(right_rest));
                 walk(at(before_right, left), at(before_right, right), cur, Path::Right(right_rest)) == to;
             };

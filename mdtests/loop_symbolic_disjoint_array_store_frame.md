@@ -78,7 +78,7 @@ void traverse(int32 *next, int32 *visited, int32 n, int32 from, int32 to) diverg
                     apply(click::separation::separate_restrict(memory(visited[0..n]), memory(next[0..n]), memory(visited[cur]), memory(next[k])));
                 }
                 have separate(loop(0).statement(1).footprint, memory(next[k])) by {
-                    solve() using { separate(memory(visited[cur]), memory(next[k])); };
+                    close() using { separate(memory(visited[cur]), memory(next[k])); };
                 }
                 have next[k] == at(iter, next[k]) by {
                     preserve(memory(next[k]), loop(0).statement(1));

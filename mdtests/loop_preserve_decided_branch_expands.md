@@ -68,14 +68,14 @@ int32 count_zero_run(int32* a, int32 n) {
             have 0 <= i and i <= n;
             have c == 0;
             have 0 <= to_integer(0 - at(iteration, i) + n - 1) by {
-                solve() using {
+                close() using {
                     0 <= at(iteration, i);
                     at(iteration, i) < n;
                     0 <= n;
                 };
             }
             have to_integer(0 - at(iteration, i) + n - 1) < to_integer(0 - at(iteration, i) + n) by {
-                solve() using {
+                close() using {
                     0 <= at(iteration, i);
                     at(iteration, i) < n;
                     0 <= n;

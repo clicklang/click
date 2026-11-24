@@ -132,7 +132,7 @@ once `defined(r3.start + 4)` is proved on the field, and the cell written and
 read back is named through `r3.start`.
 
 Where `solve` was slow or did not close, the proof uses explicit steps and
-`solve() using` with listed premises. Already-instantiated facts close with
+`close() using` with listed premises. Already-instantiated facts close with
 `known`; equality chains normalize with their two stated equations.
 `arena_write` transports the unchanged occupancy read across the separated
 data store explicitly. `click expand --claim arena_pipeline.contract`

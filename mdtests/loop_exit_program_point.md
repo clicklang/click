@@ -31,7 +31,7 @@ int32 count_from_to(int32 i, int32 n) {
         invariant 0 <= i and i <= n;
     }
     have at(count.exit, i) == n by {
-        solve() using {
+        close() using {
             at(count.exit, i) <= n;
             not (at(count.exit, i) < n);
         };

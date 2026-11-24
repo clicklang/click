@@ -87,7 +87,7 @@ pub const SEARCH_MISS_MEANING: &str = "a search fills its elided argument; if th
 /// The simple form that writes the argument `form` elides: the `using` form
 /// the reference lists beside a smart form, such as `apply(fact) using
 /// { P; ... }`. `None` for a form that elides
-/// nothing, including `solve()`, whose `using` form is smart too.
+/// nothing, including `close()`, whose `using` form is smart too.
 fn explicit_form<'a>(forms: &'a [(String, TacticClass)], form: &str) -> Option<&'a str> {
     let elided = format!("{} using ", form.trim_matches('`'));
     forms
@@ -288,7 +288,7 @@ pub fn lookup(name: &str) -> Result<String, String> {
     // replacement's.
     let name = match name {
         "assumption" => "known",
-        "arithmetic" => "solve",
+        "arithmetic" => "close",
         "execute_until" => "step_until",
         "auto" | "execute" => "implicit",
         name => name,
@@ -584,14 +584,18 @@ mod tests {
             "apply(a == b implies c == d) using { a == b; };"
         ));
         assert!(!written_tactic_elides_argument("solve();"));
+        assert!(!written_tactic_elides_argument("close();"));
         assert!(!written_tactic_elides_argument(
-            "solve() using { a == b; };"
+            "close() using { a == b; };"
         ));
-        assert!(!written_tactic_elides_argument("solve();"));
         let apply = lookup("apply").unwrap();
         assert!(apply.contains("- `apply(fact)`: simple;"), "{apply}");
-        let solve = lookup("solve").unwrap();
-        assert!(!solve.contains(SEARCH_MISS_MEANING), "{solve}");
+        let close = lookup("close").unwrap();
+        assert!(
+            close.contains("- `close() using { P; ... }`: smart;"),
+            "{close}"
+        );
+        assert!(!close.contains(SEARCH_MISS_MEANING), "{close}");
     }
 
     #[test]

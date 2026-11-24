@@ -78,7 +78,7 @@ fn migrate_claim(
     edits.extend(
         sites
             .iter()
-            .map(|site| (site.offset, if site.using { "solve" } else { "known" })),
+            .map(|site| (site.offset, if site.using { "close" } else { "known" })),
     );
     if let Err(error) = verify(&apply_edits(source, edits)) {
         if sites.iter().all(|site| site.using) {
@@ -94,7 +94,7 @@ fn migrate_claim(
                     continue;
                 }
             }
-            edits.insert(site.offset, "solve");
+            edits.insert(site.offset, if site.using { "close" } else { "solve" });
             verify(&apply_edits(source, edits))
                 .map_err(|error| format!("Replacement proof: {error}"))?;
         }
@@ -209,7 +209,7 @@ theorem broken(x: int32) {
                     "ensures x == x by normalize();",
                     "ensures x == x by known();"
                 )
-                .replace("normalize() using { x == 0; }", "solve() using { x == 0; }")
+                .replace("normalize() using { x == 0; }", "close() using { x == 0; }")
         );
     }
 }

@@ -727,7 +727,7 @@ prints, not a search the kernel
 performs. The back edge closes each of those members with `solve()`, as it
 closes each invariant and as a function's exit closes each `ensures`; where
 `solve()` misses one, prove it, or a fact it needs, with `have ... by { ... }`
-before the back edge, for example by `solve() using { ... }` naming the guard,
+before the back edge, for example by `close() using { ... }` naming the guard,
 precondition, and invariant facts it needs. A missed member's diagnostic
 names the ranking obligations the bundle carries.
 
@@ -1394,7 +1394,7 @@ theorem countdown_is_zero(n: int32) {
         let ih = induct(n);
         if n <= 0 {
             unfold(countdown(n));
-            solve() using { n <= 0; };
+            close() using { n <= 0; };
         } else {
             have 0 <= to_integer(n - 1);
             have to_integer(n - 1) < to_integer(n);
@@ -4677,7 +4677,7 @@ when their pointers are distinct and both aligned past the bound. A mask
 must clear the whole tag: `& ~1` on a word tagged with 3 is refuted rather
 than producing a word that still carries bit 1.
 
-Explicit `solve() using { aligned(p, 8); }` can also certify reading low
+Explicit `close() using { aligned(p, 8); }` can also certify reading low
 tag bits: `((address(p) + word) & 7) == (word & 7)`, including unsigned
 wraparound. The read mask must be contiguous low bits, and the selected
 alignment must cover those bits. This also applies to a bounded tag packed

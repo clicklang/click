@@ -23,7 +23,7 @@ int32 mul_i32(int32 a, int32 b) {
 } by {
     step_until(function.exit);
     have to_integer(a * b) == to_integer(a) * to_integer(b) by {
-        solve() using { -2147483648 <= to_integer(a) * to_integer(b); to_integer(a) * to_integer(b) <= 2147483647; };
+        close() using { -2147483648 <= to_integer(a) * to_integer(b); to_integer(a) * to_integer(b) <= 2147483647; };
     };
     solve();
 }
@@ -105,7 +105,7 @@ uint8 narrow_u8_in_range(uint32 x) {
     have 0 <= to_integer(x);
     have to_integer(x) <= 255;
     have to_integer(result) == to_integer(x) by {
-        solve() using { 0 <= to_integer(x); to_integer(x) <= 255; };
+        close() using { 0 <= to_integer(x); to_integer(x) <= 255; };
     };
 }
 

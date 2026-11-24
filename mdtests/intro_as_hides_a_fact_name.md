@@ -12,7 +12,7 @@ theorem t(x: int32) {
         have five: x == 5;
         let five = intro();
         have five == five by known();
-        solve() using { x == 5; };
+        close() using { x == 5; };
     }
 }
 ```

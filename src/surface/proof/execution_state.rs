@@ -2051,7 +2051,8 @@ pub(super) fn post_execution_tactic_timing(
             },
         ),
         PostExecutionTactic::Transport { .. } => ("transport", "smart"),
-        PostExecutionTactic::Solve | PostExecutionTactic::SolveUsing(_) => ("solve", "smart"),
+        PostExecutionTactic::Solve => ("solve", "smart"),
+        PostExecutionTactic::SolveUsing(_) => ("close", "smart"),
         PostExecutionTactic::ImplicitSolve => ("implicit tail", "smart"),
         // `arithmetic()` searches for its certificate.
         PostExecutionTactic::Leaf(tactic @ ProofTactic::ArithmeticUsing(_)) => {

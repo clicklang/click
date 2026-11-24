@@ -39,16 +39,16 @@ theorem unmarked_nonnegative(v: int32[], lo: int32, n: int32, hi: int32) {
             solve();
         } else {
             have lo < hi;
-            have 0 <= to_integer(hi - 1) by { solve() using { 0 <= lo; lo < hi; }; }
-            have to_integer(hi - 1) < to_integer(hi) by { solve() using { 0 <= lo; lo < hi; }; }
-            have to_integer(hi - 1) <= to_integer(n) by { solve() using { 0 <= lo; lo < hi; hi <= n; }; }
+            have 0 <= to_integer(hi - 1) by { close() using { 0 <= lo; lo < hi; }; }
+            have to_integer(hi - 1) < to_integer(hi) by { close() using { 0 <= lo; lo < hi; }; }
+            have to_integer(hi - 1) <= to_integer(n) by { close() using { 0 <= lo; lo < hi; hi <= n; }; }
             apply(ih(hi - 1));
-            have to_integer(lo) <= to_integer(hi - 1) by { solve() using { 0 <= lo; lo < hi; }; }
-            have to_integer(hi - 1) < to_integer(n) by { solve() using { 0 <= lo; lo < hi; hi <= n; }; }
-            have to_integer(hi - 1) < 2147483647 by { solve() using { 0 <= lo; lo < hi; }; }
+            have to_integer(lo) <= to_integer(hi - 1) by { close() using { 0 <= lo; lo < hi; }; }
+            have to_integer(hi - 1) < to_integer(n) by { close() using { 0 <= lo; lo < hi; hi <= n; }; }
+            have to_integer(hi - 1) < 2147483647 by { close() using { 0 <= lo; lo < hi; }; }
             unfold(unmarked(v, lo, hi));
             have 0 <= (if v[hi - 1] == 0 { 1 } else { 0 });
-            solve() using { 0 <= unmarked(v, lo, hi - 1); to_integer(0) <= to_integer(if v[hi - 1] == 0 { 1 } else { 0 }); };
+            close() using { 0 <= unmarked(v, lo, hi - 1); to_integer(0) <= to_integer(if v[hi - 1] == 0 { 1 } else { 0 }); };
         }
     }
 }

@@ -1710,11 +1710,11 @@ struct rb_node* rb_next(struct rb_node* node) {
             }
             let { left: entry_l, right: entry_r } = unfold(t);
             step();
-            have address(entry_parent) == (node->__rb_parent_color & ~3) by solve() using {
+            have address(entry_parent) == (node->__rb_parent_color & ~3) by close() using {
                 aligned(entry_parent, 8);
                 node->__rb_parent_color == address(entry_parent) + (node->__rb_parent_color & 1);
             };
-            have address(node) == (address(node) & ~3) by solve() using {
+            have address(node) == (address(node) & ~3) by close() using {
                 aligned(node, 8);
             };
             have node->__rb_parent_color != address(node) by {
@@ -2126,7 +2126,7 @@ struct rb_node* rb_next(struct rb_node* node) {
                                     }
                                     let { left: l, right: r } = unfold(t);
                                     // Recover the parent before evaluating the rest of the loop test.
-                                    have address(par) == (node->__rb_parent_color & ~3) by solve() using {
+                                    have address(par) == (node->__rb_parent_color & ~3) by close() using {
                                         aligned(par, 8);
                                         node->__rb_parent_color == address(par) + (node->__rb_parent_color & 1);
                                     };
@@ -2280,7 +2280,7 @@ struct rb_node* rb_next(struct rb_node* node) {
                                                         rewrite(parent, frame_identity);
                                                         known();
                                                     }
-                                                    have node != parent->rb_right by solve() using {
+                                                    have node != parent->rb_right by close() using {
                                                         separate(memory(node->__rb_parent_color), memory(parent->rb_right->__rb_parent_color));
                                                     };
                                                     // Refold using the opened frame's sibling address.

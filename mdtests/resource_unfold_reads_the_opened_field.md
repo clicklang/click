@@ -83,14 +83,14 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
             have 0 <= i and i <= p;
             have 0 <= p by known();
             have 0 <= 0 - at(iteration, i) + p - 1 by {
-                solve() using {
+                close() using {
                     0 <= at(iteration, i);
                     at(iteration, i) < p;
                     0 <= p;
                 };
             }
             have 0 - at(iteration, i) + p - 1 < 0 - at(iteration, i) + p by {
-                solve() using {
+                close() using {
                     0 <= at(iteration, i);
                     at(iteration, i) < p;
                     0 <= p;

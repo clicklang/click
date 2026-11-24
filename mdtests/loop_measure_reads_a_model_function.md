@@ -58,7 +58,7 @@ theorem chain_len_is_nonnegative(m: Chain) {
             Chain::Link(rest) => {
                 apply(ih(rest));
                 unfold(chain_len(Chain::Link(rest)));
-                solve() using { 0 <= chain_len(rest); };
+                close() using { 0 <= chain_len(rest); };
             }
         }
     }
@@ -107,7 +107,7 @@ void countdown(int32 n) {
                                 known();
                             }
                             have chain_len(Chain::Nil) < chain_len(c.model) by {
-                                solve() using {
+                                close() using {
                                     chain_len(c.model) == chain_len(Chain::Nil) + 1;
                                 };
                             }
@@ -126,7 +126,7 @@ void countdown(int32 n) {
                                 known();
                             }
                             have chain_len(rest2_model) < chain_len(c.model) by {
-                                solve() using {
+                                close() using {
                                     chain_len(c.model) == chain_len(rest_model) + 1;
                                     chain_len(rest_model) == chain_len(rest2_model) + 1;
                                 };

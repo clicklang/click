@@ -71,7 +71,7 @@ line of a diagnostic, and the `LINE` of its `tactic@LINE` or
 starts more than one tactic.
 
 Expansion writes what a site's search found. A smart tactic (`solve`,
-`solve() using`, `step_until`, or the implicit tail that ends every script and
+`close() using`, `step_until`, or the implicit tail that ends every script and
 is all of an omitted proof) is replaced by the simple steps it checked: for the
 tail, the steps, splits, and closers that run the remaining C and close each
 goal, and at a loop back edge one `have <member> by { ... }` per invariant

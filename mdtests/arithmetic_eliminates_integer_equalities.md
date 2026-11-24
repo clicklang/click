@@ -1,6 +1,6 @@
 # arithmetic eliminates the listed Integer equalities
 
-Any number of listed `Integer` equalities may take part in one `solve() using`
+Any number of listed `Integer` equalities may take part in one `close() using`
 step. They are eliminated, in the order they are written, each solved for the
 smallest atom it still mentions; the goal is then decided against what is left.
 Nothing is searched: the two-premise combination limit applies to the
@@ -16,7 +16,7 @@ theorem chained_integer_equalities(t: Integer, a: Integer, b: Integer, x: Intege
     requires a == b;
     requires x == y;
     ensures t == b + y by {
-        solve() using {
+        close() using {
             t == a + x;
             a == b;
             x == y;
@@ -29,7 +29,7 @@ theorem bounded_integer_sum(t: Integer, a: Integer, b: Integer, x: Integer, y: I
     requires a <= b;
     requires x <= y;
     ensures t <= b + y by {
-        solve() using {
+        close() using {
             t == a + x;
             a <= b;
             x <= y;

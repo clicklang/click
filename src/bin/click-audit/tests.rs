@@ -1300,7 +1300,7 @@ struct node* unpack(struct node* node) {
     step_until(function.exit);
     fold(packed(node));
     known();
-    solve() using {
+    close() using {
         aligned(result, 8);
         node->word == address(result) + (node->word & 1);
     };
@@ -1314,7 +1314,7 @@ struct node* unpack(struct node* node) {
 
     let closer_line = click_source
         .lines()
-        .position(|line| line.trim() == "solve() using {")
+        .position(|line| line.trim() == "close() using {")
         .expect("proof should contain the closer")
         + 1;
     let sites = inventory_sites(std::slice::from_ref(&click_path)).unwrap();

@@ -22,11 +22,11 @@ theorem hypothesis_owes_the_range_span(v: int32[], lo: int32, hi: int32) {
             known();
         } else {
             have lo < hi;
-            have 0 <= to_integer(hi - 1) by { solve() using { 0 <= lo; lo < hi; }; }
-            have to_integer(hi - 1) < to_integer(hi) by { solve() using { 0 <= lo; lo < hi; }; }
-            have to_integer(lo) <= to_integer(hi - 1) by { solve() using { 0 <= lo; lo < hi; }; }
+            have 0 <= to_integer(hi - 1) by { close() using { 0 <= lo; lo < hi; }; }
+            have to_integer(hi - 1) < to_integer(hi) by { close() using { 0 <= lo; lo < hi; }; }
+            have to_integer(lo) <= to_integer(hi - 1) by { close() using { 0 <= lo; lo < hi; }; }
             have to_integer(hi - 1) <= 1073741823 by {
-                solve() using { 0 <= hi; hi <= 1073741823; };
+                close() using { 0 <= hi; hi <= 1073741823; };
             }
             have viewable(v[lo..hi - 1]);
             apply(ih(hi - 1));

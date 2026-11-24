@@ -99,7 +99,7 @@ int32 owned_split_buffer_set_left(
     }
     step();
     have separate(statement(0).footprint, memory(owner->data)) by {
-        solve() using {
+        close() using {
             at(before_store, separate(memory(owner->data), memory(owner->data[index])));
         };
     }
@@ -150,7 +150,7 @@ int32 owned_split_buffer_set_right(
     }
     step();
     have separate(statement(0).footprint, memory(owner->data)) by {
-        solve() using {
+        close() using {
             at(before_store, separate(memory(owner->data), memory(owner->data[index])));
         };
     }
@@ -216,7 +216,7 @@ int32 owned_split_buffer_pipeline(
     have owner->len == length by { known(); }
     have owner->data == data by { known(); }
     have 1 < length by {
-        solve() using { at(function.entry, 2 <= length); };
+        close() using { at(function.entry, 2 <= length); };
     }
     have 1 < owner->len by {
         known();
@@ -234,14 +234,14 @@ int32 owned_split_buffer_pipeline(
     step();
     have separate(memory(owner->split), memory(data[1])) by { solve(); }
     have separate(statement(5).call(0).footprint, memory(data[1])) by {
-        solve() using { separate(memory(owner->split), memory(data[1])); };
+        close() using { separate(memory(owner->split), memory(data[1])); };
     }
     have at(statement(5).call(0).exit, data[1]) == at(statement(5).call(0).entry, data[1]) by {
         preserve(memory(data[1]), statement(5).call(0));
     }
     have separate(memory(ignored), memory(data[1])) by { known(); }
     have separate(statement(5).assignment(ignored, 0).footprint, memory(data[1])) by {
-        solve() using { separate(memory(ignored), memory(data[1])); };
+        close() using { separate(memory(ignored), memory(data[1])); };
     }
     have at(statement(5).assignment(ignored, 0).exit, data[1]) == at(statement(5).assignment(ignored, 0).entry, data[1]) by {
         preserve(memory(data[1]), statement(5).assignment(ignored, 0));
@@ -255,7 +255,7 @@ int32 owned_split_buffer_pipeline(
     step();
     have separate(memory(result), memory(data[1])) by { known(); }
     have separate(statement(6).assignment(result, 0).footprint, memory(data[1])) by {
-        solve() using { separate(memory(result), memory(data[1])); };
+        close() using { separate(memory(result), memory(data[1])); };
     }
     have at(statement(6).assignment(result, 0).exit, data[1]) == at(statement(6).assignment(result, 0).entry, data[1]) by {
         preserve(memory(data[1]), statement(6).assignment(result, 0));

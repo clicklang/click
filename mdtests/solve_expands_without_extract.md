@@ -48,7 +48,7 @@ theorem nested_disjunction_projection(x: int32, y: int32) {
 theorem selected_implication(x: int32, y: int32) {
     requires x > 0;
     requires x > 0 implies y > 0;
-    ensures y > 0 by solve() using { x > 0; x > 0 implies y > 0; };
+    ensures y > 0 by close() using { x > 0; x > 0 implies y > 0; };
 }
 
 theorem quantified_conclusion(flag: int32) {

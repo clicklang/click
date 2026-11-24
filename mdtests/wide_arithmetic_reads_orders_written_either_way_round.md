@@ -1,6 +1,6 @@
-# 64-bit `solve() using` reads orders written either way round
+# 64-bit `close() using` reads orders written either way round
 
-`solve() using` proves a `uint64` or `int64` goal through its Integer
+`close() using` proves a `uint64` or `int64` goal through its Integer
 observations, carrying each listed order to Integer by a bridge theorem that
 states it as `left < right` or `left <= right`. A premise written the other
 way round, `i > 0`, is restated that way round by `known` first, and a
@@ -14,7 +14,7 @@ theorem predecessor_nonnegative(i: int64) {
     requires i > 0;
 
     ensures 0 <= i - 1 by {
-        solve() using {
+        close() using {
             i > 0;
         };
     }
@@ -25,7 +25,7 @@ theorem predecessor_below(i: int64, n: int64) {
     requires i > 0;
 
     ensures n >= i - 1 by {
-        solve() using {
+        close() using {
             i <= n;
             i > 0;
         };
@@ -37,7 +37,7 @@ theorem unsigned_predecessor_below(i: uint64, n: uint64) {
     requires i > 0;
 
     ensures i - 1 <= n by {
-        solve() using {
+        close() using {
             n >= i;
             i > 0;
         };

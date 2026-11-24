@@ -2363,7 +2363,7 @@ int32 f() { ensures result == 2; } by { step(); solve(); }
         let source = r#"theorem arithmetic_tool_parity(n: int32) {
     requires n <= 10;
     ensures n <= 10 by {
-        solve() using { n <= 10; }
+        close() using { n <= 10; }
     }
 }
 "#;
@@ -2382,7 +2382,7 @@ int32 f() { ensures result == 2; } by { step(); solve(); }
         .expect("click expand should emit the ordinary arithmetic proof");
         let expanded = fs::read_to_string(&expanded_path).unwrap();
         assert!(expanded.contains("known();"), "{expanded}");
-        assert!(!expanded.contains("solve() using"), "{expanded}");
+        assert!(!expanded.contains("close() using"), "{expanded}");
 
         entry(["verify".to_string(), expanded_path.display().to_string()])
             .expect("click verify should recheck the expanded certificate");

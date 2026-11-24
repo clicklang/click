@@ -1799,7 +1799,7 @@ fn charon_adler2_small_batch_compute_rejects_false_tail_state_and_ranking() {
             "have __rust_mir_138_base == remainder + 1 by known();",
         ),
         (
-            "have __rust_mir_138_remaining < at(tail_head, __rust_mir_138_remaining) by solve() using { to_integer(__rust_mir_138_remaining) == to_integer(at(tail_head, __rust_mir_138_remaining) - 1u64); 1u64 <= at(tail_head, __rust_mir_138_remaining); };",
+            "have __rust_mir_138_remaining < at(tail_head, __rust_mir_138_remaining) by close() using { to_integer(__rust_mir_138_remaining) == to_integer(at(tail_head, __rust_mir_138_remaining) - 1u64); 1u64 <= at(tail_head, __rust_mir_138_remaining); };",
             "have at(tail_head, __rust_mir_138_remaining) < __rust_mir_138_remaining by known();",
         ),
     ] {
@@ -2218,11 +2218,11 @@ const STORED_GUARD_LEMMAS: &str = r#"theorem adler_outer_nonempty_remaining(rema
  requires 0 < remaining;
  requires remaining % 22208 == 0;
  ensures 22208 <= remaining by {
-  have 0 <= remaining by solve() using { 0 < remaining; };
+  have 0 <= remaining by close() using { 0 < remaining; };
   if remaining < 22208 {
    have remaining % 22208 == remaining by normalize() using { 0 <= remaining; remaining < 22208; };
-   have remaining == 0 by solve() using { remaining % 22208 == 0; remaining % 22208 == remaining; };
-   have not (0 < remaining) by solve() using { remaining == 0; };
+   have remaining == 0 by close() using { remaining % 22208 == 0; remaining % 22208 == remaining; };
+   have not (0 < remaining) by close() using { remaining == 0; };
    contradiction(0 < remaining);
   } else {
    solve();
@@ -2238,15 +2238,15 @@ theorem adler_outer_remaining_step(total: int32, remaining: int32) {
  ensures 0 <= remaining - 22208 and remaining - 22208 <= total by {
   all {
       0 <= remaining - 22208 => {
-       solve() using { 22208 <= remaining; };
+       close() using { 22208 <= remaining; };
       }
       remaining - 22208 <= total => {
-       solve() using { remaining <= total; 22208 <= remaining; };
+       close() using { remaining <= total; 22208 <= remaining; };
       }
   }
  }
  ensures remaining - 22208 < remaining by {
-  solve() using { 22208 <= remaining; };
+  close() using { 22208 <= remaining; };
  }
 }
 
@@ -2260,14 +2260,14 @@ theorem adler_outer_remaining_step_divisible(remaining: int32) {
   have to_integer(22208) != 0 by { normalize(); }
   apply(integer::int32_remainder_to_integer(remaining, 22208));
   have to_integer(remaining % 22208) == 0 by { rewrite(remaining % 22208, 0); normalize(); }
-  have truncating_remainder(to_integer(remaining), 22208) == 0 by solve() using { to_integer(remaining % 22208) == truncating_remainder(to_integer(remaining), to_integer(22208)); to_integer(remaining % 22208) == 0; };
+  have truncating_remainder(to_integer(remaining), 22208) == 0 by close() using { to_integer(remaining % 22208) == truncating_remainder(to_integer(remaining), to_integer(22208)); to_integer(remaining % 22208) == 0; };
   apply(integer::truncation_identity(to_integer(remaining), 22208));
-  have 1 * 22208 <= to_integer(remaining) by solve() using { 22208 <= to_integer(remaining); };
+  have 1 * 22208 <= to_integer(remaining) by close() using { 22208 <= to_integer(remaining); };
   apply(integer::positive_divisor_quotient_lower(to_integer(remaining), 22208, 1));
-  have 0 <= truncating_quotient(to_integer(remaining), 22208) - 1 by solve() using { 1 <= truncating_quotient(to_integer(remaining), 22208); };
+  have 0 <= truncating_quotient(to_integer(remaining), 22208) - 1 by close() using { 1 <= truncating_quotient(to_integer(remaining), 22208); };
   apply(adler_multiple_of_full_batch(truncating_quotient(to_integer(remaining), 22208) - 1));
-  have to_integer(remaining - 22208) == (truncating_quotient(to_integer(remaining), 22208) - 1) * 22208 by solve() using { to_integer(remaining - 22208) == to_integer(remaining) - to_integer(22208); to_integer(remaining) == truncating_quotient(to_integer(remaining), 22208) * 22208 + truncating_remainder(to_integer(remaining), 22208); truncating_remainder(to_integer(remaining), 22208) == 0; };
-  have defined((remaining - 22208) % 22208) by solve() using { defined(remaining - 22208); };
+  have to_integer(remaining - 22208) == (truncating_quotient(to_integer(remaining), 22208) - 1) * 22208 by close() using { to_integer(remaining - 22208) == to_integer(remaining) - to_integer(22208); to_integer(remaining) == truncating_quotient(to_integer(remaining), 22208) * 22208 + truncating_remainder(to_integer(remaining), 22208); truncating_remainder(to_integer(remaining), 22208) == 0; };
+  have defined((remaining - 22208) % 22208) by close() using { defined(remaining - 22208); };
   apply(integer::int32_remainder_to_integer(remaining - 22208, 22208));
   have to_integer((remaining - 22208) % 22208) == 0 by {
    rewrite(to_integer((remaining - 22208) % 22208), truncating_remainder(to_integer(remaining - 22208), to_integer(22208)));
@@ -2287,7 +2287,7 @@ theorem adler_outer_exhausted_remaining(remaining: int32, size: uint64) {
   cases {
    not (0 < remaining) => {
     have remaining <= 0;
-    solve() using { 0 <= remaining; remaining <= 0; };
+    close() using { 0 <= remaining; remaining <= 0; };
    }
    not (size as uint32 as int32 <= remaining) => {
     if 0 < remaining {
@@ -2297,7 +2297,7 @@ theorem adler_outer_exhausted_remaining(remaining: int32, size: uint64) {
      contradiction(size as uint32 as int32 <= remaining);
     } else {
      have remaining <= 0;
-     solve() using { 0 <= remaining; remaining <= 0; };
+     close() using { 0 <= remaining; remaining <= 0; };
     }
    }
   }

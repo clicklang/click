@@ -78,7 +78,7 @@ theorem in_a_have(value: int, left: Tree, right: Tree) {
     ensures balanced(left) + balanced(right) == 2 by {
         have balanced(left) == 1;
         have balanced(right) == 1;
-        solve() using { balanced(left) == 1; balanced(right) == 1; };
+        close() using { balanced(left) == 1; balanced(right) == 1; };
     }
 }
 ```

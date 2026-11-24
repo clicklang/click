@@ -3421,7 +3421,7 @@ pub(in crate::surface) fn tactic_name(tactic: &ProofTactic) -> &'static str {
         ProofTactic::Instantiate { .. } => "instantiate",
         ProofTactic::Solve => "solve",
         ProofTactic::ImplicitSolve => "implicit tail",
-        ProofTactic::SolveUsing(_) => "solve",
+        ProofTactic::SolveUsing(_) => "close",
     }
 }
 

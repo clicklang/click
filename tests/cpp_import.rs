@@ -12630,7 +12630,7 @@ const WIDE_NARROWING_SOURCE: &str =
     include_str!("fixtures/cpp-verification/wide-narrowing/narrow.cpp");
 
 fn cast_identity_proof(original: &str, lo: &str, hi: &str) -> String {
-    format!(r#"solve() using {{ {lo} <= {original}; {original} <= {hi}; }};"#)
+    format!(r#"close() using {{ {lo} <= {original}; {original} <= {hi}; }};"#)
 }
 
 #[test]
@@ -13894,7 +13894,7 @@ fn wide_division_operand_bounds_certify_native_narrowing() {
         fs::remove_file(&project.exporter).unwrap();
         let import = load_import(&project.config()).unwrap();
         let certificate = |_goal: &str| {
-            r#"solve() using { -9223372036854775808 <= to_integer(a); to_integer(a) <= 9223372036854775807; 1 <= to_integer(b); to_integer(b) <= 2147483647; };"#.to_owned()
+            r#"close() using { -9223372036854775808 <= to_integer(a); to_integer(a) <= 9223372036854775807; 1 <= to_integer(b); to_integer(b) <= 2147483647; };"#.to_owned()
         };
         let expression = format!("{pure}(to_integer(a), to_integer(b))");
         let observed = format!("to_integer(a {op} b)");
@@ -13917,10 +13917,10 @@ fn wide_division_operand_bounds_certify_native_narrowing() {
     have {lower} by {{ {lower_cert} }}
     have {upper} by {{ {upper_cert} }}
     step_until(function.exit);
-    have {lo} <= {observed} by {{ solve() using {{ {observed} == {expression}; {lower}; }}; }}
-    have {observed} <= {hi} by {{ solve() using {{ {observed} == {expression}; {upper}; }}; }}
+    have {lo} <= {observed} by {{ close() using {{ {observed} == {expression}; {lower}; }}; }}
+    have {observed} <= {hi} by {{ close() using {{ {observed} == {expression}; {upper}; }}; }}
     have to_integer(result) == {observed} by {{ {cast_cert} }}
-    have to_integer(result) == {expression} by {{ solve() using {{ {observed} == {expression}; to_integer(result) == {observed}; }}; }}
+    have to_integer(result) == {expression} by {{ close() using {{ {observed} == {expression}; to_integer(result) == {observed}; }}; }}
     solve();
 }}
 "#
@@ -13961,8 +13961,8 @@ int128 {name}(int128 a, int128 b) {{
     requires 1 <= to_integer(b);
     ensures 0 == 0;
 }} by {{
-    have to_integer(b) != 0 by {{ solve() using {{ 1 <= to_integer(b); }}; }}
-    have to_integer(b) != -1 by {{ solve() using {{ 1 <= to_integer(b); }}; }}
+    have to_integer(b) != 0 by {{ close() using {{ 1 <= to_integer(b); }}; }}
+    have to_integer(b) != -1 by {{ close() using {{ 1 <= to_integer(b); }}; }}
     step_until(function.exit); solve();
 }}"#
         );
@@ -14012,8 +14012,8 @@ verifying "narrow.cpp";
 }} by {{
     step_until(function.exit);
     have to_integer(result) == to_integer(a) by {{ {cert} }}
-    have -100 <= to_integer(result) by {{ solve() using {{ to_integer(result) == to_integer(a); -100 <= to_integer(a); }}; }}
-    have to_integer(result) <= 100 by {{ solve() using {{ to_integer(result) == to_integer(a); to_integer(a) <= 100; }}; }}
+    have -100 <= to_integer(result) by {{ close() using {{ to_integer(result) == to_integer(a); -100 <= to_integer(a); }}; }}
+    have to_integer(result) <= 100 by {{ close() using {{ to_integer(result) == to_integer(a); to_integer(a) <= 100; }}; }}
     solve();
 }}"#
         );
@@ -16764,7 +16764,7 @@ contract int32 PositiveRead(const struct State& state) {
 }
 theorem read_application() executes read(const struct State& state) {
     ensures PositiveRead(&read) by {
-        have state.child.value > 0 by { solve() using { state.child.value == 2; } }
+        have state.child.value > 0 by { close() using { state.child.value == 2; } }
         step_until(function.exit); solve();
     }
 }
@@ -16920,11 +16920,11 @@ fn check_converted_wide_call_results(initializer: bool) {
 }} by {{
  step();
  let {{ result: captured }} = step(echo, {{}});
- have {lo} <= to_integer(captured) by {{ solve() using {{ {lo} <= to_integer(value); to_integer(captured) == to_integer(value); }} }}
- have to_integer(captured) <= {hi} by {{ solve() using {{ to_integer(value) <= {hi}; to_integer(captured) == to_integer(value); }} }}
+ have {lo} <= to_integer(captured) by {{ close() using {{ {lo} <= to_integer(value); to_integer(captured) == to_integer(value); }} }}
+ have to_integer(captured) <= {hi} by {{ close() using {{ to_integer(value) <= {hi}; to_integer(captured) == to_integer(value); }} }}
  step_until(function.exit);
  have to_integer(result) == to_integer(captured) by {{ {cert} }}
- solve() using {{ to_integer(result) == to_integer(captured); to_integer(captured) == to_integer(value); }}
+ close() using {{ to_integer(result) == to_integer(captured); to_integer(captured) == to_integer(value); }}
 }}
 "#
         );
@@ -17019,7 +17019,7 @@ fn converted_wide_boolean_calls_observe_high_bits() {
 uint128 echo(uint128 value) {{ ensures result == value; }}
 bool relay(uint128 value) {{ requires to_integer(value) == {point}; ensures result == {answer}; }} by {{
  step(); let {{ result: captured }} = step(echo, {{}});
- have to_integer(captured) == {point} by {{ solve() using {{ to_integer(value) == {point}; to_integer(captured) == to_integer(value); }} }}
+ have to_integer(captured) == {point} by {{ close() using {{ to_integer(value) == {point}; to_integer(captured) == to_integer(value); }} }}
  {zero_fact}
  step_until(function.exit); solve();
 }}
@@ -18638,7 +18638,7 @@ int32& last(const struct View& view) {
  requires view.size <= 1073741823;
  ensures &result == old(view.data) + (old(view.size) - 1);
  ensures result == old(view.data[view.size - 1]);
-} by { have 0 <= view.size - 1 by { solve() using { 1 <= view.size; view.size <= 1073741823; } } have view.size - 1 < view.size by { solve() using { 1 <= view.size; view.size <= 1073741823; } } step_until(function.exit); solve(); }
+} by { have 0 <= view.size - 1 by { close() using { 1 <= view.size; view.size <= 1073741823; } } have view.size - 1 < view.size by { close() using { 1 <= view.size; view.size <= 1073741823; } } step_until(function.exit); solve(); }
 int32& probe(struct View& view, int32 n) {
  owns view.data;
  owns view.size;
@@ -18650,7 +18650,7 @@ int32& probe(struct View& view, int32 n) {
  ensures view.data == old(view.data);
  ensures view.size == old(view.size) - 1;
 
-} by { have 0 <= view.size - 1 by { solve() using { 1 <= view.size; view.size <= 1073741823; } } have view.size - 1 < view.size by { solve() using { 1 <= view.size; view.size <= 1073741823; } } step_until(function.exit); solve(); }
+} by { have 0 <= view.size - 1 by { close() using { 1 <= view.size; view.size <= 1073741823; } } have view.size - 1 < view.size by { close() using { 1 <= view.size; view.size <= 1073741823; } } step_until(function.exit); solve(); }
 "#;
     check_arithmetic_sidecar(&project, &import, proof);
     let missing = proof.replace(

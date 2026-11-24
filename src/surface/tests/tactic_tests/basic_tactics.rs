@@ -541,7 +541,7 @@ fn rejects_redundant_exact_premise_forms_with_migrations() {
         theorem legacy(x: int32) {
             requires x == x;
             ensures x == x by {
-                solve() using {
+                close() using {
                     fact x == x;
                 }
             }

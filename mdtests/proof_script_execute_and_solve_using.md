@@ -33,7 +33,7 @@ int32 checked_index(int32 i, int32 n) {
     requires i < n;
     ensures in_range: 0 <= i and i < n and result == i by {
         step_until(function.exit);
-        solve() using {
+        close() using {
             i >= 0;
             i < n;
         };

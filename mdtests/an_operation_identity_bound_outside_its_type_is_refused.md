@@ -1,7 +1,7 @@
 # An operation identity bound outside its type is refused
 
 Arithmetic search expands to ordinary proof steps, with the selected premises
-stated explicitly in `solve() using { ... }`.
+stated explicitly in `close() using { ... }`.
 
 ```c filename=an_operation_identity_bound_outside_its_type_is_refused.c
 unsigned decrement(unsigned x) { return x - 1u; }
@@ -15,7 +15,7 @@ uint32 decrement(uint32 x) {
     step_until(function.exit);
     have -1 <= to_integer(old(x)) - 1;
     have to_integer(old(x)) - 1 <= 4294967295;
-    solve() using { -1 <= to_integer(old(x)) - 1; to_integer(old(x)) - 1 <= 4294967295; };
+    close() using { -1 <= to_integer(old(x)) - 1; to_integer(old(x)) - 1 <= 4294967295; };
 }
 ```
 

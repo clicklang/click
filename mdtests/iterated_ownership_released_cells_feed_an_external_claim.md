@@ -87,7 +87,7 @@ void recycle(int32* data, int32* occupied, int32 capacity, int32 a, int32 b) {
         apply(click::integer::int32_add_to_integer(a, 1));
     }
     have a != b by {
-        solve() using { to_integer(a + 1) < to_integer(b); to_integer(a + 1) == to_integer(a) + 1; };
+        close() using { to_integer(a + 1) < to_integer(b); to_integer(a + 1) == to_integer(a) + 1; };
     }
     apply(separation::separate_elements(occupied, a, b));
     step();

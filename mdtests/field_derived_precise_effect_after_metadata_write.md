@@ -72,7 +72,7 @@ int32 buffer_push(struct buffer* owner, int32 value) {
     unfold(owned_buffer(owner));
     step_until(function.exit);
     have 0 != (old(owner->len) + 1) by {
-        solve() using { 1 <= old(owner->len); };
+        close() using { 1 <= old(owner->len); };
     }
     have separate(memory(old(owner->data)[0]), memory(old(owner->data)[old(owner->len) + 1])) by {
         apply(click::separation::separate_elements(old(owner->data), 0, old(owner->len) + 1));
@@ -91,7 +91,7 @@ int32 buffer_push(struct buffer* owner, int32 value) {
         solve();
     }
     have owner->len < owner->cap by {
-        solve() using {
+        close() using {
             to_integer(old(owner->len) + 1) < to_integer(old(owner->cap));
         };
     }

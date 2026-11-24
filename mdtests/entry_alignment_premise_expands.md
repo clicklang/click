@@ -225,12 +225,12 @@ int32 arena_init(struct arena* arena, int32 capacity) {
         false => {}
     }
     have 1 <= capacity by {
-        solve() using {
+        close() using {
             not (capacity <= 0);
         };
     }
     have capacity <= 536870911 by {
-        solve() using {
+        close() using {
             not (capacity > 536870911);
         };
     }
@@ -249,7 +249,7 @@ int32 arena_init(struct arena* arena, int32 capacity) {
             step();
             step();
             have 0 <= to_integer(capacity - at(iteration, i) - 1) by {
-                solve() using {
+                close() using {
                     0 <= at(iteration, i);
                     at(iteration, i) < capacity;
                     1 <= capacity;
@@ -257,7 +257,7 @@ int32 arena_init(struct arena* arena, int32 capacity) {
                 };
             }
             have to_integer(capacity - at(iteration, i) - 1) < to_integer(capacity - at(iteration, i)) by {
-                solve() using {
+                close() using {
                     0 <= at(iteration, i);
                     at(iteration, i) < capacity;
                     1 <= capacity;

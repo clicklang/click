@@ -45,7 +45,7 @@ int32 f(int32 u, int32 w) {
         if u == 0 {
             if w > 0 { step_until(function.exit); } else { step_until(function.exit); }
         } else {
-            have 1 <= u by { solve() using { u != 0; 0 <= u; }; }
+            have 1 <= u by { close() using { u != 0; 0 <= u; }; }
             have separate(memory(buf[1]), memory(buf[0])) by { apply(separation::separate_elements(buf, 1 as uint64, 0 as uint64)); }
             have separate(memory(buf[2]), memory(buf[0])) by { apply(separation::separate_elements(buf, 2 as uint64, 0 as uint64)); }
             have separate(memory(buf[3]), memory(buf[0])) by { apply(separation::separate_elements(buf, 3 as uint64, 0 as uint64)); }
@@ -56,13 +56,13 @@ int32 f(int32 u, int32 w) {
                     if u == 2 {
                         rewrite(u, 2); known();
                     } else {
-                        have u == 3 by { solve() using { 1 <= u; u < 4; u != 1; u != 2; }; }
+                        have u == 3 by { close() using { 1 <= u; u < 4; u != 1; u != 2; }; }
                         rewrite(u, 3); known();
                     }
                 }
             }
             have separate(statement(5).footprint, memory(buf[0])) by {
-                solve() using { separate(memory(buf[u]), memory(buf[0])); };
+                close() using { separate(memory(buf[u]), memory(buf[0])); };
             }
             have buf[0] == at(before_store, buf[0]) by {
                 preserve(memory(buf[0]), statement(5));

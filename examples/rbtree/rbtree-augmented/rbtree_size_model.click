@@ -108,13 +108,13 @@ theorem sized_child_descent(identity: struct rb_node*, parent: struct rb_node*, 
         apply(rb_subtree_size_nonnegative(sized_shape(right)));
         unfold(sized_shape(SizedTree::Node(identity, parent, color, value, left, right)));
         unfold(rb_subtree_size(RbTree::Node(identity, parent, color, sized_shape(left), sized_shape(right))));
-        solve() using { rb_subtree_size(sized_shape(right)) >= 0; };
+        close() using { rb_subtree_size(sized_shape(right)) >= 0; };
     }
     ensures rb_subtree_size(sized_shape(right)) < rb_subtree_size(sized_shape(SizedTree::Node(identity, parent, color, value, left, right))) by {
         apply(rb_subtree_size_nonnegative(sized_shape(left)));
         unfold(sized_shape(SizedTree::Node(identity, parent, color, value, left, right)));
         unfold(rb_subtree_size(RbTree::Node(identity, parent, color, sized_shape(left), sized_shape(right))));
-        solve() using { rb_subtree_size(sized_shape(left)) >= 0; };
+        close() using { rb_subtree_size(sized_shape(left)) >= 0; };
     }
 }
 
@@ -182,7 +182,7 @@ tactic certify_size(p: struct rb_node*) {
                 known();
             }
             have to_integer(value) == rb_subtree_size(sized_shape(old(tree.model))) by {
-                solve() using {
+                close() using {
                     to_integer(value) == 1 + to_integer(sized_value(left_model)) + to_integer(sized_value(right_model));
                     to_integer(sized_value(left_model)) == rb_subtree_size(sized_shape(left_model));
                     to_integer(sized_value(right_model)) == rb_subtree_size(sized_shape(right_model));
@@ -196,7 +196,7 @@ tactic certify_size(p: struct rb_node*) {
             have sized_counts_valid(checked.model) == 1 by {
                 rewrite(checked.model, SizedTree::Node(identity, parent, color, value, left_model, right_model));
                 unfold(sized_counts_valid(SizedTree::Node(identity, parent, color, value, left_model, right_model)));
-                solve() using {
+                close() using {
                     to_integer(value) == 1 + to_integer(sized_value(left_model)) + to_integer(sized_value(right_model));
                     sized_counts_valid(left_model) == 1;
                     sized_counts_valid(right_model) == 1;

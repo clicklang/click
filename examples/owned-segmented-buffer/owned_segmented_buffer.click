@@ -6,10 +6,10 @@ theorem selected_array_cell(whole: Resource, kept: Resource, p: int32*, len: int
     requires 0 <= i;
     requires i < len;
     ensures separate(kept, memory(p[i])) by {
-        have i <= 2147483646 by { solve() using { i < len; }; }
-        have defined(i + 1) by { solve() using { 0 <= i; i <= 2147483646; }; }
-        have i <= ((i + 1) as int32) by { solve() using { 0 <= i; i < len; }; }
-        have ((i + 1) as int32) <= len by { solve() using { 0 <= i; i < len; }; }
+        have i <= 2147483646 by { close() using { i < len; }; }
+        have defined(i + 1) by { close() using { 0 <= i; i <= 2147483646; }; }
+        have i <= ((i + 1) as int32) by { close() using { 0 <= i; i < len; }; }
+        have ((i + 1) as int32) <= len by { close() using { 0 <= i; i < len; }; }
         have contains(memory(p[0..len]), memory(p[i..i + 1])) by {
             apply(separation::contains_subrange(p, 0, len, i, i + 1));
         }
@@ -143,13 +143,13 @@ int32 owned_segmented_buffer_set_first(
     have separate(memory(owner->first_data[index]), memory(*owner)) by { solve(); }
     step();
     have separate(statement(0).footprint, memory(owner->first_data)) by {
-        solve() using { at(before_store, separate(memory(owner->first_data), memory(owner->first_data[index]))); };
+        close() using { at(before_store, separate(memory(owner->first_data), memory(owner->first_data[index]))); };
     }
     have owner->first_data == at(before_store, owner->first_data) by {
         preserve(memory(owner->first_data), statement(0));
     }
     have separate(statement(0).footprint, memory(owner->second_data)) by {
-        solve() using { at(before_store, separate(memory(owner->second_data), memory(owner->first_data[index]))); };
+        close() using { at(before_store, separate(memory(owner->second_data), memory(owner->first_data[index]))); };
     }
     have owner->second_data == at(before_store, owner->second_data) by {
         preserve(memory(owner->second_data), statement(0));
@@ -193,13 +193,13 @@ int32 owned_segmented_buffer_set_second(
     have separate(memory(owner->second_data[index]), memory(*owner)) by { solve(); }
     step();
     have separate(statement(0).footprint, memory(owner->first_data)) by {
-        solve() using { at(before_store, separate(memory(owner->first_data), memory(owner->second_data[index]))); };
+        close() using { at(before_store, separate(memory(owner->first_data), memory(owner->second_data[index]))); };
     }
     have owner->first_data == at(before_store, owner->first_data) by {
         preserve(memory(owner->first_data), statement(0));
     }
     have separate(statement(0).footprint, memory(owner->second_data)) by {
-        solve() using { at(before_store, separate(memory(owner->second_data), memory(owner->second_data[index]))); };
+        close() using { at(before_store, separate(memory(owner->second_data), memory(owner->second_data[index]))); };
     }
     have owner->second_data == at(before_store, owner->second_data) by {
         preserve(memory(owner->second_data), statement(0));
@@ -300,7 +300,7 @@ int32 owned_segmented_buffer_pipeline(
     }
     have separate(memory(ignored), memory(first_data[0])) by { known(); }
     have separate(statement(3).assignment(ignored, 0).footprint, memory(first_data[0])) by {
-        solve() using { separate(memory(ignored), memory(first_data[0])); };
+        close() using { separate(memory(ignored), memory(first_data[0])); };
     }
     have first_data[0] == at(statement(3).call(0).exit, first_data[0]) by {
         preserve(memory(first_data[0]), statement(3).assignment(ignored, 0));
@@ -326,7 +326,7 @@ int32 owned_segmented_buffer_pipeline(
     }
     have separate(memory(ignored), memory(first_data[0])) by { known(); }
     have separate(statement(4).assignment(ignored, 0).footprint, memory(first_data[0])) by {
-        solve() using { separate(memory(ignored), memory(first_data[0])); };
+        close() using { separate(memory(ignored), memory(first_data[0])); };
     }
     have at(statement(4).assignment(ignored, 0).exit, first_data[0]) == at(statement(4).assignment(ignored, 0).entry, first_data[0]) by {
         preserve(memory(first_data[0]), statement(4).assignment(ignored, 0));

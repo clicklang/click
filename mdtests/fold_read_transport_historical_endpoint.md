@@ -60,7 +60,7 @@ void mark_at(int32 *v, int32 *m, int32 n) {
             intro(); intro();
             instantiate(at(entry, forall (j: int32) { 0 <= j and j < end implies separate(memory(v[m[0]]), memory(v[j])) }), k);
             have separate(statement(0).footprint, memory(v[k])) by {
-                solve() using { at(entry, separate(memory(v[m[0]]), memory(v[k]))); };
+                close() using { at(entry, separate(memory(v[m[0]]), memory(v[k]))); };
             }
             preserve(memory(v[k]), statement(0));
         }

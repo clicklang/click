@@ -5,22 +5,22 @@ verifying "mutex_held_parity.c";
 theorem bounded_one(r: int32) {
     requires 1 <= r;
     requires r <= 1;
-    ensures r == 1 by { solve() using { 1 <= r; r <= 1; }; }
+    ensures r == 1 by { close() using { 1 <= r; r <= 1; }; }
 }
 
 theorem nonzero_nonnegative(r: int32) {
     requires 0 <= r;
     requires r != 0;
-    ensures 1 <= r by { solve() using { 0 <= r; r != 0; }; }
+    ensures 1 <= r by { close() using { 0 <= r; r != 0; }; }
 }
 theorem even_successor(i: int32) {
     requires 0 <= i;
     requires i < 2147483647;
     requires i % 2 == 0;
     ensures (i + 1) % 2 == 1 by {
-        have 0 <= i % 2 by { solve() using { i % 2 == 0; }; }
-        have i % 2 <= 0 by { solve() using { i % 2 == 0; }; }
-        solve() using { 0 <= i; i < 2147483647; 0 <= i % 2; i % 2 <= 0; };
+        have 0 <= i % 2 by { close() using { i % 2 == 0; }; }
+        have i % 2 <= 0 by { close() using { i % 2 == 0; }; }
+        close() using { 0 <= i; i < 2147483647; 0 <= i % 2; i % 2 <= 0; };
     }
 }
 theorem odd_successor(i: int32) {
@@ -28,11 +28,11 @@ theorem odd_successor(i: int32) {
     requires i < 2147483647;
     requires i % 2 != 0;
     ensures (i + 1) % 2 == 0 by {
-        have 0 <= i % 2 by { solve() using { 0 <= i; }; }
-        have i % 2 < 2 by { solve() using { 0 <= i; }; }
+        have 0 <= i % 2 by { close() using { 0 <= i; }; }
+        have i % 2 < 2 by { close() using { 0 <= i; }; }
         have 1 <= i % 2 by { apply(nonzero_nonnegative(i % 2)); }
-        have i % 2 <= 1 by { solve() using { 0 <= i; i % 2 < 2; }; }
-        solve() using { 0 <= i; i < 2147483647; 1 <= i % 2; i % 2 <= 1; };
+        have i % 2 <= 1 by { close() using { 0 <= i; i % 2 < 2; }; }
+        close() using { 0 <= i; i < 2147483647; 1 <= i % 2; i % 2 <= 1; };
     }
 }
 
@@ -72,7 +72,7 @@ int32 alternate_mutex(struct parity_mutex *object, int32 n) {
             invariant guard.parity == i % 2;
             initialize by solve();
             maintain by {
-                have i < 2147483647 by { solve() using { i < n; }; }
+                have i < 2147483647 by { close() using { i < n; }; }
                 if i % 2 == 0 {
                     have (i + 1) % 2 == 1 by { apply(even_successor(i)); }
                     have guard.parity == 0 by solve();
@@ -83,9 +83,9 @@ int32 alternate_mutex(struct parity_mutex *object, int32 n) {
                     let guard = fold(loop_guard(object), { parity: 1 });
                 } else {
                     have (i + 1) % 2 == 0 by { apply(odd_successor(i)); }
-                    have 0 <= i % 2 by { solve() using { 0 <= i; }; }
+                    have 0 <= i % 2 by { close() using { 0 <= i; }; }
                     have 1 <= i % 2 by { apply(nonzero_nonnegative(i % 2)); }
-                    have i % 2 <= 1 by { solve() using { 0 <= i; }; }
+                    have i % 2 <= 1 by { close() using { 0 <= i; }; }
                     have i % 2 == 1 by { apply(bounded_one(i % 2)); }
                     have guard.parity == 1 by solve();
                     unfold(guard);
@@ -102,9 +102,9 @@ int32 alternate_mutex(struct parity_mutex *object, int32 n) {
             step_until(function.exit);
             solve();
         } else {
-            have 0 <= i % 2 by { solve() using { 0 <= i; }; }
+            have 0 <= i % 2 by { close() using { 0 <= i; }; }
             have 1 <= i % 2 by { apply(nonzero_nonnegative(i % 2)); }
-            have i % 2 <= 1 by { solve() using { 0 <= i; }; }
+            have i % 2 <= 1 by { close() using { 0 <= i; }; }
             have i % 2 == 1 by { apply(bounded_one(i % 2)); }
             have guard.parity == 1 by solve();
             unfold(guard);

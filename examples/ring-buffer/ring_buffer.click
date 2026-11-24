@@ -75,7 +75,7 @@ int32 ring_buffer_push_wrap(
     mark filled;
     step();
     have separate(statement(3).footprint, memory(data[0])) by {
-        solve() using { separate(memory(data[0]), memory(owner->tail)); };
+        close() using { separate(memory(data[0]), memory(owner->tail)); };
     }
     have data[0] == at(filled, data[0]) by {
         preserve(memory(data[0]), statement(3));
