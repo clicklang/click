@@ -126,8 +126,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             // remaining antecedents before applying the complete source chain.
             let (remaining, _) = crate::surface::proof::driver::fact_application_parts(surface);
             if !remaining.is_empty() {
-                let mut body = vec![ProofTactic::Intro; remaining.len()];
-                body.extend([application, ProofTactic::Known]);
+                let mut body = vec![application, ProofTactic::Known];
+                for _ in remaining {
+                    body = vec![ProofTactic::IntroBlock { binder: None, body }];
+                }
                 if let Some(proof) = publish(body)? {
                     return Ok(proof);
                 }

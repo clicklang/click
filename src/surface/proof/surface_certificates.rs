@@ -696,6 +696,21 @@ pub(super) fn plan_explicit_forall_goal_from_premises(
         ) else {
             continue;
         };
+        if body_tactics
+            .iter()
+            .any(|tactic| matches!(tactic, ProofTactic::Have(_)))
+        {
+            if antecedent.is_some() {
+                body_tactics = vec![ProofTactic::IntroBlock {
+                    binder: None,
+                    body: body_tactics,
+                }];
+            }
+            return Some(vec![ProofTactic::IntroBlock {
+                binder: None,
+                body: body_tactics,
+            }]);
+        }
         let mut tactics = vec![ProofTactic::Intro];
         if antecedent.is_some() {
             tactics.push(ProofTactic::Intro);
@@ -3442,10 +3457,10 @@ fn plan_explicit_implies_refuted_antecedent(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
-    let mut tactics = Vec::new();
+    let mut depth = 0;
     let mut current = goal;
     while let Proposition::Implies(antecedent, consequent) = current {
-        tactics.push(ProofTactic::Intro);
+        depth += 1;
         let refutation = premise_pairs
             .iter()
             .find(|(kernel, _)| match antecedent.as_ref() {
@@ -3456,8 +3471,11 @@ fn plan_explicit_implies_refuted_antecedent(
                 _ => false,
             });
         if let Some((_, surface)) = refutation {
-            tactics.push(ProofTactic::Contradiction(surface.clone()));
-            return Some(tactics);
+            let mut body = vec![ProofTactic::Contradiction(surface.clone())];
+            for _ in 0..depth {
+                body = vec![ProofTactic::IntroBlock { binder: None, body }];
+            }
+            return Some(body);
         }
         current = consequent;
     }
@@ -3492,13 +3510,17 @@ fn plan_explicit_discharged_implication_consequent(
                 let (premises, _) = crate::surface::proof::driver::fact_application_parts(surface);
                 let (remaining, _) =
                     crate::surface::proof::driver::fact_application_parts(surface_consequent);
-                let mut tactics = vec![ProofTactic::Intro; remaining.len()];
-                tactics.push(ProofTactic::ApplyFactUsing {
-                    fact: surface.clone(),
-                    premises,
-                });
-                tactics.push(ProofTactic::Known);
-                return Some(tactics);
+                let mut body = vec![
+                    ProofTactic::ApplyFactUsing {
+                        fact: surface.clone(),
+                        premises,
+                    },
+                    ProofTactic::Known,
+                ];
+                for _ in remaining {
+                    body = vec![ProofTactic::IntroBlock { binder: None, body }];
+                }
+                return Some(body);
             }
             current = (consequent, surface_consequent);
         }

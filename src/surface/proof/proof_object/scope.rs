@@ -52,6 +52,16 @@ impl<'a> ProofScope<'a> {
         &self.body
     }
 
+    /// Scope a checked introduction before publishing this nested proof.
+    pub(in crate::surface::proof) fn finish_generated_intro(
+        mut self,
+        parent: &Proof<'a>,
+        introduced: &Proof<'a>,
+    ) -> Result<Self, ClickError> {
+        self.body = parent.finish_generated_intro(introduced, self.body)?;
+        Ok(self)
+    }
+
     /// Attributes the next checked execution operation inside this scope to
     /// its own source tactic without changing the enclosing scope root.
     pub(in crate::surface::proof) fn with_execution_tactic_index(
