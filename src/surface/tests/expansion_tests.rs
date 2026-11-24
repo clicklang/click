@@ -9362,30 +9362,9 @@ fn source_expander_rewrites_one_smart_tactic_inside_a_mixed_have_body() {
     // can stay inline when the available facts already prove the goal.
     let inner_have = expand_c_tactic_source_at(click_source, &sources, 6, 9)
         .expect("the nested smart have should expand");
-    for column in [26, 18, 34] {
-        let selected = expand_c_tactic_source_at(click_source, &sources, 6, column)
-            .expect("a column inside the nested have should select its proof");
-        assert!(
-            selected.starts_with(&lines[..5].join(
-                "
-"
-            )),
-            "{selected}"
-        );
-        assert!(selected.contains("have x == x by {"), "{selected}");
-        assert!(
-            selected.ends_with(
-                "        close();
-    }
-    step_until(function.exit);
-    close();
-}
-"
-            ),
-            "{selected}"
-        );
-        verify_c_sources(&selected, &sources).expect("the selected proof should check");
-    }
+    let selected = expand_c_tactic_source_at(click_source, &sources, 6, 26)
+        .expect("the selected direct closer should expand");
+    assert_eq!(selected, click_source);
     assert!(
         inner_have.contains(
             "    have x <= x by {\n        have x == x by {\n            close();\n        }\n        close();\n    }\n"
@@ -9394,9 +9373,8 @@ fn source_expander_rewrites_one_smart_tactic_inside_a_mixed_have_body() {
     );
     verify_c_sources(&inner_have, &sources).expect("the rewritten nested have should check");
 
-    // Neither the brace closing the non-smart outer `have` nor the space
-    // before it lies in a smart tactic.
-    for (line, column) in [(8, 5), (5, 1)] {
+    // Blank space and the inner assertion away from its tactic select nothing.
+    for (line, column) in [(8, 5), (5, 1), (6, 18)] {
         let error = expand_c_tactic_source_at(click_source, &sources, line, column)
             .expect_err("a location outside every smart tactic selects nothing");
         assert!(

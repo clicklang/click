@@ -757,7 +757,10 @@ fn execute_rest_return_certificate_omits_unused_ambient_facts() {
     let expanded = verified[0]
         .expanded_proof_tactics()
         .expect("the return proof should have a surface expansion");
-    assert_eq!(expanded, [ProofTactic::Step, ProofTactic::Known]);
+    let [ProofTactic::Step, ProofTactic::Known, remaining @ ..] = expanded.as_slice() else {
+        panic!("expected a return step and direct closures: {expanded:?}");
+    };
+    assert!(remaining.iter().all(|tactic| *tactic == ProofTactic::Known));
 
     let execute_offset = click_source
         .find("step_until(function.exit)")

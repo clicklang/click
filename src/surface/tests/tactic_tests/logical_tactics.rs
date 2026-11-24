@@ -1702,7 +1702,7 @@ fn instantiate_does_not_discharge_guards_from_ambient_facts() {
     verify_c_sources(click_source, &[("pick.c", c_source)])
         .expect("an ordinary have can prove the exact symbolic guard");
     let without_guard = click_source.replace("                have 0 <= 2 and 2 < n;\n", "");
-    let error = without_proof_search_for_claim("pick.two_le", || {
+    let error = crate::surface::without_proof_search(|| {
         verify_c_sources(&without_guard, &[("pick.c", c_source)]).map_err(|error| error.report())
     })
     .expect_err("instantiation must preserve the unproved symbolic guard");

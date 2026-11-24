@@ -1029,7 +1029,14 @@ fn check_word_store_source_publication(
                 &equation,
                 &format!("at(statement({depth}).exit, {reads}) == x"),
             );
-            assert!(verify_c_sources(&wrong, &sources).is_err());
+            let error = crate::surface::without_proof_search(|| {
+                verify_c_sources(&wrong, &sources).map_err(|error| error.report())
+            })
+            .expect_err("the stored value is the old value of x");
+            assert!(
+                error.contains("requires the current goal as an available semantic fact"),
+                "{error}"
+            );
         }
     }
     assert!(
