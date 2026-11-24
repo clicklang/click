@@ -10,23 +10,17 @@ pub(super) fn decide_zero(
     assumptions: &PureFactContext,
     facts: &ExecutionFacts,
 ) -> Option<bool> {
-    use MachineBinaryOp::{BitwiseOr, BitwiseXor};
-    if let Some((format, operator @ (BitwiseOr | BitwiseXor), [left, right])) =
-        MachineOperandView::Legacy(divisor).binary()
-    {
-        crate::instrumentation::record_deterministic_work(1);
-        for (operand, literal) in [(left, right), (right, left)] {
-            let Some(literal) = literal.literal() else {
-                continue;
-            };
-            if operator == BitwiseOr {
-                if format
-                    .constant_from_term(&literal)
-                    .is_some_and(|literal| literal.bits() != 0)
-                {
-                    return Some(false);
-                }
-            } else {
+    let view = MachineOperandView::Legacy(divisor);
+    if let Some((format, operator, [left, right])) = view.binary() {
+        if bitwise_excludes(format, divisor, false, assumptions, facts) {
+            return Some(false);
+        }
+        if operator == MachineBinaryOp::BitwiseXor {
+            crate::instrumentation::record_deterministic_work(1);
+            for (operand, literal) in [(left, right), (right, left)] {
+                let Some(literal) = literal.literal() else {
+                    continue;
+                };
                 let equal = condition_for_operand_views(
                     format,
                     CompareRelation::Equal,
@@ -41,25 +35,19 @@ pub(super) fn decide_zero(
     decide_with_facts(assumptions, facts, zero)
 }
 
-fn or_cannot_be_minus_one(
+fn bitwise_excludes(
     format: MachineIntegerType,
     divisor: &MachineTerm,
+    minus_one: bool,
     assumptions: &PureFactContext,
     facts: &ExecutionFacts,
 ) -> bool {
-    crate::kernel::proof::arithmetic_special::signed_or_sign_premises(
+    crate::kernel::proof::arithmetic_special::bitwise_divisor_excludes(
         format,
         MachineOperandView::Legacy(divisor),
+        minus_one,
+        |condition, truth| indexed_condition_value(assumptions, facts, &condition) == Some(truth),
     )
-    .is_some_and(|premises| {
-        premises.iter().any(|premise| {
-            premise
-                .condition_native()
-                .is_some_and(|(condition, truth)| {
-                    indexed_condition_value(assumptions, facts, condition) == Some(*truth)
-                })
-        })
-    })
 }
 
 pub(super) fn apply_nonzero(
@@ -82,7 +70,7 @@ pub(super) fn apply_nonzero(
         Some(false)
     } else if assumptions.proves_exact(&exceptional) {
         Some(true)
-    } else if or_cannot_be_minus_one(format, &right, assumptions, &facts) {
+    } else if bitwise_excludes(format, &right, true, assumptions, &facts) {
         Some(false)
     } else {
         match (
