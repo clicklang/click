@@ -474,6 +474,31 @@ impl TermClasses {
                         }
                     }
                 }
+                N::IntegerToMachine {
+                    destination,
+                    operand,
+                } if width == W::of_machine_type(*destination)
+                    && let N::MachineObservation {
+                        format,
+                        operand: word,
+                    } = operand.node()
+                    && destination == format
+                    && word.is_shared_machine_operand() =>
+                {
+                    // Register the written observation and conversion, using
+                    // the same restricted round-trip rule as the native path.
+                    if !finish {
+                        pending.push((term, true));
+                        pending.push((word, false));
+                        continue;
+                    }
+                    let word = self
+                        .shared_machine_classes
+                        .get(&(word.id(), width))
+                        .expect("registered round-trip operand")
+                        .1;
+                    self.intern_observation_round_trip(*destination, word)
+                }
                 N::ThreadHandle(_)
                 | N::IntegerToMachine { .. }
                 | N::BoolCast { .. }
