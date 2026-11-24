@@ -1678,7 +1678,7 @@ fn expand_c_tactic_source_at_context(
         && click_source[..span.start].trim_end().ends_with('{')
         && click_source[span.end..].trim_start().starts_with('}')
     {
-        "known();".to_string()
+        printing::known_call().to_string()
     } else {
         replacement
     };
@@ -3785,7 +3785,7 @@ fn expand_selected_tactics_context(
             ),
             TacticSourceEdit::Append(at) => (at..at, appended_tail(&tactics)),
             TacticSourceEdit::PartialProofClause(span) if tactics.is_empty() => {
-                (span, "by { known(); }".to_string())
+                (span, format!("by {{ {} }}", printing::known_call()))
             }
             TacticSourceEdit::PartialProofClause(span) => (
                 span,
@@ -3820,7 +3820,7 @@ fn expand_selected_tactics_context(
             && source[..span.start].trim_end().ends_with('{')
             && source[span.end..].trim_start().starts_with('}')
         {
-            "known();".to_string()
+            printing::known_call().to_string()
         } else {
             replacement
         };
@@ -3881,8 +3881,8 @@ fn expand_selected_tactics_context(
         }
     }
     for offset in empty_blocks.into_iter().rev() {
-        let filler = " known(); ";
-        rewritten.insert_str(offset, filler);
+        let filler = format!(" {} ", printing::known_call());
+        rewritten.insert_str(offset, &filler);
         for span in &mut replacement_spans {
             if span.start >= offset {
                 span.start += filler.len();
@@ -3935,7 +3935,7 @@ impl LocatedSourceTactic {
             // A whole phase can contribute no steps, but its written block
             // must still contain a checked tactic.
             TacticSourceEdit::PartialProofClause(span) if replacement_tactics.is_empty() => {
-                (span, "by { known(); }".to_string())
+                (span, format!("by {{ {} }}", printing::known_call()))
             }
             TacticSourceEdit::PartialProofClause(span) => (span, certificate()?),
             TacticSourceEdit::WholeProof(edit) => {

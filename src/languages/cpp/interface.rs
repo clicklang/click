@@ -506,17 +506,12 @@ fn function_interface(
     let parameters = source
         .parameters
         .iter()
+        .zip(lowered.parameters())
         .enumerate()
-        .map(|(index, parameter)| {
+        .map(|(index, (parameter, lowered_parameter))| {
             crate::instrumentation::record_deterministic_work(1);
             let is_reference = super::lowering::is_reference_parameter(index, parameter);
-            let carried_name: crate::kernel::BindingName = if super::lowering::is_receiver(index, parameter) {
-                super::lowering::RECEIVER_NAME.into()
-            } else if is_reference {
-                crate::kernel::BindingName::reference_carrier(parameter.name.as_str())
-            } else {
-                parameter.name.clone().into()
-            };
+            let carried_name = lowered_parameter.binding_name();
             if let Some(kind) = Scalar::mutable_kind(&parameter.value_type) {
                 return Ok(crate::languages::interface::ImportedParameter::from_binding(kind.proof_type(), carried_name.clone(), None));
             }
@@ -603,7 +598,7 @@ fn function_interface(
                 })
             }
             CppType::FunctionPointer { .. } => Ok(crate::languages::interface::ImportedParameter::function_pointer(
-                parameter.name.clone(),
+                carried_name.clone(),
                 function_pointer_signature(&parameter.value_type)?,
             )),
             pointer if let Some(is_const) = super::scalar::void_pointer(pointer) =>

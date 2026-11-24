@@ -26879,6 +26879,8 @@ fn arithmetic_safety_bounds_expand_to_checked_proofs() {
     for (path, function) in [
         ("mdtests/arithmetic_safety_right_shift_count.md", "shift32"),
         ("mdtests/arithmetic_safety_right_shift_count.md", "shift64"),
+        ("mdtests/arithmetic_promoted_shift_counts.md", "shift32"),
+        ("mdtests/arithmetic_promoted_shift_counts.md", "shift64"),
     ] {
         let (source, sources) = mdtest_sources(path);
         let sources = sources
@@ -27087,6 +27089,7 @@ fn indexed_read_comparisons_expand_with_preservation() {
         ("p[i]", "=="),
         ("p[i]", "!="),
         ("(p[i] & 2)", "<"),
+        ("(p[i] | 2)", "<"),
         ("*(p + i)", "<"),
     ] {
         let source = source
@@ -27104,6 +27107,50 @@ fn indexed_read_comparisons_expand_with_preservation() {
         })
         .unwrap();
         let overlapping = expanded.replace("requires i != j;", "");
+        assert_ne!(overlapping, expanded);
+        assert!(
+            without_implicit_solve_for_claim("keep.contract", || {
+                verify_c_sources(&overlapping, &sources).map_err(|error| error.report())
+            })
+            .is_err()
+        );
+    }
+}
+
+#[test]
+fn two_indexed_reads_expand_with_preservation() {
+    let c_source = "void keep(int *p, int i, int j, int k) { p[j] = 10; }";
+    let source = r#"
+        verifying "read_order.c";
+        void keep(int32 *p, int32 i, int32 j, int32 k) {
+            owns p[0..8];
+            requires 0 <= i and i < 8 and 0 <= j and j < 8;
+            requires 0 <= k and k < 8;
+            requires i != j;
+            requires k != j;
+            requires p[i] < p[k];
+            ensures p[i] < p[k];
+        } by {
+            step();
+            have p[i] < p[k] by { solve(); }
+        }
+    "#;
+    let sources = [("read_order.c", c_source)];
+    let expanded = expand_c_claim_source_by_label(source, &sources, "keep.contract").unwrap();
+    for read in ["p[i]", "p[k]"] {
+        assert!(
+            expanded.contains(&format!("preserve(memory({read}), region(0))")),
+            "{expanded}"
+        );
+        assert!(expanded.contains(&format!("rewrite({read},")), "{expanded}");
+    }
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim("keep.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+    for requirement in ["requires i != j;", "requires k != j;"] {
+        let overlapping = expanded.replace(requirement, "");
         assert_ne!(overlapping, expanded);
         assert!(
             without_implicit_solve_for_claim("keep.contract", || {
@@ -28064,15 +28111,25 @@ fn explicit_produced_view_release_expands_and_reverifies() {
 }
 
 #[test]
-fn conditional_signed_shifts_verify_with_legacy_normalization() {
-    let (source, sources) =
-        mdtest_sources("mdtests/arithmetic_expression_conditional_signed_shift.md");
-    let sources = crate::cli::source_refs(&sources);
-    verify_c_sources(&source, &sources).unwrap();
-    for claim in ["shift32.ensures_0", "shift64.ensures_0"] {
-        assert_compatibility_normalization_refusal(
-            expand_c_claim_source_by_label(&source, &sources, claim).unwrap_err(),
-        );
+fn signed_shift_definedness_expands_and_replays() {
+    for path in [
+        "mdtests/arithmetic_expression_conditional_signed_shift.md",
+        "mdtests/arithmetic_expression_signed_shift_unsigned_count.md",
+        "mdtests/signed_left_shift_reuses_the_unmasked_bound.md",
+    ] {
+        let (source, sources) = mdtest_sources(path);
+        let sources = crate::cli::source_refs(&sources);
+        for claim in ["shift32.ensures_0", "shift64.ensures_0"] {
+            let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
+                .unwrap_or_else(|error| panic!("{path} {claim}: {}", error.report()));
+            assert!(expanded.contains("step() by {"), "{path} {claim}");
+            assert!(!expanded.contains("normalize("), "{path} {claim}");
+            assert!(!expanded.contains("solve("), "{path} {claim}");
+            without_implicit_solve_for_claim(claim, || {
+                verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+            })
+            .unwrap_or_else(|error| panic!("{path} {claim}: {error}"));
+        }
     }
 }
 
@@ -28090,6 +28147,10 @@ fn arithmetic_certificates_cold_replay_or_report_legacy_normalization() {
         ("signed_odd_divisor", &[("divide", true)][..]),
         ("negative_signed_product", &[("product", false)][..]),
         ("float_add_pair", &[("sum", false)][..]),
+        (
+            "unsigned_masked_divisor",
+            &[("divide", true), ("remainder", true)][..],
+        ),
     ] {
         let (source, sources) =
             mdtest_sources(&format!("mdtests/arithmetic_expression_{fixture}.md"));

@@ -267,3 +267,26 @@ fn opaque_call_children_borrow_their_producers_exact_argument_slot() {
         KernelTermExport::default().integer(&other).unwrap()
     );
 }
+
+/// A null array views no memory, so a null array argument formed at
+/// different states is one term, while a non-null one keeps its states apart.
+#[test]
+fn a_null_array_argument_is_formed_at_no_state() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let empty = crate::kernel::ProgramPoint::of_memory(&SymbolicMemory::new());
+    let other =
+        crate::kernel::ProgramPoint::of_memory(&SymbolicMemory::new().with_block("local:x", 8));
+    let pointer = |address: Address| {
+        KernelTerm::shared_pointer_value(SharedPointer::import(&Pointer::new(
+            address,
+            ProgramType::Int32Pointer,
+        )))
+    };
+    let array = |point: &crate::kernel::ProgramPoint, pointer: &KernelTerm| {
+        KernelTerm::shared_array_reference(point.clone(), pointer.clone(), ProgramType::Int32)
+    };
+    let null = pointer(Address::null());
+    assert_eq!(array(&empty, &null), array(&other, &null));
+    let symbolic = pointer(Address::symbolic(Variable(1008601)));
+    assert_ne!(array(&empty, &symbolic), array(&other, &symbolic));
+}

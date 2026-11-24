@@ -552,6 +552,20 @@ pub(crate) fn known_bridge_leaf(
     {
         return true;
     }
+    use super::super::arithmetic_special::{
+        promoted_right_shift_bound, shift_count_mask_requirements,
+    };
+    if promoted_right_shift_bound(goal) == Some(true)
+        || shift_count_mask_requirements(goal).is_some_and(|bounds| {
+            bounds.iter().all(|bound| {
+                bound.condition_native().is_some_and(|(condition, truth)| {
+                    comparison_holds(condition.clone(), *truth, available)
+                })
+            })
+        })
+    {
+        return true;
+    }
     match goal {
         Proposition::ConditionIs(condition, true) if narrow_machine_arm(condition, available) => {
             true
@@ -615,6 +629,8 @@ pub(crate) fn known_bridge_leaf(
                 || integer_arm(b, a, available)
                 || identity(a.as_ref(), b.as_ref(), available)
                 || identity(b.as_ref(), a.as_ref(), available)
+                || super::super::arithmetic_special::signed_max_shift_identity_count_bound(a, b)
+                    .is_some_and(|bound| holds(&bound, available))
         }
         condition_source_0 @ Proposition::ConditionIs(_, true)
             if let Some((

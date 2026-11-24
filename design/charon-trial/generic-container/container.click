@@ -270,6 +270,9 @@ impl<T> generic_container::Container<T> for generic_container::Stack<T> {
     fn take(&mut self) -> Option<T> {
     }
     fn count(&self) -> usize {
+    } by {
+        have separate(state, memory(*self)) by known();
+        step_until(function.exit);
     }
 }
 
@@ -291,4 +294,12 @@ fn generic_container::round_trip_dyn(container: &mut dyn generic_container::Cont
 // A new stack lent as a container returns what was put.
 fn generic_container::through_dyn(x: u32) -> Option<u32> {
     ensures result == Option<u32>::Some(x);
+} by {
+    step_until(statement(0).call(0).entry);
+    let { after: empty } = step(__rust_q_I17_generic_container_T46___rust_q_I17_generic_container_I5_Stack_A3_u32_I3_new);
+    step_until(statement(1).call(0).entry);
+    let { object_resource(): packed } = step(__rust_q_T46___rust_q_I17_generic_container_I5_Stack_A3_u32_R50___rust_q_I17_generic_container_I9_Container_A3_u32_I6___pack, { state: empty });
+    have packed.size == 0u64 by known();
+    have packed.items == List<u32>::Nil by known();
+    step_until(function.exit);
 }

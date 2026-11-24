@@ -235,9 +235,12 @@ fn initialize_script_layout<'a>(
             matches!(tactic, ProofTactic::Have(have)
                     if &have.proposition == item.proposition())
         })
-        && rest[invariant_items.len()..]
-            .iter()
-            .all(|tactic| matches!(tactic, ProofTactic::Known | ProofTactic::Solve));
+        && rest[invariant_items.len()..].iter().all(|tactic| {
+            matches!(
+                tactic,
+                ProofTactic::Known | ProofTactic::Close | ProofTactic::Solve
+            )
+        });
     let mut grouped: Vec<Vec<(usize, &SourceProof)>> = Vec::new();
     let mut consumed = 0;
     for item in invariant_items {
@@ -255,13 +258,15 @@ fn initialize_script_layout<'a>(
         grouped.push(bodies);
     }
     let names_every_invariant = grouped.len() == invariant_items.len()
-        && rest[consumed..]
-            .iter()
-            .all(|tactic| matches!(tactic, ProofTactic::Known | ProofTactic::Solve));
+        && rest[consumed..].iter().all(|tactic| {
+            matches!(
+                tactic,
+                ProofTactic::Known | ProofTactic::Close | ProofTactic::Solve
+            )
+        });
     let invariant_bodies = names_every_invariant.then_some(grouped);
-    // Only a `solve()` that stands for what is left of the phase is a
-    // whole-phase closer. A `solve()` written before the steps it closes
-    // would be one invariant's own proof, not the phase's.
+    // A closing call that stands for the rest of the phase is a whole-phase
+    // closer. An earlier one belongs to an individual invariant proof.
     let closer_start = if names_every_invariant {
         helper_end + consumed
     } else {
@@ -271,7 +276,7 @@ fn initialize_script_layout<'a>(
         .iter()
         .copied()
         .zip(&tactics[closer_start.min(tactics.len())..])
-        .filter(|(_, tactic)| matches!(tactic, ProofTactic::Solve))
+        .filter(|(_, tactic)| matches!(tactic, ProofTactic::Close | ProofTactic::Solve))
         .map(|(index, _)| index)
         .collect();
     InitializeScriptLayout {

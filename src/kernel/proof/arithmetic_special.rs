@@ -1178,11 +1178,12 @@ pub(super) fn normalizes_selected(goal: &Proposition, premises: &[Proposition]) 
         return true;
     }
     if let [left, right] = premises
-        && let Some(sum) = FloatSumBound::new(goal)
+        && let Some(bound) = FloatPairBound::new(goal)
         && ([[left, right], [right, left]].into_iter().any(|pair| {
-            sum.operand_endpoint(0, pair[0])
-                .zip(sum.operand_endpoint(1, pair[1]))
-                .is_some_and(|(a, b)| sum.established_by([a, b]))
+            bound
+                .operand_endpoint(0, pair[0])
+                .zip(bound.operand_endpoint(1, pair[1]))
+                .is_some_and(|(a, b)| bound.established_by([a, b]))
         }))
     {
         return true;
@@ -2812,7 +2813,14 @@ fn signed_max_shift_bound(
         | (ConditionTerm::IntegerLessThan(left, right), false) => (right, left),
         _ => return None,
     };
-    let IntegerTerm::Machine(bound) = right.value_read() else {
+    let (format, count) = signed_max_shift(right)?;
+    Some((left, format, count))
+}
+
+fn signed_max_shift(
+    bound: &crate::kernel::SharedIntegerTerm,
+) -> Option<(MachineIntegerType, crate::kernel::MachineOperandView<'_>)> {
+    let IntegerTerm::Machine(bound) = bound.value_read() else {
         return None;
     };
     let mut shifted = bound.operand_view();
@@ -2832,7 +2840,20 @@ fn signed_max_shift_bound(
     if format.constant_from_term(&max.literal()?)?.to_integer() != max_value.into() {
         return None;
     }
-    Some((left, unsigned, count))
+    Some((unsigned, count))
+}
+
+/// A positive signed maximum has the same signed and unsigned right shift
+/// when both shifts use the same in-range count.
+pub(super) fn signed_max_shift_identity_count_bound(
+    left: &crate::kernel::SharedIntegerTerm,
+    right: &crate::kernel::SharedIntegerTerm,
+) -> Option<Proposition> {
+    let (format, count) = signed_max_shift(left)?;
+    let (other_format, other_count) = signed_max_shift(right)?;
+    (format == other_format && count.try_retain(format)? == other_count.try_retain(format)?)
+        .then(|| shift_count_upper_bound(format, count))
+        .flatten()
 }
 
 pub(crate) fn same_signed_max_shift_bound(premise: &Proposition, goal: &Proposition) -> bool {
@@ -2851,12 +2872,74 @@ pub(crate) fn same_signed_max_shift_bound(premise: &Proposition, goal: &Proposit
             .is_some_and(|(a, b)| a == b)
 }
 
+fn shifted_max_operand(comparison: &Proposition) -> Option<&crate::kernel::SharedIntegerTerm> {
+    match comparison.condition_native()? {
+        (ConditionTerm::IntegerLessEqual(_, bound), true)
+        | (ConditionTerm::IntegerGreaterThan(_, bound), false)
+        | (ConditionTerm::IntegerGreaterEqual(bound, _), true)
+        | (ConditionTerm::IntegerLessThan(bound, _), false) => Some(bound),
+        _ => None,
+    }
+}
+
+pub(crate) fn signed_max_shift_bound_identity(
+    premise: &Proposition,
+    goal: &Proposition,
+) -> Option<Proposition> {
+    if !same_signed_max_shift_bound(premise, goal) {
+        return None;
+    }
+    let from = shifted_max_operand(goal)?;
+    let to = shifted_max_operand(premise)?;
+    (from.value_read() != to.value_read()).then(|| {
+        Proposition::condition_is(ConditionTerm::IntegerEqual(from.clone(), to.clone()), true)
+    })
+}
+
+/// Recover the signed spelling when the premise index supplies only the
+/// unsigned reading of the comparison. The rewrite still checks the identity
+/// and the resulting signed bound independently.
+pub(crate) fn signed_max_shift_signed_identity(goal: &Proposition) -> Option<Proposition> {
+    use crate::kernel::{
+        KernelTerm, KernelTermImport, MachineOperandView, SharedMachineIntegerTerm,
+    };
+
+    let from = shifted_max_operand(goal)?;
+    let (unsigned, count) = signed_max_shift(from)?;
+    let signed = match unsigned {
+        MachineIntegerType::UInt32 => MachineIntegerType::Int32,
+        MachineIntegerType::UInt64 => MachineIntegerType::Int64,
+        _ => return None,
+    };
+    let maximum =
+        crate::kernel::machine_integer::range::constant_word(signed, &signed.format().bounds().1)?;
+    let mut import = KernelTermImport::default();
+    let maximum = import.machine_arithmetic(signed, &maximum)?;
+    let count = match count {
+        MachineOperandView::Shared(count) => count.clone(),
+        MachineOperandView::Legacy(count) => import.machine_arithmetic(unsigned, count)?,
+    };
+    let signed_shift =
+        KernelTerm::machine_binary_shared(signed, MachineBinaryOp::ShiftRight, [maximum, count]);
+    let to = IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(signed, signed_shift)?);
+    (from.value_read() != &to).then(|| {
+        Proposition::condition_is(ConditionTerm::IntegerEqual(from.clone(), to.into()), true)
+    })
+}
+
 pub(crate) fn signed_max_shift_count_bound(goal: &Proposition) -> Option<Proposition> {
+    let (_, format, count) = signed_max_shift_bound(goal)?;
+    shift_count_upper_bound(format, count)
+}
+
+fn shift_count_upper_bound(
+    format: MachineIntegerType,
+    count: crate::kernel::MachineOperandView<'_>,
+) -> Option<Proposition> {
     use crate::kernel::MachineOperandView as View;
     use crate::kernel::machine_integer::{
         comparison::condition_for_operand_views, range::constant_word,
     };
-    let (_, format, count) = signed_max_shift_bound(goal)?;
     let limit = constant_word(format, &format.format().bits().into())?;
     Some(Proposition::condition_is(
         condition_for_operand_views(
@@ -2868,14 +2951,10 @@ pub(crate) fn signed_max_shift_count_bound(goal: &Proposition) -> Option<Proposi
     ))
 }
 
-/// Explicit premises for one signed right-shift bound on a promoted narrow
-/// unsigned value, or for carrying that bound through the shift-count widening.
-pub(crate) fn promoted_right_shift_bounds(goal: &Proposition) -> Option<Vec<Proposition>> {
-    use crate::kernel::MachineOperandView as View;
-    use crate::kernel::machine_integer::comparison::{
-        condition_for_operand_views, structural_boolean_comparison_view,
-    };
-    use crate::kernel::machine_integer::range::constant_word;
+/// One root shift of a zero-extended narrow word has an intrinsic range.
+/// A subsequent signed widening preserves the result and its endpoints.
+pub(crate) fn promoted_right_shift_bound(goal: &Proposition) -> Option<bool> {
+    use crate::kernel::machine_integer::comparison::structural_boolean_comparison_view;
 
     let Proposition::ConditionIs(condition, expected) = goal else {
         return None;
@@ -2911,15 +2990,15 @@ pub(crate) fn promoted_right_shift_bounds(goal: &Proposition) -> Option<Vec<Prop
         | (R::GreaterThan, true, false) => R::GreaterEqual,
         _ => return None,
     };
-    let (shift, widened) = match format {
-        MachineIntegerType::Int32 => (operand, false),
+    let shift = match format {
+        MachineIntegerType::Int32 => operand,
         MachineIntegerType::Int64 => {
             let (_, MachineIntegerType::Int32, MachineIntegerType::Int64, source) =
                 operand.cast()?
             else {
                 return None;
             };
-            (source, true)
+            source
         }
         _ => return None,
     };
@@ -2929,31 +3008,20 @@ pub(crate) fn promoted_right_shift_bounds(goal: &Proposition) -> Option<Vec<Prop
         return None;
     };
     let (narrow, _) = promoted.narrow_widening32_operand()?;
-    if narrow.format().is_signed()
-        || crate::kernel::machine_integer::bounds::constant_shift_count(amount)? >= 32
-    {
+    let count = crate::kernel::machine_integer::bounds::constant_shift_count(amount)?;
+    if narrow.format().is_signed() || count >= 32 {
         return None;
     }
-    let bound = |operand, relation, endpoint: &num_bigint::BigInt| {
-        let literal = constant_word(MachineIntegerType::Int32, endpoint)?;
-        Some(Proposition::condition_is(
-            condition_for_operand_views(
-                MachineIntegerType::Int32,
-                relation,
-                [operand, View::Legacy(&literal)],
-            ),
-            true,
-        ))
-    };
-    if widened {
-        let endpoint = format.constant_from_term(&literal)?.to_integer();
-        return Some(vec![bound(shift, relation, &endpoint)?]);
-    }
-    let (lo, hi) = narrow.format().bounds();
-    Some(vec![
-        bound(promoted, R::GreaterEqual, &lo)?,
-        bound(promoted, R::LessEqual, &hi)?,
-    ])
+    let (minimum, maximum) = narrow.format().bounds();
+    let maximum = maximum >> count;
+    let endpoint = format.constant_from_term(&literal)?.to_integer();
+    Some(match relation {
+        R::LessThan => maximum < endpoint,
+        R::LessEqual => maximum <= endpoint,
+        R::GreaterThan => minimum > endpoint,
+        R::GreaterEqual => minimum >= endpoint,
+        _ => unreachable!("order relation"),
+    })
 }
 
 fn with_shifted_one_count<R>(
@@ -3097,16 +3165,23 @@ enum SignedProductSigns {
     NonpositiveLeft,
     NegativeRight,
     BothNegative,
+    BothNegativeStrictDivisor,
 }
 
 pub(crate) fn signed_product_guard_candidates(
     goal: &Proposition,
 ) -> impl Iterator<Item = Vec<Proposition>> + '_ {
     use SignedProductSigns::*;
-    [Nonnegative, NonpositiveLeft, NegativeRight, BothNegative]
-        .into_iter()
-        .flat_map(|signs| [false, true].into_iter().map(move |swap| (signs, swap)))
-        .filter_map(|(signs, swap)| signed_product_guard_requirements(goal, swap, signs))
+    [
+        Nonnegative,
+        NonpositiveLeft,
+        NegativeRight,
+        BothNegative,
+        BothNegativeStrictDivisor,
+    ]
+    .into_iter()
+    .flat_map(|signs| [false, true].into_iter().map(move |swap| (signs, swap)))
+    .filter_map(|(signs, swap)| signed_product_guard_requirements(goal, swap, signs))
 }
 
 /// Check one exact signed product bound from named signs and a quotient guard.
@@ -3116,6 +3191,7 @@ pub(crate) fn signed_product_guard_candidates(
 /// comparison. Requiring y < -1 excludes the overflow of that quotient.
 /// MAX/y with negative y rounds up and is a lower bound on the other
 /// negative factor, again because multiplication reverses the comparison.
+/// MAX/y is defined even when y is -1.
 fn signed_product_guard_requirements(
     goal: &Proposition,
     swap: bool,
@@ -3153,22 +3229,25 @@ fn signed_product_guard_requirements(
             ConditionTerm::integer_greater_equal(a.as_ref().clone(), zero())
         }
         NonpositiveLeft => ConditionTerm::integer_less_equal(a.as_ref().clone(), zero()),
-        BothNegative => ConditionTerm::integer_less_than(a.as_ref().clone(), zero()),
+        BothNegative | BothNegativeStrictDivisor => {
+            ConditionTerm::integer_less_than(a.as_ref().clone(), zero())
+        }
     };
     let y_sign = match signs {
         Nonnegative | NonpositiveLeft => {
             ConditionTerm::integer_greater_than(b.as_ref().clone(), zero())
         }
-        NegativeRight | BothNegative => {
+        NegativeRight | BothNegativeStrictDivisor => {
             ConditionTerm::integer_less_than(b.as_ref().clone(), IntegerTerm::constant_i64(-1))
         }
+        BothNegative => ConditionTerm::integer_less_than(b.as_ref().clone(), zero()),
     };
     let mut premises = vec![
         Proposition::condition_is(x_sign, true),
         Proposition::condition_is(y_sign, true),
     ];
     let needs_quotient_guard = match signs {
-        Nonnegative | BothNegative => upper,
+        Nonnegative | BothNegative | BothNegativeStrictDivisor => upper,
         NonpositiveLeft | NegativeRight => !upper,
     };
     if needs_quotient_guard {
@@ -3185,7 +3264,9 @@ fn signed_product_guard_requirements(
         let (x, quotient) = (observe(x)?, observe(quotient)?);
         let rejected_branch = match signs {
             Nonnegative | NegativeRight => ConditionTerm::integer_greater_than(x, quotient),
-            NonpositiveLeft | BothNegative => ConditionTerm::integer_less_than(x, quotient),
+            NonpositiveLeft | BothNegative | BothNegativeStrictDivisor => {
+                ConditionTerm::integer_less_than(x, quotient)
+            }
         };
         premises.push(Proposition::condition_is(rejected_branch, false));
     }
@@ -3247,6 +3328,7 @@ enum FloatBoundOperation {
     },
     Negate,
     Widen,
+    Narrow,
 }
 
 impl FloatBoundOperation {
@@ -3254,7 +3336,7 @@ impl FloatBoundOperation {
         match self {
             Self::Binary { increasing, .. } => increasing,
             Self::Negate => false,
-            Self::Widen => true,
+            Self::Widen | Self::Narrow => true,
         }
     }
 
@@ -3284,6 +3366,12 @@ impl FloatBoundOperation {
                 ),
                 strict,
             ),
+            Self::Narrow => (
+                u64::from(
+                    crate::kernel::primitives::float_conversion::float64_to_float32_bits(endpoint),
+                ),
+                false,
+            ),
         }
     }
 }
@@ -3303,6 +3391,9 @@ fn float_bound_operation(
     }
     if let Some(operand) = value.widened_float32() {
         return Some((operand, FloatBoundOperation::Widen));
+    }
+    if let Some(operand) = value.narrowed_float64() {
+        return Some((operand, FloatBoundOperation::Narrow));
     }
     float_literal_operation(value)
 }
@@ -3470,23 +3561,34 @@ fn float_endpoint_compare(
     comparison == ConditionTerm::Constant(true)
 }
 
-/// An ordered bound on a sum of two nonliteral operands. The checked rule
-/// takes one finite endpoint per operand, in the goal's direction.
-pub(crate) struct FloatSumBound<'a> {
+/// An ordered sum or difference of two nonliteral operands, with one
+/// finite endpoint per operand.
+pub(crate) struct FloatPairBound<'a> {
     goal: FloatBound<'a>,
+    operator: crate::kernel::FloatBinaryOperator,
     operands: [FloatOperandView<'a>; 2],
 }
 
-impl<'a> FloatSumBound<'a> {
+impl<'a> FloatPairBound<'a> {
     pub(crate) fn new(goal: &'a Proposition) -> Option<Self> {
+        use crate::kernel::FloatBinaryOperator::{Add, Subtract};
         let goal = float_bound(goal)?;
-        let (crate::kernel::FloatBinaryOperator::Add, operands) = goal.operand.binary()? else {
+        let (operator @ (Add | Subtract), operands) = goal.operand.binary()? else {
             return None;
         };
         operands
             .iter()
             .all(|operand| operand.literal_bits().is_none())
-            .then_some(Self { goal, operands })
+            .then_some(Self {
+                goal,
+                operator,
+                operands,
+            })
+    }
+
+    fn lower_operand_bound(&self, index: usize) -> bool {
+        let reverse = index == 1 && self.operator == crate::kernel::FloatBinaryOperator::Subtract;
+        self.goal.lower != reverse
     }
 
     pub(crate) fn operand_endpoint(&self, index: usize, premise: &Proposition) -> Option<u64> {
@@ -3496,14 +3598,14 @@ impl<'a> FloatSumBound<'a> {
             KernelFloatType::Float64 => 0x7ff0_0000_0000_0000,
         };
         (premise.format == self.goal.format
-            && premise.lower == self.goal.lower
+            && premise.lower == self.lower_operand_bound(index)
             && premise.endpoint & !float_sign_bit(premise.format) < infinity
             && same_float_operand(premise.operand, self.operands[index]))
         .then_some(premise.endpoint)
     }
 
-    pub(crate) fn stronger_endpoint(&self, candidate: u64, previous: u64) -> bool {
-        let operator = if self.goal.lower {
+    pub(crate) fn stronger_endpoint(&self, index: usize, candidate: u64, previous: u64) -> bool {
+        let operator = if self.lower_operand_bound(index) {
             ComparisonOperator::GreaterThan
         } else {
             ComparisonOperator::LessThan
@@ -3512,14 +3614,14 @@ impl<'a> FloatSumBound<'a> {
     }
 
     pub(crate) fn established_by(&self, [left, right]: [u64; 2]) -> bool {
-        // Ordered lower bounds with finite endpoints exclude -infinity;
-        // ordered upper bounds exclude +infinity. Thus the sum cannot pair
-        // opposing infinities, and rounding preserves the non-strict bound.
+        // The ordered bounds exclude NaNs and one infinity per operand.
+        // The directions exclude opposing infinities for addition, and
+        // matching infinities for subtraction.
         let endpoint = crate::kernel::primitives::float_binary_bits_at(
             self.goal.format,
             left,
             right,
-            crate::kernel::FloatBinaryOperator::Add,
+            self.operator,
         );
         float_endpoint_establishes(&self.goal, endpoint, false)
     }

@@ -674,8 +674,24 @@ fn decode_artifact(
     dependencies: &[(String, PathBuf)],
 ) -> Result<CppExport, String> {
     super::budget::check_serialized(bytes)?;
-    let export: CppExport = serde_json::from_slice(bytes)
+    let mut export: CppExport = serde_json::from_slice(bytes)
         .map_err(|error| format!("parse C++ semantic artifact: {error}"))?;
+    // Older captures may give an unnamed axiom parameter an artificial
+    // spelling. The exporter's declaration identity already marks its slot.
+    for function in &mut export.reachable_functions {
+        if function.axiom.is_none() {
+            continue;
+        }
+        for parameter in &mut function.parameters {
+            let slot = parameter
+                .declaration_id
+                .strip_prefix(&function.declaration_id)
+                .and_then(|suffix| suffix.strip_prefix("@argument"));
+            if slot.is_some_and(|slot| slot.parse::<u32>().is_ok()) {
+                parameter.name.clear();
+            }
+        }
+    }
     export.validate(
         &config.logical_source,
         &config.functions,

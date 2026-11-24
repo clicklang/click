@@ -77,6 +77,8 @@ tail, the steps, splits, and closers that run the remaining C and close each
 goal, and at a loop back edge one `have <member> by { ... }` per invariant
 bundle member not already available as a fact. Expansion keeps a named theorem application as `apply(t(x))` and retains
 proofs of its open requirements in `have` steps.
+Expansion writes checked goal closers as `close()`. Handwritten tactics
+outside the selected replacement keep their spelling.
 Whole-claim expansion replays the selected proof with proof search disabled.
 Use [`click verify --checked-only`](verify.md) to repeat that check after editing
 an expanded proof. Expanding one tactic allows the untouched tactics in the

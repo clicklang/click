@@ -354,7 +354,7 @@ fn charon_external_array_copies_and_fills_verify_and_reject_false_bytes() {
         "copy_million.contract",
         "fill_million.contract",
         "independent.contract",
-        "empty.ensures_0",
+        "empty.contract",
     ] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
     }

@@ -6,8 +6,28 @@ use super::diagnostics::{
 use super::*;
 
 thread_local! {
+    static EXPANSION_CLOSE_OUTPUT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     static CONTRACT_VALUE_PARAMETERS: std::cell::RefCell<Option<std::sync::Arc<ContractValueParameters>>> =
         const { std::cell::RefCell::new(None) };
+}
+
+/// Use the trial spelling of a checked goal closure when rendering expansion
+/// output. Checked certificates still carry the same `Known` operation.
+pub fn with_expansion_close_output<R>(operation: impl FnOnce() -> R) -> R {
+    struct Restore(bool);
+
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            EXPANSION_CLOSE_OUTPUT.with(|output| output.set(self.0));
+        }
+    }
+
+    let _restore = Restore(EXPANSION_CLOSE_OUTPUT.with(|output| output.replace(true)));
+    operation()
+}
+
+pub(super) fn known_call() -> &'static str {
+    EXPANSION_CLOSE_OUTPUT.with(|output| if output.get() { "close();" } else { "known();" })
 }
 
 /// The contract declaration names available while writing a checked proof.
@@ -1328,7 +1348,8 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             &prefix,
             &format!("apply({});", source_click_proposition(fact)),
         ),
-        ProofTactic::Known => line(output, &prefix, "known();"),
+        ProofTactic::Close => line(output, &prefix, "close();"),
+        ProofTactic::Known => line(output, &prefix, known_call()),
         ProofTactic::CompatibilityNormalize(_) => {
             line(output, &prefix, COMPATIBILITY_NORMALIZATION)
         }
@@ -1478,7 +1499,7 @@ fn write_proof(output: &mut String, proof: &SourceProof, indent: usize) {
         // such as the `initialize` phase of a loop with no invariant, keeps
         // `known();`, the step a phase with nothing to prove is
         // checked by.
-        line(output, &"    ".repeat(indent + 1), "known();");
+        line(output, &"    ".repeat(indent + 1), known_call());
     }
     write_tactics(output, tactics, indent + 1);
     output.push_str(&"    ".repeat(indent));

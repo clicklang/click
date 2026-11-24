@@ -1,6 +1,97 @@
 use super::*;
 
 #[test]
+fn shift_definedness_bridges_read_only_the_exact_count_bounds() {
+    use crate::kernel::machine_integer::{
+        comparison::condition_for_operand_views, range::constant_word,
+    };
+    for (signed, unsigned) in [
+        (MachineIntegerType::Int32, MachineIntegerType::UInt32),
+        (MachineIntegerType::Int64, MachineIntegerType::UInt64),
+    ] {
+        let _session = VerificationSession::enter();
+        let count = MachineTerm::Variable(Variable(995760));
+        let other = MachineTerm::Variable(Variable(995761));
+        let width = unsigned.format().bits();
+        let maximum = signed.format().bounds().1;
+        let observe = |ty, op, left, right| {
+            IntegerTerm::from_machine(
+                ty,
+                MachineTerm::Binary {
+                    format: ty,
+                    op,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                },
+            )
+            .unwrap()
+        };
+        let masked = observe(
+            unsigned,
+            MachineBinaryOp::BitwiseAnd,
+            count.clone(),
+            constant_word(unsigned, &(width - 1).into()).unwrap(),
+        );
+        let mask_goal = equality(
+            masked,
+            IntegerTerm::from_machine(unsigned, count.clone()).unwrap(),
+        );
+        let shift = |ty, d| {
+            observe(
+                ty,
+                MachineBinaryOp::ShiftRight,
+                constant_word(ty, &maximum).unwrap(),
+                d,
+            )
+        };
+        let right_shift = shift(signed, count.clone());
+        let shift_goal = equality(right_shift.clone(), shift(unsigned, count.clone()));
+        let different_count = equality(right_shift, shift(unsigned, other.clone()));
+        let bound = |d, endpoint: u32| {
+            let endpoint = constant_word(unsigned, &endpoint.into()).unwrap();
+            condition_for_operand_views(
+                unsigned,
+                CompareRelation::LessThan,
+                [
+                    MachineOperandView::Legacy(d),
+                    MachineOperandView::Legacy(&endpoint),
+                ],
+            )
+            .truth_claim(true)
+        };
+        for related in [false, true] {
+            let mut expected_work = None;
+            for size in [8, 32, 128] {
+                let noise = (0..size)
+                    .map(|i| bound(if related { &count } else { &other }, width + i + 1))
+                    .collect::<Vec<_>>();
+                let missing = PureFactStore::from_ordered(&noise);
+                let mut premises = noise;
+                premises.extend([bound(&count, width), bound(&other, width)]);
+                let present = PureFactStore::from_ordered(&premises);
+                let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    for goal in [&mask_goal, &shift_goal] {
+                        assert!(known_bridge_leaf(goal, &|p| present.pure_known_available(p)));
+                        assert!(!known_bridge_leaf(goal, &|p| missing.pure_known_available(p)));
+                    }
+                    assert!(
+                        !known_bridge_leaf(&different_count, &|p| present.pure_known_available(p))
+                    );
+                });
+                let baseline = *expected_work.get_or_insert(work);
+                // Indexed lookups can visit a different number of nodes as
+                // the fact store grows. A scan of either bucket would exceed
+                // this fixed allowance.
+                assert!(
+                    work <= baseline + 16,
+                    "{unsigned:?}, related={related}, facts={size}: {work} > {baseline} + 16"
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn local_observation_rules_ignore_unrelated_facts_and_related_bound_buckets() {
     for related in [false, true] {
         let _session = VerificationSession::enter();

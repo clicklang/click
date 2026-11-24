@@ -131,7 +131,7 @@ pub fn click_source_is_declaration_module(source: &str) -> bool {
     parser::declares_only_definitions(source)
 }
 use parser::ContractLetBinding;
-pub use printing::{format_proof_certificate, format_proof_tactics};
+pub use printing::{format_proof_certificate, format_proof_tactics, with_expansion_close_output};
 use proof::*;
 pub(crate) use pure_fact_list::PureFactList;
 use source_registry::*;
@@ -229,6 +229,7 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "byte_offset",
     "call",
     "cases",
+    "close",
     "close_invariants",
     "constructs",
     "consumes",
@@ -6305,6 +6306,7 @@ pub enum ProofTactic {
         strict: bool,
     },
     CheckTerminationCallbacks,
+    Close,
     Known,
     Normalize,
     NormalizeUsing(Vec<ClickProposition>),
@@ -6705,6 +6707,11 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
         class: "simple",
     },
     PublicTacticForm {
+        id: "close",
+        syntax: "close()",
+        class: "smart",
+    },
+    PublicTacticForm {
         id: "known",
         syntax: "known()",
         class: "simple",
@@ -6953,7 +6960,9 @@ impl ProofTactic {
             Self::SmartExecute | Self::ExecuteUntil(_) => {
                 TacticClass::smart(SmartTacticKind::Execute)
             }
-            Self::Solve | Self::SolveUsing(_) => TacticClass::smart(SmartTacticKind::Solve),
+            Self::Close | Self::Solve | Self::SolveUsing(_) => {
+                TacticClass::smart(SmartTacticKind::Solve)
+            }
             Self::ImplicitSolve => TacticClass::Smart(SmartSite::Implicit),
             Self::Have(_) => TacticClass::Control(ControlTactic::Have),
             Self::IntroBlock { .. } => TacticClass::Control(ControlTactic::Intro),

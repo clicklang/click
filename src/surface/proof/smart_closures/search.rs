@@ -3581,6 +3581,25 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_normalize_after_arithmetic_bounds");
+        let Some((proof, surfaces)) =
+            Self::establish_arithmetic_bounds(input, requirements, introduced_surfaces)?
+        else {
+            return Ok(None);
+        };
+        attempt::candidate_outcome(
+            proof
+                .driver()
+                .apply_step(ProofStep::CompatibilityNormalize(Some(surfaces))),
+        )
+    }
+
+    fn establish_arithmetic_bounds(
+        input: &Proof<'a>,
+        requirements: &[Proposition],
+        introduced_surfaces: &[ClickProposition],
+    ) -> Result<Option<(Proof<'a>, Vec<ClickProposition>)>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("establish_arithmetic_bounds");
         let mut proof = input.clone();
         let mut surfaces = Vec::with_capacity(requirements.len());
         for required in requirements {
@@ -3610,11 +3629,67 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
             surfaces.push(surface);
         }
-        attempt::candidate_outcome(
-            proof
-                .driver()
-                .apply_step(ProofStep::CompatibilityNormalize(Some(surfaces))),
-        )
+        Ok(Some((proof, surfaces)))
+    }
+
+    fn try_signed_max_shift_bound(
+        input: &Proof<'a>,
+        bound: &Proposition,
+        count: &Proposition,
+        introduced_surfaces: &[ClickProposition],
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_signed_max_shift_bound");
+        use crate::kernel::proof::arithmetic_special::{
+            signed_max_shift_bound_identity, signed_max_shift_signed_identity,
+        };
+        let Some(goal) = input.goal() else {
+            return Ok(None);
+        };
+        let Some((proof, surfaces)) = Self::establish_arithmetic_bounds(
+            input,
+            &[bound.clone(), count.clone()],
+            introduced_surfaces,
+        )?
+        else {
+            return Ok(None);
+        };
+        if let Some(closed) =
+            attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Known))?
+        {
+            return Ok(Some(closed));
+        }
+        // The execution checker can know the count via its range index
+        // before that exact bound has been published as an available fact.
+        let Some(count_surface) = surfaces.last() else {
+            return Ok(None);
+        };
+        let Some(proof) = attempt::candidate_outcome(proof.driver().apply_step(
+            super::super::wide_arithmetic::have(count_surface.clone(), vec![ProofStep::Known]),
+        ))?
+        else {
+            return Ok(None);
+        };
+        let identities = signed_max_shift_bound_identity(bound, goal)
+            .into_iter()
+            .chain(std::iter::once_with(|| signed_max_shift_signed_identity(goal)).flatten());
+        for identity in identities {
+            if let Some(equality) = proof.structural_proposition_candidate(&identity)
+                && let Some(with_identity) = attempt::candidate_outcome(proof.driver().apply_step(
+                    super::super::wide_arithmetic::have(equality.clone(), vec![ProofStep::Known]),
+                ))?
+                && let Some(rewritten) = attempt::candidate_outcome(
+                    with_identity
+                        .driver()
+                        .apply_step(ProofStep::Rewrite(equality)),
+                )?
+                && let Some(closed) =
+                    attempt::candidate_outcome(rewritten.driver().apply_step(ProofStep::Known))?
+            {
+                return Ok(Some(closed));
+            }
+        }
+        Ok(None)
     }
 
     /// Materialize the selected chain as one checked normalization per
@@ -3676,7 +3751,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_bounded_arithmetic_closure");
         use crate::kernel::proof::arithmetic_special::{
-            float_compound_bound_operand, is_float_bound, promoted_right_shift_bounds,
+            float_compound_bound_operand, is_float_bound, promoted_right_shift_bound,
             shift_count_mask_requirements, shifted_one_bounds, signed_max_shift_count_bound,
             signed_product_guard_candidates, signed_quotient_bridge_requirement,
             signed_shift_bound_mask_identity,
@@ -3687,21 +3762,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if let Proposition::Or(left, right) = goal {
             return Self::try_distinct_constant_exclusion(search_input, left, right);
         }
-        if let Some(requirements) = shift_count_mask_requirements(goal) {
-            return Self::try_normalize_after_arithmetic_bounds(
-                search_input,
-                &requirements,
-                introduced_surfaces,
-            );
-        }
-        if let Some(requirements) = promoted_right_shift_bounds(goal)
-            && let Some(closed) = Self::try_normalize_after_arithmetic_bounds(
-                search_input,
-                &requirements,
-                introduced_surfaces,
-            )?
+        if let Some(requirements) = shift_count_mask_requirements(goal)
+            && let Some((proof, _)) =
+                Self::establish_arithmetic_bounds(search_input, &requirements, introduced_surfaces)?
         {
-            return Ok(Some(closed));
+            return attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Known));
         }
         if let Some(identity) = signed_shift_bound_mask_identity(goal)
             && let Some(equality) = search_input.structural_proposition_candidate(&identity)
@@ -3733,7 +3798,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if let Proposition::And(left, right) = goal
             && [left.as_ref(), right.as_ref()].iter().all(|leaf| {
                 is_float_bound(leaf)
-                    || promoted_right_shift_bounds(leaf).is_some()
+                    || promoted_right_shift_bound(leaf) == Some(true)
                     || signed_product_guard_candidates(leaf).next().is_some()
             })
         {
@@ -3777,6 +3842,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             goal,
         ) {
             if let Some(count) = signed_max_shift_count_bound(goal) {
+                if let Some(closed) = Self::try_signed_max_shift_bound(
+                    search_input,
+                    &bound,
+                    &count,
+                    introduced_surfaces,
+                )? {
+                    return Ok(Some(closed));
+                }
                 if let Some(closed) = Self::try_normalize_after_arithmetic_bounds(
                     search_input,
                     &[bound, count],
@@ -3788,7 +3861,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 candidates.push(vec![bound]);
             }
         }
-        if let Some(bounds) = crate::kernel::search::ProofSearch::select_float_sum_bounds(
+        if let Some(bounds) = crate::kernel::search::ProofSearch::select_float_pair_bounds(
             search_input.facts().assumptions(),
             goal,
         ) {
@@ -6748,6 +6821,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                             Some(expression)
                         }
                         ContractExpression::BitwiseAnd(left, right)
+                        | ContractExpression::BitwiseOr(left, right)
                             if matches!(
                                 operand_against_literal(left, right),
                                 Some(ContractExpression::Index(..))
@@ -6760,7 +6834,24 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 })
         };
         let literal_operand = operand_against_literal(left, right);
-        let Some(expression) = literal_operand.or_else(read_operand_against_binding) else {
+        let indexed_cell =
+            |base: &ContractExpression, index: &ContractExpression| ResourceSubject::SavedMemory {
+                base: base.clone(),
+                start: index.clone(),
+                end: None,
+            };
+        let second_cell = match (left, right) {
+            (ContractExpression::Index(..), ContractExpression::Index(base, index))
+                if left != right =>
+            {
+                Some((right, indexed_cell(base, index)))
+            }
+            _ => None,
+        };
+        let Some(expression) = literal_operand
+            .or_else(read_operand_against_binding)
+            .or_else(|| second_cell.as_ref().map(|_| left))
+        else {
             return Ok(None);
         };
         fn expression_memory_read(
@@ -6867,11 +6958,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             end: None,
         };
         let cell = match read {
-            ContractExpression::Index(base, index) => Some(ResourceSubject::SavedMemory {
-                base: base.as_ref().clone(),
-                start: index.as_ref().clone(),
-                end: None,
-            }),
+            ContractExpression::Index(base, index) => Some(indexed_cell(base, index)),
             ContractExpression::CUnary {
                 operand,
                 lowered: ProgramExpression::Load(_),
@@ -6984,7 +7071,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let current = crate::kernel::intern_memory_ref(state.memory());
         let mut endpoint = current.clone();
         let mut prepared = search_input.clone();
-        for (selector, _) in records.recent(MAX_TRANSPORT_SOURCE_POINTS) {
+        'regions: for (selector, _) in records.recent(MAX_TRANSPORT_SOURCE_POINTS) {
             check_verification_deadline()?;
             let ProgramPointSelector::ProgramPoint(ProgramPointRef {
                 region: region @ CodeRegionRef::Region(_),
@@ -7007,105 +7094,113 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             if before == endpoint {
                 continue;
             }
-            let footprint_separation = ClickProposition::Separate {
-                left: ResourceSubject::Footprint(region.clone()),
-                right: kept.clone(),
-            };
-            let at = |kind| ContractExpression::At {
-                selector: ProgramPointSelector::ProgramPoint(ProgramPointRef {
-                    region: region.clone(),
-                    kind,
-                }),
-                expression: Box::new(read.clone()),
-            };
-            let equality = ClickProposition::Comparison {
-                left: if anchored || endpoint != current {
-                    at(ProgramPointKind::Exit)
-                } else {
-                    read.clone()
-                },
-                operator: ComparisonOperator::Equal,
-                right: at(ProgramPointKind::Entry),
-            };
-            let have = |proposition, step| ProofStep::Have {
-                proposition,
-                proof: Box::new(
-                    ProofCertificate::from_steps(vec![step]).expect("ordinary preservation step"),
-                ),
-            };
-            let mut steps = Vec::new();
-            let proof = if cell_read
-                && footprint.members.len() == 1
-                && let Some(written) = footprint.members.front()
-                && let Some(proof) = Self::try_distinct_indexed_store_separation(
-                    &prepared,
-                    written,
-                    &kept,
-                    &footprint_separation,
-                )? {
-                proof
-            } else if cell_read || field_bound {
-                let Some(proof) =
-                    attempt::candidate_outcome(Self::try_memory_footprint_separation(
-                        &prepared,
-                        &footprint,
-                        &kept,
-                        &footprint_separation,
-                    ))?
-                    .flatten()
-                else {
-                    continue;
-                };
-                proof
-            } else {
-                let Some(written) = footprint
-                    .members
-                    .front()
-                    .filter(|member| matches!(member, Resource::Memory(_)))
-                    .and_then(spell)
-                else {
-                    continue;
-                };
-                let separate = ClickProposition::Separate {
-                    left: written,
+            let mut preserved = prepared.clone();
+            let mut closing = Vec::new();
+            // Prepare every read at this boundary before rewriting the comparison.
+            for (read, kept) in std::iter::once((read, &kept))
+                .chain(second_cell.iter().map(|(read, kept)| (*read, kept)))
+            {
+                let footprint_separation = ClickProposition::Separate {
+                    left: ResourceSubject::Footprint(region.clone()),
                     right: kept.clone(),
                 };
-                steps.extend([
-                    have(separate, ProofStep::Known),
-                    have(footprint_separation.clone(), ProofStep::Known),
-                ]);
-                prepared.clone()
-            };
-            steps.push(have(
-                equality.clone(),
-                ProofStep::Preserve(footprint_separation),
-            ));
-            let Some(preserved) = attempt::candidate_outcome(
-                proof.driver().apply_ordinary_transport_steps(target, steps),
-            )?
-            else {
-                continue;
-            };
-            if preserved.is_complete() {
-                return Ok(Some(preserved));
-            }
-
-            // Keep the checked endpoint equality even if it is too recent to
-            // close the comparison. Rewrite only on the closing candidate.
-            let mut closing = Vec::new();
-            if !anchored {
-                let rewrite = if endpoint == current {
-                    equality
-                } else {
-                    let composed = ClickProposition::Comparison {
-                        left: read.clone(),
-                        operator: ComparisonOperator::Equal,
-                        right: at(ProgramPointKind::Entry),
-                    };
-                    closing.push(have(composed.clone(), ProofStep::Known));
-                    composed
+                let at = |kind| ContractExpression::At {
+                    selector: ProgramPointSelector::ProgramPoint(ProgramPointRef {
+                        region: region.clone(),
+                        kind,
+                    }),
+                    expression: Box::new(read.clone()),
                 };
-                closing.push(ProofStep::Rewrite(rewrite));
+                let equality = ClickProposition::Comparison {
+                    left: if anchored || endpoint != current {
+                        at(ProgramPointKind::Exit)
+                    } else {
+                        read.clone()
+                    },
+                    operator: ComparisonOperator::Equal,
+                    right: at(ProgramPointKind::Entry),
+                };
+                let have = |proposition, step| ProofStep::Have {
+                    proposition,
+                    proof: Box::new(
+                        ProofCertificate::from_steps(vec![step])
+                            .expect("ordinary preservation step"),
+                    ),
+                };
+                let mut steps = Vec::new();
+                let proof = if cell_read
+                    && footprint.members.len() == 1
+                    && let Some(written) = footprint.members.front()
+                    && let Some(proof) = Self::try_distinct_indexed_store_separation(
+                        &preserved,
+                        written,
+                        kept,
+                        &footprint_separation,
+                    )? {
+                    proof
+                } else if cell_read || field_bound {
+                    let Some(proof) =
+                        attempt::candidate_outcome(Self::try_memory_footprint_separation(
+                            &preserved,
+                            &footprint,
+                            kept,
+                            &footprint_separation,
+                        ))?
+                        .flatten()
+                    else {
+                        continue 'regions;
+                    };
+                    proof
+                } else {
+                    let Some(written) = footprint
+                        .members
+                        .front()
+                        .filter(|member| matches!(member, Resource::Memory(_)))
+                        .and_then(spell)
+                    else {
+                        continue 'regions;
+                    };
+                    let separate = ClickProposition::Separate {
+                        left: written,
+                        right: kept.clone(),
+                    };
+                    steps.extend([
+                        have(separate, ProofStep::Known),
+                        have(footprint_separation.clone(), ProofStep::Known),
+                    ]);
+                    preserved
+                };
+                steps.push(have(
+                    equality.clone(),
+                    ProofStep::Preserve(footprint_separation),
+                ));
+                let Some(next) = attempt::candidate_outcome(
+                    proof.driver().apply_ordinary_transport_steps(target, steps),
+                )?
+                else {
+                    continue 'regions;
+                };
+                if next.is_complete() {
+                    return Ok(Some(next));
+                }
+                preserved = next;
+
+                // Keep the checked endpoint equality even if it is too recent to
+                // close the comparison. Rewrite only on the closing candidate.
+                if !anchored {
+                    let rewrite = if endpoint == current {
+                        equality
+                    } else {
+                        let composed = ClickProposition::Comparison {
+                            left: read.clone(),
+                            operator: ComparisonOperator::Equal,
+                            right: at(ProgramPointKind::Entry),
+                        };
+                        closing.push(have(composed.clone(), ProofStep::Known));
+                        composed
+                    };
+                    closing.push(ProofStep::Rewrite(rewrite));
+                }
             }
             closing.push(ProofStep::Known);
             if let Some(proof) = attempt::candidate_outcome(

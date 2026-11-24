@@ -6,7 +6,8 @@ slice.
 
 Behavioral refinement of a named contract is an explicit theorem: the kernel
 checks that the two interfaces have compatible shape, and the clause-level
-implication is proved by ordinary tactics.
+implication is proved by ordinary tactics. The proof splits off the prefix
+and suffix so the callback can borrow each range and update the middle cell.
 
 ```c filename=symbolic_callback_footprint.c
 void increment_at(int32* state, int32 position, int32 count) {
@@ -48,9 +49,24 @@ void increment_at(int32* state, int32 position, int32 count) {
     ensures state[position] == old(state[position]) + 1;
 }
 
-theorem increment_at_is_slice_step() {
+resource slice_prefix(cells: int32*, index: int32) {
+    owns cells[0..index];
+}
+
+resource slice_suffix(cells: int32*, index: int32, length: int32) {
+    owns cells[index + 1..length];
+}
+
+theorem increment_at_is_slice_step() executes increment_at(int32* cells, int32 index, int32 length) {
     ensures SliceStep(&increment_at) by {
-        unfold(SliceStep(&increment_at));
+        have index + 1 <= length by { solve() using { index < length; }; }
+        apply(click::separation::separate_adjacent_ranges(cells, 0, index, index + 1));
+        apply(click::separation::separate_adjacent_ranges(cells, index, index + 1, length));
+        fold(slice_prefix(cells, index));
+        fold(slice_suffix(cells, index, length));
+        unfold(slice_prefix(cells, index));
+        unfold(slice_suffix(cells, index, length));
+        step(increment_at);
         solve();
     }
 }

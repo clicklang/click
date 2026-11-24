@@ -158,38 +158,103 @@ fn float_literal_operations_check_one_cited_bound_as_ambient_bounds_grow() {
 }
 
 #[test]
-fn float_sum_checks_two_cited_bounds_as_ambient_bounds_grow() {
+fn float_pair_checks_two_cited_bounds_as_ambient_bounds_grow() {
     use crate::kernel::{FloatBinaryOperator, Variable};
 
     let x = MachineTerm::var(Variable(880401));
     let y = MachineTerm::var(Variable(880402));
-    let bound = |value, endpoint: f32| {
+    let bound = |value, endpoint: f32, operator| {
         Proposition::condition_is(
             ConditionTerm::float32_compare(
                 value,
                 MachineTerm::constant(endpoint.to_bits()),
-                ComparisonOperator::GreaterEqual,
+                operator,
             ),
             true,
         )
     };
-    let goal = bound(
-        MachineTerm::float32_binary(x.clone(), y.clone(), FloatBinaryOperator::Add),
-        0.0,
+    let ge = ComparisonOperator::GreaterEqual;
+    let le = ComparisonOperator::LessEqual;
+    for (operator, direction, endpoint, weaker) in [
+        (FloatBinaryOperator::Add, ge, 10.0, 9.0),
+        (FloatBinaryOperator::Subtract, le, -10.0, -9.0),
+    ] {
+        let goal = bound(
+            MachineTerm::float32_binary(x.clone(), y.clone(), operator),
+            0.0,
+            ge,
+        );
+        let first = bound(x.clone(), -10.0, ge);
+        let selected = [first.clone(), bound(y.clone(), endpoint, direction)];
+        let insufficient = [first, bound(y.clone(), weaker, direction)];
+        for related in [false, true] {
+            let samples = [4, 16, 64].map(|size| {
+                let mut ambient = selected.to_vec();
+                ambient.push(insufficient[1].clone());
+                for index in 0..size {
+                    let value = if related {
+                        x.clone()
+                    } else {
+                        MachineTerm::var(Variable(880410 + index))
+                    };
+                    ambient.push(bound(value, -20.0 - index as f32, ge));
+                }
+                let facts = PureFactStore::from_ordered(&ambient);
+                let (hit, hit_work) = crate::instrumentation::measure_deterministic_work(|| {
+                    normalize_using_conditions(&goal, &selected, &facts)
+                });
+                let (miss, miss_work) = crate::instrumentation::measure_deterministic_work(|| {
+                    normalize_using_conditions(&goal, &insufficient, &facts)
+                });
+                hit.unwrap();
+                assert!(miss.is_err());
+                (hit_work, miss_work)
+            });
+            assert!(
+                samples
+                    .iter()
+                    .all(|(hit, miss)| *hit <= samples[0].0 + 8 && *miss <= samples[0].1 + 8),
+                "{related}: {samples:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn float_narrowing_checks_one_cited_bound_as_ambient_bounds_grow() {
+    use crate::kernel::Variable;
+
+    let x = MachineTerm::var(Variable(880501));
+    let source = |value, endpoint: f64| {
+        Proposition::condition_is(
+            ConditionTerm::float64_compare(
+                value,
+                MachineTerm::uint64_constant(endpoint.to_bits()),
+                ComparisonOperator::LessEqual,
+            ),
+            true,
+        )
+    };
+    let goal = Proposition::condition_is(
+        ConditionTerm::float32_compare(
+            MachineTerm::opaque_conversion("c_float64_to_float32", x.clone()),
+            MachineTerm::constant(1f32.to_bits()),
+            ComparisonOperator::LessEqual,
+        ),
+        true,
     );
-    let selected = [bound(x.clone(), -10.0), bound(y.clone(), 10.0)];
-    let insufficient = [selected[0].clone(), bound(y, 9.0)];
+    let selected = [source(x.clone(), 1.0 + f64::EPSILON)];
+    let insufficient = [source(x.clone(), 2.0)];
     for related in [false, true] {
         let samples = [4, 16, 64].map(|size| {
-            let mut ambient = selected.to_vec();
-            ambient.push(insufficient[1].clone());
+            let mut ambient = vec![selected[0].clone(), insufficient[0].clone()];
             for index in 0..size {
                 let value = if related {
                     x.clone()
                 } else {
-                    MachineTerm::var(Variable(880410 + index))
+                    MachineTerm::var(Variable(880510 + index))
                 };
-                ambient.push(bound(value, -20.0 - index as f32));
+                ambient.push(source(value, 3.0 + index as f64));
             }
             let facts = PureFactStore::from_ordered(&ambient);
             let (hit, hit_work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -197,6 +262,66 @@ fn float_sum_checks_two_cited_bounds_as_ambient_bounds_grow() {
             });
             let (miss, miss_work) = crate::instrumentation::measure_deterministic_work(|| {
                 normalize_using_conditions(&goal, &insufficient, &facts)
+            });
+            hit.unwrap();
+            assert!(miss.is_err());
+            (hit_work, miss_work)
+        });
+        assert!(
+            samples
+                .iter()
+                .all(|(hit, miss)| *hit <= samples[0].0 + 8 && *miss <= samples[0].1 + 8),
+            "{related}: {samples:?}"
+        );
+    }
+}
+
+#[test]
+fn negative_product_guard_checks_only_cited_signs_and_quotient() {
+    let ty = MachineIntegerType::Int32;
+    let observe = |term| IntegerTerm::from_machine(ty, term).unwrap();
+    let x = MachineTerm::var(crate::kernel::Variable(880601));
+    let y = MachineTerm::var(crate::kernel::Variable(880602));
+    let max = MachineTerm::constant(i32::MAX as u32);
+    let quotient = observe(MachineTerm::machine_binary(
+        ty,
+        MachineBinaryOp::Divide,
+        max.clone(),
+        y.clone(),
+    ));
+    let x = observe(x);
+    let y = observe(y);
+    let zero = IntegerTerm::constant_i64(0);
+    let fact = |condition| Proposition::condition_is(condition, true);
+    let goal = fact(ConditionTerm::integer_less_equal(
+        IntegerTerm::multiply(x.clone(), y.clone()),
+        observe(max),
+    ));
+    let selected = [
+        fact(ConditionTerm::integer_less_than(x.clone(), zero.clone())),
+        fact(ConditionTerm::integer_less_than(y, zero)),
+        Proposition::condition_is(ConditionTerm::integer_less_than(x.clone(), quotient), false),
+    ];
+    for related in [false, true] {
+        let samples = [4, 16, 64].map(|size| {
+            let mut ambient = selected.to_vec();
+            for index in 0..size {
+                let value = if related {
+                    x.clone()
+                } else {
+                    observe(MachineTerm::var(crate::kernel::Variable(880610 + index)))
+                };
+                ambient.push(fact(ConditionTerm::integer_greater_equal(
+                    value,
+                    IntegerTerm::constant_i64(-100 - index as i64),
+                )));
+            }
+            let facts = PureFactStore::from_ordered(&ambient);
+            let (hit, hit_work) = crate::instrumentation::measure_deterministic_work(|| {
+                normalize_using_conditions(&goal, &selected, &facts)
+            });
+            let (miss, miss_work) = crate::instrumentation::measure_deterministic_work(|| {
+                normalize_using_conditions(&goal, &selected[..2], &facts)
             });
             hit.unwrap();
             assert!(miss.is_err());

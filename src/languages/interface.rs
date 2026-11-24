@@ -1672,8 +1672,11 @@ impl ImportedParameter {
     }
 
     /// A function-pointer parameter, typed by its signature.
-    pub(crate) fn function_pointer(name: String, signature: CallbackInterface) -> Self {
-        let mut parameter = Self::new(signature.pointer_type(), name, None);
+    pub(crate) fn function_pointer(
+        name: impl Into<crate::kernel::BindingName>,
+        signature: CallbackInterface,
+    ) -> Self {
+        let mut parameter = Self::from_binding(signature.pointer_type(), name, None);
         parameter.function_pointer_signature = Some(signature);
         parameter
     }
