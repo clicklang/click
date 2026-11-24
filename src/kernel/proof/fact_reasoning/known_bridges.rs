@@ -33,10 +33,8 @@ fn comparison_holds(
 /// The reduced comparison names a single premise for the exact-fact lookup.
 fn trivial_fold_comparison(condition: &ConditionTerm) -> Option<ConditionTerm> {
     super::computation::map_integer_comparison(condition, |operand| {
-        let IntegerTerm::Machine(machine) = operand.as_ref() else {
-            return None;
-        };
-        super::computation::observe_trivial_int32_fold(machine)
+        let machine = operand.root().exact_shared_integer_observation()?;
+        super::computation::observe_trivial_int32_fold(&machine)
     })
 }
 
@@ -123,34 +121,31 @@ fn guard_holds(
 }
 
 fn integer_arm(
-    value: &IntegerTerm,
-    other: &IntegerTerm,
+    value: &SharedIntegerTerm,
+    other: &SharedIntegerTerm,
     available: &impl Fn(&Proposition) -> bool,
 ) -> bool {
-    let (condition, arms) = match value {
-        IntegerTerm::If {
-            condition,
-            then_term,
-            else_term,
-        } => {
-            if then_term.as_ref() == other && else_term.as_ref() == other {
-                return true;
-            }
-            return [(true, then_term), (false, else_term)]
-                .into_iter()
-                .any(|(truth, arm)| {
-                    arm.as_ref() == other
-                        && guard_holds(BooleanOperandView::Native(condition), truth, available)
-                });
-        }
-        IntegerTerm::Machine(machine) => {
-            let Some((condition, arms)) = machine.operand_view().conditional_view() else {
-                return false;
-            };
-            (condition, arms.map(|arm| arm.observe(machine.ty())))
-        }
-        _ => return false,
+    if let KernelTermNode::IntegerIf {
+        arguments: [guard, then_term, else_term],
+    } = value.root().node()
+    {
+        let same_value = |arm: &KernelTerm| {
+            arm == other.root() || SharedIntegerTerm::from_root(arm.clone()) == *other
+        };
+        let then_matches = same_value(then_term);
+        let else_matches = same_value(else_term);
+        return (then_matches && else_matches)
+            || (then_matches && guard_holds(BooleanOperandView::Shared(guard), true, available))
+            || (else_matches && guard_holds(BooleanOperandView::Shared(guard), false, available));
+    }
+    let Some(machine) = value.root().exact_shared_integer_observation() else {
+        return false;
     };
+    let Some((condition, arms)) = machine.operand_view().conditional_view() else {
+        return false;
+    };
+    let arms = arms.map(|arm| arm.observe(machine.ty()));
+    let other = other.as_ref();
     if arms.iter().all(|arm| arm.as_ref() == Some(other)) {
         return true;
     }
@@ -225,9 +220,6 @@ fn identity(
                 }
             }
         }
-    }
-    if integer_arm(value, other, available) {
-        return true;
     }
     if let Some((ty, exact)) = identity::explicit_mathematical(value)
         && identity::same_exact_value(&exact, other)
@@ -633,8 +625,10 @@ pub(crate) fn known_bridge_leaf(
             if let Some((ConditionTerm::IntegerEqual(a, b), _)) =
                 condition_source_0.condition_native() =>
         {
-            identity(a, b, available)
-                || identity(b, a, available)
+            integer_arm(a, b, available)
+                || integer_arm(b, a, available)
+                || identity(a.as_ref(), b.as_ref(), available)
+                || identity(b.as_ref(), a.as_ref(), available)
                 || super::super::arithmetic_special::signed_max_shift_identity_count_bound(a, b)
                     .is_some_and(|bound| holds(&bound, available))
         }

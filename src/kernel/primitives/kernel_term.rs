@@ -330,7 +330,6 @@ impl WeakKernelTerm {
 struct TermData {
     id: u64,
     key: NodeKey,
-    // Temporary reverse bridge. Weak because the old node caches this term.
     integer_identity: OnceLock<Arc<IntegerIdentity>>,
     integer_reading: OnceLock<Option<SharedIntegerTerm>>,
     machine_leaf: MachineLeafCache,
@@ -1130,6 +1129,15 @@ impl KernelTerm {
         };
         if let KernelTermNode::Legacy(leaf) = operand.node()
             && let LegacyIdentity::ExactIntegerObservation(observation) = &leaf.identity
+        {
+            return Some(observation.clone());
+        }
+        if let Some(observation) = self
+            .0
+            .integer_identity
+            .get()
+            .and_then(|identity| identity.observation.as_ref())
+            && observation.shared_operand() == Some(operand)
         {
             return Some(observation.clone());
         }

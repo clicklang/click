@@ -6,7 +6,7 @@ use super::*;
 enum IntegerExactSource<'a> {
     Mathematical(KernelTerm),
     Observation {
-        written: &'a SharedMachineIntegerTerm,
+        written: SharedMachineIntegerTerm,
         reading: &'a SharedIntegerTerm,
     },
 }
@@ -17,13 +17,14 @@ impl IntegerExactSource<'_> {
             Self::Mathematical(source) => term == source,
             Self::Observation { written, reading } => {
                 if let Some(observation) = observation {
-                    if observation == *written {
+                    if observation == written {
                         return true;
                     }
                     return match observation.value_reading() {
                         Some(value) => value == reading.as_ref(),
                         None => {
-                            matches!(reading.as_ref(), IntegerTerm::Machine(value) if observation == value)
+                            reading.root().exact_shared_integer_observation().as_ref()
+                                == Some(observation)
                         }
                     };
                 }
@@ -148,9 +149,15 @@ impl TermRewrite<'_> {
         root.is_integer_observation_arithmetic()
             && self.integer_exact.is_some_and(|(source, replacement)| {
                 source.mathematical_root().is_none()
-                    && matches!(source.as_ref(), IntegerTerm::Machine(value) if value.shared_operand().is_some())
+                    && source
+                        .root()
+                        .exact_shared_integer_observation()
+                        .is_some_and(|value| value.shared_operand().is_some())
                     && (replacement.mathematical_root().is_some()
-                        || matches!(replacement.as_ref(), IntegerTerm::Machine(value) if value.shared_operand().is_some()))
+                        || replacement
+                            .root()
+                            .exact_shared_integer_observation()
+                            .is_some_and(|value| value.shared_operand().is_some()))
             })
     }
 
@@ -179,9 +186,7 @@ impl TermRewrite<'_> {
             Some((source, replacement))
                 if fold_child && self.can_rewrite_exact_observation(root) =>
             {
-                let IntegerTerm::Machine(observation) = source.as_ref() else {
-                    return None;
-                };
+                let observation = source.root().exact_shared_integer_observation()?;
                 Some((
                     IntegerExactSource::Observation {
                         written: observation,

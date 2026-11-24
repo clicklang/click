@@ -1912,7 +1912,7 @@ pub(crate) fn machine_value_reading(
 pub(super) struct IntegerIdentity {
     pub(super) id: u64,
     pub(super) key: IntegerShallowKey,
-    _observation: Option<SharedMachineIntegerTerm>,
+    pub(super) observation: Option<SharedMachineIntegerTerm>,
 }
 
 impl IntegerIdentity {
@@ -1983,7 +1983,7 @@ impl IntegerInterner {
         let identity = Arc::new(IntegerIdentity {
             id,
             key,
-            _observation: observation,
+            observation,
         });
         bucket.push(Arc::downgrade(&identity));
         self.cleanup_queue
