@@ -1753,8 +1753,9 @@ not search for an interval or derive missing bounds.
 
 For a valid literal shift count, a left-shift observation equals multiplication
 by its power of two when the exact result is in range; signed shifts also
-require a nonnegative source. A signed OR with a nonnegative literal and
-a stated nonnegative second operand excludes `-1`. A bitwise-and with a
+require a nonnegative source. A signed OR or XOR of two nonnegative
+operands excludes `-1`. A word OR with a nonzero operand excludes zero.
+A bitwise-and with a
 nonnegative literal mask is between zero and the mask, and is at most a
 nonnegative source. For
 unsigned words, this range also supports comparisons of compound expressions.
@@ -1767,6 +1768,8 @@ and unsigned right shifts of the positive signed maximum at the same in-range
 count. A constant right shift of a zero-extended unsigned byte or halfword
 has a range computed from its source width and count, including after a
 signed widening of the result.
+For a positive literal left operand, a count bound below the point where
+the result would reach the sign bit establishes that the shift fits.
 
 A root conditional equals its selected arm when its written guard is available.
 A root Integer or machine conditional with identical arms equals that shared

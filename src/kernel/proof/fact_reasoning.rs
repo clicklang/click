@@ -8,6 +8,7 @@ pub(in crate::kernel) use computation::{
 };
 pub(crate) use computation::{computes_leaf, trivial_condition_value};
 pub(in crate::kernel) use known_bridges::known_uint32_from_defined_bytes;
+pub(crate) use known_bridges::literal_mask_bounds;
 pub(crate) use known_bridges::{
     is_quotient_remainder_order, known_bridge_leaf, pointer_projection_source,
 };

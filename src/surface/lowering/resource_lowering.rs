@@ -1761,6 +1761,7 @@ pub(in crate::surface) fn requirement_definedness_surfaces(
             | ClickProposition::Contains { .. }
             | ClickProposition::Loadable { .. }
             | ClickProposition::Defined { .. }
+            | ClickProposition::IsA { .. }
             | ClickProposition::At { .. }
             | ClickProposition::PredicateCall { .. } => {}
         }

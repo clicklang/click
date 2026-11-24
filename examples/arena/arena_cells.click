@@ -4172,6 +4172,10 @@ int32 arena_pipeline(
         rewrite(first->arena->data, at(w2, first->arena->data));
         close();
     }
+    have at(statement(12).exit, (let data: int32* = at(w2_open, arena->data); data[at(w2, first->start) + 0]))
+        == at(statement(12).entry, (let data: int32* = at(w2_open, arena->data); data[at(w2, first->start) + 0])) by {
+        preserve(memory(at(w2_open, arena->data)[at(w2, first->start) + 0]), statement(12));
+    }
     have first->arena->data[(first->start + 0)] == at(w2, first->arena->data[(first->start + 0)]) by {
         rewrite(first->arena->data, at(w2_open, arena->data));
         rewrite(first->start, at(w2, first->start));

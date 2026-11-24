@@ -949,7 +949,8 @@ fn validate_contract_applications_in_proposition_one(
         | ClickProposition::ResourceViewable { .. }
         | ClickProposition::Contains { .. }
         | ClickProposition::Loadable { .. }
-        | ClickProposition::Defined { .. } => Ok(()),
+        | ClickProposition::Defined { .. }
+        | ClickProposition::IsA { .. } => Ok(()),
     }
 }
 
@@ -1743,7 +1744,8 @@ fn collect_resource_fact_scalar_assumptions_from_proposition(
         ClickProposition::Comparison { .. }
         | ClickProposition::FloatClassification { .. }
         | ClickProposition::Loadable { .. }
-        | ClickProposition::Defined { .. } => {
+        | ClickProposition::Defined { .. }
+        | ClickProposition::IsA { .. } => {
             let source = describe_click_proposition(proposition);
             let state = ExecutionState::at_point(at);
             if let Ok(proposition) =
@@ -1965,17 +1967,19 @@ fn collect_resource_fact_reads_from_proposition(
                 resource_name,
             )
         }
-        ClickProposition::Defined { expression } => {
-            collect_resource_fact_reads_from_contract_expression(
-                expression,
-                predicate_definitions,
-                click_function_definitions,
-                visited_predicates,
-                visited_functions,
-                reads,
-                resource_name,
-            )
-        }
+        ClickProposition::Defined { expression }
+        | ClickProposition::IsA {
+            pointer: expression,
+            ..
+        } => collect_resource_fact_reads_from_contract_expression(
+            expression,
+            predicate_definitions,
+            click_function_definitions,
+            visited_predicates,
+            visited_functions,
+            reads,
+            resource_name,
+        ),
         ClickProposition::At { proposition, .. } => collect_resource_fact_reads_from_proposition(
             proposition,
             predicate_definitions,

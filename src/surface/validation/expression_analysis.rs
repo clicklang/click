@@ -257,7 +257,11 @@ pub(in crate::surface) fn proposition_contains_resource_count(
         ClickProposition::FloatClassification { expression, .. } => {
             contains_resource_count(expression)
         }
-        ClickProposition::Defined { expression } => contains_resource_count(expression),
+        ClickProposition::Defined { expression }
+        | ClickProposition::IsA {
+            pointer: expression,
+            ..
+        } => contains_resource_count(expression),
         ClickProposition::At { proposition, .. }
         | ClickProposition::Not(proposition)
         | ClickProposition::ForAll {
@@ -371,7 +375,8 @@ pub(in crate::surface) fn proposition_contains_liveness_claim(
         | ClickProposition::FloatClassification { .. }
         | ClickProposition::Separate { .. }
         | ClickProposition::Contains { .. }
-        | ClickProposition::Defined { .. } => false,
+        | ClickProposition::Defined { .. }
+        | ClickProposition::IsA { .. } => false,
     }
 }
 
@@ -507,7 +512,11 @@ pub(in crate::surface) fn collect_resource_count_families(
         ClickProposition::FloatClassification { expression, .. } => {
             collect_expression(expression, families);
         }
-        ClickProposition::Defined { expression } => collect_expression(expression, families),
+        ClickProposition::Defined { expression }
+        | ClickProposition::IsA {
+            pointer: expression,
+            ..
+        } => collect_expression(expression, families),
         ClickProposition::At { proposition, .. }
         | ClickProposition::Not(proposition)
         | ClickProposition::ForAll {
@@ -589,7 +598,8 @@ pub(in crate::surface) fn collect_called_predicates(
         | ClickProposition::ResourceViewable { .. }
         | ClickProposition::Contains { .. }
         | ClickProposition::Loadable { .. }
-        | ClickProposition::Defined { .. } => {}
+        | ClickProposition::Defined { .. }
+        | ClickProposition::IsA { .. } => {}
     }
 }
 
@@ -648,7 +658,11 @@ pub(in crate::surface) fn proposition_contains_old_expression(
                 || resource_subject_contains_old_expression(child)
         }
         ClickProposition::Loadable { segment } => contract_segment_contains_old_expression(segment),
-        ClickProposition::Defined { expression } => contains_old_expression(expression),
+        ClickProposition::Defined { expression }
+        | ClickProposition::IsA {
+            pointer: expression,
+            ..
+        } => contains_old_expression(expression),
         ClickProposition::At { proposition, .. } => {
             proposition_contains_old_expression(proposition)
         }
@@ -818,7 +832,11 @@ pub(in crate::surface) fn proposition_contains_at_expression(
                 || resource_subject_contains_at_expression(child)
         }
         ClickProposition::Loadable { segment } => contract_segment_contains_at_expression(segment),
-        ClickProposition::Defined { expression } => contains_at_expression(expression),
+        ClickProposition::Defined { expression }
+        | ClickProposition::IsA {
+            pointer: expression,
+            ..
+        } => contains_at_expression(expression),
         ClickProposition::At { .. } => true,
         ClickProposition::And(left, right)
         | ClickProposition::Or(left, right)
@@ -1087,7 +1105,11 @@ fn collect_click_function_calls_in_proposition_one(
         ClickProposition::Loadable { segment } => {
             collect_click_function_calls_in_segment(segment, calls);
         }
-        ClickProposition::Defined { expression } => {
+        ClickProposition::Defined { expression }
+        | ClickProposition::IsA {
+            pointer: expression,
+            ..
+        } => {
             collect_click_function_calls(expression, calls);
         }
         ClickProposition::At { proposition, .. } => {
@@ -1701,7 +1723,8 @@ fn validate_recursive_calls_in_proposition(
             }
             Ok(())
         }
-        ClickProposition::Defined { expression: body } => expression(body),
+        ClickProposition::Defined { expression: body }
+        | ClickProposition::IsA { pointer: body, .. } => expression(body),
         ClickProposition::ResourceViewable { resource } => {
             validate_recursive_calls_in_resource_subject(
                 caller,

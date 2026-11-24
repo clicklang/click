@@ -4036,12 +4036,22 @@ fn boolean_calls_conditionals_and_equalities_round_trip_in_both_polarities() {
         chosen,
         ConditionTerm::bool_if(flag, positive.clone(), ConditionTerm::Constant(false)),
         ConditionTerm::bool_equal(positive.clone(), ConditionTerm::bool_not(positive)),
+        ConditionTerm::BoolEqual(
+            Box::new(ConditionTerm::Constant(true)),
+            Box::new(ConditionTerm::Constant(false)),
+        ),
     ] {
         for truth in [false, true] {
+            let root = crate::kernel::KernelTermImport::default().condition(&condition);
+            let retained = Proposition::ConditionIs(
+                crate::kernel::StoredConditionTerm::from_root(root.clone()).unwrap(),
+                truth,
+            );
             let fact = condition.truth_claim(truth);
             let surface =
-                synthesize_surface_proposition(&fact, ParameterBinding::default(), &state)
-                    .expect("Bool fact spelling");
+                synthesize_surface_proposition(&retained, ParameterBinding::default(), &state)
+                    .expect("retained Bool fact spelling");
+            assert!(!root.has_cached_native_argument());
             let lowered = crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
                 &surface, &PureFactContext::new(), ContractEnvironment::new(&ProgramValueBindings::new(), &BTreeMap::new()),
                 FixedStateFrame::new(&state, &state, None, &RecordedStates::new()),
@@ -7273,6 +7283,10 @@ fn shared_constructor_fields_preserve_native_spelling_and_refusals() {
         ProgramValue::Bool(word),
         int32(7),
         ProgramValue::UInt32(MachineTerm::uint32_constant(7)),
+        ProgramValue::UInt64(MachineTerm::uint64_constant(0)),
+        ProgramValue::of_bool(ConditionTerm::Constant(true)),
+        ProgramValue::of_bool(ConditionTerm::Constant(false)),
+        ProgramValue::of_bool(ConditionTerm::Variable(variable)),
     ] {
         let mut native =
             KernelMatch::test_scrutinee(vec![crate::kernel::AlgebraicValueType::Program(
@@ -7284,6 +7298,10 @@ fn shared_constructor_fields_preserve_native_spelling_and_refusals() {
         };
         let expected =
             synthesize_surface_algebraic(&native, ParameterBinding::default(), &state, &names);
+        assert!(
+            expected.is_some(),
+            "constructor field needs a Surface spelling"
+        );
         let root = KernelTermImport::default().algebraic(&native);
         let exports = KernelTermExport::algebraic_export_count();
         assert_eq!(

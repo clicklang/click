@@ -5483,15 +5483,33 @@ fn bounded_shift_count(
     facts: &ExecutionFacts,
 ) -> bool {
     use MachineIntegerType::{Int32, Int64, UInt32, UInt64};
+    crate::instrumentation::record_deterministic_work(1);
+    // Validity has already excluded negative counts. A remainder's
+    // magnitude is below the magnitude of its nonzero literal divisor.
+    if let Some((operation_format, MachineBinaryOp::Remainder, [_, divisor])) = count.binary()
+        && operation_format == format
+        && let Some(divisor) = divisor
+            .literal()
+            .and_then(|term| format.constant_from_term(&term))
+        && let Some(divisor) = divisor.to_i128()
+        && (1..=u128::from(limit)).contains(&divisor.unsigned_abs())
+    {
+        return true;
+    }
     let endpoint = crate::kernel::machine_integer::range::constant_word(format, &limit.into())
         .expect("shift count limit fits word");
-    crate::instrumentation::record_deterministic_work(1);
     let condition = condition_for_operand_views(
         format,
         CompareRelation::LessThan,
         [count, MachineOperandView::Legacy(&endpoint)],
     );
     if indexed_condition_value(assumptions, facts, &condition) == Some(true) {
+        return true;
+    }
+    if facts
+        .indexed_guard_upper_bound(format, count)
+        .is_some_and(|upper| upper < u64::from(limit))
+    {
         return true;
     }
     let small = |upper| (0..i64::from(limit)).contains(&upper);

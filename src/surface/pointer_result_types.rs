@@ -614,7 +614,11 @@ impl Analysis<'_> {
                 self.check_expression(right, bindings, definition)?;
             }
             ClickProposition::FloatClassification { expression, .. }
-            | ClickProposition::Defined { expression } => {
+            | ClickProposition::Defined { expression }
+            | ClickProposition::IsA {
+                pointer: expression,
+                ..
+            } => {
                 self.check_expression(expression, bindings, definition)?;
             }
             ClickProposition::PredicateCall { arguments, .. } => {

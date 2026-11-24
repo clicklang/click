@@ -47,3 +47,48 @@ fn signed_shift_headroom_uses_indexed_operand_extrema() {
         );
     }
 }
+
+#[test]
+fn signed_shift_headroom_uses_indexed_expression_guards() {
+    let count = MachineTerm::var(Variable(975_001));
+    let assumptions = PureFactContext::new();
+    let one = MachineTerm::constant(1);
+    for related in [false, true] {
+        let samples = [4, 16, 64].map(|size| {
+            let mut guards = ExecutionFacts::new();
+            guards.ensure_indexed();
+            guards.push(ExecutionPureFact::new(Proposition::condition_is(
+                ConditionTerm::signed_less_than(count.clone(), MachineTerm::constant(16)),
+                true,
+            )));
+            for index in 0..size {
+                let value = if related {
+                    count.clone()
+                } else {
+                    MachineTerm::var(Variable(975_100 + u64::from(index)))
+                };
+                guards.push(ExecutionPureFact::new(Proposition::condition_is(
+                    ConditionTerm::signed_less_equal(value, MachineTerm::constant(100 + index)),
+                    true,
+                )));
+            }
+            let (fits, work) = crate::instrumentation::measure_deterministic_work(|| {
+                signed_shift_fits_from_bounds(
+                    MachineIntegerType::Int32,
+                    &one,
+                    &count,
+                    false,
+                    &assumptions,
+                    &guards,
+                )
+            });
+            assert!(fits);
+            work
+        });
+        let minimum = samples.iter().copied().min().unwrap();
+        assert!(
+            samples.iter().all(|&work| work <= minimum + 4),
+            "{related}: {samples:?}"
+        );
+    }
+}

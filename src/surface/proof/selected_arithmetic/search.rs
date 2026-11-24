@@ -374,6 +374,27 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         };
         let mut carried =
             crate::kernel::search::ProofSearch::carried_machine_facts(search_input, &candidates);
+        // A mask is a single atom of the affine expression. Offer its
+        // Integer bounds directly, even when the held word comparisons
+        // are indexed under the compound word instead of its variables.
+        for value in crate::kernel::proof::integer_arithmetic::integer_affine_machine_values(goal) {
+            let Some(bounds) = crate::kernel::proof::fact_reasoning::literal_mask_bounds(&value)
+            else {
+                continue;
+            };
+            for bound in bounds {
+                check_verification_deadline()?;
+                if let Some(surface) = search_input.structural_proposition_candidate(&bound) {
+                    carried.push(Carried {
+                        establish: Establish::Steps(vec![have(
+                            surface.clone(),
+                            vec![ProofStep::Known],
+                        )]),
+                        surface,
+                    });
+                }
+            }
+        }
         // Every sum or difference an `Integer` claim observes, from the
         // goal, the carried facts, and the connected `defined(...)` facts,
         // and every one nested inside an observed operation: each gets its

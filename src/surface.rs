@@ -2486,6 +2486,13 @@ pub enum ClickProposition {
         name: String,
         arguments: Vec<ContractExpression>,
     },
+    /// `is_a<T>(p)`: the object `p` points to is a `T`. It holds exactly
+    /// where the proof has type evidence for `p`, such as a resource body's
+    /// typed call or a typed parameter, and lowers to that evidence's fact.
+    IsA {
+        class: crate::kernel::effective_type::CAccessClass,
+        pointer: ContractExpression,
+    },
 }
 
 impl Clone for ClickProposition {
@@ -2530,6 +2537,10 @@ fn clone_click_proposition_atom(proposition: &ClickProposition) -> ClickProposit
         },
         ClickProposition::Defined { expression } => ClickProposition::Defined {
             expression: expression.clone(),
+        },
+        ClickProposition::IsA { class, pointer } => ClickProposition::IsA {
+            class: class.clone(),
+            pointer: pointer.clone(),
         },
         ClickProposition::PredicateCall { name, arguments } => ClickProposition::PredicateCall {
             name: name.clone(),
@@ -3291,7 +3302,11 @@ fn collect_current_proposition_variables(
             ClickProposition::Loadable { segment } => {
                 collect_current_segment_variables(segment, names);
             }
-            ClickProposition::Defined { expression } => {
+            ClickProposition::Defined { expression }
+            | ClickProposition::IsA {
+                pointer: expression,
+                ..
+            } => {
                 collect_current_contract_expression_variables(expression, names);
             }
             // The proposition itself is anchored, so current-local writes cannot
@@ -8515,9 +8530,11 @@ fn click_proposition_reads_memory(
                 || contract_expression_reads_memory(right, callees)
         }
         ClickProposition::FloatClassification { expression, .. }
-        | ClickProposition::Defined { expression } => {
-            contract_expression_reads_memory(expression, callees)
-        }
+        | ClickProposition::Defined { expression }
+        | ClickProposition::IsA {
+            pointer: expression,
+            ..
+        } => contract_expression_reads_memory(expression, callees),
         // Resource separation, containment, loadability, states, and
         // predicates all observe the C state.
         ClickProposition::Separate { .. }
