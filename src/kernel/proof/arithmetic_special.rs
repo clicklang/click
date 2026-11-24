@@ -3101,6 +3101,74 @@ pub(crate) fn computed_shift_divisor_bound(goal: &Proposition) -> Option<Proposi
     })
 }
 
+/// A cited numeric word order excludes a literal on the same word.
+/// Equality at a fixed width is independent of the chosen signed reading.
+pub(crate) fn word_order_excludes_literal(goal: &Proposition, premise: &Proposition) -> bool {
+    use crate::kernel::equality_graph::MachineAtom;
+    use crate::kernel::machine_integer::{Relation, comparison::comparison_view};
+    crate::instrumentation::record_deterministic_work(1);
+    let Some(view) = goal
+        .condition_native()
+        .and_then(|(condition, truth)| comparison_view(condition, *truth))
+    else {
+        return false;
+    };
+    if view.relation != Relation::NotEqual {
+        return false;
+    }
+    let [a, b] = view
+        .operands
+        .each_ref()
+        .map(|operand| operand.operand_view());
+    let Some((value, literal)) = [(a, b), (b, a)]
+        .into_iter()
+        .find_map(|(value, literal)| Some((value, literal.literal()?)))
+    else {
+        return false;
+    };
+    let Some(case) = premise
+        .condition_native()
+        .and_then(|(condition, truth)| comparison_view(condition, *truth))
+    else {
+        return false;
+    };
+    if case.format.format().bits() != view.format.format().bits()
+        || !matches!(case.relation, Relation::Less | Relation::LessEqual)
+    {
+        return false;
+    }
+    let Some(excluded) = case
+        .format
+        .constant_from_term(&literal)
+        .and_then(|term| term.to_i128())
+    else {
+        return false;
+    };
+    let key = MachineAtom::from_numeric_operand(case.format, value);
+    let [left, right] = case
+        .operands
+        .each_ref()
+        .map(|operand| operand.operand_view());
+    let strict = case.relation == Relation::Less;
+    [(left, right, true), (right, left, false)]
+        .into_iter()
+        .any(|(word, endpoint, upper)| {
+            endpoint
+                .literal()
+                .and_then(|term| case.format.constant_from_term(&term))
+                .and_then(|term| term.to_i128())
+                .is_some_and(|endpoint| {
+                    let (lower, upper) = if upper {
+                        (endpoint, excluded)
+                    } else {
+                        (excluded, endpoint)
+                    };
+                    (lower < upper || (strict && lower == upper))
+                        && MachineAtom::from_numeric_operand(case.format, word) == key
+                })
+        })
+}
+
 /// Test only the root operands and their named word comparisons. OR is
 /// nonzero when either operand is nonzero. OR and XOR have clear sign bits
 /// when both input sign bits are clear.
@@ -3686,7 +3754,7 @@ fn float_reciprocal_endpoint(premise: &FloatBound<'_>, goal: &FloatBound<'_>) ->
 pub(crate) fn checks_selected_float_bounds(goal: &Proposition, premises: &[Proposition]) -> bool {
     match premises {
         [premise] => {
-            float_bound_weakens(premise, goal)
+            (float_bound_weakens(premise, goal) || rounded_integer_float_bound(goal, Some(premise)))
                 || float_zero_product_premise(goal).as_ref() == Some(premise)
         }
         [_, _] | [_, _, _, _] => {
@@ -3694,6 +3762,97 @@ pub(crate) fn checks_selected_float_bounds(goal: &Proposition, premises: &[Propo
         }
         _ => false,
     }
+}
+
+/// An integer-to-float conversion is monotone at its destination precision.
+/// Use the source type range or one explicitly cited integer endpoint.
+pub(crate) fn rounded_integer_float_bound(
+    goal: &Proposition,
+    premise: Option<&Proposition>,
+) -> bool {
+    use crate::kernel::machine_integer::{Relation, comparison::comparison_view};
+    use crate::kernel::primitives::float_conversion::{
+        integer_to_float32_bits, integer_to_float64_bits,
+    };
+    use crate::kernel::{MachineOperandView, equality_graph::MachineAtom};
+    use num_traits::ToPrimitive;
+
+    let Some(bound) = float_bound(goal) else {
+        return false;
+    };
+    let Some(conversion) = bound.operand.conversion() else {
+        return false;
+    };
+    let Some(format) = MachineIntegerType::from_program_type(conversion.source_type()) else {
+        return false;
+    };
+    if format.format().bits() > 64 {
+        return false;
+    }
+    let operand = if let Some(root) = conversion.shared() {
+        MachineOperandView::Shared(root)
+    } else if let Some(native) = conversion.native() {
+        MachineOperandView::Legacy(native)
+    } else {
+        return false;
+    };
+    let (minimum, maximum) = format.format().bounds();
+    let endpoint = if let Some(premise) = premise {
+        let Some(view) = premise
+            .condition_native()
+            .and_then(|(condition, truth)| comparison_view(condition, *truth))
+        else {
+            return false;
+        };
+        if view.format != format || !matches!(view.relation, Relation::Less | Relation::LessEqual) {
+            return false;
+        }
+        let [left, right] = &view.operands;
+        let (literal, named) = if bound.lower {
+            (left, right)
+        } else {
+            (right, left)
+        };
+        let Some(literal) = literal
+            .operand_view()
+            .literal()
+            .and_then(|term| format.constant_from_term(&term))
+        else {
+            return false;
+        };
+        if MachineAtom::from_numeric_operand(format, named.operand_view())
+            != MachineAtom::from_numeric_operand(format, operand)
+        {
+            return false;
+        }
+        let mut endpoint = literal.to_integer();
+        if view.relation == Relation::Less {
+            endpoint += if bound.lower { 1 } else { -1 };
+        }
+        endpoint
+    } else if bound.lower {
+        minimum
+    } else {
+        maximum
+    };
+    let Some(value) = endpoint.to_i128() else {
+        return false;
+    };
+    let bits = match bound.format {
+        KernelFloatType::Float32 => {
+            u64::from(integer_to_float32_bits(value < 0, value.unsigned_abs()))
+        }
+        KernelFloatType::Float64 => integer_to_float64_bits(value < 0, value.unsigned_abs()),
+    };
+    crate::instrumentation::record_deterministic_work(1);
+    float_endpoint_establishes(&bound, bits, false)
+}
+
+pub(crate) fn is_rounded_integer_float_bound(goal: &Proposition) -> bool {
+    float_bound(goal)
+        .and_then(|bound| bound.operand.conversion())
+        .and_then(|conversion| MachineIntegerType::from_program_type(conversion.source_type()))
+        .is_some_and(|format| format.format().bits() <= 64)
 }
 
 /// One checked unary transfer followed by ordered endpoint weakening.
@@ -3874,6 +4033,20 @@ fn finite_float_requirement(
         crate::kernel::StoredConditionTerm::from_root(condition)?,
         true,
     ))
+}
+
+/// One sign flip or exact widening preserves finiteness.
+pub(super) fn float_finiteness_source(goal: &Proposition) -> Option<Proposition> {
+    let Proposition::ConditionIs(condition, true) = goal else {
+        return None;
+    };
+    let (_, FloatClassification::Finite, operand) =
+        condition.operand_view().float_classification()?
+    else {
+        return None;
+    };
+    let source = operand.negate().or_else(|| operand.widened_float32())?;
+    finite_float_requirement(source.format(), retained_float(source))
 }
 
 /// Finite self-subtraction gives zero. Finite, nonzero self-division gives
