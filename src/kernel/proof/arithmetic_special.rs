@@ -3586,27 +3586,7 @@ pub(crate) fn float_bound_weakens(premise: &Proposition, goal: &Proposition) -> 
     {
         return float_endpoint_establishes(&goal, premise.endpoint, premise.strict);
     }
-    if let Some((crate::kernel::FloatBinaryOperator::Divide, [numerator, divisor])) =
-        goal.operand.binary()
-        && let Some(numerator) = numerator.literal_bits()
-        && positive_finite_float(goal.format, numerator)
-        && premise.format == goal.format
-        && premise.lower
-        && positive_finite_float(goal.format, premise.endpoint)
-        && same_float_operand(premise.operand, divisor)
-    {
-        // The divisor is positive and may be +infinity. The reciprocal
-        // decreases to +0, and its upper endpoint rounds at this width.
-        let endpoint = if goal.lower {
-            0
-        } else {
-            crate::kernel::primitives::float_binary_bits_at(
-                goal.format,
-                numerator,
-                premise.endpoint,
-                crate::kernel::FloatBinaryOperator::Divide,
-            )
-        };
+    if let Some((_, endpoint)) = positive_reciprocal_endpoint(&premise, &goal) {
         return float_endpoint_establishes(&goal, endpoint, false);
     }
     let Some((operand, operation)) = float_bound_operation(goal.operand) else {
@@ -3620,6 +3600,53 @@ pub(crate) fn float_bound_weakens(premise: &Proposition, goal: &Proposition) -> 
     }
     let (endpoint, strict) = operation.apply(goal.format, premise.endpoint, premise.strict);
     float_endpoint_establishes(&goal, endpoint, strict)
+}
+
+/// The one-sided reciprocal bound selected by the existing float planner.
+fn positive_reciprocal_endpoint(
+    source: &FloatBound<'_>,
+    goal: &FloatBound<'_>,
+) -> Option<(u64, u64)> {
+    use crate::kernel::FloatBinaryOperator::Divide;
+    let (Divide, [numerator, divisor]) = goal.operand.binary()? else {
+        return None;
+    };
+    let numerator = numerator.literal_bits()?;
+    if !positive_finite_float(goal.format, numerator)
+        || source.format != goal.format
+        || !source.lower
+        || !positive_finite_float(goal.format, source.endpoint)
+        || !same_float_operand(source.operand, divisor)
+    {
+        return None;
+    }
+    // The divisor may be +infinity. The reciprocal decreases to +0,
+    // and its upper endpoint rounds at the operation's precision.
+    let endpoint = if goal.lower {
+        0
+    } else {
+        crate::kernel::primitives::float_binary_bits_at(
+            goal.format,
+            numerator,
+            source.endpoint,
+            Divide,
+        )
+    };
+    Some((numerator, endpoint))
+}
+
+pub(crate) fn float_reciprocal_bound_weakening(
+    premise: &Proposition,
+    goal: &Proposition,
+) -> Option<(FloatBoundWeakening, u64, bool)> {
+    let source = float_bound(premise)?;
+    let bound = float_bound(goal)?;
+    let (numerator, endpoint) = positive_reciprocal_endpoint(&source, &bound)?;
+    Some((
+        FloatBoundWeakening::new(&bound, endpoint, false)?,
+        numerator,
+        source.strict,
+    ))
 }
 
 /// One checked unary transfer followed by ordered endpoint weakening.

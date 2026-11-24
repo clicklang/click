@@ -5581,3 +5581,35 @@ path = "reference/library/index.md#float_orderfloat64_product_lower"
 [[item]]
 id = "library.theorem.float_order::float64_product_upper"
 path = "reference/library/index.md#float_orderfloat64_product_upper"
+
+[[item]]
+id = "library.theorem.float_order::float32_reciprocal_lower"
+path = "reference/library/index.md#float_orderfloat32_reciprocal_lower"
+
+[[item]]
+id = "library.theorem.float_order::float32_reciprocal_upper"
+path = "reference/library/index.md#float_orderfloat32_reciprocal_upper"
+
+[[item]]
+id = "library.theorem.float_order::float32_quotient_lower"
+path = "reference/library/index.md#float_orderfloat32_quotient_lower"
+
+[[item]]
+id = "library.theorem.float_order::float32_quotient_upper"
+path = "reference/library/index.md#float_orderfloat32_quotient_upper"
+
+[[item]]
+id = "library.theorem.float_order::float64_reciprocal_lower"
+path = "reference/library/index.md#float_orderfloat64_reciprocal_lower"
+
+[[item]]
+id = "library.theorem.float_order::float64_reciprocal_upper"
+path = "reference/library/index.md#float_orderfloat64_reciprocal_upper"
+
+[[item]]
+id = "library.theorem.float_order::float64_quotient_lower"
+path = "reference/library/index.md#float_orderfloat64_quotient_lower"
+
+[[item]]
+id = "library.theorem.float_order::float64_quotient_upper"
+path = "reference/library/index.md#float_orderfloat64_quotient_upper"

@@ -31,7 +31,8 @@ int32 divide(float x, float y) {
 theorem reciprocal_upper(y: float) {
     requires y >= float32_from_bits(0x3f800000);
     ensures float32_from_bits(0x3f800000) / y <= float32_from_bits(0x3f800000) by {
-        normalize() using { y >= float32_from_bits(0x3f800000); };
+        apply(click::float_order::float32_reciprocal_upper(
+            float32_from_bits(0x3f800000), y, float32_from_bits(0x3f800000)));
     }
 }
 

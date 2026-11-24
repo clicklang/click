@@ -29,6 +29,15 @@ The finite interval bounds `float_order::float32_product_lower`,
 and `float_order::float64_product_upper` are exercised in
 [`arithmetic_expression_float_signed_ranges.md`](arithmetic_expression_float_signed_ranges.md).
 
+The reciprocal laws `float_order::float32_reciprocal_lower`,
+`float_order::float32_reciprocal_upper`, `float_order::float64_reciprocal_lower`,
+and `float_order::float64_reciprocal_upper` are exercised in the cast proofs in
+[`arithmetic_expression_float_reciprocal_and_products.md`](arithmetic_expression_float_reciprocal_and_products.md)
+and [`arithmetic_expression_float_signed_quotient_ranges.md`](arithmetic_expression_float_signed_quotient_ranges.md).
+The quotient laws `float_order::float32_quotient_lower`,
+`float_order::float32_quotient_upper`, `float_order::float64_quotient_lower`,
+and `float_order::float64_quotient_upper` are exercised in those same proofs.
+
 The representation law `integer::uint32_from_le_bytes` is exercised in
 [`integer_uint32_from_le_bytes_initialization.md`](integer_uint32_from_le_bytes_initialization.md).
 

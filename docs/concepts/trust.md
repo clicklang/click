@@ -158,7 +158,7 @@ theorem certification consumes checks that theorem once. A proved library
 theorem is trusted to the extent that the check of its proof is; a kernel
 standard theorem is trusted to the extent that its builder is.
 
-The library also declares 99 `axiom`s, which are trusted, not proved.
+The library also declares 107 `axiom`s, which are trusted, not proved.
 Seven are the laws of the primitive type `Vec<T>` in
 `library/rust/vec.click`, which relate its bodyless operations `vec::len`,
 `vec::get`, `vec::push` and `vec::set`
@@ -237,6 +237,14 @@ product below even when an operand is infinite. Finite operand intervals
 rule out NaNs and infinities. The real product reaches its extrema at a
 corner of the interval rectangle, and monotone IEEE rounding preserves
 each non-strict bound, including on overflow to infinity.
+
+The floating reciprocal laws in `library/float_order.click` use a positive
+finite numerator and a positive bound on the divisor. An infinite positive
+divisor gives positive zero. The floating quotient laws bound two
+finite operand intervals by the four rounded endpoint combinations.
+The divisor interval lies on one side of zero, so each corner is defined
+and ordinary IEEE rounding preserves the order bounds. The two-sided
+operand bounds exclude NaN and infinity from the operands.
 
 Only the built-in library modules may declare a primitive `type`, a bodyless
 `function` or an `axiom`; the parser refuses each in any other file. The

@@ -26924,6 +26924,51 @@ fn float_cast_bounds_expand_and_cold_replay() {
 }
 
 #[test]
+fn positive_reciprocal_and_signed_quotient_bounds_expand_and_cold_replay() {
+    for (fixture, cases) in [
+        (
+            "arithmetic_expression_float_reciprocal_and_products",
+            &[
+                ("reciprocal", "float32_reciprocal"),
+                ("divide", "float32_quotient"),
+            ][..],
+        ),
+        (
+            "arithmetic_expression_float_signed_quotient_ranges",
+            &[
+                ("reciprocal64", "float64_reciprocal"),
+                ("divide_negative_denominator", "float64_quotient"),
+            ][..],
+        ),
+    ] {
+        let (source, inputs) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+        let sources = crate::cli::source_refs(&inputs);
+        verify_c_sources(&source, &sources).unwrap();
+        for (function, law) in cases {
+            let claim = format!("{function}.ensures_0");
+            let expanded = expand_c_claim_source_by_label(&source, &sources, &claim)
+                .unwrap_or_else(|error| panic!("{claim}: {}", error.report()));
+            assert_eq!(
+                expanded.matches("normalize()").count(),
+                source.matches("normalize()").count(),
+                "{claim}"
+            );
+            let generated = expanded.split("theorem reciprocal_upper(").next().unwrap();
+            for direction in ["lower", "upper"] {
+                assert!(
+                    generated.contains(&format!("click::float_order::{law}_{direction}")),
+                    "{claim}: {generated}"
+                );
+            }
+            crate::surface::check_audit_claim(&claim, true, || {
+                verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+            })
+            .unwrap_or_else(|error| panic!("{claim}: {error}"));
+        }
+    }
+}
+
+#[test]
 fn indexed_store_bounds_expand_to_an_explicit_step_proof() {
     let (source, sources) = mdtest_sources("mdtests/indexed_store_exposes_its_bounds.md");
     let implicit = source.replace("step() by { known(); }", "step();");

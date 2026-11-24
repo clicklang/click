@@ -3942,6 +3942,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if let Some(closed) = Self::try_exact_float_bound_transfer(input, source, goal)? {
             return Ok(Some(closed));
         }
+        if let Some(closed) = Self::try_float_reciprocal_bound(input, source, goal, source_surface)?
+        {
+            return Ok(Some(closed));
+        }
         Self::try_float_scale_bound(input, source, goal, source_surface)
     }
 

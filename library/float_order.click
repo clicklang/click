@@ -169,3 +169,105 @@ axiom float64_product_upper(x: double, y: double, a: double, b: double, c: doubl
     requires c * d <= bound;
     ensures x * y <= bound;
 }
+
+// Dividing a positive finite numerator by a positive value decreases to
+// positive zero as the divisor increases to positive infinity.
+axiom float32_reciprocal_lower(n: float, y: float, b: float) {
+    requires isfinite(n);
+    requires float32_from_bits(0) < n;
+    requires float32_from_bits(0) < b;
+    requires b <= y;
+    ensures n / y >= float32_from_bits(0);
+}
+
+axiom float32_reciprocal_upper(n: float, y: float, b: float) {
+    requires isfinite(n);
+    requires float32_from_bits(0) < n;
+    requires float32_from_bits(0) < b;
+    requires b <= y;
+    ensures n / y <= n / b;
+}
+
+axiom float32_quotient_lower(x: float, y: float, a: float, b: float, c: float, d: float, bound: float) {
+    requires x >= a;
+    requires y >= b;
+    requires x <= c;
+    requires y <= d;
+    requires isfinite(a);
+    requires isfinite(b);
+    requires isfinite(c);
+    requires isfinite(d);
+    requires float32_from_bits(0) < b or d < float32_from_bits(0);
+    requires bound <= a / b;
+    requires bound <= a / d;
+    requires bound <= c / b;
+    requires bound <= c / d;
+    ensures x / y >= bound;
+}
+
+axiom float32_quotient_upper(x: float, y: float, a: float, b: float, c: float, d: float, bound: float) {
+    requires x >= a;
+    requires y >= b;
+    requires x <= c;
+    requires y <= d;
+    requires isfinite(a);
+    requires isfinite(b);
+    requires isfinite(c);
+    requires isfinite(d);
+    requires float32_from_bits(0) < b or d < float32_from_bits(0);
+    requires a / b <= bound;
+    requires a / d <= bound;
+    requires c / b <= bound;
+    requires c / d <= bound;
+    ensures x / y <= bound;
+}
+
+axiom float64_reciprocal_lower(n: double, y: double, b: double) {
+    requires isfinite(n);
+    requires float64_from_bits(0) < n;
+    requires float64_from_bits(0) < b;
+    requires b <= y;
+    ensures n / y >= float64_from_bits(0);
+}
+
+axiom float64_reciprocal_upper(n: double, y: double, b: double) {
+    requires isfinite(n);
+    requires float64_from_bits(0) < n;
+    requires float64_from_bits(0) < b;
+    requires b <= y;
+    ensures n / y <= n / b;
+}
+
+axiom float64_quotient_lower(x: double, y: double, a: double, b: double, c: double, d: double, bound: double) {
+    requires x >= a;
+    requires y >= b;
+    requires x <= c;
+    requires y <= d;
+    requires isfinite(a);
+    requires isfinite(b);
+    requires isfinite(c);
+    requires isfinite(d);
+    requires float64_from_bits(0) < b or d < float64_from_bits(0);
+    requires bound <= a / b;
+    requires bound <= a / d;
+    requires bound <= c / b;
+    requires bound <= c / d;
+    ensures x / y >= bound;
+}
+
+axiom float64_quotient_upper(x: double, y: double, a: double, b: double, c: double, d: double, bound: double) {
+    requires x >= a;
+    requires y >= b;
+    requires x <= c;
+    requires y <= d;
+    requires isfinite(a);
+    requires isfinite(b);
+    requires isfinite(c);
+    requires isfinite(d);
+    requires float64_from_bits(0) < b or d < float64_from_bits(0);
+    requires a / b <= bound;
+    requires a / d <= bound;
+    requires c / b <= bound;
+    requires c / d <= bound;
+    ensures x / y <= bound;
+}

@@ -906,6 +906,9 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_float_sum_bou
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_float_sum_bound	try_float_bound_weakening	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_float_bound_chain	try_float_bound_link	2
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_float_bound_link	try_float_scale_bound	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_float_bound_link	try_float_reciprocal_bound	1
+src/surface/proof/smart_closures/float_division.rs	search	ProofSearch::try_float_reciprocal_bound	driver	2
+src/surface/proof/smart_closures/float_division.rs	search	ProofSearch::try_float_reciprocal_bound	try_float_bound_weakening	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_float_bound_link	try_exact_float_bound_transfer	1
 src/surface/proof/driver/scopes.rs	driver	ProofDriver::try_float_bound_link	try_float_bound_link	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_float_scale_bound	driver	1
