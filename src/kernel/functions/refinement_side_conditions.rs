@@ -459,6 +459,42 @@ pub(in crate::kernel) fn spec_algebraic_expression_is_obligation_free(
     spec_tree_all(SpecNode::Algebraic(expression), obligation_free_node)
 }
 
+/// An algebraic match can retain total conditionals in its arms. Keep this
+/// separate from the datatype reflexivity shortcut, which skips evaluation.
+pub(in crate::kernel) fn spec_algebraic_match_can_retain_arms(
+    expression: &SpecAlgebraicExpression,
+) -> bool {
+    fn direct_operand(expression: &SpecExpression) -> bool {
+        matches!(
+            expression,
+            SpecExpression::Value(_)
+                | SpecExpression::ProgramExpression(
+                    ProgramExpression::Value(_) | ProgramExpression::Variable(_),
+                )
+        )
+    }
+
+    fn guard_operand(expression: &SpecExpression) -> bool {
+        direct_operand(expression)
+            || matches!(expression, SpecExpression::Cast(value, ProgramType::Bool)
+                if direct_operand(value))
+    }
+
+    spec_tree_all(SpecNode::Algebraic(expression), |node| match node {
+        SpecNode::Algebraic(SpecAlgebraicExpression {
+            node: SpecAlgebraicExpressionNode::If { .. },
+            ..
+        }) => Visit::Descend,
+        SpecNode::Proposition(SpecProposition::Truth(_)) => Visit::Skip,
+        SpecNode::Proposition(SpecProposition::Comparison {
+            left,
+            operator: ComparisonOperator::Equal | ComparisonOperator::NotEqual,
+            right,
+        }) if guard_operand(left) && guard_operand(right) => Visit::Skip,
+        node => obligation_free_node(node),
+    })
+}
+
 pub(super) fn obligation_free_node(node: SpecNode<'_>) -> Visit<()> {
     match node {
         SpecNode::Algebraic(algebraic) => match &algebraic.node {

@@ -831,6 +831,25 @@ impl MemoryStateLabels {
     }
 }
 
+/// A comparison of full pointers can carry more information than their
+/// common address contains.
+fn distinct_pointers_at_one_address(
+    left: &crate::kernel::Pointer,
+    right: &crate::kernel::Pointer,
+) -> bool {
+    left != right && left.address() == right.address()
+}
+
+pub(super) fn pointer_comparison_needs_source(proposition: &Proposition) -> bool {
+    matches!(proposition.condition_native(), Some((ConditionTerm::PointerEqual(left, right), _))
+        if distinct_pointers_at_one_address(left, right))
+}
+
+fn describe_pointer_comparison(address: &str, equality: bool) -> String {
+    let relation = if equality { "equal" } else { "unequal" };
+    format!("whether two pointers at `{address}` with different provenance are {relation}")
+}
+
 /// Whether the renderer spells `proposition` with no placeholder for an
 /// unnamed value, pointer or state. Checked on a copy of `labels`, so asking
 /// assigns no placeholder letters.
@@ -1179,7 +1198,7 @@ impl Drop for TypedNotationScope {
     }
 }
 
-fn typed_notation() -> bool {
+pub(super) fn typed_notation() -> bool {
     TYPED_NOTATION.with(std::cell::Cell::get)
 }
 
@@ -2092,9 +2111,15 @@ impl Renderer<'_> {
                 self.offset(b, 0);
             }
             ConditionTerm::PointerEqual(a, b) => {
-                self.pointer(a.address());
-                self.push(" == ");
-                self.pointer(b.address());
+                if distinct_pointers_at_one_address(a, b) {
+                    self.push("pointer equality at ");
+                    self.pointer(a.address());
+                    self.push(" (the two pointers have different provenance)");
+                } else {
+                    self.pointer(a.address());
+                    self.push(" == ");
+                    self.pointer(b.address());
+                }
             }
             ConditionTerm::AddressEqual(a, b) => {
                 self.pointer(a);
@@ -2987,6 +3012,27 @@ mod tests {
 
     fn render_proposition(proposition: &Proposition) -> String {
         render_proposition_labeled(proposition, &mut MemoryStateLabels::ambient())
+    }
+
+    #[test]
+    fn pointer_equality_diagnostic_keeps_provenance_distinct_at_the_same_address() {
+        use crate::kernel::{Pointer, ProgramType, SubobjectBounds};
+        let address = Address::symbolic(Variable(10993745));
+        let left = Pointer::new(address.clone(), ProgramType::Int32Pointer);
+        let right = left.clone().with_bounds(Some(SubobjectBounds {
+            start: address,
+            width: MachineTerm::uint64_constant(4),
+        }));
+        let goal = Proposition::condition_is(
+            ConditionTerm::PointerEqual(Box::new(left), Box::new(right)),
+            true,
+        );
+        let mut labels = MemoryStateLabels::ambient();
+        assert!(!renders_exactly(&goal, &labels));
+        let ordinary = render_proposition_labeled(&goal, &mut labels);
+        assert!(ordinary.contains("different provenance"), "{ordinary}");
+        let trace = render_internal_proposition_labeled(&goal, &mut labels);
+        assert!(trace.contains("different provenance"), "{trace}");
     }
 
     #[test]

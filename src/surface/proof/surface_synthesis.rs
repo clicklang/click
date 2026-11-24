@@ -4098,9 +4098,8 @@ pub(super) fn raise_kernel_term(
     raise_kernel_term_dispatch(term, parameter_binding, state, bound_variables)
 }
 
-// A comparison's presentation reads addresses and declared pointer types.
-// Keep producer qualifiers/evidence/bounds on the root; do not export those
-// unrelated payloads merely to pass through a native condition constructor.
+// Pointer-value equality can name full pointers even when their addresses
+// coincide. Address and offset comparisons retain their own operand types.
 fn raise_pointer_comparison(
     term: &crate::kernel::KernelTerm,
     parameter_binding: ParameterBinding<'_>,
@@ -4110,7 +4109,23 @@ fn raise_pointer_comparison(
     use crate::kernel::{KernelAddressOffset, KernelTermNode as Node};
     let (left, right) = match term.node() {
         Node::PointerEqual(pair) => {
+            let [left, right] = pair.arguments();
+            let shared_address =
+                left.node().address == right.node().address && !left.same_source_payload(right);
             let operand = |value: &crate::kernel::SharedPointer| {
+                if let Some(name) = pointer_names::shared_name(value) {
+                    return Some(ContractExpression::ProgramExpression(
+                        ProgramExpression::Variable(name.into()),
+                    ));
+                }
+                if shared_address {
+                    return synthesize_pointer_equality_operand(
+                        &value.export().ok()?,
+                        parameter_binding,
+                        state,
+                        bound_variables,
+                    );
+                }
                 synthesize_pointer_equality_address(
                     &value.node().address.export().ok()?,
                     value.node().program_type,
@@ -4119,10 +4134,16 @@ fn raise_pointer_comparison(
                     bound_variables,
                 )
             };
-            (
-                operand(&pair.arguments()[0])?,
-                operand(&pair.arguments()[1])?,
-            )
+            let left = operand(left)?;
+            let right = operand(right)?;
+            if shared_address && left == right {
+                crate::surface::proof::raise_lower_audit::note_reason(|| {
+                    "pointer equality: its operands share an address but have no distinct names"
+                        .to_string()
+                });
+                return None;
+            }
+            (left, right)
         }
         Node::AddressEqual { arguments } => {
             let left = arguments[0].export().ok()?;

@@ -196,6 +196,35 @@ fn condition_proposition_storage_clones_growing_logical_dags_without_exports() {
 }
 
 #[test]
+fn condition_hash_reuses_the_key_of_a_growing_shared_dag() {
+    use std::hash::{DefaultHasher, Hash, Hasher};
+
+    let mut warm_baseline = None;
+    for size in [4, 16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut root = KernelTerm::variable(KernelType::Bool, Variable(10993717));
+        for _ in 0..size {
+            root = KernelTerm::boolean_equal_raw([root.clone(), root]);
+        }
+        let condition = StoredConditionTerm::from_root(root.clone()).unwrap();
+        let hash = || {
+            let mut hasher = DefaultHasher::new();
+            condition.hash(&mut hasher);
+            hasher.finish()
+        };
+        let (fingerprint, cold_work) = crate::instrumentation::measure_deterministic_work(hash);
+        assert!(cold_work <= 4 * (size + 1), "size={size} work={cold_work}");
+        let (_, warm_work) = crate::instrumentation::measure_deterministic_work(|| {
+            for _ in 0..32 {
+                assert_eq!(hash(), fingerprint);
+            }
+        });
+        assert_eq!(warm_work, *warm_baseline.get_or_insert(warm_work), "size={size}");
+        assert!(!root.has_cached_native_argument());
+    }
+}
+
+#[test]
 fn mixed_integer_descriptor_identity_survives_handle_drop_without_exports() {
     use crate::kernel::{KernelFold, KernelFoldIndex, SharedMachineIntegerTerm};
     let format = MachineIntegerType::Int32;

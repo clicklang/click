@@ -10141,8 +10141,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 };
                 match purpose {
                     SurfaceRaisingPurpose::AvailablePremise => {
-                        super::super::execution_planning::without_open_obligation_probe(operation)
-                            .ok()
+                        search_input.lower_proposition_spelling(candidate).ok()
                     }
                     SurfaceRaisingPurpose::ProposedGoal => {
                         // This private probe checks only the candidate's term identity.

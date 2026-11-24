@@ -2,6 +2,7 @@
 //! Native input and selected native output retain their exact syntax; shared
 //! producers own their common root and reuse its existing compatibility reader.
 use super::*;
+use crate::kernel::execution_value::storage_keys::ConditionStorageKey;
 use crate::kernel::{ExecutionValue, RetainedProgramValue};
 
 #[derive(Clone)]
@@ -293,12 +294,19 @@ impl StoredAlgebraicTerm {
 pub struct StoredConditionTerm(StoredCondition);
 #[derive(Clone)]
 enum StoredCondition {
-    Input(Arc<ConditionTerm>),
+    Input(Arc<NativeConditionInput>),
     Shared(KernelTerm),
+}
+struct NativeConditionInput {
+    value: ConditionTerm,
+    connective_key: std::sync::OnceLock<ConditionStorageKey>,
 }
 impl From<ConditionTerm> for StoredConditionTerm {
     fn from(value: ConditionTerm) -> Self {
-        Self(StoredCondition::Input(Arc::new(value)))
+        Self(StoredCondition::Input(Arc::new(NativeConditionInput {
+            value,
+            connective_key: std::sync::OnceLock::new(),
+        })))
     }
 }
 impl StoredConditionTerm {
@@ -325,7 +333,7 @@ impl StoredConditionTerm {
     }
     pub(crate) fn native_compat(&self) -> &ConditionTerm {
         match &self.0 {
-            StoredCondition::Input(value) => value,
+            StoredCondition::Input(input) => &input.value,
             StoredCondition::Shared(root) => {
                 if let KernelTermNode::BoolLiteral(value) = root.node() {
                     return if *value {
@@ -554,27 +562,36 @@ impl std::fmt::Debug for StoredConditionTerm {
     }
 }
 impl StoredConditionTerm {
-    fn connective_roots<'a>(&'a self, other: &'a Self) -> Option<(&'a KernelTerm, &'a KernelTerm)> {
-        let connective = |root: &KernelTerm| {
-            matches!(
-                root.node(),
-                KernelTermNode::BoolIf { .. } | KernelTermNode::BoolEqual { .. }
-            )
-        };
-        let left = self.root().filter(|root| connective(root))?;
-        let right = other.root().filter(|root| connective(root))?;
-        Some((left, right))
+    fn connective_key(&self) -> Option<ConditionStorageKey> {
+        match &self.0 {
+            StoredCondition::Shared(root)
+                if matches!(
+                    root.node(),
+                    KernelTermNode::BoolIf { .. } | KernelTermNode::BoolEqual { .. }
+                ) =>
+            {
+                Some(root.condition_storage_key())
+            }
+            StoredCondition::Input(input)
+                if matches!(
+                    input.value,
+                    ConditionTerm::BoolIf { .. } | ConditionTerm::BoolEqual(..)
+                ) =>
+            {
+                Some(
+                    input
+                        .connective_key
+                        .get_or_init(|| ConditionStorageKey::native(&input.value))
+                        .clone(),
+                )
+            }
+            _ => None,
+        }
     }
 }
 impl PartialEq for StoredConditionTerm {
     fn eq(&self, other: &Self) -> bool {
-        if matches!((self.root(), other.root()), (Some(left), Some(right)) if left == right) {
-            return true;
-        }
-        if let Some((left, right)) = self.connective_roots(other) {
-            return left.condition_storage_key() == right.condition_storage_key();
-        }
-        self.native_compat() == other.native_compat()
+        self.cmp(other).is_eq()
     }
 }
 impl Eq for StoredConditionTerm {}
@@ -585,20 +602,26 @@ impl PartialOrd for StoredConditionTerm {
 }
 impl Ord for StoredConditionTerm {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        use std::cmp::Ordering;
         if matches!((self.root(), other.root()), (Some(left), Some(right)) if left == right) {
-            return std::cmp::Ordering::Equal;
+            return Ordering::Equal;
         }
-        if let Some((left, right)) = self.connective_roots(other) {
-            return left
-                .condition_storage_key()
-                .cmp(&right.condition_storage_key());
+        match (self.connective_key(), other.connective_key()) {
+            (Some(left), Some(right)) => left.cmp(&right),
+            // BoolIf and BoolEqual follow all atomic conditions in ConditionTerm.
+            (Some(_), None) => Ordering::Greater,
+            (None, Some(_)) => Ordering::Less,
+            (None, None) => self.native_compat().cmp(other.native_compat()),
         }
-        self.native_compat().cmp(other.native_compat())
     }
 }
 impl std::hash::Hash for StoredConditionTerm {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.native_compat().hash(state);
+        if let Some(key) = self.connective_key() {
+            key.hash(state);
+        } else {
+            self.native_compat().hash(state);
+        }
     }
 }
 impl std::fmt::Debug for StoredPointerOffset {
@@ -778,7 +801,10 @@ mod protocol_value_tests {
                 StoredConditionTerm::from_minted(value.clone()),
             ] {
                 assert_eq!(stored.native_compat(), value);
-                assert_eq!(hash(&stored), hash(value));
+                assert_eq!(
+                    hash(&stored),
+                    hash(&StoredConditionTerm::from(value.clone()))
+                );
                 assert_eq!(format!("{stored:?}"), format!("{value:?}"));
                 for other in &conditions {
                     let other_stored = StoredConditionTerm::from(other.clone());
@@ -862,8 +888,10 @@ mod protocol_value_tests {
             .map(|root| StoredConditionTerm::from_root(root.clone()).unwrap());
         assert_ne!(left, right);
         assert_eq!(left.cmp(&right), values[0].cmp(&values[1]));
+        let native = StoredConditionTerm::from(values[0].clone());
+        assert_eq!(left, native);
+        assert_eq!(hash(&left), hash(&native));
         assert!(roots.iter().all(|root| !root.has_cached_native_argument()));
-        assert_eq!(left, StoredConditionTerm::from(values[0].clone()));
     }
 
     #[test]

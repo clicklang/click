@@ -838,6 +838,20 @@ impl Printer<'_> {
                 return Some(negate(name, polarity));
             }
             ConditionTerm::PointerEqual(left, right) => {
+                if self.source_mode() && distinct_pointers_at_one_address(left, right) {
+                    if let Some(naming) = &self.labels.naming
+                        && let (Some(left), Some(right)) = (
+                            self.exact_pointer_value(left, naming),
+                            self.exact_pointer_value(right, naming),
+                        )
+                    {
+                        let operator = if polarity { "==" } else { "!=" };
+                        return Some(atom(format!("{left} {operator} {right}")));
+                    }
+                    self.labels.count_placeholder();
+                    let address = self.pointer(left.address(), depth)?;
+                    return Some(atom(describe_pointer_comparison(&address.text, polarity)));
+                }
                 let left = self.cvalue(
                     &crate::kernel::ProgramValue::Pointer((**left).clone()),
                     depth,
