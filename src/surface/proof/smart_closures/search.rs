@@ -4549,6 +4549,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 "checked-only verification forbids implicit solve; write its proof steps explicitly",
             ));
         }
+        if let Some(proof) = Self::try_recorded_allocation_alignment(search_input)? {
+            return Ok(Some(proof));
+        }
         if let Some(proof) =
             Self::try_bounded_arithmetic_closure(search_input, introduced_surfaces)?
         {
@@ -10782,39 +10785,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         };
         let goal = goal.clone();
         let attempted_closures = std::cell::RefCell::new(BTreeSet::new());
-        // An alignment mask is not a pointer comparison. Select rewrites
-        // from the exact aliases of its pointer operand, and cite the
-        // allocation by the region that produced it. After the rewrite the
-        // ordinary alignment check reads the intrinsic heap alignment.
-        let mut allocation_equalities = Vec::new();
-        if let Some((condition, _)) = goal.condition_native()
-            && let Some((pointer, _)) =
-                crate::kernel::proof::arithmetic_special::checked_pointer_alignment(condition)
-            && let Some(view) = proof.premise_fixed_state_view()
-        {
-            for alias in proof
-                .facts()
-                .assumptions()
-                .exact_pointer_aliases(pointer)
-                .take(MAX_SOLVE_SOURCE_PREMISES)
-            {
-                if crate::instrumentation::deadline_exceeded_with_work(1) {
-                    return Continue(());
-                }
-                if view
-                    .fixed_state
-                    .recorded_states
-                    .allocation_result(alias)
-                    .is_none()
-                {
-                    continue;
-                }
-                allocation_equalities.push(Proposition::condition_is(
-                    ConditionTerm::AddressEqual(Box::new(pointer.clone()), Box::new(alias.clone())),
-                    true,
-                ));
-            }
-        }
         // Pointer equalities between scaled offsets are candidates too:
         // `rewrite` carries one through the address of a load, so a
         // goal over `p->q->x` reaches `r->x` under `p->q == r`.
@@ -10861,9 +10831,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
             _ => proof.facts().load_equalities_mentioning(&goal),
         };
-        let equalities = allocation_equalities
+        let equalities = equality_candidates
             .into_iter()
-            .chain(equality_candidates)
             .chain(proof.facts().algebraic_equalities_mentioning(&goal));
         let mut has_source_candidate = false;
         for equality in equalities {

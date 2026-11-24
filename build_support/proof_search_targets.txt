@@ -229,6 +229,7 @@ try_returned_index_preservation
 try_integer_composition_using
 apply_integer_composition
 try_recorded_footprint_preservation
+try_recorded_allocation_alignment
 publish_selected_fact
 try_signed_interval_using
 ordinary_integer_fact

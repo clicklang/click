@@ -800,6 +800,49 @@ impl Words<'_, '_> {
     }
 }
 impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
+    /// Name the allocation underlying an aligned pointer read before using
+    /// the intrinsic alignment of its concrete address.
+    pub(in crate::surface::proof) fn try_recorded_allocation_alignment(
+        input: &Proof<'a>,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_recorded_allocation_alignment");
+        let Some((condition, _)) = input.goal().and_then(Proposition::condition_native) else {
+            return Ok(None);
+        };
+        let Some((pointer, _)) =
+            crate::kernel::proof::arithmetic_special::checked_pointer_alignment(condition)
+        else {
+            return Ok(None);
+        };
+        let Some(region) = input.premise_fixed_state_view().and_then(|view| {
+            let storage = input.facts().assumptions().alignment_storage_address(pointer)?;
+            view.fixed_state.recorded_states.allocation_result(&storage)
+        }) else {
+            return Ok(None);
+        };
+        let Some(ClickProposition::Comparison { left, right, .. }) = input.surface_goal() else {
+            return Ok(None);
+        };
+        let Some(pointer_source) = [left, right].into_iter().find_map(|expression| {
+            let (word, _) = alignment_mask(expression)?;
+            address_pointer(&word)
+        }) else {
+            return Ok(None);
+        };
+        let equality = ClickProposition::Comparison {
+            left: pointer_source,
+            operator: ComparisonOperator::Equal,
+            right: E::RegionAllocation(region),
+        };
+        let Some(rewritten) = attempt::candidate_outcome(
+            input.driver().apply_step(ProofStep::Rewrite(equality)),
+        )? else {
+            return Ok(None);
+        };
+        attempt::candidate_outcome(rewritten.driver().apply_step(ProofStep::Known))
+    }
+
     pub(in crate::surface::proof) fn try_address_words_using(
         input: &Proof<'a>,
         premises: &[ClickProposition],
