@@ -2,7 +2,7 @@
 
 A cited premise decides the goal's conditions in any of its spellings, in
 every family: at the other polarity, mirrored, and, for a comparison with a
-constant, from cited conditions on the same term. An ambient equality between
+constant, by rewriting it with an exact equality. An ambient equality between
 C machine values decides a condition at either width.
 
 ```c filename=normalize_using_reads_every_spelling_of_a_cited_premise.c
@@ -18,7 +18,7 @@ theorem spellings(x: int32, y: int32, a: uint64, b: uint64, n: int32) {
     requires n == 0;
     ensures not (x >= y) by { close() using { x < y; }; }
     ensures b > a by { close() using { a < b; }; }
-    ensures n != 1 by { normalize() using { n == 0; }; }
+    ensures n != 1 by { rewrite(n, 0); close(); }
 }
 
 theorem integer_mirror(i: Integer, j: Integer) {
@@ -28,7 +28,7 @@ theorem integer_mirror(i: Integer, j: Integer) {
 
 theorem ambient_wide(a: uint64, b: uint64) {
     requires a == b;
-    ensures a == b by { normalize() using { }; }
+    ensures a == b by { close(); }
 }
 ```
 

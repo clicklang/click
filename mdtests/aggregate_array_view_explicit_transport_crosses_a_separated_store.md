@@ -14,7 +14,7 @@ void write_first(struct Descriptor *owner) {
     ensures owner[1].length == old(owner[1].length);
 } by {
     have contains(memory(owner[1].data[0..1]), memory(owner[1].data[0..1])) by { apply(click::separation::contains_refl(memory(owner[1].data[0..1]))); }
-    have contains(memory(owner[0..2]), memory((&owner[1].length)[0..1])) by { normalize(); }
+    have contains(memory(owner[0..2]), memory((&owner[1].length)[0..1])) by { close(); }
     have separate(memory(owner[1].data[0..1]), memory((&owner[1].length)[0..1])) by {
         apply(click::separation::separate_restrict(memory(owner[1].data[0..1]), memory(owner[0..2]), memory(owner[1].data[0..1]), memory((&owner[1].length)[0..1])));
     }

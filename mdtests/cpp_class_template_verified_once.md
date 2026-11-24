@@ -69,7 +69,7 @@ int round_trip(Cell<int>& small, Cell<unsigned int>& large, int x, unsigned int 
     have small.value == x by { close(); }
     mark before_large;
     step();
-    have contains(memory(small.value), memory((&small.value)[0..1])) by { normalize(); }
+    have contains(memory(small.value), memory((&small.value)[0..1])) by { close(); }
     have contains(memory(large), region(1).footprint) by { close(); }
     have separate(memory(large), memory(small.value)) by { close(); }
     apply(click::separation::separate_restrict(memory(large), memory(small.value), region(1).footprint, memory((&small.value)[0..1])));

@@ -20,7 +20,7 @@ uint64 f(uint8 bytes[], uint64 n) {
 
     ensures result == 0u64 by {
         have contains(memory(bytes[0..3]), memory(bytes[0..3u64])) by {
-            normalize();
+            close();
         }
         have viewable(memory(bytes[0..3u64])) by {
             apply(click::separation::viewable_restrict(memory(bytes[0..3]), memory(bytes[0..3u64])));

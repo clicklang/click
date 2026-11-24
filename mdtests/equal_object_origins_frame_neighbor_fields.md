@@ -135,7 +135,7 @@ void inner(struct rb_node* node) {
         InnerPhase::After(g, p) => {
             have inner_pending(state.phase) != 1 by {
                 rewrite(state.phase, InnerPhase::After(g, p));
-                unfold(inner_pending(InnerPhase::After(g, p))); normalize();
+                unfold(inner_pending(InnerPhase::After(g, p))); close();
             }
             contradiction(inner_pending(state.phase) == 1);
         },
@@ -172,7 +172,7 @@ void inner(struct rb_node* node) {
                     have separate(memory(parent->rb_right), memory(node->rb_left)) by { close(); }
                     have separate(memory(parent->rb_right), memory(p->__rb_parent_color)) by { close(); }
                     have separate(statement(1).statement(4).footprint, at(after_store, memory(parent->rb_right))) by {
-                        normalize() using { separate(memory(parent->rb_right), memory(node->rb_left)); };
+                        close() using { separate(memory(parent->rb_right), memory(node->rb_left)); };
                     }
                     have separate(statement(1).statement(5).footprint, at(statement(1).statement(4).exit, memory(parent->rb_right))) by {
                         normalize() using { separate(memory(parent->rb_right), memory(p->__rb_parent_color)); };

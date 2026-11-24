@@ -36,7 +36,7 @@ int32 quotient(float x, float y) {
 theorem finite_zero(x: float) {
     requires isfinite(x);
     ensures x * float32_from_bits(0) <= float32_from_bits(0) by {
-        normalize() using { isfinite(x); };
+        close() using { isfinite(x); };
     }
 }
 theorem negative_quotient(x: float, y: float) {

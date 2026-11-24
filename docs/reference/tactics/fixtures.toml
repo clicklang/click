@@ -164,8 +164,8 @@ needle = "normalize();"
 
 [[form]]
 id = "normalize-using"
-path = "mdtests/normalize_using.md"
-needle = "normalize() using { x < y; y == 5; };"
+path = "mdtests/normalize_using_graph_conditions.md"
+needle = "normalize() using { x < 0; };"
 
 [[form]]
 id = "intro"

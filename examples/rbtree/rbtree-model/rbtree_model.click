@@ -575,7 +575,7 @@ theorem is_rb_red_node(node: struct rb_node*, parent: struct rb_node*,
     ensures is_rb(RbTree::Node(node, parent, Color::Red, left, right)) == 1 by {
         unfold(is_rb(RbTree::Node(node, parent, Color::Red, left, right)));
         rewrite(rb_root_black(right), 1);
-        normalize() using {
+        close() using {
             is_rb(left) == 1;
             is_rb(right) == 1;
             black_height(left) == black_height(right);
@@ -2525,7 +2525,7 @@ theorem node_color_ok_red(left_color: Color, right_color: Color) {
 
     ensures node_color_ok(Color::Red, left_color, right_color) == 1 by {
         unfold(node_color_ok(Color::Red, left_color, right_color));
-        normalize() using {
+        close() using {
             color_black(left_color) == 1;
             color_black(right_color) == 1;
         };
@@ -2554,7 +2554,7 @@ theorem is_rb_red_node_value(node: struct rb_node*, parent: struct rb_node*,
     ensures rb_root_black(right)
         == is_rb(RbTree::Node(node, parent, Color::Red, left, right)) by {
         unfold(is_rb(RbTree::Node(node, parent, Color::Red, left, right)));
-        normalize() using {
+        close() using {
             is_rb(left) == 1;
             is_rb(right) == 1;
             black_height(left) == black_height(right);
@@ -2826,7 +2826,7 @@ theorem ctx_rb_right_value(identity: struct rb_node*, grandparent: struct rb_nod
             bh, focus_color) by {
         unfold(ctx_rb(Context::Right(identity, grandparent, color, sibling_model, up_model),
             bh, focus_color));
-        normalize() using {
+        close() using {
             is_rb(sibling_model) == 1;
             black_height(sibling_model) == bh;
             node_color_ok(color, rb_color(sibling_model), focus_color) == 1;
@@ -2868,7 +2868,7 @@ theorem ctx_rb_right_frame(identity: struct rb_node*, grandparent: struct rb_nod
         unfold(ctx_rb(Context::Right(identity, grandparent, color, sibling_model, up_model),
             bh, focus_color));
         rewrite(ctx_rb(up_model, frame_black_height(color, bh), color), 1);
-        normalize() using {
+        close() using {
             is_rb(sibling_model) == 1;
             black_height(sibling_model) == bh;
             node_color_ok(color, rb_color(sibling_model), focus_color) == 1;
@@ -3451,7 +3451,7 @@ theorem ctx_rb_right_red_up(identity: struct rb_node*, grandparent: struct rb_no
                 Context::Right(identity, grandparent, Color::Red, sibling_model, up_model),
                 bh, focus_color));
             unfold(frame_black_height(Color::Red, bh));
-            normalize() using {
+            close() using {
                 is_rb(sibling_model) == 1;
                 black_height(sibling_model) == bh;
                 node_color_ok(Color::Red, rb_color(sibling_model), focus_color) == 1;

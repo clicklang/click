@@ -25,8 +25,8 @@ void copy_pos(struct cursor *target, struct cursor *source) {
     views *source;
     requires separate(memory(*target), memory(*source));
 } by {
-    have contains(memory(*target), memory(target->pos)) by { normalize(); }
-    have contains(memory(*source), memory(source->data)) by { normalize(); }
+    have contains(memory(*target), memory(target->pos)) by { close(); }
+    have contains(memory(*source), memory(source->data)) by { close(); }
     have separate(memory(target->pos), memory(source->data)) by {
         apply(restrict_again(memory(*target), memory(*source),
             memory(target->pos), memory(source->data)));

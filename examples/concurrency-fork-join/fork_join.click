@@ -8,20 +8,10 @@ theorem selected_array_cell(whole: Resource, kept: Resource, p: int32*, lo: int3
     requires lo <= i;
     requires i < hi;
     ensures separate(kept, memory(p[i])) by {
-        have 0 <= i by { close() using { 0 <= lo; lo <= i; }; }
-        have i <= 2147483646 by { close() using { i < hi; }; }
-        have defined(i + 1) by { close() using { 0 <= i; i <= 2147483646; }; }
-        have i <= ((i + 1) as int32) by { close() using { 0 <= i; i < hi; }; }
-        have ((i + 1) as int32) <= hi by { close() using { 0 <= i; i < hi; }; }
-        have contains(memory(p[lo..hi]), memory(p[i..i + 1])) by {
-            apply(separation::contains_subrange(p, lo, hi, i, i + 1));
+        have contains(memory(p[lo..hi]), memory(p[i])) by {
+            apply(separation::contains_element(p, lo, hi, i));
         }
-        have separate(kept, memory(p[i..i + 1])) by {
-            apply(separation::separate_restrict(whole, memory(p[lo..hi]), kept, memory(p[i..i + 1])));
-        }
-        have contains(kept, kept) by { apply(click::separation::contains_refl(kept)); }
-        have contains(memory(p[i..i + 1]), memory(p[i])) by { normalize(); }
-        apply(separation::separate_restrict(kept, memory(p[i..i + 1]), kept, memory(p[i])));
+        apply(separation::separate_restrict(whole, memory(p[lo..hi]), kept, memory(p[i])));
     }
 }
 

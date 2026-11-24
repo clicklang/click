@@ -13,7 +13,7 @@ verifying "a_step_after_instantiate_refutes_an_introduced_universal.c";
 theorem not_all_zero(n: int32) {
     ensures not (forall (x: int32) { x == 0 }) by {
         witness(1);
-        normalize();
+        close();
     }
 }
 ```
