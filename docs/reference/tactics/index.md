@@ -1959,7 +1959,7 @@ A product's lower bound can instead cite two strictly positive lower
 endpoints. Multiplication by a literal signed zero can cite a finite
 operand or its two finite bounds. `close()` accepts the exact
 `isfinite` premise for the zero product.
-`solve` can select these float bounds and expand to `normalize() using`
+`close()` can select these float bounds and expand to `normalize() using`
 with the selected premises.
 
 
