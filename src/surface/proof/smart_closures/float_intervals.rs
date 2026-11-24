@@ -28,6 +28,14 @@ fn less(left: ContractExpression, right: ContractExpression) -> ClickProposition
     }
 }
 
+fn at_most(left: ContractExpression, right: ContractExpression) -> ClickProposition {
+    ClickProposition::Comparison {
+        left,
+        operator: ComparisonOperator::LessEqual,
+        right,
+    }
+}
+
 fn corner_order(
     operator: FloatBinaryOperator,
     plan: &FloatBoundWeakening,
@@ -46,11 +54,7 @@ fn corner_order(
     } else {
         (corner, bound)
     };
-    ClickProposition::Comparison {
-        left,
-        operator: ComparisonOperator::LessEqual,
-        right,
-    }
+    at_most(left, right)
 }
 
 impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
@@ -218,35 +222,64 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_float_reciprocal_bound");
         use crate::kernel::proof::arithmetic_special::float_reciprocal_bound_weakening;
-        let Some((plan, numerator, strict)) = float_reciprocal_bound_weakening(source, goal) else {
+        let Some(reciprocal) = float_reciprocal_bound_weakening(source, goal) else {
             return Ok(None);
         };
+        let plan = &reciprocal.weakening;
         let comparison = surface_comparison_with_anchored_operands(source_surface);
-        let parts = if strict {
+        let parts = if reciprocal.strict_source {
             surface_strict_parts(&comparison)
         } else {
             surface_nonstrict_parts(&comparison)
         };
-        let Some((bound, divisor)) = parts else {
+        let Some((left, right)) = parts else {
             return Ok(None);
         };
+        let (source_bound, divisor) = if reciprocal.divisor_lower_bound {
+            (left.clone(), right.clone())
+        } else {
+            (right.clone(), left.clone())
+        };
+        let bound = reciprocal.minimum_positive_endpoint.map_or_else(
+            || source_bound.clone(),
+            |endpoint| literal(plan.format, endpoint),
+        );
         let float = match plan.format {
             KernelFloatType::Float32 => "float32",
             KernelFloatType::Float64 => "float64",
         };
+        let zero = literal(plan.format, 0);
         let mut proof = input.clone();
-        let premise = if strict {
-            let nonstrict = ClickProposition::Comparison {
-                left: bound.clone(),
-                operator: ComparisonOperator::LessEqual,
-                right: divisor.clone(),
-            };
+        let premise = if reciprocal.strict_source {
+            let (nonstrict, law, arguments, premises) =
+                if reciprocal.minimum_positive_endpoint.is_some() {
+                    (
+                        at_most(bound.clone(), divisor.clone()),
+                        "strictly_positive_minimum",
+                        vec![source_bound.clone(), divisor.clone()],
+                        vec![
+                            ClickProposition::Comparison {
+                                left: source_bound,
+                                operator: ComparisonOperator::Equal,
+                                right: zero.clone(),
+                            },
+                            source_surface.clone(),
+                        ],
+                    )
+                } else {
+                    (
+                        at_most(left.clone(), right.clone()),
+                        "lt_to_le",
+                        vec![left, right],
+                        vec![source_surface.clone()],
+                    )
+                };
             let application = ProofStep::ApplyPlannedTheorem {
                 application: TheoremApplication {
-                    name: format!("click::float_order::{float}_lt_to_le"),
-                    arguments: vec![bound.clone(), divisor.clone()],
+                    name: format!("click::float_order::{float}_{law}"),
+                    arguments,
                 },
-                premises: vec![source_surface.clone()],
+                premises,
             };
             let Some(next) = attempt::candidate_outcome(proof.driver().apply_step(
                 super::super::wide_arithmetic::have(nonstrict.clone(), vec![application]),
@@ -259,20 +292,57 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         } else {
             source_surface.clone()
         };
-        let numerator = literal(plan.format, numerator);
-        let zero = literal(plan.format, 0);
+        let numerator = literal(plan.format, reciprocal.numerator);
+        let direction = if plan.lower { "lower" } else { "upper" };
+        if reciprocal.uses_positive_law {
+            let premises = vec![
+                finite(&numerator),
+                less(zero.clone(), numerator.clone()),
+                less(zero, bound.clone()),
+                premise,
+            ];
+            return Self::try_apply_float_interval_bound(
+                &proof,
+                plan,
+                &format!("{float}_reciprocal_{direction}"),
+                vec![numerator, divisor, bound],
+                premises,
+            );
+        }
+
+        let sign = ClickProposition::Or(
+            Box::new(ClickProposition::And(
+                Box::new(less(zero.clone(), bound.clone())),
+                Box::new(at_most(bound.clone(), divisor.clone())),
+            )),
+            Box::new(ClickProposition::And(
+                Box::new(less(bound.clone(), zero.clone())),
+                Box::new(at_most(divisor.clone(), bound.clone())),
+            )),
+        );
+        let Some(proof) = attempt::candidate_outcome(proof.driver().apply_step(
+            super::super::wide_arithmetic::have(sign.clone(), vec![ProofStep::Known]),
+        ))?
+        else {
+            return Ok(None);
+        };
+        let endpoint = literal(plan.format, plan.actual_endpoint);
+        let zero_bound = if plan.lower {
+            at_most(endpoint.clone(), zero)
+        } else {
+            at_most(zero, endpoint.clone())
+        };
         let premises = vec![
             finite(&numerator),
-            less(zero.clone(), numerator.clone()),
-            less(zero, bound.clone()),
-            premise,
+            sign,
+            zero_bound,
+            corner_order(FloatBinaryOperator::Divide, plan, &numerator, &bound),
         ];
-        let direction = if plan.lower { "lower" } else { "upper" };
         Self::try_apply_float_interval_bound(
             &proof,
-            &plan,
-            &format!("{float}_reciprocal_{direction}"),
-            vec![numerator, divisor, bound],
+            plan,
+            &format!("{float}_bounded_reciprocal_{direction}"),
+            vec![numerator, divisor, bound, endpoint],
             premises,
         )
     }

@@ -3757,26 +3757,42 @@ fn float_reciprocal_endpoint(
     Some((numerator, endpoint))
 }
 
-/// Apply the positive reciprocal law at the literal endpoint of the cited
-/// bound. A strict source first weakens to a nonstrict comparison there.
+pub(crate) struct FloatReciprocalBoundPlan {
+    pub(crate) weakening: FloatBoundWeakening,
+    pub(crate) numerator: u64,
+    pub(crate) divisor_lower_bound: bool,
+    pub(crate) strict_source: bool,
+    pub(crate) minimum_positive_endpoint: Option<u64>,
+    pub(crate) uses_positive_law: bool,
+}
+
+/// Use the cited divisor endpoint, with a strict positive bound at zero
+/// strengthened to the smallest positive value of the same format.
 pub(crate) fn float_reciprocal_bound_weakening(
     premise: &Proposition,
     goal: &Proposition,
-) -> Option<(FloatBoundWeakening, u64, bool)> {
+) -> Option<FloatReciprocalBoundPlan> {
     let source = float_bound(premise)?;
     let bound = float_bound(goal)?;
-    let (numerator, endpoint) = float_reciprocal_endpoint(&source, &bound, source.endpoint)?;
-    if !source.lower
-        || !positive_finite_float(bound.format, source.endpoint)
-        || !positive_finite_float(bound.format, numerator)
-    {
-        return None;
-    }
-    Some((
-        FloatBoundWeakening::new(&bound, endpoint, false)?,
+    let minimum_positive_endpoint =
+        if source.strict && source.lower && (source.endpoint & !float_sign_bit(source.format)) == 0
+        {
+            Some(source.inclusive_endpoint()?)
+        } else {
+            None
+        };
+    let divisor_endpoint = minimum_positive_endpoint.unwrap_or(source.endpoint);
+    let (numerator, endpoint) = float_reciprocal_endpoint(&source, &bound, divisor_endpoint)?;
+    Some(FloatReciprocalBoundPlan {
+        weakening: FloatBoundWeakening::new(&bound, endpoint, false)?,
         numerator,
-        source.strict,
-    ))
+        divisor_lower_bound: source.lower,
+        strict_source: source.strict,
+        minimum_positive_endpoint,
+        uses_positive_law: source.lower
+            && positive_finite_float(bound.format, divisor_endpoint)
+            && positive_finite_float(bound.format, numerator),
+    })
 }
 
 /// Check float bounds using only the cited comparisons and constant rounding.

@@ -340,3 +340,53 @@ axiom float64_quotient_upper(x: double, y: double, a: double, b: double, c: doub
     requires c / d <= bound;
     ensures x / y <= bound;
 }
+
+// A divisor on one side of zero ranges from the cited endpoint to that
+// side's infinity.
+// A finite numerator then gives quotients between zero and the rounded
+// endpoint quotient, regardless of which of the two is larger.
+axiom float32_bounded_reciprocal_lower(n: float, y: float, b: float, bound: float) {
+    requires isfinite(n);
+    requires (float32_from_bits(0) < b and b <= y) or (b < float32_from_bits(0) and y <= b);
+    requires bound <= float32_from_bits(0);
+    requires bound <= n / b;
+    ensures n / y >= bound;
+}
+
+axiom float32_bounded_reciprocal_upper(n: float, y: float, b: float, bound: float) {
+    requires isfinite(n);
+    requires (float32_from_bits(0) < b and b <= y) or (b < float32_from_bits(0) and y <= b);
+    requires float32_from_bits(0) <= bound;
+    requires n / b <= bound;
+    ensures n / y <= bound;
+}
+
+// Signed zero has one numeric value. The smallest positive value has bits 1.
+axiom float32_strictly_positive_minimum(z: float, y: float) {
+    requires z == float32_from_bits(0);
+    requires z < y;
+    ensures float32_from_bits(1) <= y;
+}
+
+axiom float64_bounded_reciprocal_lower(n: double, y: double, b: double, bound: double) {
+    requires isfinite(n);
+    requires (float64_from_bits(0u64) < b and b <= y) or (b < float64_from_bits(0u64) and y <= b);
+    requires bound <= float64_from_bits(0u64);
+    requires bound <= n / b;
+    ensures n / y >= bound;
+}
+
+axiom float64_bounded_reciprocal_upper(n: double, y: double, b: double, bound: double) {
+    requires isfinite(n);
+    requires (float64_from_bits(0u64) < b and b <= y) or (b < float64_from_bits(0u64) and y <= b);
+    requires float64_from_bits(0u64) <= bound;
+    requires n / b <= bound;
+    ensures n / y <= bound;
+}
+
+// Signed zero has one numeric value. The smallest positive value has bits 1.
+axiom float64_strictly_positive_minimum(z: double, y: double) {
+    requires z == float64_from_bits(0u64);
+    requires z < y;
+    ensures float64_from_bits(1u64) <= y;
+}
