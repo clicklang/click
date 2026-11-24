@@ -215,11 +215,11 @@ theorem outer_nonblack_node_color(node: struct rb_node*, parent: struct rb_node*
     ensures color == Color::Red by {
         let ih = induct(color);
         match color {
-            Color::Red => { normalize(); }
+            Color::Red => { known(); }
             Color::Black => {
                 have rb_root_black(RbTree::Node(node, parent, Color::Black, left, right)) == 1 by {
                     unfold(rb_root_black(RbTree::Node(node, parent, Color::Black, left, right)));
-                    normalize();
+                    known();
                 }
                 contradiction(rb_root_black(RbTree::Node(node, parent, Color::Black, left, right)) == 1);
             }
@@ -232,11 +232,11 @@ theorem outer_black_node_color(node: struct rb_node*, parent: struct rb_node*, c
     ensures color == Color::Black by {
         let ih = induct(color);
         match color {
-            Color::Black => { normalize(); }
+            Color::Black => { known(); }
             Color::Red => {
                 have not(rb_root_black(RbTree::Node(node, parent, Color::Red, left, right)) == 1) by {
                     unfold(rb_root_black(RbTree::Node(node, parent, Color::Red, left, right)));
-                    normalize();
+                    known();
                 }
                 contradiction(rb_root_black(RbTree::Node(node, parent, Color::Red, left, right)) == 1);
             }
@@ -249,11 +249,11 @@ theorem erase_flips_red_all_right_red_step_empty(id: struct rb_node*, above: str
     ensures erase_flips_red_all_result(Context::Right(id, above, Color::Red, RbTree::Node(sid, id, Color::Black, RbTree::Empty, near), up), focus) == plug(up, RbTree::Node(id, above, Color::Black, rb_recolor(RbTree::Node(sid, id, Color::Black, RbTree::Empty, near), Color::Red), focus)) by {
         let ih = induct(near);
         match near {
-            RbTree::Empty => { unfold(erase_flips_red_all_result(Context::Right(id, above, Color::Red, RbTree::Node(sid, id, Color::Black, RbTree::Empty, RbTree::Empty), up), focus)); normalize(); }
+            RbTree::Empty => { unfold(erase_flips_red_all_result(Context::Right(id, above, Color::Red, RbTree::Node(sid, id, Color::Black, RbTree::Empty, RbTree::Empty), up), focus)); known(); }
             RbTree::Node(nid, np, nc, nl, nr) => {
                 apply(outer_black_node_color(nid, np, nc, nl, nr));
                 rewrite(nc, Color::Black);
-                unfold(erase_flips_red_all_result(Context::Right(id, above, Color::Red, RbTree::Node(sid, id, Color::Black, RbTree::Empty, RbTree::Node(nid, np, Color::Black, nl, nr)), up), focus)); normalize();
+                unfold(erase_flips_red_all_result(Context::Right(id, above, Color::Red, RbTree::Node(sid, id, Color::Black, RbTree::Empty, RbTree::Node(nid, np, Color::Black, nl, nr)), up), focus)); known();
             }
         }
     }
@@ -264,11 +264,11 @@ theorem erase_flips_red_all_right_red_step_black(id: struct rb_node*, above: str
     ensures erase_flips_red_all_result(Context::Right(id, above, Color::Red, RbTree::Node(sid, id, Color::Black, RbTree::Node(rid, rp, Color::Black, rl, rr), near), up), focus) == plug(up, RbTree::Node(id, above, Color::Black, rb_recolor(RbTree::Node(sid, id, Color::Black, RbTree::Node(rid, rp, Color::Black, rl, rr), near), Color::Red), focus)) by {
         let ih = induct(near);
         match near {
-            RbTree::Empty => { unfold(erase_flips_red_all_result(Context::Right(id, above, Color::Red, RbTree::Node(sid, id, Color::Black, RbTree::Node(rid, rp, Color::Black, rl, rr), RbTree::Empty), up), focus)); normalize(); }
+            RbTree::Empty => { unfold(erase_flips_red_all_result(Context::Right(id, above, Color::Red, RbTree::Node(sid, id, Color::Black, RbTree::Node(rid, rp, Color::Black, rl, rr), RbTree::Empty), up), focus)); known(); }
             RbTree::Node(nid, np, nc, nl, nr) => {
                 apply(outer_black_node_color(nid, np, nc, nl, nr));
                 rewrite(nc, Color::Black);
-                unfold(erase_flips_red_all_result(Context::Right(id, above, Color::Red, RbTree::Node(sid, id, Color::Black, RbTree::Node(rid, rp, Color::Black, rl, rr), RbTree::Node(nid, np, Color::Black, nl, nr)), up), focus)); normalize();
+                unfold(erase_flips_red_all_result(Context::Right(id, above, Color::Red, RbTree::Node(sid, id, Color::Black, RbTree::Node(rid, rp, Color::Black, rl, rr), RbTree::Node(nid, np, Color::Black, nl, nr)), up), focus)); known();
             }
         }
     }
@@ -295,11 +295,11 @@ theorem erase_flips_red_all_right_black_step_empty(id: struct rb_node*, above: s
     ensures erase_flips_red_all_result(Context::Right(id, above, Color::Black, RbTree::Node(sid, id, Color::Black, RbTree::Empty, near), up), focus) == erase_flips_red_all_result(up, RbTree::Node(id, above, Color::Black, rb_recolor(RbTree::Node(sid, id, Color::Black, RbTree::Empty, near), Color::Red), focus)) by {
         let ih = induct(near);
         match near {
-            RbTree::Empty => { unfold(erase_flips_red_all_result(Context::Right(id, above, Color::Black, RbTree::Node(sid, id, Color::Black, RbTree::Empty, RbTree::Empty), up), focus)); normalize(); }
+            RbTree::Empty => { unfold(erase_flips_red_all_result(Context::Right(id, above, Color::Black, RbTree::Node(sid, id, Color::Black, RbTree::Empty, RbTree::Empty), up), focus)); known(); }
             RbTree::Node(nid, np, nc, nl, nr) => {
                 apply(outer_black_node_color(nid, np, nc, nl, nr));
                 rewrite(nc, Color::Black);
-                unfold(erase_flips_red_all_result(Context::Right(id, above, Color::Black, RbTree::Node(sid, id, Color::Black, RbTree::Empty, RbTree::Node(nid, np, Color::Black, nl, nr)), up), focus)); normalize();
+                unfold(erase_flips_red_all_result(Context::Right(id, above, Color::Black, RbTree::Node(sid, id, Color::Black, RbTree::Empty, RbTree::Node(nid, np, Color::Black, nl, nr)), up), focus)); known();
             }
         }
     }
@@ -310,11 +310,11 @@ theorem erase_flips_red_all_right_black_step_black(id: struct rb_node*, above: s
     ensures erase_flips_red_all_result(Context::Right(id, above, Color::Black, RbTree::Node(sid, id, Color::Black, RbTree::Node(rid, rp, Color::Black, rl, rr), near), up), focus) == erase_flips_red_all_result(up, RbTree::Node(id, above, Color::Black, rb_recolor(RbTree::Node(sid, id, Color::Black, RbTree::Node(rid, rp, Color::Black, rl, rr), near), Color::Red), focus)) by {
         let ih = induct(near);
         match near {
-            RbTree::Empty => { unfold(erase_flips_red_all_result(Context::Right(id, above, Color::Black, RbTree::Node(sid, id, Color::Black, RbTree::Node(rid, rp, Color::Black, rl, rr), RbTree::Empty), up), focus)); normalize(); }
+            RbTree::Empty => { unfold(erase_flips_red_all_result(Context::Right(id, above, Color::Black, RbTree::Node(sid, id, Color::Black, RbTree::Node(rid, rp, Color::Black, rl, rr), RbTree::Empty), up), focus)); known(); }
             RbTree::Node(nid, np, nc, nl, nr) => {
                 apply(outer_black_node_color(nid, np, nc, nl, nr));
                 rewrite(nc, Color::Black);
-                unfold(erase_flips_red_all_result(Context::Right(id, above, Color::Black, RbTree::Node(sid, id, Color::Black, RbTree::Node(rid, rp, Color::Black, rl, rr), RbTree::Node(nid, np, Color::Black, nl, nr)), up), focus)); normalize();
+                unfold(erase_flips_red_all_result(Context::Right(id, above, Color::Black, RbTree::Node(sid, id, Color::Black, RbTree::Node(rid, rp, Color::Black, rl, rr), RbTree::Node(nid, np, Color::Black, nl, nr)), up), focus)); known();
             }
         }
     }
@@ -341,11 +341,11 @@ theorem erase_flips_red_all_left_red_step_empty(id: struct rb_node*, above: stru
     ensures erase_flips_red_all_result(Context::Left(id, above, Color::Red, RbTree::Node(sid, id, Color::Black, near, RbTree::Empty), up), focus) == plug(up, RbTree::Node(id, above, Color::Black, focus, rb_recolor(RbTree::Node(sid, id, Color::Black, near, RbTree::Empty), Color::Red))) by {
         let ih = induct(near);
         match near {
-            RbTree::Empty => { unfold(erase_flips_red_all_result(Context::Left(id, above, Color::Red, RbTree::Node(sid, id, Color::Black, RbTree::Empty, RbTree::Empty), up), focus)); normalize(); }
+            RbTree::Empty => { unfold(erase_flips_red_all_result(Context::Left(id, above, Color::Red, RbTree::Node(sid, id, Color::Black, RbTree::Empty, RbTree::Empty), up), focus)); known(); }
             RbTree::Node(nid, np, nc, nl, nr) => {
                 apply(outer_black_node_color(nid, np, nc, nl, nr));
                 rewrite(nc, Color::Black);
-                unfold(erase_flips_red_all_result(Context::Left(id, above, Color::Red, RbTree::Node(sid, id, Color::Black, RbTree::Node(nid, np, Color::Black, nl, nr), RbTree::Empty), up), focus)); normalize();
+                unfold(erase_flips_red_all_result(Context::Left(id, above, Color::Red, RbTree::Node(sid, id, Color::Black, RbTree::Node(nid, np, Color::Black, nl, nr), RbTree::Empty), up), focus)); known();
             }
         }
     }
@@ -356,11 +356,11 @@ theorem erase_flips_red_all_left_red_step_black(id: struct rb_node*, above: stru
     ensures erase_flips_red_all_result(Context::Left(id, above, Color::Red, RbTree::Node(sid, id, Color::Black, near, RbTree::Node(rid, rp, Color::Black, rl, rr)), up), focus) == plug(up, RbTree::Node(id, above, Color::Black, focus, rb_recolor(RbTree::Node(sid, id, Color::Black, near, RbTree::Node(rid, rp, Color::Black, rl, rr)), Color::Red))) by {
         let ih = induct(near);
         match near {
-            RbTree::Empty => { unfold(erase_flips_red_all_result(Context::Left(id, above, Color::Red, RbTree::Node(sid, id, Color::Black, RbTree::Empty, RbTree::Node(rid, rp, Color::Black, rl, rr)), up), focus)); normalize(); }
+            RbTree::Empty => { unfold(erase_flips_red_all_result(Context::Left(id, above, Color::Red, RbTree::Node(sid, id, Color::Black, RbTree::Empty, RbTree::Node(rid, rp, Color::Black, rl, rr)), up), focus)); known(); }
             RbTree::Node(nid, np, nc, nl, nr) => {
                 apply(outer_black_node_color(nid, np, nc, nl, nr));
                 rewrite(nc, Color::Black);
-                unfold(erase_flips_red_all_result(Context::Left(id, above, Color::Red, RbTree::Node(sid, id, Color::Black, RbTree::Node(nid, np, Color::Black, nl, nr), RbTree::Node(rid, rp, Color::Black, rl, rr)), up), focus)); normalize();
+                unfold(erase_flips_red_all_result(Context::Left(id, above, Color::Red, RbTree::Node(sid, id, Color::Black, RbTree::Node(nid, np, Color::Black, nl, nr), RbTree::Node(rid, rp, Color::Black, rl, rr)), up), focus)); known();
             }
         }
     }
@@ -387,11 +387,11 @@ theorem erase_flips_red_all_left_black_step_empty(id: struct rb_node*, above: st
     ensures erase_flips_red_all_result(Context::Left(id, above, Color::Black, RbTree::Node(sid, id, Color::Black, near, RbTree::Empty), up), focus) == erase_flips_red_all_result(up, RbTree::Node(id, above, Color::Black, focus, rb_recolor(RbTree::Node(sid, id, Color::Black, near, RbTree::Empty), Color::Red))) by {
         let ih = induct(near);
         match near {
-            RbTree::Empty => { unfold(erase_flips_red_all_result(Context::Left(id, above, Color::Black, RbTree::Node(sid, id, Color::Black, RbTree::Empty, RbTree::Empty), up), focus)); normalize(); }
+            RbTree::Empty => { unfold(erase_flips_red_all_result(Context::Left(id, above, Color::Black, RbTree::Node(sid, id, Color::Black, RbTree::Empty, RbTree::Empty), up), focus)); known(); }
             RbTree::Node(nid, np, nc, nl, nr) => {
                 apply(outer_black_node_color(nid, np, nc, nl, nr));
                 rewrite(nc, Color::Black);
-                unfold(erase_flips_red_all_result(Context::Left(id, above, Color::Black, RbTree::Node(sid, id, Color::Black, RbTree::Node(nid, np, Color::Black, nl, nr), RbTree::Empty), up), focus)); normalize();
+                unfold(erase_flips_red_all_result(Context::Left(id, above, Color::Black, RbTree::Node(sid, id, Color::Black, RbTree::Node(nid, np, Color::Black, nl, nr), RbTree::Empty), up), focus)); known();
             }
         }
     }
@@ -402,11 +402,11 @@ theorem erase_flips_red_all_left_black_step_black(id: struct rb_node*, above: st
     ensures erase_flips_red_all_result(Context::Left(id, above, Color::Black, RbTree::Node(sid, id, Color::Black, near, RbTree::Node(rid, rp, Color::Black, rl, rr)), up), focus) == erase_flips_red_all_result(up, RbTree::Node(id, above, Color::Black, focus, rb_recolor(RbTree::Node(sid, id, Color::Black, near, RbTree::Node(rid, rp, Color::Black, rl, rr)), Color::Red))) by {
         let ih = induct(near);
         match near {
-            RbTree::Empty => { unfold(erase_flips_red_all_result(Context::Left(id, above, Color::Black, RbTree::Node(sid, id, Color::Black, RbTree::Empty, RbTree::Node(rid, rp, Color::Black, rl, rr)), up), focus)); normalize(); }
+            RbTree::Empty => { unfold(erase_flips_red_all_result(Context::Left(id, above, Color::Black, RbTree::Node(sid, id, Color::Black, RbTree::Empty, RbTree::Node(rid, rp, Color::Black, rl, rr)), up), focus)); known(); }
             RbTree::Node(nid, np, nc, nl, nr) => {
                 apply(outer_black_node_color(nid, np, nc, nl, nr));
                 rewrite(nc, Color::Black);
-                unfold(erase_flips_red_all_result(Context::Left(id, above, Color::Black, RbTree::Node(sid, id, Color::Black, RbTree::Node(nid, np, Color::Black, nl, nr), RbTree::Node(rid, rp, Color::Black, rl, rr)), up), focus)); normalize();
+                unfold(erase_flips_red_all_result(Context::Left(id, above, Color::Black, RbTree::Node(sid, id, Color::Black, RbTree::Node(nid, np, Color::Black, nl, nr), RbTree::Node(rid, rp, Color::Black, rl, rr)), up), focus)); known();
             }
         }
     }
@@ -433,11 +433,11 @@ theorem erase_flips_red_all_left_inner_result(id: struct rb_node*, above: struct
     ensures erase_flips_red_all_result(Context::Left(id, above, pc, RbTree::Node(sid, id, Color::Black, RbTree::Node(rid, sid, Color::Red, rl, rr), far), up), focus) == plug(up, RbTree::Node(rid, above, pc, RbTree::Node(id, rid, Color::Black, focus, rb_reparent(rl, id)), RbTree::Node(sid, rid, Color::Black, rb_reparent(rr, sid), far))) by {
         let ih = induct(far);
         match far {
-            RbTree::Empty => { unfold(erase_flips_red_all_result(Context::Left(id, above, pc, RbTree::Node(sid, id, Color::Black, RbTree::Node(rid, sid, Color::Red, rl, rr), RbTree::Empty), up), focus)); normalize(); }
+            RbTree::Empty => { unfold(erase_flips_red_all_result(Context::Left(id, above, pc, RbTree::Node(sid, id, Color::Black, RbTree::Node(rid, sid, Color::Red, rl, rr), RbTree::Empty), up), focus)); known(); }
             RbTree::Node(fid, fp, fc, fl, fr) => {
                 apply(outer_black_node_color(fid, fp, fc, fl, fr));
                 rewrite(fc, Color::Black);
-                unfold(erase_flips_red_all_result(Context::Left(id, above, pc, RbTree::Node(sid, id, Color::Black, RbTree::Node(rid, sid, Color::Red, rl, rr), RbTree::Node(fid, fp, Color::Black, fl, fr)), up), focus)); normalize();
+                unfold(erase_flips_red_all_result(Context::Left(id, above, pc, RbTree::Node(sid, id, Color::Black, RbTree::Node(rid, sid, Color::Red, rl, rr), RbTree::Node(fid, fp, Color::Black, fl, fr)), up), focus)); known();
             }
         }
     }
@@ -448,11 +448,11 @@ theorem erase_flips_red_all_right_inner_result(id: struct rb_node*, above: struc
     ensures erase_flips_red_all_result(Context::Right(id, above, pc, RbTree::Node(sid, id, Color::Black, far, RbTree::Node(rid, sid, Color::Red, rl, rr)), up), focus) == plug(up, RbTree::Node(rid, above, pc, RbTree::Node(sid, rid, Color::Black, far, rb_reparent(rl, sid)), RbTree::Node(id, rid, Color::Black, rb_reparent(rr, id), focus))) by {
         let ih = induct(far);
         match far {
-            RbTree::Empty => { unfold(erase_flips_red_all_result(Context::Right(id, above, pc, RbTree::Node(sid, id, Color::Black, RbTree::Empty, RbTree::Node(rid, sid, Color::Red, rl, rr)), up), focus)); normalize(); }
+            RbTree::Empty => { unfold(erase_flips_red_all_result(Context::Right(id, above, pc, RbTree::Node(sid, id, Color::Black, RbTree::Empty, RbTree::Node(rid, sid, Color::Red, rl, rr)), up), focus)); known(); }
             RbTree::Node(fid, fp, fc, fl, fr) => {
                 apply(outer_black_node_color(fid, fp, fc, fl, fr));
                 rewrite(fc, Color::Black);
-                unfold(erase_flips_red_all_result(Context::Right(id, above, pc, RbTree::Node(sid, id, Color::Black, RbTree::Node(fid, fp, Color::Black, fl, fr), RbTree::Node(rid, sid, Color::Red, rl, rr)), up), focus)); normalize();
+                unfold(erase_flips_red_all_result(Context::Right(id, above, pc, RbTree::Node(sid, id, Color::Black, RbTree::Node(fid, fp, Color::Black, fl, fr), RbTree::Node(rid, sid, Color::Red, rl, rr)), up), focus)); known();
             }
         }
     }
@@ -463,10 +463,10 @@ theorem black_root_has_black_color(tree: RbTree) {
     ensures rb_color(tree) == Color::Black by {
         let ih = induct(tree);
         match tree {
-            RbTree::Empty => { unfold(rb_color(RbTree::Empty)); normalize(); }
+            RbTree::Empty => { unfold(rb_color(RbTree::Empty)); known(); }
             RbTree::Node(id, p, c, l, r) => {
                 apply(outer_black_node_color(id, p, c, l, r));
-                unfold(rb_color(RbTree::Node(id, p, c, l, r))); normalize();
+                unfold(rb_color(RbTree::Node(id, p, c, l, r))); known();
             }
         }
     }
@@ -540,7 +540,9 @@ p: struct rb_node*) {
             Context::Left(cid, grandparent, ccolor, sibling_model, up_model), p) != 1 by {
                 unfold(ctx_node_is(
                 Context::Left(cid, grandparent, ccolor, sibling_model, up_model), p));
-                normalize() using { not(p == cid); };
+                have (if p == cid { 1 } else { 0 }) == 0 by known();
+                rewrite((if p == cid { 1 } else { 0 }), 0);
+                known();
             }
             contradiction(ctx_node_is(
             Context::Left(cid, grandparent, ccolor, sibling_model, up_model), p) == 1);
@@ -560,13 +562,15 @@ p: struct rb_node*) {
             unfold(ctx_reroot(
             Context::Right(cid, grandparent, ccolor, sibling_model, up_model), p));
             rewrite(p, cid);
-            normalize();
+            known();
         } else {
             have ctx_node_is(
             Context::Right(cid, grandparent, ccolor, sibling_model, up_model), p) != 1 by {
                 unfold(ctx_node_is(
                 Context::Right(cid, grandparent, ccolor, sibling_model, up_model), p));
-                normalize() using { not(p == cid); };
+                have (if p == cid { 1 } else { 0 }) == 0 by known();
+                rewrite((if p == cid { 1 } else { 0 }), 0);
+                known();
             }
             contradiction(ctx_node_is(
             Context::Right(cid, grandparent, ccolor, sibling_model, up_model), p) == 1);
@@ -608,14 +612,14 @@ color: Color, left: RbTree, right: RbTree) {
             Color::Red => {
                 have rb_root_black(RbTree::Node(node, parent, Color::Red, left, right)) != 1 by {
                     unfold(rb_root_black(RbTree::Node(node, parent, Color::Red, left, right)));
-                    normalize();
+                    known();
                 }
                 contradiction(rb_root_black(RbTree::Node(node, parent, Color::Red, left, right))
                 == 1);
             }
             Color::Black => {
                 unfold(color_bit(Color::Black));
-                normalize();
+                known();
             }
         }
     }
@@ -817,11 +821,11 @@ theorem color_bit_nonzero_is_one(color: Color) {
             Color::Red => {
                 have color_bit(Color::Red) == 0 by {
                     unfold(color_bit(Color::Red));
-                    normalize();
+                    known();
                 }
                 contradiction(color_bit(Color::Red) == 0);
             }
-            Color::Black => { unfold(color_bit(Color::Black)); normalize(); }
+            Color::Black => { unfold(color_bit(Color::Black)); known(); }
         }
     }
 }
@@ -876,34 +880,34 @@ theorem ctx_parent_word_from_color(ctx: Context, parent: struct rb_node*, word: 
             Context::Top => {
                 have parent == 0 by { apply(ctx_node_is_top_null(parent)); known(); }
                 if color_bit(color) == 0 {
-                    have word == 0 by { rewrite(word, address(parent) + color_bit(color)); rewrite(parent, 0); rewrite(color_bit(color), 0); normalize(); }
+                    have word == 0 by { rewrite(word, address(parent) + color_bit(color)); rewrite(parent, 0); rewrite(color_bit(color), 0); known(); }
                     have ctx_parent_word(Context::Top, 0) == 1;
                     rewrite(word, 0); known();
                 } else {
                     apply(color_bit_nonzero_is_one(color));
-                    have word == 1 by { rewrite(word, address(parent) + color_bit(color)); rewrite(parent, 0); rewrite(color_bit(color), 1); normalize(); }
-                    rewrite(word, 1); unfold(ctx_parent_word(Context::Top, 1)); normalize();
+                    have word == 1 by { rewrite(word, address(parent) + color_bit(color)); rewrite(parent, 0); rewrite(color_bit(color), 1); known(); }
+                    rewrite(word, 1); unfold(ctx_parent_word(Context::Top, 1)); known();
                 }
             }
             Context::Left(id, above, pc, sibling, up) => {
                 have parent == id by { apply(ctx_node_is_left_identity(id, above, pc, sibling, up, parent)); known(); }
                 if color_bit(color) == 0 {
-                    have word == address(id) by { rewrite(word, address(parent) + color_bit(color)); rewrite(parent, id); rewrite(color_bit(color), 0); normalize(); }
+                    have word == address(id) by { rewrite(word, address(parent) + color_bit(color)); rewrite(parent, id); rewrite(color_bit(color), 0); known(); }
                     rewrite(word, address(id)); unfold(ctx_parent_word(Context::Left(id, above, pc, sibling, up), address(id))); known();
                 } else {
                     apply(color_bit_nonzero_is_one(color));
-                    have word == address(id) + 1 by { rewrite(word, address(parent) + color_bit(color)); rewrite(parent, id); rewrite(color_bit(color), 1); normalize(); }
+                    have word == address(id) + 1 by { rewrite(word, address(parent) + color_bit(color)); rewrite(parent, id); rewrite(color_bit(color), 1); known(); }
                     rewrite(word, address(id) + 1); unfold(ctx_parent_word(Context::Left(id, above, pc, sibling, up), address(id) + 1)); known();
                 }
             }
             Context::Right(id, above, pc, sibling, up) => {
                 have parent == id by { apply(ctx_node_is_right_identity(id, above, pc, sibling, up, parent)); known(); }
                 if color_bit(color) == 0 {
-                    have word == address(id) by { rewrite(word, address(parent) + color_bit(color)); rewrite(parent, id); rewrite(color_bit(color), 0); normalize(); }
+                    have word == address(id) by { rewrite(word, address(parent) + color_bit(color)); rewrite(parent, id); rewrite(color_bit(color), 0); known(); }
                     rewrite(word, address(id)); unfold(ctx_parent_word(Context::Right(id, above, pc, sibling, up), address(id))); known();
                 } else {
                     apply(color_bit_nonzero_is_one(color));
-                    have word == address(id) + 1 by { rewrite(word, address(parent) + color_bit(color)); rewrite(parent, id); rewrite(color_bit(color), 1); normalize(); }
+                    have word == address(id) + 1 by { rewrite(word, address(parent) + color_bit(color)); rewrite(parent, id); rewrite(color_bit(color), 1); known(); }
                     rewrite(word, address(id) + 1); unfold(ctx_parent_word(Context::Right(id, above, pc, sibling, up), address(id) + 1)); known();
                 }
             }
@@ -937,10 +941,10 @@ theorem erase_color_not_black(c: Color) {
         let ih = induct(c);
         match c {
             Color::Red => {
-                normalize();
+                known();
             }
             Color::Black => {
-                have Color::Black == Color::Black;
+                have Color::Black == Color::Black by known();
                 contradiction(Color::Black == Color::Black);
             }
         }
@@ -990,25 +994,13 @@ theorem erase_frame_left(id: struct rb_node*, above: struct rb_node*, pc: Color,
                                 rewrite(sc, Color::Black);
                                 rewrite(pc, Color::Black);
                                 rewrite(erase_flips_red_all(up), 1);
-                                normalize() using {
-                                    sc == Color::Black;
-                                    pc == Color::Black;
-                                    erase_flips_red_all(up) == 1;
-                                    rb_root_black(l) == 1;
-                                    rb_root_black(r) == 1;
-                                };
+                                known();
                             }
                             else {
                                 rewrite(sc, Color::Black);
                                 rewrite(pc, Color::Black);
                                 rewrite(erase_flips_red_all(up), 1);
-                                normalize() using {
-                                    sc == Color::Black;
-                                    pc == Color::Black;
-                                    erase_flips_red_all(up) == 1;
-                                    rb_root_black(l) == 1;
-                                    not(rb_root_black(r) == 1);
-                                };
+                                known();
                             }
                         }
                         else {
@@ -1016,25 +1008,13 @@ theorem erase_frame_left(id: struct rb_node*, above: struct rb_node*, pc: Color,
                                 rewrite(sc, Color::Black);
                                 rewrite(pc, Color::Black);
                                 rewrite(erase_flips_red_all(up), 1);
-                                normalize() using {
-                                    sc == Color::Black;
-                                    pc == Color::Black;
-                                    erase_flips_red_all(up) == 1;
-                                    not(rb_root_black(l) == 1);
-                                    rb_root_black(r) == 1;
-                                };
+                                known();
                             }
                             else {
                                 rewrite(sc, Color::Black);
                                 rewrite(pc, Color::Black);
                                 rewrite(erase_flips_red_all(up), 1);
-                                normalize() using {
-                                    sc == Color::Black;
-                                    pc == Color::Black;
-                                    erase_flips_red_all(up) == 1;
-                                    not(rb_root_black(l) == 1);
-                                    not(rb_root_black(r) == 1);
-                                };
+                                known();
                             }
                         }
                     }
@@ -1045,44 +1025,24 @@ theorem erase_frame_left(id: struct rb_node*, above: struct rb_node*, pc: Color,
                             if rb_root_black(r) == 1 {
                                 rewrite(sc, Color::Black);
                                 rewrite(pc, Color::Red);
-                                normalize() using {
-                                    sc == Color::Black;
-                                    pc == Color::Red;
-                                    rb_root_black(l) == 1;
-                                    rb_root_black(r) == 1;
-                                };
+                                known();
                             }
                             else {
                                 rewrite(sc, Color::Black);
                                 rewrite(pc, Color::Red);
-                                normalize() using {
-                                    sc == Color::Black;
-                                    pc == Color::Red;
-                                    rb_root_black(l) == 1;
-                                    not(rb_root_black(r) == 1);
-                                };
+                                known();
                             }
                         }
                         else {
                             if rb_root_black(r) == 1 {
                                 rewrite(sc, Color::Black);
                                 rewrite(pc, Color::Red);
-                                normalize() using {
-                                    sc == Color::Black;
-                                    pc == Color::Red;
-                                    not(rb_root_black(l) == 1);
-                                    rb_root_black(r) == 1;
-                                };
+                                known();
                             }
                             else {
                                 rewrite(sc, Color::Black);
                                 rewrite(pc, Color::Red);
-                                normalize() using {
-                                    sc == Color::Black;
-                                    pc == Color::Red;
-                                    not(rb_root_black(l) == 1);
-                                    not(rb_root_black(r) == 1);
-                                };
+                                known();
                             }
                         }
                     }
@@ -1150,25 +1110,13 @@ theorem erase_frame_right(id: struct rb_node*, above: struct rb_node*, pc: Color
                                 rewrite(sc, Color::Black);
                                 rewrite(pc, Color::Black);
                                 rewrite(erase_flips_red_all(up), 1);
-                                normalize() using {
-                                    sc == Color::Black;
-                                    pc == Color::Black;
-                                    erase_flips_red_all(up) == 1;
-                                    rb_root_black(l) == 1;
-                                    rb_root_black(r) == 1;
-                                };
+                                known();
                             }
                             else {
                                 rewrite(sc, Color::Black);
                                 rewrite(pc, Color::Black);
                                 rewrite(erase_flips_red_all(up), 1);
-                                normalize() using {
-                                    sc == Color::Black;
-                                    pc == Color::Black;
-                                    erase_flips_red_all(up) == 1;
-                                    rb_root_black(l) == 1;
-                                    not(rb_root_black(r) == 1);
-                                };
+                                known();
                             }
                         }
                         else {
@@ -1176,25 +1124,13 @@ theorem erase_frame_right(id: struct rb_node*, above: struct rb_node*, pc: Color
                                 rewrite(sc, Color::Black);
                                 rewrite(pc, Color::Black);
                                 rewrite(erase_flips_red_all(up), 1);
-                                normalize() using {
-                                    sc == Color::Black;
-                                    pc == Color::Black;
-                                    erase_flips_red_all(up) == 1;
-                                    not(rb_root_black(l) == 1);
-                                    rb_root_black(r) == 1;
-                                };
+                                known();
                             }
                             else {
                                 rewrite(sc, Color::Black);
                                 rewrite(pc, Color::Black);
                                 rewrite(erase_flips_red_all(up), 1);
-                                normalize() using {
-                                    sc == Color::Black;
-                                    pc == Color::Black;
-                                    erase_flips_red_all(up) == 1;
-                                    not(rb_root_black(l) == 1);
-                                    not(rb_root_black(r) == 1);
-                                };
+                                known();
                             }
                         }
                     }
@@ -1205,44 +1141,24 @@ theorem erase_frame_right(id: struct rb_node*, above: struct rb_node*, pc: Color
                             if rb_root_black(r) == 1 {
                                 rewrite(sc, Color::Black);
                                 rewrite(pc, Color::Red);
-                                normalize() using {
-                                    sc == Color::Black;
-                                    pc == Color::Red;
-                                    rb_root_black(l) == 1;
-                                    rb_root_black(r) == 1;
-                                };
+                                known();
                             }
                             else {
                                 rewrite(sc, Color::Black);
                                 rewrite(pc, Color::Red);
-                                normalize() using {
-                                    sc == Color::Black;
-                                    pc == Color::Red;
-                                    rb_root_black(l) == 1;
-                                    not(rb_root_black(r) == 1);
-                                };
+                                known();
                             }
                         }
                         else {
                             if rb_root_black(r) == 1 {
                                 rewrite(sc, Color::Black);
                                 rewrite(pc, Color::Red);
-                                normalize() using {
-                                    sc == Color::Black;
-                                    pc == Color::Red;
-                                    not(rb_root_black(l) == 1);
-                                    rb_root_black(r) == 1;
-                                };
+                                known();
                             }
                             else {
                                 rewrite(sc, Color::Black);
                                 rewrite(pc, Color::Red);
-                                normalize() using {
-                                    sc == Color::Black;
-                                    pc == Color::Red;
-                                    not(rb_root_black(l) == 1);
-                                    not(rb_root_black(r) == 1);
-                                };
+                                known();
                             }
                         }
                     }
@@ -1279,14 +1195,14 @@ theorem erase_flips_red_all_covers_deficit(ctx: Context, height: Nat, focus_colo
         match ctx {
             Context::Top => {
                 unfold(erase_flips_red_all(Context::Top));
-                normalize();
+                known();
             }
             Context::Left(id, above, pc, sibling, up) => {
                 apply(ctx_rb_left_sibling(id, above, pc, sibling, up, Nat::Succ(height), focus_color));
                 apply(ctx_rb_left_height(id, above, pc, sibling, up, Nat::Succ(height), focus_color));
                 have black_height(sibling) == Nat::Succ(height) by {
                     rewrite(Nat::Succ(height), black_height(sibling));
-                    normalize();
+                    known();
                 }
                 apply(ctx_rb_left_up(id, above, pc, sibling, up, Nat::Succ(height), focus_color));
                 if pc == Color::Black {
