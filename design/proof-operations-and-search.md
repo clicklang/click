@@ -230,7 +230,7 @@ test, discuss the explicit rule or indexed representation, then replace the
 search and repair proofs. Preserve the C program, contracts and safety refusals.
 Remove the corresponding inventory records as the dependency disappears.
 Start with loan permission through an actual write, separating alias growth
-from symbolic-loan growth; the [operation audit](../roadmap/smart-tactics.md)
+from symbolic-loan growth; the [operation audit](../docs/internals/verification-efficiency.md#operation-audit-ledger)
 retains the other candidates and coverage gaps.
 
 The intended end condition remains: an expanded proof executes through proof

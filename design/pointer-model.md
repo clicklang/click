@@ -250,7 +250,7 @@ Each step is one PR, measured with the gate and the raise-lower audit.
 | `docs/concepts/memory-model.md`, "Blocks and pointers" | rewrite in step 7 |
 | `docs/internals/equality-closure.md` | update with step 3 |
 | `docs/reference/language/index.md`: `same_object`, pointer equality, `address` | update in steps 2 and 7 |
-| `roadmap/raise-lower-principle.md`, complete-pointer equality items | update with step 3 |
+| `roadmap/kernel-term-split.md`, complete-pointer equality items | update with step 3 |
 | `roadmap/unsafe-rust.md` | consistent; it is this model's Rust half |
 
 ## Decisions

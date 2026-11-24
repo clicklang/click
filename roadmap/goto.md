@@ -21,22 +21,23 @@ function-scope labels, exact target resumption, path joins, and chained
 ordinary C cleanup. This issue now tracks only the deferred general jump
 shapes.
 
-Click accepts the documented forward subset and one narrow reducible natural-cycle
-subset: a direct function-body entry label with exactly one backward edge in
-the re-entered region. That edge may be nested in an `if`, and the existing
-`loop` proof supplies its invariant and termination evidence. General
-backward edges, jumps involving loops or switches, labels nested below
-the function body, and edges across unsupported declaration scopes remain
-rejected. Treating those shapes as
+Click accepts the documented forward subset, including forward jumps out of
+a loop or switch to a later label, and one narrow reducible natural-cycle
+subset: a direct function-body entry label with backward edges from its
+re-entered region, possibly nested in an `if`, where the existing `loop`
+proof supplies the invariant and termination evidence, and forward exits
+sharing one later label. The accepted shapes are listed under `goto` in
+[the C language reference](../docs/reference/language/c.md). General backward
+edges, loops or switches after a label, distinct forward exit targets from a
+cycle, labels nested below the function body, and edges across unsupported
+declaration scopes remain rejected. Treating those shapes as
 `break`, a hidden flag, or a source rewrite would lose the C control-flow
 semantics that Click is meant to verify.
 
 ## Cross-language edge design
 
 Design the execution frontier and checked edges with the future language
-frontends in mind. The shared control-flow discussion is in
-[Supporting more languages](../design/supporting-more-languages.md#control-flow-goto-and-implicit-cleanup).
-The delivered [basic C++ slice](../examples/basic-cpp/README.md) implements
+frontends in mind. The delivered [basic C++ slice](../examples/basic-cpp/README.md) implements
 implicit cleanup on ordinary scope exits and returns without general C goto.
 The [one-guard exception regression](../mdtests/cpp_one_guard_unwind.md) now
 checks cleanup on one exceptional call edge as well; the completed bounded
@@ -72,25 +73,18 @@ at the jump, apply any required checked scope-exit effects, and resume exactly
 at its target. Ordinary statements skipped by the jump execute on neither
 the jump path nor its proof trace.
 
-## Delivered forward boundary
+## Delivered boundary
 
-The durable regressions are
-[`forward_goto_direct.md`](../mdtests/forward_goto_direct.md),
-[`forward_goto_conditional.md`](../mdtests/forward_goto_conditional.md), and
-[`forward_goto_cleanup_chain.md`](../mdtests/forward_goto_cleanup_chain.md).
-They cover checked edges, skipped statements and conditionals, conditional
-path joins, label chains, allocation cleanup, expansion, and hostile missing
-cleanup. Parser tests retain the unsupported-shape diagnostics.
-
-The first natural-cycle regressions are
-[`natural_goto_cycle.md`](../mdtests/natural_goto_cycle.md) and
-[`natural_goto_conditional_backedge.md`](../mdtests/natural_goto_conditional_backedge.md).
-The natural-cycle slice also accepts one explicit forward exit label, covered
-by [`natural_goto_exit_label.md`](../mdtests/natural_goto_exit_label.md).
-Multiple forward edges to that same exit label are covered by
-[`natural_goto_multiple_exit_labels.md`](../mdtests/natural_goto_multiple_exit_labels.md).
-Multiple backedges to the same cycle header are covered by
-[`natural_goto_multiple_backedges.md`](../mdtests/natural_goto_multiple_backedges.md).
+The forward regressions are the `mdtests/forward_goto_*.md` files and
+`mdtests/goto_out_may_skip_loops_that_precede_its_label.md`: checked edges,
+skipped statements and conditionals, path joins, label chains, allocation
+cleanup, jumps out of `while`, `for` (retiring the initializer's locals),
+switches and summarized loops, expansion, and hostile missing cleanup or
+wrong joins. The natural-cycle regressions are the `mdtests/natural_goto_*.md`
+and `mdtests/a_natural_goto_cycle_*.md` files: single and conditional
+backedges, multiple backedges, exit labels, forward exits with differing
+states, and returns from a cycle. `mdtests/goto_refuses_a_loop_after_a_label.md`
+and parser tests retain the unsupported-shape diagnostics.
 
 ## Intended regression
 
