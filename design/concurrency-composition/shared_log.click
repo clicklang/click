@@ -108,20 +108,22 @@ int32 vector_copy(
                 close();
             }
             have forall (k: int32) { 0 <= k and k < i implies dst[k] == old(src[k]) } by {
-                intro();
-                intro();
-                have 0 <= k;
-                have k < i;
-                have i == 0 by {
-                    normalize();
+                intro() {
+                    intro() {
+                        have 0 <= k;
+                        have k < i;
+                        have i == 0 by {
+                            normalize();
+                        }
+                        have not (0 <= k) by {
+                            close() using {
+                                k < i;
+                                i == 0;
+                            };
+                        }
+                        contradiction(0 <= k);
+                    }
                 }
-                have not (0 <= k) by {
-                    close() using {
-                        k < i;
-                        i == 0;
-                    };
-                }
-                contradiction(0 <= k);
             }
         }
         maintain by {
@@ -135,32 +137,36 @@ int32 vector_copy(
         close();
     }
     have forall (k: int32) { 0 <= k and k < length implies dst[k] == old(src[k]) } by {
-        intro();
-        intro();
-        have at(loop(0).exit, 0) <= at(loop(0).exit, k) and at(loop(0).exit, k) < at(loop(0).exit, i);
-        instantiate(forall (k: int32) { at(loop(0).exit, 0) <= at(loop(0).exit, k) and at(loop(0).exit, k) < at(loop(0).exit, i) implies at(loop(0).exit, dst[k]) == old(src[k]) }, k);
-        close();
+        intro() {
+            intro() {
+                have at(loop(0).exit, 0) <= at(loop(0).exit, k) and at(loop(0).exit, k) < at(loop(0).exit, i);
+                instantiate(forall (k: int32) { at(loop(0).exit, 0) <= at(loop(0).exit, k) and at(loop(0).exit, k) < at(loop(0).exit, i) implies at(loop(0).exit, dst[k]) == old(src[k]) }, k);
+                close();
+            }
+        }
     }
     step();
     have result == length by {
         close();
     }
     have forall (k: int32) { 0 <= k and k < length implies src[k] == old(src[k]) } by {
-        intro();
-        intro();
-        have 0 <= k;
-        have k < length;
-        transport(old(src[k]) == old(src[k]), src[k] == old(src[k])) using {
-            0 <= length;
-            0 <= k;
-            k < length;
-            length <= dst_capacity;
-            length <= src_capacity;
-            1 <= dst_capacity;
-            1 <= src_capacity;
-            separate(memory(dst[0..dst_capacity]), memory(src[0..src_capacity]));
-        };
-        close();
+        intro() {
+            intro() {
+                have 0 <= k;
+                have k < length;
+                transport(old(src[k]) == old(src[k]), src[k] == old(src[k])) using {
+                    0 <= length;
+                    0 <= k;
+                    k < length;
+                    length <= dst_capacity;
+                    length <= src_capacity;
+                    1 <= dst_capacity;
+                    1 <= src_capacity;
+                    separate(memory(dst[0..dst_capacity]), memory(src[0..src_capacity]));
+                };
+                close();
+            }
+        }
     }
     have forall (k: int32) { 0 <= k and k < length implies dst[k] == old(src[k]) } by {
         close();
@@ -281,15 +287,17 @@ int32 vector_grow(struct vector* owner) {
         step();
         step();
         have forall (k: int32) { 0 <= k and k < old(owner->len) implies owner->data[k] == old(owner->data[k]) } by {
-            intro();
-            intro();
-            have 0 <= k;
-            have k < old(owner->len);
-            transport(old(owner->data[k]) == old(owner->data[k]), owner->data[k] == old(owner->data[k])) using {
-                0 <= k;
-                k < old(owner->len);
-            };
-            close();
+            intro() {
+                intro() {
+                    have 0 <= k;
+                    have k < old(owner->len);
+                    transport(old(owner->data[k]) == old(owner->data[k]), owner->data[k] == old(owner->data[k])) using {
+                        0 <= k;
+                        k < old(owner->len);
+                    };
+                    close();
+                }
+            }
         }
         let after = fold(allocated_vector(owner), { cap: owner->cap });
         have result == 0 by {
@@ -426,16 +434,18 @@ int32 vector_push(struct vector* owner, int32 value) {
         close();
     }
     have forall (k: int32) { 0 <= k and k < old(owner->len) implies owner->data[k] == old(owner->data[k]) } by {
-        intro();
-        intro();
-        have 0 <= k;
-        have k < old(owner->len);
-        transport(old(owner->data[k]) == old(owner->data[k]), owner->data[k] == old(owner->data[k])) using {
-            at(region(5).entry, owner->len) <= at(region(5).entry, owner->cap);
-            0 <= k;
-            k < old(owner->len);
-        };
-        close();
+        intro() {
+            intro() {
+                have 0 <= k;
+                have k < old(owner->len);
+                transport(old(owner->data[k]) == old(owner->data[k]), owner->data[k] == old(owner->data[k])) using {
+                    at(region(5).entry, owner->len) <= at(region(5).entry, owner->cap);
+                    0 <= k;
+                    k < old(owner->len);
+                };
+                close();
+            }
+        }
     }
     close();
     close();
@@ -488,43 +498,51 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
                 close();
             }
             have result == 0 implies owner->len == old(owner->len) by {
-                intro();
-                transport(old(owner->len) == old(owner->len), owner->len == old(owner->len)) using {
-                };
-                close();
+                intro() {
+                    transport(old(owner->len) == old(owner->len), owner->len == old(owner->len)) using {
+                    };
+                    close();
+                }
             }
             have result == 0 implies owner->cap == old(owner->cap) by {
-                intro();
-                have at(region(4).entry, owner->cap) == at(region(3).entry, owner->cap);
-                close();
+                intro() {
+                    have at(region(4).entry, owner->cap) == at(region(3).entry, owner->cap);
+                    close();
+                }
             }
             have result == 0 implies owner->data == old(owner->data) by {
-                intro();
-                have at(region(4).entry, owner->data) == at(region(3).entry, owner->data);
-                close();
+                intro() {
+                    have at(region(4).entry, owner->data) == at(region(3).entry, owner->data);
+                    close();
+                }
             }
             have result == 1 implies owner->len == (old(owner->len) + 1) by {
-                intro();
-                contradiction(result == 1);
+                intro() {
+                    contradiction(result == 1);
+                }
             }
             have result == 1 implies owner->data[old(owner->len)] == value by {
-                intro();
-                contradiction(result == 1);
+                intro() {
+                    contradiction(result == 1);
+                }
             }
             have forall (k: int32) { 0 <= k and k < old(owner->len) implies owner->data[k] == old(owner->data[k]) } by {
                 close();
             }
             have old(owner->len) < old(owner->cap) implies result == 1 by {
-                intro();
-                contradiction(old(owner->len) < old(owner->cap));
+                intro() {
+                    contradiction(old(owner->len) < old(owner->cap));
+                }
             }
             have old(owner->len) < old(owner->cap) implies owner->cap == old(owner->cap) by {
-                intro();
-                contradiction(old(owner->len) < old(owner->cap));
+                intro() {
+                    contradiction(old(owner->len) < old(owner->cap));
+                }
             }
             have old(owner->len) < old(owner->cap) implies owner->data == old(owner->data) by {
-                intro();
-                contradiction(old(owner->len) < old(owner->cap));
+                intro() {
+                    contradiction(old(owner->len) < old(owner->cap));
+                }
             }
             have owner->cap == old(owner->cap) by {
                 have at(region(4).entry, owner->cap) == at(region(3).entry, owner->cap);
@@ -642,8 +660,9 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
                 normalize();
             }
             have result == 1 implies owner->len == (old(owner->len) + 1) by {
-                intro();
-                close();
+                intro() {
+                    close();
+                }
             }
             have at(region(8).entry, owner->len) < at(region(8).entry, owner->cap) by {
                 close();
@@ -667,33 +686,39 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
                 close();
             }
             have result == 1 implies owner->data[old(owner->len)] == value by {
-                intro();
-                close();
+                intro() {
+                    close();
+                }
             }
             have forall (k: int32) { 0 <= k and k < old(owner->len) implies owner->data[k] == old(owner->data[k]) } by {
-                intro();
-                intro();
-                have 0 <= k;
-                have k < old(owner->len);
-                instantiate(forall (j: int32) { 0 <= j and j < old(owner->len) implies at(region(4).entry, owner->data[j]) == old(owner->data[j]) }, k);
-                transport(at(region(4).entry, owner->data[k]) == old(owner->data[k]), owner->data[k] == old(owner->data[k])) using {
-                    at(region(4).entry, owner->data[k]) == old(owner->data[k]);
-                    0 <= k;
-                    k < old(owner->len);
-                };
-                close();
+                intro() {
+                    intro() {
+                        have 0 <= k;
+                        have k < old(owner->len);
+                        instantiate(forall (j: int32) { 0 <= j and j < old(owner->len) implies at(region(4).entry, owner->data[j]) == old(owner->data[j]) }, k);
+                        transport(at(region(4).entry, owner->data[k]) == old(owner->data[k]), owner->data[k] == old(owner->data[k])) using {
+                            at(region(4).entry, owner->data[k]) == old(owner->data[k]);
+                            0 <= k;
+                            k < old(owner->len);
+                        };
+                        close();
+                    }
+                }
             }
             have old(owner->len) < old(owner->cap) implies result == 1 by {
-                intro();
-                contradiction(old(owner->len) < old(owner->cap));
+                intro() {
+                    contradiction(old(owner->len) < old(owner->cap));
+                }
             }
             have old(owner->len) < old(owner->cap) implies owner->cap == old(owner->cap) by {
-                intro();
-                contradiction(old(owner->len) < old(owner->cap));
+                intro() {
+                    contradiction(old(owner->len) < old(owner->cap));
+                }
             }
             have old(owner->len) < old(owner->cap) implies owner->data == old(owner->data) by {
-                intro();
-                contradiction(old(owner->len) < old(owner->cap));
+                intro() {
+                    contradiction(old(owner->len) < old(owner->cap));
+                }
             }
             have owner->cap == old(owner->cap) + 1 by {
                 rewrite(owner->cap, at(region(8).entry, owner->cap));
@@ -786,15 +811,17 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
             close();
         }
         have result == 1 implies owner->len == (old(owner->len) + 1) by {
-            intro();
-            close();
+            intro() {
+                close();
+            }
         }
         have owner->data[old(owner->len)] == value by {
             close();
         }
         have result == 1 implies owner->data[old(owner->len)] == value by {
-            intro();
-            close();
+            intro() {
+                close();
+            }
         }
         have forall (k: int32) { 0 <= k and k < old(owner->len) implies owner->data[k] == old(owner->data[k]) } by {
             close();
@@ -806,16 +833,19 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
             close();
         }
         have old(owner->len) < old(owner->cap) implies result == 1 by {
-            intro();
-            close();
+            intro() {
+                close();
+            }
         }
         have old(owner->len) < old(owner->cap) implies owner->cap == old(owner->cap) by {
-            intro();
-            close();
+            intro() {
+                close();
+            }
         }
         have old(owner->len) < old(owner->cap) implies owner->data == old(owner->data) by {
-            intro();
-            close();
+            intro() {
+                close();
+            }
         }
         have owner->cap <= old(owner->cap) by {
             rewrite(owner->cap, old(owner->cap));

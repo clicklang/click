@@ -13,8 +13,9 @@ verifying "the_goal_after_intro_names_the_introduced_variable.c";
 
 theorem t(n: int32) {
     ensures forall (a: int32) { forall (b: int32) { a == b } } by {
-        intro();
-        normalize();
+        intro() {
+            normalize();
+        }
     }
 }
 ```

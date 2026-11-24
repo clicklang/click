@@ -3983,6 +3983,7 @@ fn proof_step_source_name(step: &ProofStep) -> &'static str {
         ProofStep::ApplyInduction { .. } => "apply",
         ProofStep::Induct { .. } => "induct",
         ProofStep::TransportUsing { .. } => "transport",
+        ProofStep::CompatibilityFactTransport { .. } => "verification-only fact transport",
         ProofStep::Instantiate { .. } => "instantiate",
         ProofStep::Have { .. } => "have",
         ProofStep::Open { .. } => "with",

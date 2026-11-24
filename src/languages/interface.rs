@@ -591,15 +591,19 @@ impl ImportedFunction {
     /// the head is still checked against them.
     pub(crate) fn named_by_head<'n>(
         &self,
-        names: impl ExactSizeIterator<Item = &'n str>,
+        names: impl ExactSizeIterator<Item = (&'n str, crate::kernel::BindingName)>,
     ) -> Option<Self> {
         if !self.positional_parameters || names.len() != self.parameters.len() {
             return None;
         }
         let mut named = self.clone();
-        for (parameter, name) in named.parameters.iter_mut().zip(names) {
+        for (parameter, (name, binding)) in named.parameters.iter_mut().zip(names) {
             parameter.name = if parameter.name.reference_referent().is_some() {
                 crate::kernel::BindingName::reference_carrier(name)
+            } else if parameter.name.slice_length_of().is_some() {
+                // A slice's length keeps the head's binding, which names the
+                // slice it measures, `s.len()` of `s: &[u8]`.
+                binding
             } else {
                 name.to_string().into()
             };

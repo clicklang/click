@@ -9,9 +9,10 @@ matched the requirement `y == 7` by its spelling and read the parameter.
 theorem t(y: int32) {
     requires y == 7;
     ensures forall (y: int32) { y == y } by {
-        intro();
-        have outer.y == 7;
-        close();
+        intro() {
+            have outer.y == 7;
+            close();
+        }
     }
 }
 ```

@@ -62,16 +62,19 @@ void sweep(int32 visited[], int32 n) {
                 have forall (k: int32) {
                     0 <= k and k < i implies visited[k] == at(iter, visited[k])
                 } by {
-                    intro(); intro();
-                    have k < n by { close() using { k < i; i < n; }; }
-                    have i != k by { close() using { k < i; }; }
-                    have separate(memory(visited[i]), memory(visited[k])) by {
-                        apply(click::separation::separate_elements(visited, i, k));
+                    intro() {
+                        intro() {
+                            have k < n by { close() using { k < i; i < n; }; }
+                            have i != k by { close() using { k < i; }; }
+                            have separate(memory(visited[i]), memory(visited[k])) by {
+                                apply(click::separation::separate_elements(visited, i, k));
+                            }
+                            have separate(loop(0).statement(0).footprint, memory(visited[k])) by {
+                                close() using { separate(memory(visited[i]), memory(visited[k])); };
+                            }
+                            preserve(memory(visited[k]), loop(0).statement(0));
+                        }
                     }
-                    have separate(loop(0).statement(0).footprint, memory(visited[k])) by {
-                        close() using { separate(memory(visited[i]), memory(visited[k])); };
-                    }
-                    preserve(memory(visited[k]), loop(0).statement(0));
                 }
                 have viewable(visited[0..n]) by { observe(visited[0..n]); close(); }
                 have 0 <= 0 by { close(); }

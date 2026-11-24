@@ -3,6 +3,44 @@ use super::*;
 use crate::surface::proof::driver::ProofDriver;
 
 impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
+    pub(in crate::surface::proof) fn try_ordinary_fact_transport(
+        &self,
+        source: &ClickProposition,
+        target: &ClickProposition,
+        premises: &[ClickProposition],
+    ) -> Result<Option<ProofScope<'a>>, ClickError> {
+        let Some(body) = crate::kernel::search::ProofSearch::try_ordinary_fact_transport(
+            &self.proof.body,
+            source,
+            target,
+            premises,
+        )?
+        else {
+            return Ok(None);
+        };
+        let mut next = self.proof.clone();
+        next.body = body;
+        Ok(Some(next))
+    }
+
+    pub(in crate::surface::proof) fn try_preserve_selected_fact(
+        &self,
+        conclusion: &ClickProposition,
+        source: ClickProposition,
+    ) -> Result<Option<ProofScope<'a>>, ClickError> {
+        let Some(body) = crate::kernel::search::ProofSearch::try_preserve_selected_fact(
+            &self.proof.body,
+            conclusion,
+            source,
+        )?
+        else {
+            return Ok(None);
+        };
+        let mut next = self.proof.clone();
+        next.body = body;
+        Ok(Some(next))
+    }
+
     /// Replay one operation bound inside the selected have body.
     pub(in crate::surface::proof) fn try_float_bound_link(
         &self,

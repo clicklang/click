@@ -564,8 +564,10 @@ fn memory_numeric_keys_keep_native_syntax_instead_of_local_observations() {
     ];
     assert_ne!(cells[0], cells[1]);
     assert_eq!(cells[0].cmp(&cells[1]), a.cmp(&b));
-    assert_eq!(hash(&cells[0]), hash(&a));
-    assert_eq!(hash(&cells[1]), hash(&b));
+    let root = KernelTermImport::default().argument(&PureFunctionArgument::Value(b));
+    let retained = StoredMemoryValue::from(ExecutionValue::Shared(root));
+    assert_eq!(cells[1], retained);
+    assert_eq!(hash(&cells[1]), hash(&retained));
 }
 
 #[test]

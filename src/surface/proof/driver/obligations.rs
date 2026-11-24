@@ -997,20 +997,24 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             // Later invariant declarations can have a long prefix of guards
             // from earlier declarations. Introduce that spine iteratively;
             // one native planner frame per guard overflows before a bounded
-            // tactic can return, even though the certificate is sequential.
+            // tactic can return.
             let mut introduced = driver_proof.clone();
+            let mut openings = Vec::new();
             while matches!(introduced.goal(), Some(Proposition::Implies(_, _))) {
                 let Some(next) =
                     attempt::candidate_outcome(introduced.driver().apply_step(ProofStep::Intro))?
                 else {
                     return Ok(None);
                 };
+                openings.push((introduced, next.clone()));
                 introduced = next;
             }
-            let result = introduced.driver().plan_invariant_bundle_closure()?;
-            if result.is_some() {
+            if let Some(mut closed) = introduced.driver().plan_invariant_bundle_closure()? {
+                for (parent, introduced) in openings.into_iter().rev() {
+                    closed = parent.finish_generated_intro(&introduced, closed)?;
+                }
                 scope.succeed();
-                return Ok(result);
+                return Ok(Some(closed));
             }
             // A leaf the introduced premises contradict, as a guarded member
             // `done implies ...` is on a path whose test said `!done`: the

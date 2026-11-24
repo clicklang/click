@@ -24,8 +24,11 @@ fn adler_incremental::incremental(bytes: &[u8], split: usize) -> u32 {
  have to_integer((state.b as u32)) == old(adler_spec_b_u64(bytes, split, 1, 0)) by close() using { to_integer((state.b as u32)) == to_integer(state.b); to_integer(state.b) == old(adler_spec_b_u64(bytes, split, 1, 0)); };
  mark prefix_done;
  have forall (k: uint64) { to_integer(k) < to_integer(bytes.len() - split) implies suffix[k] == old((bytes + split)[k]) } by {
-  intro(); intro();
-  normalize();
+  intro() {
+      intro() {
+          normalize();
+      }
+  }
  }
  apply(adler_spec_extensional_u64(suffix, old(bytes + split), bytes.len() - split, to_integer((state.a as u32)), to_integer((state.b as u32))));
  step_until(statement(4).call(0).entry);

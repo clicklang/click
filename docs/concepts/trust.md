@@ -158,7 +158,7 @@ theorem certification consumes checks that theorem once. A proved library
 theorem is trusted to the extent that the check of its proof is; a kernel
 standard theorem is trusted to the extent that its builder is.
 
-The library also declares 127 `axiom`s, which are trusted, not proved.
+The library also declares 128 `axiom`s, which are trusted, not proved.
 Seven are the laws of the primitive type `Vec<T>` in
 `library/rust/vec.click`, which relate its bodyless operations `vec::len`,
 `vec::get`, `vec::push` and `vec::set`
@@ -243,6 +243,10 @@ Two narrowing axioms in `library/float_order.click` preserve an ordered
 operands. The true input comparison excludes NaNs. Rounding preserves
 order for finite values, infinities and signed zeros.
 
+The `int32_to_float32_le` axiom states that rounding signed 32-bit integers
+to float32 preserves non-strict order. Distinct integers can round to the
+same floating-point value.
+
 The rounded product axioms distinguish two positive lower endpoints from
 two finite operand intervals. A positive lower endpoint rules out zero,
 negative values, and NaN, so multiplying the two endpoints bounds the
@@ -294,7 +298,7 @@ proved. Each family is an assumption in the same sense:
 | Formatted stream output | `printf` | The `fprintf` transition on the hosted `stdout` stream | `library/c/printf.interface.click` |
 | Formatted stream output | `fprintf` | The same transition on the stream identified by the `FILE *` argument, for a format of ordinary characters and `%%`, stated with `click::c::stdio`'s format functions | `library/c/fprintf.interface.click` |
 | C++ standard library | `C++ std` | The catalog contract of each `std::span`, `std::array`, `std::as_writable_bytes` and selected `std::vector` function an import calls, plus the C++ `memcpy` interface, and the explicitly pinned opaque exception constructor in the `ios_failure` profile | `library/cpp/span.interface.click` (`std::span<T>` and static-extent `std::span<T, N>`), `library/cpp/span_state.click` (logical descriptor state), `library/cpp/span_state_contracts.interface.click` (logical copy construction and `empty()` for dynamic `std::span<int>`), `library/cpp/array.interface.click` (`std::array<T, N>`, its `const` and mutable overloads), and `library/cpp/as_writable_bytes.interface.click` (`std::as_writable_bytes<T, N>`), `library/cpp/vector.interface.click` and `library/cpp/vector_state.click` (logical descriptor, read-only queries, and const subscript of an existing byte vector), `library/cpp/memcpy.interface.click` (byte copy through native `void*` parameters), and Click templates written out at each called element type and extent; `src/languages/cpp/standard_library.rs` keeps the name table and the opaque exception factory contract |
-| Rust core library | `Rust core` | The contract of each core method an import calls: integer methods (`u32::min`), `Vec`, slice, and `Option`/`Result` unwrapping ([core library methods](../reference/rust.md#core-library-methods)), with the 7 `axiom`s above | `library/rust/core.interface.click` (`Vec`, `slice::swap<T>`, `Option`/`Result` unwrapping contracts, generic contracts written out at each called type, with only a name table in `src/languages/rust/standard_library.rs`) and `library/rust/integers.interface.click` (one contract per integer method and type, stating its result with the specification function of the same path in `library/rust/<type>.click`; only the called methods' lines are appended) |
+| Rust core library | `Rust core` | The contract of each core method an import calls: integer methods (`u32::min`), `Vec`, slice, `str`, and `Option`/`Result` unwrapping ([core library methods](../reference/rust.md#core-library-methods)), with the 7 `axiom`s above | `library/rust/core.interface.click` (`Vec`, `slice::swap<T>`, `Option`/`Result` unwrapping contracts, generic contracts written out at each called type, with only a name table in `src/languages/rust/standard_library.rs`) and `library/rust/integers.interface.click` (one contract per integer method and type, stating its result with the specification function of the same path in `library/rust/<type>.click`; only the called methods' lines are appended), and `library/rust/str.interface.click` (one contract per `str` method, `str::len`, stated over the string slice's byte length; only the called methods' lines are appended) |
 | Verifier primitive | `primitive` | `__click_constant_p_unknown`, the value of `__builtin_constant_p`, is 0 or 1 ([verifier primitives](../reference/language/index.md#verifier-primitives)): it stands for a compiler decision, not a library function | `library/c/builtins.interface.click` |
 | Thread runtime | `runtime` | The selected `modeled-pthread` specification: create/join, shared mutex calls and one-shot atomic publication obey it | `src/languages/c/thread_runtime.rs` |
 

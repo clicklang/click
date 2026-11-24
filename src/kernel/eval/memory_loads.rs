@@ -776,6 +776,32 @@ fn holds_its_own_read(stored: &ProgramValue, pointer: &Address) -> bool {
         )
 }
 
+fn retained_cell_holds_its_own_read(value: &ExecutionValue, pointer: &Address) -> bool {
+    use crate::kernel::execution_value::storage_keys::AddressKey;
+    let native_read = |word| {
+        matches!(
+            viewed_as_memory_load(word),
+            Some(MachineTerm::MemoryLoad(_, cell, _)) if *cell == *pointer
+        )
+    };
+    let Some(root) = value.shared() else {
+        return holds_its_own_read(value.native_payload().expect("native cell"), pointer);
+    };
+    match root.node() {
+        KernelTermNode::MemoryLoad { address, .. } => {
+            AddressKey::native(pointer) == AddressKey::shared(address)
+        }
+        KernelTermNode::FloatRead(read) => {
+            AddressKey::native(pointer) == AddressKey::shared(read.parts().1)
+        }
+        KernelTermNode::Variable(variable) if value.program_type() != ProgramType::Bool => {
+            native_read(&MachineTerm::Variable(*variable))
+        }
+        KernelTermNode::ImportedScalar(input) => native_read(input.value()),
+        _ => root.retained_machine_input().is_some_and(native_read),
+    }
+}
+
 /// Whether a logical read of a `value_type` cell lowers to the read at the
 /// cell's version rather than to a value the cell holds
 /// (`docs/internals/raise-lower-principle.md`). Integer and pointer cells keep their
@@ -1280,12 +1306,33 @@ fn evaluate_retained_memory_load_case(
             .and_then(|address| memory.known_retained_value(&address))
     });
     if let Some(value) =
-        known.filter(|stored| !names_version || holds_its_own_read(&stored.native(), &pointer))
+        known.filter(|value| !names_version || retained_cell_holds_its_own_read(value, &pointer))
     {
+        if value.shared().is_some()
+            && value.program_type() == value_type
+            && matches!(
+                value_type,
+                ProgramType::Bool
+                    | ProgramType::Int32
+                    | ProgramType::UInt32
+                    | ProgramType::Int64
+                    | ProgramType::UInt64
+                    | ProgramType::Float32
+                    | ProgramType::Float64
+            )
+        {
+            // These same-type reads need no conversion or narrow range facts.
+            return vec![ExpressionPath {
+                outcome: ExpressionOutcome::Value(value),
+                facts,
+                obligations,
+            }];
+        }
+        let native = value.native();
         if let Some(value) = canonicalized_pointer_value_from_int_cell(
             memory,
             &pointer,
-            &value.native(),
+            &native,
             value_type,
             &mut facts,
             assumptions,
@@ -1299,7 +1346,7 @@ fn evaluate_retained_memory_load_case(
                 obligations,
             }];
         }
-        if let Some(converted) = value_type.read_cell(&value.native()) {
+        if let Some(converted) = value_type.read_cell(&native) {
             return vec![ExpressionPath {
                 outcome: ExpressionOutcome::Value(retained_cell_conversion(&value, converted)),
                 facts,
@@ -1317,7 +1364,7 @@ fn evaluate_retained_memory_load_case(
                 obligations,
             }];
         }
-        if !pointer_cell_defers_to_symbolic(&value.native()) {
+        if !pointer_cell_defers_to_symbolic(&native) {
             return vec![ExpressionPath {
                 outcome: ExpressionOutcome::RuntimeError(RuntimeError::LoadTypeMismatch {
                     pointer: pointer.clone(),

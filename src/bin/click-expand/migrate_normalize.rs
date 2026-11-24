@@ -3,11 +3,11 @@ use std::path::Path;
 
 use click::cli::VerificationInput;
 use click::surface::{
-    ClickProject, NormalizeSourceSite, expand_claim_by_label, first_normalize_in_claim,
-    normalize_source_sites, without_proof_search_for_claim,
+    ClickProject, NormalizeSourceSite, expand_claim_by_label, normalize_source_sites,
+    without_proof_search_for_claim,
 };
 
-use super::{check_expansion_deadline, verify_proof_unit};
+use super::{check_expansion_deadline, require_no_normalize, verify_proof_unit};
 
 const LEGACY: &str = "normalize";
 
@@ -110,32 +110,6 @@ fn migrate_claim(
     )?;
     without_proof_search_for_claim(claim, || verify(&expanded.source))
         .map_err(|error| format!("Strict replay: {error}"))
-}
-
-fn require_no_normalize(
-    project: Option<&ClickProject>,
-    source: &str,
-    inputs: &VerificationInput,
-    claim: &str,
-    stage: &str,
-) -> Result<(), String> {
-    if let Some(position) =
-        first_normalize_in_claim(project, source, &inputs.program_inputs(), claim)
-            .map_err(|error| format!("{stage}: {}", error.report()))?
-    {
-        let before = position.line.saturating_sub(4);
-        let context = source
-            .lines()
-            .skip(before)
-            .take(position.line - before)
-            .collect::<Vec<_>>()
-            .join("\n");
-        return Err(format!(
-            "{stage} still contains normalize() at {}:{} in its Click source\n{context}",
-            position.line, position.column
-        ));
-    }
-    Ok(())
 }
 
 fn apply_edits(source: &str, edits: &BTreeMap<usize, &'static str>) -> String {

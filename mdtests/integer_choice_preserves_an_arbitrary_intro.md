@@ -6,11 +6,12 @@ theorem independent_integer_choice() {
     ensures forall (arbitrary: Integer) {
         exists (found: Integer) { found == 0 and arbitrary == arbitrary }
     } by {
-        intro();
-        let chosen = obtain(exists (chosen: Integer) { chosen == 0 });
-        have arbitrary == arbitrary by { close(); }
-        witness(chosen);
-        close();
+        intro() {
+            let chosen = obtain(exists (chosen: Integer) { chosen == 0 });
+            have arbitrary == arbitrary by { close(); }
+            witness(chosen);
+            close();
+        }
     }
 }
 ```

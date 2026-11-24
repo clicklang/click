@@ -26,23 +26,27 @@ void cut(uint8* s, uint64 n) {
     unfold(cstr_at(s, n));
     step();
     have forall (k: uint64) { 0u64 <= k and k < 0u64 implies s[k] != '\0' } by {
-        intro();
-        intro();
-        contradiction();
+        intro() {
+            intro() {
+                contradiction();
+            }
+        }
     }
     have s[0u64] == '\0' by {
         close();
     }
     have forall (k: uint64) { 0u64 <= k and k < 0u64 + 1u64 implies defined(s[k]) } by {
-        intro();
-        intro();
-        have k == 0u64 by {
-            close() using {
-                k < 1u64;
-            };
+        intro() {
+            intro() {
+                have k == 0u64 by {
+                    close() using {
+                        k < 1u64;
+                    };
+                }
+                rewrite(k, 0u64);
+                close();
+            }
         }
-        rewrite(k, 0u64);
-        close();
     }
     fold(cstr_at(s, 0u64));
 }

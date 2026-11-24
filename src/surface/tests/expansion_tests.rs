@@ -118,8 +118,9 @@ theorem ordinary(hi: int32) {
     let source = r#"
 theorem written() {
     ensures forall (x: int32) { x == 0 implies x == 0 } by {
-        intro();
-        close();
+        intro() {
+            close();
+        }
     }
 }
 "#;
@@ -2105,8 +2106,9 @@ fn short_circuit_return_expands_after_an_early_return() {
                     step_until(function.exit);
                     have 2 <= size implies (first as int32) == 67 implies
                         (second as int32) == 75 implies result by {
-                        intro();
-                        contradiction(size < 2);
+                        intro() {
+                            contradiction(size < 2);
+                        }
                     }
                     close();
                 }
@@ -2193,6 +2195,26 @@ fn unchanged_machine_fold_expands_to_known() {
     without_implicit_solve(|| verify_click_theorems(source)).unwrap();
     let changed = source.replace("{ acc }", "{ item }");
     assert!(without_implicit_solve(|| verify_click_theorems(&changed)).is_err());
+}
+
+#[test]
+fn disjunctive_divisor_bounds_expand_and_cold_replay() {
+    let (source, inputs) = mdtest_sources("mdtests/arithmetic_division_under_disjunctive_bound.md");
+    let sources = crate::cli::source_refs(&inputs);
+    for claim in [
+        "divide.ensures_0",
+        "remainder.ensures_0",
+        "safe_divisor.ensures_0",
+    ] {
+        let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
+            .unwrap_or_else(|error| panic!("{claim}: {}", error.report()));
+        assert!(!expanded.contains("normalize()"), "{claim}: {expanded}");
+        assert!(expanded.contains("contradiction("), "{claim}: {expanded}");
+        crate::surface::check_audit_claim(claim, true, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{claim}: {error}"));
+    }
 }
 
 #[test]
@@ -4886,7 +4908,7 @@ fn targeted_termination_assumes_unselected_callees() {
     }
 }
 
-/// A `close()` after `step_until(function.exit); intro(); intro();` closes a claim proof the
+/// A `close()` in nested `intro` blocks after `step_until(function.exit)` closes a claim proof the
 /// `intro`s opened, and expands to only the steps it adds there. It used to
 /// expand to the whole claim's certificate, `have <claim> by { ... };
 /// close();`, and a deferred `normalize()` or `close()` ignored
@@ -4894,14 +4916,14 @@ fn targeted_termination_assumes_unselected_callees() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_12")]
 fn post_execution_closer_continues_the_proof_intros_opened() {
-    let anchor = "intro();\n        close();";
+    let anchor = "intro() {\n                close();";
     let expanded = expand_mdtest_site_and_reverify(
         "mdtests/post_execution_intro_quantified_ensure.md",
         anchor,
-        "intro();\n        ".len(),
+        "intro() {\n                ".len(),
     );
     assert!(
-        expanded.contains("intro();\n        intro();\n        close();"),
+        expanded.contains("intro() {\n            intro() {\n                close();"),
         "{expanded}"
     );
     assert!(!expanded.contains("have forall"), "{expanded}");
@@ -5177,12 +5199,14 @@ theorem fixed_integer_witness(value: int32) {
         witness(0);
         all {
           (0 : Integer) == 0 implies to_integer(value) + 1 <= 2147483647 and to_integer(value) + 1 >= -2147483648 => {
-            intro();
-            close();
+            intro() {
+                close();
+            }
           }
           (0 : Integer) == 0 implies to_integer(value) + 1 <= 2147483647 and to_integer(value) + 1 >= -2147483648 => {
-            intro();
-            close();
+            intro() {
+                close();
+            }
           }
           (0 : Integer) == 0 and to_integer(value + 1) == to_integer(value + 1) => { close(); }
         }
@@ -6468,7 +6492,7 @@ fn whole_claim_expansion_closes_a_claim_opened_after_execution() {
         (
             "intro_as_in_a_function_proof",
             "keep.contract",
-            "let below = intro();",
+            "intro(below) {",
         ),
     ] {
         let (click, sources) = mdtest_sources(&format!("mdtests/{mdtest}.md"));
@@ -7507,11 +7531,12 @@ fn contract_refinement_expands_ordinary_helper_proofs() {
             ensures Target(callback) by {
                 unfold(Source(callback));
                 unfold(Target(callback));
-                intro();
-                have result == x implies result >= 0 by {
-                    apply(nonnegative_equal(x, result));
+                intro() {
+                    have result == x implies result >= 0 by {
+                        apply(nonnegative_equal(x, result));
+                    }
+                    close();
                 }
-                close();
             }
         }
     "#;
@@ -9997,9 +10022,11 @@ fn post_execution_restricted_solve_continues_an_introduced_claim() {
         int32 forall_scope() {
             ensures forall (k: int32) { 0 <= k implies 0 <= k } by {
                 step_until(function.exit);
-                intro();
-                intro();
-                close() using { 0 <= k; }
+                intro() {
+                    intro() {
+                        close() using { 0 <= k; }
+                    }
+                }
             }
         }
     "#;
@@ -16378,7 +16405,7 @@ fn outcome_predicate_unfold_evidence_survives_nested_have_expansion() {
         expanded.contains("unfold(permutation::permutation("),
         "{expanded}"
     );
-    assert!(expanded.contains("intro();"), "{expanded}");
+    assert!(expanded.contains("intro() {"), "{expanded}");
     assert!(!expanded.contains("normalize("), "{expanded}");
     crate::surface::check_audit_claim("sort_three_cells.ensures_0", true, || {
         verify_c_sources(&expanded, &sources).map_err(|error| error.report())
@@ -17446,6 +17473,7 @@ fn outcome_solve_preserves_viewability_after_a_call() {
 
     let expanded = expand_function_proof_source(click_source, &sources, "use_summary")
         .expect("the call-preserved viewability should expand");
+    assert!(!expanded.contains("transport("), "{expanded}");
     assert!(!expanded.contains("normalize()"), "{expanded}");
     assert!(expanded.contains("preserve(memory(p[0..1]),"), "{expanded}");
     crate::surface::check_audit_claim("use_summary.contract", true, || {
@@ -17662,9 +17690,11 @@ fn quantified_old_equality_keeps_its_introduced_binder() {
             have forall (k: int32) {
                 0 <= k and k < n implies src[k] == old(src[k])
             } by {
-                intro();
-                intro();
-                close();
+                intro() {
+                    intro() {
+                        close();
+                    }
+                }
             }
             close();
         }
@@ -19766,7 +19796,7 @@ fn loop_entry_logical_read_expands_without_hidden_introductions() {
         .expect("the expansion keeps the preservation proof");
     assert!(initialize < preserve, "{expanded}");
     assert!(
-        !expanded[initialize..preserve].contains("intro();"),
+        !expanded[initialize..preserve].contains("intro() {"),
         "the initialization certificate must not invent a read guard: {expanded}"
     );
     verify_c_sources(&expanded, &sources).unwrap_or_else(|error| {
@@ -23174,7 +23204,7 @@ fn a_written_loop_phase_expands_alone_by_label_and_by_line() {
     );
     // A line of the phase inside the loop tactic, past its first line.
     assert_eq!(
-        at("intro();", ClaimLocationScope::Innermost).label,
+        at("intro() {", ClaimLocationScope::Innermost).label,
         format!("{function}.loop(0).initialize")
     );
     // The proof unit that checks the phase is the contract proof writing it,
@@ -24964,7 +24994,11 @@ fn scoped_conversion_requirements_expand_before_the_have() {
             requires 0 <= j and j <= 255;
             ensures 0 == 0 by {
                 have forall (k: int32) { k < j implies to_uint8(to_integer(j)) == to_uint8(to_integer(j)) } by {
-                    intro(); intro(); close();
+                    intro() {
+                        intro() {
+                            close();
+                        }
+                    }
                 }
                 close();
             }
@@ -25005,7 +25039,7 @@ fn theorem_entry_type_bounds_discharge_without_search() {
         theorem entry_conversion() {
             ensures forall (k: uint8) {
                 to_uint8(to_integer(k)) == to_uint8(to_integer(k))
-            } by { intro(); close(); }
+            } by { intro() { close(); } }
         }
     "#;
     without_implicit_solve(|| verify_click_theorems(source))
@@ -25724,10 +25758,11 @@ fn structural_invariant_bundles_expand_as_ordered_member_haves() {
                         close();
                     }
                     (a == 0 implies a + 1 == 1) => {
-                        intro();
-                        have a == 0 by { close(); }
-                        have a + 1 == 1 by { rewrite(a, 0); close(); }
-                        close();
+                        intro() {
+                            have a == 0 by { close(); }
+                            have a + 1 == 1 by { rewrite(a, 0); close(); }
+                            close();
+                        }
                     }
                 }
             }
@@ -25756,7 +25791,7 @@ fn structural_invariant_bundles_expand_as_ordered_member_haves() {
             requires a == b;
             requires b == 0;
             ensures a == 0 and (a == 0 implies a + 1 == 1)
-            {} all {{ a == 0 => {{ close(); }} (a == 0 implies a + 1 == 1) => {{ intro(); close(); }} }}
+            {} all {{ a == 0 => {{ close(); }} (a == 0 implies a + 1 == 1) => {{ intro() {{ close(); }} }} }}
             }}
         }}
     "#,
@@ -25902,6 +25937,130 @@ fn explicit_entry_witnesses_for_cstr_calls_expand_without_search() {
         })
         .unwrap_or_else(|error| panic!("{fixture}: {error}\n{expanded}"));
     }
+}
+
+#[test]
+fn field_viewability_expands_with_containment() {
+    let sources = [(
+        "view.c",
+        "struct box { int first; int second; }; void f(struct box *p) {}",
+    )];
+    let source = r#"
+        verifying "view.c";
+        void f(struct box *p) {
+            requires viewable(p[0..1]);
+            ensures true;
+        } by {
+            have viewable(p->second) by {
+                CLOSE_VIEW
+            }
+            step();
+        }
+    "#;
+    for tactic in ["close();", "close() using { viewable(p[0..1]); };"] {
+        let source = source.replace("CLOSE_VIEW", tactic);
+        let expanded = expand_c_claim_source_by_label(&source, &sources, "f.contract").unwrap();
+        assert!(
+            expanded.contains("contains(memory(p[0..1]), memory(p->second))"),
+            "{expanded}"
+        );
+        assert!(
+            expanded.contains("separation::viewable_restrict"),
+            "{expanded}"
+        );
+        assert!(!expanded.contains("transport("), "{expanded}");
+        without_implicit_solve_for_claim("f.contract", || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap();
+    }
+
+    let source = source.replace("CLOSE_VIEW", "close();").replace(
+        "            have viewable(p->second)",
+        "            step();\n            have viewable(p->second)",
+    );
+    let with_local = sources[0].1.replace("{}", "{ int local = 0; }");
+    let sources = [("view.c", with_local.as_str())];
+    let expanded = expand_c_claim_source_by_label(&source, &sources, "f.contract").unwrap();
+    assert!(
+        expanded.contains("preserve(memory(p[0..1]), region(0))"),
+        "{expanded}"
+    );
+    assert!(
+        expanded.contains("separation::viewable_restrict"),
+        "{expanded}"
+    );
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim("f.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
+#[test]
+fn aliased_element_viewability_expands_with_containment() {
+    let sources = [("view.c", "void f(int *p, int *q, int i) {}")];
+    let source = r#"
+        verifying "view.c";
+        void f(int32 *p, int32 *q, int32 i) {
+            requires q == p;
+            requires viewable(p[0..8]);
+            requires 0 <= i and i < 8;
+            ensures true;
+        } by {
+            have viewable(q[i]) by { close(); }
+            step();
+        }
+    "#;
+    let expanded = expand_c_claim_source_by_label(source, &sources, "f.contract").unwrap();
+    assert!(expanded.contains("rewrite(q, p)"), "{expanded}");
+    assert!(
+        expanded.contains("separation::contains_element"),
+        "{expanded}"
+    );
+    assert!(
+        expanded.contains("separation::viewable_restrict"),
+        "{expanded}"
+    );
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim("f.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
+#[test]
+fn entry_existential_view_expands_with_preservation() {
+    let sources = [(
+        "entry.c",
+        "int f(unsigned char *p) { int local = 0; return local; }",
+    )];
+    let source = r#"
+        verifying "entry.c";
+
+        predicate good(p: uint8*) {
+            exists (n: uint64) { n == 8u64 and viewable(p[0u64..n]) }
+        }
+
+        int32 f(uint8 *p) {
+            requires good(p);
+            ensures result == 0;
+        } by {
+            step();
+            have exists (n: uint64) { n == 8u64 and viewable(p[0u64..n]) } by {
+                close();
+            }
+            step();
+        }
+    "#;
+    let expanded = expand_c_claim_source_by_label(source, &sources, "f.contract").unwrap();
+    assert!(expanded.contains("witness(n)"), "{expanded}");
+    assert!(expanded.contains("preserve(memory(p["), "{expanded}");
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim("f.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
 }
 
 #[test]
@@ -27031,6 +27190,15 @@ fn arithmetic_safety_bounds_expand_to_checked_proofs() {
 #[test]
 fn float_cast_bounds_expand_and_cold_replay() {
     for (fixture, functions) in [
+        (
+            "arithmetic_float_cast_from_integer_bounds",
+            &[
+                "via_double",
+                "unsigned_via_double",
+                "short_via_float",
+                "via_float",
+            ][..],
+        ),
         ("arithmetic_safety_float_widening", &["convert"][..]),
         (
             "arithmetic_safety_float_narrowing_keeps_rounded_bounds",
@@ -27049,6 +27217,11 @@ fn float_cast_bounds_expand_and_cold_replay() {
             let expanded = expand_c_claim_source_by_label(&source, &sources, &claim)
                 .unwrap_or_else(|error| panic!("{}", error.report()));
             assert!(!expanded.contains("normalize()"), "{expanded}");
+            if *function == "via_float" {
+                let (cast_proof, _) = expanded.split_once("theorem rounded_upper(").unwrap();
+                assert!(cast_proof.contains("click::integer::lt_le_predecessor"));
+                assert!(cast_proof.contains("click::float_order::int32_to_float32_le"));
+            }
             if *function == "cast_narrowed" {
                 let (cast_proof, _) = expanded.split_once("theorem rounded(").unwrap();
                 assert!(
@@ -27381,6 +27554,79 @@ fn indexed_left_shift_comparison_expands_with_preservation() {
         verify_c_sources(&expanded, &sources).map_err(|error| error.report())
     })
     .unwrap();
+}
+
+#[test]
+fn indexed_signed_left_shift_definedness_expands_with_preservation() {
+    let sources = [(
+        "read_order.c",
+        "void keep(int *p, int i, int j, int limit) { p[j] = 10; }",
+    )];
+    let source = r#"
+        verifying "read_order.c";
+        void keep(int32 *p, int32 i, int32 j, int32 limit) {
+            owns p[0..8];
+            requires 0 <= i and i < 8 and 0 <= j and j < 8;
+            requires i != j;
+            requires 0 <= p[i] and p[i] <= 1073741823;
+            requires (p[i] << 1) < limit;
+            ensures (p[i] << 1) < limit;
+        } by {
+            step();
+            have (p[i] << 1) < limit by { close(); }
+        }
+    "#;
+    let expanded = expand_c_claim_source_by_label(source, &sources, "keep.contract").unwrap();
+    assert!(
+        expanded.contains("have not p[i] < 0 and p[i] <= 1073741823 by {"),
+        "{expanded}"
+    );
+    assert!(
+        expanded.contains("preserve(memory(p[i]), region(0))"),
+        "{expanded}"
+    );
+    assert!(expanded.contains("rewrite(p[i],"), "{expanded}");
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim("keep.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
+#[test]
+fn indexed_equality_with_a_historical_read_expands_with_preservation() {
+    let sources = [("keep.c", "void f(int *p, int i, int j) { p[j] = 10; }")];
+    let source = r#"
+        verifying "keep.c";
+        void f(int32 *p, int32 i, int32 j) {
+            owns p[0..8];
+            requires 0 <= i and i < 8 and 0 <= j and j < 8;
+            requires i != j;
+            ensures true;
+        } by {
+            step();
+            have p[i] == SAVED by { close(); }
+        }
+    "#;
+    for saved in ["old(p[i])", "at(function.entry, p[i])"] {
+        let source = source.replace("SAVED", saved);
+        let expanded = expand_c_claim_source_by_label(&source, &sources, "f.contract").unwrap();
+        assert!(
+            expanded.contains("separation::separate_elements"),
+            "{expanded}"
+        );
+        assert!(
+            expanded.contains("preserve(memory(p[i]), region(0))"),
+            "{expanded}"
+        );
+        assert!(!expanded.contains("transport("), "{expanded}");
+        without_implicit_solve_for_claim("f.contract", || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap();
+        let overlapping = expanded.replace("requires i != j;", "");
+        assert!(verify_c_sources(&overlapping, &sources).is_err());
+    }
 }
 
 #[test]

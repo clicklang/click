@@ -26,16 +26,20 @@ int32 walk(int32 n) {
     have forall (j: int32) {
         0 <= j and j < 5 implies 0 <= j
     } by {
-        intro();
-        intro();
-        close();
+        intro() {
+            intro() {
+                close();
+            }
+        }
     }
     have forall (k: int32) {
         0 <= k implies k < 5
     } by {
-        intro();
-        intro();
-        close();
+        intro() {
+            intro() {
+                close();
+            }
+        }
     }
 }
 ```

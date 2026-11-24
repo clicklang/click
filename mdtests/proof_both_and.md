@@ -18,8 +18,8 @@ theorem quantified_pair() {
     ensures (forall (i: int32) { i == i }) and
             (forall (j: int32) { j <= j }) by {
         all {
-            forall (i: int32) { i == i } => { intro(); close(); }
-            forall (j: int32) { j <= j } => { intro(); close(); }
+            forall (i: int32) { i == i } => { intro() { close(); } }
+            forall (j: int32) { j <= j } => { intro() { close(); } }
         }
     }
 }

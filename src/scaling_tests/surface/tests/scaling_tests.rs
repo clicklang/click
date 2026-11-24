@@ -635,7 +635,9 @@ fn reversed_all_arm_matching_scales_with_written_labels() {
         let arms = (0..width)
             .rev()
             .map(|index| {
-                format!("forall (j: int32) {{ j <= j or j == {index} }} => {{ intro(); close(); }}")
+                format!(
+                    "forall (j: int32) {{ j <= j or j == {index} }} => {{ intro() {{ close(); }} }}"
+                )
             })
             .collect::<Vec<_>>()
             .join("\n");
@@ -5483,15 +5485,15 @@ fn copy_loop_with_unrelated_requirements(fact_count: usize) -> String {
                      have 0 <= i by {{\n                normalize();\n            }}\n            \
                      have i <= length by {{\n                close();\n            }}\n            \
                      have forall (k: int32) {{ 0 <= k and k < i implies dst[k] == old(src[k]) }} by {{\n                \
-                         intro();\n                \
-                         intro();\n                \
+                         intro() {{\n                \
+                         intro() {{\n                \
                          have 0 <= k by close();\n                \
                          have k < i by close();\n                \
                          have i == 0 by {{\n                    normalize();\n                }}\n                \
                          have not (0 <= k) by {{\n                    \
                              close() using {{\n                        k < i;\n                        i == 0;\n                    }}\n                \
                          }}\n                \
-                         contradiction(0 <= k);\n            \
+                         contradiction(0 <= k);\n                }} }}\n            \
                      }}\n        \
                  }}\n        \
                  maintain by {{\n            step();\n            step();\n            close();\n        }}\n    \

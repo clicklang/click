@@ -1056,6 +1056,21 @@ impl Parser {
         let mutable =
             self.tokens.get(self.position + 1 + lifetime) == Some(&Token::Ident("mut".into()));
         let bracket = self.position + 1 + lifetime + usize::from(mutable);
+        // `&str` is a shared slice of the UTF-8 bytes it refers to, as the
+        // importer reads it.
+        if !mutable && self.tokens.get(bracket) == Some(&Token::Ident("str".into())) {
+            self.position = bracket + 1;
+            return Ok(Some(ParsedType {
+                interface_type: rust_scalar_type("u8")
+                    .and_then(InterfaceType::pointer_type)
+                    .expect("a byte pointer"),
+                struct_name: None,
+                struct_pointer: false,
+                constant: false,
+                pointee_constant: true,
+                reference: false,
+            }));
+        }
         if self.tokens.get(bracket) != Some(&Token::LBracket) {
             return Ok(None);
         }

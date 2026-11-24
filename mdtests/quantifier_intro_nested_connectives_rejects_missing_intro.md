@@ -18,16 +18,17 @@ theorem nested_universal_body(n: int32) {
     ensures forall (k: int32) {
         0 <= k and k < n implies (0 <= k and (k < n or k == n))
     } by {
-        intro();
-        have 0 <= k;
-        have k < n;
-        all {
-            0 <= k => {
-                close();
-            }
-            (k < n or k == n) => {
-                have k < n by close();
-                close();
+        intro() {
+            have 0 <= k;
+            have k < n;
+            all {
+                0 <= k => {
+                    close();
+                }
+                (k < n or k == n) => {
+                    have k < n by close();
+                    close();
+                }
             }
         }
     }

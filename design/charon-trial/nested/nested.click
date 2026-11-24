@@ -78,7 +78,11 @@ fn nested(bytes: &[u8]) -> usize {
     }
     step_until(function.exit);
     have forall (k: int32) { 0 <= k and k < 8 implies bytes[k] == old(bytes[k]) } by {
-        intro(); intro(); close();
+        intro() {
+            intro() {
+                close();
+            }
+        }
     }
     close();
 }

@@ -335,3 +335,25 @@ fn stored_machine_quantity_reads_the_cached_word_without_export() {
         }
     }
 }
+
+#[test]
+fn rewritten_displacement_hash_uses_only_the_shared_offset_nodes() {
+    for depth in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut root = KernelAddressOffset::Variable(Variable(991857))
+            .into_shared()
+            .unwrap();
+        for _ in 0..depth {
+            root = KernelAddressOffset::Add([root.clone(), root])
+                .into_shared()
+                .unwrap();
+        }
+        let (offset, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let offset = StoredPointerOffset::from_rewritten_root(root);
+            offset.hash(&mut std::collections::hash_map::DefaultHasher::new());
+            offset
+        });
+        assert!(work <= 4 * depth + 16, "depth={depth}, work={work}");
+        assert!(!offset.has_cached_native_offset());
+    }
+}
