@@ -5831,7 +5831,8 @@ fn bitvector_spells_uint32(
 }
 
 /// A population's count at function entry, which the kernel holds as an
-/// opaque symbol, is spelled `old(count(R(anchor, _, ...)))`. A fact the
+/// opaque symbol, is spelled `old(count(R(anchor, _, ...)))`; one a lock
+/// acquired is spelled `at(<the lock's region>.exit, count(...))`. A fact the
 /// kernel records about it, such as the bound a consumed member places on
 /// it, then has a source spelling and can be cited.
 fn synthesize_population_entry_count(
@@ -5861,18 +5862,31 @@ fn synthesize_population_entry_count(
             wildcards,
         ))
         .collect();
-    Some(ContractExpression::Old(Box::new(
-        ContractExpression::ResourceCount(Box::new(ResourceClause::Declared {
-            type_schema: None,
-            resource_type_arguments: Vec::new(),
-            resource_arguments: Vec::new(),
-            access: ResourceAccessMode::Own,
-            kind: ResourceKind::Token,
-            name: population.family().to_string(),
-            arguments,
-            parameter_types: Vec::new(),
-        })),
-    )))
+    let count = ContractExpression::ResourceCount(Box::new(ResourceClause::Declared {
+        type_schema: None,
+        resource_type_arguments: Vec::new(),
+        resource_arguments: Vec::new(),
+        access: ResourceAccessMode::Own,
+        kind: ResourceKind::Token,
+        name: population.family().to_string(),
+        arguments,
+        parameter_types: Vec::new(),
+    }));
+    // A total a lock acquired is the count once the lock returns, where its
+    // control holds the population's authority: the exit of the region the
+    // lock started at.
+    if let Some(point) = state.population_count_acquired_point(*variable) {
+        return SYNTHESIS_RECORDED_POINTS.with(|slot| {
+            Some(ContractExpression::At {
+                selector: slot
+                    .borrow()
+                    .as_ref()?
+                    .acquired_total_point(*variable, point)?,
+                expression: Box::new(count),
+            })
+        });
+    }
+    Some(ContractExpression::Old(Box::new(count)))
 }
 
 fn synthesize_call_capture(

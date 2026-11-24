@@ -7439,9 +7439,6 @@ impl AnnotationLowerer<'_> {
                 else {
                     return Err("`count(...)` expects a declared resource".to_string());
                 };
-                if environment.reference_state.is_some() {
-                    return Err("`count(R(p))` at a recorded state is unavailable".to_string());
-                }
                 if arguments.is_empty()
                     || matches!(arguments[0], ContractExpression::ResourceWildcard)
                     || (arguments
@@ -7470,6 +7467,24 @@ impl AnnotationLowerer<'_> {
                     name: name.clone(),
                     arguments,
                 };
+                // `at(point, count(R))` is the population's count in that
+                // recorded state, which holds its own ledger and authority.
+                // It is read there, as a field or instance under `at` is.
+                if let Some(state) = environment.reference_state.as_ref() {
+                    let (value, obligations) =
+                        crate::kernel::program_evaluate_speprogram_expression_at_state(
+                            state,
+                            &count,
+                            None,
+                            &crate::kernel::PureFactContext::new(),
+                        )?;
+                    if !obligations.is_empty() {
+                        return Err(
+                            "`count(...)` at a recorded state must not owe obligations".to_string()
+                        );
+                    }
+                    return Ok(SpecExpression::Value(value));
+                }
                 // A count named at the function entry is the entry's
                 // population, which the kernel evaluates at the entry state.
                 Ok(if environment.at_function_entry {

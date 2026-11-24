@@ -74,8 +74,9 @@ enum OpaqueMemberInputs {
     Quantity(Option<ResourceDescription>),
     NamedAuthority,
     /// A typed lock in a standalone body. Its anchor is the caller's pointer,
-    /// which no storage created earlier in this proof can alias.
-    Acquired,
+    /// which no storage created earlier in this proof can alias. It carries
+    /// the program point the lock started from, which names its total.
+    Acquired(Option<crate::kernel::program_point::ProgramPointId>),
 }
 
 struct Root {
@@ -159,6 +160,9 @@ struct OpaqueImport {
     named_ambiguous: bool,
     /// Only a checked control wrapper can supply this immutable entry load.
     entry_count: Option<MachineTerm>,
+    /// For a total acquired with a lock rather than at entry, the program
+    /// point the lock started from.
+    acquired_at: Option<crate::kernel::program_point::ProgramPointId>,
     retired_authority: bool,
 }
 
@@ -221,7 +225,11 @@ enum StorageEvent {
     Retired(AddressBase),
     InstanceMember(ResourceReference, bool),
     TransferredAnchor(Holder, Holder, AddressBase),
-    AcquiredControl(ResourceDescription, u32),
+    AcquiredControl(
+        ResourceDescription,
+        u32,
+        Option<crate::kernel::program_point::ProgramPointId>,
+    ),
 }
 
 /// Whether a population anchor is a caller-supplied pointer, governed by an
@@ -533,8 +541,9 @@ impl CreationEvents {
         &self,
         description: &ResourceDescription,
         owned_members: u32,
+        acquired_at: Option<crate::kernel::program_point::ProgramPointId>,
     ) -> Result<Self, CreationRefusal> {
-        let key = StorageEvent::AcquiredControl(description.clone(), owned_members);
+        let key = StorageEvent::AcquiredControl(description.clone(), owned_members, acquired_at);
         if let Some(existing) = self
             .0
             .storage_events
@@ -550,7 +559,7 @@ impl CreationEvents {
             Some(self.fresh_opaque_entry_count(description)?),
             None,
             None,
-            OpaqueMemberInputs::Acquired,
+            OpaqueMemberInputs::Acquired(acquired_at),
         )?;
         Ok(self.memoized_storage_event(key, || next))
     }
@@ -893,7 +902,11 @@ impl CreationEvents {
         members: OpaqueMemberInputs,
     ) -> Result<Self, CreationRefusal> {
         let named_authority = matches!(members, OpaqueMemberInputs::NamedAuthority);
-        let acquired = matches!(members, OpaqueMemberInputs::Acquired);
+        let acquired_at = match members {
+            OpaqueMemberInputs::Acquired(point) => point,
+            _ => None,
+        };
+        let acquired = matches!(members, OpaqueMemberInputs::Acquired(_));
         if named_authority
             && (description.schema().is_fieldless()
                 || owned_members != 0
@@ -904,7 +917,7 @@ impl CreationEvents {
         }
         let wildcard_member = match members {
             OpaqueMemberInputs::Quantity(member) => member,
-            OpaqueMemberInputs::NamedAuthority | OpaqueMemberInputs::Acquired => None,
+            OpaqueMemberInputs::NamedAuthority | OpaqueMemberInputs::Acquired(_) => None,
         };
         let Some([crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(pointer))]) =
             (description.arguments()).fixed_values::<1>()
@@ -987,6 +1000,7 @@ impl CreationEvents {
                 named_selection: None,
                 named_ambiguous: false,
                 entry_count,
+                acquired_at,
                 retired_authority: false,
             },
         );
@@ -1421,6 +1435,38 @@ impl CreationEvents {
                 )
                 .then_some(description)
             })
+    }
+
+    /// For a total a lock acquired, the program point the lock started from.
+    pub(in crate::kernel) fn entry_count_acquired_point(
+        &self,
+        variable: crate::kernel::Variable,
+    ) -> Option<crate::kernel::program_point::ProgramPointId> {
+        self.0.opaque_imports.iter().find_map(|(_, import)| {
+            crate::instrumentation::record_deterministic_work(1);
+            matches!(
+                &import.entry_count,
+                Some(MachineTerm::Variable(entry)) if *entry == variable
+            )
+            .then_some(import.acquired_at)
+            .flatten()
+        })
+    }
+
+    /// Whether the population whose imported total is `variable` still
+    /// counts exactly that total: no member was born or consumed since.
+    pub(in crate::kernel) fn imported_total_unchanged(
+        &self,
+        variable: crate::kernel::Variable,
+    ) -> bool {
+        let Some(description) = self.entry_count_population(variable) else {
+            return false;
+        };
+        self.observe_symbolic(description).is_some_and(|count| {
+            count.delta == 0
+                && count.symbolic_delta.is_none()
+                && count.entry_count == MachineTerm::Variable(variable)
+        })
     }
 
     /// The description includes the exact pointer; another family or offset

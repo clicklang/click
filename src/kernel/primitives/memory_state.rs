@@ -10022,6 +10022,7 @@ impl ExecutionState {
         instance: &super::super::ResourceInstance,
         definition: &super::super::CompositeResourceDefinition,
         assumptions: &PureFactContext,
+        acquired_from: Option<crate::kernel::program_point::ProgramPointId>,
     ) -> Result<Self, String> {
         if !definition.contains().iter().any(|spec| {
             matches!(
@@ -10081,7 +10082,7 @@ impl ExecutionState {
                 .filter_map(|fact| fact.owned_quantity_term().and_then(MachineTerm::as_const))
                 .sum::<u32>();
             let events = events
-                .import_acquired_control_population(description, owned)
+                .import_acquired_control_population(description, owned, acquired_from)
                 .map_err(|refusal| format!("acquired control authority refused: {refusal}"))?;
             Arc::make_mut(&mut next.population_effects).creation = Some(events);
         }
@@ -10237,17 +10238,31 @@ impl ExecutionState {
         assumptions: &PureFactContext,
         require_folded: bool,
     ) -> Result<(Vec<ResourceFact>, Vec<ResourceDescription>), String> {
-        let ResourceFact::Own(Resource::Composite { name, arguments }, quantity) = selected else {
-            return Err("Requires owns control resource".into());
+        // A control with model fields is held as an instance. Its fields never
+        // decide which resources its body owns: only the owned clauses below
+        // are evaluated, over its parameters, and a clause that needed a
+        // field value would fail to evaluate rather than be admitted.
+        let (name, arguments, quantity, has_fields) = match selected {
+            ResourceFact::Own(Resource::Composite { name, arguments }, quantity) => {
+                (name.as_str(), arguments, quantity, false)
+            }
+            ResourceFact::Own(Resource::Instance(instance), quantity) => (
+                instance.name(),
+                instance.arguments(),
+                quantity,
+                !instance.schema().fields().is_empty(),
+            ),
+            _ => return Err("Requires owns control resource".into()),
         };
         if name != definition.name()
             || quantity.as_const() != Some(1)
             || (require_folded && !self.resources.satisfies_fact(selected, assumptions))
             || definition.parameters().len() != arguments.len()
-            || definition
-                .instance_schema
-                .as_ref()
-                .is_some_and(|schema| !schema.fields().is_empty())
+            || (!has_fields
+                && definition
+                    .instance_schema
+                    .as_ref()
+                    .is_some_and(|schema| !schema.fields().is_empty()))
             || definition.matched.is_some()
             || !definition.witnesses.is_empty()
             || definition.condition.is_some()
