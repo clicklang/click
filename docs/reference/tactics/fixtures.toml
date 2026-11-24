@@ -175,7 +175,7 @@ needle = "intro();"
 [[form]]
 id = "intro-as"
 path = "mdtests/intro_as_names_the_introduced_variable.md"
-needle = "let row = intro();"
+needle = "intro(row) {"
 
 [[form]]
 id = "enumerate"

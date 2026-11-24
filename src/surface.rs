@@ -6771,8 +6771,8 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
     },
     PublicTacticForm {
         id: "intro-as",
-        syntax: "let name = intro()",
-        class: "simple",
+        syntax: "intro(name) { ... }",
+        class: "control",
     },
     PublicTacticForm {
         id: "enumerate",

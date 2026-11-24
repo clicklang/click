@@ -1027,14 +1027,14 @@ impl<'a> Proof<'a> {
     }
 
     /// The focused universal goal with its binder respelled `name`, for
-    /// `let name = intro()`. The name must be new here: nothing is shadowed.
+    /// a named introduction. The name must be new.
     fn universal_goal_renamed_for_intro(
         &self,
         name: &SurfaceBinder,
     ) -> Result<ClickProposition, ClickError> {
         if !matches!(self.goal(), Some(Proposition::ForAll { .. })) {
             return Err(self.step_error(format!(
-                "`let {name} = intro()` names the variable of a `forall` goal; this goal introduces a fact, which has no name, so write `intro();`"
+                "use `intro({name}) {{ ... }}` for a `forall` goal. To introduce an implication premise, write `intro() {{ ... }}`"
             )));
         }
         // A range quantifier keeps its variable in the lambda:
@@ -1049,7 +1049,7 @@ impl<'a> Proof<'a> {
             Some(ClickProposition::RangeAll { item, body, .. }) => (item, body, false),
             _ => {
                 return Err(self.step_error(format!(
-                    "`let {name} = intro()` requires a goal written as `forall (x: T) {{ ... }}` or `(lo..hi).all(|x| {{ ... }})`; write `intro();` to keep the name this goal's quantifier has"
+                    "`intro({name}) {{ ... }}` requires a goal written as `forall (x: T) {{ ... }}` or `(lo..hi).all(|x| {{ ... }})`. Use `intro() {{ ... }}` to keep the quantifier's name"
                 )));
             }
         };
@@ -1065,7 +1065,7 @@ impl<'a> Proof<'a> {
                     .is_some_and(|goal| goal.surface_bindings.get(name).is_some());
             if bound {
                 return Err(self.step_error(format!(
-                    "`{name}` is already introduced here; use `let binder(N) = intro()` with a fresh identity"
+                    "`{name}` is already introduced here; use a fresh generated binder identity"
                 )));
             }
         }
@@ -1091,7 +1091,7 @@ impl<'a> Proof<'a> {
                 });
         if in_scope {
             return Err(self.step_error(format!(
-                "`let {name} = intro()`: `{name}` is already in scope here; choose a name that is not"
+                "`intro({name})`: `{name}` is already in scope here; choose a name that is not"
             )));
         }
         let replacement = match (c_typed, name.written()) {
@@ -1126,7 +1126,7 @@ impl<'a> Proof<'a> {
         &self,
         rename: Option<SurfaceBinder>,
     ) -> Result<KernelProofHandle, ClickError> {
-        // `let name = intro()` respells the universal goal's binder before the
+        // A named introduction respells the universal goal's binder before the
         // ordinary introduction runs, so every binding below is made under
         // the chosen name and the remaining goal is written in terms of it.
         let renamed_surface = rename

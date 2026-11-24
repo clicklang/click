@@ -6468,7 +6468,7 @@ fn whole_claim_expansion_closes_a_claim_opened_after_execution() {
         (
             "intro_as_in_a_function_proof",
             "keep.contract",
-            "let below = intro();",
+            "intro(below) {",
         ),
     ] {
         let (click, sources) = mdtest_sources(&format!("mdtests/{mdtest}.md"));
