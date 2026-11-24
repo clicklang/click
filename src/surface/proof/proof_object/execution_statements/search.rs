@@ -150,11 +150,20 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     .with_proof_refusal(crate::surface::ProofRefusal::UnsuccessfulSearch)
             })?
         };
-        Self::try_ordinary_fact_transport(search_input, surface_source, surface_target, &premises)?
-            .ok_or_else(|| {
-                search_input
-                    .step_error("could not construct an ordinary proof for this transport")
-                    .with_proof_refusal(crate::surface::ProofRefusal::UnsuccessfulSearch)
+        if let Some(proof) = Self::try_ordinary_fact_transport(
+            search_input,
+            surface_source,
+            surface_target,
+            &premises,
+        )? {
+            return Ok(proof);
+        }
+        search_input
+            .driver()
+            .apply_step(ProofStep::CompatibilityFactTransport {
+                source: surface_source.clone(),
+                target: surface_target.clone(),
+                premises,
             })
     }
     /// The live-state search planner on a focused function outcome:
@@ -227,11 +236,20 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             ClickError::new(format!("`{claim_label}` tactic {tactic_index}: {reason}"))
                 .with_proof_refusal(crate::surface::ProofRefusal::UnsuccessfulSearch)
         })?;
-        Self::try_ordinary_fact_transport(search_input, surface_source, surface_target, &premises)?
-            .ok_or_else(|| {
-                search_input
-                    .step_error("could not construct an ordinary proof for this transport")
-                    .with_proof_refusal(crate::surface::ProofRefusal::UnsuccessfulSearch)
+        if let Some(proof) = Self::try_ordinary_fact_transport(
+            search_input,
+            surface_source,
+            surface_target,
+            &premises,
+        )? {
+            return Ok(proof);
+        }
+        search_input
+            .driver()
+            .apply_step(ProofStep::CompatibilityFactTransport {
+                source: surface_source.clone(),
+                target: surface_target.clone(),
+                premises,
             })
     }
 }

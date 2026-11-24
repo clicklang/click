@@ -11486,15 +11486,22 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Some(proof);
         }
         let conclusion = plan.conclusion?;
-        Self::try_ordinary_fact_transport(
+        if let Some(closed) = Self::try_ordinary_fact_transport(
             &proof,
             &conclusion.source,
             &conclusion.target,
             &conclusion.premises,
         )
-        .ok()
-        .flatten()
+        .ok()?
         .filter(Proof::focused_discharged)
+        {
+            return Some(closed);
+        }
+        proof
+            .driver()
+            .try_generated_linear_script(&conclusion.fallback)
+            .ok()
+            .flatten()
     }
 
     /// Close a selected historical conclusion with checked local proof steps.

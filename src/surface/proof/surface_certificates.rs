@@ -399,6 +399,7 @@ pub(super) struct SelectedConclusion {
     pub(super) source: ClickProposition,
     pub(super) target: ClickProposition,
     pub(super) premises: Vec<ClickProposition>,
+    pub(super) fallback: Vec<ProofTactic>,
 }
 
 pub(super) fn plan_explicit_forall_instantiation_transport(
@@ -549,10 +550,55 @@ fn plan_explicit_universal_conclusion_discharge(
         quantified: premise_surface.clone(),
         arguments: vec![argument_expression.clone()],
     });
-    let conclusion = transport_closure.map(|(source, target)| SelectedConclusion {
-        source,
-        target,
-        premises: using_surfaces.to_vec(),
+    let conclusion = transport_closure.map(|(source, target)| {
+        let mut fallback = Vec::new();
+        if let Some((historical, current)) = comparison_state_expression_pair(&source, &target) {
+            let reflexive = ClickProposition::Comparison {
+                left: historical.clone(),
+                operator: ComparisonOperator::Equal,
+                right: historical.clone(),
+            };
+            let forward = ClickProposition::Comparison {
+                left: historical.clone(),
+                operator: ComparisonOperator::Equal,
+                right: current.clone(),
+            };
+            let reverse = ClickProposition::Comparison {
+                left: current,
+                operator: ComparisonOperator::Equal,
+                right: historical,
+            };
+            let mut bridge_premises = vec![reflexive.clone()];
+            bridge_premises.extend(using_surfaces.iter().cloned());
+            fallback.push(ProofTactic::Have(ProofHave {
+                proposition: forward.clone(),
+                proof: SourceProof::Script(vec![ProofTactic::CompatibilityFactTransport {
+                    source: reflexive,
+                    target: forward.clone(),
+                    premises: bridge_premises,
+                }]),
+            }));
+            fallback.push(ProofTactic::Have(ProofHave {
+                proposition: reverse.clone(),
+                proof: SourceProof::Script(vec![ProofTactic::Rewrite(forward), ProofTactic::Known]),
+            }));
+            fallback.push(ProofTactic::Rewrite(reverse));
+        } else {
+            let mut transport_premises = vec![source.clone()];
+            transport_premises.extend(using_surfaces.iter().cloned());
+            fallback.push(ProofTactic::CompatibilityFactTransport {
+                source: source.clone(),
+                target: target.clone(),
+                premises: transport_premises,
+            });
+        }
+        fallback.push(ProofTactic::Known);
+        SelectedConclusion {
+            source,
+            target,
+            premises: using_surfaces.to_vec(),
+            fallback,
+        }
     });
     if conclusion.is_none() {
         tactics.push(ProofTactic::Known);

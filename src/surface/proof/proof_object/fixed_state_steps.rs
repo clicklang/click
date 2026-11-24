@@ -3266,15 +3266,6 @@ impl<'a> Proof<'a> {
         })
     }
 
-    pub(in crate::surface::proof) fn source_only_transport_refusal(
-        &self,
-        source: &ClickProposition,
-        target: &ClickProposition,
-    ) -> Option<ClickError> {
-        self.apply_transport_using(source, target, std::slice::from_ref(source))
-            .err()
-    }
-
     pub(super) fn apply_transport_using(
         &self,
         source: &ClickProposition,
