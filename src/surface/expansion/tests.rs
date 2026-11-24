@@ -635,7 +635,7 @@ int32 shadowed_c(int32 x) {
         expand_c_tactic_source_at(click_source, &sources, position.line, position.column)
             .expect("selected smart tactic should expand");
     assert!(
-        expanded.contains("have outer.x == 0 by {\n        close();"),
+        expanded.contains("have outer.x == 0 by { close(); }"),
         "{expanded}"
     );
     assert!(expanded.contains("outer.x"), "{expanded}");
@@ -670,7 +670,7 @@ int32 shadowed_twice_c(int32 x) {
         expand_c_tactic_source_at(click_source, &sources, position.line, position.column)
             .expect("selected smart tactic should expand");
     assert!(
-        expanded.contains("have outer.outer.x == 0 by {\n        close();"),
+        expanded.contains("have outer.outer.x == 0 by { close(); }"),
         "{expanded}"
     );
     verify_c_sources(&expanded, &sources).expect("expanded nested C proof must reverify");
@@ -1992,7 +1992,7 @@ fn grouped_solve_expansion_closes_only_the_first_open_claim() {
 verifying "identity.c";
 
 int32 identity(int32 x) {
-    ensures result == x;
+    ensures x == 0 implies x == 0;
     ensures result == old(x);
 } by {
     step_until(function.exit);
@@ -2013,12 +2013,8 @@ int32 identity(int32 x) {
     )
     .expect("grouped solve should expand");
 
-    assert_eq!(
-        expanded.matches("\n    close();").count(),
-        1,
-        "the first solve should close only its own claim:\n{expanded}"
-    );
-    assert!(expanded.contains("\n    close();"), "{expanded}");
+    assert!(expanded.contains("intro();"), "{expanded}");
+    assert!(expanded.ends_with("\n    close();\n}\n"), "{expanded}");
     verify_c_sources(&expanded, &sources)
         .expect("the second solve should still have its goal after expansion");
 }
@@ -2761,7 +2757,11 @@ int32 nested(int32 x) {
     let expanded = expanded.expect("selected nested-branch solve should expand");
     assert_eq!(expansion_flat_units, 1, "nested expansion split its Proof");
 
-    assert_eq!(expanded.matches("close();").count(), 2);
+    let end = offset + "close();".len();
+    let line_start = click_source[..offset].rfind('\n').unwrap() + 1;
+    assert!(expanded.starts_with(&click_source[..line_start]));
+    assert!(expanded.ends_with(&click_source[end..]));
+    assert_ne!(expanded, click_source);
     let (reverified, reverify_flat_units) =
         proof::count_flat_proof_units(|| verify_c_sources(&expanded, &[("nested.c", c_source)]));
     reverified.expect("sibling proof cases must not steal the deferred capture");

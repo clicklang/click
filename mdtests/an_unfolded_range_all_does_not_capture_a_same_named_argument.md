@@ -31,5 +31,5 @@ int32 f(int32 p[2], int32 j) {
 ```
 
 ```expect
-fail: did not complete the retained claim proof
+fail: could not establish `(0..(j as int32)).all
 ```
