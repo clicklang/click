@@ -36,6 +36,76 @@ fn ordered_float_bound_parts(
     Some(if lower { (right, left) } else { (left, right) })
 }
 
+/// After stored reads resolve, the same indicators can occur in a different
+/// order. At most three 0-or-1 terms fit in int32 regardless of their guards.
+/// Observe the uncast sums with `to_integer` so the checked arithmetic leaf
+/// can compute the equality without treating the outer native casts as atoms.
+fn observed_reordered_indicator_sum(surface: &ClickProposition) -> Option<ClickProposition> {
+    fn indicator_count(mut value: &ContractExpression) -> Option<usize> {
+        fn literal(expression: &ContractExpression, value: i32) -> bool {
+            match expression {
+                ContractExpression::ProgramExpression(ProgramExpression::Value(actual)) => {
+                    actual == &int32(value)
+                }
+                ContractExpression::IntegerLiteral(actual) => *actual == value.to_string(),
+                _ => false,
+            }
+        }
+
+        let mut count = 0;
+        while let ContractExpression::Add(prefix, term) = value {
+            let ContractExpression::If {
+                then_branch,
+                else_branch,
+                ..
+            } = term.as_ref()
+            else {
+                return None;
+            };
+            if count == 3 || !literal(then_branch, 1) || !literal(else_branch, 0) {
+                return None;
+            }
+            count += 1;
+            value = prefix;
+        }
+        (count >= 2 && literal(value, 0)).then_some(count)
+    }
+
+    let uncast = |expression: &ContractExpression| match expression {
+        ContractExpression::CUnary {
+            operand,
+            lowered: ProgramExpression::Cast {
+                target_type: crate::kernel::ProgramType::Int32,
+                ..
+            },
+        } => Some(operand.clone()),
+        _ => None,
+    };
+    let ClickProposition::Comparison {
+        left,
+        operator: ComparisonOperator::Equal,
+        right,
+    } = surface
+    else {
+        return None;
+    };
+    let left = uncast(left)?;
+    let right = uncast(right)?;
+    if indicator_count(&left)? != indicator_count(&right)? {
+        return None;
+    }
+
+    let observe = |expression: Box<ContractExpression>| ContractExpression::Call {
+        name: "to_integer".into(),
+        arguments: vec![*expression],
+    };
+    Some(ClickProposition::Comparison {
+        left: observe(left),
+        operator: ComparisonOperator::Equal,
+        right: observe(right),
+    })
+}
+
 impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// Retain a computational `known` leaf when possible, otherwise the exact
     /// legacy normalizer requested by this search route. Premise-restricted
@@ -3320,12 +3390,31 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let Some(surface) = surface else {
             return Ok(None);
         };
+        let observed = observed_reordered_indicator_sum(&surface);
         let Some(scope) = attempt::candidate_outcome(search_input.driver().open_have(surface))?
         else {
             return Ok(None);
         };
-        let Some(closed) = (scope).driver().try_solve_closure()? else {
-            return Ok(None);
+        let observed_closure = if let Some(observed) = observed
+            && let Some(established) = attempt::candidate_outcome(
+                scope.driver().apply_step(super::super::wide_arithmetic::have(
+                    observed,
+                    vec![ProofStep::Known],
+                )),
+            )?
+        {
+            attempt::candidate_outcome(established.driver().apply_step(ProofStep::Known))?
+        } else {
+            None
+        };
+        let closed = match observed_closure {
+            Some(closed) => closed,
+            None => {
+                let Some(closed) = scope.driver().try_solve_closure()? else {
+                    return Ok(None);
+                };
+                closed
+            }
         };
         let Some(proof) = attempt::candidate_outcome(closed.join())? else {
             return Ok(None);
@@ -6198,159 +6287,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         Ok(None)
     }
 
-    /// After a concrete count fold unfolds, match at most three of its
-    /// indicator reads to the other count's reads. The checker still requires
-    /// every chosen equality and the reordered sum as ordinary proof steps.
-    fn try_indicator_sum_reordering(
-        search_input: &Proof<'a>,
-    ) -> Result<Option<Proof<'a>>, ClickError> {
-        #[cfg(test)]
-        crate::kernel::search::record_discovery("try_indicator_sum_reordering");
-        use crate::kernel::machine_integer::comparison::condition_for_operand_views;
-        use crate::kernel::{IntegerTerm, LoadKind, MachineBinaryOp, MachineOperandView};
-
-        fn count_reads(
-            mut value: MachineOperandView<'_>,
-        ) -> Option<Vec<(MachineOperandView<'_>, Variable)>> {
-            let ty = MachineIntegerType::Int32;
-            let literal = |operand: MachineOperandView<'_>, expected: i32| {
-                operand
-                    .literal()
-                    .and_then(|term| ty.constant_from_term(&term))
-                    .is_some_and(|word| word.to_integer() == expected.into())
-            };
-            let mut reads = Vec::new();
-            while let Some((MachineIntegerType::Int32, MachineBinaryOp::Add, [prefix, term])) =
-                value.binary()
-            {
-                if reads.len() == 3 {
-                    return None;
-                }
-                let (guard, [one, zero]) = term.conditional_view()?;
-                if !literal(one, 1) || !literal(zero, 0) {
-                    return None;
-                }
-                let (_, CompareRelation::Equal, [left, right]) = guard.comparison()? else {
-                    return None;
-                };
-                let (read, variable) =
-                    [(left, right), (right, left)]
-                        .into_iter()
-                        .find_map(|(read, binder)| {
-                            (read.read_kind() == Some(LoadKind::Int32))
-                                .then_some((read, *binder.variable()?))
-                        })?;
-                reads.push((read, variable));
-                value = prefix;
-            }
-            (!reads.is_empty() && literal(value, 0)).then_some(reads)
-        }
-
-        let Some((ConditionTerm::IntegerEqual(left, right), true)) =
-            search_input.goal().and_then(Proposition::condition_native)
-        else {
-            return Ok(None);
-        };
-        let (IntegerTerm::Machine(left), IntegerTerm::Machine(right)) =
-            (left.value_read(), right.value_read())
-        else {
-            return Ok(None);
-        };
-        let ty = MachineIntegerType::Int32;
-        if left.ty() != ty || right.ty() != ty {
-            return Ok(None);
-        }
-        let (Some(left), Some(mut remaining)) = (
-            count_reads(left.operand_view()),
-            count_reads(right.operand_view()),
-        ) else {
-            return Ok(None);
-        };
-        if left.len() != remaining.len() {
-            return Ok(None);
-        }
-
-        let have_known = |proposition| ProofStep::Have {
-            proposition,
-            proof: Box::new(
-                ProofCertificate::from_steps(vec![ProofStep::Known])
-                    .expect("known is an ordinary certificate"),
-            ),
-        };
-        let mut proof = search_input.clone();
-        for (left, binder) in left {
-            let mut selected = None;
-            for (index, &(right, right_binder)) in remaining.iter().enumerate() {
-                check_verification_deadline()?;
-                if binder != right_binder {
-                    continue;
-                }
-                if left
-                    .try_retain(ty)
-                    .zip(right.try_retain(ty))
-                    .is_some_and(|(left, right)| left == right)
-                {
-                    selected = Some(index);
-                    break;
-                }
-                let equality =
-                    condition_for_operand_views(ty, CompareRelation::Equal, [left, right])
-                        .truth_claim(true);
-                let Some(equality_surface) = proof.structural_proposition_candidate(&equality)
-                else {
-                    continue;
-                };
-                let Some(established) = attempt::candidate_outcome(
-                    proof
-                        .driver()
-                        .apply_step(have_known(equality_surface.clone())),
-                )?
-                else {
-                    continue;
-                };
-                let Some(rewritten) = attempt::candidate_outcome(
-                    established
-                        .driver()
-                        .apply_step(ProofStep::Rewrite(equality_surface)),
-                )?
-                else {
-                    continue;
-                };
-                if rewritten.focused_discharged() {
-                    return Ok(Some(rewritten));
-                }
-                proof = rewritten;
-                selected = Some(index);
-                break;
-            }
-            let Some(index) = selected else {
-                return Ok(None);
-            };
-            remaining.swap_remove(index);
-        }
-
-        if let Some(closed) =
-            attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Known))?
-        {
-            return Ok(Some(closed));
-        }
-        // State rewrites can leave exact observations of two differently
-        // ordered sums. Materialize the same written comparison so ordinary
-        // lowering supplies its machine comparison reading for known.
-        let Some(restated) = proof
-            .goal()
-            .and_then(|goal| proof.structural_proposition_candidate(goal))
-        else {
-            return Ok(None);
-        };
-        let Some(established) =
-            attempt::candidate_outcome(proof.driver().apply_step(have_known(restated)))?
-        else {
-            return Ok(None);
-        };
-        attempt::candidate_outcome(established.driver().apply_step(ProofStep::Known))
-    }
-
     /// Tries the finite set of function applications already present in the
     /// current surface goal. Each accepted candidate is a normal checked
     /// `unfold` step. The recursive simplification attempt disables further
@@ -6409,9 +6345,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             if let Some(closed) =
                 crate::kernel::search::ProofSearch::try_direct_logical_closure(&(proof))?
             {
-                return Ok(Some(closed));
-            }
-            if let Some(closed) = Self::try_indicator_sum_reordering(&proof)? {
                 return Ok(Some(closed));
             }
             // A recursive definition over a known constructor exposes its
