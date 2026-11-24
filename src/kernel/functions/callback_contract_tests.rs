@@ -1886,7 +1886,7 @@ fn check_unrelated_functions(select: bool) {
     let mut samples = Vec::new();
     for count in [0, 16, 64, 256] {
         // Keep term-bridge imports cold at every sample size.
-        crate::kernel::clear_integer_bridge_memo();
+        crate::kernel::clear_machine_observation_memo();
         let mut environment = ExecutionEnvironment::new();
         for index in 0..count {
             environment = environment.with_function(program_function(

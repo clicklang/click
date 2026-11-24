@@ -280,7 +280,7 @@ fn observing_every_shared_machine_prefix_does_not_materialize_operands() {
                         IntegerTerm::Machine(observation.clone()).into();
                     let common = KernelTermImport::default().integer(&source);
                     drop(source);
-                    clear_integer_bridge_memo();
+                    clear_machine_observation_memo();
                     let restored = KernelTermExport::default().integer(&common).unwrap();
                     let IntegerTerm::Machine(actual) = restored.as_ref() else {
                         panic!("machine observation");

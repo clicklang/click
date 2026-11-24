@@ -11,7 +11,7 @@ impl KernelLegacyTerm {
     pub(in crate::kernel) fn machine_operand(&self) -> Option<&MachineTerm> {
         if !matches!(
             self.identity,
-            LegacyIdentity::Machine(_) | LegacyIdentity::MachineObservation(_)
+            LegacyIdentity::Machine(_) | LegacyIdentity::MachineObservation(_) | LegacyIdentity::ExactIntegerObservation(_)
         ) {
             return None;
         }

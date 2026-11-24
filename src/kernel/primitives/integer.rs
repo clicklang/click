@@ -469,6 +469,9 @@ impl Hash for SharedIntegerRangeEndpoint {
 
 impl SharedIntegerRangeEndpoint {
     pub(crate) fn from_shared(root: KernelTerm) -> Option<Self> {
+        if let Some(node) = root.legacy_range_endpoint() {
+            return Some(Self { node });
+        }
         SharedMachineIntegerTerm::from_shared(
             MachineIntegerType::Int32,
             root.with_machine_observation_type(MachineIntegerType::Int32),
@@ -716,7 +719,7 @@ thread_local! {
     static MACHINE_OBSERVATION_IMPORTS: std::cell::RefCell<crate::id_hash::U64Map<SharedMachineIntegerTerm>> = Default::default();
 }
 
-pub(super) fn clear_machine_observation_memo() {
+pub(crate) fn clear_machine_observation_memo() {
     MACHINE_OBSERVATION_IMPORTS.with(|seen| seen.borrow_mut().clear());
 }
 
@@ -1254,74 +1257,34 @@ impl MachineIntegerInterner {
 
 /// An immutable Integer node.  Children are interned by shallow identity, so
 /// cloning a shared child never clones its transitive DAG.
-pub struct SharedIntegerTerm(SharedIntegerStorage);
-
-#[derive(Clone)]
-enum SharedIntegerStorage {
-    Retained(KernelTerm),
-    Native(Arc<SharedIntegerNode>),
-}
-
-struct SharedIntegerNode {
-    identity: Arc<IntegerIdentity>,
-    term: IntegerTerm,
-    literal_arithmetic: bool,
-    kernel_term: OnceLock<KernelTerm>,
-    /// [`SharedIntegerTerm::read_through`], computed once on first use;
-    /// `None` when the node is its own reading.
-    read_through: OnceLock<Option<SharedIntegerTerm>>,
-}
-
-/// Weak reverse migration link: the common tree must not keep its source
-/// alive when that source already owns the converted tree.
-#[derive(Clone, Default)]
-pub(crate) struct WeakIntegerTerm(Weak<SharedIntegerNode>);
-impl WeakIntegerTerm {
-    pub(crate) fn upgrade(&self) -> Option<SharedIntegerTerm> {
-        self.0
-            .upgrade()
-            .map(|node| SharedIntegerTerm(SharedIntegerStorage::Native(node)))
-    }
-}
+pub struct SharedIntegerTerm(KernelTerm);
 
 impl SharedIntegerTerm {
-    pub(super) fn from_mathematical_root(root: KernelTerm) -> Self {
-        debug_assert!(root.is_mathematical_integer());
-        Self(SharedIntegerStorage::Retained(root))
+    pub(super) fn from_root(root: KernelTerm) -> Self {
+        debug_assert_eq!(root.ty(), &KernelType::Integer);
+        if let KernelTermNode::Legacy(value) = root.node()
+            && let PureFunctionArgument::Integer(value) = value.value()
+        {
+            return value.clone();
+        }
+        Self(root)
+    }
+
+    pub(crate) fn root(&self) -> &KernelTerm {
+        &self.0
     }
 
     pub(crate) fn mathematical_root(&self) -> Option<&KernelTerm> {
-        match &self.0 {
-            SharedIntegerStorage::Retained(root) => Some(root),
-            SharedIntegerStorage::Native(_) => None,
-        }
+        self.0.is_mathematical_integer().then_some(&self.0)
     }
 
-    pub(crate) fn kernel_term(&self) -> Option<&KernelTerm> {
-        match &self.0 {
-            SharedIntegerStorage::Retained(root) => Some(root),
-            SharedIntegerStorage::Native(node) => node.kernel_term.get(),
-        }
-    }
-    pub(crate) fn remember_kernel_term(&self, term: KernelTerm) {
-        if let SharedIntegerStorage::Native(node) = &self.0 {
-            let _ = node.kernel_term.set(term);
-        }
-    }
-    pub(crate) fn downgrade(&self) -> WeakIntegerTerm {
-        match &self.0 {
-            SharedIntegerStorage::Retained(_) => WeakIntegerTerm::default(),
-            SharedIntegerStorage::Native(node) => WeakIntegerTerm(Arc::downgrade(node)),
-        }
+    #[cfg(test)]
+    pub(crate) fn downgrade(&self) -> super::kernel_term::WeakKernelTerm {
+        self.0.downgrade()
     }
 
-    /// Cached from immediate children when the node is introduced. Numeric
-    /// checking can leave symbolic nonlinear operands opaque without a walk.
     pub(crate) fn is_literal_arithmetic(&self) -> bool {
-        match &self.0 {
-            SharedIntegerStorage::Retained(root) => root.is_literal_integer_arithmetic(),
-            SharedIntegerStorage::Native(node) => node.literal_arithmetic,
-        }
+        self.0.is_literal_integer_arithmetic()
     }
 
     pub(super) fn mathematical_id(root: &KernelTerm) -> u64 {
@@ -1329,143 +1292,91 @@ impl SharedIntegerTerm {
     }
 
     pub(crate) fn id(&self) -> u64 {
-        match &self.0 {
-            SharedIntegerStorage::Retained(root) => Self::mathematical_id(root),
-            SharedIntegerStorage::Native(node) => node.identity.id,
-        }
+        self.0
+            .retained_integer_exact_id()
+            .expect("Integer identity")
     }
 
     pub(crate) fn as_ref(&self) -> &IntegerTerm {
-        match &self.0 {
-            SharedIntegerStorage::Retained(root) => {
-                root.integer_native_compat().expect("mathematical Integer")
-            }
-            SharedIntegerStorage::Native(node) => &node.term,
-        }
+        self.0.integer_native_compat().expect("Integer operand")
     }
 
-    /// This term with every machine observation among its arithmetic
-    /// (negation, `+`, `-`, `*`, truncating quotient and remainder) read through its value
-    /// relations (rule W, [`SharedMachineIntegerTerm::value_reading`]):
-    /// `to_integer(a as int128) * to_integer(b as int128)` reads as
-    /// `to_integer(a) * to_integer(b)`. Reasoning keys an opaque product by
-    /// this reading, so the two spellings are one atom; the term itself is
-    /// unchanged. Each node's reading is computed once, when the node is
-    /// interned, from its children's readings, and cached on the node, which
-    /// keeps the rebuilt node alive and its identity stable: O(1) per node,
-    /// and reading it is a lookup. Other nodes (applications, conditionals,
-    /// folds) are their own reading.
+    /// Read arithmetic through its observations' value relations (rule W).
+    /// The retained reading is memoized on each node of the selected DAG.
     pub(crate) fn read_through(&self) -> SharedIntegerTerm {
         self.read_through_ref().clone()
     }
 
-    /// [`Self::read_through`] by reference to the cached reading.
     pub(crate) fn read_through_ref(&self) -> &SharedIntegerTerm {
-        let SharedIntegerStorage::Native(node) = &self.0 else {
+        if self.0.is_mathematical_integer() {
             return self;
-        };
-        if node.read_through.get().is_none() {
+        }
+        if self.0.integer_reading().get().is_none() {
             self.compute_read_through();
         }
-        node.read_through
+        self.0
+            .integer_reading()
             .get()
             .and_then(Option::as_ref)
             .unwrap_or(self)
     }
 
     fn compute_read_through(&self) {
-        let children = |node: &SharedIntegerNode| -> Vec<SharedIntegerTerm> {
-            match &node.term {
-                IntegerTerm::Negate(child) => vec![child.clone()],
-                crate::kernel::binary_integer_term!(left, right) => {
-                    vec![left.clone(), right.clone()]
-                }
-                _ => Vec::new(),
-            }
-        };
-        let mut stack = vec![(self.clone(), false)];
-        while let Some((term, expanded)) = stack.pop() {
-            let SharedIntegerStorage::Native(node) = &term.0 else {
-                continue;
-            };
-            if node.read_through.get().is_some() {
+        let mut pending = vec![(&self.0, false)];
+        while let Some((root, expanded)) = pending.pop() {
+            if root.is_mathematical_integer() || root.integer_reading().get().is_some() {
                 continue;
             }
-            if !expanded {
-                stack.push((term.clone(), true));
-                stack.extend(
-                    children(node)
-                        .into_iter()
-                        .filter(|child| {
-                            matches!(&child.0, SharedIntegerStorage::Native(node) if node.read_through.get().is_none())
+            let reading = match root.node() {
+                KernelTermNode::MachineObservation { .. } => root
+                    .exact_shared_integer_observation()
+                    .and_then(|observation| observation.value_reading().cloned())
+                    .map(Self::intern),
+                KernelTermNode::IntegerOperation {
+                    operator,
+                    arguments,
+                } => {
+                    if !expanded {
+                        pending.push((root, true));
+                        pending.extend(arguments.iter().rev().map(|child| (child, false)));
+                        continue;
+                    }
+                    let children: Vec<_> = arguments
+                        .iter()
+                        .map(|child| {
+                            child
+                                .integer_reading()
+                                .get()
+                                .and_then(Option::as_ref)
+                                .map_or(child, SharedIntegerTerm::root)
+                                .clone()
                         })
-                        .map(|child| (child, false)),
-                );
-                continue;
-            }
-            let read = |child: &SharedIntegerTerm| -> SharedIntegerTerm {
-                child.read_through_ref().clone()
-            };
-            let rebuilt = match &node.term {
-                IntegerTerm::Machine(machine) => machine
-                    .value_reading()
-                    .map(|reading| SharedIntegerTerm::intern(reading.clone())),
-                IntegerTerm::Negate(child) => {
-                    let child_read = read(child);
-                    (child_read.id() != child.id())
-                        .then(|| SharedIntegerTerm::intern(IntegerTerm::Negate(child_read)))
-                }
-                IntegerTerm::Add(left, right)
-                | IntegerTerm::Subtract(left, right)
-                | IntegerTerm::Multiply(left, right)
-                | IntegerTerm::TruncatingQuotient(left, right)
-                | IntegerTerm::TruncatingRemainder(left, right) => {
-                    let (left_read, right_read) = (read(left), read(right));
-                    (left_read.id() != left.id() || right_read.id() != right.id()).then(|| {
-                        SharedIntegerTerm::intern(match &node.term {
-                            IntegerTerm::Add(..) => IntegerTerm::Add(left_read, right_read),
-                            IntegerTerm::Subtract(..) => {
-                                IntegerTerm::Subtract(left_read, right_read)
-                            }
-                            IntegerTerm::Multiply(..) => {
-                                IntegerTerm::Multiply(left_read, right_read)
-                            }
-                            IntegerTerm::TruncatingQuotient(..) => {
-                                IntegerTerm::TruncatingQuotient(left_read, right_read)
-                            }
-                            _ => IntegerTerm::TruncatingRemainder(left_read, right_read),
-                        })
+                        .collect();
+                    (children != *arguments).then(|| {
+                        Self::from_root(
+                            KernelTerm::integer_operation(*operator, children)
+                                .expect("Integer reading"),
+                        )
                     })
                 }
                 _ => None,
             };
-            // A reading is its own reading: its children are readings and a
-            // read observation has no further relation to read through.
-            if let Some(rebuilt) = &rebuilt
-                && let SharedIntegerStorage::Native(node) = &rebuilt.0
-            {
-                let _ = node.read_through.set(None);
+            if let Some(reading) = &reading {
+                if reading.root() == root {
+                    let _ = root.integer_reading().set(None);
+                    continue;
+                }
+                let _ = reading.root().integer_reading().set(None);
             }
-            let _ = node.read_through.set(rebuilt);
+            let _ = root.integer_reading().set(reading);
         }
     }
 
-    /// Interns `term` and computes its reading ([`Self::read_through`])
-    /// from its children's, which interning computed before: O(1) per new
-    /// node, so no later reader walks a term's DAG.
     pub(crate) fn intern(term: IntegerTerm) -> Self {
         if let Some(root) = term.mathematical_root() {
-            return Self::from_mathematical_root(root);
+            return Self::from_root(root);
         }
-        let node = integer_interner()
-            .lock()
-            .expect("Integer interner lock poisoned")
-            .intern(term);
-        if matches!(&node.0, SharedIntegerStorage::Native(native) if native.read_through.get().is_none())
-        {
-            node.compute_read_through();
-        }
-        node
+        Self::from_root(KernelTermImport::default().integer_input(&term))
     }
 }
 
@@ -1990,19 +1901,13 @@ impl IntegerIdentity {
             .lock()
             .expect("Integer interner lock poisoned")
             .intern_identity(key, observation)
-            .0
     }
-}
-
-struct IntegerInternEntry {
-    identity: Weak<IntegerIdentity>,
-    native: Weak<SharedIntegerNode>,
 }
 
 #[derive(Default)]
 struct IntegerInterner {
     next_id: u64,
-    identities: crate::id_hash::U64Map<Vec<IntegerInternEntry>>,
+    identities: crate::id_hash::U64Map<Vec<Weak<IntegerIdentity>>>,
     cleanup_queue: VecDeque<(u64, usize)>,
 }
 
@@ -2017,21 +1922,20 @@ impl IntegerInterner {
         &mut self,
         key: IntegerShallowKey,
         observation: Option<SharedMachineIntegerTerm>,
-    ) -> (Arc<IntegerIdentity>, &mut Weak<SharedIntegerNode>) {
+    ) -> Arc<IntegerIdentity> {
         for _ in 0..8 {
             let Some((fingerprint, pointer)) = self.cleanup_queue.pop_front() else {
                 break;
             };
             if let Some(bucket) = self.identities.get_mut(&fingerprint) {
-                if bucket.iter().any(|entry| {
-                    entry.identity.as_ptr() as usize == pointer
-                        && entry.identity.strong_count() != 0
-                }) {
+                if bucket
+                    .iter()
+                    .any(|entry| entry.as_ptr() as usize == pointer && entry.strong_count() != 0)
+                {
                     self.cleanup_queue.push_back((fingerprint, pointer));
                 }
                 bucket.retain(|entry| {
-                    entry.identity.as_ptr() as usize != pointer
-                        || entry.identity.strong_count() != 0
+                    entry.as_ptr() as usize != pointer || entry.strong_count() != 0
                 });
                 if bucket.is_empty() {
                     self.identities.remove(&fingerprint);
@@ -2040,11 +1944,12 @@ impl IntegerInterner {
         }
         let fingerprint = integer_key_fingerprint(&key);
         let bucket = self.identities.entry(fingerprint).or_default();
-        if let Some((index, identity)) = bucket.iter().enumerate().find_map(|(index, entry)| {
-            let identity = entry.identity.upgrade()?;
-            (identity.key == key).then_some((index, identity))
-        }) {
-            return (identity, &mut bucket[index].native);
+        if let Some(identity) = bucket
+            .iter()
+            .filter_map(Weak::upgrade)
+            .find(|entry| entry.key == key)
+        {
+            return identity;
         }
         let id = self.next_id;
         self.next_id = id
@@ -2056,49 +1961,10 @@ impl IntegerInterner {
             key,
             _observation: observation,
         });
-        bucket.push(IntegerInternEntry {
-            identity: Arc::downgrade(&identity),
-            native: Weak::new(),
-        });
+        bucket.push(Arc::downgrade(&identity));
         self.cleanup_queue
             .push_back((fingerprint, Arc::as_ptr(&identity) as usize));
-        (
-            identity,
-            &mut bucket.last_mut().expect("interned Integer").native,
-        )
-    }
-
-    fn intern(&mut self, term: IntegerTerm) -> SharedIntegerTerm {
-        let observation = match &term {
-            IntegerTerm::Machine(value) => Some(value.clone()),
-            _ => None,
-        };
-        let (identity, native) = self.intern_identity(term.shallow_key(), observation);
-        if let Some(node) = native.upgrade() {
-            return SharedIntegerTerm(SharedIntegerStorage::Native(node));
-        }
-        let literal_arithmetic = match &term {
-            IntegerTerm::Constant(_) => true,
-            IntegerTerm::Machine(value) => value.literal_conversion_value().is_some(),
-            IntegerTerm::Negate(child) => child.is_literal_arithmetic(),
-            IntegerTerm::Add(left, right)
-            | IntegerTerm::Subtract(left, right)
-            | IntegerTerm::Multiply(left, right)
-            | IntegerTerm::TruncatingQuotient(left, right)
-            | IntegerTerm::TruncatingRemainder(left, right) => {
-                left.is_literal_arithmetic() && right.is_literal_arithmetic()
-            }
-            _ => false,
-        };
-        let node = Arc::new(SharedIntegerNode {
-            identity,
-            term,
-            literal_arithmetic,
-            kernel_term: OnceLock::new(),
-            read_through: OnceLock::new(),
-        });
-        *native = Arc::downgrade(&node);
-        SharedIntegerTerm(SharedIntegerStorage::Native(node))
+        identity
     }
 }
 

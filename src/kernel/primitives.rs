@@ -97,11 +97,11 @@ pub(crate) use contracts::{
     wide_loadable_element_count, wide_range_bounds,
 };
 mod integer;
-pub(crate) use integer::WeakIntegerTerm;
+pub(crate) use integer::clear_machine_observation_memo;
 mod kernel_term;
 pub(crate) use kernel_term::{
     BooleanOperandView, FloatOperandView, KernelConstructor, KernelFold, KernelFoldIndex,
-    KernelMatch, KernelTermExport, KernelTermImport, clear_integer_bridge_memo,
+    KernelMatch, KernelTermExport, KernelTermImport,
 };
 // Prepared rewrite interface for the following scoped consumers.
 pub(crate) use kernel_term::{
