@@ -6436,6 +6436,33 @@ fn cpp_sidecar_reports_source_and_signature_mismatches_without_c_fallback() {
     );
 }
 
+#[test]
+fn cpp_written_self_is_an_ordinary_parameter() {
+    for (selected, native, sidecar) in [
+        (
+            "probe",
+            "int probe(int self) noexcept { return self; }",
+            "int32 probe(int32 self) { ensures result == self; }",
+        ),
+        (
+            "Box::read",
+            "struct Box { int value; int read(int self) const noexcept { return self; } };",
+            "int32 Box::read(int32 self) const { ensures result == self; }",
+        ),
+    ] {
+        let project = Project::with_fixture("driver.cpp", selected, native);
+        refresh_import(&project.config()).unwrap();
+        fs::remove_file(&project.exporter).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let source = format!("verifying \"driver.cpp\";\n{sidecar}");
+        let path = project.directory.join("probe.click");
+        fs::write(&path, &source).unwrap();
+        let parsed = read_click_project(&path, &source).unwrap();
+        verify_program_prepared_project(&parsed, &import)
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+    }
+}
+
 /// A reference parameter is declared as a reference and named as its
 /// referent. Each older or mistaken spelling is refused with the one to
 /// write.

@@ -209,22 +209,14 @@ fn lower_function(
         .chain(declared_places)
         .map(|parameter| (parameter.declaration_id.as_str(), parameter))
         .collect::<BTreeMap<_, _>>();
-    let reference_parameters = source
-        .parameters
-        .iter()
-        .enumerate()
-        .filter(|(index, parameter)| is_reference_parameter(*index, parameter))
-        .map(|(_, parameter)| parameter.declaration_id.as_str())
-        // A local of reference type is carried the same way: the pointer is
-        // named for the address it holds, and the local's own name is the
-        // referent a proof reads.
-        .chain(
-            places
-                .values()
-                .filter(|place| is_reference_local(place))
-                .map(|place| place.declaration_id.as_str()),
-        )
-        .collect::<std::collections::BTreeSet<_>>();
+    let receiver = source.receiver().map(|place| place.declaration_id.as_str());
+    // Reference parameters and locals both carry the address of the referent.
+    let reference_parameters = places
+        .values()
+        .filter(|place| matches!(place.value_type, CppType::LvalueReference { .. }))
+        .map(|place| place.declaration_id.as_str())
+        .filter(|id| Some(*id) != receiver)
+        .collect::<BTreeSet<_>>();
     let function_name = names.require(&source.declaration_id)?;
     let owner = LocalFunctionId::new(
         Some(import.logical_source().to_owned()),
@@ -235,10 +227,8 @@ fn lower_function(
         .iter()
         .enumerate()
         .map(|(index, parameter)| {
-            if is_receiver(index, parameter) {
-                let mut receiver = parameter.clone();
-                receiver.name = RECEIVER_NAME.to_string();
-                return lower_parameter(&receiver, layouts, RECEIVER_NAME.into());
+            if receiver == Some(parameter.declaration_id.as_str()) {
+                return lower_parameter(parameter, layouts, RECEIVER_NAME.into());
             }
             let binding = if source.axiom.is_some() && parameter.name.is_empty() {
                 let ordinal = u32::try_from(index).map_err(|_| "too many C++ parameters")?;
@@ -246,7 +236,7 @@ fn lower_function(
             } else {
                 BindingName::from(parameter.name.as_str())
             };
-            let binding = if is_reference_parameter(index, parameter) {
+            let binding = if matches!(parameter.value_type, CppType::LvalueReference { .. }) {
                 BindingName::reference_carrier(binding)
             } else {
                 binding
@@ -255,11 +245,7 @@ fn lower_function(
         })
         .collect::<Result<Vec<_>, String>>()?;
     let mut context = LoweringContext {
-        receiver: source
-            .parameters
-            .first()
-            .filter(|parameter| is_receiver(0, parameter))
-            .map(|parameter| parameter.declaration_id.as_str()),
+        receiver,
         reference_parameters,
         source_unit: import.logical_source(),
         function_name,
@@ -326,23 +312,10 @@ fn lower_function(
 /// `this`, as in C++.
 pub(super) const RECEIVER_NAME: &str = "this";
 
-/// Whether a parameter is a member function's receiver. The exporter
-/// delivers it first, as a reference named `self`.
-pub(super) fn is_receiver(index: usize, parameter: &CppPlace) -> bool {
-    index == 0 && parameter.name == "self"
-}
-
 /// Whether a declared local is a reference, which a proof names by its
 /// referent as it names a reference parameter.
 pub(super) fn is_reference_local(local: &CppPlace) -> bool {
     matches!(local.value_type, CppType::LvalueReference { .. })
-}
-
-/// Whether a parameter is a reference the sidecar names by its referent. A
-/// receiver also arrives as a reference; it is the pointer `this`.
-pub(super) fn is_reference_parameter(index: usize, parameter: &CppPlace) -> bool {
-    matches!(parameter.value_type, CppType::LvalueReference { .. })
-        && !is_receiver(index, parameter)
 }
 
 fn lower_parameter(
@@ -752,8 +725,8 @@ impl LoweringContext<'_> {
         else {
             return Ok(name);
         };
-        for (index, (argument, parameter)) in arguments.iter().zip(&function.parameters).enumerate()
-        {
+        let receiver = function.receiver();
+        for (argument, parameter) in arguments.iter().zip(&function.parameters) {
             let CppCallArgument::Reference { place } = argument else {
                 continue;
             };
@@ -768,7 +741,7 @@ impl LoweringContext<'_> {
             else {
                 continue;
             };
-            if is_receiver(index, parameter)
+            if receiver.is_some_and(|receiver| std::ptr::eq(receiver, parameter))
                 || !self.polymorphism.open.contains(class.as_str())
                 || place.projections.last().is_some_and(|projection| {
                     matches!(projection, super::schema::CppProjection::Base { .. })
@@ -799,10 +772,6 @@ impl LoweringContext<'_> {
                 .borrow_mut()
                 .insert((class.clone(), class.clone()));
         }
-        let receiver = function
-            .parameters
-            .first()
-            .filter(|parameter| is_receiver(0, parameter));
         let Some(CppType::LvalueReference { pointee }) =
             receiver.map(|parameter| &parameter.value_type)
         else {
