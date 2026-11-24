@@ -26924,6 +26924,47 @@ fn float_cast_bounds_expand_and_cold_replay() {
 }
 
 #[test]
+fn selected_float_bounds_expand_and_cold_replay() {
+    for (fixture, functions) in [
+        (
+            "float_bound_composition",
+            &["scale_twice", "double_twice"][..],
+        ),
+        (
+            "float_signed_ranges",
+            &["by_zero_bounded", "product", "quotient"][..],
+        ),
+        (
+            "float_reciprocals_and_squares",
+            &[
+                "reciprocal_negative",
+                "negative_reciprocal",
+                "reciprocal_strict",
+                "square",
+            ][..],
+        ),
+    ] {
+        let (source, sources) =
+            mdtest_sources(&format!("mdtests/arithmetic_expression_{fixture}.md"));
+        let sources = crate::cli::source_refs(&sources);
+        for function in functions {
+            let claim = format!("{function}.ensures_0");
+            let expanded = expand_c_claim_source_by_label(&source, &sources, &claim)
+                .unwrap_or_else(|error| panic!("{claim}: {}", error.report()));
+            assert!(
+                expanded.matches("normalize() using").count()
+                    > source.matches("normalize() using").count(),
+                "{claim}: {expanded}"
+            );
+            without_implicit_solve_for_claim(&claim, || {
+                verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+            })
+            .unwrap_or_else(|error| panic!("{claim}: {error}"));
+        }
+    }
+}
+
+#[test]
 fn indexed_store_bounds_expand_to_an_explicit_step_proof() {
     let (source, sources) = mdtest_sources("mdtests/indexed_store_exposes_its_bounds.md");
     let implicit = source.replace("step() by { known(); }", "step();");
