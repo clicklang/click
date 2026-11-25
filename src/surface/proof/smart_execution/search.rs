@@ -2,9 +2,8 @@
 use super::*;
 
 impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
-    /// Runs `step_until` on checked descendants: the implicit tail's search
-    /// with a target, which stops before that source statement and follows
-    /// one path, refusing where it would have to split. The returned fact
+    /// Runs `step_until` as ordinary steps on one checked path, refusing
+    /// where it would have to split. The returned fact
     /// list is only the prefix's output delta; scope adapters use it to
     /// retain facts introduced inside their owned representation.
     pub(in crate::surface::proof) fn try_execute_until_descendant(
@@ -122,7 +121,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         }
         let mut proof = search_input.clone();
         let mut facts = Vec::new();
-        let mut retried = BTreeSet::new();
         let mut steps = 0;
         loop {
             let frontier = &proof
@@ -147,22 +145,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 ));
             }
             proof.charge_execute_step(&mut steps, 0)?;
-            if let Some(next) = crate::kernel::search::ProofSearch::try_smart_statement_step(
-                &(proof),
-                ProofStep::Step,
-                &mut retried,
-            )? {
-                facts.extend(next.added_facts().iter().cloned());
-                proof = next;
-                retried.clear();
-            } else {
-                return match proof.driver().apply_step(ProofStep::Step) {
-                    Err(error) => Err(error),
-                    Ok(_) => Err(proof.step_error(
-                        "`loop.back_edge` found no checked advance from this frontier",
-                    )),
-                };
-            }
+            proof = proof.driver().apply_step(ProofStep::Step)?;
+            facts.extend(proof.added_facts().iter().cloned());
         }
     }
 

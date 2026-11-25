@@ -195,8 +195,8 @@ A C store into an array keeps a cached element of that array only on a
 stated disequality of the two index words, compared as `int32`, or as
 `uint64` or `int64` for two 64-bit indices of that signedness such as
 `size_t` ones (see [Verifier design](../../internals/verifier-design.md));
-otherwise it drops the element. When a statement the implicit tail or
-`step_until` runs drops such an element, the tail writes that disequality
+otherwise it drops the element. When a statement the implicit tail runs
+drops such an element, the tail writes that disequality
 from the two index words, `((m - 1) as int32) != 0`,
 `((n - 1u64) as uint64) != 0u64` or `j != 0u64` say,
 proves it at the statement's pre-state, retains it as a `have`,
@@ -666,7 +666,9 @@ leaves an open claim to the report that names it
 
 `step_until` repeats `step()` up to the target, walking any loop the facts
 decide, and never splits: an undecided branch before the target refuses it, as
-it refuses `step()`. The parser refuses the removed form `execute_until`
+it refuses `step()`. Its only proof search is the ordinary closer for each
+step's obligations. State any index disequality a store needs before it runs.
+The parser refuses the removed form `execute_until`
 and names `step_until`.
 
 **Specialized.** Write it to stop execution at a chosen statement, loop, or read
