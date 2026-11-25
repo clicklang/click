@@ -88,6 +88,7 @@ void checkout(struct pool* pool, struct payload* p) {
         have defined((pool->checked_out + 1)) by {
             close() using { at(function.entry, pool->checked_out) < at(function.entry, 2147483647); };
         }
+        apply(integer::int32_add_to_integer(pool->checked_out, 1));
         unfold(slot(pool));
         step();
         fold(item(pool, p));
@@ -99,7 +100,9 @@ void checkout(struct pool* pool, struct payload* p) {
                 close() using { to_integer(old(pool->checked_out)) < 2147483647; };
             }
             have to_integer(pool->checked_out) == (to_integer(old(pool->checked_out)) + 1) by {
-                close() using { -2147483648 <= (to_integer(old(pool->checked_out)) + 1); (to_integer(old(pool->checked_out)) + 1) <= 2147483647; };
+                have pool->checked_out == old(pool->checked_out) + 1;
+                rewrite(pool->checked_out, old(pool->checked_out) + 1);
+                close();
             }
             have -2147483648 <= (to_integer(old(count(slot(pool)))) - 1) by {
                 close() using { 1 <= to_integer(old(count(slot(pool)))); };
@@ -205,6 +208,7 @@ void give_back(struct pool* pool, struct payload* p) {
         unfold(item(pool, p));
         have separate(memory(p->value), memory(pool->checked_out));
         have p->value == old(p->value) by close();
+        apply(integer::int32_subtract_to_integer(pool->checked_out, 1));
         mark before_decrement;
         step();
         have separate(statement(0).footprint, memory(p->value)) by {
@@ -231,7 +235,9 @@ void give_back(struct pool* pool, struct payload* p) {
                 close() using {  };
             }
             have to_integer(pool->checked_out) == (to_integer(old(pool->checked_out)) - 1) by {
-                close() using { -2147483648 <= (to_integer(old(pool->checked_out)) - 1); (to_integer(old(pool->checked_out)) - 1) <= 2147483647; };
+                have pool->checked_out == old(pool->checked_out) - 1;
+                rewrite(pool->checked_out, old(pool->checked_out) - 1);
+                close();
             }
             have -2147483648 <= (to_integer(old(count(slot(pool)))) + 1) by {
                 close() using { 0 <= to_integer(old(count(slot(pool)))); };
@@ -299,7 +305,12 @@ void give_back(struct pool* pool, struct payload* p) {
     }
     have defined((pool->checked_out + count(slot(pool)))) by {
         have (to_integer(pool->checked_out) + to_integer(count(slot(pool)))) >= -2147483648 by {
-            close() using { 0 <= to_integer(pool->checked_out); to_integer(count(slot(pool))) == to_integer(old(count(slot(pool)))) + 1; to_integer(old(count(slot(pool)))) + 1 >= -2147483648; };
+            have 0 <= to_integer(count(slot(pool)));
+            have 0 <= to_integer(pool->checked_out) + to_integer(count(slot(pool))) by {
+                apply(integer::add_le(0, to_integer(pool->checked_out), 0, to_integer(count(slot(pool)))));
+                close();
+            }
+            apply(integer::le_transitive(-2147483648, 0, to_integer(pool->checked_out) + to_integer(count(slot(pool)))));
         }
         have (to_integer(pool->checked_out) + to_integer(count(slot(pool)))) <= 2147483647 by {
             close() using { at(function.entry, to_integer(pool->capacity)) == at(function.entry,
