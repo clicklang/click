@@ -474,7 +474,7 @@ fn pointer_rejection_prefixes_expand_and_replay() {
         (
             "joined_pointer_field_read_rejects_different_field",
             "inspect",
-            "have model->right == leaf by {\n                                normalize() using { sibling == model; sibling->left == child; child == leaf; };\n                            }",
+            "have model->right == leaf by {\n                                close() using { sibling == model; sibling->left == child; child == leaf; };\n                            }",
             "have child == leaf by { close(); }",
         ),
         (

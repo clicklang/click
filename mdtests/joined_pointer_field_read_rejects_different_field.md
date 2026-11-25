@@ -80,7 +80,7 @@ void inspect(struct node* parent) {
                 Pair::At(model, lm) => {
                     let { l: l } = unfold(c);
                     have parent->left == model by { close(); }
-                    have defined(parent->right) by { rewrite(parent, pid); close(); }
+                    have defined(parent->right) by { rewrite(parent, pid); normalize(); }
                     mark before_sibling;
                     have defined(at(before_sibling, pid->right)) by { close(); }
                     step();
@@ -129,8 +129,8 @@ void inspect(struct node* parent) {
                             have model->right == leaf by {
                                 close() using { sibling == model; sibling->left == child; child == leaf; };
                             }
-                            let l = fold(leaf_at(parent->left->left), { model: Identity::At(leaf) });
-                            let c = fold(cell(parent->left), { model: Pair::At(model, Identity::At(leaf)), l: l });
+                            let l = fold(leaf_at(pid->left->left), { model: Identity::At(leaf) });
+                            let c = fold(cell(pid->left), { model: Pair::At(model, Identity::At(leaf)), l: l });
                             have f.model == fm;
                             let tree_context = fold(parent_at(root), { model: Parent::At(pid, Pair::At(model, Identity::At(leaf)), fm), c: c, f: f });
                             step(); step();

@@ -6679,10 +6679,7 @@ fn deferred_preservation_solve_expands_at_its_original_source_site() {
     let expanded =
         expand_c_tactic_source_at(&source, &c_sources, position.line, position.column).unwrap();
     assert_ne!(source, expanded);
-    without_implicit_solve(|| {
-        verify_c_sources_functions(&expanded, &c_sources, vec!["vector_copy".into()])
-    })
-    .unwrap();
+    verify_c_sources_functions(&expanded, &c_sources, vec!["vector_copy".into()]).unwrap();
     let expanded = expand_c_claim_source_by_label(&source, &c_sources, "vector_copy.contract")
         .expect("the native split pivot must survive Integer-mode expansion");
     without_implicit_solve(|| {
