@@ -459,81 +459,40 @@ pub(in crate::kernel) fn spec_algebraic_expression_is_obligation_free(
     spec_tree_all(SpecNode::Algebraic(expression), obligation_free_node)
 }
 
-/// Whether a comparison can retain a known match with symbolic arm bindings.
-/// An algebraic conditional is total here when its guard tests only Boolean
-/// literals and fields bound by the surrounding match patterns.
-pub(in crate::kernel) fn spec_algebraic_match_is_total(
+/// An algebraic match can retain total conditionals in its arms. Keep this
+/// separate from the datatype reflexivity shortcut, which skips evaluation.
+pub(in crate::kernel) fn spec_algebraic_match_can_retain_arms(
     expression: &SpecAlgebraicExpression,
 ) -> bool {
-    use crate::persistent::PersistentSet;
-    type Bindings = PersistentSet<BindingName>;
-    let mut pending = vec![(SpecNode::Algebraic(expression), Bindings::default())];
-    while let Some((node, bindings)) = pending.pop() {
-        crate::instrumentation::record_deterministic_work(1);
-        match node {
-            SpecNode::Algebraic(SpecAlgebraicExpression {
-                node: SpecAlgebraicExpressionNode::Match { scrutinee, arms },
-                ..
-            }) => {
-                if !algebraic_match_covers_each_variant_once(scrutinee, arms) {
-                    return false;
-                }
-                for arm in arms {
-                    let mut scope = bindings.clone();
-                    // The match evaluator validates these field types against
-                    // the scrutinee's variant before evaluating an arm.
-                    for (name, ty) in arm.bindings.iter().zip(&arm.binding_types) {
-                        if *ty == AlgebraicValueType::Program(ProgramType::Bool) {
-                            scope = scope.with_value(name.clone());
-                        } else {
-                            scope = scope.without_value(name);
-                        }
-                    }
-                    pending.push((SpecNode::Algebraic(&arm.body), scope));
-                }
-                pending.push((SpecNode::Algebraic(scrutinee), bindings));
-            }
-            SpecNode::Algebraic(SpecAlgebraicExpression {
-                node: SpecAlgebraicExpressionNode::If { .. },
-                ..
-            }) => node.for_each_child(|child| pending.push((child, bindings.clone()))),
-            SpecNode::Proposition(SpecProposition::Truth(_)) => {}
-            SpecNode::Proposition(SpecProposition::Comparison {
-                left,
-                operator: ComparisonOperator::Equal | ComparisonOperator::NotEqual,
-                right,
-            }) => {
-                let total_boolean = |operand: &SpecExpression| {
-                    // Generated match binders carry their field type through a
-                    // cast. The scope check below admits only Bool-to-Bool.
-                    let operand = match operand {
-                        SpecExpression::Cast(value, ProgramType::Bool) => value.as_ref(),
-                        _ => operand,
-                    };
-                    match operand {
-                        SpecExpression::Value(ProgramValue::Bool(value)) => {
-                            value.bool_constant_value().is_some()
-                        }
-                        SpecExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
-                            bindings.contains(name)
-                        }
-                        _ => false,
-                    }
-                };
-                if !total_boolean(left) || !total_boolean(right) {
-                    return false;
-                }
-            }
-            _ => match obligation_free_node(node) {
-                Visit::Descend => {
-                    node.for_each_child(|child| pending.push((child, bindings.clone())))
-                }
-                Visit::Skip => {}
-                Visit::Stop(()) => return false,
-            },
-        }
+    fn direct_operand(expression: &SpecExpression) -> bool {
+        matches!(
+            expression,
+            SpecExpression::Value(_)
+                | SpecExpression::ProgramExpression(
+                    ProgramExpression::Value(_) | ProgramExpression::Variable(_),
+                )
+        )
     }
-    true
+
+    fn guard_operand(expression: &SpecExpression) -> bool {
+        direct_operand(expression)
+            || matches!(expression, SpecExpression::Cast(value, ProgramType::Bool)
+                if direct_operand(value))
+    }
+
+    spec_tree_all(SpecNode::Algebraic(expression), |node| match node {
+        SpecNode::Algebraic(SpecAlgebraicExpression {
+            node: SpecAlgebraicExpressionNode::If { .. },
+            ..
+        }) => Visit::Descend,
+        SpecNode::Proposition(SpecProposition::Truth(_)) => Visit::Skip,
+        SpecNode::Proposition(SpecProposition::Comparison {
+            left,
+            operator: ComparisonOperator::Equal | ComparisonOperator::NotEqual,
+            right,
+        }) if guard_operand(left) && guard_operand(right) => Visit::Skip,
+        node => obligation_free_node(node),
+    })
 }
 
 pub(super) fn obligation_free_node(node: SpecNode<'_>) -> Visit<()> {

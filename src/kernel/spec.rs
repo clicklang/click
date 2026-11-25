@@ -4101,7 +4101,7 @@ fn evaluate_spec_algebraic_non_call_in(
                     && !budget.checked_reads
                     && (budget.in_pure_algebraic_match
                         || *pure_match.get_or_insert_with(|| {
-                            super::functions::spec_algebraic_match_is_total(expression)
+                            super::functions::spec_algebraic_match_can_retain_arms(expression)
                                 && super::functions::spec_algebraic_expression_is_state_independent(
                                     expression,
                                 )
