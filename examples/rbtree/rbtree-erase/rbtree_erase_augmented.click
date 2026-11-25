@@ -734,6 +734,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                             have separate(memory(successor->rb_right), memory(node->__rb_parent_color)) by close();
                                                             step();
                                                             mark after_linking_successor;
+                                                            have successor->rb_right == child by close() using {};
                                                             have separate(region(37).footprint, memory(node->__rb_parent_color)) by {
                                                                 normalize() using { separate(memory(successor->rb_right), memory(node->__rb_parent_color)); };
                                                             }
@@ -745,7 +746,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                             have (child->__rb_parent_color & 1) == color_bit(rc) by close();
                                                             mark before_reparent;
                                                             have separate(memory(child->__rb_parent_color), memory(node->__rb_parent_color)) by close();
-                                                            step();
+                                                            step(rb_set_parent);
                                                             mark after_child_reparent;
                                                             have contains(memory(child->__rb_parent_color), region(38).footprint) by close();
                                                             apply(click::separation::contains_refl(memory(node->__rb_parent_color)));
@@ -807,6 +808,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                             have separate(memory(successor->rb_left), memory(node->__rb_parent_color)) by close();
                                                             step();
                                                             mark after_linking_left_child;
+                                                            have successor->rb_left == tmp by close() using {};
                                                             have separate(region(42).footprint, memory(node->__rb_parent_color)) by {
                                                                 normalize() using { separate(memory(successor->rb_left), memory(node->__rb_parent_color)); };
                                                             }
@@ -821,7 +823,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                             unfold(live_left_tag);
                                                             have separate(memory(tmp->__rb_parent_color), memory(*augment)) by close();
                                                             mark before_left_reparent;
-                                                            step();
+                                                            step(rb_set_parent);
                                                             mark after_left_reparent;
                                                             have separate(at(before_left_reparent, memory(tmp->__rb_parent_color)), memory(node->__rb_parent_color)) by close();
                                                             have separate(region(43).footprint, memory(node->__rb_parent_color)) by {
@@ -1179,9 +1181,11 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                                 rewrite(color_bit(mc), 1); normalize();
                                                             }
                                                             step_until(statement(4).statement(5).statement(15).entry);
+                                                            have rebalance == parent by close() using {};
                                                             mark before_copying_tag;
                                                             have ((pc & ~3) as (struct rb_node *)) == parent_model by close();
                                                             step();
+                                                            have successor->__rb_parent_color == pc by close() using {};
                                                             have successor->__rb_parent_color == at(before_copying_tag, pc) by close();
                                                             have ((successor->__rb_parent_color & ~3) as (struct rb_node *)) == parent_model by close();
                                                             let transplanted_tag = fold(erase_saved_parent(successor, parent_model), {
@@ -1597,6 +1601,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                             have separate(memory(successor->rb_right), memory(node->__rb_parent_color)) by close();
                                                             step();
                                                             mark after_linking_successor;
+                                                            have successor->rb_right == child by close() using {};
                                                             have separate(region(37).footprint, memory(node->__rb_parent_color)) by {
                                                                 normalize() using { separate(memory(successor->rb_right), memory(node->__rb_parent_color)); };
                                                             }
@@ -1608,7 +1613,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                             have (child->__rb_parent_color & 1) == color_bit(rc) by close();
                                                             mark before_reparent;
                                                             have separate(memory(child->__rb_parent_color), memory(node->__rb_parent_color)) by close();
-                                                            step();
+                                                            step(rb_set_parent);
                                                             mark after_child_reparent;
                                                             have contains(memory(child->__rb_parent_color), region(38).footprint) by close();
                                                             apply(click::separation::contains_refl(memory(node->__rb_parent_color)));
@@ -1667,6 +1672,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                             have separate(memory(successor->rb_left), memory(node->__rb_parent_color)) by close();
                                                             step();
                                                             mark after_linking_left_child;
+                                                            have successor->rb_left == tmp by close() using {};
                                                             have separate(region(42).footprint, memory(node->__rb_parent_color)) by {
                                                                 normalize() using { separate(memory(successor->rb_left), memory(node->__rb_parent_color)); };
                                                             }
@@ -1681,7 +1687,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                             unfold(live_left_tag);
                                                             have separate(memory(tmp->__rb_parent_color), memory(*augment)) by close();
                                                             mark before_left_reparent;
-                                                            step();
+                                                            step(rb_set_parent);
                                                             mark after_left_reparent;
                                                             have separate(at(before_left_reparent, memory(tmp->__rb_parent_color)), memory(node->__rb_parent_color)) by close();
                                                             have separate(region(43).footprint, memory(node->__rb_parent_color)) by {
@@ -2073,6 +2079,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                                     }
                                                                     have child2 == 0;
                                                                     step_until(statement(4).statement(5).statement(15).entry);
+                                                                    have rebalance == 0 by close() using {};
                                                                     mark before_copying_tag;
                                                                     have ((pc & ~3) as (struct rb_node *)) == parent_model by close();
                                                                     step();
@@ -2121,6 +2128,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
 
                                                                     let moved_child = fold(rb_at(child2), { model: RbTree::Node(cid, mp, Color::Black, cl, cr), left: child_left, right: child_right });
                                                                     step_until(statement(4).statement(5).statement(15).entry);
+                                                                    have rebalance == 0 by close() using {};
                                                                     mark before_copying_tag;
                                                                     have ((pc & ~3) as (struct rb_node *)) == parent_model by close();
                                                                     step();
@@ -2814,7 +2822,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                             have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == erased_parent by close();
                             step_until(call(__rb_change_child, 1).entry);
                             have tmp == el_id by close();
-                            have tmp->__rb_parent_color == pc by close();
+                            have tmp->__rb_parent_color == pc by close() using {};
                             have ((tmp->__rb_parent_color & ~3) as (struct rb_node *)) == erased_parent by close();
                             let replacement_tag = fold(erase_saved_parent(tmp, erased_parent), { word: pc, color: Color::Black });
                             have parent == erased_parent by close();

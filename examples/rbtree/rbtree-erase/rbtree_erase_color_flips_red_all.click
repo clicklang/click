@@ -1592,12 +1592,13 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                     let moving_parent_tag = fold(rb_context_tag(id, above), { color: Color::Black });
                                                     step(); // The black parent cannot absorb the deficit.
                                                     step(); // Move the deficit to its parent.
+                                                    have node == parent by close() using {};
                                                     unfold(moving_parent_tag);
                                                     have node == id by close();
                                                     have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == above by close();
                                                     mark decode_parent;
                                                     step(); step(); // Decode and assign the new parent.
-                                                    have parent == at(decode_parent, ((node->__rb_parent_color & ~3) as (struct rb_node *))) by close();
+                                                    have parent == at(decode_parent, ((node->__rb_parent_color & ~3) as (struct rb_node *))) by close() using { parent == at(decode_parent, ((node->__rb_parent_color & ~3) as (struct rb_node *))); };
                                                     have node == id;
                                                     have parent == above;
                                                     have id->__rb_parent_color == address(above) + (id->__rb_parent_color & 1) by {
@@ -1770,8 +1771,10 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                         rewrite(at(inner_inputs, iid->rb_left), at(inner_inputs, tmp2->rb_left)); close();
                                                     }
                                                     step(); // Move that child under the old sibling.
+                                                    have sibling->rb_right == tmp1 by close() using {};
                                                     let kept_updated_sibling_right = fold(rb_saved_link(&sid->rb_right), { model: RbSavedLink::Link(tmp1) });
                                                     step(); // Put the old sibling under the red node.
+                                                    have tmp2->rb_left == sibling by close() using {};
                                                     let kept_updated_near_link = fold(rb_saved_link(&iid->rb_left), { model: RbSavedLink::Link(sid) });
                                                     step(); // Update the parent's child link.
                                                     unfold(kept_updated_near_link);
@@ -1887,6 +1890,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                     step(); // Attach the near child to the parent.
                                                     let outer_updated_parent_left = fold(rb_saved_link(&parent->rb_left), { model: RbSavedLink::Link(tmp2) });
                                                     step(); // Attach the parent under the sibling.
+                                                    have sibling->rb_right == parent by close() using {};
                                                     let outer_updated_sibling_link = fold(rb_saved_link(&iid->rb_right), { model: RbSavedLink::Link(parent) });
                                                     step(); // Blacken the far child.
                                                     unfold(outer_updated_sibling_link);
@@ -2019,6 +2023,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                     apply(ctx_node_is_identity(u.model, above));
                                                     have ((parent->__rb_parent_color & ~3) as (struct rb_node *)) == above by close();
                                                     let { after: u } = step(__rb_rotate_set_parents, { c: u });
+                                                    have parent->__rb_parent_color == (address(sibling) + 1) by close() using { parent->__rb_parent_color == (address(sibling) + 1); };
                                                     step(); // The augmentation callback preserves the tree resources.
                                                     unfold(rb_child_links(iid, sid, parent));
                                                     unfold(rb_child_links(parent, tmp2, node));
@@ -2121,6 +2126,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                 step(); // Attach the near child to the parent.
                                                 let direct_parent_left = fold(rb_saved_link(&parent->rb_left), { model: RbSavedLink::Link(tmp2) });
                                                 step(); // Attach the parent under the sibling.
+                                                have sibling->rb_right == parent by close() using {};
                                                 step(); // Reparent and blacken the far child.
                                                 have tmp1->__rb_parent_color == (address(sibling) | 1) by close();
                                                 have rid->__rb_parent_color == (address(sid) | 1) by { close() using { tmp1->__rb_parent_color == (address(sibling) | 1); tmp1 == rid; sibling == sid; }; }
@@ -2195,6 +2201,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                 mark outer_rotation;
                                                 apply(ctx_node_is_identity(u.model, above));
                                                 let { after: u } = step(__rb_rotate_set_parents, { c: u });
+                                                have parent->__rb_parent_color == (address(sibling) + 1) by close() using { parent->__rb_parent_color == (address(sibling) + 1); };
                                                 step(); // The augmentation callback preserves the tree resources.
                                                 unfold(rb_child_links(sid, rid, parent));
                                                 unfold(rb_child_links(parent, tmp2, node));
@@ -2355,15 +2362,17 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                             step(); // Enter case 1 for the red sibling.
                                             step(); // Read its near child.
                                             step(); // Attach the near child under the parent.
+                                            have parent->rb_left == tmp1 by close() using { parent == id; };
                                             let red_parent_left = fold(rb_saved_link(&parent->rb_left), { model: RbSavedLink::Link(tmp1) });
                                             step(); // Attach the parent under the old sibling.
+                                            have sibling->rb_right == parent by close() using {};
                                             let red_sibling_right = fold(rb_saved_link(&sid->rb_right), { model: RbSavedLink::Link(parent) });
                                             let { left: zl, right: zr } = unfold(sl);
                                             have tmp1 == zid by close();
                                             have separate(memory(tmp1->__rb_parent_color), memory(tmp1->rb_left)) by close();
                                             have separate(memory(tmp1->__rb_parent_color), memory(tmp1->rb_right)) by close();
                                             mark near_color;
-                                            step(); // Set the near child's black parent word.
+                                            step(rb_set_parent_color); // Set the near child's black parent word.
                                             have separate(statement(1).statement(1).statement(12).statement(3).footprint, memory(tmp1->rb_left)) by {
                                                 normalize() using { separate(memory(tmp1->__rb_parent_color), memory(tmp1->rb_left)); };
                                             }
@@ -2377,7 +2386,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                 preserve(memory(tmp1->rb_right), statement(1).statement(1).statement(12).statement(3));
                                             }
                                             have tmp1 == zid by { close(); }
-                                            have tmp1->__rb_parent_color == (address(parent) | 1) by { close(); }
+                                            have tmp1->__rb_parent_color == (address(parent) | 1) by close() using { tmp1->__rb_parent_color == (address(parent) | 1); };
                                             have zid->__rb_parent_color == (address(id) | 1) by { close() using { tmp1->__rb_parent_color == (address(parent) | 1); tmp1 == zid; parent == id; }; }
                                             have zid->__rb_parent_color == address(id) + 1 by { rewrite(zid->__rb_parent_color, (address(id) | 1)); close() using { aligned(id, 8); }; }
                                             have (zid->__rb_parent_color & 1) == 1 by { rewrite(zid->__rb_parent_color, (address(id) | 1)); normalize(); }
@@ -2409,6 +2418,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                             apply(ctx_node_is_identity(u.model, above));
                                             have ((parent->__rb_parent_color & ~3) as (struct rb_node *)) == above by close();
                                             let { after: u_after } = step(__rb_rotate_set_parents, { c: u });
+                                            have parent->__rb_parent_color == address(sibling) by close() using { parent->__rb_parent_color == address(sibling); };
                                             have contains((at(red_rotation, u) * memory(parent->__rb_parent_color)) * memory(at(iteration, id->rb_left as (uint64 *))[0]), statement(1).statement(1).statement(12).statement(4).footprint) by close();
                                             apply(separation::separate_star(at(red_rotation, u), memory(parent->__rb_parent_color), memory(tmp1->rb_left)));
                                             apply(separation::separate_star(at(red_rotation, u) * memory(parent->__rb_parent_color), memory(at(iteration, id->rb_left as (uint64 *))[0]), memory(tmp1->rb_left)));
@@ -2722,8 +2732,10 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                                 rewrite(at(inner_inputs, iid->rb_left), at(inner_inputs, tmp2->rb_left)); close();
                                                             }
                                                             step(); // Move that child under the old sibling.
+                                                            have sibling->rb_right == tmp1 by close() using {};
                                                             let kept_updated_sibling_right = fold(rb_saved_link(&zid->rb_right), { model: RbSavedLink::Link(tmp1) });
                                                             step(); // Put the old sibling under the red node.
+                                                            have tmp2->rb_left == sibling by close() using {};
                                                             let kept_updated_near_link = fold(rb_saved_link(&iid->rb_left), { model: RbSavedLink::Link(zid) });
                                                             step(); // Update the parent's child link.
                                                             unfold(kept_updated_near_link);
@@ -2837,6 +2849,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                             step(); // Attach the near child to the parent.
                                                             let outer_updated_parent_left = fold(rb_saved_link(&parent->rb_left), { model: RbSavedLink::Link(tmp2) });
                                                             step(); // Attach the parent under the sibling.
+                                                            have sibling->rb_right == parent by close() using {};
                                                             let outer_updated_sibling_link = fold(rb_saved_link(&iid->rb_right), { model: RbSavedLink::Link(parent) });
                                                             step(); // Blacken the far child.
                                                             unfold(outer_updated_sibling_link);
@@ -3062,6 +3075,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                         step(); // Attach the near child to the parent.
                                                         let direct_parent_left = fold(rb_saved_link(&parent->rb_left), { model: RbSavedLink::Link(tmp2) });
                                                         step(); // Attach the parent under the sibling.
+                                                        have sibling->rb_right == parent by close() using {};
                                                         step(); // Reparent and blacken the far child.
                                                         have tmp1->__rb_parent_color == (address(sibling) | 1) by close();
                                                         have rid->__rb_parent_color == (address(zid) | 1) by { close() using { tmp1->__rb_parent_color == (address(sibling) | 1); tmp1 == rid; sibling == zid; }; }
@@ -3459,12 +3473,13 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                     let moving_parent_tag = fold(rb_context_tag(id, above), { color: Color::Black });
                                                     step(); // The black parent cannot absorb the deficit.
                                                     step(); // Move the deficit to its parent.
+                                                    have node == parent by close() using {};
                                                     unfold(moving_parent_tag);
                                                     have node == id by close();
                                                     have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == above by close();
                                                     mark decode_parent;
                                                     step(); step(); // Decode and assign the new parent.
-                                                    have parent == at(decode_parent, ((node->__rb_parent_color & ~3) as (struct rb_node *))) by close();
+                                                    have parent == at(decode_parent, ((node->__rb_parent_color & ~3) as (struct rb_node *))) by close() using { parent == at(decode_parent, ((node->__rb_parent_color & ~3) as (struct rb_node *))); };
                                                     have node == id;
                                                     have parent == above;
                                                     have id->__rb_parent_color == address(above) + (id->__rb_parent_color & 1) by {
@@ -3639,8 +3654,10 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                         rewrite(at(inner_inputs, iid->rb_right), at(inner_inputs, tmp2->rb_right)); close();
                                                     }
                                                     step(); // Move that child under the old sibling.
+                                                    have sibling->rb_left == tmp1 by close() using {};
                                                     let kept_updated_sibling_left = fold(rb_saved_link(&sid->rb_left), { model: RbSavedLink::Link(tmp1) });
                                                     step(); // Put the old sibling under the red node.
+                                                    have tmp2->rb_right == sibling by close() using {};
                                                     let kept_updated_near_link = fold(rb_saved_link(&iid->rb_right), { model: RbSavedLink::Link(sid) });
                                                     step(); // Update the parent's child link.
                                                     unfold(kept_updated_near_link);
@@ -3756,6 +3773,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                     step(); // Attach the near child to the parent.
                                                     let outer_updated_parent_right = fold(rb_saved_link(&parent->rb_right), { model: RbSavedLink::Link(tmp2) });
                                                     step(); // Attach the parent under the sibling.
+                                                    have sibling->rb_left == parent by close() using {};
                                                     let outer_updated_sibling_link = fold(rb_saved_link(&iid->rb_left), { model: RbSavedLink::Link(parent) });
                                                     step(); // Blacken the far child.
                                                     unfold(outer_updated_sibling_link);
@@ -3888,6 +3906,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                     apply(ctx_node_is_identity(u.model, above));
                                                     have ((parent->__rb_parent_color & ~3) as (struct rb_node *)) == above by close();
                                                     let { after: u } = step(__rb_rotate_set_parents, { c: u });
+                                                    have parent->__rb_parent_color == (address(sibling) + 1) by close() using { parent->__rb_parent_color == (address(sibling) + 1); };
                                                     step(); // The augmentation callback preserves the tree resources.
                                                     unfold(rb_child_links(iid, parent, sid));
                                                     unfold(rb_child_links(parent, node, tmp2));
@@ -3990,6 +4009,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                 step(); // Attach the near child to the parent.
                                                 let direct_parent_right = fold(rb_saved_link(&parent->rb_right), { model: RbSavedLink::Link(tmp2) });
                                                 step(); // Attach the parent under the sibling.
+                                                have sibling->rb_left == parent by close() using {};
                                                 step(); // Reparent and blacken the far child.
                                                 have tmp1->__rb_parent_color == (address(sibling) | 1) by close();
                                                 have rid->__rb_parent_color == (address(sid) | 1) by { close() using { tmp1->__rb_parent_color == (address(sibling) | 1); tmp1 == rid; sibling == sid; }; }
@@ -4064,6 +4084,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                 mark outer_rotation;
                                                 apply(ctx_node_is_identity(u.model, above));
                                                 let { after: u } = step(__rb_rotate_set_parents, { c: u });
+                                                have parent->__rb_parent_color == (address(sibling) + 1) by close() using { parent->__rb_parent_color == (address(sibling) + 1); };
                                                 step(); // The augmentation callback preserves the tree resources.
                                                 unfold(rb_child_links(sid, parent, rid));
                                                 unfold(rb_child_links(parent, node, tmp2));
@@ -4223,15 +4244,17 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                             step(); // Enter case 1 for the red sibling.
                                             step(); // Read its near child.
                                             step(); // Attach the near child under the parent.
+                                            have parent->rb_right == tmp1 by close() using { parent == id; };
                                             let red_parent_right = fold(rb_saved_link(&parent->rb_right), { model: RbSavedLink::Link(tmp1) });
                                             step(); // Attach the parent under the old sibling.
+                                            have sibling->rb_left == parent by close() using {};
                                             let red_sibling_left = fold(rb_saved_link(&sid->rb_left), { model: RbSavedLink::Link(parent) });
                                             let { right: zr, left: zl } = unfold(sl);
                                             have tmp1 == zid by close();
                                             have separate(memory(tmp1->__rb_parent_color), memory(tmp1->rb_right)) by close();
                                             have separate(memory(tmp1->__rb_parent_color), memory(tmp1->rb_left)) by close();
                                             mark near_color;
-                                            step(); // Set the near child's black parent word.
+                                            step(rb_set_parent_color); // Set the near child's black parent word.
                                             have separate(statement(1).statement(1).statement(0).statement(3).footprint, memory(tmp1->rb_right)) by {
                                                 normalize() using { separate(memory(tmp1->__rb_parent_color), memory(tmp1->rb_right)); };
                                             }
@@ -4245,7 +4268,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                 preserve(memory(tmp1->rb_left), statement(1).statement(1).statement(0).statement(3));
                                             }
                                             have tmp1 == zid by { close(); }
-                                            have tmp1->__rb_parent_color == (address(parent) | 1) by { close(); }
+                                            have tmp1->__rb_parent_color == (address(parent) | 1) by close() using { tmp1->__rb_parent_color == (address(parent) | 1); };
                                             have zid->__rb_parent_color == (address(id) | 1) by { close() using { tmp1->__rb_parent_color == (address(parent) | 1); tmp1 == zid; parent == id; }; }
                                             have zid->__rb_parent_color == address(id) + 1 by { rewrite(zid->__rb_parent_color, (address(id) | 1)); close() using { aligned(id, 8); }; }
                                             have (zid->__rb_parent_color & 1) == 1 by { rewrite(zid->__rb_parent_color, (address(id) | 1)); normalize(); }
@@ -4277,6 +4300,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                             apply(ctx_node_is_identity(u.model, above));
                                             have ((parent->__rb_parent_color & ~3) as (struct rb_node *)) == above by close();
                                             let { after: u_after } = step(__rb_rotate_set_parents, { c: u });
+                                            have parent->__rb_parent_color == address(sibling) by close() using { parent->__rb_parent_color == address(sibling); };
                                             have contains((at(red_rotation, u) * memory(parent->__rb_parent_color)) * memory(at(iteration, id->rb_right as (uint64 *))[0]), statement(1).statement(1).statement(0).statement(4).footprint) by close();
                                             apply(separation::separate_star(at(red_rotation, u), memory(parent->__rb_parent_color), memory(tmp1->rb_right)));
                                             apply(separation::separate_star(at(red_rotation, u) * memory(parent->__rb_parent_color), memory(at(iteration, id->rb_right as (uint64 *))[0]), memory(tmp1->rb_right)));
@@ -4589,8 +4613,10 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                                 rewrite(at(inner_inputs, iid->rb_right), at(inner_inputs, tmp2->rb_right)); close();
                                                             }
                                                             step(); // Move that child under the old sibling.
+                                                            have sibling->rb_left == tmp1 by close() using {};
                                                             let kept_updated_sibling_left = fold(rb_saved_link(&zid->rb_left), { model: RbSavedLink::Link(tmp1) });
                                                             step(); // Put the old sibling under the red node.
+                                                            have tmp2->rb_right == sibling by close() using {};
                                                             let kept_updated_near_link = fold(rb_saved_link(&iid->rb_right), { model: RbSavedLink::Link(zid) });
                                                             step(); // Update the parent's child link.
                                                             unfold(kept_updated_near_link);
@@ -4704,6 +4730,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                             step(); // Attach the near child to the parent.
                                                             let outer_updated_parent_right = fold(rb_saved_link(&parent->rb_right), { model: RbSavedLink::Link(tmp2) });
                                                             step(); // Attach the parent under the sibling.
+                                                            have sibling->rb_left == parent by close() using {};
                                                             let outer_updated_sibling_link = fold(rb_saved_link(&iid->rb_left), { model: RbSavedLink::Link(parent) });
                                                             step(); // Blacken the far child.
                                                             unfold(outer_updated_sibling_link);
@@ -4929,6 +4956,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                         step(); // Attach the near child to the parent.
                                                         let direct_parent_right = fold(rb_saved_link(&parent->rb_right), { model: RbSavedLink::Link(tmp2) });
                                                         step(); // Attach the parent under the sibling.
+                                                        have sibling->rb_left == parent by close() using {};
                                                         step(); // Reparent and blacken the far child.
                                                         have tmp1->__rb_parent_color == (address(sibling) | 1) by close();
                                                         have rid->__rb_parent_color == (address(zid) | 1) by { close() using { tmp1->__rb_parent_color == (address(sibling) | 1); tmp1 == rid; sibling == zid; }; }
