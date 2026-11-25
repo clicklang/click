@@ -21141,8 +21141,10 @@ fn ambient_pointer_equality_expands_and_rechecks() {
     let expanded = expand_c_claim_source_by_label(source, &c_sources, claim)
         .expect("ambient equality should expand");
     assert!(!expanded.contains("normalize("), "{expanded}");
-    without_proof_search_for_claim(claim, || verify_c_sources(&expanded, &c_sources))
-        .expect("expanded proof should pass checked replay");
+    without_proof_search_for_claim(claim, || {
+        verify_c_sources(&expanded, &c_sources).map_err(|error| error.report())
+    })
+    .expect("expanded proof should pass checked replay");
     let missing = expanded.replace("b == c implies", "b == b implies");
     assert!(
         verify_c_sources(&missing, &c_sources).is_err(),
@@ -21168,8 +21170,10 @@ fn c_pointer_equality_expands_and_rechecks() {
     let expanded = expand_c_claim_source_by_label(source, &c_sources, claim)
         .expect("C pointer transitivity should expand");
     assert!(!expanded.contains("normalize("), "{expanded}");
-    without_proof_search_for_claim(claim, || verify_c_sources(&expanded, &c_sources))
-        .expect("expanded proof should pass checked replay");
+    without_proof_search_for_claim(claim, || {
+        verify_c_sources(&expanded, &c_sources).map_err(|error| error.report())
+    })
+    .expect("expanded proof should pass checked replay");
     for missing in ["requires a == b;", "requires b == c;"] {
         assert!(verify_c_sources(&expanded.replace(missing, ""), &c_sources).is_err());
     }
@@ -21201,8 +21205,10 @@ fn pointer_addition_expands_and_rechecks() {
     let expanded = expand_c_claim_source_by_label(source, &c_sources, claim)
         .expect("pointer addition congruence should expand");
     assert!(!expanded.contains("normalize("), "{expanded}");
-    without_proof_search_for_claim(claim, || verify_c_sources(&expanded, &c_sources))
-        .expect("expanded proof should pass checked replay");
+    without_proof_search_for_claim(claim, || {
+        verify_c_sources(&expanded, &c_sources).map_err(|error| error.report())
+    })
+    .expect("expanded proof should pass checked replay");
     assert!(verify_c_sources(&expanded.replace("requires a == b;", ""), &c_sources).is_err());
     assert!(verify_c_sources(&expanded.replace("b + 1;", "b + 2;"), &c_sources).is_err());
 }
@@ -21280,8 +21286,10 @@ fn int32_equality_expands_and_rechecks() {
     let expanded = expand_c_claim_source_by_label(source, &c_sources, claim)
         .expect("int32 transitivity should expand");
     assert!(!expanded.contains("normalize("), "{expanded}");
-    without_proof_search_for_claim(claim, || verify_c_sources(&expanded, &c_sources))
-        .expect("expanded proof should pass checked replay");
+    without_proof_search_for_claim(claim, || {
+        verify_c_sources(&expanded, &c_sources).map_err(|error| error.report())
+    })
+    .expect("expanded proof should pass checked replay");
     let (keep, _) = expanded
         .split_once("theorem choose")
         .expect("choose retained");
@@ -21361,8 +21369,10 @@ fn scaled_int32_expands_and_rechecks() {
     let expanded = expand_c_claim_source_by_label(source, &c_sources, claim)
         .expect("scaled equality should expand");
     assert!(!expanded.contains("normalize("), "{expanded}");
-    without_proof_search_for_claim(claim, || verify_c_sources(&expanded, &c_sources))
-        .expect("expanded proof should pass checked replay");
+    without_proof_search_for_claim(claim, || {
+        verify_c_sources(&expanded, &c_sources).map_err(|error| error.report())
+    })
+    .expect("expanded proof should pass checked replay");
     let (keep, _) = expanded.split_once("theorem choose").unwrap();
     for missing in ["requires i == j;", "requires j == k;"] {
         let changed = keep.replace(missing, "");
@@ -21395,8 +21405,10 @@ fn int32_addition_expands_and_rechecks_without_proving_definedness() {
     let expanded = expand_c_claim_source_by_label(source, &c_sources, claim)
         .expect("addition congruence should expand");
     assert!(!expanded.contains("normalize("), "{expanded}");
-    without_proof_search_for_claim(claim, || verify_c_sources(&expanded, &c_sources))
-        .expect("expanded proof should pass checked replay");
+    without_proof_search_for_claim(claim, || {
+        verify_c_sources(&expanded, &c_sources).map_err(|error| error.report())
+    })
+    .expect("expanded proof should pass checked replay");
     let (keep, _) = expanded.split_once("theorem offsets").unwrap();
     let missing = keep.replace("requires a == b;", "");
     assert_ne!(missing, keep);
@@ -21446,8 +21458,10 @@ fn int32_loads_expands_and_rechecks() {
     let expanded = expand_c_claim_source_by_label(source, &c_sources, claim)
         .expect("load congruence should expand");
     assert!(!expanded.contains("normalize("), "{expanded}");
-    without_proof_search_for_claim(claim, || verify_c_sources(&expanded, &c_sources))
-        .expect("expanded proof should pass checked replay");
+    without_proof_search_for_claim(claim, || {
+        verify_c_sources(&expanded, &c_sources).map_err(|error| error.report())
+    })
+    .expect("expanded proof should pass checked replay");
     let (keep, _) = expanded.split_once("theorem same_read").unwrap();
     let missing = keep.replace("requires i == j;", "");
     assert_ne!(missing, keep);
