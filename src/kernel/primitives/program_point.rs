@@ -1431,10 +1431,11 @@ enum LegacyPlace {
     /// On the point's own path, which it has.
     OwnPath,
     /// The memory is the state at this point, or a view of that state.
-    TrueAt(PathLink),
+    /// The point alone, without a link's view, keeps every read term small.
+    TrueAt(Arc<PointNode>),
     /// The legacy walk's memory for a read made at this point. It is the
     /// state of an earlier point the walk does not name, not this one's.
-    WalkedFrom(PathLink),
+    WalkedFrom(Arc<PointNode>),
     /// Built from a bare memory ([`ProgramPoint::unplaced`]): no claim.
     Unplaced,
 }
@@ -1625,8 +1626,8 @@ impl ProgramPoint {
 
     /// Where this point's memory belongs, for a point built from it.
     fn place(&self) -> LegacyPlace {
-        if self.path.id().is_some() {
-            return LegacyPlace::TrueAt(self.path.clone());
+        if let Some(node) = &self.path.0 {
+            return LegacyPlace::TrueAt(node.clone());
         }
         match &self.read {
             ReadSelection::Legacy(
@@ -1640,13 +1641,13 @@ impl ProgramPoint {
     /// The point on a path a read through this point was made at: the
     /// point's own path when it has one, else the place its memory was
     /// given. `None` for an unplaced point.
-    pub(crate) fn read_site(&self) -> Option<&PathLink> {
+    pub(crate) fn read_site(&self) -> Option<PathLink> {
         if self.path.id().is_some() {
-            return Some(&self.path);
+            return Some(self.path.clone());
         }
         match &self.read {
-            ReadSelection::Legacy(LegacyPlace::TrueAt(path) | LegacyPlace::WalkedFrom(path)) => {
-                Some(path)
+            ReadSelection::Legacy(LegacyPlace::TrueAt(node) | LegacyPlace::WalkedFrom(node)) => {
+                Some(PathLink(Some(node.clone()), IndexedView::Recorded))
             }
             _ => None,
         }
@@ -3360,5 +3361,16 @@ mod tests {
         };
         assert!(report.contains("program_point.rs"), "{report}");
         assert!(crate::kernel::mixed_read_names::capture(|| observe(&selected)).is_empty());
+    }
+}
+
+#[cfg(test)]
+mod size_tests {
+    /// A place costs a read term no size: it holds the point alone, and a
+    /// read term is held inline in every machine term.
+    #[test]
+    fn a_placed_point_is_no_larger_than_an_unplaced_one() {
+        assert!(std::mem::size_of::<super::ReadSelection>() <= 16);
+        assert!(std::mem::size_of::<super::ProgramPoint>() <= 64);
     }
 }
