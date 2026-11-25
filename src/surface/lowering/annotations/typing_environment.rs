@@ -38,6 +38,19 @@ impl<'a> TypingEnvironment<'a> {
         }
     }
 
+    /// The type of a name bound to an algebraic value: an algebraic binder's
+    /// declared type, or an outer algebraic binding's.
+    pub(super) fn algebraic_binding_click_type<Q: crate::surface::binders::BinderKey + ?Sized>(
+        &self,
+        name: &Q,
+    ) -> Option<ClickType> {
+        match self.binders.get(name) {
+            Some(click_type @ ClickType::Algebraic(_)) => Some(click_type.clone()),
+            Some(_) => None,
+            None => self.outer.algebraic_binding_click_type(name),
+        }
+    }
+
     /// Whether a name is bound to an algebraic value.
     pub(super) fn binding_is_algebraic<Q: crate::surface::binders::BinderKey + ?Sized>(
         &self,
