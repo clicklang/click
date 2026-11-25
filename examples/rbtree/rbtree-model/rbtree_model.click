@@ -1504,10 +1504,9 @@ theorem rb_parent_consistent_node(node: struct rb_node*, parent: struct rb_node*
     ensures rb_parent_consistent(RbTree::Node(node, parent, color, left, right), p) == 1 by {
         unfold(rb_parent_consistent(RbTree::Node(node, parent, color, left, right), p));
         rewrite(rb_node_is(parent, p), 1);
-        normalize() using {
-            rb_parent_consistent(left, node) == 1;
-            rb_parent_consistent(right, node) == 1;
-        };
+        rewrite(rb_parent_consistent(left, node), 1);
+        rewrite(rb_parent_consistent(right, node), 1);
+        close();
     }
 }
 
@@ -2034,13 +2033,15 @@ theorem ctx_consistent_left_up(identity: struct rb_node*, grandparent: struct rb
                 unfold(ctx_consistent(
                     Context::Left(identity, grandparent, color, sibling_model, up_model),
                     sub, root_parent));
-                normalize() using {
-                    rb_parent_consistent(sub, identity) == 1;
-                    rb_parent_consistent(sibling_model, identity) == 1;
-                    not(ctx_consistent(up_model,
-                        RbTree::Node(identity, grandparent, color, sub, sibling_model),
-                        root_parent) == 1);
-                };
+                rewrite(rb_parent_consistent(sub, identity), 1);
+                rewrite(rb_parent_consistent(sibling_model, identity), 1);
+                have (if ctx_consistent(up_model,
+                    RbTree::Node(identity, grandparent, color, sub, sibling_model), root_parent) == 1
+                    { 1 } else { 0 }) == 0 by close();
+                rewrite((if ctx_consistent(up_model,
+                    RbTree::Node(identity, grandparent, color, sub, sibling_model), root_parent) == 1
+                    { 1 } else { 0 }), 0);
+                close();
             }
             contradiction(ctx_consistent(
                 Context::Left(identity, grandparent, color, sibling_model, up_model),
@@ -2117,13 +2118,15 @@ theorem ctx_consistent_right_up(identity: struct rb_node*, grandparent: struct r
                 unfold(ctx_consistent(
                     Context::Right(identity, grandparent, color, sibling_model, up_model),
                     sub, root_parent));
-                normalize() using {
-                    rb_parent_consistent(sub, identity) == 1;
-                    rb_parent_consistent(sibling_model, identity) == 1;
-                    not(ctx_consistent(up_model,
-                        RbTree::Node(identity, grandparent, color, sibling_model, sub),
-                        root_parent) == 1);
-                };
+                rewrite(rb_parent_consistent(sub, identity), 1);
+                rewrite(rb_parent_consistent(sibling_model, identity), 1);
+                have (if ctx_consistent(up_model,
+                    RbTree::Node(identity, grandparent, color, sibling_model, sub), root_parent) == 1
+                    { 1 } else { 0 }) == 0 by close();
+                rewrite((if ctx_consistent(up_model,
+                    RbTree::Node(identity, grandparent, color, sibling_model, sub), root_parent) == 1
+                    { 1 } else { 0 }), 0);
+                close();
             }
             contradiction(ctx_consistent(
                 Context::Right(identity, grandparent, color, sibling_model, up_model),
