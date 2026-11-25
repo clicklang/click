@@ -3377,7 +3377,7 @@ pub(in crate::surface) fn tactic_name(tactic: &ProofTactic) -> &'static str {
         ProofTactic::CheckTerminationCallbacks => "check_termination_callbacks",
         ProofTactic::Close => "close",
         ProofTactic::Known => "known",
-        ProofTactic::CloseBounds(_) => "close() using bounds",
+        ProofTactic::CloseBounds(_) => "close",
         ProofTactic::Normalize
         | ProofTactic::NormalizeUsing(_)
         | ProofTactic::CompatibilityNormalize(_) => "normalize",
