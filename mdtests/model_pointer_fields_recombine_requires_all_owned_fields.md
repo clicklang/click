@@ -34,7 +34,7 @@ void recombine(struct node *p) {
  unfold(links(qid));
  let check = fold(fields(qid), { model: Identity::At(qid) });
  unfold(check);
- step_until(function.exit); normalize();
+ step_until(function.exit); close();
  }, }
 }
 ```

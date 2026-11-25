@@ -14,7 +14,7 @@ uint64 remain(uint64 n, uint64 x) { requires x != 0u64; ensures true; }
 theorem odd_product(x: uint32) {
     requires x != 0u32;
     ensures ((x * 3u32) as uint32) != 0u32 by {
-        normalize() using { x != 0u32; };
+        close() using { x != 0u32; };
     }
 }
 ```

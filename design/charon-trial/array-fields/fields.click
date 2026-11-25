@@ -17,25 +17,25 @@ fn write(state: &mut Lanes, index: usize, value: u32) {
     have (index as uint32 as int32) == 1 by { rewrite(index, 1u64); close(); }
     have separate(memory((((state as (void *)) as (uint32 *)) + index)[0..1]), memory(state.marker)) by {
         rewrite(index, 1u64);
-        normalize();
+        close();
     }
     have separate(memory((((state as (void *)) as (uint32 *)) + index)[0..1]), memory(*(((state as (void *)) as (uint32 *)) + 0u64))) by {
         rewrite(index, 1u64);
-        normalize();
+        close();
     }
     have separate(
         memory((((state as (void *)) as (uint32 *)) + index)[0..1]),
         memory(*(((state as (void *)) as (uint32 *)) + 2u64))
     ) by {
         rewrite(index, 1u64);
-        normalize();
+        close();
     }
     have separate(
         memory((((state as (void *)) as (uint32 *)) + index)[0..1]),
         memory(*(((state as (void *)) as (uint32 *)) + 3u64))
     ) by {
         rewrite(index, 1u64);
-        normalize();
+        close();
     }
     step_until(statement(0).region(5).entry);
     step();

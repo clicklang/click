@@ -86,7 +86,7 @@ void set_parent_black(struct rb_node* node, struct rb_node* old_parent, struct r
             let { left: l, right: r } = unfold(t);
             have color_bit(Color::Red) == 0 by {
                 unfold(color_bit(Color::Red));
-                normalize();
+                close();
             }
             step_until(function.exit);
             let u = fold(rb_at(node), {

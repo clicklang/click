@@ -45,7 +45,7 @@ void poke(uint8* s, uint64 n) {
             }
         }
     }
-    have n != 0u64 by { close() using { 0u64 < n; }; }
+    have n != 0u64 by { normalize() using { 0u64 < n; }; }
     have separate(memory(s[n]), memory(s[0u64])) by {
         apply(click::separation::separate_elements(s, n, 0u64));
     }

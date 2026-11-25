@@ -4,7 +4,7 @@
 theorem unknown_count(flag: Bool, z: uint64, w: uint64) {
     requires flag;
     ensures (if flag { z >> w } else { z }) == z by {
-        normalize() using { flag; };
+        close() using { flag; };
     }
 }
 ```

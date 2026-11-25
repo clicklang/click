@@ -41,7 +41,30 @@ int32 set_before_terminator(
 } by {
     unfold(terminated(data, length));
     step();
-    have data[length] == 0;
+    have data[length] == 0 by {
+        have length != index by {
+            if index == length {
+                have not (index < length) by {
+                    rewrite(index, length);
+                    normalize();
+                }
+                contradiction(index < length);
+            } else {
+                close();
+            }
+        }
+        have separate(memory(data[index]), memory(data[length])) by {
+            apply(click::separation::separate_elements(data, index, length));
+        }
+        have separate(statement(0).footprint, memory(data[length])) by {
+            normalize() using { separate(memory(data[index]), memory(data[length])); };
+        }
+        have data[length] == at(statement(0).entry, data[length]) by {
+            preserve(memory(data[length]), statement(0));
+        }
+        rewrite(data[length], at(statement(0).entry, data[length]));
+        close();
+    }
     have terminated(data, length) by {
         unfold(terminated(data, length));
         close();

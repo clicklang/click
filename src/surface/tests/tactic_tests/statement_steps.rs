@@ -2,8 +2,34 @@ use super::*;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
 #[test]
+fn pure_proofs_use_rewrite_instead_of_transport_using() {
+    let source = r#"
+        theorem transfer(a: int32, b: int32) {
+            requires a == 1;
+            requires a == b;
+            ensures b == 1 by {
+                rewrite(b, a);
+                close();
+            }
+        }
+    "#;
+    verify_c_sources(source, &[]).unwrap();
+    let retired = source.replace(
+        "rewrite(b, a);\n                close();",
+        "transport(a == 1, b == 1) using { a == 1; a == b; };",
+    );
+    let error = verify_c_sources(&retired, &[]).unwrap_err();
+    assert!(
+        error
+            .message()
+            .contains("`transport ... using` is retired in pure proofs"),
+        "{error}"
+    );
+}
+
+#[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by statement_steps_batch_00")]
-fn proof_step_supports_explicit_fact_transport() {
+fn proof_step_supports_explicit_preservation() {
     let c_source = r#"
             int32 set_second_return_first(int32 p[2]) {
                 p[1] = 9;
@@ -24,8 +50,11 @@ fn proof_step_supports_explicit_fact_transport() {
             } by {
                 unfold(first_is_seven(p));
                 step();
-                transport(old(p[0]) == 7, p[0] == 7) using {
-                    old(p[0]) == 7;
+                have separate(statement(0).footprint, memory(p[0])) by { close(); }
+                have p[0] == old(p[0]) by { preserve(memory(p[0]), statement(0)); }
+                have p[0] == 7 by {
+                    rewrite(p[0], old(p[0]));
+                    close();
                 }
                 step();
                 close();
@@ -33,34 +62,17 @@ fn proof_step_supports_explicit_fact_transport() {
         "#;
 
     verify_c_sources(click_source, &[("transport.c", c_source)])
-        .expect("explicit fact transport should verify");
-
-    let missing_source = click_source.replace(
-        "transport(old(p[0]) == 7, p[0] == 7) using {
-                    old(p[0]) == 7;
-                }",
-        "transport(old(p[0]) == 7, p[0] == 7) using {}",
+        .expect("explicit field preservation should verify");
+    let missing_separation = click_source.replace(
+        "have separate(statement(0).footprint, memory(p[0])) by { close(); }",
+        "",
     );
-    let error = verify_c_sources(&missing_source, &[("transport.c", c_source)])
-        .expect_err("explicit transport must not borrow its logical source from ambient facts");
+    let error = verify_c_sources(&missing_separation, &[("transport.c", c_source)])
+        .expect_err("preserve requires its exact footprint separation");
     assert!(
         error
             .message()
-            .contains("requires a source derivable from its explicit facts"),
-        "{}",
-        error.message()
-    );
-    // The source is available, only unlisted: the refusal names it as
-    // written and does not print it as missing beside the facts holding it.
-    assert!(
-        error.message().contains(
-            "its source `old(p[0]) == 7` is an available fact, but this check reads only the facts listed in `using`"
-        ),
-        "{}",
-        error.message()
-    );
-    assert!(
-        !error.message().contains("available pure facts"),
+            .contains("preserve separation is not exactly available"),
         "{}",
         error.message()
     );
@@ -68,7 +80,7 @@ fn proof_step_supports_explicit_fact_transport() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by statement_steps_batch_00")]
-fn explicit_fact_transport_can_certify_a_derived_source() {
+fn explicit_preservation_can_use_a_derived_source() {
     let c_source = r#"
             int32 set_third_return_second(int32 p[3]) {
                 p[2] = 9;
@@ -89,35 +101,25 @@ fn explicit_fact_transport_can_certify_a_derived_source() {
             } by {
                 unfold(ordered(p));
                 step();
-                transport(0 <= old(p[1]), 0 <= p[1]) using {
-                    0 <= old(p[0]);
-                    old(p[0]) <= old(p[1]);
-                };
+                have 0 <= old(p[1]) by {
+                    close() using { 0 <= old(p[0]); old(p[0]) <= old(p[1]); };
+                }
+                have separate(statement(0).footprint, memory(p[1])) by { close(); }
+                have p[1] == old(p[1]) by { preserve(memory(p[1]), statement(0)); }
+                have 0 <= p[1] by {
+                    rewrite(p[1], old(p[1]));
+                    close();
+                }
                 step();
                 close();
             }
         "#;
 
-    // A bare `transport` cites only its source, which is derived here, not
-    // available: the facts that derive it are written in `using`.
-    let bare = click_source.replace(
-        "transport(0 <= old(p[1]), 0 <= p[1]) using {\n                    0 <= old(p[0]);\n                    old(p[0]) <= old(p[1]);\n                };",
-        "transport(0 <= old(p[1]), 0 <= p[1]);",
-    );
-    assert_ne!(bare, click_source);
-    let error = verify_c_sources(&bare, &[("transport.c", c_source)])
-        .expect_err("a bare transport does not search for the facts deriving its source");
-    assert!(
-        error.message().contains("search miss"),
-        "{}",
-        error.message()
-    );
-
     let (verified, planning_transitions) = collect_planning_statement_transitions(|| {
         verify_c_sources(click_source, &[("transport.c", c_source)])
     });
     let verified =
-        verified.expect("transport should certify a source derived from exact state facts");
+        verified.expect("preservation should carry a source derived from exact state facts");
     assert!(
         planning_transitions
             .iter()
@@ -149,9 +151,6 @@ fn explicit_fact_transport_can_certify_a_derived_source() {
     assert!(rewritten.contains("step();"), "{rewritten}");
     verify_c_sources(&rewritten, &[("transport.c", c_source)])
         .expect("the rewritten raw-memory step should verify normally");
-
-    // A bare step names no premise list to corrupt; the transport's own
-    // explicit premise remains the independently checked evidence.
 }
 
 #[test]
@@ -1534,8 +1533,8 @@ test_batches! {
     file: "statement_steps.rs",
     marker: "statement_steps_batch_",
     statement_steps_batch_00: [
-        proof_step_supports_explicit_fact_transport,
-        explicit_fact_transport_can_certify_a_derived_source,
+        proof_step_supports_explicit_preservation,
+        explicit_preservation_can_use_a_derived_source,
         smart_step_starts_each_source_tactic_with_an_empty_step_delta,
         simple_statement_transition_does_not_transport_facts_automatically,
     ],

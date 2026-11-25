@@ -22,7 +22,7 @@ theorem t(n: int32) {
         let ih = induct(n);
         if n <= 0 {
             unfold(cd(n));
-            normalize() using { n <= 0; };
+            close() using { n <= 0; };
         } else {
             apply(ih(n - 1));
             unfold(cd(n));

@@ -8,7 +8,7 @@ names the constructor and asks for the written form.
 theorem append_nothing(xs: List<int32>) {
     ensures xs == xs by {
         unfold(list::append(List::Nil, List::Nil));
-        normalize();
+        close();
     }
 }
 ```

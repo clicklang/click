@@ -86,7 +86,7 @@ int32 owned_split_buffer_set_left(
     have contains(memory(owner->data[0..owner->len]), memory(owner->data[index])) by {
         apply(separation::contains_element(owner->data, 0, owner->len, index));
     }
-    have contains(memory(*owner), memory(owner->data)) by { normalize(); }
+    have contains(memory(*owner), memory(owner->data)) by { close(); }
     have separate(memory(owner->data), memory(owner->data[index])) by {
         apply(separation::separate_restrict(memory(*owner), memory(owner->data[0..owner->len]),
             memory(owner->data), memory(owner->data[index])));
@@ -137,7 +137,7 @@ int32 owned_split_buffer_set_right(
     have contains(memory(owner->data[0..owner->len]), memory(owner->data[index])) by {
         apply(separation::contains_element(owner->data, 0, owner->len, index));
     }
-    have contains(memory(*owner), memory(owner->data)) by { normalize(); }
+    have contains(memory(*owner), memory(owner->data)) by { close(); }
     have separate(memory(owner->data), memory(owner->data[index])) by {
         apply(separation::separate_restrict(memory(*owner), memory(owner->data[0..owner->len]),
             memory(owner->data), memory(owner->data[index])));

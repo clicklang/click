@@ -4694,10 +4694,12 @@ pub(crate) fn float_corner_bound_weakening(
 pub(crate) enum FloatScaleOperation {
     MultiplyLeft,
     MultiplyRight,
-    Divide,
+    DividePositive,
+    DivideNegative,
 }
 
-/// Rounded float32 multiplication or division by a positive finite literal.
+/// Rounded float32 multiplication by a positive finite literal or division
+/// by a nonzero finite literal.
 pub(crate) fn float_scale_bound_weakening(
     source: &Proposition,
     goal: &Proposition,
@@ -4709,16 +4711,17 @@ pub(crate) fn float_scale_bound_weakening(
         operator,
         literal,
         literal_on_left,
-        increasing: true,
+        increasing,
     } = operation
     else {
         return None;
     };
     use crate::kernel::FloatBinaryOperator::{Divide, Multiply};
-    let scale = match (operator, literal_on_left) {
-        (Multiply, true) => FloatScaleOperation::MultiplyLeft,
-        (Multiply, false) => FloatScaleOperation::MultiplyRight,
-        (Divide, false) => FloatScaleOperation::Divide,
+    let scale = match (operator, literal_on_left, increasing) {
+        (Multiply, true, true) => FloatScaleOperation::MultiplyLeft,
+        (Multiply, false, true) => FloatScaleOperation::MultiplyRight,
+        (Divide, false, true) => FloatScaleOperation::DividePositive,
+        (Divide, false, false) => FloatScaleOperation::DivideNegative,
         _ => return None,
     };
     if result.format != KernelFloatType::Float32

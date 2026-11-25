@@ -71,7 +71,10 @@ int32 read_back(int32 u) {
                 apply(separation::separate_restrict(memory(buf[1..4]), memory(buf[0..1]),
                     memory(buf[u..u + 1]), memory(buf[0])));
             }
-            have contains(memory(buf[u..u + 1]), memory(buf[u])) by { normalize(); }
+            have contains(memory(buf[u..u + 1]), memory(buf[u])) by {
+                have u < (u + 1) by { close(); }
+                apply(separation::contains_element(buf, u, u + 1, u));
+            }
             have contains(memory(buf[0]), memory(buf[0])) by { close(); }
             have separate(memory(buf[u]), memory(buf[0])) by {
                 apply(separation::separate_restrict(memory(buf[u..u + 1]), memory(buf[0]),
@@ -117,7 +120,10 @@ int32 read_back_stepped(int32 u) {
                 apply(separation::separate_restrict(memory(buf[1..4]), memory(buf[0..1]),
                     memory(buf[u..u + 1]), memory(buf[0])));
             }
-            have contains(memory(buf[u..u + 1]), memory(buf[u])) by { normalize(); }
+            have contains(memory(buf[u..u + 1]), memory(buf[u])) by {
+                have u < (u + 1) by { close(); }
+                apply(separation::contains_element(buf, u, u + 1, u));
+            }
             have contains(memory(buf[0]), memory(buf[0])) by { close(); }
             have separate(memory(buf[u]), memory(buf[0])) by {
                 apply(separation::separate_restrict(memory(buf[u..u + 1]), memory(buf[0]),

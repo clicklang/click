@@ -9,10 +9,8 @@ use crate::surface::proof_diagnostics::render;
 
 /// The premises a bare `transport` writes: its source, when that is an
 /// available fact and carries the target, or none when the target already
-/// follows without it. No other available fact is a candidate: a frame that
-/// needs more premises is written as `transport(P, Q) using { ... }`, and the
-/// bare form's miss says so. The final `TransportUsing` step checks all the
-/// ordinary frame routes.
+/// follows without it. This planner does not select additional premises.
+/// The ordinary proof route checks the selected frame evidence.
 #[allow(clippy::too_many_arguments)]
 pub(in crate::surface::proof) fn plan_explicit_fact_transport(
     surface_source: &SurfaceProposition,
@@ -116,9 +114,8 @@ pub(in crate::surface::proof) fn plan_explicit_fact_transport(
             || check_premises(selected),
         )
     };
-    // The candidate is the source alone. Search over the other available
-    // facts is gone: a premise the frame needs beyond the source is written
-    // in the `using` form, which this planner never scans for.
+    // The source is the only candidate. State any additional facts in an
+    // ordinary proof before applying preservation or rewriting.
     if !checks(&selected) {
         let _render_timing = crate::instrumentation::OperationTiming::new(
             "surface",
@@ -958,10 +955,8 @@ pub(in crate::surface::proof) fn fact_transport_planning_failure(
 }
 
 /// The line a bare `transport` adds when its premise planner finds no frame
-/// evidence. The planner is a search, so finding nothing is a search miss:
-/// the fix is the evidence written in the explicit form, which searches
-/// nothing and whose refusal is the frame check's own.
-const TRANSPORT_SEARCH_MISS: &str = "\n  this is a search miss, not a refusal; if the target holds, list the facts that carry the source in `transport(P, Q) using { ... }`, stating any that is not available with `have` first";
+/// evidence. A proof can name the missing links with ordinary steps.
+const TRANSPORT_SEARCH_MISS: &str = "\n  this is a search miss, not a refusal; use `have` to state the facts that carry the source, `preserve` to prove unchanged reads across named footprints, and `rewrite` to relate those reads";
 
 /// Erases every embedded memory state from a comparison proposition so
 /// two forms of the same comparison at different states compare

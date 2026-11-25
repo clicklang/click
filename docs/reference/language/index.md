@@ -4319,9 +4319,9 @@ is still written `program::result` inside `at(...)` or `old(...)`.
 available where `result` is: in a postcondition and in a proof step after
 execution has returned, where it is the current path's state. It is refused
 before the return. Each returned path has its own `result`, so
-`transport(at(function.exit, P), P) using { }` closes a `result` goal on a
-path whose own state proves it, and expansion writes that step on each such
-path (`mdtests/a_returned_path_transports_a_result_goal_from_function_exit.md`,
+`transport(at(function.exit, P), P)` can close a `result` goal on a path
+whose own state proves it. Expansion can write the ordinary proof on each
+such path (`mdtests/a_returned_path_transports_a_result_goal_from_function_exit.md`,
 `mdtests/a_function_exit_point_before_the_return_is_refused.md`,
 `mdtests/a_function_exit_transport_of_a_false_result_claim_is_refused.md`).
 

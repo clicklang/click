@@ -67,7 +67,7 @@ int32 through_parameter(int32* a, int32 u) {
 } by {
     step(); step();
     have a[0] == 5 by { close(); }
-    have u != 0 by { close() using { 1 <= u; }; }
+    have u != 0 by { normalize() using { 1 <= u; }; }
     have separate(memory(a[u]), memory(a[0])) by {
         apply(separation::separate_elements(a, u, 0));
     }

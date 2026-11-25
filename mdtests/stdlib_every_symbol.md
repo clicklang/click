@@ -29,6 +29,9 @@ and `float_order::float32_scale_right_upper` are exercised in
 The rounded division bounds `float_order::float32_divide_positive_lower` and
 `float_order::float32_divide_positive_upper` are exercised in
 [`float_division_by_positive_literal.md`](float_division_by_positive_literal.md).
+The negative-divisor bounds `float_order::float32_divide_negative_lower` and
+`float_order::float32_divide_negative_upper` are exercised in
+[`float_division_by_negative_literal.md`](float_division_by_negative_literal.md).
 The rounded subtraction bounds `float_order::float32_sub_lower`,
 `float_order::float32_sub_upper`, `float_order::float64_sub_lower`, and
 `float_order::float64_sub_upper` are exercised in

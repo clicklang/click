@@ -225,8 +225,9 @@ expansion output.
   current statement frontier. Conditions use framing; structural memory facts
   such as `viewable(...)` use the certified execution effects. Like `apply`,
   this bare form is smart.
-- `transport(source, target) using { P; ... }`: the simple, exact-premise
-  form of the same rule.
+- `preserve(resource, region)`: use exact footprint separation to prove a
+  selected read unchanged across the named region. Use the equality in a
+  `rewrite` to carry the fact to the current point.
 - `close() using { Q; ... }`: smart simplification restricted to exactly the
   listed proposition facts. It tries arithmetic over them last, and a miss
   adds arithmetic's reason. `close() using {}` reads no facts from the

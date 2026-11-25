@@ -19,8 +19,8 @@ void insert::rb_set_parent_color(struct rb_node* rb, struct rb_node* p, int32 co
         },
         SizedTree::Node(identity, before, shade, value, left_model, right_model) => {
             let { metadata: metadata, left: left, right: right } = unfold(tree);
-            have 0 <= color by { rewrite(color, 1); normalize(); }
-            have color <= 1 by { rewrite(color, 1); normalize(); }
+            have 0 <= color by { rewrite(color, 1); close(); }
+            have color <= 1 by { rewrite(color, 1); close(); }
             step();
             have rb->__rb_parent_color == address(p) + 1 by {
                 rewrite(color, 1);

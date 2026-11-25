@@ -7,8 +7,8 @@ theorem scoped_conversion() {
     ensures 0 == 0 by {
         have forall (k: int32) {
             0 <= k and k <= 256 implies to_uint8(to_integer(k)) == to_uint8(to_integer(k))
-        } by { intro() { intro() { normalize(); } } }
-        normalize();
+        } by { intro() { intro() { close(); } } }
+        close();
     }
 }
 ```

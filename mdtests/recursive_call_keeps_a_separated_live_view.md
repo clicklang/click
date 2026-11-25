@@ -32,6 +32,8 @@ int32 caller(struct node* p, const int32* slot) {
         requires separate(list(p), memory(*slot)) by close();
     }
     step();
+    have result == old(*slot) by { normalize() using {}; }
+    close();
 }
 ```
 

@@ -79,21 +79,21 @@ void probe(struct node *p, struct root *root) {
   mark before_detach;
   step();
   have separate(statement(7).footprint, memory(rid->left)) by {
-   normalize() using { separate(memory(cursor->left), memory(rid->left)); };
+   close() using { separate(memory(cursor->left), memory(rid->left)); };
   }
   have rid->left == at(before_detach, rid->left) by {
    preserve(memory(rid->left), statement(7));
   }
   have rid->left == 0 by { rewrite(rid->left, at(before_detach, rid->left)); close(); }
   have separate(statement(7).footprint, memory(nid->right)) by {
-   normalize() using { separate(memory(cursor->left), memory(nid->right)); };
+   close() using { separate(memory(cursor->left), memory(nid->right)); };
   }
   have nid->right == at(before_detach, nid->right) by {
    preserve(memory(nid->right), statement(7));
   }
   have nid->right == 0 by { rewrite(nid->right, at(before_detach, nid->right)); close(); }
   have separate(memory(rid->left), memory(near->right)) by {
-   rewrite(near, rid); normalize();
+   rewrite(near, rid); close();
   }
   have separate(memory(nid->right), memory(near->right)) by {
    rewrite(near, rid); close();
@@ -103,14 +103,14 @@ void probe(struct node *p, struct root *root) {
   have near->right == cursor by { close(); }
   have rid->right == cursor by { rewrite(rid, near); close(); }
   have separate(statement(8).footprint, memory(rid->left)) by {
-   normalize() using { separate(memory(rid->left), memory(near->right)); };
+   close() using { separate(memory(rid->left), memory(near->right)); };
   }
   have rid->left == at(before_attach, rid->left) by {
    preserve(memory(rid->left), statement(8));
   }
   have rid->left == 0 by { rewrite(rid->left, at(before_attach, rid->left)); close(); }
   have separate(statement(8).footprint, memory(nid->right)) by {
-   normalize() using { separate(memory(nid->right), memory(near->right)); };
+   close() using { separate(memory(nid->right), memory(near->right)); };
   }
   have nid->right == at(before_attach, nid->right) by {
    preserve(memory(nid->right), statement(8));

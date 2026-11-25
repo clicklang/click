@@ -516,7 +516,7 @@ int tree_contains(struct tree_node* root, struct tree_node* target) {
                         } else {
                             have (heap_member(left_model, target) as int32) == 0 by {
                                 rewrite(heap_member(left_model, target), false);
-                                normalize();
+                                close();
                             }
                             contradiction((heap_member(left_model, target) as int32) == 0);
                         }
@@ -534,7 +534,7 @@ int tree_contains(struct tree_node* root, struct tree_node* target) {
                 if heap_member(left_model, target) {
                     have (heap_member(left_model, target) as int32) != 0 by {
                         rewrite(heap_member(left_model, target), true);
-                        normalize();
+                        close();
                     }
                     contradiction((heap_member(left_model, target) as int32) == 0);
                 } else {

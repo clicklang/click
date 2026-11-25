@@ -33,12 +33,12 @@ int h(uint8 raw[]) {
     branch {
         true => {
             step();
-            normalize();
+            close();
         }
         false => {}
     }
     step() {
-        requires separate(memory((dst as (uint8 *))[0..4]), memory(raw[0..4])) by { normalize(); }
+        requires separate(memory((dst as (uint8 *))[0..4]), memory(raw[0..4])) by { close(); }
     }
 }
 ```

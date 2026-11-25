@@ -3675,9 +3675,16 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         else {
             return Ok(None);
         };
-        let Some(proved) = attempt::candidate_outcome(scope.driver().apply_step(
-            ProofStep::CompatibilityNormalize(Some(vec![condition.clone()])),
-        ))?
+        let Some(rewritten) = attempt::candidate_outcome(
+            scope
+                .driver()
+                .apply_step(ProofStep::Rewrite(condition.clone())),
+        )?
+        else {
+            return Ok(None);
+        };
+        let Some(proved) =
+            attempt::candidate_outcome(rewritten.driver().apply_step(ProofStep::Known))?
         else {
             return Ok(None);
         };
@@ -4147,7 +4154,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_float_scale_bound");
         use crate::kernel::proof::arithmetic_special::{
-            FloatScaleOperation, float_scale_bound_weakening,
+            FloatScaleOperation::{DivideNegative, DividePositive, MultiplyLeft, MultiplyRight},
+            float_scale_bound_weakening,
         };
         let Some((plan, factor, scale)) = float_scale_bound_weakening(source, goal) else {
             return Ok(None);
@@ -4156,7 +4164,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let Some((left, right)) = surface_nonstrict_parts(&source_order) else {
             return Ok(None);
         };
-        let (x, endpoint) = if plan.lower {
+        let reverse = matches!(scale, DivideNegative);
+        let (x, endpoint) = if plan.lower != reverse {
             (right, left)
         } else {
             (left, right)
@@ -4172,26 +4181,32 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             expression: factor.clone(),
             classification: syntax::CFloatClassification::Finite,
         };
-        let positive = SurfaceProposition::Comparison {
-            left: literal(0),
-            operator: ComparisonOperator::LessThan,
-            right: factor.clone(),
+        let (sign_left, sign_right) = if reverse {
+            (factor.clone(), literal(0))
+        } else {
+            (literal(0), factor.clone())
         };
-        use FloatScaleOperation::{Divide, MultiplyLeft, MultiplyRight};
+        let sign = SurfaceProposition::Comparison {
+            left: sign_left,
+            operator: ComparisonOperator::LessThan,
+            right: sign_right,
+        };
         let name = match (scale, plan.lower) {
             (MultiplyLeft, true) => "float32_scale_lower",
             (MultiplyLeft, false) => "float32_scale_upper",
             (MultiplyRight, true) => "float32_scale_right_lower",
             (MultiplyRight, false) => "float32_scale_right_upper",
-            (Divide, true) => "float32_divide_positive_lower",
-            (Divide, false) => "float32_divide_positive_upper",
+            (DividePositive, true) => "float32_divide_positive_lower",
+            (DividePositive, false) => "float32_divide_positive_upper",
+            (DivideNegative, true) => "float32_divide_negative_lower",
+            (DivideNegative, false) => "float32_divide_negative_upper",
         };
         let application = ProofStep::ApplyPlannedTheorem {
             application: TheoremApplication {
                 name: format!("click::float_order::{name}"),
                 arguments: vec![factor, x, endpoint],
             },
-            premises: vec![source_surface.clone(), finite, positive],
+            premises: vec![source_surface.clone(), finite, sign],
         };
         let Some(proof) = attempt::candidate_outcome(input.driver().apply_step(
             super::super::wide_arithmetic::have(intermediate.clone(), vec![application]),
@@ -4775,11 +4790,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                             operator,
                             right: right.clone(),
                         };
-                        if let Some(proof) =
-                            attempt::candidate_outcome(search_input.driver().apply_step(
-                                ProofStep::CompatibilityNormalize(Some(vec![premise])),
-                            ))?
-                        {
+                        if let Some(proof) = attempt::candidate_outcome(
+                            search_input
+                                .driver()
+                                .apply_step(ProofStep::NormalizeUsing(vec![premise])),
+                        )? {
                             return Ok(Some(proof));
                         }
                     }
