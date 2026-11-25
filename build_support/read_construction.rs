@@ -201,7 +201,7 @@ const BASELINE: &[(&str, Form, usize)] = &[
         1,
     ),
     (
-        "src/surface/proof/fixed_state_proofs/fact_transport.rs",
+        "src/surface/proof/fixed_state_proofs/path_condition.rs",
         Form::UnplacedPoint,
         1,
     ),

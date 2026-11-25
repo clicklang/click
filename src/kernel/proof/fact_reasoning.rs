@@ -3385,21 +3385,6 @@ fn bridged_with_origins<S: ScalarReadBridgeSide>(
     false
 }
 
-/// The chain closure with origin-unchanged implicit edges. Two load variables
-/// additionally connect when the loads they represent are
-/// provably unchanged between their origin states under the supplied
-/// assumptions (call effect summaries and frame evidence). Reserved for
-/// once-per-tactic consumers such as explicit transport and rewrite premise
-/// checks — the unchanged proof is assumption-based and must stay off hot
-/// fact paths.
-pub(crate) fn premise_bridged_by_load_variable_chain_with_origins(
-    premise: &Proposition,
-    facts: &[Proposition],
-    assumptions: &PureFactContext,
-) -> bool {
-    load_variable_bridge(premise, facts, assumptions, |_| false)
-}
-
 /// A planner probe charges edge visits and origin comparisons to the active
 /// search budget. Its answer has no checking authority.
 pub(in crate::kernel) fn plan_load_variable_bridge(

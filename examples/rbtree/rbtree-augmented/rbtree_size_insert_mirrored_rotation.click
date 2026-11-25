@@ -241,7 +241,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     have p->rb_left == g by close();
                     have parent == p by { close(); }
                     have parent->__rb_parent_color == 1 by close();
-                    transport(parent->__rb_parent_color == 1, p->__rb_parent_color == 1);
+                    have p->__rb_parent_color == 1 by { close(); }
                     have ((p->__rb_parent_color & ~3) as (struct rb_node *)) == 0 by {
                         rewrite(p->__rb_parent_color, 1); normalize();
                     }

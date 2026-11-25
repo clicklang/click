@@ -1,18 +1,14 @@
 use super::*;
 
 pub(in crate::surface) mod conversion_conditions;
-mod fact_transport;
 mod have_proofs;
+mod path_condition;
 mod theorem_application;
 
 use conversion_conditions::{
     StatedForm, StatedSite, describe_dropped_fold_body, refuse_unproved_conversion_bounds,
 };
 
-pub(super) use fact_transport::{
-    check_fixed_state_fact_transport, fact_transport_planning_failure, path_condition_equivalent,
-    plan_explicit_fact_transport,
-};
 pub(super) use have_proofs::{
     FixedStateLowering, capture_fixed_state_algebraic_expression,
     capture_fixed_state_algebraic_expression_with_values, capture_fixed_state_algebraic_value,
@@ -40,4 +36,5 @@ pub(in crate::surface) use have_proofs::{
     lower_fixed_state_proposition_through_kernel_with_introductions, lower_stated_proposition,
     lower_stated_proposition_retaining_requirements,
 };
+pub(super) use path_condition::path_condition_equivalent;
 pub(super) use theorem_application::*;

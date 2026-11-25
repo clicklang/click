@@ -2210,8 +2210,6 @@ thread_local! {
 #[path = "../driver/obligations.rs"]
 mod driver;
 
-mod search;
-
 /// Where the statement at the frontier leaves the result a `step` binds.
 enum FrontierResult {
     /// The local it assigns.

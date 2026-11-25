@@ -449,14 +449,6 @@ struct ClosureDistinctnessFailure {
 pub(crate) enum ClosureFactCheck {
     /// Whether a bare condition target holds in the selected live context.
     ConditionTarget,
-    /// Whether a load-variable chain through the listed facts bridges the
-    /// target.
-    LoadVariableBridge,
-    /// Whether the certified reachability walk carries the source to the
-    /// target.
-    Reachability,
-    /// Whether the quantified frame carries the source to the target.
-    QuantifiedFrame,
 }
 
 /// A fact-transport check that failed inside one smart closure: its exact
@@ -638,7 +630,7 @@ fn closure_failure_memo_answers_a_repeated_failure_once() {
     let runs = std::cell::Cell::new(0);
     let check = |answer: bool| {
         closure_memoized_fact_check(
-            ClosureFactCheck::Reachability,
+            ClosureFactCheck::ConditionTarget,
             &[&source, &target],
             None,
             &assumptions,

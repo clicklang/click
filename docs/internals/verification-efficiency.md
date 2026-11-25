@@ -474,14 +474,6 @@ charged to visible semantic output rather than hidden ambient state:
   claims, unrelated functions, or globally declared theorems.
 - Termination height inference reads the forward call closure of the run once
   (see [Termination heights and local descent](#termination-heights-and-local-descent)).
-- An explicit fold read frame (`src/kernel/fold_read_summary.rs`) walks the
-  recorded memory history between the two array states and decides each
-  crossed step once from its own write set; the crossed steps are its output
-  (`explicit_fold_read_transport_along_a_store_sequence_is_near_linear`).
-- An explicit quantified frame (`src/kernel/quantified_frame.rs`) walks source
-  and target once in parallel, renames each binder once, and asks one checked
-  load-history question per differing read; it never instantiates a
-  quantifier (`quantified_frame_is_near_linear_in_unrelated_facts`).
 - Typed range membership of an unsigned 64-bit index in a range with
   constant bounds (`PointerInRangeEvidence::UnsignedIndexed`) builds at most
   four forms of the bound and looks each up exactly.

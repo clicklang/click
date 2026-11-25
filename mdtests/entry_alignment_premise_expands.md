@@ -16,8 +16,11 @@ as `at(function.entry, aligned(arena, 8))`, which
 `state_read_alignment_fact_renders_as_aligned` in
 `src/surface/tests/surface_syntax.rs` checks directly. The expansion no longer
 needs the fact at all: the loop's store `occupied[i - 1]` and an earlier cell
-`occupied[k]` are separated by `k < i - 1` alone. The loop also follows a
-proof-level `branch`, the shape `loop_after_proof_branch_expands.md` reduces.
+`occupied[k]` are separated by `k < i - 1` alone. The maintenance proof
+instantiates the previous prefix invariant and preserves each earlier cell
+across the recorded store. It checks the newly written cell directly. The
+loop also follows a proof-level `branch`, the shape
+`loop_after_proof_branch_expands.md` reduces.
 The expansion regression in `src/surface/tests/expansion_tests.rs` expands
 the site and re-verifies the rewrite. The retained-session audit regression
 uses the smaller `loop_after_proof_branch_expands.md` fixture rather than
@@ -73,6 +76,8 @@ int32 arena_init(struct arena* arena, int32 capacity) {
 ```
 
 ```click
+import click::separation;
+
 resource arena_initialized_storage(
     data: int32*,
     occupied: int32*,
@@ -236,7 +241,7 @@ int32 arena_init(struct arena* arena, int32 capacity) {
     }
     step();
     loop initialize_occupied {
-        decreases capacity - i;
+        decreases to_integer(capacity) - to_integer(i);
         invariant 0 <= i and i <= capacity;
         invariant forall (k: int32) {
             0 <= k and k < i implies occupied[k] == 0
@@ -248,21 +253,44 @@ int32 arena_init(struct arena* arena, int32 capacity) {
             mark iteration;
             step();
             step();
-            have 0 <= to_integer(capacity - at(iteration, i) - 1) by {
-                close() using {
-                    0 <= at(iteration, i);
-                    at(iteration, i) < capacity;
-                    1 <= capacity;
-                    capacity <= 536870911;
-                };
-            }
-            have to_integer(capacity - at(iteration, i) - 1) < to_integer(capacity - at(iteration, i)) by {
-                close() using {
-                    0 <= at(iteration, i);
-                    at(iteration, i) < capacity;
-                    1 <= capacity;
-                    capacity <= 536870911;
-                };
+            have to_integer(at(iteration, i) + 1) == to_integer(at(iteration, i)) + 1;
+            have 0 <= to_integer(capacity) - to_integer(at(iteration, i) + 1);
+            have forall (k: int32) { 0 <= k and k < i implies occupied[k] == 0 } by {
+                intro() {
+                    intro() {
+                        have 0 <= k;
+                        have k < i;
+                        if k < at(iteration, i) {
+                            have at(iteration, occupied[k]) == 0 by {
+                                have at(iteration, 0) <= at(iteration, k) and at(iteration, k) < at(iteration, i);
+                                instantiate(forall (j: int32) {
+                                    at(iteration, 0) <= at(iteration, j) and at(iteration, j) < at(iteration, i) implies
+                                        at(iteration, occupied[j]) == at(iteration, 0)
+                                }, k);
+                                close();
+                            }
+                            have at(iteration, i) != k by { close() using { k < at(iteration, i); }; }
+                            have at(iteration, separate(memory(occupied[i]), memory(occupied[k]))) by {
+                                apply(separation::separate_elements(occupied, at(iteration, i), k));
+                            }
+                            have separate(loop(0).statement(0).footprint, memory(occupied[k])) by {
+                                close() using { at(iteration, separate(memory(occupied[i]), memory(occupied[k]))); };
+                            }
+                            have at(loop(0).statement(0).exit, occupied[k]) == at(iteration, occupied[k]) by {
+                                preserve(memory(occupied[k]), loop(0).statement(0));
+                            }
+                            have separate(loop(0).statement(1).footprint, memory(occupied[k])) by { close() using {}; }
+                            have occupied[k] == at(loop(0).statement(1).entry, occupied[k]) by {
+                                preserve(memory(occupied[k]), loop(0).statement(1));
+                            }
+                            close();
+                        } else {
+                            have k == at(iteration, i) by { close(); }
+                            rewrite(k, at(iteration, i));
+                            close();
+                        }
+                    }
+                }
             }
             close();
         }
