@@ -863,7 +863,7 @@ pub(super) fn scoped_loop_exit_facts(
                             .locals()
                             .name_for_slot(&Address {
                                 base: address.base.clone(),
-                                offset: AddressOffset::Constant(0),
+                                offset: OldAddressOffset::Constant(0),
                             })
                             .is_none()
                     })

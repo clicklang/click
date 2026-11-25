@@ -11,33 +11,33 @@ fn retained(ty: MachineIntegerType, term: &OldMachineTerm) -> SharedMachineInteg
     )
     .unwrap()
 }
-fn offset(value: SharedMachineIntegerTerm, width: i64, unsigned: bool) -> AddressOffset {
+fn offset(value: SharedMachineIntegerTerm, width: i64, unsigned: bool) -> OldAddressOffset {
     if matches!(
         value.ty(),
         MachineIntegerType::Int32 | MachineIntegerType::UInt32
     ) {
-        AddressOffset::Int32Scaled {
+        OldAddressOffset::Int32Scaled {
             value,
             byte_width: width,
         }
     } else {
-        AddressOffset::Int64Scaled {
+        OldAddressOffset::Int64Scaled {
             value,
             byte_width: width,
             unsigned,
         }
     }
 }
-fn fact(offset: AddressOffset) -> Proposition {
+fn fact(offset: OldAddressOffset) -> Proposition {
     Proposition::condition_is(
         OldConditionTerm::AddressOffsetEqual(
             Box::new(offset),
-            Box::new(AddressOffset::Constant(0)),
+            Box::new(OldAddressOffset::Constant(0)),
         ),
         true,
     )
 }
-fn quantified(variable: Variable, offset: AddressOffset) -> Proposition {
+fn quantified(variable: Variable, offset: OldAddressOffset) -> Proposition {
     crate::kernel::quantifiers::test_forall(
         crate::kernel::BinderName::written("index"),
         variable,

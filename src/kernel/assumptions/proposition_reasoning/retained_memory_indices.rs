@@ -22,7 +22,7 @@ fn binary(
 fn reads() -> [OldMachineTerm; 3] {
     let pointer = Address {
         base: "retained-retained_state".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let memory = SymbolicMemory::new()
         .with_block(pointer.base.clone(), 64)
@@ -32,7 +32,7 @@ fn reads() -> [OldMachineTerm; 3] {
         );
     let other = Address {
         base: pointer.base.clone(),
-        offset: AddressOffset::Constant(32),
+        offset: OldAddressOffset::Constant(32),
     };
     let separate = memory
         .clone()
@@ -49,8 +49,8 @@ fn reads() -> [OldMachineTerm; 3] {
         )
     })
 }
-fn scaled(root: &KernelTerm) -> AddressOffset {
-    AddressOffset::Int32Scaled {
+fn scaled(root: &KernelTerm) -> OldAddressOffset {
+    OldAddressOffset::Int32Scaled {
         value: MachineOperandView::Shared(root).retain(MachineIntegerType::Int32),
         byte_width: 4,
     }
@@ -163,7 +163,7 @@ fn state_source_index_matches_retained_signed_and_unsigned_ring_terms() {
         });
         let [source, target, changed] = offsets;
         assert_eq!(offset_state_shape(&source), offset_state_shape(&target));
-        let end = AddressOffset::Constant(12);
+        let end = OldAddressOffset::Constant(12);
         let fact = Proposition::condition_is(
             OldConditionTerm::address_offset_equal(source.clone(), end.clone()),
             true,
@@ -186,7 +186,7 @@ fn cached_state_syntax_never_caches_context_authority() {
         crate::kernel::intern_memory(SymbolicMemory::new().with_block("retained_state-alias", 16));
     let pointers = [994110, 994111].map(|id| Address {
         base: "retained_state-alias".into(),
-        offset: AddressOffset::Variable(Variable(id)),
+        offset: OldAddressOffset::Variable(Variable(id)),
     });
     let roots = pointers.each_ref().map(|pointer| {
         shared(&OldMachineTerm::read_named(

@@ -438,13 +438,13 @@ impl ObservationComparisons {
         let source = Proposition::condition_is(condition.clone(), truth);
         if let OldConditionTerm::AddressOffsetEqual(left, right) = condition {
             use crate::kernel::machine_integer::comparison::ComparisonOperand;
-            fn operand(offset: &AddressOffset) -> Option<ComparisonOperand<'_>> {
+            fn operand(offset: &OldAddressOffset) -> Option<ComparisonOperand<'_>> {
                 match offset {
-                    AddressOffset::Int32Scaled {
+                    OldAddressOffset::Int32Scaled {
                         value,
                         byte_width: 4,
                     } => Some(ComparisonOperand::Observation(value.clone())),
-                    AddressOffset::Constant(bytes) if bytes % 4 == 0 => {
+                    OldAddressOffset::Constant(bytes) if bytes % 4 == 0 => {
                         i32::try_from(bytes / 4).ok().map(|value| {
                             ComparisonOperand::Constant(OldMachineTerm::constant(value as u32))
                         })
@@ -668,12 +668,12 @@ mod compound_observation_lookup_tests {
         for truth in [false, true] {
             for width in [4, 8] {
                 let source = OldConditionTerm::AddressOffsetEqual(
-                    AddressOffset::Int32Scaled {
+                    OldAddressOffset::Int32Scaled {
                         value: MachineOperandView::Shared(&root).retain(ty),
                         byte_width: width,
                     }
                     .into(),
-                    AddressOffset::Constant(0).into(),
+                    OldAddressOffset::Constant(0).into(),
                 );
                 let mut index = ObservationComparisons::default();
                 let parent = index.clone();

@@ -306,22 +306,22 @@ mod tests {
     use super::*;
     use crate::kernel::BooleanOperandView as B;
 
-    fn sources() -> Vec<AddressOffset> {
+    fn sources() -> Vec<OldAddressOffset> {
         let mut result = vec![
-            AddressOffset::Constant(0),
-            AddressOffset::Constant(1),
-            AddressOffset::Constant(i64::MAX),
-            AddressOffset::Variable(Variable(998001)),
+            OldAddressOffset::Constant(0),
+            OldAddressOffset::Constant(1),
+            OldAddressOffset::Constant(i64::MAX),
+            OldAddressOffset::Variable(Variable(998001)),
         ];
         for width in [0, -8, 4, 1 << 24, (1 << 24) + 1] {
             for bits in [
                 OldMachineTerm::constant(0),
                 OldMachineTerm::Variable(Variable(998002)),
             ] {
-                result.push(AddressOffset::scaled_int32_node(bits, width));
+                result.push(OldAddressOffset::scaled_int32_node(bits, width));
             }
             for unsigned in [false, true] {
-                result.push(AddressOffset::scaled_int64_node(
+                result.push(OldAddressOffset::scaled_int64_node(
                     OldMachineTerm::Variable(Variable(998003)),
                     width,
                     unsigned,
@@ -330,9 +330,12 @@ mod tests {
         }
         for n in [30, 31, 32, 33] {
             let mut offset =
-                AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(998002)), 4);
+                OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(998002)), 4);
             for _ in 0..n {
-                offset = AddressOffset::Add(Box::new(offset), Box::new(AddressOffset::Constant(1)));
+                offset = OldAddressOffset::Add(
+                    Box::new(offset),
+                    Box::new(OldAddressOffset::Constant(1)),
+                );
             }
             result.push(offset);
         }
@@ -366,11 +369,11 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         for offset in sources() {
             let source = OldConditionTerm::AddressOffsetEqual(
-                Box::new(AddressOffset::Add(
-                    Box::new(AddressOffset::Constant(0)),
+                Box::new(OldAddressOffset::Add(
+                    Box::new(OldAddressOffset::Constant(0)),
                     Box::new(offset),
                 )),
-                Box::new(AddressOffset::Constant(5)),
+                Box::new(OldAddressOffset::Constant(5)),
             );
             let root = KernelTermImport::default().condition(&source);
             assert!(matches!(
@@ -435,13 +438,13 @@ mod tests {
                     },
                 );
                 let offset = if wide {
-                    AddressOffset::scaled_int64_node(value, 8, false)
+                    OldAddressOffset::scaled_int64_node(value, 8, false)
                 } else {
-                    AddressOffset::scaled_int32_node(value, 4)
+                    OldAddressOffset::scaled_int32_node(value, 4)
                 };
                 OldConditionTerm::AddressOffsetEqual(
                     Box::new(offset),
-                    Box::new(AddressOffset::Constant(0)),
+                    Box::new(OldAddressOffset::Constant(0)),
                 )
             };
             let a = condition(ProgramPoint::at(&memory_a));
@@ -489,7 +492,7 @@ mod identity_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let sources = [CScalarClass::Int, CScalarClass::Char].map(|class| {
             OldConditionTerm::AddressOffsetEqual(
-                Box::new(AddressOffset::scaled_int64_node(
+                Box::new(OldAddressOffset::scaled_int64_node(
                     OldMachineTerm::IntegerAddress(
                         Box::new(Address::symbolic(Variable(998400))),
                         crate::kernel::AddressObjectClass::new(Some(CAccessClass::Scalar(class))),
@@ -497,7 +500,7 @@ mod identity_tests {
                     1,
                     true,
                 )),
-                Box::new(AddressOffset::Constant(0)),
+                Box::new(OldAddressOffset::Constant(0)),
             )
         });
         let roots = sources

@@ -17,7 +17,7 @@ fn shared_pointer_equality_visits_offset_pairs_and_load_pairs_once() {
             let make = |memory| {
                 let native = Address {
                     base: AddressBase::Concrete("shared-check-array".into()),
-                    offset: AddressOffset::Int32Scaled {
+                    offset: OldAddressOffset::Int32Scaled {
                         value: SharedMachineIntegerTerm::index(
                             MachineIntegerType::Int32,
                             OldMachineTerm::read_named(

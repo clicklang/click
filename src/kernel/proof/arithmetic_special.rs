@@ -1,9 +1,9 @@
 //! Local arithmetic rules used by selected-input normalization, and internal
 //! plans selecting those rules for ordinary proof expansion.
 use super::super::{
-    Address, AddressBase, AddressOffset, ComparisonOperator, FloatClassification, FloatCondition,
-    FloatOperandView, KernelFloatType, OldConditionTerm, OldMachineTerm, OldPointer, Proposition,
-    SignedDefinedWidth,
+    Address, AddressBase, ComparisonOperator, FloatClassification, FloatCondition,
+    FloatOperandView, KernelFloatType, OldAddressOffset, OldConditionTerm, OldMachineTerm,
+    OldPointer, Proposition, SignedDefinedWidth,
 };
 
 use crate::kernel::binary_term;
@@ -63,7 +63,7 @@ fn pointer_payload(pointer: &Address) -> Option<usize> {
     address_base_payload(&pointer.base)?.checked_add(pointer_offset_payload(&pointer.offset)?)
 }
 
-fn pointer_offset_payload(root: &AddressOffset) -> Option<usize> {
+fn pointer_offset_payload(root: &OldAddressOffset) -> Option<usize> {
     let mut pending = vec![root];
     let mut payload = 0usize;
     while let Some(offset) = pending.pop() {
@@ -72,12 +72,13 @@ fn pointer_offset_payload(root: &AddressOffset) -> Option<usize> {
             return None;
         }
         match offset {
-            AddressOffset::Constant(_) | AddressOffset::Variable(_) => {}
-            AddressOffset::Add(left, right) => {
+            OldAddressOffset::Constant(_) | OldAddressOffset::Variable(_) => {}
+            OldAddressOffset::Add(left, right) => {
                 pending.push(left);
                 pending.push(right);
             }
-            AddressOffset::Int32Scaled { value, .. } | AddressOffset::Int64Scaled { value, .. } => {
+            OldAddressOffset::Int32Scaled { value, .. }
+            | OldAddressOffset::Int64Scaled { value, .. } => {
                 payload = payload.checked_add(pointer_index_payload(value.operand_view())?)?;
             }
         }
@@ -200,7 +201,7 @@ fn bitvector_payload(root: &OldMachineTerm) -> Option<usize> {
     Some(payload)
 }
 
-fn charge_pointer_offset(offset: &AddressOffset) -> bool {
+fn charge_pointer_offset(offset: &OldAddressOffset) -> bool {
     pointer_offset_payload(offset).is_some_and(charge_payload)
 }
 
@@ -216,7 +217,7 @@ fn charge_bitvector(term: &OldMachineTerm) -> bool {
     bitvector_payload(term).is_some_and(charge_payload)
 }
 
-fn charge_map_insert(offset: &AddressOffset, map_len: usize) -> bool {
+fn charge_map_insert(offset: &OldAddressOffset, map_len: usize) -> bool {
     let comparisons = (usize::BITS - map_len.max(1).leading_zeros()) as usize;
     pointer_offset_payload(offset).is_some_and(|payload| {
         !crate::instrumentation::deadline_exceeded_with_work(
@@ -338,33 +339,33 @@ fn pointer_index_equal(
     true
 }
 
-fn address_offset_equal(left: &AddressOffset, right: &AddressOffset) -> bool {
+fn address_offset_equal(left: &OldAddressOffset, right: &OldAddressOffset) -> bool {
     let mut pending = vec![(left, right)];
     while let Some((left, right)) = pending.pop() {
         match (left, right) {
-            (AddressOffset::Constant(left), AddressOffset::Constant(right)) => {
+            (OldAddressOffset::Constant(left), OldAddressOffset::Constant(right)) => {
                 if left != right {
                     return false;
                 }
             }
-            (AddressOffset::Variable(left), AddressOffset::Variable(right)) => {
+            (OldAddressOffset::Variable(left), OldAddressOffset::Variable(right)) => {
                 if left != right {
                     return false;
                 }
             }
             (
-                AddressOffset::Add(left_first, left_second),
-                AddressOffset::Add(right_first, right_second),
+                OldAddressOffset::Add(left_first, left_second),
+                OldAddressOffset::Add(right_first, right_second),
             ) => {
                 pending.push((left_first, right_first));
                 pending.push((left_second, right_second));
             }
             (
-                AddressOffset::Int32Scaled {
+                OldAddressOffset::Int32Scaled {
                     value: left,
                     byte_width: left_width,
                 },
-                AddressOffset::Int32Scaled {
+                OldAddressOffset::Int32Scaled {
                     value: right,
                     byte_width: right_width,
                 },
@@ -374,12 +375,12 @@ fn address_offset_equal(left: &AddressOffset, right: &AddressOffset) -> bool {
                 }
             }
             (
-                AddressOffset::Int64Scaled {
+                OldAddressOffset::Int64Scaled {
                     value: left,
                     byte_width: left_width,
                     unsigned: left_unsigned,
                 },
-                AddressOffset::Int64Scaled {
+                OldAddressOffset::Int64Scaled {
                     value: right,
                     byte_width: right_width,
                     unsigned: right_unsigned,
@@ -901,8 +902,8 @@ impl SpecialArithmeticNode {}
 fn pointer_sides(
     proposition: &Proposition,
 ) -> Option<(
-    &AddressOffset,
-    &AddressOffset,
+    &OldAddressOffset,
+    &OldAddressOffset,
     Option<(&AddressBase, &AddressBase)>,
 )> {
     match proposition {
@@ -1092,7 +1093,7 @@ fn unsigned64_bounds(premises: &[&Proposition]) -> Option<BTreeMap<OldMachineTer
 }
 
 enum OffsetPart<'a> {
-    Offset(&'a AddressOffset),
+    Offset(&'a OldAddressOffset),
     Scaled(crate::kernel::MachineOperandView<'a>, i64),
     /// An unsigned 64-bit index scaled by an element width.
     Scaled64(crate::kernel::MachineOperandView<'a>, i64),
@@ -1388,7 +1389,7 @@ fn pointer_translation(
         };
         xmin + ymin >= SIGNED_MIN && xmax + ymax <= SIGNED_MAX
     };
-    let mut terms = BTreeMap::<AddressOffset, i128>::new();
+    let mut terms = BTreeMap::<OldAddressOffset, i128>::new();
     let mut constant = 0i128;
     for (offset, sign) in [
         (left, 1i128),
@@ -1399,19 +1400,19 @@ fn pointer_translation(
         let mut pending = vec![OffsetPart::Offset(offset)];
         while let Some(part) = pending.pop() {
             let atom = match part {
-                OffsetPart::Offset(AddressOffset::Constant(value)) => {
+                OffsetPart::Offset(OldAddressOffset::Constant(value)) => {
                     let Some(next) = constant.checked_add(sign * i128::from(*value)) else {
                         return false;
                     };
                     constant = next;
                     continue;
                 }
-                OffsetPart::Offset(AddressOffset::Add(left, right)) => {
+                OffsetPart::Offset(OldAddressOffset::Add(left, right)) => {
                     pending.push(OffsetPart::Offset(left));
                     pending.push(OffsetPart::Offset(right));
                     continue;
                 }
-                OffsetPart::Offset(AddressOffset::Int32Scaled { value, byte_width }) => {
+                OffsetPart::Offset(OldAddressOffset::Int32Scaled { value, byte_width }) => {
                     pending.push(OffsetPart::Scaled(value.operand_view(), *byte_width));
                     continue;
                 }
@@ -1432,12 +1433,12 @@ fn pointer_translation(
                         pending.push(OffsetPart::Scaled(right, width));
                         continue;
                     }
-                    AddressOffset::Int32Scaled {
+                    OldAddressOffset::Int32Scaled {
                         value: value.retain(MachineIntegerType::Int32),
                         byte_width: width,
                     }
                 }
-                OffsetPart::Offset(AddressOffset::Int64Scaled {
+                OffsetPart::Offset(OldAddressOffset::Int64Scaled {
                     value,
                     byte_width,
                     unsigned: true,
@@ -1462,7 +1463,7 @@ fn pointer_translation(
                         pending.push(OffsetPart::Scaled64(right, width));
                         continue;
                     }
-                    AddressOffset::Int64Scaled {
+                    OldAddressOffset::Int64Scaled {
                         value: value.retain(MachineIntegerType::Int64),
                         byte_width: width,
                         unsigned: true,
@@ -1483,20 +1484,20 @@ fn pointer_translation(
     constant == 0 && terms.values().all(|coefficient| *coefficient == 0)
 }
 
-fn offset_difference(goal: &AddressOffset, premise: &AddressOffset) -> Option<i128> {
+fn offset_difference(goal: &OldAddressOffset, premise: &OldAddressOffset) -> Option<i128> {
     if !charge_pointer_offset(goal) || !charge_pointer_offset(premise) {
         return None;
     }
-    let mut terms = BTreeMap::<AddressOffset, i128>::new();
+    let mut terms = BTreeMap::<OldAddressOffset, i128>::new();
     let mut constant = 0i128;
     for (offset, sign) in [(goal, 1i128), (premise, -1)] {
         let mut pending = vec![offset];
         while let Some(offset) = pending.pop() {
             match offset {
-                AddressOffset::Constant(value) => {
+                OldAddressOffset::Constant(value) => {
                     constant = constant.checked_add(sign * i128::from(*value))?
                 }
-                AddressOffset::Add(left, right) => {
+                OldAddressOffset::Add(left, right) => {
                     pending.push(left);
                     pending.push(right);
                 }
@@ -1629,7 +1630,7 @@ fn pointer_alignment(premise: Option<&Proposition>, result: &Proposition) -> boo
         if goal_alignment > intrinsic {
             return false;
         }
-        let Some(delta) = offset_difference(&goal_pointer.offset, &AddressOffset::Constant(0))
+        let Some(delta) = offset_difference(&goal_pointer.offset, &OldAddressOffset::Constant(0))
         else {
             return false;
         };
@@ -1642,7 +1643,10 @@ fn pointer_alignment(premise: Option<&Proposition>, result: &Proposition) -> boo
 /// alignment.  Such an addend cannot change the pointer's residue.  The
 /// traversal is iterative because this helper runs on source-shaped pointer
 /// offsets and must not inherit their nesting depth.
-fn drop_aligned_scaled_addends(offset: &AddressOffset, alignment: u64) -> Option<AddressOffset> {
+fn drop_aligned_scaled_addends(
+    offset: &OldAddressOffset,
+    alignment: u64,
+) -> Option<OldAddressOffset> {
     if !charge_pointer_offset(offset) {
         return None;
     }
@@ -1651,7 +1655,7 @@ fn drop_aligned_scaled_addends(offset: &AddressOffset, alignment: u64) -> Option
     let mut parts = Vec::new();
     while let Some(offset) = pending.pop() {
         match offset {
-            AddressOffset::Add(left, right) => {
+            OldAddressOffset::Add(left, right) => {
                 pending.push(right);
                 pending.push(left);
             }
@@ -1668,9 +1672,9 @@ fn drop_aligned_scaled_addends(offset: &AddressOffset, alignment: u64) -> Option
             .or_else(|| right.word32_constant())
             .map(|value| i64::from(value as i32))
     }
-    let divisible = |part: &AddressOffset| match part {
-        AddressOffset::Int32Scaled { value, byte_width }
-        | AddressOffset::Int64Scaled {
+    let divisible = |part: &OldAddressOffset| match part {
+        OldAddressOffset::Int32Scaled { value, byte_width }
+        | OldAddressOffset::Int64Scaled {
             value, byte_width, ..
         } => {
             let scale = constant_factor(value.operand_view())
@@ -1687,8 +1691,8 @@ fn drop_aligned_scaled_addends(offset: &AddressOffset, alignment: u64) -> Option
         parts
             .into_iter()
             .filter(|part| !divisible(part))
-            .reduce(AddressOffset::add)
-            .unwrap_or(AddressOffset::Constant(0)),
+            .reduce(OldAddressOffset::add)
+            .unwrap_or(OldAddressOffset::Constant(0)),
     )
 }
 
@@ -1816,25 +1820,25 @@ fn pointer_identity_hash(pointer: &Address) -> Option<u64> {
     let mut pending = vec![&pointer.offset];
     while let Some(offset) = pending.pop() {
         match offset {
-            AddressOffset::Constant(value) => {
+            OldAddressOffset::Constant(value) => {
                 0u8.hash(&mut hasher);
                 value.hash(&mut hasher);
             }
-            AddressOffset::Variable(value) => {
+            OldAddressOffset::Variable(value) => {
                 1u8.hash(&mut hasher);
                 value.hash(&mut hasher);
             }
-            AddressOffset::Add(left, right) => {
+            OldAddressOffset::Add(left, right) => {
                 2u8.hash(&mut hasher);
                 pending.push(right);
                 pending.push(left);
             }
-            AddressOffset::Int32Scaled { value, byte_width } => {
+            OldAddressOffset::Int32Scaled { value, byte_width } => {
                 3u8.hash(&mut hasher);
                 byte_width.hash(&mut hasher);
                 pointer_index_hash(value.operand_view())?.hash(&mut hasher);
             }
-            AddressOffset::Int64Scaled { .. } => return None,
+            OldAddressOffset::Int64Scaled { .. } => return None,
         }
     }
     Some(hasher.finish())
@@ -4994,7 +4998,7 @@ mod tests {
             let index = S::from_shared(MachineIntegerType::Int32, root.clone()).unwrap();
             let pointer = Address {
                 base: AddressBase::ExternalArgument,
-                offset: AddressOffset::Int32Scaled {
+                offset: OldAddressOffset::Int32Scaled {
                     value: index.clone(),
                     byte_width: 4,
                 },
@@ -5237,15 +5241,15 @@ mod tests {
         assert!(!bitvector_equal(&constant(1.into()), &constant(2.into())));
     }
 
-    fn pointer(offset: AddressOffset) -> Address {
+    fn pointer(offset: OldAddressOffset) -> Address {
         Address {
             base: AddressBase::ExternalArgument,
             offset,
         }
     }
 
-    fn add(left: AddressOffset, right: AddressOffset) -> AddressOffset {
-        AddressOffset::Add(Box::new(left), Box::new(right))
+    fn add(left: OldAddressOffset, right: OldAddressOffset) -> OldAddressOffset {
+        OldAddressOffset::Add(Box::new(left), Box::new(right))
     }
 
     fn tagged_tag_nodes(root: &Arc<TaggedTag<'_>>) -> usize {
@@ -5268,9 +5272,9 @@ mod tests {
     }
 
     fn deep_pointer(depth: usize) -> Address {
-        let mut offset = AddressOffset::Constant(0);
+        let mut offset = OldAddressOffset::Constant(0);
         for _ in 0..depth {
-            offset = add(offset, AddressOffset::Constant(1));
+            offset = add(offset, OldAddressOffset::Constant(1));
         }
         pointer(offset)
     }
@@ -5331,7 +5335,7 @@ mod tests {
     fn retained_masked_read_equation_checks_native_pointer_goal() {
         use crate::kernel::MachineOperandView;
         let _session = crate::kernel::VerificationSession::enter();
-        let next = pointer(AddressOffset::Constant(0));
+        let next = pointer(OldAddressOffset::Constant(0));
         let address = OldMachineTerm::integer_address(next.clone());
         let raw = OldMachineTerm::read_named(
             crate::kernel::ProgramPoint::at(
@@ -5380,7 +5384,7 @@ mod tests {
         let mut previous = 0;
         for depth in [4, 16, 64, 256, 1024] {
             let address = OldMachineTerm::IntegerAddress(
-                Box::new(pointer(AddressOffset::Constant(0))),
+                Box::new(pointer(OldAddressOffset::Constant(0))),
                 crate::kernel::AddressObjectClass::NONE,
             );
             let variable = OldMachineTerm::Variable(crate::kernel::Variable(294));

@@ -774,11 +774,11 @@ fn cold_native_array_argument_retains_the_entry_point_across_local_stores() {
     let _session = VerificationSession::enter();
     let local = Address {
         base: "local:unrelated".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let pointer = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let argument = SpecPureFunctionArgument::ArrayRef {
         point: SpecPoint::Current,
@@ -839,15 +839,15 @@ fn external_array_entry_crosses_checked_local_calls_with_bounded_cold_work() {
     let _session = VerificationSession::enter();
     let array = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let local = Address {
         base: "local:callee-write".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let other = Address {
         base: "local:other-callee-write".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let argument = ProgramValue::typed_pointer(array.clone(), ProgramType::Int32Pointer);
     let entry = ExecutionState::new().begin_function_entry_memory();
@@ -1245,11 +1245,11 @@ fn declared_predicate_array_names_its_entry_point_after_local_calls() {
     let _session = VerificationSession::enter();
     let array = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let local = Address {
         base: "local:callee-write".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let arguments = [SpecPredicateArgument::ArrayRef {
         point: SpecPoint::Current,

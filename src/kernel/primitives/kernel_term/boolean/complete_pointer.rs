@@ -222,7 +222,7 @@ mod tests {
             Address::from_integer_address(OldMachineTerm::Variable(Variable(999102))),
             Address {
                 base: AddressBase::ExternalObject(Variable(999101)),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
         ] {
             let raw = OldPointer::new(pointer, ProgramType::Int32Pointer);
@@ -239,9 +239,9 @@ mod tests {
             );
             values.push(raw.clone().with_address(Address {
                 base: raw.base.clone(),
-                offset: AddressOffset::Add(
-                    Box::new(AddressOffset::Constant(0)),
-                    Box::new(AddressOffset::scaled_int32_node(
+                offset: OldAddressOffset::Add(
+                    Box::new(OldAddressOffset::Constant(0)),
+                    Box::new(OldAddressOffset::scaled_int32_node(
                         OldMachineTerm::Variable(Variable(999102)),
                         4,
                     )),
@@ -251,7 +251,7 @@ mod tests {
         values.push(OldPointer::new(
             Address {
                 base: AddressBase::FunctionSymbolic(Variable(999101)),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
             ProgramType::FunctionPointer(CallbackSignature::UNSPECIFIED),
         ));
@@ -295,9 +295,9 @@ mod tests {
                 Address::symbolic(Variable(999110)),
                 Address {
                     base: AddressBase::Symbolic(Variable(999110)),
-                    offset: AddressOffset::Add(
-                        Box::new(AddressOffset::Constant(1)),
-                        Box::new(AddressOffset::Constant(2)),
+                    offset: OldAddressOffset::Add(
+                        Box::new(OldAddressOffset::Constant(1)),
+                        Box::new(OldAddressOffset::Constant(2)),
                     ),
                 },
             ] {
@@ -457,7 +457,7 @@ mod tests {
         let roots = [before, after].map(|memory| {
             let pointer = Address {
                 base: AddressBase::Symbolic(Variable(999130)),
-                offset: AddressOffset::scaled_int32_node(
+                offset: OldAddressOffset::scaled_int32_node(
                     OldMachineTerm::read_named(
                         ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                         Box::new(crate::kernel::SymbolicMemory::global_pointer(

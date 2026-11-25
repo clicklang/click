@@ -155,7 +155,7 @@ fn fold_nonnull_fact_uses_an_exact_composite_pointer_alias() {
     let model = Address::symbolic(Variable(700));
     let program = Address {
         base: AddressBase::Symbolic(Variable(701)),
-        offset: AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(702)), 4),
+        offset: OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(702)), 4),
     };
     let null = Address::null();
     let alias = pointer_fact(&model, &program, true);
@@ -371,7 +371,7 @@ fn numeric_resource_facts_do_not_repeat_the_canonical_read_walk() {
         let _session = crate::kernel::VerificationSession::enter();
         let input = |name| Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(name)), 4),
+            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(name)), 4),
         };
         let word = input(719_100);
         let context = PureFactContext::new()

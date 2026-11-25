@@ -1,6 +1,6 @@
 use super::*;
 use crate::kernel::borrows::{BorrowBinding, BorrowLedger};
-use crate::kernel::{AddressBase, AddressOffset, int32};
+use crate::kernel::{AddressBase, OldAddressOffset, int32};
 use std::collections::BTreeSet;
 
 /// The two largest adjacent ratios of a doubling series, the same
@@ -88,7 +88,7 @@ fn parameter_view(variable: u64) -> ResourceFact {
     ResourceFact::view_memory(MemoryRange::new_with_element_width(
         Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Variable(Variable(variable)),
+            offset: OldAddressOffset::Variable(Variable(variable)),
         },
         OldMachineTerm::constant(0),
         OldMachineTerm::constant(1),
@@ -122,7 +122,7 @@ fn cells_in_the_symbolic_block(count: usize) -> SymbolicMemory {
         memory = memory.store(
             Address {
                 base: AddressBase::ExternalArgument,
-                offset: AddressOffset::Constant(4 * index as i64),
+                offset: OldAddressOffset::Constant(4 * index as i64),
             },
             int32(0),
         );

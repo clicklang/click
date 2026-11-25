@@ -511,15 +511,15 @@ impl PureFactContext {
                     )
                     || self.has_condition_fact(
                         OldConditionTerm::address_offset_equal(
-                            AddressOffset::scale_int32(left.clone(), 4),
-                            AddressOffset::scale_int32(right.clone(), 4),
+                            OldAddressOffset::scale_int32(left.clone(), 4),
+                            OldAddressOffset::scale_int32(right.clone(), 4),
                         ),
                         true,
                     )
                     || self.has_condition_fact(
                         OldConditionTerm::address_offset_equal(
-                            AddressOffset::scale_int32(right.clone(), 4),
-                            AddressOffset::scale_int32(left.clone(), 4),
+                            OldAddressOffset::scale_int32(right.clone(), 4),
+                            OldAddressOffset::scale_int32(left.clone(), 4),
                         ),
                         true,
                     )
@@ -560,15 +560,15 @@ impl PureFactContext {
                     )) == Some(true)
                     || self.has_condition_fact(
                         OldConditionTerm::address_offset_equal(
-                            AddressOffset::scale_int32(left.clone(), 4),
-                            AddressOffset::scale_int32(right.clone(), 4),
+                            OldAddressOffset::scale_int32(left.clone(), 4),
+                            OldAddressOffset::scale_int32(right.clone(), 4),
                         ),
                         false,
                     )
                     || self.has_condition_fact(
                         OldConditionTerm::address_offset_equal(
-                            AddressOffset::scale_int32(right.clone(), 4),
-                            AddressOffset::scale_int32(left.clone(), 4),
+                            OldAddressOffset::scale_int32(right.clone(), 4),
+                            OldAddressOffset::scale_int32(left.clone(), 4),
                         ),
                         false,
                     )
@@ -1595,24 +1595,27 @@ impl PureFactContext {
 /// share (one occurrence per match). Offsets are exact i64 sums of their
 /// addends, so `C + L == C + R` holds exactly if and only if `L == R`.
 pub(in crate::kernel) fn cancel_common_offset_addends(
-    left: &crate::kernel::AddressOffset,
-    right: &crate::kernel::AddressOffset,
-) -> (crate::kernel::AddressOffset, crate::kernel::AddressOffset) {
-    use crate::kernel::AddressOffset;
-    fn addends(offset: &AddressOffset, out: &mut Vec<AddressOffset>) {
+    left: &crate::kernel::OldAddressOffset,
+    right: &crate::kernel::OldAddressOffset,
+) -> (
+    crate::kernel::OldAddressOffset,
+    crate::kernel::OldAddressOffset,
+) {
+    use crate::kernel::OldAddressOffset;
+    fn addends(offset: &OldAddressOffset, out: &mut Vec<OldAddressOffset>) {
         match offset {
-            AddressOffset::Add(left, right) => {
+            OldAddressOffset::Add(left, right) => {
                 addends(left, out);
                 addends(right, out);
             }
             other => out.push(other.clone()),
         }
     }
-    fn rebuild(addends: Vec<AddressOffset>) -> AddressOffset {
+    fn rebuild(addends: Vec<OldAddressOffset>) -> OldAddressOffset {
         addends
             .into_iter()
-            .reduce(|sum, addend| AddressOffset::Add(Box::new(sum), Box::new(addend)))
-            .unwrap_or(AddressOffset::Constant(0))
+            .reduce(|sum, addend| OldAddressOffset::Add(Box::new(sum), Box::new(addend)))
+            .unwrap_or(OldAddressOffset::Constant(0))
     }
     let mut left_addends = Vec::new();
     addends(left, &mut left_addends);
@@ -1621,11 +1624,11 @@ pub(in crate::kernel) fn cancel_common_offset_addends(
     crate::instrumentation::record_deterministic_work(left_addends.len() + right_addends.len());
     // A multiset count: each addend is hashed once, and an addend shared
     // `k` times cancels `k` times, so the work is linear in the addends.
-    let mut right_counts = std::collections::HashMap::<&AddressOffset, usize>::new();
+    let mut right_counts = std::collections::HashMap::<&OldAddressOffset, usize>::new();
     for addend in &right_addends {
         *right_counts.entry(addend).or_default() += 1;
     }
-    let mut cancelled = std::collections::HashMap::<&AddressOffset, usize>::new();
+    let mut cancelled = std::collections::HashMap::<&OldAddressOffset, usize>::new();
     let mut left_rest = Vec::new();
     for addend in &left_addends {
         match right_counts.get_mut(addend) {
@@ -2029,13 +2032,13 @@ impl PureFactContext {
 /// The offset without its scaled-index addends whose byte scale `alignment`
 /// divides; `None` when there is no such addend.
 fn drop_aligned_scaled_addends(
-    offset: &crate::kernel::AddressOffset,
+    offset: &crate::kernel::OldAddressOffset,
     alignment: u64,
-) -> Option<crate::kernel::AddressOffset> {
-    use crate::kernel::AddressOffset;
-    fn addends(offset: &AddressOffset, out: &mut Vec<AddressOffset>) {
+) -> Option<crate::kernel::OldAddressOffset> {
+    use crate::kernel::OldAddressOffset;
+    fn addends(offset: &OldAddressOffset, out: &mut Vec<OldAddressOffset>) {
         match offset {
-            AddressOffset::Add(left, right) => {
+            OldAddressOffset::Add(left, right) => {
                 addends(left, out);
                 addends(right, out);
             }
@@ -2057,9 +2060,9 @@ fn drop_aligned_scaled_addends(
             .or_else(|| right.word32_constant())
             .map(|constant| i64::from(constant as i32))
     }
-    let divisible = |part: &AddressOffset| match part {
-        AddressOffset::Int32Scaled { value, byte_width }
-        | AddressOffset::Int64Scaled {
+    let divisible = |part: &OldAddressOffset| match part {
+        OldAddressOffset::Int32Scaled { value, byte_width }
+        | OldAddressOffset::Int64Scaled {
             value, byte_width, ..
         } => {
             let scale = constant_factor(value.operand_view())
@@ -2076,18 +2079,18 @@ fn drop_aligned_scaled_addends(
         parts
             .into_iter()
             .filter(|part| !divisible(part))
-            .reduce(AddressOffset::add)
-            .unwrap_or(AddressOffset::Constant(0)),
+            .reduce(OldAddressOffset::add)
+            .unwrap_or(OldAddressOffset::Constant(0)),
     )
 }
 
 fn split_constant_displacement(
-    offset: &crate::kernel::AddressOffset,
-) -> (crate::kernel::AddressOffset, i64) {
-    use crate::kernel::AddressOffset;
-    fn addends(offset: &AddressOffset, out: &mut Vec<AddressOffset>) {
+    offset: &crate::kernel::OldAddressOffset,
+) -> (crate::kernel::OldAddressOffset, i64) {
+    use crate::kernel::OldAddressOffset;
+    fn addends(offset: &OldAddressOffset, out: &mut Vec<OldAddressOffset>) {
         match offset {
-            AddressOffset::Add(left, right) => {
+            OldAddressOffset::Add(left, right) => {
                 addends(left, out);
                 addends(right, out);
             }
@@ -2106,8 +2109,8 @@ fn split_constant_displacement(
     }
     let base = symbolic
         .into_iter()
-        .reduce(AddressOffset::add)
-        .unwrap_or(AddressOffset::Constant(0));
+        .reduce(OldAddressOffset::add)
+        .unwrap_or(OldAddressOffset::Constant(0));
     (base, displacement)
 }
 
@@ -2349,7 +2352,7 @@ impl PureFactContext {
     /// resolution uses the width-specific form for positive index equality.
     pub(in crate::kernel) fn element_index_rebuild_is_exact(
         &self,
-        offset: &crate::kernel::AddressOffset,
+        offset: &crate::kernel::OldAddressOffset,
     ) -> bool {
         self.element_index_rebuild_is_exact_for_width(offset, 4)
     }
@@ -2358,7 +2361,7 @@ impl PureFactContext {
     /// merely its 32-bit residue.
     pub(in crate::kernel) fn element_index_rebuild_is_exact_for_width(
         &self,
-        offset: &crate::kernel::AddressOffset,
+        offset: &crate::kernel::OldAddressOffset,
         element_width: u32,
     ) -> bool {
         self.rebuilt_offset_is_exact(offset, element_width, false)
@@ -2366,7 +2369,7 @@ impl PureFactContext {
 
     /// Whether the index or byte term the offset rebuilders produce for
     /// `offset` denotes the exact offset rather than a wrapped 32-bit value.
-    /// `AddressOffset` semantics are exact i64, so equal rebuilt terms
+    /// `OldAddressOffset` semantics are exact i64, so equal rebuilt terms
     /// imply equal offsets only when every rebuilt addition (and, on the byte
     /// path, every scaling by a width) is proved not to overflow under the
     /// current facts. Constants and single index terms are always exact.
@@ -2385,12 +2388,12 @@ impl PureFactContext {
 
     fn rebuilt_offset_is_exact(
         &self,
-        offset: &crate::kernel::AddressOffset,
+        offset: &crate::kernel::OldAddressOffset,
         element_width: u32,
         byte_path: bool,
     ) -> bool {
-        use crate::kernel::AddressOffset;
-        let rebuild = |offset: &AddressOffset| {
+        use crate::kernel::OldAddressOffset;
+        let rebuild = |offset: &OldAddressOffset| {
             if byte_path {
                 crate::kernel::reasoning::shared_byte_offset_from_pointer_offset(offset)
             } else {
@@ -2398,11 +2401,11 @@ impl PureFactContext {
             }
         };
         match offset {
-            AddressOffset::Constant(_) => true,
+            OldAddressOffset::Constant(_) => true,
             // Full-width constants or checked unsigned bounds make the
             // element projection exact. The byte projection below still
             // requires a constant whose scaled byte displacement fits.
-            AddressOffset::Int64Scaled { byte_width, .. } => {
+            OldAddressOffset::Int64Scaled { byte_width, .. } => {
                 if !byte_path && *byte_width != i64::from(element_width) {
                     return false;
                 }
@@ -2438,7 +2441,7 @@ impl PureFactContext {
                 crate::kernel::assumptions::exact_wide_scaled_offset_constant(offset, self)
                     .is_some_and(|bytes| i32::try_from(bytes).is_ok())
             }
-            AddressOffset::Int32Scaled { value, byte_width } => {
+            OldAddressOffset::Int32Scaled { value, byte_width } => {
                 if !byte_path || *byte_width <= 1 {
                     return true;
                 }
@@ -2453,13 +2456,17 @@ impl PureFactContext {
                     ],
                 )
             }
-            AddressOffset::Add(left, right) if left.as_ref() == &AddressOffset::Constant(0) => {
+            OldAddressOffset::Add(left, right)
+                if left.as_ref() == &OldAddressOffset::Constant(0) =>
+            {
                 self.rebuilt_offset_is_exact(right, element_width, byte_path)
             }
-            AddressOffset::Add(left, right) if right.as_ref() == &AddressOffset::Constant(0) => {
+            OldAddressOffset::Add(left, right)
+                if right.as_ref() == &OldAddressOffset::Constant(0) =>
+            {
                 self.rebuilt_offset_is_exact(left, element_width, byte_path)
             }
-            AddressOffset::Add(left, right) => {
+            OldAddressOffset::Add(left, right) => {
                 if !(self.rebuilt_offset_is_exact(left, element_width, byte_path)
                     && self.rebuilt_offset_is_exact(right, element_width, byte_path))
                 {
@@ -2473,7 +2480,7 @@ impl PureFactContext {
                     _ => false,
                 }
             }
-            AddressOffset::Variable(_) => false,
+            OldAddressOffset::Variable(_) => false,
         }
     }
 }
@@ -4127,7 +4134,7 @@ mod shared_read_equality_rule_tests {
         let write_index = OldMachineTerm::Variable(Variable(995_782));
         let base = Address {
             base: "selected-word".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let pointer = base.offset_by_elements(read_index.clone(), 4);
         let written = base.offset_by_elements(write_index.clone(), 4);
@@ -4155,7 +4162,7 @@ mod shared_read_equality_rule_tests {
         let right = read(after.clone(), &pointer);
         let unrelated = Address {
             base: "different-word".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let wrong_address = read(after.clone(), &unrelated);
         let wrong_state = read(
@@ -4243,7 +4250,7 @@ mod shared_read_order_bridge_tests {
         let write_index = OldMachineTerm::Variable(Variable(995_802));
         let base = Address {
             base: "order-read-bridge".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let pointer = base.offset_by_elements(read_index.clone(), 4);
         let write = base.offset_by_elements(write_index.clone(), 4);
@@ -4344,7 +4351,7 @@ mod shared_byte_rebuild_tests {
         let empty = PureFactContext::new();
         let lower_only = empty.clone().assume_condition(lower, true);
         let bounded = lower_only.clone().assume_condition(upper, true);
-        let offset = AddressOffset::Int32Scaled {
+        let offset = OldAddressOffset::Int32Scaled {
             value: index,
             byte_width: 8,
         };

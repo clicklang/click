@@ -7,7 +7,7 @@ fn call(name: &str, arguments: Vec<PureFunctionArgument>) -> Address {
             name.into(),
             arguments,
         )),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     }
 }
 fn word(id: u64) -> OldMachineTerm {
@@ -50,7 +50,7 @@ fn pointer_calls_follow_late_model_aliases_and_displaced_addresses() {
     let mut graph = EqualityGraph::default();
     let shifted = |p: &Address| Address {
         base: p.base.clone(),
-        offset: AddressOffset::Constant(8),
+        offset: OldAddressOffset::Constant(8),
     };
     assert!(!graph.are_equal(&shifted(&left), &shifted(&right)));
     graph.add_algebraic_equality(&a, &b);

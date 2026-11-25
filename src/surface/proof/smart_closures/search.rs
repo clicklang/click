@@ -11415,21 +11415,21 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 // External arguments share a block and carry the
                 // actual base as an offset prefix: `(base + i) == base`
                 // needs facts about `i`, not old reads through `base`.
-                let zero = crate::kernel::AddressOffset::Constant(0);
+                let zero = crate::kernel::OldAddressOffset::Constant(0);
                 let (left, right) = match (&left.offset, &right.offset) {
-                    (crate::kernel::AddressOffset::Add(base, index), right)
+                    (crate::kernel::OldAddressOffset::Add(base, index), right)
                         if base.as_ref() == right =>
                     {
                         (index.as_ref(), &zero)
                     }
-                    (left, crate::kernel::AddressOffset::Add(base, index))
+                    (left, crate::kernel::OldAddressOffset::Add(base, index))
                         if left == base.as_ref() =>
                     {
                         (&zero, index.as_ref())
                     }
                     (
-                        crate::kernel::AddressOffset::Add(left_base, left_index),
-                        crate::kernel::AddressOffset::Add(right_base, right_index),
+                        crate::kernel::OldAddressOffset::Add(left_base, left_index),
+                        crate::kernel::OldAddressOffset::Add(right_base, right_index),
                     ) if left_base == right_base => (left_index.as_ref(), right_index.as_ref()),
                     (left, right) => (left, right),
                 };
@@ -13689,7 +13689,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let AddressBase::StaticObject { binding } = &address.base else {
             return Ok(None);
         };
-        if binding.function().is_some() || address.offset != AddressOffset::Constant(0) {
+        if binding.function().is_some() || address.offset != OldAddressOffset::Constant(0) {
             return Ok(None);
         }
 

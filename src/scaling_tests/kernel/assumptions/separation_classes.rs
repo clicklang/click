@@ -10,7 +10,7 @@ fn separation_class_lookup_visits_only_the_selected_payload() {
             let node = pointer(9_884_002);
             let program = Address {
                 base: AddressBase::ExternalArgument,
-                offset: AddressOffset::scale_int32(
+                offset: OldAddressOffset::scale_int32(
                     OldMachineTerm::Variable(Variable(9_884_003)),
                     4,
                 ),

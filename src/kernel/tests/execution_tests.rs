@@ -470,7 +470,7 @@ fn scalar_local_updates_share_memory_and_resource_state() {
 fn loop_back_edge_rejects_heap_and_resource_state_changes() {
     let allocation = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let memory = SymbolicMemory::new()
         .with_heap_allocation_claim(allocation.clone(), AllocationSize::int32(16))
@@ -490,7 +490,7 @@ fn loop_back_edge_rejects_heap_and_resource_state_changes() {
         &top,
         &program_heap_free(ProgramExpression::Value(ProgramValue::pointer(Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         }))),
         &PureFactContext::new(),
         ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
@@ -567,7 +567,7 @@ fn join_state_forgets_changed_scalars_and_memory() {
     let stable_x = int32(OldMachineTerm::Variable(Variable(7)));
     let pointer = Address {
         base: "heap".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let state_zero = ExecutionState::new()
         .with_local("x", stable_x.clone())
@@ -613,11 +613,11 @@ fn join_state_forgets_changed_scalars_and_memory() {
 fn join_state_abstracts_changed_pointer_locals() {
     let left = Address {
         base: "left".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let right = Address {
         base: "right".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let abstract_left = abstract_execution_state_for_join(
         &ExecutionState::new().with_local("selected", ProgramValue::pointer(left)),
@@ -714,7 +714,7 @@ fn symbolic_address_bases_do_not_imply_non_aliasing() {
     let symbolic = Address::symbolic(Variable(21_000));
     let concrete = Address {
         base: "heap".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
 
     assert_eq!(
@@ -727,11 +727,11 @@ fn symbolic_address_bases_do_not_imply_non_aliasing() {
 fn concrete_address_base_names_cannot_create_symbolic_identity() {
     let misleading_name = Address {
         base: "symbolic-pointer:21000".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let heap = Address {
         base: "heap".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
 
     assert!(!misleading_name.has_symbolic_block());
@@ -923,7 +923,7 @@ fn execution_derivation_matches_only_equivalent_call_havoc() {
 fn function_call_threads_memory_but_discards_callee_locals() {
     let pointer = Address {
         base: "block".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let resources = own_memory_context(pointer.clone(), 0, 1);
     let state = ExecutionState::new()
@@ -1855,7 +1855,7 @@ fn unknown_call_assign_is_runtime_error() {
 fn unreadable_guard_operand_leaves_the_condition_undecided() {
     let pointer = Address {
         base: "external".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let state = ExecutionState::new()
         .with_local("a", int32(OldMachineTerm::Variable(Variable(1))))
@@ -2113,7 +2113,7 @@ fn whole_function_default_budget_scales_with_selected_source() {
 fn while_invariant_is_proof_obligation() {
     let pointer = Address {
         base: "block".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let invariant = Proposition::MemoryLoadable {
         memory: SymbolicMemory::new(),
@@ -2326,7 +2326,7 @@ fn prerequisite_loop_rule_fixture() -> (ProgramStatement, VerifiedLoopRule) {
 fn loop_back_edge_refuses_a_dropped_share_or_a_regenerated_root() {
     let pointer = Address {
         base: "block".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let viewed = view_memory_fact(pointer, 0, 1);
     let resources = ResourceContext::new().unchecked_with_fact(viewed.clone());

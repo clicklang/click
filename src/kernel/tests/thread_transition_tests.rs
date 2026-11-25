@@ -8,7 +8,7 @@ use crate::kernel::threads::{
 fn pointer(index: usize) -> Address {
     Address {
         base: format!("thread-task-{index}").into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     }
 }
 
@@ -1269,7 +1269,7 @@ fn two_workers_share_one_implicit_local_root_until_both_join() {
     let (reader, termination) = certify_worker(function);
     let local = Address {
         base: "local:shared-reader".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let view = ResourceFact::view_memory(MemoryRange::new(local.clone(), 0.into(), 1.into()));
     let state = ExecutionState::new()
@@ -1649,7 +1649,7 @@ fn thread_parent_c_access_requires_join_and_implicit_storage_transfers_refuse() 
     ] {
         let local = Address {
             base: block.into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let state = ExecutionState::new()
             .with_population_creation_tracking()

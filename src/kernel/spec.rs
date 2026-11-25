@@ -2769,17 +2769,18 @@ fn integer_carrier_in_pointer(pointer: &Address, variable: Variable) -> bool {
     ) || integer_carrier_in_pointer_offset(&pointer.offset, variable)
 }
 
-fn integer_carrier_in_pointer_offset(offset: &AddressOffset, variable: Variable) -> bool {
+fn integer_carrier_in_pointer_offset(offset: &OldAddressOffset, variable: Variable) -> bool {
     match offset {
-        AddressOffset::Constant(_) => false,
-        AddressOffset::Variable(load) => {
+        OldAddressOffset::Constant(_) => false,
+        OldAddressOffset::Variable(load) => {
             integer_carrier_in_bitvector(&OldMachineTerm::Variable(*load), variable)
         }
-        AddressOffset::Add(left, right) => {
+        OldAddressOffset::Add(left, right) => {
             integer_carrier_in_pointer_offset(left, variable)
                 || integer_carrier_in_pointer_offset(right, variable)
         }
-        AddressOffset::Int32Scaled { value, .. } | AddressOffset::Int64Scaled { value, .. } => {
+        OldAddressOffset::Int32Scaled { value, .. }
+        | OldAddressOffset::Int64Scaled { value, .. } => {
             integer_carrier_in_offset_index(value.operand_view(), variable)
         }
     }
@@ -2821,15 +2822,15 @@ fn integer_carrier_in_offset_index(operand: MachineOperandView<'_>, variable: Va
 /// Keep this query conservative for those selected pointer leaves: retaining
 /// the accumulator quantifier is sound, while expanding the registry here
 /// would duplicate the checked carrier collector and reopen its DAG.
-fn pointer_offset_contains_registered_load(offset: &AddressOffset) -> bool {
+fn pointer_offset_contains_registered_load(offset: &OldAddressOffset) -> bool {
     match offset {
-        AddressOffset::Constant(_) => false,
-        AddressOffset::Variable(variable) => crate::kernel::is_load_variable(variable),
-        AddressOffset::Add(left, right) => {
+        OldAddressOffset::Constant(_) => false,
+        OldAddressOffset::Variable(variable) => crate::kernel::is_load_variable(variable),
+        OldAddressOffset::Add(left, right) => {
             pointer_offset_contains_registered_load(left)
                 || pointer_offset_contains_registered_load(right)
         }
-        AddressOffset::Int32Scaled { .. } | AddressOffset::Int64Scaled { .. } => false,
+        OldAddressOffset::Int32Scaled { .. } | OldAddressOffset::Int64Scaled { .. } => false,
     }
 }
 
@@ -5963,24 +5964,24 @@ fn evaluate_spec_integer_pure_function_application_paths_in(
 }
 
 /// An element index scaled to bytes, folded when the index is a constant.
-fn canonical_scaled_offset(value: OldMachineTerm, byte_width: i64) -> AddressOffset {
+fn canonical_scaled_offset(value: OldMachineTerm, byte_width: i64) -> OldAddressOffset {
     match value {
         bits32_constant!(value) => {
-            AddressOffset::Constant((constant_u32(value) as i32 as i64) * byte_width)
+            OldAddressOffset::Constant((constant_u32(value) as i32 as i64) * byte_width)
         }
-        value => AddressOffset::scaled_int32_node(value, byte_width),
+        value => OldAddressOffset::scaled_int32_node(value, byte_width),
     }
 }
 
 /// `left + right` on offsets with constants folded and zero addends dropped.
-fn canonical_offset_sum(left: AddressOffset, right: AddressOffset) -> AddressOffset {
+fn canonical_offset_sum(left: OldAddressOffset, right: OldAddressOffset) -> OldAddressOffset {
     match (&left, &right) {
-        (AddressOffset::Constant(left), AddressOffset::Constant(right)) => {
-            AddressOffset::Constant(left + right)
+        (OldAddressOffset::Constant(left), OldAddressOffset::Constant(right)) => {
+            OldAddressOffset::Constant(left + right)
         }
-        (AddressOffset::Constant(0), _) => right,
-        (_, AddressOffset::Constant(0)) => left,
-        _ => AddressOffset::Add(Box::new(left), Box::new(right)),
+        (OldAddressOffset::Constant(0), _) => right,
+        (_, OldAddressOffset::Constant(0)) => left,
+        _ => OldAddressOffset::Add(Box::new(left), Box::new(right)),
     }
 }
 
@@ -7226,7 +7227,7 @@ fn evaluate_resource_count_paths(
                         obligations,
                     });
                 }
-                if anchor.offset != AddressOffset::Constant(0) {
+                if anchor.offset != OldAddressOffset::Constant(0) {
                     return Err(ExecutionLimit::AuthorityCountNeedsExactPointer);
                 }
                 if creation.governing_authority(&description).as_ref() != Some(&description) {
@@ -8436,7 +8437,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     )]
                 } else if !*exact
                     && *value_type == ProgramType::UInt32
-                    && matches!(pointer.offset, AddressOffset::Constant(0))
+                    && matches!(pointer.offset, OldAddressOffset::Constant(0))
                     && let Some((value, byte_facts)) = crate::kernel::eval::indexed_uint32_byte_read(
                         &read_point,
                         &pointer,
@@ -8631,7 +8632,7 @@ fn evaluate_spec_pure_function_application_paths_in(
                         base: AddressBase::PureFunctionApplication(
                             application.as_ref().unwrap().clone(),
                         ),
-                        offset: AddressOffset::Constant(0),
+                        offset: OldAddressOffset::Constant(0),
                     }
                 },
                 result_type,
@@ -8835,7 +8836,7 @@ fn refine_object_pointer_argument_with_null(
         [value.address(), value.provenance()]
             .into_iter()
             .any(|object| {
-                object.offset == AddressOffset::Constant(0)
+                object.offset == OldAddressOffset::Constant(0)
                     && memory.declared_class(object).as_ref() == Some(object_class)
             })
     };

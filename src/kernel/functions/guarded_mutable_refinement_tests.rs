@@ -41,7 +41,7 @@ fn entry_state() -> ExecutionState {
             "cells",
             ProgramValue::pointer(Address {
                 base: AddressBase::ExternalArgument,
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             }),
         )
 }

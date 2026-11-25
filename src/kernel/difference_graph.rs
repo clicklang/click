@@ -23,7 +23,7 @@
 use crate::kernel::MachineIntegerType;
 use crate::kernel::binary_term;
 use crate::kernel::integer_exclusions::ExcludedIntegers;
-use crate::kernel::{Address, AddressOffset, OldConditionTerm, OldMachineTerm};
+use crate::kernel::{Address, OldAddressOffset, OldConditionTerm, OldMachineTerm};
 use crate::kernel::{CompareRelation, OverflowOperation};
 use crate::kernel::{MachineBinaryOp, MachineUnaryOp};
 use crate::kernel::{MachineCastSpelling, cast_term};
@@ -2406,8 +2406,8 @@ enum ScaledOffset<'a> {
     Bytes(i64),
 }
 
-fn scaled_offset(offset: &crate::kernel::AddressOffset) -> Option<ScaledOffset<'_>> {
-    use crate::kernel::AddressOffset as O;
+fn scaled_offset(offset: &crate::kernel::OldAddressOffset) -> Option<ScaledOffset<'_>> {
+    use crate::kernel::OldAddressOffset as O;
     match offset {
         O::Int32Scaled { value, byte_width } if *byte_width != 0 => {
             Some(ScaledOffset::Scaled(value.operand_view(), *byte_width))
@@ -2435,7 +2435,7 @@ fn offset_equality(condition: &OldConditionTerm) -> Option<OldConditionTerm> {
     // Wide scaled offsets also denote exact products, so cancelling their
     // common nonzero stride preserves equality and disequality. Keep the
     // full index domain; no low-word projection is involved.
-    use crate::kernel::AddressOffset as O;
+    use crate::kernel::OldAddressOffset as O;
     let wide = match (a.as_ref(), b.as_ref()) {
         (
             O::Int64Scaled {
@@ -2526,10 +2526,10 @@ fn offset_equality(condition: &OldConditionTerm) -> Option<OldConditionTerm> {
 /// (`p->size` and `q->size`): the offsets are equal exactly when the bases
 /// are, since adding one constant is injective.
 fn same_field_bases<'a>(
-    a: &'a AddressOffset,
-    b: &'a AddressOffset,
-) -> Option<(&'a AddressOffset, &'a AddressOffset)> {
-    use crate::kernel::AddressOffset as O;
+    a: &'a OldAddressOffset,
+    b: &'a OldAddressOffset,
+) -> Option<(&'a OldAddressOffset, &'a OldAddressOffset)> {
+    use crate::kernel::OldAddressOffset as O;
     match (a, b) {
         (O::Add(a_base, a_field), O::Add(b_base, b_field))
             if matches!(
@@ -2546,8 +2546,8 @@ fn same_field_bases<'a>(
 /// Two pointer offsets that cannot be equal whatever their values: a
 /// constant byte offset that no whole number of `int32` elements reaches.
 fn offset_mismatch(
-    a: &crate::kernel::AddressOffset,
-    b: &crate::kernel::AddressOffset,
+    a: &crate::kernel::OldAddressOffset,
+    b: &crate::kernel::OldAddressOffset,
 ) -> Option<bool> {
     match (scaled_offset(a)?, scaled_offset(b)?) {
         (ScaledOffset::Scaled(_, width), ScaledOffset::Bytes(bytes))
@@ -2765,7 +2765,7 @@ impl Residues {
     /// `addr(p + o)` is `addr(p) + o`: the address of a pointer whose
     /// offset is a sum, read through the address of one summand's pointer.
     fn address_residue(&self, pointer: &Address, depth: u32) -> Option<Residue> {
-        use crate::kernel::AddressOffset as O;
+        use crate::kernel::OldAddressOffset as O;
         let O::Add(left, right) = &pointer.offset else {
             return None;
         };
@@ -2790,8 +2790,8 @@ impl Residues {
 
 /// The residue of a pointer offset's byte count: exact for constants, and
 /// `0 mod 2^tz(w)` for `w` times an unknown index.
-fn offset_residue(offset: &AddressOffset) -> Option<Residue> {
-    use crate::kernel::AddressOffset as O;
+fn offset_residue(offset: &OldAddressOffset) -> Option<Residue> {
+    use crate::kernel::OldAddressOffset as O;
     charge();
     match offset {
         O::Constant(bytes) => Some(Residue::exact(*bytes as u64)),
@@ -2820,7 +2820,7 @@ struct PointerClasses {
     ids: PersistentMap<Address, NodeId>,
     terms: PersistentMap<NodeId, Address>,
     /// The ids of the pointers with each offset, for an offset question.
-    by_offset: PersistentMap<AddressOffset, crate::persistent::PersistentSet<NodeId>>,
+    by_offset: PersistentMap<OldAddressOffset, crate::persistent::PersistentSet<NodeId>>,
     parent: PersistentMap<NodeId, NodeId>,
     size: PersistentMap<NodeId, usize>,
     unequal: PersistentMap<NodeId, crate::persistent::PersistentSet<NodeId>>,
@@ -2930,7 +2930,7 @@ impl PointerClasses {
     /// `a == b` for two offsets of one block, read from recorded pointers
     /// in a common block with those offsets: such pointers are equal
     /// exactly when their offsets are.
-    fn decide_offsets(&self, a: &AddressOffset, b: &AddressOffset) -> Option<bool> {
+    fn decide_offsets(&self, a: &OldAddressOffset, b: &OldAddressOffset) -> Option<bool> {
         let (with_a, with_b) = (self.by_offset.get(a)?, self.by_offset.get(b)?);
         let pairs = with_a
             .iter()

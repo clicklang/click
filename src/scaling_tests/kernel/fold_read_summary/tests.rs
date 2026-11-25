@@ -178,7 +178,7 @@ fn retained_offset_summary_does_not_expand_index_dags() {
             );
         }
         let index = MachineOperandView::Shared(&root).retain(MachineIntegerType::Int32);
-        let offset = AddressOffset::Int32Scaled {
+        let offset = OldAddressOffset::Int32Scaled {
             value: index.clone(),
             byte_width: 4,
         };

@@ -167,7 +167,7 @@ fn qualified_storage_source_index_preserves_forks_and_scales() {
     fn pair(index: u32) -> (Address, SyntaxTerm, SyntaxProposition, Proposition) {
         let pointer = Address {
             base: AddressBase::Concrete(format!("global:state#file-static:file{index}.c")),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let expression = SyntaxTerm::QualifiedC {
             name: format!("file{index}::state"),

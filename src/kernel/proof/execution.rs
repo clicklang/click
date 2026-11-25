@@ -921,7 +921,7 @@ fn checks_population_member_exchange(
                 }
             });
     if !imported_member_exchange
-        && (anchor.offset != crate::kernel::AddressOffset::Constant(0)
+        && (anchor.offset != crate::kernel::OldAddressOffset::Constant(0)
             || !(matches!(&anchor.base, crate::kernel::AddressBase::Heap(_))
                 && before.memory.live_heap_block_size(anchor).is_some()
                 || anchor.base.is_local_block() && before.memory.has_block(&anchor.base)))

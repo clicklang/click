@@ -883,7 +883,7 @@ pub(in crate::surface) fn source_backed_requirement_is_supported(
         Condition(&'a OldConditionTerm),
         Bitvector(&'a OldMachineTerm),
         Shared(&'a crate::kernel::KernelTerm),
-        PointerOffset(&'a AddressOffset),
+        PointerOffset(&'a OldAddressOffset),
     }
     let mut work = vec![Work::Proposition(proposition, 0)];
     let mut visited = 0;
@@ -1044,20 +1044,20 @@ pub(in crate::surface) fn source_backed_requirement_is_supported(
                 work.push(Work::Bitvector(body));
             }
             Work::Bitvector(_) => return Ok(false),
-            Work::PointerOffset(AddressOffset::Constant(_)) => {}
-            Work::PointerOffset(AddressOffset::Variable(variable)) => {
+            Work::PointerOffset(OldAddressOffset::Constant(_)) => {}
+            Work::PointerOffset(OldAddressOffset::Variable(variable)) => {
                 if crate::kernel::is_load_variable(variable)
                     && crate::kernel::registered_load_for_variable(variable).is_none()
                 {
                     return Ok(false);
                 }
             }
-            Work::PointerOffset(AddressOffset::Add(left, right)) => {
+            Work::PointerOffset(OldAddressOffset::Add(left, right)) => {
                 work.push(Work::PointerOffset(right));
                 work.push(Work::PointerOffset(left));
             }
-            Work::PointerOffset(AddressOffset::Int32Scaled { value, .. })
-            | Work::PointerOffset(AddressOffset::Int64Scaled { value, .. }) => {
+            Work::PointerOffset(OldAddressOffset::Int32Scaled { value, .. })
+            | Work::PointerOffset(OldAddressOffset::Int64Scaled { value, .. }) => {
                 if let Some(root) = value.shared_operand() {
                     work.push(Work::Shared(root));
                 } else {
@@ -1275,7 +1275,7 @@ mod tests {
         );
         let pointer = crate::kernel::Address {
             base: crate::kernel::AddressBase::Concrete("static:test:values#static0".into()),
-            offset: crate::kernel::AddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0),
         };
         // The named form has to be the same read as the spelled `MemoryLoad`
         // alternative below: its kind, and the width that term's naming
@@ -1331,7 +1331,7 @@ mod tests {
 
         let dynamic_pointer = crate::kernel::Address {
             base: crate::kernel::AddressBase::Concrete("heap:test".into()),
-            offset: crate::kernel::AddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0),
         };
         let dynamic_variable = crate::kernel::load_variable_for_cell_with_origin(
             &memory,
@@ -1383,7 +1383,7 @@ mod tests {
         let memory = crate::kernel::SymbolicMemory::new();
         let pointer = crate::kernel::Address {
             base: crate::kernel::AddressBase::ExternalArgument,
-            offset: crate::kernel::AddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0),
         };
         let range = Proposition::MemoryLoadable {
             memory: crate::kernel::SymbolicMemory::new(),
@@ -1536,7 +1536,7 @@ mod tests {
             && let Proposition::MemoryLoadable { base, .. } = consequent.as_mut()
         {
             base.offset =
-                AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(1 << 40)), 1);
+                OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(1 << 40)), 1);
         }
         let unregistered_guarded = crate::kernel::quantifiers::test_exists(
             "len".to_string(),

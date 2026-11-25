@@ -28,7 +28,7 @@ fn free_uses_the_owned_base_and_retires_every_proven_alias() {
     let _session = crate::kernel::VerificationSession::enter();
     let base = Address {
         base: AddressBase::Heap(973_000),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let alias = Address::symbolic(Variable(973_001));
     let facts = PureFactContext::new().assume_proposition(Proposition::condition_is(
@@ -75,7 +75,7 @@ fn free_does_not_treat_an_unproved_or_interior_alias_as_a_base() {
     let _session = crate::kernel::VerificationSession::enter();
     let base = Address {
         base: AddressBase::Heap(973_010),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let alias = Address::symbolic(Variable(973_011));
     let state = ExecutionState::new()
@@ -108,7 +108,7 @@ fn free_alias_cannot_bypass_an_unresolved_reallocation() {
     let _session = crate::kernel::VerificationSession::enter();
     let base = Address {
         base: AddressBase::Heap(973_020),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let alias = Address::symbolic(Variable(973_021));
     let pending = Address::symbolic(Variable(973_022));

@@ -48,7 +48,7 @@ fn loop_head_havoc_work_over_cells_and_symbolic_borrows() {
             assert!(
                 !havoced.has_known_cell_at(&Address {
                     base: AddressBase::ExternalArgument,
-                    offset: AddressOffset::Constant(4 * index as i64),
+                    offset: OldAddressOffset::Constant(4 * index as i64),
                 }),
                 "a cell no borrow protects must not survive the havoc"
             );

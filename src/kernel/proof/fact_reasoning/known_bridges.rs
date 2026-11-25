@@ -833,18 +833,18 @@ pub(crate) fn pointer_projection_source(condition: &OldConditionTerm) -> Option<
     // A pointer parameter is itself an exact offset in the abstract
     // argument block. Cancel that common prefix before comparing its indices.
     let (a, b) = match (a, b) {
-        (AddressOffset::Add(base, a), AddressOffset::Add(other, b)) if base == other => {
+        (OldAddressOffset::Add(base, a), OldAddressOffset::Add(other, b)) if base == other => {
             (a.as_ref(), b.as_ref())
         }
         _ => (a, b),
     };
     for (narrow, wide) in [(a, b), (b, a)] {
         if let (
-            AddressOffset::Int32Scaled {
+            OldAddressOffset::Int32Scaled {
                 value: narrow,
                 byte_width,
             },
-            AddressOffset::Int64Scaled {
+            OldAddressOffset::Int64Scaled {
                 value: wide,
                 byte_width: wide_width,
                 unsigned: true,
@@ -1020,9 +1020,9 @@ mod tests {
                 right: Box::new(memory(
                     Address {
                         base: boundary.base.clone(),
-                        offset: AddressOffset::add(
+                        offset: OldAddressOffset::add(
                             boundary.offset.clone(),
-                            AddressOffset::Constant(offset),
+                            OldAddressOffset::Constant(offset),
                         ),
                     },
                     1u32.into(),

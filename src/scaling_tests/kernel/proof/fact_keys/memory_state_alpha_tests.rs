@@ -187,7 +187,7 @@ fn algebraic_read_fold_alpha_keys_ignore_unrelated_cells() {
                 point: crate::kernel::ProgramPoint::at(&memory.clone()),
                 pointer: Box::new(Address {
                     base: AddressBase::Heap(992_000),
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0),
                 }),
             },
         };
@@ -213,7 +213,7 @@ fn algebraic_read_fold_alpha_keys_ignore_unrelated_cells() {
             memory = memory.store(
                 Address {
                     base: AddressBase::Heap(993_000 + index),
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0),
                 },
                 ProgramValue::Int32(0u32.into()),
             );

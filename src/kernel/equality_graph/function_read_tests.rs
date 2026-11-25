@@ -22,7 +22,7 @@ fn a_function_pointer_read_of_its_stored_cell_is_the_stored_function() {
     let _session = crate::kernel::VerificationSession::enter();
     let slot = Address {
         base: "callback-slot".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let target = Address::function("callback");
     let memory =
@@ -50,7 +50,7 @@ fn a_function_pointer_read_through_an_alias_requires_explicit_store_equation() {
     let _session = crate::kernel::VerificationSession::enter();
     let slot = Address {
         base: "callback-slot".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let target = Address::function("callback");
     let stored = callback_value("callback");

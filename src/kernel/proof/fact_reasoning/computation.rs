@@ -1925,11 +1925,11 @@ mod tests {
         let _session = VerificationSession::enter();
         let source = Address {
             base: "copy-source".into(),
-            offset: AddressOffset::Constant(4),
+            offset: OldAddressOffset::Constant(4),
         };
         let destination = Address {
             base: "copy-destination".into(),
-            offset: AddressOffset::Constant(4),
+            offset: OldAddressOffset::Constant(4),
         };
         let read = |memory: SymbolicMemory, pointer: &Address| {
             OldMachineTerm::read_named(
@@ -1955,7 +1955,7 @@ mod tests {
             for i in 0..count {
                 let other = Address {
                     base: format!("copy-unrelated-{i}").into(),
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0),
                 };
                 memory = memory.store_union(other, ProgramType::Int32, crate::kernel::int32(i));
             }
@@ -1988,7 +1988,7 @@ mod tests {
                 memory,
                 base: Address {
                     base: "target".into(),
-                    offset: AddressOffset::Constant(4),
+                    offset: OldAddressOffset::Constant(4),
                 },
                 bytes: OldMachineTerm::constant(size).into(),
                 wide: false,

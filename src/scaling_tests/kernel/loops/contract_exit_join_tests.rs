@@ -73,7 +73,7 @@ fn a_loop_exit_join_visits_only_changed_bindings_and_cells() {
             shared = shared.with_local(format!("spare{index}"), int32(index));
             let pointer = Address {
                 base: AddressBase::from("shared"),
-                offset: AddressOffset::Constant(i64::from(index) * 4),
+                offset: OldAddressOffset::Constant(i64::from(index) * 4),
             };
             memory = memory.store(pointer, int32(index));
         }
@@ -283,11 +283,11 @@ fn optional_exit_cache_reconciliation_does_not_walk_unrelated_store_history() {
     let _session = crate::kernel::VerificationSession::enter();
     let pointer = Address {
         base: "shared".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let other = Address {
         base: "other".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let mut samples = Vec::new();
     for count in [4usize, 64, 1024] {
@@ -331,7 +331,7 @@ fn exit_cache_reconciliation_reuses_the_joins_exit_contexts() {
     let _session = crate::kernel::VerificationSession::enter();
     let pointer = Address {
         base: AddressBase::Concrete("shared".into()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let memory = SymbolicMemory::new().with_block("shared", 4);
     // Name the cell's load, as the exit's own read did.

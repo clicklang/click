@@ -6,7 +6,7 @@
 
 use super::{Anchor, AuthorityState, Holder, Refusal};
 use crate::kernel::{
-    AddressBase, AddressOffset, AlgebraicValue, CompositeResourceDefinition, ExecutionState,
+    AddressBase, AlgebraicValue, CompositeResourceDefinition, ExecutionState, OldAddressOffset,
     OldMachineTerm, ProgramValue, PureFactContext, Resource, ResourceDescription, ResourceFact,
     ResourceReference,
 };
@@ -1817,7 +1817,7 @@ impl CreationEvents {
         else {
             return Err(CreationRefusal::InvalidMember);
         };
-        if pointer.address().offset != AddressOffset::Constant(0)
+        if pointer.address().offset != OldAddressOffset::Constant(0)
             || &pointer.address().base != block
             || self.governing_authority(description).is_none()
         {
@@ -2036,7 +2036,7 @@ impl CreationEvents {
             AlgebraicValue::Program(ProgramValue::Pointer(pointer)) => {
                 let mut address = pointer.address().clone();
                 if let Some(offset) = address.offset.as_const() {
-                    address.offset = AddressOffset::Constant(offset);
+                    address.offset = OldAddressOffset::Constant(offset);
                 }
                 AlgebraicValue::Program(ProgramValue::pointer(address))
             }
@@ -3577,7 +3577,7 @@ impl CreationEvents {
             return Err(CreationRefusal::InvalidMember);
         };
         if &pointer.address().base != block
-            || pointer.address().offset != AddressOffset::Constant(0)
+            || pointer.address().offset != OldAddressOffset::Constant(0)
             || !description.resource_arguments().is_empty()
         {
             return Err(CreationRefusal::InvalidMember);

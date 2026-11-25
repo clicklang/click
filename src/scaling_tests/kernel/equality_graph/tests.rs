@@ -11,11 +11,11 @@ fn wide_borrow_alignment_retains_both_index_widths_without_alias_scans() {
         let mut graph = EqualityGraph::default();
         let bytes = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(index(999_200), 1),
+            offset: OldAddressOffset::scale_int32(index(999_200), 1),
         };
         let base = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(index(999_201), 1),
+            offset: OldAddressOffset::scale_int32(index(999_201), 1),
         };
         let computed = base.offset_by_elements(index(999_202), 1);
         let wide = bytes.offset_by_typed_elements(index(999_203), 1, true, true);
@@ -66,10 +66,10 @@ fn repeated_address_queries_reuse_registered_addresses() {
         // query reaches address registration, whose normal form of each
         // offset is a fresh flattened term.
         let offset = |first: u64| {
-            (0..size).fold(AddressOffset::Constant(0), |sum, item| {
-                AddressOffset::Add(
+            (0..size).fold(OldAddressOffset::Constant(0), |sum, item| {
+                OldAddressOffset::Add(
                     Box::new(sum),
-                    Box::new(AddressOffset::scaled_int32_node(index(first + item), 4)),
+                    Box::new(OldAddressOffset::scaled_int32_node(index(first + item), 4)),
                 )
             })
         };
@@ -157,7 +157,7 @@ fn reading_one_class_merge_does_not_walk_the_shared_history() {
 fn same_block_pointer_premise_chains_have_indexed_work() {
     for size in [16u64, 64, 256, 1024] {
         let block = symbolic(11_030);
-        let offset = |i| AddressOffset::Variable(Variable(20_000 + i));
+        let offset = |i| OldAddressOffset::Variable(Variable(20_000 + i));
         let mut graph = EqualityGraph::default();
         let (_, insertion_work) = crate::instrumentation::measure_deterministic_work(|| {
             for i in 0..size {
@@ -182,8 +182,8 @@ fn same_block_pointer_premise_chains_have_indexed_work() {
 #[test]
 fn equal_base_offset_queries_ignore_unrelated_class_members() {
     for size in [16u64, 64, 256, 1024] {
-        let x = AddressOffset::Variable(Variable(11_050));
-        let y = AddressOffset::Variable(Variable(11_051));
+        let x = OldAddressOffset::Variable(Variable(11_050));
+        let y = OldAddressOffset::Variable(Variable(11_051));
         let mut graph = EqualityGraph::default();
         for i in 0..size {
             graph.add_equality(&at(symbolic(30_000 + i), 0), &at(symbolic(30_001 + i), 0));
@@ -207,7 +207,7 @@ fn equal_base_offset_queries_ignore_unrelated_class_members() {
 
 #[test]
 fn pointer_transitivity_recovers_same_block_offsets() {
-    let offset = |id| AddressOffset::scaled_int32_node(index(id), 4);
+    let offset = |id| OldAddressOffset::scaled_int32_node(index(id), 4);
     for reverse in [false, true] {
         let mut samples = Vec::new();
         for size in [8u64, 32, 128, 512] {
@@ -219,7 +219,7 @@ fn pointer_transitivity_recovers_same_block_offsets() {
                 graph.add_equality(
                     &at_offset(
                         symbolic(961_000 + id),
-                        AddressOffset::Variable(Variable(963_000 + id)),
+                        OldAddressOffset::Variable(Variable(963_000 + id)),
                     ),
                     &z,
                 );
@@ -257,13 +257,16 @@ fn pointer_transitivity_recovers_same_block_offsets() {
     // Equal addresses from different blocks do not equate their offsets.
     let mut graph = EqualityGraph::default();
     graph.add_equality(&at(symbolic(962_000), 4), &at(symbolic(962_001), 8));
-    assert!(!graph.are_offsets_equal(&AddressOffset::Constant(4), &AddressOffset::Constant(8)));
+    assert!(!graph.are_offsets_equal(
+        &OldAddressOffset::Constant(4),
+        &OldAddressOffset::Constant(8)
+    ));
 }
 
 #[test]
 fn mixed_pointer_queries_do_not_walk_growing_offset_classes() {
     for size in [8u64, 32, 128, 512] {
-        let offset = |i| AddressOffset::Variable(Variable(940_000 + i));
+        let offset = |i| OldAddressOffset::Variable(Variable(940_000 + i));
         let x = at_offset(AddressBase::ExternalArgument, offset(0));
         let y = at_offset(AddressBase::ExternalArgument, offset(size));
         let z = at(symbolic(950_000), 0);
@@ -298,15 +301,15 @@ fn constant_displacement_queries_ignore_unrelated_class_members() {
     for size in [16u64, 64, 256, 1024] {
         let a = symbolic(40_000);
         let b = symbolic(40_001);
-        let x = AddressOffset::Variable(Variable(11_070));
-        let y = AddressOffset::Variable(Variable(11_071));
+        let x = OldAddressOffset::Variable(Variable(11_070));
+        let y = OldAddressOffset::Variable(Variable(11_071));
         let mut graph = EqualityGraph::default();
         graph.add_equality(&at(a.clone(), 0), &at(b.clone(), 8));
         for i in 1..size {
             graph.add_equality(&at(symbolic(40_000 + i), 0), &at(symbolic(40_001 + i), 0));
         }
         graph.add_offset_equality(
-            &AddressOffset::add(x.clone(), AddressOffset::Constant(8)),
+            &OldAddressOffset::add(x.clone(), OldAddressOffset::Constant(8)),
             &y,
         );
         let left = at_offset(a, x);
@@ -333,10 +336,10 @@ fn same_block_pointer_queries_scale_with_registered_offset_classes() {
         for id in 0..size {
             graph.add_int32_equality(&index(id), &index(id + 1));
         }
-        let first = at_offset(base.clone(), AddressOffset::scale_int32(index(0), 4));
+        let first = at_offset(base.clone(), OldAddressOffset::scale_int32(index(0), 4));
         let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
             for id in 1..=size {
-                let other = at_offset(base.clone(), AddressOffset::scale_int32(index(id), 4));
+                let other = at_offset(base.clone(), OldAddressOffset::scale_int32(index(id), 4));
                 assert!(graph.are_equal(&first, &other));
             }
         });
@@ -404,7 +407,7 @@ fn offset_queries_retain_typed_read_definitions_and_keep_blocks_distinct() {
         let read = value.as_loaded_value().expect("a typed pointer read");
         assert_eq!(&read.defining_address, address);
         assert_eq!(read.defining_memory.arena_id(), memory.arena_id());
-        assert_eq!(read.displacement, AddressOffset::Constant(0));
+        assert_eq!(read.displacement, OldAddressOffset::Constant(0));
     }
     let mut graph = EqualityGraph::default();
     let sibling = graph.clone();
@@ -425,7 +428,7 @@ fn offset_queries_retain_typed_read_definitions_and_keep_blocks_distinct() {
         &x,
         &Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(yv), 4),
+            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(yv), 4),
         }
     ));
     // New unrelated definitions must not make rediscovery visit more than
@@ -629,7 +632,7 @@ fn branch_merges_do_not_reindex_the_large_shared_prefix() {
 #[test]
 fn separation_equality_query_uses_offset_classes_without_walking_aliases() {
     for size in [16u64, 64, 256, 1024] {
-        let offset = |i| AddressOffset::Variable(Variable(500_000 + i));
+        let offset = |i| OldAddressOffset::Variable(Variable(500_000 + i));
         let mut context = PureFactContext::new();
         for i in 0..size {
             context = context.assume_condition(
@@ -650,11 +653,11 @@ fn separation_equality_query_uses_offset_classes_without_walking_aliases() {
 #[test]
 fn affine_input_normalization_is_linear_in_its_explicit_syntax() {
     for size in [16u64, 64, 256, 1024] {
-        let mut input = AddressOffset::Constant(0);
+        let mut input = OldAddressOffset::Constant(0);
         for i in 0..size {
-            input = AddressOffset::Add(
+            input = OldAddressOffset::Add(
                 Box::new(input),
-                Box::new(AddressOffset::Variable(Variable(900_000 + i))),
+                Box::new(OldAddressOffset::Variable(Variable(900_000 + i))),
             );
         }
         let (form, work) = crate::instrumentation::measure_deterministic_work(|| {

@@ -10,7 +10,7 @@ fn split_formation_selects_the_owned_piece_beside_unrelated_owners() {
             let other = OldPointer::new(
                 Address {
                     base: AddressBase::ExternalArgument,
-                    offset: AddressOffset::scale_int32(
+                    offset: OldAddressOffset::scale_int32(
                         OldMachineTerm::Variable(Variable(932_000 + i)),
                         4,
                     ),

@@ -436,7 +436,7 @@ mod tests {
         );
         let pointer = Address {
             base: "retained_state-comparison".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let variable = crate::kernel::load_variable_for_cell_with_origin(
             &memory,
@@ -486,7 +486,7 @@ mod tests {
         );
         let pointer = Address {
             base: "retained_state-key".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let variable = crate::kernel::load_variable_for_cell_with_origin(
             &memory,

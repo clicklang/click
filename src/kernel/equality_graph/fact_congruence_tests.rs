@@ -41,7 +41,7 @@ fn eq(a: OldMachineTerm, b: OldMachineTerm) -> Proposition {
 fn pointer(name: &str) -> Address {
     Address {
         base: name.into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     }
 }
 fn array(memory: &SymbolicMemory, p: Address, element_type: ProgramType) -> PureFunctionArgument {
@@ -269,7 +269,7 @@ fn signed_addition_definedness_stays_scoped() {
 fn coordinate_pointer(block: AddressBase, id: u64) -> Address {
     Address {
         base: block,
-        offset: AddressOffset::Variable(Variable(id)),
+        offset: OldAddressOffset::Variable(Variable(id)),
     }
 }
 
@@ -317,8 +317,8 @@ fn pointer_disequality_projects_only_through_a_witnessed_common_base() {
     );
     assert!(!distinct.contains_known(&Proposition::condition_is(
         OldConditionTerm::address_offset_equal(
-            AddressOffset::Constant(0),
-            AddressOffset::Constant(0)
+            OldAddressOffset::Constant(0),
+            OldAddressOffset::Constant(0)
         ),
         false
     )));
@@ -346,8 +346,8 @@ fn pointer_disequality_follows_a_new_base_witness_on_the_kept_class() {
     );
     assert!(facts.contains_known(&Proposition::condition_is(
         OldConditionTerm::address_offset_equal(
-            AddressOffset::Variable(Variable(72000)),
-            AddressOffset::Variable(Variable(72001))
+            OldAddressOffset::Variable(Variable(72000)),
+            OldAddressOffset::Variable(Variable(72001))
         ),
         false
     )));
@@ -479,7 +479,7 @@ fn selected_cursor_chain() -> (Proposition, Vec<Proposition>) {
     let original = OldPointer::new(
         Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(100_001)), 1),
+            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(100_001)), 1),
         },
         ProgramType::UInt8Pointer,
     );
@@ -496,30 +496,30 @@ fn selected_cursor_chain() -> (Proposition, Vec<Proposition>) {
         .with_address(cursor_base.address().offset_by_bytes(16));
     let at_first = original.clone().with_address(Address {
         base: original.address().base.clone(),
-        offset: AddressOffset::add(
+        offset: OldAddressOffset::add(
             original.address().offset.clone(),
-            AddressOffset::scale_int32(first.clone(), 1),
+            OldAddressOffset::scale_int32(first.clone(), 1),
         ),
     });
     let at_sum = Address {
         base: original.address().base.clone(),
-        offset: AddressOffset::add(
+        offset: OldAddressOffset::add(
             original.address().offset.clone(),
-            AddressOffset::scale_int32(sum.clone(), 1),
+            OldAddressOffset::scale_int32(sum.clone(), 1),
         ),
     };
     let at_count = Address {
         base: original.address().base.clone(),
-        offset: AddressOffset::add(
+        offset: OldAddressOffset::add(
             original.address().offset.clone(),
-            AddressOffset::scale_int32(count.clone(), 1),
+            OldAddressOffset::scale_int32(count.clone(), 1),
         ),
     };
     let target = original.clone().with_address(Address {
         base: original.address().base.clone(),
-        offset: AddressOffset::add(
+        offset: OldAddressOffset::add(
             original.address().offset.clone(),
-            AddressOffset::scale_int64(difference, 1, true),
+            OldAddressOffset::scale_int64(difference, 1, true),
         ),
     });
     let full = |left: OldPointer, right: OldPointer| {
@@ -642,7 +642,7 @@ fn selected_native_cursor_normalization_is_stable_across_context_orders() {
     let original = OldPointer::new(
         Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(100_001)), 1),
+            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(100_001)), 1),
         },
         ProgramType::UInt8Pointer,
     );
@@ -661,27 +661,27 @@ fn selected_native_cursor_normalization_is_stable_across_context_orders() {
     let second = OldMachineTerm::Variable(Variable(11));
     let at_first = original.clone().with_address(Address {
         base: original.address().base.clone(),
-        offset: AddressOffset::add(
+        offset: OldAddressOffset::add(
             original.address().offset.clone(),
-            AddressOffset::scale_int64(first.clone(), 1, true),
+            OldAddressOffset::scale_int64(first.clone(), 1, true),
         ),
     });
     let at_second = batch.clone().with_address(Address {
         base: batch.address().base.clone(),
-        offset: AddressOffset::scale_int64(second.clone(), 1, true),
+        offset: OldAddressOffset::scale_int64(second.clone(), 1, true),
     });
     let sequential = Address {
         base: original.address().base.clone(),
-        offset: AddressOffset::add(
+        offset: OldAddressOffset::add(
             at_first.address().offset.clone(),
-            AddressOffset::scale_int64(second.clone(), 1, true),
+            OldAddressOffset::scale_int64(second.clone(), 1, true),
         ),
     };
     let target = original.clone().with_address(Address {
         base: original.address().base.clone(),
-        offset: AddressOffset::add(
+        offset: OldAddressOffset::add(
             original.address().offset.clone(),
-            AddressOffset::scale_int64(
+            OldAddressOffset::scale_int64(
                 OldMachineTerm::Binary {
                     format: MachineIntegerType::UInt64,
                     op: MachineBinaryOp::Add,
@@ -767,11 +767,11 @@ fn named_pointer_read_definitions_follow_later_observations() {
     };
     let cell = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let unrelated = Address {
         base: AddressBase::Heap(985_003),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let first = crate::kernel::intern_memory(
         SymbolicMemory::new().store(unrelated.clone(), ProgramValue::UInt32(1u32.into())),
@@ -809,12 +809,12 @@ fn structural_pointer_read_definitions_keep_domains_and_reject_partial_writes() 
     let _session = VerificationSession::enter();
     let cell = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let memory = intern_memory(SymbolicMemory::new().store(
         Address {
             base: AddressBase::Heap(986_005),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         },
         ProgramValue::UInt32(1u32.into()),
     ));
@@ -945,7 +945,7 @@ fn pointer_domain_queries_register_stored_read_definitions_without_prior_address
     let read = Address::loaded_value(&memory, &slot);
     let root = Address {
         base: AddressBase::Heap(989_102),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let root_memory = intern_memory(SymbolicMemory::new().store(
         slot.clone(),

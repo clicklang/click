@@ -848,7 +848,7 @@ fn quantified_fact_query_scales_near_linearly_with_unrelated_quantified_facts() 
             let memory = SymbolicMemory::new();
             let data = Address {
                 base: "quantified-data".into(),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             };
             let fact_index = Variable(94_500);
             let target_index = Variable(94_501);
@@ -892,7 +892,7 @@ fn quantified_fact_query_scales_near_linearly_with_unrelated_quantified_facts() 
                 let unrelated_index = Variable(95_000 + index as u64 * 2);
                 let unrelated = Address {
                     base: format!("quantified-unrelated-{index}").into(),
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0),
                 };
                 assumptions = assumptions.assume_proposition(forall_int32(
                     unrelated_index,
@@ -1006,7 +1006,7 @@ fn theory_capable_order_endpoints_scale_near_linearly() {
             for index in 0..size {
                 let cell = Address {
                     base: format!("arg-memory-{index}").into(),
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0),
                 };
                 let load = OldMachineTerm::read_named(
                     ProgramPoint::at(&(crate::kernel::intern_memory(SymbolicMemory::new()))),
@@ -1362,11 +1362,11 @@ fn pointer_association_selected_guard_work_ignores_ambient_facts() {
     );
     let goal = Proposition::condition_is(
         OldConditionTerm::address_offset_equal(
-            AddressOffset::Add(
-                Box::new(AddressOffset::scale_int32(i.clone(), 1)),
-                Box::new(AddressOffset::Constant(4)),
+            OldAddressOffset::Add(
+                Box::new(OldAddressOffset::scale_int32(i.clone(), 1)),
+                Box::new(OldAddressOffset::Constant(4)),
             ),
-            AddressOffset::scale_int32(OldMachineTerm::add(i, OldMachineTerm::constant(4)), 1),
+            OldAddressOffset::scale_int32(OldMachineTerm::add(i, OldMachineTerm::constant(4)), 1),
         ),
         true,
     );
@@ -1409,11 +1409,11 @@ fn pointer_association_selected_guard_work_ignores_ambient_facts() {
 fn uint64_pointer_association_selected_guard_work_ignores_other_facts() {
     let i = OldMachineTerm::Variable(Variable(198301));
     let goal_condition = OldConditionTerm::address_offset_equal(
-        AddressOffset::Add(
-            Box::new(AddressOffset::scale_int64(i.clone(), 1, true)),
-            Box::new(AddressOffset::Constant(4)),
+        OldAddressOffset::Add(
+            Box::new(OldAddressOffset::scale_int64(i.clone(), 1, true)),
+            Box::new(OldAddressOffset::Constant(4)),
         ),
-        AddressOffset::scale_int64(
+        OldAddressOffset::scale_int64(
             OldMachineTerm::uint64_add(i, OldMachineTerm::uint64_constant(4)),
             1,
             true,
@@ -1432,11 +1432,11 @@ fn uint64_pointer_association_selected_guard_work_ignores_other_facts() {
     let other_bound = |n: u64| {
         let j = OldMachineTerm::Variable(Variable(199500 + n));
         bound_of(&OldConditionTerm::address_offset_equal(
-            AddressOffset::Add(
-                Box::new(AddressOffset::scale_int64(j.clone(), 1, true)),
-                Box::new(AddressOffset::Constant(4)),
+            OldAddressOffset::Add(
+                Box::new(OldAddressOffset::scale_int64(j.clone(), 1, true)),
+                Box::new(OldAddressOffset::Constant(4)),
             ),
-            AddressOffset::scale_int64(
+            OldAddressOffset::scale_int64(
                 OldMachineTerm::uint64_add(j, OldMachineTerm::uint64_constant(4)),
                 1,
                 true,
@@ -1496,7 +1496,7 @@ fn native_loadability_window_query_work_ignores_unrelated_views() {
     let memory = SymbolicMemory::new();
     let root = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let target = root.offset_by_bytes(1);
     let mut expected = None;
@@ -1556,7 +1556,7 @@ fn native_loadability_prefix_coverage_ignores_unrelated_addresses() {
     let memory = SymbolicMemory::new();
     let base = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let requested = OldMachineTerm::Variable(Variable(973_103));
     let mut expected = None;
@@ -1615,7 +1615,7 @@ fn native_loadability_queries_do_not_visit_unrelated_addresses() {
     let memory = SymbolicMemory::new();
     let base = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let mut expected = None;
     for count in [16, 64, 256] {
@@ -1625,7 +1625,7 @@ fn native_loadability_queries_do_not_visit_unrelated_addresses() {
                 memory: memory.clone(),
                 base: Address {
                     base: base.base.clone(),
-                    offset: AddressOffset::Constant(4 * (index + 1)),
+                    offset: OldAddressOffset::Constant(4 * (index + 1)),
                 },
                 bytes: crate::kernel::StoredMachineTerm::new(
                     crate::kernel::MachineIntegerType::UInt64,
@@ -1764,7 +1764,7 @@ fn call_input_retention_does_not_derive_memory_or_scan_unrelated_facts() {
     let memory = SymbolicMemory::new();
     let base = Address {
         base: "retention_data".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let held = Proposition::MemoryLoadable {
         memory: memory.clone(),

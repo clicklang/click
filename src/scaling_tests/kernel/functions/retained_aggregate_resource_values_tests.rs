@@ -8,11 +8,11 @@ use super::*;
 fn retained_resource_fields_preserve_lvalues_and_scale_with_expression() {
     let slot = Address {
         base: "local:frame:0:input".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let pointee = Address {
         base: "pointee".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let value = ProgramValue::typed_pointer(pointee, ProgramType::Int32Pointer);
     let layout = AggregateLayout::new(

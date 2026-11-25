@@ -133,8 +133,8 @@ fn pointer_disequality_projection_ignores_unrelated_pointer_predicates() {
                 );
                 assert!(facts.contains_known(&Proposition::condition_is(
                     OldConditionTerm::address_offset_equal(
-                        AddressOffset::Variable(Variable(73000)),
-                        AddressOffset::Variable(Variable(73001))
+                        OldAddressOffset::Variable(Variable(73000)),
+                        OldAddressOffset::Variable(Variable(73001))
                     ),
                     false
                 )));
@@ -301,11 +301,11 @@ fn later_pointer_read_definition_work(count: u32, unrelated: u64) -> usize {
     let _session = VerificationSession::enter();
     let cell = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let other = Address {
         base: AddressBase::Heap(986_001),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let mut memory = intern_memory(
         SymbolicMemory::new().store(other.clone(), ProgramValue::UInt32(0u32.into())),
@@ -418,7 +418,7 @@ fn pointer_domain_queries_scale_with_selected_read_definitions() {
         let slot = Address::symbolic(Variable(989_110));
         let target = Address {
             base: AddressBase::Heap(989_111),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let mut previous = target.clone();
         let mut memory = SymbolicMemory::new();

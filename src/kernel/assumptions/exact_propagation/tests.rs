@@ -146,7 +146,7 @@ fn exact_propagation_does_not_match_different_memory_states_or_types() {
     use crate::kernel::*;
     let pointer = Address {
         base: "propagation-cell".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let before = SymbolicMemory::new()
         .with_block("propagation-cell", 4)

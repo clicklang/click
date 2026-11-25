@@ -1317,10 +1317,10 @@ impl std::fmt::Debug for OldMachineTerm {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub enum AddressOffset {
+pub enum OldAddressOffset {
     Constant(i64),
     Variable(Variable),
-    Add(Box<AddressOffset>, Box<AddressOffset>),
+    Add(Box<OldAddressOffset>, Box<OldAddressOffset>),
     Int32Scaled {
         value: SharedMachineIntegerTerm,
         byte_width: i64,
@@ -1336,7 +1336,7 @@ pub enum AddressOffset {
     },
 }
 
-impl AddressOffset {
+impl OldAddressOffset {
     /// A small address index can carry arbitrarily deep *retained* operands.
     /// Its offset structure itself must stay bounded for source publication.
     pub(crate) fn is_shallow(&self) -> bool {
@@ -1375,7 +1375,7 @@ impl AddressOffset {
         mut map: impl FnMut(&SharedMachineIntegerTerm) -> SharedMachineIntegerTerm,
     ) -> Self {
         enum Task<'a> {
-            Visit(&'a AddressOffset),
+            Visit(&'a OldAddressOffset),
             Add,
         }
         let mut pending = vec![Task::Visit(self)];
@@ -1568,7 +1568,7 @@ pub enum OldConditionTerm {
     },
     Float32(FloatCondition),
     Float64(FloatCondition),
-    AddressOffsetEqual(Box<AddressOffset>, Box<AddressOffset>),
+    AddressOffsetEqual(Box<OldAddressOffset>, Box<OldAddressOffset>),
     AddressEqual(Box<Address>, Box<Address>),
     /// Specification pointer equality includes the designated object and bounds.
     PointerEqual(Box<OldPointer>, Box<OldPointer>),
@@ -1625,7 +1625,7 @@ enum ConditionIdentity<'a> {
     },
     Float32(&'a FloatCondition),
     Float64(&'a FloatCondition),
-    AddressOffsetEqual(&'a AddressOffset, &'a AddressOffset),
+    AddressOffsetEqual(&'a OldAddressOffset, &'a OldAddressOffset),
     AddressEqual(&'a Address, &'a Address),
     PointerEqual(&'a OldPointer, &'a OldPointer),
     IntegerLessThan(&'a SharedIntegerTerm, &'a SharedIntegerTerm),
@@ -2585,7 +2585,7 @@ pub(crate) use unary_machine_term;
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Address {
     pub base: AddressBase,
-    pub offset: AddressOffset,
+    pub offset: OldAddressOffset,
 }
 
 /// Which decodings of one pointer cell's bytes are one pointer value
@@ -2629,7 +2629,7 @@ pub(crate) struct LoadedPointerView {
     pub(crate) defining_memory: SharedMemory,
     pub(crate) point: ProgramPoint,
     pub(crate) defining_address: Address,
-    pub(crate) displacement: AddressOffset,
+    pub(crate) displacement: OldAddressOffset,
 }
 
 pub(crate) type ObjectTypeRequirements =
@@ -3066,8 +3066,8 @@ impl OldPointer {
         }
         let address_read = self.address.as_loaded_value()?;
         let origin = self.provenance().as_loaded_value()?;
-        if address_read.displacement != AddressOffset::Constant(0)
-            || origin.displacement != AddressOffset::Constant(0)
+        if address_read.displacement != OldAddressOffset::Constant(0)
+            || origin.displacement != OldAddressOffset::Constant(0)
             || address_read.defining_address != origin.defining_address
         {
             return None;
@@ -3304,7 +3304,7 @@ impl OldPointer {
 
     pub(crate) fn is_null(&self) -> bool {
         self.address.base == AddressBase::Concrete("null".to_string())
-            && self.address.offset == AddressOffset::Constant(0)
+            && self.address.offset == OldAddressOffset::Constant(0)
     }
 }
 
@@ -5522,7 +5522,7 @@ impl AlgebraicTerm {
         enum Node<'a> {
             Algebraic(&'a AlgebraicTerm),
             Value(&'a ProgramValue),
-            Offset(&'a AddressOffset),
+            Offset(&'a OldAddressOffset),
         }
         let mut pending = vec![Node::Algebraic(self)];
         while let Some(node) = pending.pop() {
@@ -5618,13 +5618,13 @@ impl AlgebraicTerm {
                     | ProgramValue::Float64(v) => visit(MachineOperandView::Old(v)),
                 },
                 Node::Offset(offset) => match offset {
-                    AddressOffset::Constant(_) | AddressOffset::Variable(_) => {}
-                    AddressOffset::Add(a, b) => {
+                    OldAddressOffset::Constant(_) | OldAddressOffset::Variable(_) => {}
+                    OldAddressOffset::Add(a, b) => {
                         pending.push(Node::Offset(a));
                         pending.push(Node::Offset(b));
                     }
-                    AddressOffset::Int32Scaled { value, .. }
-                    | AddressOffset::Int64Scaled { value, .. } => visit(value.operand_view()),
+                    OldAddressOffset::Int32Scaled { value, .. }
+                    | OldAddressOffset::Int64Scaled { value, .. } => visit(value.operand_view()),
                 },
             }
         }
@@ -10027,7 +10027,7 @@ pub(super) struct PendingReallocation {
     /// zero value. A prefix equal to the new allocation size means the whole
     /// block is zeroed; a shorter prefix leaves the grown tail uninitialized.
     pub(super) zeroed_prefix: Option<OldMachineTerm>,
-    pub(super) copied_cells: Vec<(AddressOffset, ProgramValue)>,
+    pub(super) copied_cells: Vec<(OldAddressOffset, ProgramValue)>,
     /// The runs of constant byte offsets of the old block that were
     /// initialized and lie in the new allocation, cut at its size: a
     /// successful resize preserves them whether or not a cached cell still
@@ -11081,7 +11081,7 @@ pub(in crate::kernel) enum StaticCellVersion {
 /// Keep the constant element geometry that the legacy call separator uses.
 /// Unknown blocks, offsets, bounds, or shapes leave an ordinary walk boundary.
 fn static_call_range(range: &MemoryRange) -> Option<(std::ops::Range<u32>, usize)> {
-    let AddressOffset::Constant(base) = range.base().offset else {
+    let OldAddressOffset::Constant(base) = range.base().offset else {
         return None;
     };
     let width = range.element_width();
@@ -11102,7 +11102,7 @@ fn static_call_range(range: &MemoryRange) -> Option<(std::ops::Range<u32>, usize
 }
 
 fn static_cell_byte_span(pointer: &Address, bytes: u32) -> Option<std::ops::Range<i64>> {
-    let AddressOffset::Constant(start) = pointer.offset else {
+    let OldAddressOffset::Constant(start) = pointer.offset else {
         return None;
     };
     let bytes = i64::from(bytes);
@@ -12461,7 +12461,7 @@ pub(super) struct ResourceContextIndex {
     /// offset (the range's anchor). Two distinct owned members of one block
     /// have different anchors, which a pointer comparison asks by key
     /// rather than through every pair of members.
-    pub(super) owned_memory_by_anchor: PersistentMap<AddressOffset, ResourceEntryIds>,
+    pub(super) owned_memory_by_anchor: PersistentMap<OldAddressOffset, ResourceEntryIds>,
 }
 
 /// A condition fact's kind and canonical sides; see
@@ -12471,7 +12471,7 @@ pub(super) enum ConditionMatchKey {
     /// A 32-bit equality, sides in ascending order.
     Equal(OldMachineTerm, OldMachineTerm),
     /// An offset equality, sides in ascending order.
-    OffsetEqual(AddressOffset, AddressOffset),
+    OffsetEqual(OldAddressOffset, OldAddressOffset),
     /// A signed order: strict, then its lower and its upper side.
     Order(bool, OldMachineTerm, OldMachineTerm),
     /// An unsigned 32-bit order, separate from signed order facts.
@@ -12496,7 +12496,7 @@ impl ConditionMatchKey {
 
 /// The block and first symbolic atom (canonical) of a memory base; see
 /// `ResourceContextIndex::owned_memory_by_root`.
-pub(super) type MemoryBaseRoot = (AddressBase, Option<AddressOffset>);
+pub(super) type MemoryBaseRoot = (AddressBase, Option<OldAddressOffset>);
 
 /// A token or composite's shape and first-pointer root; see
 /// `ResourceContextIndex::exact_shapes_by_root`.
@@ -14745,11 +14745,11 @@ mod term_payload_view_tests {
     #[test]
     fn owned_program_value_extraction_moves_native_address_prefixes() {
         for size in [16, 64, 256] {
-            let mut offset = AddressOffset::Constant(0);
+            let mut offset = OldAddressOffset::Constant(0);
             for index in 0..size {
-                offset = AddressOffset::Add(
+                offset = OldAddressOffset::Add(
                     Box::new(offset),
-                    Box::new(AddressOffset::Variable(Variable(991300 + index))),
+                    Box::new(OldAddressOffset::Variable(Variable(991300 + index))),
                 );
             }
             let value = ProgramValue::pointer(Address {
@@ -14762,7 +14762,7 @@ mod term_payload_view_tests {
             let ProgramValue::Pointer(pointer) = &value else {
                 unreachable!()
             };
-            let AddressOffset::Add(left, right) = &pointer.address().offset else {
+            let OldAddressOffset::Add(left, right) = &pointer.address().offset else {
                 unreachable!()
             };
             let allocations = [
@@ -14775,7 +14775,7 @@ mod term_payload_view_tests {
                 unreachable!()
             };
             let address = pointer.into_pointer();
-            let AddressOffset::Add(left, right) = &address.offset else {
+            let OldAddressOffset::Add(left, right) = &address.offset else {
                 unreachable!()
             };
             assert_eq!(
@@ -16342,7 +16342,7 @@ pub struct PureFactContext {
     /// alone: if `B + left` is null and `B + right` is not, then `left` and
     /// `right` are different offsets whatever block the query came from.
     pub(super) null_pointer_offsets: crate::persistent::PersistentMap<
-        AddressOffset,
+        OldAddressOffset,
         crate::persistent::PersistentMap<(AddressBase, bool), OldConditionTerm>,
     >,
     /// Trusted persistent equality closure for pointers, offsets, and int32
@@ -16357,7 +16357,7 @@ pub struct PureFactContext {
     /// statement about the offset terms alone, whatever block the comparison
     /// came from. Ownership alone does not trigger composition discovery.
     pub(super) separated_anchor_offsets: crate::persistent::PersistentMap<
-        (AddressOffset, AddressOffset),
+        (OldAddressOffset, OldAddressOffset),
         crate::persistent::PersistentSet<Proposition>,
     >,
     /// The same stated nonempty separation evidence for anchors whose

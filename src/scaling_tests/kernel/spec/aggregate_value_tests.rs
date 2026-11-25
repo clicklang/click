@@ -9,7 +9,7 @@ fn logical_fields_are_bounded_and_do_not_grant_pointer_access() {
     use crate::kernel::{AggregateField, AggregateLayout};
     let slot = Address {
         base: "local:frame:0:input".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let layout = AggregateLayout::new(
         4,

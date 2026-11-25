@@ -9,7 +9,7 @@ use crate::kernel::{int32_constant, native_constant};
 fn word(offset: i64) -> Address {
     Address {
         base: AddressBase::from("global:word"),
-        offset: AddressOffset::Constant(offset),
+        offset: OldAddressOffset::Constant(offset),
     }
 }
 
@@ -404,7 +404,7 @@ fn big_endian_and_uninstalled_byte_orders_have_no_byte_view() {
 fn pointer_cells_have_no_byte_view() {
     let target = Address {
         base: AddressBase::from("global:target"),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let memory = SymbolicMemory::new().store(
         word(0),

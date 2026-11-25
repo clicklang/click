@@ -12,7 +12,7 @@ fn retained_contract_offset_rewrite_visits_shared_displacements_once() {
     let to = OldMachineTerm::Variable(Variable(970_009));
     let repeated = |index: &OldMachineTerm, depth| {
         let mut root =
-            KernelAddressOffset::import(&AddressOffset::scaled_int32_node(index.clone(), 4));
+            KernelAddressOffset::import(&OldAddressOffset::scaled_int32_node(index.clone(), 4));
         for _ in 0..depth {
             root = KernelAddressOffset::Add([root.clone(), root])
                 .into_shared()
@@ -225,7 +225,7 @@ fn registered_load_rewrite_keeps_branching_pointer_dag_compact() {
             &memory,
             &Address {
                 base: AddressBase::Concrete(block.clone()),
-                offset: AddressOffset::scaled_int32_node(source_term.clone(), 4),
+                offset: OldAddressOffset::scaled_int32_node(source_term.clone(), 4),
             },
             crate::kernel::LoadKind::Int32,
             4,
@@ -235,12 +235,12 @@ fn registered_load_rewrite_keeps_branching_pointer_dag_compact() {
                 &memory,
                 &Address {
                     base: AddressBase::Concrete(block.clone()),
-                    offset: AddressOffset::Add(
-                        Box::new(AddressOffset::scaled_int32_node(
+                    offset: OldAddressOffset::Add(
+                        Box::new(OldAddressOffset::scaled_int32_node(
                             OldMachineTerm::Variable(load),
                             4,
                         )),
-                        Box::new(AddressOffset::scaled_int32_node(
+                        Box::new(OldAddressOffset::scaled_int32_node(
                             OldMachineTerm::Variable(load),
                             4,
                         )),
@@ -680,7 +680,7 @@ fn checked_fold_collectors_bound_mixed_carrier_payloads_and_opaque_states() {
             memory = memory.store(
                 Address {
                     base: block.clone(),
-                    offset: AddressOffset::Constant(offset as i64),
+                    offset: OldAddressOffset::Constant(offset as i64),
                 },
                 ProgramValue::Int32(OldMachineTerm::constant(offset as u32)),
             );
@@ -721,7 +721,7 @@ fn checked_fold_collectors_bound_mixed_carrier_payloads_and_opaque_states() {
         let memory = memory_state_identity(state_size);
         let pointer = Address {
             base: AddressBase::Concrete("checked-fold-opaque".into()),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let replacement_payload = OldMachineTerm::read_named(
             ProgramPoint::at(&memory),
@@ -750,7 +750,7 @@ fn checked_fold_collectors_bound_mixed_carrier_payloads_and_opaque_states() {
         let memory = memory_state_identity(depth);
         let pointer = Address {
             base: AddressBase::Concrete("checked-fold-opaque".into()),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let integer_source = Variable(3_000_000 + depth as u64);
         let mut int32_body = IntegerTerm::var(integer_source);
@@ -940,7 +940,7 @@ fn checked_substitution_collector_reuses_registered_load_dag() {
         let memory = crate::kernel::intern_memory(SymbolicMemory::new().with_block("array", 16));
         let leaf_pointer = Address {
             base: AddressBase::Concrete("array".into()),
-            offset: AddressOffset::scaled_int32_node(
+            offset: OldAddressOffset::scaled_int32_node(
                 OldMachineTerm::IntegerToMachine {
                     value: IntegerTerm::var(source).into(),
                     destination: MachineIntegerType::Int32,
@@ -959,7 +959,7 @@ fn checked_substitution_collector_reuses_registered_load_dag() {
                 &memory,
                 &Address {
                     base: AddressBase::Concrete("array".into()),
-                    offset: AddressOffset::Variable(load),
+                    offset: OldAddressOffset::Variable(load),
                 },
                 crate::kernel::LoadKind::Int32,
                 4,
@@ -969,7 +969,7 @@ fn checked_substitution_collector_reuses_registered_load_dag() {
             memory: memory.as_ref().clone(),
             base: Address {
                 base: AddressBase::Concrete("array".into()),
-                offset: AddressOffset::Variable(load),
+                offset: OldAddressOffset::Variable(load),
             },
             bytes: (OldMachineTerm::constant(4)).into(),
             wide: false,
@@ -1007,8 +1007,9 @@ fn checked_substitution_collector_reuses_registered_load_dag() {
 #[test]
 fn native_unsigned_offset_projection_checks_full_width_bounds_and_scopes() {
     let index = OldMachineTerm::Variable(Variable(989_100));
-    let native = AddressOffset::scaled_int64_node(index.clone(), 4, true);
-    let narrow = AddressOffset::scaled_int32_node(OldMachineTerm::uint32_from_64(index.clone()), 4);
+    let native = OldAddressOffset::scaled_int64_node(index.clone(), 4, true);
+    let narrow =
+        OldAddressOffset::scaled_int32_node(OldMachineTerm::uint32_from_64(index.clone()), 4);
     let bound = OldConditionTerm::uint64_less_equal(
         index.clone(),
         OldMachineTerm::uint64_constant(1_073_741_823),
@@ -1091,7 +1092,7 @@ fn native_unsigned_offset_projection_checks_full_width_bounds_and_scopes() {
         assert_eq!(projection(condition, truth), native);
     }
     let conditions = HashMap::from([(bound.clone(), true)]);
-    let signed = AddressOffset::scaled_int64_node(index.clone(), 4, false);
+    let signed = OldAddressOffset::scaled_int64_node(index.clone(), 4, false);
     let mut rewrite = TermRewrite::for_conditions(&conditions);
     assert_eq!(rewrite.offset(&signed), signed);
     let binder = crate::kernel::quantifiers::test_forall(
@@ -1178,7 +1179,7 @@ fn generic_read_alias_rewrite_work(count: u64, unrelated: u64, warm: bool) -> us
         memory = memory.store(
             Address {
                 base: AddressBase::Heap(996_100 + index),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
             stored.clone(),
         );
@@ -1187,7 +1188,7 @@ fn generic_read_alias_rewrite_work(count: u64, unrelated: u64, warm: bool) -> us
     let from = OldPointer::new(
         Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         },
         ProgramType::Int32Pointer,
     );
@@ -1330,7 +1331,7 @@ fn numeric_pointer_read_rewrite_work(
     let to = OldMachineTerm::Variable(Variable(997_021));
     let address = |index| Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int32(index, 8),
+        offset: OldAddressOffset::scale_int32(index, 8),
     };
     let mut memory = SymbolicMemory::new();
     for index in 0..unrelated {
@@ -1341,7 +1342,7 @@ fn numeric_pointer_read_rewrite_work(
                 } else {
                     AddressBase::Symbolic(Variable(998_020 + index))
                 },
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
             ProgramValue::Int32(7u32.into()),
         );
@@ -1775,7 +1776,7 @@ fn pointer_index_reconstruction_keeps_cold_dags_shared() {
             root =
                 KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [root.clone(), root]);
         }
-        let offset = AddressOffset::Int32Scaled {
+        let offset = OldAddressOffset::Int32Scaled {
             value: SharedMachineIntegerTerm::from_shared(ty, root).unwrap(),
             byte_width: 4,
         };

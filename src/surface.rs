@@ -14,7 +14,7 @@ use std::fmt;
 use crate::instrumentation::{self, TacticEvent, VerificationEvent};
 use crate::kernel::proof::PropositionSource;
 use crate::kernel::{
-    Address, AddressBase, AddressOffset, AlgebraicValue, BitvectorEqualityDerivationStep,
+    Address, AddressBase, AlgebraicValue, BitvectorEqualityDerivationStep,
     CheckedFunctionExecution, CheckedFunctionProposition,
     ComparisonOperator as KernelComparisonOperator, CompositeResourceDefinition, ConditionOutcome,
     ExecutionBudget, ExecutionEnvironment, ExecutionPureFact, ExecutionSemantics, ExecutionState,
@@ -22,8 +22,8 @@ use crate::kernel::{
     FunctionContractClaimTarget, FunctionContractExecutionMode, FunctionExecutionCandidates,
     FunctionOutcome, FunctionSpecification, LoopEarlyExit, LoopEffect, LoopEffectCheck,
     LoopEffectSpan, LoopFinalExitCandidate, LoopInvariantCheck, LoopReturnExit, MemoryRange,
-    MemorySegment, OldConditionTerm, OldMachineTerm, ProgramExpression, ProgramFunction,
-    ProgramStatement, ProgramType, ProgramValue, ProofObligation, Proposition,
+    MemorySegment, OldAddressOffset, OldConditionTerm, OldMachineTerm, ProgramExpression,
+    ProgramFunction, ProgramStatement, ProgramType, ProgramValue, ProofObligation, Proposition,
     PropositionDerivation, PureFactContext, Resource,
     ResourceAccessMode as KernelResourceAccessMode, ResourceContext, ResourceContextValidityError,
     ResourceFact, ResourceFamily, ResourceSpec, ResourceStateSource, ResourceTransferRole, Sort,
@@ -5349,8 +5349,8 @@ impl RecordedStates {
         pointer: &crate::kernel::Address,
         name_base: impl FnOnce(&crate::kernel::Address) -> Option<SyntaxTerm>,
     ) -> Option<SyntaxTerm> {
-        use crate::kernel::{Address, AddressOffset};
-        let AddressOffset::Constant(bytes) = pointer.offset else {
+        use crate::kernel::{Address, OldAddressOffset};
+        let OldAddressOffset::Constant(bytes) = pointer.offset else {
             return None;
         };
         let bytes = u32::try_from(bytes).ok()?;
@@ -5359,7 +5359,7 @@ impl RecordedStates {
         }
         let base = Address {
             base: pointer.base.clone(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         Some(SyntaxTerm::CUnary {
             operand: Box::new(name_base(&base)?),

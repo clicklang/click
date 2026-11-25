@@ -1701,15 +1701,16 @@ fn collect_shared_offset_reads(
     });
 }
 
-fn collect_offset_reads(offset: &AddressOffset, reads: &mut Vec<ResourceRead>) {
+fn collect_offset_reads(offset: &OldAddressOffset, reads: &mut Vec<ResourceRead>) {
     let mut pending = vec![offset];
     while let Some(offset) = pending.pop() {
         match offset {
-            AddressOffset::Add(left, right) => {
+            OldAddressOffset::Add(left, right) => {
                 pending.push(left);
                 pending.push(right);
             }
-            AddressOffset::Int32Scaled { value, .. } | AddressOffset::Int64Scaled { value, .. } => {
+            OldAddressOffset::Int32Scaled { value, .. }
+            | OldAddressOffset::Int64Scaled { value, .. } => {
                 collect_operand_reads(value.operand_view(), reads)
             }
             _ => {}

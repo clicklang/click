@@ -108,7 +108,7 @@ fn aligned_shared_sums_check_selected_read_authority_in_linear_work() {
         let write_index = OldMachineTerm::Variable(Variable(996_001));
         let base = Address {
             base: "framed-sums".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let pointers: Vec<_> = (0..size)
             .map(|index| {

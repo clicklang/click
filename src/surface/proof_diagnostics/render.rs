@@ -11,8 +11,8 @@ use crate::kernel::ResourceFact;
 use crate::kernel::binary_node;
 use crate::kernel::binary_term;
 use crate::kernel::{
-    Address, AddressOffset, AlgebraicTerm, AlgebraicTermNode, AlgebraicValue, AlgebraicValueType,
-    ExecutionState, ExpressionOutcome, IntegerRangeFoldIndex, IntegerTerm, OldConditionTerm,
+    Address, AlgebraicTerm, AlgebraicTermNode, AlgebraicValue, AlgebraicValueType, ExecutionState,
+    ExpressionOutcome, IntegerRangeFoldIndex, IntegerTerm, OldAddressOffset, OldConditionTerm,
     OldMachineTerm, ProgramValue, Proposition, PureFunctionArgument, Resource, Sort,
     SpecCaptureRefusal, SymbolicMemory, Term, Variable,
 };
@@ -320,7 +320,7 @@ impl MemoryStateLabels {
             names
                 .iter()
                 .filter(|(base, _)| {
-                    base.base == pointer.base && base.offset == AddressOffset::Constant(0)
+                    base.base == pointer.base && base.offset == OldAddressOffset::Constant(0)
                 })
                 .map(|(_, name)| name.as_str())
                 .min_by(|left, right| left.len().cmp(&right.len()).then(left.cmp(right)))
@@ -2566,18 +2566,18 @@ impl Renderer<'_> {
         self.bitvector(right);
         self.push(")");
     }
-    fn offset(&mut self, o: &AddressOffset, _depth: usize) {
+    fn offset(&mut self, o: &OldAddressOffset, _depth: usize) {
         if self.depth >= MAX_DEPTH || self.truncated {
             self.truncated = true;
             return;
         }
         match o {
-            AddressOffset::Constant(v) => self.fmt(format_args!("{v}")),
-            AddressOffset::Variable(v) => {
+            OldAddressOffset::Constant(v) => self.fmt(format_args!("{v}")),
+            OldAddressOffset::Variable(v) => {
                 let name = self.variable_name(*v, "offset");
                 self.push(&name);
             }
-            AddressOffset::Add(a, b) => {
+            OldAddressOffset::Add(a, b) => {
                 self.depth += 1;
                 self.push("(");
                 self.offset(a, 0);
@@ -2586,12 +2586,12 @@ impl Renderer<'_> {
                 self.push(")");
                 self.depth -= 1;
             }
-            AddressOffset::Int32Scaled { value, byte_width } => {
+            OldAddressOffset::Int32Scaled { value, byte_width } => {
                 self.push("int32(");
                 self.bitvector(value.structural_value());
                 self.fmt(format_args!(")*{byte_width} bytes"));
             }
-            AddressOffset::Int64Scaled {
+            OldAddressOffset::Int64Scaled {
                 value,
                 byte_width,
                 unsigned,
@@ -3085,19 +3085,19 @@ mod tests {
 
     #[test]
     fn retained_contract_offset_diagnostic_preserves_shape_and_width() {
-        use crate::kernel::{AddressOffset, OldMachineTerm, Term};
+        use crate::kernel::{OldAddressOffset, OldMachineTerm, Term};
         let _session = crate::kernel::VerificationSession::enter();
-        let offset = AddressOffset::Add(
-            Box::new(AddressOffset::scaled_int64_node(
+        let offset = OldAddressOffset::Add(
+            Box::new(OldAddressOffset::scaled_int64_node(
                 OldMachineTerm::uint64_constant(3),
                 8,
                 true,
             )),
-            Box::new(AddressOffset::Constant(-2)),
+            Box::new(OldAddressOffset::Constant(-2)),
         );
         let claim = Proposition::Equal(
             Term::PointerOffset(offset.into()),
-            Term::PointerOffset(AddressOffset::Constant(22).into()),
+            Term::PointerOffset(OldAddressOffset::Constant(22).into()),
         );
         let source = surface::source(&claim, &mut MemoryStateLabels::ambient());
         assert!(source.contains(" * 8 + -2"), "{source}");
@@ -3195,7 +3195,7 @@ mod tests {
         ] {
             let pointer = Address {
                 base: format!("local:{local}").into(),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             };
             let memory = SymbolicMemory::new()
                 .with_block(format!("local:{local}"), 4)
@@ -3327,7 +3327,7 @@ mod tests {
             memory,
             base: Address {
                 base: crate::kernel::AddressBase::ExternalArgument,
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
             bytes: (OldMachineTerm::constant(1)).into(),
             wide: false,
@@ -3515,7 +3515,7 @@ mod resource_detail_tests {
     fn typed_resource_arguments_keep_publication_payload_values() {
         let flag = Address {
             base: "ready".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let publication = |value| {
             ResourceFact::own(Resource::Publication(PublicationRight::new(
@@ -3542,11 +3542,11 @@ mod resource_detail_tests {
     fn typed_iterated_resources_keep_guards_elements_and_taken_indices() {
         let base = Address {
             base: "elements".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let guard = Address {
             base: "flags".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let iterated = IteratedMemory::new(
             "selected",

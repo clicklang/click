@@ -348,7 +348,7 @@ impl ChildArgumentTrace {
 pub(super) fn pointer_definition(pointer: &Address) -> Option<OldMachineTerm> {
     crate::kernel::logical_pointer_read_term(pointer).or_else(|| {
         let read = pointer.as_loaded_value()?;
-        (read.displacement == crate::kernel::AddressOffset::Constant(0)).then(|| {
+        (read.displacement == crate::kernel::OldAddressOffset::Constant(0)).then(|| {
             crate::kernel::OldMachineTerm::read_named(
                 crate::kernel::ProgramPoint::viewing(&read.defining_memory, &read.point),
                 read.defining_address,
@@ -1358,7 +1358,7 @@ mod tests {
         });
     }
 
-    use crate::kernel::{Address, AddressBase, AddressOffset, OldMachineTerm, SymbolicMemory};
+    use crate::kernel::{Address, AddressBase, OldAddressOffset, OldMachineTerm, SymbolicMemory};
 
     #[test]
     fn admitted_read_equalities_share_the_fact_printer_and_read_labels() {
@@ -1598,7 +1598,7 @@ mod tests {
             memory,
             base: Address {
                 base: AddressBase::ExternalArgument,
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
             bytes: (OldMachineTerm::constant(1)).into(),
             wide: false,
@@ -1767,7 +1767,7 @@ mod tests {
         let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let pointer = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let variable =
             crate::kernel::load_variable_for_term(&crate::kernel::OldMachineTerm::read_named(

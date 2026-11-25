@@ -113,14 +113,14 @@ pub(in crate::kernel) struct InputData {
     >,
     /// Normalized same-block pointer equalities, indexed under each offset.
     pub(in crate::kernel) pointer_offset_aliases: crate::persistent::PersistentMap<
-        AddressOffset,
-        crate::persistent::PersistentSet<AddressOffset>,
+        OldAddressOffset,
+        crate::persistent::PersistentSet<OldAddressOffset>,
     >,
     /// `pointer_offset_aliases` again, keyed by the alias offset's root atom
     /// (`resource_algebra::offset_root_atom`).
     pub(in crate::kernel) pointer_offset_aliases_by_root: crate::persistent::PersistentMap<
-        Option<AddressOffset>,
-        crate::persistent::PersistentSet<(AddressOffset, AddressOffset)>,
+        Option<OldAddressOffset>,
+        crate::persistent::PersistentSet<(OldAddressOffset, OldAddressOffset)>,
     >,
     /// Admission-time keys of the admitted scalar evidence inputs.
     pub(in crate::kernel) scalar_evidence_keys: crate::persistent::PersistentMap<

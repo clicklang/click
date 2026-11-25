@@ -115,7 +115,7 @@ fn algebraic_read_construction_keeps_growing_shared_addresses_without_exports() 
         }
         let pointer = Address {
             base: AddressBase::Symbolic(Variable(999748)),
-            offset: AddressOffset::Int32Scaled {
+            offset: OldAddressOffset::Int32Scaled {
                 value: SharedMachineIntegerTerm::from_shared(format, index).unwrap(),
                 byte_width: 4,
             },

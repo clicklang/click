@@ -445,7 +445,7 @@ fn shared_pointer_resource_read_collection_visits_each_node_once() {
                 [root.clone(), root],
             );
         }
-        let offset = AddressOffset::Int32Scaled {
+        let offset = OldAddressOffset::Int32Scaled {
             value: S::from_shared(MachineIntegerType::Int32, root).unwrap(),
             byte_width: 4,
         };

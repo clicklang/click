@@ -454,16 +454,16 @@ fn pointer_storage_keys_preserve_the_complete_native_identity_tuple() {
         })));
     }
     for offset in [
-        AddressOffset::Constant(-1),
-        AddressOffset::Constant(0),
-        AddressOffset::Variable(Variable(998752)),
-        AddressOffset::Add(
-            Box::new(AddressOffset::Variable(Variable(998752))),
-            Box::new(AddressOffset::Constant(1)),
+        OldAddressOffset::Constant(-1),
+        OldAddressOffset::Constant(0),
+        OldAddressOffset::Variable(Variable(998752)),
+        OldAddressOffset::Add(
+            Box::new(OldAddressOffset::Variable(Variable(998752))),
+            Box::new(OldAddressOffset::Constant(1)),
         ),
-        AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(998753)), 4),
-        AddressOffset::scaled_int64_node(OldMachineTerm::Variable(Variable(998754)), 8, false),
-        AddressOffset::scaled_int64_node(OldMachineTerm::Variable(Variable(998754)), 8, true),
+        OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(998753)), 4),
+        OldAddressOffset::scaled_int64_node(OldMachineTerm::Variable(Variable(998754)), 8, false),
+        OldAddressOffset::scaled_int64_node(OldMachineTerm::Variable(Variable(998754)), 8, true),
     ] {
         values.push(OldPointer::new(
             Address {

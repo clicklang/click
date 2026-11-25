@@ -923,7 +923,7 @@ mod tests {
         } else {
             Address {
                 base: "global:public-output".into(),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             }
         };
         let mut memory = SymbolicMemory::new().with_block(anchor.base.clone(), 4);

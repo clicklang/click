@@ -169,7 +169,7 @@ fn external_array_source_selection_skips_unrelated_parameter_cells() {
         let source = external(935_000);
         let target = Address {
             base: "local:indexed-copy".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let mut memory = SymbolicMemory::new()
             .with_block(target.base.clone(), 16)

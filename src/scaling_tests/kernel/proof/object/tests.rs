@@ -1413,8 +1413,8 @@ fn known_compound_comparison_work_is_linear_in_selected_clauses() {
 #[test]
 fn automatic_object_separation_ignores_ambient_address_facts() {
     use crate::kernel::{
-        Address, AddressBase, AddressOffset, LocalBindingId, LocalFunctionId, LocalStorageInstance,
-        MemoryRange, OldConditionTerm, Resource, Variable,
+        Address, AddressBase, LocalBindingId, LocalFunctionId, LocalStorageInstance, MemoryRange,
+        OldAddressOffset, OldConditionTerm, Resource, Variable,
     };
 
     let _session = crate::kernel::VerificationSession::enter();
@@ -1424,12 +1424,12 @@ fn automatic_object_separation_ignores_ambient_address_facts() {
             binding: LocalBindingId::new(function.clone(), false, index, None),
             instance: LocalStorageInstance::Implicit,
         },
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let selected = local(0);
     let incoming = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let alias = Address::symbolic(Variable(1));
     let resource = |pointer| {
@@ -1562,13 +1562,14 @@ fn selected_match_conditionals_known_work_ignores_context_growth() {
 #[test]
 fn pointer_index_projection_looks_up_only_its_full_width_bound() {
     use crate::kernel::proof::fact_reasoning::{known_bridge_leaf, pointer_projection_source};
-    use crate::kernel::{AddressOffset, OldConditionTerm, VerificationSession};
+    use crate::kernel::{OldAddressOffset, OldConditionTerm, VerificationSession};
     let _session = VerificationSession::enter();
     let index = OldMachineTerm::Variable(Variable(970_020));
-    let narrow = AddressOffset::scaled_int32_node(OldMachineTerm::uint32_from_64(index.clone()), 4);
-    let wide = AddressOffset::scaled_int64_node(index.clone(), 4, true);
+    let narrow =
+        OldAddressOffset::scaled_int32_node(OldMachineTerm::uint32_from_64(index.clone()), 4);
+    let wide = OldAddressOffset::scaled_int64_node(index.clone(), 4, true);
     let at_parameter =
-        |offset| AddressOffset::add(AddressOffset::Variable(Variable(970_021)), offset);
+        |offset| OldAddressOffset::add(OldAddressOffset::Variable(Variable(970_021)), offset);
     let compare = OldConditionTerm::address_offset_equal(at_parameter(narrow), at_parameter(wide));
     let wide = pointer_projection_source(&compare).unwrap();
     let goal = Proposition::condition_is(compare, true);

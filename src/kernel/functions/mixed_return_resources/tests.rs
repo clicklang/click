@@ -9,7 +9,7 @@ fn mixed_composition_restores_symbolic_borrows_and_keeps_emitted_occurrence_orde
     let facts = PureFactContext::new();
     let pointer = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Variable(Variable(8_810_000)),
+        offset: OldAddressOffset::Variable(Variable(8_810_000)),
     };
     let borrow = owner(pointer.clone(), 0, 1);
     let produced = owner(Address::symbolic(Variable(8_810_001)), 0, 1);
@@ -2354,7 +2354,7 @@ fn escrow_boundary_checks_live_new_outputs_but_not_removed_occurrences() {
     let facts = PureFactContext::new();
     let pointer = Address {
         base: "escrow-boundary".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let escrow = owner(pointer.clone(), 0, 8);
     let protected = ResourceContext::new_with_equalities(&facts).unchecked_with_fact(escrow);
@@ -2381,7 +2381,7 @@ fn escrow_boundary_checks_body_frontiers_against_released_inherited_holds() {
     let facts = PureFactContext::new();
     let pointer = Address {
         base: "inherited-escrow-boundary".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let inherited = ResourceContext::new_with_equalities(&facts).unchecked_with_fact(owner(
         pointer.clone(),
@@ -2408,7 +2408,7 @@ fn escrow_recovery_uses_the_lend_time_frontier_of_a_folded_owner() {
     let facts = PureFactContext::new();
     let pointer = Address {
         base: "folded-escrow".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let piece = owner(pointer.clone(), 0, 8);
     let head = ResourceFact::own_composite("protected".into(), vec![]);

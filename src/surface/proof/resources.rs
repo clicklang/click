@@ -5892,7 +5892,7 @@ void child_release(struct child* obj) {
                 memory: earlier.memory().clone(),
                 pointer: Address {
                     base: AddressBase::ExternalArgument,
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0),
                 },
                 value_type: ProgramType::Int32,
             };
@@ -5910,7 +5910,7 @@ void child_release(struct child* obj) {
     fn dynamic_quantified_definedness_depends_on_the_guarded_range() {
         let base = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let memory = SymbolicMemory::new();
         let index = Variable(2_000_000);
@@ -5947,7 +5947,7 @@ void child_release(struct child* obj) {
                         memory: memory.clone(),
                         pointer: Address {
                             base: AddressBase::ExternalArgument,
-                            offset: AddressOffset::Int32Scaled {
+                            offset: OldAddressOffset::Int32Scaled {
                                 value: crate::kernel::SharedMachineIntegerTerm::index(
                                     crate::kernel::MachineIntegerType::Int32,
                                     *index_term(),
@@ -6025,7 +6025,7 @@ void child_release(struct child* obj) {
     fn check_dynamic_current_fact_dependencies(definedness: bool, symbolic_range: bool) {
         let pointer = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let memory = SymbolicMemory::new().store(
             pointer.clone(),
@@ -6322,7 +6322,7 @@ mod guarded_unmatched_materialization_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = Address {
             base: crate::kernel::AddressBase::ExternalArgument,
-            offset: crate::kernel::AddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0),
         };
         let state = ExecutionState::new().begin_function_entry_memory();
         check_composite_cell_naming(pointer, state, true);
@@ -6714,7 +6714,7 @@ mod guarded_unmatched_materialization_tests {
         .unwrap();
         let slot = Address {
             base: "local:slot".into(),
-            offset: crate::kernel::AddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0),
         };
         let start = ExecutionState::new()
             .with_memory(SymbolicMemory::new().with_block(slot.base.clone(), 4));
@@ -6779,7 +6779,7 @@ resource cell(p: int32*) {
             (
                 crate::kernel::Address {
                     base: "object".into(),
-                    offset: crate::kernel::AddressOffset::Constant(0),
+                    offset: crate::kernel::OldAddressOffset::Constant(0),
                 },
                 true,
             ),
@@ -7012,7 +7012,7 @@ mod declared_scalar_field_observation_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let base = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let ty = ProgramType::Int32Pointer;
         let stored = ExecutionState::new().with_memory(SymbolicMemory::new().store(
@@ -7047,7 +7047,7 @@ mod declared_scalar_field_observation_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let base = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let state = ExecutionState::new().begin_function_entry_memory();
         let source = state.program_point();

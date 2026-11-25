@@ -350,7 +350,7 @@ fn selected_footprint_separations_are_linear_with_one_shared_address_bucket() {
             MemoryRange::new_with_element_width(
                 Address {
                     base: AddressBase::ExternalArgument,
-                    offset: AddressOffset::Variable(Variable(8_391_000 + index)),
+                    offset: OldAddressOffset::Variable(Variable(8_391_000 + index)),
                 },
                 0u32.into(),
                 4u32.into(),

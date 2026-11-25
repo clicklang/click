@@ -3714,8 +3714,8 @@ impl PureFactContext {
         condition: &OldConditionTerm,
     ) -> BTreeSet<OldMachineTerm> {
         fn collect_offset_candidates(
-            pattern: &AddressOffset,
-            target: &AddressOffset,
+            pattern: &OldAddressOffset,
+            target: &OldAddressOffset,
             bound: Variable,
             candidates: &mut BTreeSet<OldMachineTerm>,
         ) {
@@ -3728,16 +3728,19 @@ impl PureFactContext {
                 candidates.insert(OldMachineTerm::constant(0));
             }
             match (pattern, target) {
-                (AddressOffset::Add(left_a, left_b), AddressOffset::Add(right_a, right_b)) => {
+                (
+                    OldAddressOffset::Add(left_a, left_b),
+                    OldAddressOffset::Add(right_a, right_b),
+                ) => {
                     collect_offset_candidates(left_a, right_a, bound, candidates);
                     collect_offset_candidates(left_b, right_b, bound, candidates);
                 }
                 (
-                    AddressOffset::Int32Scaled {
+                    OldAddressOffset::Int32Scaled {
                         value: left,
                         byte_width: left_width,
                     },
-                    AddressOffset::Int32Scaled {
+                    OldAddressOffset::Int32Scaled {
                         value: right,
                         byte_width: right_width,
                     },
@@ -3750,11 +3753,11 @@ impl PureFactContext {
                     );
                 }
                 (
-                    AddressOffset::Int32Scaled {
+                    OldAddressOffset::Int32Scaled {
                         value: left,
                         byte_width,
                     },
-                    AddressOffset::Constant(bytes),
+                    OldAddressOffset::Constant(bytes),
                 ) if *byte_width != 0 && bytes % byte_width == 0 => {
                     let elements = bytes / byte_width;
                     collect_index_candidates(
@@ -3767,12 +3770,12 @@ impl PureFactContext {
                     );
                 }
                 (
-                    AddressOffset::Int64Scaled {
+                    OldAddressOffset::Int64Scaled {
                         value: left,
                         byte_width: left_width,
                         unsigned: left_unsigned,
                     },
-                    AddressOffset::Int64Scaled {
+                    OldAddressOffset::Int64Scaled {
                         value: right,
                         byte_width: right_width,
                         unsigned: right_unsigned,
@@ -3786,12 +3789,12 @@ impl PureFactContext {
                     );
                 }
                 (
-                    AddressOffset::Int64Scaled {
+                    OldAddressOffset::Int64Scaled {
                         value: left,
                         byte_width,
                         unsigned,
                     },
-                    AddressOffset::Constant(bytes),
+                    OldAddressOffset::Constant(bytes),
                 ) if *byte_width != 0 && bytes % byte_width == 0 => {
                     let elements = bytes / byte_width;
                     let value = if *unsigned {
@@ -4821,8 +4824,8 @@ impl PureFactContext {
 
     fn address_offsets_equal_for_transport(
         &self,
-        left: &AddressOffset,
-        right: &AddressOffset,
+        left: &OldAddressOffset,
+        right: &OldAddressOffset,
     ) -> bool {
         if left == right {
             return true;
@@ -4830,11 +4833,11 @@ impl PureFactContext {
 
         match (left, right) {
             (
-                AddressOffset::Int32Scaled {
+                OldAddressOffset::Int32Scaled {
                     value: left,
                     byte_width: left_width,
                 },
-                AddressOffset::Int32Scaled {
+                OldAddressOffset::Int32Scaled {
                     value: right,
                     byte_width: right_width,
                 },
@@ -4845,7 +4848,7 @@ impl PureFactContext {
                         right.operand_view(),
                     )
             }
-            (AddressOffset::Add(left_a, left_b), AddressOffset::Add(right_a, right_b)) => {
+            (OldAddressOffset::Add(left_a, left_b), OldAddressOffset::Add(right_a, right_b)) => {
                 self.address_offsets_equal_for_transport(left_a, right_a)
                     && self.address_offsets_equal_for_transport(left_b, right_b)
                     || self.address_offsets_equal_for_transport(left_a, right_b)
@@ -4857,19 +4860,19 @@ impl PureFactContext {
 
     fn address_offsets_state_equivalent(
         &self,
-        left: &AddressOffset,
-        right: &AddressOffset,
+        left: &OldAddressOffset,
+        right: &OldAddressOffset,
     ) -> bool {
         if left == right {
             return true;
         }
         match (left, right) {
             (
-                AddressOffset::Int32Scaled {
+                OldAddressOffset::Int32Scaled {
                     value: left,
                     byte_width: left_width,
                 },
-                AddressOffset::Int32Scaled {
+                OldAddressOffset::Int32Scaled {
                     value: right,
                     byte_width: right_width,
                 },
@@ -4877,7 +4880,7 @@ impl PureFactContext {
                 left_width == right_width
                     && self.operands_state_equivalent(left.operand_view(), right.operand_view())
             }
-            (AddressOffset::Add(left_a, left_b), AddressOffset::Add(right_a, right_b)) => {
+            (OldAddressOffset::Add(left_a, left_b), OldAddressOffset::Add(right_a, right_b)) => {
                 self.address_offsets_state_equivalent(left_a, right_a)
                     && self.address_offsets_state_equivalent(left_b, right_b)
                     || self.address_offsets_state_equivalent(left_a, right_b)
@@ -4895,8 +4898,8 @@ impl PureFactContext {
 
     pub(in crate::kernel) fn has_pointer_offset_state_fact(
         &self,
-        left: &AddressOffset,
-        right: &AddressOffset,
+        left: &OldAddressOffset,
+        right: &OldAddressOffset,
     ) -> bool {
         // Keep this deliberately structural and one-hop. Callers use it only
         // to move an already-certified address equality between framed memory
@@ -5659,7 +5662,7 @@ mod guided_condition_instantiation_tests {
             ProgramPoint::at(&(crate::kernel::intern_memory(SymbolicMemory::new()))),
             Box::new(Address {
                 base: "quantified-cells".into(),
-                offset: AddressOffset::scale_int32(index, 4),
+                offset: OldAddressOffset::scale_int32(index, 4),
             }),
             kind,
         )
@@ -6322,7 +6325,7 @@ mod shared_wide_order_evidence_tests {
     #[test]
     fn wide_order_evidence_connects_mixed_load_syntax_only_at_its_registered_variable() {
         use crate::kernel::{
-            Address, AddressOffset, LoadKind, MachineOperandView, SymbolicMemory, intern_memory,
+            Address, LoadKind, MachineOperandView, OldAddressOffset, SymbolicMemory, intern_memory,
         };
         for ty in [MachineIntegerType::Int64, MachineIntegerType::UInt64] {
             let _session = crate::kernel::VerificationSession::enter();
@@ -6332,7 +6335,7 @@ mod shared_wide_order_evidence_tests {
                     ProgramPoint::at(&memory),
                     Box::new(Address {
                         base: "wide-order".into(),
-                        offset: AddressOffset::Constant(offset),
+                        offset: OldAddressOffset::Constant(offset),
                     }),
                     LoadKind::Bits64,
                 )

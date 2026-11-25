@@ -30,7 +30,7 @@ fn havoc_write_set_identity_scales_near_linearly_with_term_size() {
 fn call_frame_retains_a_view_without_scanning_other_views() {
     let pointer = |index| Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(index)), 1),
+        offset: OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(index)), 1),
     };
     let target = pointer(900_000);
     crate::kernel::eval::declare_load_access_width(&target, 4);

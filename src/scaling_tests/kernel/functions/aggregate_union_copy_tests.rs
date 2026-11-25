@@ -12,7 +12,7 @@ fn aggregate_argument_reads_require_authority_and_initialization_and_scale() {
         let _session = crate::kernel::VerificationSession::enter();
         let source = Address {
             base: "aggregate-argument-source".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let layout = AggregateLayout::new(
             count * 4,
@@ -75,11 +75,11 @@ fn unsigned_aggregate_array_copies_preserve_values_and_scale() {
         let _session = crate::kernel::VerificationSession::enter();
         let source = Address {
             base: "local:aggregate-array-source".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let destination = Address {
             base: "local:aggregate-array-target".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let layout = AggregateLayout::new(
             count * 4,

@@ -3,12 +3,12 @@ use super::*;
 #[test]
 fn pointer_relevance_visits_shared_prefixes_once() {
     use crate::kernel::{
-        Address, AddressBase, AddressOffset, KernelTerm, KernelTermExport, KernelType,
-        MachineOperandView as View, Variable,
+        Address, AddressBase, KernelTerm, KernelTermExport, KernelType, MachineOperandView as View,
+        OldAddressOffset, Variable,
     };
     let target = Address {
         base: AddressBase::Concrete("unrelated".into()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let mut previous = None;
     for size in [16, 64, 256] {

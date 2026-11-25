@@ -776,7 +776,7 @@ fn call_passes_witness_child(
             ProgramValue::typed_pointer(
                 Address {
                     base: AddressBase::ExternalArgument,
-                    offset: AddressOffset::scale_int32(OldMachineTerm::Variable(variable), 1),
+                    offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(variable), 1),
                 },
                 parameter.program_type(),
             )
@@ -5388,7 +5388,7 @@ mod ranking_member_tests {
     fn int32_cell(name: &str) -> Address {
         Address {
             base: AddressBase::Concrete(name.to_string()),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         }
     }
 

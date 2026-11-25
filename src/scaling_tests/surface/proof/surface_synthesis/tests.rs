@@ -11,7 +11,7 @@ fn read_origin_raising_ignores_other_points_with_equal_memory() {
     let point = source.program_point();
     let slot = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let indexed = point
         .ordinary_typed_version(&slot, ProgramType::Int32)
@@ -117,11 +117,11 @@ fn pointer_spelling_skips_cyclic_offsets_and_tries_the_next_local() {
             for size in [1usize, 8, 32, 128] {
                 let pointer = Address {
                     base: crate::kernel::AddressBase::ExternalArgument,
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0),
                 };
                 let cyclic = Address {
                     base: pointer.base.clone(),
-                    offset: AddressOffset::scaled_int32_node(
+                    offset: OldAddressOffset::scaled_int32_node(
                         OldMachineTerm::integer_address(pointer.clone()),
                         4,
                     ),
@@ -308,7 +308,7 @@ fn allocation_result_names_use_one_index_as_recorded_history_grows() {
         for n in 0..count {
             last = Address {
                 base: AddressBase::Heap(990_000 + n as u64),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             };
             last_region = layout
                 .source_path_region(&[SourcePathStep::Statement(n + 1)], ProgramPointKind::Exit)
@@ -690,7 +690,7 @@ fn array_argument_state_lookup_ignores_unrelated_recorded_history() {
     let pointer = ProgramValue::pointer(Address::symbolic(Variable(981_400)));
     let cell = Address {
         base: AddressBase::Concrete("selected-array-memory".into()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let selected = ExecutionState::new()
         .with_local("p", pointer.clone())

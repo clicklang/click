@@ -24,7 +24,7 @@ fn origin(pointer: &Address) -> Option<Key> {
     // Literal bases need no normalization traversal (including during large
     // certified input publications).
     let offset = match &pointer.offset {
-        AddressOffset::Constant(_) => AffineOffset::constant(0),
+        OldAddressOffset::Constant(_) => AffineOffset::constant(0),
         offset => AffineOffset::of(offset)?,
     };
     Some((pointer.base.clone(), offset.origin_fingerprint()))
@@ -50,7 +50,7 @@ impl StructuralMemory {
 
     fn candidates(&self, pointer: &Address) -> BTreeSet<ResourceEntryId> {
         let mut result = BTreeSet::new();
-        let mut add_shape = |offset: &AddressOffset| {
+        let mut add_shape = |offset: &OldAddressOffset| {
             let key = shape(&Address {
                 base: pointer.base.clone(),
                 offset: offset.clone(),
@@ -63,7 +63,7 @@ impl StructuralMemory {
         // These are subterms of the explicit access, not alternate spellings
         // of it. They cover precisely the bases the structural read judgment
         // can recognize in an addition, including either operand.
-        if let AddressOffset::Add(left, right) = &pointer.offset {
+        if let OldAddressOffset::Add(left, right) = &pointer.offset {
             add_shape(left);
             add_shape(right);
         }
@@ -88,21 +88,22 @@ fn remove_owned_key(
 // constant displacement. Symbolic indexing and state matching need the
 // shape payload instead; their membership is a checked judgment, not an
 // ordering of affine vectors.
-fn plain_origin(mut offset: &AddressOffset) -> bool {
+fn plain_origin(mut offset: &OldAddressOffset) -> bool {
     loop {
         match offset {
-            AddressOffset::Constant(_) | AddressOffset::Variable(_) => return true,
-            AddressOffset::Int32Scaled { value, .. } | AddressOffset::Int64Scaled { value, .. } => {
+            OldAddressOffset::Constant(_) | OldAddressOffset::Variable(_) => return true,
+            OldAddressOffset::Int32Scaled { value, .. }
+            | OldAddressOffset::Int64Scaled { value, .. } => {
                 let value = value.operand_view();
                 return value.variable().is_some()
                     || value.literal().is_some_and(|literal| {
                         matches!(literal, bits32_constant!(_) | int64_constant!(_))
                     });
             }
-            AddressOffset::Add(left, right) => {
-                offset = if matches!(left.as_ref(), AddressOffset::Constant(_)) {
+            OldAddressOffset::Add(left, right) => {
+                offset = if matches!(left.as_ref(), OldAddressOffset::Constant(_)) {
                     right
-                } else if matches!(right.as_ref(), AddressOffset::Constant(_)) {
+                } else if matches!(right.as_ref(), OldAddressOffset::Constant(_)) {
                     left
                 } else {
                     return false;
@@ -215,7 +216,7 @@ fn retained_plain_origin_requires_an_exact_allowed_atom() {
         ),
     ] {
         let root = KernelTerm::retained_machine_operand(ty, V::Old(&term));
-        let offset = AddressOffset::Int32Scaled {
+        let offset = OldAddressOffset::Int32Scaled {
             value: V::Shared(&root).retain(T::Int32),
             byte_width: 4,
         };

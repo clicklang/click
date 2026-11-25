@@ -36,7 +36,7 @@
 //! initial values, and each iteration sees the same accumulator, index and
 //! cell). Framing guarantees those cells hold the same bytes at both
 //! states. Pointer offsets are exact `i64` sums of sign-extended scaled
-//! `int32` terms (`AddressOffset::Int32Scaled`), so the cells occupy the
+//! `int32` terms (`OldAddressOffset::Int32Scaled`), so the cells occupy the
 //! contiguous bytes `[p + 4*start, p + 4*end)` with no wraparound, and a write
 //! misses them exactly when it ends at or below the first byte or starts at or
 //! above the last one. Emptiness is used only when a fact or the syntax proves
@@ -1084,21 +1084,21 @@ enum OffsetAtom {
 }
 
 impl LinearOffset {
-    fn of(offset: &AddressOffset) -> Self {
+    fn of(offset: &OldAddressOffset) -> Self {
         let mut linear = Self::default();
         let mut pending = vec![(offset, 1i128)];
         while let Some((offset, sign)) = pending.pop() {
             crate::instrumentation::record_deterministic_work(1);
             match offset {
-                AddressOffset::Constant(value) => linear.constant += sign * i128::from(*value),
-                AddressOffset::Variable(variable) => {
+                OldAddressOffset::Constant(value) => linear.constant += sign * i128::from(*value),
+                OldAddressOffset::Variable(variable) => {
                     linear.add_atom(OffsetAtom::Variable(*variable), sign)
                 }
-                AddressOffset::Add(left, right) => {
+                OldAddressOffset::Add(left, right) => {
                     pending.push((left, sign));
                     pending.push((right, sign));
                 }
-                AddressOffset::Int32Scaled { value, byte_width } => {
+                OldAddressOffset::Int32Scaled { value, byte_width } => {
                     match value.operand_view().word32_constant() {
                         Some(value) => {
                             linear.constant +=
@@ -1110,7 +1110,7 @@ impl LinearOffset {
                         ),
                     }
                 }
-                AddressOffset::Int64Scaled {
+                OldAddressOffset::Int64Scaled {
                     value,
                     byte_width,
                     unsigned,

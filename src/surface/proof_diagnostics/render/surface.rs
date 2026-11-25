@@ -1500,19 +1500,19 @@ impl Printer<'_> {
         }
     }
 
-    fn offset(&mut self, offset: &AddressOffset, depth: usize) -> String {
+    fn offset(&mut self, offset: &OldAddressOffset, depth: usize) -> String {
         match offset {
-            AddressOffset::Constant(bytes) => bytes.to_string(),
-            AddressOffset::Variable(variable) => self
+            OldAddressOffset::Constant(bytes) => bytes.to_string(),
+            OldAddressOffset::Variable(variable) => self
                 .variable_name(*variable)
                 .unwrap_or_else(|| self.unnamed_variable(*variable)),
-            AddressOffset::Add(left, right) => format!(
+            OldAddressOffset::Add(left, right) => format!(
                 "{} + {}",
                 self.offset(left, depth + 1),
                 self.offset(right, depth + 1)
             ),
-            AddressOffset::Int32Scaled { value, byte_width }
-            | AddressOffset::Int64Scaled {
+            OldAddressOffset::Int32Scaled { value, byte_width }
+            | OldAddressOffset::Int64Scaled {
                 value, byte_width, ..
             } => {
                 let value = self
@@ -2112,7 +2112,7 @@ impl Printer<'_> {
             return Some(spelled(name.clone(), precedence));
         }
         if let Some((name, _)) = super::c_library_pointer_name(pointer) {
-            return Some(if pointer.offset == AddressOffset::Constant(0) {
+            return Some(if pointer.offset == OldAddressOffset::Constant(0) {
                 atom(name)
             } else {
                 let offset = self.offset(&pointer.offset, depth + 1);
@@ -2123,7 +2123,7 @@ impl Printer<'_> {
         if let Some(read) = pointer.as_loaded_value() {
             let place =
                 self.pointer_cell(read.defining_memory.memory(), &read.defining_address, depth);
-            return Some(if read.displacement == AddressOffset::Constant(0) {
+            return Some(if read.displacement == OldAddressOffset::Constant(0) {
                 place
             } else {
                 let offset = self.offset(&read.displacement, depth);
@@ -2136,16 +2136,16 @@ impl Printer<'_> {
         if let crate::kernel::AddressBase::PureFunctionApplication(application) = &pointer.base {
             let call = self.call(application.name(), application.arguments(), depth + 1)?;
             return Some(match &pointer.offset {
-                AddressOffset::Constant(0) => call,
-                AddressOffset::Int32Scaled { value, .. }
-                | AddressOffset::Int64Scaled { value, .. } => {
+                OldAddressOffset::Constant(0) => call,
+                OldAddressOffset::Int32Scaled { value, .. }
+                | OldAddressOffset::Int64Scaled { value, .. } => {
                     let index = self.bitvector(value.structural_value(), None, depth + 1)?;
                     spelled(
                         format!("{} + {}", operand(call, ADD), operand(index, MULTIPLY)),
                         ADD,
                     )
                 }
-                AddressOffset::Constant(bytes)
+                OldAddressOffset::Constant(bytes)
                     if let Some(width) = instance_element_width(application.name())
                         && bytes % width == 0 =>
                 {
@@ -2212,7 +2212,7 @@ impl Printer<'_> {
         // An address inside an allocation a local held is spelled from that
         // local: `(char *)at(region(2).exit, p) + k * 4`.
         if self.labels.state_pointer_name(pointer).is_none()
-            && pointer.offset != AddressOffset::Constant(0)
+            && pointer.offset != OldAddressOffset::Constant(0)
             && let Some(base) = self.labels.block_base_name(pointer).map(str::to_owned)
             && base.len() <= 256
         {
@@ -2401,7 +2401,7 @@ impl Printer<'_> {
         depth: usize,
         tables: &NamingTables,
     ) -> Option<Spelled> {
-        let AddressOffset::Add(base_offset, extra) = &pointer.offset else {
+        let OldAddressOffset::Add(base_offset, extra) = &pointer.offset else {
             return None;
         };
         let parameter =
@@ -2423,8 +2423,8 @@ impl Printer<'_> {
         let name = parameter.name();
         let width = crate::surface::diagnostics::diagnostic_parameter_element_width(parameter);
         let index = match extra.as_ref() {
-            AddressOffset::Int32Scaled { value, byte_width }
-            | AddressOffset::Int64Scaled {
+            OldAddressOffset::Int32Scaled { value, byte_width }
+            | OldAddressOffset::Int64Scaled {
                 value, byte_width, ..
             } if *byte_width == width && width > 0 => {
                 self.bitvector(value.structural_value(), None, depth + 1)
@@ -3610,7 +3610,7 @@ mod tests {
         let pointer = ProgramValue::Pointer(OldPointer::new(
             Address {
                 base: AddressBase::Concrete("global:cells".into()),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
             ProgramType::Int32Pointer,
         ));
@@ -3655,7 +3655,7 @@ mod tests {
             ProgramValue::Pointer(OldPointer::new(
                 Address {
                     base: AddressBase::Concrete(format!("global:{name}")),
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0),
                 },
                 ProgramType::Int32Pointer,
             ))
@@ -3721,7 +3721,7 @@ mod tests {
     fn historical_loads_use_their_own_state_names_and_keep_their_read_type() {
         let pointer = Address {
             base: AddressBase::Concrete("global:cells".into()),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let base =
             ProgramValue::Pointer(OldPointer::new(pointer.clone(), ProgramType::Int32Pointer));
@@ -3772,7 +3772,7 @@ mod tests {
         let index = Variable(9);
         let heap = Address {
             base: AddressBase::Heap(1),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let before =
             ExecutionState::new().with_memory(SymbolicMemory::new().with_block("global:a", 4));
@@ -3848,7 +3848,7 @@ mod resource_tests {
     fn resource_arguments_keep_the_same_read_states_as_proposition_operands() {
         let pointer = Address {
             base: AddressBase::Concrete("global:cells".into()),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let before = ExecutionState::new()
             .with_local(

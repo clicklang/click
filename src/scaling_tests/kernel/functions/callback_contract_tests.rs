@@ -8,7 +8,7 @@ use super::*;
 fn authoritative_memory_projection_scales_with_used_members_not_unrelated_frames() {
     let pointer = Address {
         base: AddressBase::Concrete("local:projection:data".to_string()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let state = ExecutionState::new()
         .with_local("p", ProgramValue::pointer(pointer.clone()))
@@ -108,7 +108,7 @@ fn authoritative_memory_projection_scales_with_used_members_not_unrelated_frames
 fn checked_transition_projection_ignores_unrelated_caller_frame() {
     let pointer = Address {
         base: AddressBase::Concrete("local:transition:data".to_string()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let mut samples = Vec::new();
     for used_members in [1usize, 4, 16, 64] {
@@ -202,7 +202,7 @@ fn checked_transition_projection_ignores_unrelated_caller_frame() {
 fn checked_wrapper_projection_scales_with_used_members() {
     let pointer = Address {
         base: AddressBase::Concrete("local:wrapper:data".to_string()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let mut samples = Vec::new();
     for used_members in [1usize, 4, 16, 64] {

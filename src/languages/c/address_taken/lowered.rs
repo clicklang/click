@@ -250,7 +250,7 @@ mod tests {
             program_declare("capture", ProgramType::Int32),
             program_return(crate::kernel::program_expression::pointer_value(Address {
                 base: "local:capture".into(),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             })),
         ));
         assert!(

@@ -8,7 +8,7 @@ fn named_parameter_shadowing_ignores_unrelated_globals() {
         let value = ProgramValue::typed_pointer(
             Address {
                 base: "parameter-bytes".into(),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
             ProgramType::Int32Pointer,
         );

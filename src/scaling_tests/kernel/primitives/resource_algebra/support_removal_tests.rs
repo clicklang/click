@@ -192,7 +192,7 @@ fn shared_pointer_load_footprints_keep_depth_refusal_without_tree_expansion() {
                 [root.clone(), root],
             );
         }
-        let offset = AddressOffset::Int32Scaled {
+        let offset = OldAddressOffset::Int32Scaled {
             value: S::from_shared(MachineIntegerType::Int32, root).unwrap(),
             byte_width: 4,
         };

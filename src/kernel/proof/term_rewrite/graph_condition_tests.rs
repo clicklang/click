@@ -2,8 +2,8 @@ use super::*;
 use crate::kernel::CompareRelation;
 use crate::kernel::equality_graph::EqualityGraph;
 
-fn offset(id: u64) -> AddressOffset {
-    AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(id)), 4)
+fn offset(id: u64) -> OldAddressOffset {
+    OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(id)), 4)
 }
 
 fn guard() -> OldConditionTerm {

@@ -102,7 +102,7 @@ fn filing_a_loadable_fact_in_a_fork_shares_every_other_block() {
 fn filing_a_load_condition_in_a_fork_shares_every_other_load() {
     let pointer = |id: u64| Address {
         base: format!("load-condition-index-{id}").into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let load_condition = |id: u64| {
         OldConditionTerm::float64_compare(

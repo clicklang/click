@@ -26,7 +26,7 @@ fn loadability_explanation_ignores_unrelated_objects() {
                 memory: state.memory().clone(),
                 base: Address {
                     base: AddressBase::Heap(index),
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0),
                 },
                 bytes: (OldMachineTerm::constant(8)).into(),
                 wide: false,

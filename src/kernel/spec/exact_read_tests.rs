@@ -7,7 +7,7 @@ use super::*;
 fn read(point: &str, value_type: ProgramType, exact: bool) -> SpecExpression {
     let cell = Address {
         base: point.into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     SpecExpression::MemoryLoad {
         point: SpecPoint::Current,
@@ -41,11 +41,11 @@ fn an_exact_read_is_named_by_its_own_state_not_the_version_point() {
     let _session = crate::kernel::VerificationSession::enter();
     let cell = Address {
         base: "exact-read-cell".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let other = Address {
         base: "exact-read-other".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let stored = SymbolicMemory::new()
         .with_block("exact-read-cell", 4)
@@ -76,11 +76,11 @@ fn an_exact_pointer_read_has_its_own_read_as_provenance() {
     let _session = crate::kernel::VerificationSession::enter();
     let cell = Address {
         base: "exact-pointer-cell".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let other = Address {
         base: "exact-pointer-other".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let after = SymbolicMemory::new()
         .with_block("exact-pointer-cell", 8)

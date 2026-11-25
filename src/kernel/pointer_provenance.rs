@@ -142,7 +142,7 @@ mod tests {
             OldPointer::new(
                 Address {
                     base: AddressBase::ExternalArgument,
-                    offset: AddressOffset::scale_int32(index, 4),
+                    offset: OldAddressOffset::scale_int32(index, 4),
                 },
                 ProgramType::Int32Pointer,
             )

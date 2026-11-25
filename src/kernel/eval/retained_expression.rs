@@ -1028,7 +1028,7 @@ mod tests {
                     pointer.address().base,
                     SymbolicMemory::global_pointer(binding).base
                 );
-                assert_eq!(pointer.address().offset, AddressOffset::Constant(offset));
+                assert_eq!(pointer.address().offset, OldAddressOffset::Constant(offset));
             }
         }
     }

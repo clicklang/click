@@ -489,31 +489,34 @@ fn bounded_address_equal(left: &crate::kernel::Address, right: &crate::kernel::A
         }
         match (left, right) {
             (
-                crate::kernel::AddressOffset::Constant(a),
-                crate::kernel::AddressOffset::Constant(b),
+                crate::kernel::OldAddressOffset::Constant(a),
+                crate::kernel::OldAddressOffset::Constant(b),
             ) => {
                 if a != b {
                     return false;
                 }
             }
             (
-                crate::kernel::AddressOffset::Variable(a),
-                crate::kernel::AddressOffset::Variable(b),
+                crate::kernel::OldAddressOffset::Variable(a),
+                crate::kernel::OldAddressOffset::Variable(b),
             ) => {
                 if a != b {
                     return false;
                 }
             }
-            (crate::kernel::AddressOffset::Add(a, b), crate::kernel::AddressOffset::Add(c, d)) => {
+            (
+                crate::kernel::OldAddressOffset::Add(a, b),
+                crate::kernel::OldAddressOffset::Add(c, d),
+            ) => {
                 pending.push((a, c));
                 pending.push((b, d));
             }
             (
-                crate::kernel::AddressOffset::Int32Scaled {
+                crate::kernel::OldAddressOffset::Int32Scaled {
                     value: a,
                     byte_width: aw,
                 },
-                crate::kernel::AddressOffset::Int32Scaled {
+                crate::kernel::OldAddressOffset::Int32Scaled {
                     value: b,
                     byte_width: bw,
                 },
@@ -523,12 +526,12 @@ fn bounded_address_equal(left: &crate::kernel::Address, right: &crate::kernel::A
                 }
             }
             (
-                crate::kernel::AddressOffset::Int64Scaled {
+                crate::kernel::OldAddressOffset::Int64Scaled {
                     value: a,
                     byte_width: aw,
                     ..
                 },
-                crate::kernel::AddressOffset::Int64Scaled {
+                crate::kernel::OldAddressOffset::Int64Scaled {
                     value: b,
                     byte_width: bw,
                     ..
@@ -753,7 +756,7 @@ fn charge_proposition(proposition: &Proposition) -> bool {
     }
 }
 
-fn bounded_offset_work(root: &crate::kernel::AddressOffset) -> bool {
+fn bounded_offset_work(root: &crate::kernel::OldAddressOffset) -> bool {
     let mut pending = vec![root];
     let mut count = 0usize;
     while let Some(offset) = pending.pop() {
@@ -762,12 +765,12 @@ fn bounded_offset_work(root: &crate::kernel::AddressOffset) -> bool {
             return false;
         }
         match offset {
-            crate::kernel::AddressOffset::Add(left, right) => {
+            crate::kernel::OldAddressOffset::Add(left, right) => {
                 pending.push(left);
                 pending.push(right);
             }
-            crate::kernel::AddressOffset::Int32Scaled { value, .. }
-            | crate::kernel::AddressOffset::Int64Scaled { value, .. }
+            crate::kernel::OldAddressOffset::Int32Scaled { value, .. }
+            | crate::kernel::OldAddressOffset::Int64Scaled { value, .. }
                 if !bounded_index_work(value) =>
             {
                 return false;

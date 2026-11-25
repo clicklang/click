@@ -7,7 +7,7 @@ fn call(name: &str, arguments: Vec<PureFunctionArgument>) -> Address {
             name.into(),
             arguments,
         )),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     }
 }
 fn argument(pointer: Address) -> PureFunctionArgument {
@@ -51,8 +51,8 @@ fn rewriting_an_exact_scalar_index_keeps_its_named_point() {
     let read = |address: Address| {
         OldMachineTerm::read_named(point.clone(), Box::new(address), LoadKind::UInt32)
     };
-    let from = AddressOffset::Constant(0);
-    let to = AddressOffset::Constant(4);
+    let from = OldAddressOffset::Constant(0);
+    let to = OldAddressOffset::Constant(4);
     let expected = read(pointer.offset_by_bytes(4));
     assert_eq!(
         TermRewrite::for_pointer_offset_exact(&from, &to).bits(&read(pointer.clone())),
@@ -63,7 +63,7 @@ fn rewriting_an_exact_scalar_index_keeps_its_named_point() {
     let replacement = OldMachineTerm::constant(4);
     let indexed = Address {
         base: pointer.base,
-        offset: AddressOffset::Int32Scaled {
+        offset: OldAddressOffset::Int32Scaled {
             value: SharedMachineIntegerTerm::index(MachineIntegerType::Int32, variable.clone()),
             byte_width: 1,
         },
@@ -117,7 +117,7 @@ fn rewriting_a_scalar_caller_store_read_keeps_its_program_point() {
     let _session = VerificationSession::enter();
     let source = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(4),
+        offset: OldAddressOffset::Constant(4),
     };
     let target = source.offset_by_bytes(8);
     let kind = LoadKind::Int32;
@@ -153,7 +153,7 @@ fn pure_pointer_calls_preserve_identity_and_do_not_imply_separation() {
     assert!(!a.blocks_proven_distinct(&b));
     let heap = Address {
         base: AddressBase::Heap(55),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     assert!(!a.blocks_proven_distinct(&heap));
     assert!(!heap.blocks_proven_distinct(&a));
@@ -165,10 +165,10 @@ fn pure_pointer_rewrite_preserves_offsets_and_distinct_arguments() {
     let p = Address::symbolic(Variable(410));
     let q = Address::symbolic(Variable(411));
     let mut input = call("select", vec![argument(p.clone()), argument(q.clone())]);
-    input.offset = AddressOffset::Constant(8);
+    input.offset = OldAddressOffset::Constant(8);
     let replacement = Address {
         base: "target".into(),
-        offset: AddressOffset::Constant(4),
+        offset: OldAddressOffset::Constant(4),
     };
     let mut expected = call("select", vec![argument(replacement.clone()), argument(q)]);
     expected.offset = input.offset.clone();
@@ -303,7 +303,7 @@ fn numeric_pointer_rewrites_preserve_origin_and_selected_bounds() {
     let source = Address::symbolic(Variable(420));
     let target = Address {
         base: "target".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let original = OldPointer::new(source.clone(), ProgramType::Int32Pointer).with_bounds(Some(
         SubobjectBounds {
@@ -385,7 +385,7 @@ fn memory_relationship_rewrite_transports_only_a_complete_pointer_carrier() {
     );
     let target_base = Address {
         base: AddressBase::Heap(424_102),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let target = OldPointer::new(target_base.clone(), ProgramType::Int32Pointer).with_bounds(Some(
         SubobjectBounds {
@@ -449,7 +449,7 @@ fn a_full_pointer_rewrite_does_not_adopt_another_read_carrier_at_the_same_addres
     let target = OldPointer::new(
         Address {
             base: AddressBase::Heap(424_113),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         },
         ProgramType::Int32Pointer,
     );
@@ -488,7 +488,7 @@ fn full_program_argument_pointer_rewrite_reaches_a_displaced_copy() {
         OldPointer::new(
             Address {
                 base: AddressBase::ExternalArgument,
-                offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(id)), 1),
+                offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(id)), 1),
             },
             ProgramType::UInt8Pointer,
         )
@@ -584,7 +584,7 @@ fn displaced_program_argument_rewrite_inherits_known_replacement_bounds() {
         OldPointer::new(
             Address {
                 base: AddressBase::ExternalArgument,
-                offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(id)), 1),
+                offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(id)), 1),
             },
             ProgramType::UInt8Pointer,
         )
@@ -687,7 +687,7 @@ fn rewriting_integer_address_zero_keeps_canonical_null_and_displacement() {
     for value in [0, 1, 2, 3, 4, 5, u64::MAX] {
         for displacement in [0, 8] {
             let mut input = Address::from_integer_address(bits.clone());
-            input.offset = AddressOffset::Constant(displacement);
+            input.offset = OldAddressOffset::Constant(displacement);
             let replacement = OldMachineTerm::uint64_constant(value);
             let mut rewrite = TermRewrite::for_bits(&word, &replacement);
             let output = rewrite.pointer(&input);
@@ -719,17 +719,17 @@ fn exact_displacement_replacement_keeps_the_retained_offset() {
         MachineIntegerType::UInt64,
         OldMachineTerm::Variable(Variable(1008337)),
     );
-    let from = AddressOffset::Int64Scaled {
+    let from = OldAddressOffset::Int64Scaled {
         value: index,
         byte_width: 8,
         unsigned: true,
     };
-    let to = AddressOffset::Add(
+    let to = OldAddressOffset::Add(
         Box::new(from.clone()),
-        Box::new(AddressOffset::Constant(16)),
+        Box::new(OldAddressOffset::Constant(16)),
     );
     let displacement =
-        |left| AddressOffset::Add(Box::new(left), Box::new(AddressOffset::Constant(40)));
+        |left| OldAddressOffset::Add(Box::new(left), Box::new(OldAddressOffset::Constant(40)));
     let input = StoredPointerOffset::from_written(&displacement(from.clone()));
     let expected = StoredPointerOffset::from_written(&displacement(to.clone()));
     let mut rewrite = TermRewrite::for_pointer_offset_exact(&from, &to);

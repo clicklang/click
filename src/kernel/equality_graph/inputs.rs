@@ -12,7 +12,7 @@ pub(super) enum Input {
     Pointer(OldPointer, OldPointer),
     PointerReadValue(Address, Address),
     Address(Address, Address),
-    Offset(AddressOffset, AddressOffset),
+    Offset(OldAddressOffset, OldAddressOffset),
     Int32(OldMachineTerm, OldMachineTerm),
     Int32Operands(
         crate::kernel::SharedMachineIntegerTerm,
@@ -233,15 +233,16 @@ fn is_scalar_read(term: &OldMachineTerm) -> bool {
     }
 }
 
-fn is_read_offset(offset: &AddressOffset) -> bool {
+fn is_read_offset(offset: &OldAddressOffset) -> bool {
     let mut pending = vec![offset];
     while let Some(offset) = pending.pop() {
         match offset {
-            AddressOffset::Add(left, right) => {
+            OldAddressOffset::Add(left, right) => {
                 pending.push(left);
                 pending.push(right);
             }
-            AddressOffset::Int32Scaled { value, .. } | AddressOffset::Int64Scaled { value, .. }
+            OldAddressOffset::Int32Scaled { value, .. }
+            | OldAddressOffset::Int64Scaled { value, .. }
                 if value.operand_view().read().is_some()
                     || value.operand_view().variable().is_some_and(|v| {
                         crate::kernel::registered_load_term_for_variable(v).is_some()
@@ -486,8 +487,8 @@ mod read_trace_tests {
             LoadKind::Int32,
         );
         let (variable, _) = crate::kernel::load_variable_for_term(&load).unwrap();
-        let read = AddressOffset::scaled_int32_node(OldMachineTerm::Variable(variable), 4);
-        let target = AddressOffset::Constant(8);
+        let read = OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(variable), 4);
+        let target = OldAddressOffset::Constant(8);
         let checkpoint = graph.read_equality_checkpoint();
         graph.add_offset_equality(&read, &target);
         assert_eq!(

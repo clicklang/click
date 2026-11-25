@@ -148,7 +148,7 @@ fn whole_and_partial_stores_into_compact_arrays_visit_live_intervals() {
 fn scaling_cell(block: &str, index: usize) -> Address {
     Address {
         base: AddressBase::from(block),
-        offset: AddressOffset::Constant(4 * index as i64),
+        offset: OldAddressOffset::Constant(4 * index as i64),
     }
 }
 
@@ -424,7 +424,7 @@ const TARGET_HEAP: u64 = 1_000_000;
 fn heap_cell(identity: u64, offset: i64) -> Address {
     Address {
         base: AddressBase::Heap(identity),
-        offset: AddressOffset::Constant(offset),
+        offset: OldAddressOffset::Constant(offset),
     }
 }
 
@@ -436,7 +436,7 @@ fn with_initialized_allocation(
 ) -> SymbolicMemory {
     let pending = Address {
         base: AddressBase::Symbolic(Variable(identity)),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let (memory, _, base) = memory
         .with_pending_heap_allocation(pending.clone(), AllocationSize::int32(16), false)
@@ -565,7 +565,7 @@ fn one_store_into_a_64_bit_heap_block_is_logarithmic_in_unrelated_64_bit_allocat
         let allocate = |(memory, resources): (SymbolicMemory, ResourceContext), identity: u64| {
             let pending = Address {
                 base: AddressBase::Symbolic(Variable(identity)),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             };
             let (memory, _, base) = memory
                 .with_pending_heap_allocation(
@@ -659,7 +659,7 @@ fn one_field_store_into_a_64_bit_struct_array_block_is_logarithmic_in_unrelated_
         let allocate = |(memory, resources): (SymbolicMemory, ResourceContext), identity: u64| {
             let pending = Address {
                 base: AddressBase::Symbolic(Variable(identity)),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             };
             let (memory, _, base) = memory
                 .with_pending_heap_allocation(
@@ -958,7 +958,7 @@ fn owned_parameter_objects_and_a_region_store(
 ) -> (SymbolicMemory, PureFactContext, Address, Vec<Address>) {
     let parameter = |id: u64| Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(id)), 4),
+        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(id)), 4),
     };
     let objects = (0..count)
         .map(|index| parameter(97_000 + index as u64))
@@ -1108,7 +1108,10 @@ fn consecutive_reallocating_calls_cost_the_same_each() {
     const CALLS: [usize; 4] = [16, 64, 256, 1024];
     let external = |variable: u64| Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(variable)), 4),
+        offset: OldAddressOffset::scaled_int32_node(
+            OldMachineTerm::Variable(Variable(variable)),
+            4,
+        ),
     };
     let int32_range = |base: &Address, end: u32| {
         MemoryRange::new_with_element_width(
@@ -1230,7 +1233,10 @@ fn consecutive_reallocating_calls_cost_the_same_each() {
 fn retirement_admits_a_view_of_a_kept_owned_range() {
     let external = |variable: u64| Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(variable)), 4),
+        offset: OldAddressOffset::scaled_int32_node(
+            OldMachineTerm::Variable(Variable(variable)),
+            4,
+        ),
     };
     let int32_range = |base: &Address, end: u32| {
         MemoryRange::new_with_element_width(
@@ -1324,11 +1330,11 @@ fn condition_fact_queries_ignore_unrelated_facts() {
     );
     let symbolic = Address {
         base: AddressBase::Symbolic(Variable(95_004)),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let argument = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(95_005)), 4),
+        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(95_005)), 4),
     };
     let mut samples = Vec::new();
     for size in [8, 16, 32, 64] {
@@ -1412,16 +1418,16 @@ fn condition_fact_queries_ignore_unrelated_facts() {
 fn external_object(identity: u64) -> Address {
     Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(identity)), 4),
+        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(identity)), 4),
     }
 }
 
 fn external_field(identity: u64, bytes: i64) -> Address {
     Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Add(
+        offset: OldAddressOffset::Add(
             Box::new(external_object(identity).offset),
-            Box::new(AddressOffset::Constant(bytes)),
+            Box::new(OldAddressOffset::Constant(bytes)),
         ),
     }
 }
@@ -1628,9 +1634,9 @@ fn a_call_kept_instance_range_is_placed_in_work_linear_in_its_body() {
         let _session = crate::kernel::VerificationSession::enter();
         let data = |index: OldMachineTerm| Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Add(
+            offset: OldAddressOffset::Add(
                 Box::new(external_object(DATA).offset),
-                Box::new(AddressOffset::scale_int32(index, 4)),
+                Box::new(OldAddressOffset::scale_int32(index, 4)),
             ),
         };
         // `data[start..start + 1]`, spelled through the instance's field.
@@ -1968,7 +1974,7 @@ fn an_unplaced_store_records_a_local_array_as_one_run() {
         );
         let unplaced = Address {
             base: AddressBase::from(block),
-            offset: AddressOffset::scale_int32(index.clone(), 4),
+            offset: OldAddressOffset::scale_int32(index.clone(), 4),
         };
         let (forgotten, work) = crate::instrumentation::measure_deterministic_work(|| {
             written.without_possible_aliasing_cells(&unplaced, 4, &PureFactContext::new())
@@ -2217,7 +2223,7 @@ fn sequential_owned_parameter_stores_ignore_earlier_cached_fields() {
             let objects: Vec<_> = (0..count)
                 .map(|index| Address {
                     base: AddressBase::ExternalArgument,
-                    offset: AddressOffset::scale_int32(
+                    offset: OldAddressOffset::scale_int32(
                         OldMachineTerm::Variable(Variable(980_000 + index as u64)),
                         4,
                     ),
@@ -2402,7 +2408,7 @@ fn direct_literal_checks_do_not_walk_related_equality_classes() {
             let expected = if shape == "unrelated" { Some(7) } else { None };
             let pointer = |index| Address {
                 base: Address::symbolic(Variable(995_000)).base,
-                offset: AddressOffset::scale_int32(index, 4),
+                offset: OldAddressOffset::scale_int32(index, 4),
             };
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 for _ in 0..4 {
@@ -2454,7 +2460,7 @@ fn store_preservation_ignores_unrelated_owned_members() {
             let _session = crate::kernel::VerificationSession::enter();
             let object = |i| Address {
                 base: AddressBase::ExternalArgument,
-                offset: AddressOffset::Variable(Variable(997_000 + i)),
+                offset: OldAddressOffset::Variable(Variable(997_000 + i)),
             };
             let own =
                 |i| ResourceFact::own_memory(MemoryRange::new(object(i), 0u32.into(), 2u32.into()));
@@ -2513,7 +2519,7 @@ fn store_distinctness_does_not_search_same_block_range_candidates() {
     let index = |i| OldMachineTerm::Variable(Variable(998_000 + i));
     let pointer = |i| Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int32(index(i), 4),
+        offset: OldAddressOffset::scale_int32(index(i), 4),
     };
     let mut samples = Vec::new();
     for size in [4u64, 16, 64] {
@@ -2589,7 +2595,7 @@ fn wide_store_index_lookup_ignores_unrelated_facts_and_same_array_cells() {
         let index = |i: u64| OldMachineTerm::Variable(Variable(999_100 + i));
         let pointer = |i: u64| Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int64(index(i), 4, unsigned),
+            offset: OldAddressOffset::scale_int64(index(i), 4, unsigned),
         };
         let differ = |i: u64, j: u64| {
             OldConditionTerm::machine_compare(format, CompareRelation::Equal, index(i), index(j))
@@ -2672,11 +2678,11 @@ fn wide_store_index_lookup_ignores_unrelated_facts_and_same_array_cells() {
             // The other signedness, and a 32-bit index, have no key.
             let other = Address {
                 base: AddressBase::ExternalArgument,
-                offset: AddressOffset::scale_int64(index(1), 4, !unsigned),
+                offset: OldAddressOffset::scale_int64(index(1), 4, !unsigned),
             };
             let narrow = Address {
                 base: AddressBase::ExternalArgument,
-                offset: AddressOffset::scale_int32(index(1), 4),
+                offset: OldAddressOffset::scale_int32(index(1), 4),
             };
             for declined in [other, narrow] {
                 assert!(
@@ -2714,7 +2720,7 @@ fn store_ownership_selection_bounds_same_base_candidates() {
                     let _session = crate::kernel::VerificationSession::enter();
                     let object = |i| Address {
                         base: AddressBase::ExternalArgument,
-                        offset: AddressOffset::Variable(Variable(999_100 + i)),
+                        offset: OldAddressOffset::Variable(Variable(999_100 + i)),
                     };
                     let own = |base, start: u32| {
                         ResourceFact::own_memory(MemoryRange::new(
@@ -2769,7 +2775,7 @@ fn store_ownership_selection_bounds_same_base_compositions() {
             let _session = crate::kernel::VerificationSession::enter();
             let object = |i| Address {
                 base: AddressBase::ExternalArgument,
-                offset: AddressOffset::Variable(Variable(999_500 + i)),
+                offset: OldAddressOffset::Variable(Variable(999_500 + i)),
             };
             let own = |base, end: u32| {
                 ResourceFact::own_memory(MemoryRange::new(object(base), 0u32.into(), end.into()))
@@ -2813,7 +2819,7 @@ fn store_byte_gap_bounds_recorded_order_walks() {
             let index = |i| OldMachineTerm::Variable(Variable(999_800 + i));
             let pointer = |i| Address {
                 base: AddressBase::ExternalArgument,
-                offset: AddressOffset::scale_int32(index(i), 4),
+                offset: OldAddressOffset::scale_int32(index(i), 4),
             };
             let mut facts = PureFactContext::new();
             for i in 0..size {
@@ -2848,7 +2854,7 @@ fn pointer_frame_through_seeded_cells_ignores_run_length() {
         let _session = crate::kernel::VerificationSession::enter();
         let field = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Constant(128),
+            offset: OldAddressOffset::Constant(128),
         };
         let source = crate::kernel::intern_memory(SymbolicMemory::new());
         // The seed reads the original source, not its immediate parent.
@@ -3132,11 +3138,11 @@ fn repeated_read_initialization_work(adjacent: bool, exact: bool) -> Vec<(u32, u
         let _session = crate::kernel::VerificationSession::enter();
         let read = Address {
             base: AddressBase::Heap(998_940),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let write = Address {
             base: AddressBase::Heap(998_941),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let initial = SymbolicMemory::new();
         let defined = |memory: &SymbolicMemory| {
@@ -3224,7 +3230,7 @@ fn pointer_read_naming_samples(with_history: bool, same_cell: bool) -> Vec<(u32,
         let _session = crate::kernel::VerificationSession::enter();
         let base = Address {
             base: AddressBase::Heap(998_960),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let initial = crate::kernel::intern_memory(SymbolicMemory::new());
         let mut memory = initial.memory().clone();
@@ -3364,7 +3370,7 @@ fn compact_run_store_does_not_scan_separation_candidates() {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = |i| Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Variable(Variable(999_950 + i)),
+            offset: OldAddressOffset::Variable(Variable(999_950 + i)),
         };
         let base = pointer(0);
         let memory = SymbolicMemory::new().with_seeded_cells(
@@ -3686,11 +3692,11 @@ fn wide_store_comparisons_keep_retained_arithmetic_and_exact_sources() {
             let index = SharedMachineIntegerTerm::observe_shared(format, root.clone()).unwrap();
             let zero = Address {
                 base: AddressBase::ExternalArgument,
-                offset: AddressOffset::Constant(0.into()),
+                offset: OldAddressOffset::Constant(0.into()),
             };
             let selected = Address {
                 base: zero.base.clone(),
-                offset: AddressOffset::Int64Scaled {
+                offset: OldAddressOffset::Int64Scaled {
                     value: index,
                     byte_width: 4,
                     unsigned,

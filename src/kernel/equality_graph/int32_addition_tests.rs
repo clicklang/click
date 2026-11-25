@@ -21,8 +21,8 @@ fn int32_addition_closes_both_operands_early_and_late_through_scaled_offsets() {
         let right = add(add(var(2), var(4)), var(5));
         graph.add_int32_equality(&left, &var(10));
         graph.add_int32_equality(&right, &var(11));
-        let offset = |v| AddressOffset::scale_int32(v, 4);
-        let alias = |i| AddressOffset::Variable(Variable(i));
+        let offset = |v| OldAddressOffset::scale_int32(v, 4);
+        let alias = |i| OldAddressOffset::Variable(Variable(i));
         graph.add_offset_equality(&offset(left), &alias(20));
         graph.add_offset_equality(&offset(right), &alias(21));
         let parent = graph.clone();
@@ -84,10 +84,10 @@ fn int32_addition_does_not_cancel_commute_or_merge_other_sorts() {
     };
     assert!(!graph.are_int32_equal(&wide(var(1)), &wide(var(2))));
     assert!(!graph.are_int32_equal(&add(var(1), var(3)), &wide(var(1))));
-    let scalar_offset = AddressOffset::scale_int32(add(var(1), var(3)), 4);
-    let offset_sum = AddressOffset::Add(
-        Box::new(AddressOffset::Variable(Variable(1))),
-        Box::new(AddressOffset::Variable(Variable(3))),
+    let scalar_offset = OldAddressOffset::scale_int32(add(var(1), var(3)), 4);
+    let offset_sum = OldAddressOffset::Add(
+        Box::new(OldAddressOffset::Variable(Variable(1))),
+        Box::new(OldAddressOffset::Variable(Variable(3))),
     );
     assert!(!graph.are_offsets_equal(&scalar_offset, &offset_sum));
 }

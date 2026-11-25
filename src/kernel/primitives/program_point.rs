@@ -16,9 +16,9 @@ use crate::persistent::{PersistentMap, PersistentSet};
 
 use super::cell_version_intervals::CellVersionIntervals;
 use super::{
-    Address, AddressBase, AddressOffset, LoadKind, MemoryDerivation, MemoryRange, OldMachineTerm,
-    ProgramType, ProgramValue, SharedMemory, StoredMemoryValue, SymbolicMemory, intern_memory,
-    intern_memory_ref,
+    Address, AddressBase, LoadKind, MemoryDerivation, MemoryRange, OldAddressOffset,
+    OldMachineTerm, ProgramType, ProgramValue, SharedMemory, StoredMemoryValue, SymbolicMemory,
+    intern_memory, intern_memory_ref,
 };
 
 /// The identity of one point an execution path reached.
@@ -234,7 +234,7 @@ struct PointReadObject {
     /// A whole-object removal can discard an arbitrarily large map. A later
     /// write creates a new lineage so the join need not diff those maps.
     generation: ProgramPointId,
-    origin: Option<(AddressBase, AddressOffset)>,
+    origin: Option<(AddressBase, OldAddressOffset)>,
     cells: PointReadCells,
 }
 
@@ -316,7 +316,7 @@ struct ExternalEntryWrites {
     /// The view the first step after entry started from.
     entry_view: SharedMemory,
     /// The one origin all writes since entry used; none before the first.
-    origin: Option<(AddressBase, AddressOffset)>,
+    origin: Option<(AddressBase, OldAddressOffset)>,
     written: PersistentSet<i64>,
     /// The point whose effect last changed `written` or `origin`, or the
     /// entry. Two arms with one generation hold one record.
@@ -986,18 +986,18 @@ fn read_bucket(block: &AddressBase) -> Option<&AddressBase> {
 
 /// The bounded address shape only. No arithmetic or alias fact is consulted.
 /// Symbolic offsets share a bucket only while they use the same origin.
-fn read_displacement(offset: &AddressOffset) -> Option<(Option<&AddressOffset>, i64)> {
+fn read_displacement(offset: &OldAddressOffset) -> Option<(Option<&OldAddressOffset>, i64)> {
     match offset {
-        AddressOffset::Constant(start) => Some((None, *start)),
-        AddressOffset::Add(origin, delta)
+        OldAddressOffset::Constant(start) => Some((None, *start)),
+        OldAddressOffset::Add(origin, delta)
             if origin.is_shallow()
-                && let AddressOffset::Constant(delta) = delta.as_ref() =>
+                && let OldAddressOffset::Constant(delta) = delta.as_ref() =>
         {
             Some((Some(origin), *delta))
         }
-        AddressOffset::Add(delta, origin)
+        OldAddressOffset::Add(delta, origin)
             if origin.is_shallow()
-                && let AddressOffset::Constant(delta) = delta.as_ref() =>
+                && let OldAddressOffset::Constant(delta) = delta.as_ref() =>
         {
             Some((Some(origin), *delta))
         }
@@ -1008,12 +1008,12 @@ fn read_displacement(offset: &AddressOffset) -> Option<(Option<&AddressOffset>, 
 
 fn read_origin(
     pointer: &Address,
-    anchor: Option<&AddressOffset>,
-) -> Option<(AddressBase, AddressOffset)> {
+    anchor: Option<&OldAddressOffset>,
+) -> Option<(AddressBase, OldAddressOffset)> {
     if anchor.is_some() || external_storage(&pointer.base) {
         Some((
             pointer.base.clone(),
-            anchor.cloned().unwrap_or(AddressOffset::Constant(0)),
+            anchor.cloned().unwrap_or(OldAddressOffset::Constant(0)),
         ))
     } else {
         None
@@ -2204,7 +2204,7 @@ impl ProgramPoint {
     }
 
     pub(in crate::kernel) fn supports_local_call_output(pointer: &Address) -> bool {
-        indexed_local(&pointer.base) && pointer.offset == AddressOffset::Constant(0)
+        indexed_local(&pointer.base) && pointer.offset == OldAddressOffset::Constant(0)
     }
 
     pub(in crate::kernel) fn call_output_integer_version(
@@ -2235,7 +2235,7 @@ impl ProgramPoint {
         use crate::kernel::effective_type::CAccessClass;
 
         let memory = self.memory();
-        if pointer.offset != AddressOffset::Constant(0)
+        if pointer.offset != OldAddressOffset::Constant(0)
             || memory.block_size(&pointer.base)?.as_const()? != bytes
             || !matches!(
                 memory.declared_class(pointer),
@@ -2262,7 +2262,7 @@ impl ProgramPoint {
     pub(crate) fn supports_indexed_version(pointer: &Address) -> bool {
         read_bucket(&pointer.base).is_some()
             || (pointer.base.is_static_storage_block()
-                && pointer.offset == AddressOffset::Constant(0))
+                && pointer.offset == OldAddressOffset::Constant(0))
     }
 
     /// A direct integer cell's version, if this path has a recorded direct write
@@ -2284,7 +2284,7 @@ impl ProgramPoint {
     ) -> Option<Self> {
         let indexed_algebraic = matches!(value_type, ProgramType::Parameter(ty)
             if indexed_local(&pointer.base)
-                && matches!(pointer.offset, AddressOffset::Constant(_))
+                && matches!(pointer.offset, OldAddressOffset::Constant(_))
                 && !ty.has_abstract_size());
         if let Some(category) = super::PointerLoadCategory::of_type(value_type) {
             return self.indexed_pointer_version(pointer, Some(category));
@@ -2324,7 +2324,7 @@ impl ProgramPoint {
         pointer: &Address,
         parameter: super::TypeParameterName,
     ) -> Option<Self> {
-        if !indexed_local(&pointer.base) || pointer.offset != AddressOffset::Constant(0) {
+        if !indexed_local(&pointer.base) || pointer.offset != OldAddressOffset::Constant(0) {
             return None;
         }
         self.indexed_version(pointer, super::ABSTRACT_VALUE_WIDTH, |store| {
@@ -2383,7 +2383,7 @@ impl ProgramPoint {
         bytes: u32,
         matches_source: impl FnOnce(&MemoryDerivation) -> bool,
     ) -> Option<Self> {
-        if pointer.offset != AddressOffset::Constant(0)
+        if pointer.offset != OldAddressOffset::Constant(0)
             || self.memory().block_size(&pointer.base)?.as_const()? != bytes
         {
             return None;
@@ -2468,7 +2468,7 @@ mod tests {
         let block: AddressBase = "local:slot".into();
         let slot = Address {
             base: block.clone(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         SymbolicMemory::new()
             .with_block(block, 4)
@@ -2478,7 +2478,7 @@ mod tests {
     fn slot() -> Address {
         Address {
             base: "local:slot".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         }
     }
 
@@ -2652,7 +2652,7 @@ mod tests {
         let block = AddressBase::ExternalArgument;
         let cell = Address {
             base: block.clone(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let effect = entry.clone().with_memory(
             entry
@@ -2677,7 +2677,7 @@ mod tests {
         let other_entry = ExecutionState::new().begin_function_entry_memory();
         let pointer = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let select = |state: &ExecutionState| {
             state
@@ -2733,7 +2733,7 @@ mod tests {
         let entry = ExecutionState::new().begin_function_entry_memory();
         let pointer_slot = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let pointer = OldPointer::from_point_read(
             entry.program_point().for_exact_read(),
@@ -2770,7 +2770,7 @@ mod tests {
         let point = entry.program_point();
         let slot = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let pointer = OldPointer::from_point_read(
             point.clone().for_legacy_read(),
@@ -2791,7 +2791,7 @@ mod tests {
         let entry = ExecutionState::new().begin_function_entry_memory();
         let caller_cell = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let loaded = OldPointer::from_point_read(
             entry.program_point().for_exact_read(),
@@ -2840,7 +2840,7 @@ mod tests {
         let second = stored(&declared, 2);
         let pointer = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Constant(4),
+            offset: OldAddressOffset::Constant(4),
         };
         let join = |left: &ExecutionState, right: &ExecutionState| {
             let mut joined = left.clone();
@@ -3037,7 +3037,7 @@ mod tests {
         let slot = slot();
         let other = Address {
             base: "local:other".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let start = ExecutionState::new().with_memory(
             SymbolicMemory::new()
@@ -3404,7 +3404,7 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let cell = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let entry = ExecutionState::new().begin_function_entry_memory();
         let selected = entry

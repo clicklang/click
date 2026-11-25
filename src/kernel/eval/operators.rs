@@ -1955,17 +1955,17 @@ fn pointer_element_indices(
     let relative = match (&left.offset, &right.offset) {
         (left, right) if left == right => Some((zero.clone(), zero.clone())),
         (
-            AddressOffset::Add(left_base, left_addend),
-            AddressOffset::Add(right_base, right_addend),
+            OldAddressOffset::Add(left_base, left_addend),
+            OldAddressOffset::Add(right_base, right_addend),
         ) if left_base == right_base => Some((
             pointer_index_from_offset_term(left_addend, byte_width)?,
             pointer_index_from_offset_term(right_addend, byte_width)?,
         )),
-        (AddressOffset::Add(base, addend), right) if base.as_ref() == right => Some((
+        (OldAddressOffset::Add(base, addend), right) if base.as_ref() == right => Some((
             pointer_index_from_offset_term(addend, byte_width)?,
             zero.clone(),
         )),
-        (left, AddressOffset::Add(base, addend)) if base.as_ref() == left => Some((
+        (left, OldAddressOffset::Add(base, addend)) if base.as_ref() == left => Some((
             zero.clone(),
             pointer_index_from_offset_term(addend, byte_width)?,
         )),
@@ -1984,10 +1984,10 @@ fn pointer_element_indices(
 fn pointer_difference_offsets<'a>(
     left: &'a Address,
     right: &'a Address,
-) -> Option<(Vec<&'a AddressOffset>, Vec<&'a AddressOffset>)> {
-    fn offset_spine(mut offset: &AddressOffset) -> Vec<&AddressOffset> {
+) -> Option<(Vec<&'a OldAddressOffset>, Vec<&'a OldAddressOffset>)> {
+    fn offset_spine(mut offset: &OldAddressOffset) -> Vec<&OldAddressOffset> {
         let mut spine = Vec::new();
-        while let AddressOffset::Add(base, displacement) = offset {
+        while let OldAddressOffset::Add(base, displacement) = offset {
             spine.push(displacement.as_ref());
             offset = base;
         }
@@ -2036,13 +2036,13 @@ fn apply_pointer_difference(
     assumptions: &PureFactContext,
 ) -> Vec<ExpressionPath> {
     let mut guards = Vec::new();
-    let mut index = |offsets: Vec<&AddressOffset>| -> Option<SharedMachineIntegerTerm> {
+    let mut index = |offsets: Vec<&OldAddressOffset>| -> Option<SharedMachineIntegerTerm> {
         // Pointer formation folds consecutive constant advances. Check an
         // unsigned element index plus that advance in its original type:
         // n + k fits ptrdiff_t iff n <= PTRDIFF_MAX - k for k >= 0.
         if let [
-            AddressOffset::Constant(bytes),
-            AddressOffset::Int64Scaled {
+            OldAddressOffset::Constant(bytes),
+            OldAddressOffset::Int64Scaled {
                 value,
                 byte_width: stride,
                 unsigned: true,
@@ -3258,7 +3258,7 @@ fn pointer_index_from_offset(pointer: &Address, byte_width: u32) -> Option<OldMa
 }
 
 fn pointer_index_from_offset_term(
-    offset: &AddressOffset,
+    offset: &OldAddressOffset,
     byte_width: u32,
 ) -> Option<OldMachineTerm> {
     if byte_width == 1 {
@@ -3278,13 +3278,13 @@ fn pointer_index_from_concrete_offset(offset: i64, byte_width: u32) -> Option<Ol
         .then_some(OldMachineTerm::constant((index as i32) as u32))
 }
 
-fn pointer_arithmetic_index(offset: &AddressOffset, byte_width: u32) -> Option<OldMachineTerm> {
-    let AddressOffset::Add(left, right) = offset else {
+fn pointer_arithmetic_index(offset: &OldAddressOffset, byte_width: u32) -> Option<OldMachineTerm> {
+    let OldAddressOffset::Add(left, right) = offset else {
         return None;
     };
     let right = pointer_index_from_offset_term(right, byte_width)?;
     let left = match left.as_ref() {
-        AddressOffset::Add(..) => pointer_arithmetic_index(left, byte_width)?,
+        OldAddressOffset::Add(..) => pointer_arithmetic_index(left, byte_width)?,
         // The first addend is the pointer's opaque base. It is not an
         // element displacement, even if its byte representation happens to
         // be aligned.
@@ -3293,16 +3293,16 @@ fn pointer_arithmetic_index(offset: &AddressOffset, byte_width: u32) -> Option<O
     Some(OldMachineTerm::add(left, right))
 }
 
-fn pointer_offset_contains_int64_scaled(offset: &AddressOffset) -> bool {
+fn pointer_offset_contains_int64_scaled(offset: &OldAddressOffset) -> bool {
     match offset {
-        AddressOffset::Int64Scaled { .. } => true,
-        AddressOffset::Add(left, right) => {
+        OldAddressOffset::Int64Scaled { .. } => true,
+        OldAddressOffset::Add(left, right) => {
             pointer_offset_contains_int64_scaled(left)
                 || pointer_offset_contains_int64_scaled(right)
         }
-        AddressOffset::Constant(_)
-        | AddressOffset::Variable(_)
-        | AddressOffset::Int32Scaled { .. } => false,
+        OldAddressOffset::Constant(_)
+        | OldAddressOffset::Variable(_)
+        | OldAddressOffset::Int32Scaled { .. } => false,
     }
 }
 
@@ -3400,14 +3400,14 @@ fn exact_offset_operation(
 }
 
 fn exact_pointer_offset_i64_with_guards(
-    offset: &AddressOffset,
+    offset: &OldAddressOffset,
     guards: &mut Vec<PointerFormationGuard>,
 ) -> Option<SharedMachineIntegerTerm> {
     exact_pointer_index_i64_with_guards(offset, None, guards)
 }
 
 fn exact_pointer_index_i64_with_guards(
-    offset: &AddressOffset,
+    offset: &OldAddressOffset,
     element_width: Option<u32>,
     guards: &mut Vec<PointerFormationGuard>,
 ) -> Option<SharedMachineIntegerTerm> {
@@ -3417,12 +3417,12 @@ fn exact_pointer_index_i64_with_guards(
     let width = i64::from(element_width.unwrap_or(1));
     let scale = |bytes: i64| (width > 0 && bytes % width == 0).then(|| bytes / width);
     match offset {
-        AddressOffset::Constant(value) => Some(SharedMachineIntegerTerm::intern(
+        OldAddressOffset::Constant(value) => Some(SharedMachineIntegerTerm::intern(
             T::Int64,
             OldMachineTerm::int64_constant(scale(*value)?),
         )),
-        AddressOffset::Variable(_) => None,
-        AddressOffset::Add(left, right) => {
+        OldAddressOffset::Variable(_) => None,
+        OldAddressOffset::Add(left, right) => {
             let left = exact_pointer_index_i64_with_guards(left, element_width, guards)?;
             let right = exact_pointer_index_i64_with_guards(right, element_width, guards)?;
             Some(exact_offset_operation(
@@ -3432,7 +3432,7 @@ fn exact_pointer_index_i64_with_guards(
                 guards,
             ))
         }
-        AddressOffset::Int32Scaled { value, byte_width } => {
+        OldAddressOffset::Int32Scaled { value, byte_width } => {
             let scale = scale(*byte_width)?;
             let left = value
                 .operand_view()
@@ -3448,11 +3448,10 @@ fn exact_pointer_index_i64_with_guards(
                 guards,
             ))
         }
-        AddressOffset::Int64Scaled { byte_width: 0, .. } => Some(SharedMachineIntegerTerm::intern(
-            T::Int64,
-            OldMachineTerm::int64_constant(0),
-        )),
-        AddressOffset::Int64Scaled {
+        OldAddressOffset::Int64Scaled { byte_width: 0, .. } => Some(
+            SharedMachineIntegerTerm::intern(T::Int64, OldMachineTerm::int64_constant(0)),
+        ),
+        OldAddressOffset::Int64Scaled {
             value,
             byte_width,
             unsigned,
@@ -3553,7 +3552,7 @@ fn address_base_bounds(
         return Some(guards);
     }
 
-    if let AddressOffset::Int64Scaled {
+    if let OldAddressOffset::Int64Scaled {
         value,
         byte_width: scale,
         unsigned,
@@ -3712,7 +3711,7 @@ fn address_base_bounds(
 /// [`scaled_element_offset`]: crate::kernel::reasoning::scaled_element_offset
 /// [`wide_index_bound_conditions`]: crate::kernel::reasoning::wide_index_bound_conditions
 fn wide_element_block_bounds(
-    offset: &AddressOffset,
+    offset: &OldAddressOffset,
     size: &AllocationSize,
     assumptions: &PureFactContext,
 ) -> Option<Vec<PointerFormationGuard>> {
@@ -3720,7 +3719,7 @@ fn wide_element_block_bounds(
         condition,
         value: true,
     };
-    if let AddressOffset::Constant(bytes) = offset {
+    if let OldAddressOffset::Constant(bytes) = offset {
         let bytes = u64::try_from(*bytes).ok()?;
         let (count, bound) = crate::kernel::reasoning::uint64_size_in_elements(size.bytes(), bytes);
         return Some(vec![guard(OldConditionTerm::uint64_less_equal(
@@ -3728,7 +3727,7 @@ fn wide_element_block_bounds(
             count.clone(),
         ))]);
     }
-    if matches!(offset, AddressOffset::Int32Scaled { .. }) {
+    if matches!(offset, OldAddressOffset::Int32Scaled { .. }) {
         // A bare 32-bit index keeps its own rule.
         return None;
     }
@@ -3757,10 +3756,10 @@ fn wide_element_block_bounds(
 /// `0 <= offset <= bytes` over the exact 64-bit byte offset. An offset with
 /// no exact reading has no checked normal path.
 fn wide_block_bounds_of_32_bit_offset(
-    offset: &AddressOffset,
+    offset: &OldAddressOffset,
     size: &AllocationSize,
 ) -> Option<Vec<PointerFormationGuard>> {
-    if let AddressOffset::Int32Scaled {
+    if let OldAddressOffset::Int32Scaled {
         value,
         byte_width: scale,
     } = offset
@@ -3835,16 +3834,20 @@ fn wide_block_bounds_of_32_bit_offset(
 /// spelling `0 <= i * stride + field <= bytes` says the same thing in terms
 /// a linear order check cannot read.
 fn strided_block_bounds(
-    offset: &AddressOffset,
+    offset: &OldAddressOffset,
     block_size: &OldMachineTerm,
 ) -> Option<Vec<PointerFormationGuard>> {
     let (index, stride, field) = match offset {
-        AddressOffset::Int32Scaled { value, byte_width } => (value, *byte_width, 0),
-        AddressOffset::Add(left, right) => match (left.as_ref(), right.as_ref()) {
-            (AddressOffset::Int32Scaled { value, byte_width }, AddressOffset::Constant(field))
-            | (AddressOffset::Constant(field), AddressOffset::Int32Scaled { value, byte_width }) => {
-                (value, *byte_width, *field)
-            }
+        OldAddressOffset::Int32Scaled { value, byte_width } => (value, *byte_width, 0),
+        OldAddressOffset::Add(left, right) => match (left.as_ref(), right.as_ref()) {
+            (
+                OldAddressOffset::Int32Scaled { value, byte_width },
+                OldAddressOffset::Constant(field),
+            )
+            | (
+                OldAddressOffset::Constant(field),
+                OldAddressOffset::Int32Scaled { value, byte_width },
+            ) => (value, *byte_width, *field),
             _ => return None,
         },
         _ => return None,
@@ -6266,7 +6269,7 @@ fn apply_pointer_adjacency_guard(
 /// The pointer's displacement from its object's base: its offset for a block
 /// based at offset zero, and the summands after the parameter's opaque base
 /// for argument memory. `None` when the offset does not spell the base.
-fn pointer_object_displacement(pointer: &Address) -> Option<AddressOffset> {
+fn pointer_object_displacement(pointer: &Address) -> Option<OldAddressOffset> {
     pointer.offset_from_base(&pointer.object_base())
 }
 

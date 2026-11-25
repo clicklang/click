@@ -3431,8 +3431,8 @@ mod tests {
             ExecutionFrontier, ExecutionProofCore, ExecutionRegionKind, FrontierPosition,
         };
         use crate::kernel::{
-            Address, AddressOffset, ExecutionState, IntegerRangeFoldIndex, IntegerTerm,
-            MachineIntegerType, OldConditionTerm, ProgramValue, SharedIntegerRangeEndpoint,
+            Address, ExecutionState, IntegerRangeFoldIndex, IntegerTerm, MachineIntegerType,
+            OldAddressOffset, OldConditionTerm, ProgramValue, SharedIntegerRangeEndpoint,
             SymbolicMemory,
         };
         type TestProof = ProofObject<
@@ -3493,7 +3493,7 @@ mod tests {
                         memory,
                         base: Address {
                             base: "alpha".into(),
-                            offset: AddressOffset::Constant(0),
+                            offset: OldAddressOffset::Constant(0),
                         },
                         bytes: (OldMachineTerm::Variable(variable)).into(),
                         wide: false,
@@ -3567,7 +3567,7 @@ mod tests {
         let changed = before.clone().store(
             Address {
                 base: "alpha".into(),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
             ProgramValue::Int32(OldMachineTerm::constant(7)),
         );
@@ -3587,8 +3587,8 @@ mod tests {
             ExecutionFrontier, ExecutionProofCore, ExecutionRegionKind, FrontierPosition,
         };
         use crate::kernel::{
-            Address, AddressOffset, ExecutionState, LoopInvariantCheck, ProgramType, ProgramValue,
-            SpecExpression, SpecPoint, SpecProposition,
+            Address, ExecutionState, LoopInvariantCheck, OldAddressOffset, ProgramType,
+            ProgramValue, SpecExpression, SpecPoint, SpecProposition,
         };
         type TestProof = ProofObject<
             (),
@@ -3601,7 +3601,7 @@ mod tests {
                 crate::kernel::OldPointer::new(
                     Address {
                         base: "unallocated".into(),
-                        offset: AddressOffset::Constant(0),
+                        offset: OldAddressOffset::Constant(0),
                     },
                     ProgramType::Int32Pointer,
                 ),

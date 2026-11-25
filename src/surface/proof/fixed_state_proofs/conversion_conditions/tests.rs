@@ -14,7 +14,7 @@ fn indexed_pointer_site() -> (ProgramValueBindings, ExecutionState) {
     let pointer = ProgramValue::typed_pointer(
         Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scaled_int32_node(
+            offset: OldAddressOffset::scaled_int32_node(
                 OldMachineTerm::Variable(Variable(100_000)),
                 4,
             ),
@@ -43,12 +43,12 @@ fn pointer_base(values: &ProgramValueBindings) -> Address {
 fn indexed_cell(values: &ProgramValueBindings) -> Address {
     Address {
         base: pointer_base(values).base,
-        offset: AddressOffset::Add(
-            Box::new(AddressOffset::scaled_int32_node(
+        offset: OldAddressOffset::Add(
+            Box::new(OldAddressOffset::scaled_int32_node(
                 OldMachineTerm::Variable(Variable(100_000)),
                 4,
             )),
-            Box::new(AddressOffset::scaled_int32_node(
+            Box::new(OldAddressOffset::scaled_int32_node(
                 OldMachineTerm::Variable(Variable(1)),
                 4,
             )),

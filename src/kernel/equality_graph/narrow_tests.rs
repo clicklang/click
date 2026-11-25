@@ -196,7 +196,7 @@ fn check_narrow_store_equation(format: Ty) {
     for aliased in [false, true] {
         let pointer = Address {
             base: "narrow".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let query = if aliased {
             Address::symbolic(Variable(993201))

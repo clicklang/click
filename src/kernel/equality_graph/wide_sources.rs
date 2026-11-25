@@ -3,8 +3,8 @@ use crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey as Key;
 use crate::kernel::assumptions::{parameter_alias_bucket, parameter_partition_variable};
 use crate::kernel::machine_integer::{Relation, comparison::comparison_view};
 use crate::kernel::{
-    Address, AddressBase, AddressOffset, MachineIntegerType, MachineOperandView, OldConditionTerm,
-    OldMachineTerm, Proposition, Variable,
+    Address, AddressBase, MachineIntegerType, MachineOperandView, OldAddressOffset,
+    OldConditionTerm, OldMachineTerm, Proposition, Variable,
 };
 use crate::persistent::{PersistentComponents, PersistentMap, PersistentSet};
 use std::collections::BTreeSet;
@@ -155,8 +155,8 @@ impl NumericAddressConnectivity {
     fn can_be_owner(bucket: &Address) -> bool {
         bucket.base == AddressBase::ExternalArgument
             && match &bucket.offset {
-                AddressOffset::Variable(_) => true,
-                AddressOffset::Int32Scaled { value, .. } => {
+                OldAddressOffset::Variable(_) => true,
+                OldAddressOffset::Int32Scaled { value, .. } => {
                     value.operand_view().variable().is_some()
                 }
                 _ => false,

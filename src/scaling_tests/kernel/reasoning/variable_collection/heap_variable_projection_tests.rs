@@ -10,7 +10,7 @@ fn heap_variable_counts_follow_local_edits_and_keep_siblings_isolated() {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = |id| Address {
             base: AddressBase::Symbolic(Variable(id)),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let mut heap = crate::kernel::primitives::HeapMemory::default();
         for id in 1..=size {

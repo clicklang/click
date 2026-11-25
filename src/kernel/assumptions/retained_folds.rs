@@ -290,12 +290,12 @@ mod tests {
         let point = ProgramPoint::at(&crate::kernel::intern_memory_ref(&memory));
         let word = Address::symbolic(Variable(999967));
         let wide = Address::symbolic(Variable(999968));
-        let offset = AddressOffset::Add(
-            Box::new(AddressOffset::scaled_int32_node(
+        let offset = OldAddressOffset::Add(
+            Box::new(OldAddressOffset::scaled_int32_node(
                 OldMachineTerm::read_named(point.clone(), Box::new(word.clone()), LoadKind::Int32),
                 4,
             )),
-            Box::new(AddressOffset::scaled_int64_node(
+            Box::new(OldAddressOffset::scaled_int64_node(
                 OldMachineTerm::read_named(point, Box::new(wide.clone()), LoadKind::Bits64),
                 8,
                 true,
@@ -506,11 +506,11 @@ mod offset_condition_tests {
             )
         };
         let source = OldConditionTerm::AddressOffsetEqual(
-            Box::new(AddressOffset::scaled_int32_node(
+            Box::new(OldAddressOffset::scaled_int32_node(
                 read(998500, LoadKind::Int32),
                 4,
             )),
-            Box::new(AddressOffset::scaled_int64_node(
+            Box::new(OldAddressOffset::scaled_int64_node(
                 read(998501, LoadKind::Bits64),
                 8,
                 false,
@@ -546,7 +546,7 @@ mod boolean_read_tests {
         let memory = crate::kernel::intern_memory(current.clone());
         let address = Address {
             base: AddressBase::Symbolic(Variable(999360)),
-            offset: AddressOffset::scaled_int32_node(
+            offset: OldAddressOffset::scaled_int32_node(
                 OldMachineTerm::read_named(
                     ProgramPoint::at(&memory),
                     Box::new(SymbolicMemory::global_pointer("bool-index")),

@@ -1,5 +1,7 @@
 use super::*;
-use crate::kernel::{Address, AddressOffset, OldConditionTerm, Resource, ResourceFact, Variable};
+use crate::kernel::{
+    Address, OldAddressOffset, OldConditionTerm, Resource, ResourceFact, Variable,
+};
 
 fn owned(name: &str) -> ResourceFact {
     ResourceFact::own(Resource::Token {
@@ -186,7 +188,7 @@ fn parameter_range(variable: u64, start: u32, end: u32, width: u32) -> MemoryRan
     MemoryRange::new_with_element_width(
         crate::kernel::Address {
             base: AddressBase::ExternalArgument,
-            offset: crate::kernel::AddressOffset::Variable(Variable(variable)),
+            offset: crate::kernel::OldAddressOffset::Variable(Variable(variable)),
         },
         OldMachineTerm::constant(start),
         OldMachineTerm::constant(end),
@@ -198,7 +200,7 @@ fn local_job_range() -> MemoryRange {
     MemoryRange::new_with_element_width(
         crate::kernel::Address {
             base: "local:job".into(),
-            offset: crate::kernel::AddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0),
         },
         OldMachineTerm::constant(0),
         OldMachineTerm::constant(4),
@@ -394,7 +396,7 @@ fn buffer_range(start: u32, end: u32, width: u32) -> MemoryRange {
     MemoryRange::new_with_element_width(
         crate::kernel::Address {
             base: "buffer".into(),
-            offset: crate::kernel::AddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0),
         },
         OldMachineTerm::constant(start),
         OldMachineTerm::constant(end),
@@ -958,7 +960,7 @@ fn mutex_owner(epoch: Option<u64>) -> ResourceFact {
     ResourceFact::own(Resource::MutexLive(crate::kernel::MutexIdentity {
         mutex: crate::kernel::Address {
             base: "mutex".into(),
-            offset: crate::kernel::AddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0),
         },
         epoch,
     }))
@@ -2851,7 +2853,7 @@ pub(super) fn memory(start: u32, end: u32, own: bool) -> ResourceFact {
     let range = crate::kernel::MemoryRange::new(
         crate::kernel::Address {
             base: "buffer".into(),
-            offset: crate::kernel::AddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0),
         },
         crate::kernel::OldMachineTerm::constant(start),
         crate::kernel::OldMachineTerm::constant(end),
@@ -3626,7 +3628,7 @@ fn symbolic_memory(start: OldMachineTerm, end: OldMachineTerm, own: bool) -> Res
     let range = crate::kernel::MemoryRange::new(
         crate::kernel::Address {
             base: "buffer".into(),
-            offset: crate::kernel::AddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0),
         },
         start,
         end,
@@ -4556,7 +4558,7 @@ fn contract_entry_overlap_does_not_walk_pointer_aliases() {
             if same_block {
                 Address {
                     base: AddressBase::ExternalArgument,
-                    offset: AddressOffset::Variable(Variable(id)),
+                    offset: OldAddressOffset::Variable(Variable(id)),
                 }
             } else {
                 Address::symbolic(Variable(id))
@@ -4622,7 +4624,7 @@ fn indexed_borrow_blocks_write_through_exact_pointer_alias() {
     let (ledger, owner, reader) = participants();
     let protected_base = Address {
         base: AddressBase::Symbolic(Variable(702)),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let protected = ResourceFact::own_memory(MemoryRange::new(
         protected_base.clone(),
@@ -4634,7 +4636,7 @@ fn indexed_borrow_blocks_write_through_exact_pointer_alias() {
 
     let query_base = Address {
         base: AddressBase::Symbolic(Variable(703)),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let assumptions = PureFactContext::new().assume_condition(
         OldConditionTerm::address_equal(query_base.clone(), protected_base.clone()),
@@ -4669,7 +4671,7 @@ fn symbolic_borrow_fallback_checks_equal_pointer_alias_buckets() {
     let (ledger, owner, reader) = participants();
     let protected_base = Address {
         base: AddressBase::Symbolic(Variable(704)),
-        offset: AddressOffset::Variable(Variable(700)),
+        offset: OldAddressOffset::Variable(Variable(700)),
     };
     let protected = MemoryRange::new_with_element_width(
         protected_base.clone(),
@@ -4682,7 +4684,7 @@ fn symbolic_borrow_fallback_checks_equal_pointer_alias_buckets() {
 
     let query_base = Address {
         base: AddressBase::Symbolic(Variable(705)),
-        offset: AddressOffset::Variable(Variable(701)),
+        offset: OldAddressOffset::Variable(Variable(701)),
     };
     let assumptions = PureFactContext::new().assume_condition(
         OldConditionTerm::address_equal(query_base.clone(), protected_base.clone()),
@@ -4860,7 +4862,7 @@ fn indexed_write_witness_keeps_the_least_borrow_across_buckets_and_aliases() {
     let original = memory(0, 32, false);
     let alias = Address {
         base: AddressBase::Symbolic(Variable(991_123)),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let facts = PureFactContext::new().assume_condition(
         OldConditionTerm::address_equal(

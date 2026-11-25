@@ -1621,7 +1621,7 @@ mod retained_tag_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let cell = Address {
             base: "tag-cell".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let pointer = Address::symbolic(Variable(986030));
         let memory = SymbolicMemory::new().with_block("tag-cell", 8);

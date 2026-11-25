@@ -605,7 +605,7 @@ In `src/kernel/`:
   some widths stay context-implied while machine operators carry formats is
   explained in `design/machine-integers.md`; the older typed-index rulings
   against format-carrying nodes were superseded.
-- `AddressOffset`: pointer-offset expressions.
+- `OldAddressOffset`: pointer-offset expressions.
 - `OldConditionTerm`: proof-level truth-valued conditions: machine comparisons
   `Compare { format, relation, left, right }` and overflow tests
   `Overflows { format, op, left, right }` at every machine-integer format,
@@ -1199,8 +1199,8 @@ arithmetic that is modular by definition. A key that *is* ordered — the
 pairwise scan — is an ordering question wearing a key's clothes, and takes the
 signed reading.
 
-A **byte offset** is mathematical. `AddressOffset` adds exactly, and
-`AddressOffset::scale_int32` sign-extends its index before multiplying by
+A **byte offset** is mathematical. `OldAddressOffset` adds exactly, and
+`OldAddressOffset::scale_int32` sign-extends its index before multiplying by
 the element width, so a pointer's displacement from its block is an `i64` that
 never wraps. An **element index** is modular. `OldMachineTerm` is a 32-bit
 machine value, so `OldMachineTerm::add` and `OldMachineTerm::subtract` wrap:

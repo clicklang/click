@@ -325,7 +325,7 @@ fn certification_binary(
 
 fn pointer_offset_bytes(
     assumptions: &PureFactContext,
-    offset: &AddressOffset,
+    offset: &OldAddressOffset,
 ) -> Option<SharedMachineIntegerTerm> {
     let literal = |n| {
         SharedMachineIntegerTerm::intern(MachineIntegerType::Int32, OldMachineTerm::constant(n))
@@ -338,10 +338,10 @@ fn pointer_offset_bytes(
     let le =
         |a: Operand<'_>, b: Operand<'_>| certification_proves_signed_le_views(assumptions, a, b);
     match offset {
-        AddressOffset::Constant(_)
-        | AddressOffset::Variable(_)
-        | AddressOffset::Int64Scaled { .. } => None,
-        AddressOffset::Add(left, right) => {
+        OldAddressOffset::Constant(_)
+        | OldAddressOffset::Variable(_)
+        | OldAddressOffset::Int64Scaled { .. } => None,
+        OldAddressOffset::Add(left, right) => {
             let left = pointer_offset_bytes(assumptions, left)?;
             let right = pointer_offset_bytes(assumptions, right)?;
             let sum = certification_binary(
@@ -357,7 +357,7 @@ fn pointer_offset_bytes(
                 && le(right.operand_view(), sum.operand_view()))
             .then_some(sum)
         }
-        AddressOffset::Int32Scaled { value, byte_width } => {
+        OldAddressOffset::Int32Scaled { value, byte_width } => {
             let width = u32::try_from(*byte_width).ok().filter(|width| *width > 0)?;
             let limit = OldMachineTerm::constant(max / width);
             (le(Operand::Old(&zero), value.operand_view())
@@ -382,8 +382,8 @@ fn pointer_offset_bytes(
 /// offset extends the fact offset additively.
 fn pointer_offset_byte_delta(
     assumptions: &PureFactContext,
-    goal_offset: &AddressOffset,
-    fact_offset: &AddressOffset,
+    goal_offset: &OldAddressOffset,
+    fact_offset: &OldAddressOffset,
 ) -> Option<SharedMachineIntegerTerm> {
     if goal_offset == fact_offset {
         return Some(SharedMachineIntegerTerm::intern(
@@ -391,7 +391,7 @@ fn pointer_offset_byte_delta(
             OldMachineTerm::constant(0),
         ));
     }
-    if let AddressOffset::Add(left, right) = goal_offset {
+    if let OldAddressOffset::Add(left, right) = goal_offset {
         if left.as_ref() == fact_offset {
             return pointer_offset_bytes(assumptions, right);
         }
@@ -515,7 +515,7 @@ fn symbolic_base_aliases_a_held_cell(
     };
     let object = Address {
         base: base.base.clone(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     assumptions.exact_pointer_aliases(&object).any(|alias| {
         crate::instrumentation::record_deterministic_work(1);
@@ -856,19 +856,20 @@ pub(in crate::kernel) fn quantified_int32_fact_certifies_loadable_cell(
         return false;
     }
     fn collect_shallow_offset_variables(
-        offset: &AddressOffset,
+        offset: &OldAddressOffset,
         variables: &mut BTreeSet<Variable>,
     ) {
         match offset {
-            AddressOffset::Constant(_) => {}
-            AddressOffset::Variable(variable) => {
+            OldAddressOffset::Constant(_) => {}
+            OldAddressOffset::Variable(variable) => {
                 variables.insert(*variable);
             }
-            AddressOffset::Add(left, right) => {
+            OldAddressOffset::Add(left, right) => {
                 collect_shallow_offset_variables(left, variables);
                 collect_shallow_offset_variables(right, variables);
             }
-            AddressOffset::Int32Scaled { value, .. } | AddressOffset::Int64Scaled { value, .. } => {
+            OldAddressOffset::Int32Scaled { value, .. }
+            | OldAddressOffset::Int64Scaled { value, .. } => {
                 collect_shallow_operand_variables(value.operand_view(), variables);
             }
         }
@@ -3153,15 +3154,15 @@ pub(crate) fn propositions_alpha_equivalent(left: &Proposition, right: &Proposit
 /// resolver once per atom at top level, never inside the resolution
 /// recursion.
 fn pointer_offsets_equal_with_resolved_atoms(
-    left: &AddressOffset,
-    right: &AddressOffset,
+    left: &OldAddressOffset,
+    right: &OldAddressOffset,
     assumptions: &PureFactContext,
 ) -> bool {
-    let resolve = |offset: &AddressOffset| {
+    let resolve = |offset: &OldAddressOffset| {
         let (atoms, mut constant) = crate::kernel::reasoning::offset_atoms_and_constant(offset);
         let mut unresolved = Vec::new();
         for atom in atoms {
-            if let AddressOffset::Int32Scaled { value, byte_width } = &atom
+            if let OldAddressOffset::Int32Scaled { value, byte_width } = &atom
                 && let Some(known) =
                     assumptions.known_signed_constant_after_normalization_view(value.operand_view())
             {
@@ -3194,7 +3195,7 @@ fn pointer_offsets_equal_with_resolved_atoms(
                 assumptions,
             )
     };
-    let atoms_match = |left: &AddressOffset, right: &AddressOffset| {
+    let atoms_match = |left: &OldAddressOffset, right: &OldAddressOffset| {
         if left == right
             || assumptions.exact_condition_value(&OldConditionTerm::address_offset_equal(
                 left.clone(),
@@ -3208,11 +3209,11 @@ fn pointer_offsets_equal_with_resolved_atoms(
             return true;
         }
         let (
-            AddressOffset::Int32Scaled {
+            OldAddressOffset::Int32Scaled {
                 value: left_value,
                 byte_width: left_width,
             },
-            AddressOffset::Int32Scaled {
+            OldAddressOffset::Int32Scaled {
                 value: right_value,
                 byte_width: right_width,
             },
@@ -3487,7 +3488,7 @@ mod shared_contract_operand_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = Address {
             base: "contract-expression-cell".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let written = OldMachineTerm::add(
             OldMachineTerm::Variable(Variable(1017151)),
@@ -3534,7 +3535,7 @@ mod shared_contract_operand_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = Address {
             base: "contract-index".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let load = |id| {
             let memory = crate::kernel::SymbolicMemory::new()
@@ -3551,7 +3552,7 @@ mod shared_contract_operand_tests {
         };
         let a = load(1017152);
         let b = load(1017153);
-        let offset = |term| AddressOffset::Int32Scaled {
+        let offset = |term| OldAddressOffset::Int32Scaled {
             value: SharedMachineIntegerTerm::index(MachineIntegerType::Int32, term),
             byte_width: 4,
         };
@@ -3580,7 +3581,7 @@ mod shared_contract_operand_tests {
     fn shared_byte_offsets_keep_bounds_and_width_authority() {
         let _session = crate::kernel::VerificationSession::enter();
         let x = OldMachineTerm::Variable(Variable(1017121));
-        let offset = AddressOffset::Int32Scaled {
+        let offset = OldAddressOffset::Int32Scaled {
             value: SharedMachineIntegerTerm::index(MachineIntegerType::Int32, x.clone()),
             byte_width: 4,
         };
@@ -3599,7 +3600,7 @@ mod shared_contract_operand_tests {
         assert!(
             pointer_offset_bytes(
                 &bounded,
-                &AddressOffset::Int64Scaled {
+                &OldAddressOffset::Int64Scaled {
                     value: SharedMachineIntegerTerm::index(
                         MachineIntegerType::Int64,
                         OldMachineTerm::int64_from_32(x)

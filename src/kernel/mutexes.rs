@@ -3576,7 +3576,7 @@ mod tests {
                 &state,
                 &Address {
                     base: "local:f:fresh_mutex".into(),
-                    offset: super::super::AddressOffset::Constant(0),
+                    offset: super::super::OldAddressOffset::Constant(0),
                 },
                 &assumptions,
             )
@@ -3883,7 +3883,7 @@ mod tests {
         use super::super::*;
         let pointer = Address {
             base: AddressBase::Heap(91_003),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let range = allocation_range(pointer.clone(), 40);
         let fact = ResourceFact::own_memory(range.clone());
@@ -3992,7 +3992,7 @@ mod tests {
         use super::super::*;
         let base = Address {
             base: AddressBase::Heap(90_000),
-            offset: AddressOffset::constant(0),
+            offset: OldAddressOffset::constant(0),
         };
         let symbolic = Address::symbolic(Variable(90_001));
         let context = MutexContext::new(ExecutionState::new())
@@ -4275,14 +4275,14 @@ mod tests {
     }
 
     use crate::kernel::{
-        AddressOffset, ProgramType, ResourceContext, ResourceFieldSchema, ResourceFieldType,
+        OldAddressOffset, ProgramType, ResourceContext, ResourceFieldSchema, ResourceFieldType,
         ResourceInstance, Variable, int32,
     };
 
     fn mutex(index: usize) -> Address {
         Address {
             base: format!("mutex-{index}").into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         }
     }
 

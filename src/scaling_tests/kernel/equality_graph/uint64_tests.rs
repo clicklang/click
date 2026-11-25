@@ -103,7 +103,7 @@ fn an_aliased_read_uses_its_store_equation_without_scanning_unrelated_cells_or_a
         let mut memory = SymbolicMemory::new().with_block("cells", 8 * (size as u32 + 1));
         let cell = |i: u64| Address {
             base: "cells".into(),
-            offset: AddressOffset::Constant(8 * i as i64),
+            offset: OldAddressOffset::Constant(8 * i as i64),
         };
         for i in 0..=size {
             memory = memory.store(
@@ -150,7 +150,7 @@ fn an_aliased_read_query_does_not_walk_its_own_alias_class() {
         let _session = VerificationSession::enter();
         let stored_at = Address {
             base: "cells".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let memory = intern_memory(SymbolicMemory::new().with_block("cells", 8).store(
             stored_at.clone(),
@@ -200,7 +200,7 @@ fn a_late_alias_rechecks_only_the_reads_of_its_own_address_class() {
             memory = memory.store(
                 Address {
                     base: "other".into(),
-                    offset: AddressOffset::Constant(8 * i as i64),
+                    offset: OldAddressOffset::Constant(8 * i as i64),
                 },
                 ProgramValue::UInt64(OldMachineTerm::uint64_constant(i)),
             );

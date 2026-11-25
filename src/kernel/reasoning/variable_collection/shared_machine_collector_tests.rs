@@ -259,12 +259,12 @@ fn machine_fold_endpoints_retain_mathematical_variables_in_conversions() {
 // observation: these edges must not implicitly Deref the shared operand.
 fn check_pointer_index_collectors(native: &OldMachineTerm, machine: &SharedMachineIntegerTerm) {
     let offset = if machine.ty() == MachineIntegerType::Int32 {
-        AddressOffset::Int32Scaled {
+        OldAddressOffset::Int32Scaled {
             value: machine.clone(),
             byte_width: 4,
         }
     } else {
-        AddressOffset::Int64Scaled {
+        OldAddressOffset::Int64Scaled {
             value: machine.clone(),
             byte_width: 8,
             unsigned: true,

@@ -68,14 +68,14 @@ pub(crate) fn memory_access_element_bound(
     let mut widest: Option<(&OldMachineTerm, u32)> = None;
     while let Some(term) = pending.pop() {
         match term {
-            AddressOffset::Add(left, right) => {
+            OldAddressOffset::Add(left, right) => {
                 pending.push(right);
                 pending.push(left);
             }
             // A widened index is spelled as the C index it widens: a
             // `uint32` index zero-extends to the 64-bit offset.
-            AddressOffset::Int32Scaled { value, byte_width }
-            | AddressOffset::Int64Scaled {
+            OldAddressOffset::Int32Scaled { value, byte_width }
+            | OldAddressOffset::Int64Scaled {
                 value, byte_width, ..
             } => {
                 let value = match value.structural_value() {
@@ -87,8 +87,8 @@ pub(crate) fn memory_access_element_bound(
                     widest = Some((value, stride));
                 }
             }
-            AddressOffset::Constant(_) => {}
-            AddressOffset::Variable(_) => return None,
+            OldAddressOffset::Constant(_) => {}
+            OldAddressOffset::Variable(_) => return None,
         }
     }
     let (index, stride) = widest?;
@@ -4890,10 +4890,10 @@ fn guided_byte_read_index(
 ) -> Option<OldMachineTerm> {
     crate::instrumentation::record_deterministic_work(1);
     let (base_offset, index_offset) = match &pattern.offset {
-        AddressOffset::Add(base, index) => ((**base).clone(), index.as_ref()),
-        index => (AddressOffset::Constant(0), index),
+        OldAddressOffset::Add(base, index) => ((**base).clone(), index.as_ref()),
+        index => (OldAddressOffset::Constant(0), index),
     };
-    let AddressOffset::Int64Scaled {
+    let OldAddressOffset::Int64Scaled {
         value,
         byte_width: 1,
         unsigned: true,
@@ -6205,7 +6205,7 @@ mod proof_case_evidence_tests {
     fn branch_memory_delta_uses_the_full_changed_cell_width() {
         let pointer = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let escrow = ResourceFact::own_memory(MemoryRange::new(
             pointer.clone(),
@@ -6226,7 +6226,7 @@ mod proof_case_evidence_tests {
             .store(pointer.clone(), int32(0));
         let later_byte = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Constant(1),
+            offset: OldAddressOffset::Constant(1),
         };
         let changed = base.clone().store(later_byte, int32(1));
         let mut requirements = BTreeSet::new();
@@ -6234,7 +6234,7 @@ mod proof_case_evidence_tests {
         let changed_range = MemoryRange::new_with_element_width(
             Address {
                 base: AddressBase::ExternalArgument,
-                offset: AddressOffset::Constant(1),
+                offset: OldAddressOffset::Constant(1),
             },
             0u32.into(),
             4u32.into(),
@@ -7989,7 +7989,7 @@ pub fn contract_refinement_context(
     if pointer.program_type() != target.function_pointer_type()
         || pointer.program_type() != source.function_pointer_type()
         || !matches!(pointer.address().base, AddressBase::FunctionSymbolic(_))
-        || pointer.address().offset != AddressOffset::Constant(0)
+        || pointer.address().offset != OldAddressOffset::Constant(0)
     {
         return None;
     }
@@ -8207,7 +8207,7 @@ pub(crate) fn prove_executed_contract_refinement(
     };
     if name != &target.predicate_name()
         || pointer.program_type() != target.function_pointer_type()
-        || pointer.address().offset != AddressOffset::Constant(0)
+        || pointer.address().offset != OldAddressOffset::Constant(0)
     {
         return None;
     }
@@ -8387,7 +8387,7 @@ pub(crate) fn prove_executed_concrete_contract_refinement(
     }
     if name != &target.predicate_name()
         || pointer.program_type() != target.function_pointer_type()
-        || pointer.address().offset != AddressOffset::Constant(0)
+        || pointer.address().offset != OldAddressOffset::Constant(0)
     {
         return None;
     }

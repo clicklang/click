@@ -65,7 +65,7 @@ fn caller_flat_exclusions_keep_new_composites_fragments_and_views() {
     let _session = VerificationSession::enter();
     let object = |index| Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(index)), 4),
+        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(index)), 4),
     };
     let cell = object(783_901);
     let other = object(783_902);
@@ -141,7 +141,7 @@ fn retained_membership_does_not_preserve_the_shared_body_across_a_call() {
     for wrapper_kind in 0..3 {
         let pointer = |name: &str| Address {
             base: name.into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let shared = pointer("shared-counter");
         let private = pointer("private-cell");

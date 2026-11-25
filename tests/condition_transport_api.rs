@@ -54,11 +54,11 @@ fn context_free_disjoint_store_transport_stays_closed() {
     let before = SymbolicMemory::new();
     let written = Address {
         base: "arg-memory".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let preserved = Address {
         base: "arg-memory".into(),
-        offset: AddressOffset::Constant(4),
+        offset: OldAddressOffset::Constant(4),
     };
     let after = before.clone().store(written, int32(7));
     let old_load = OldMachineTerm::memory_read(

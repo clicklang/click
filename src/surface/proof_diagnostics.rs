@@ -994,7 +994,9 @@ mod tests {
 
     #[test]
     fn reported_trace_uses_the_goals_state_labels() {
-        use crate::kernel::{Address, AddressBase, AddressOffset, OldMachineTerm, SymbolicMemory};
+        use crate::kernel::{
+            Address, AddressBase, OldAddressOffset, OldMachineTerm, SymbolicMemory,
+        };
 
         struct TracedState(Proposition);
         impl ProofDiagnosticState for TracedState {
@@ -1039,7 +1041,7 @@ mod tests {
             memory,
             base: Address {
                 base: AddressBase::ExternalArgument,
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
             bytes: (OldMachineTerm::constant(1)).into(),
             wide: false,

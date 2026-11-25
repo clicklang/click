@@ -16776,7 +16776,7 @@ impl Parser {
                 ProgramValue::typed_pointer(
                     crate::kernel::Address {
                         base: crate::kernel::AddressBase::StaticObject { binding: id },
-                        offset: crate::kernel::AddressOffset::Constant(0),
+                        offset: crate::kernel::OldAddressOffset::Constant(0),
                     },
                     ProgramType::UInt8Pointer,
                 ),
@@ -17020,7 +17020,7 @@ impl Parser {
                             binding: id,
                             instance,
                         },
-                        offset: crate::kernel::AddressOffset::Constant(0),
+                        offset: crate::kernel::OldAddressOffset::Constant(0),
                     },
                     ProgramType::UInt8Pointer,
                 )),
@@ -17182,7 +17182,7 @@ impl Parser {
                 ProgramValue::typed_pointer(
                     crate::kernel::Address {
                         base: block,
-                        offset: crate::kernel::AddressOffset::Constant(0),
+                        offset: crate::kernel::OldAddressOffset::Constant(0),
                     },
                     ProgramType::UInt8Pointer,
                 ),

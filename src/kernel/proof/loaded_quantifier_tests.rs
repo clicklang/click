@@ -1,7 +1,7 @@
 use super::*;
 use crate::kernel::proof::PureFactStore;
 use crate::kernel::{
-    Address, AddressOffset, LoadKind, ProgramValue, SymbolicMemory, intern_memory,
+    Address, LoadKind, OldAddressOffset, ProgramValue, SymbolicMemory, intern_memory,
 };
 
 fn loaded_fact(memory: &SharedMemory, binder: Variable, shared: bool) -> Proposition {
@@ -41,16 +41,16 @@ fn loaded_fact_of_format(
             base: "loaded-quantifier".into(),
             offset: match format {
                 MachineIntegerType::Int32 => {
-                    AddressOffset::scaled_int32_node(OldMachineTerm::Variable(binder), 4)
+                    OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(binder), 4)
                 }
                 MachineIntegerType::Int64 | MachineIntegerType::UInt64 => {
-                    AddressOffset::scaled_int64_node(
+                    OldAddressOffset::scaled_int64_node(
                         OldMachineTerm::Variable(binder),
                         4,
                         format == MachineIntegerType::UInt64,
                     )
                 }
-                MachineIntegerType::UInt32 => AddressOffset::Constant(0),
+                MachineIntegerType::UInt32 => OldAddressOffset::Constant(0),
                 _ => unreachable!(),
             },
         }),
@@ -87,7 +87,7 @@ fn loaded_quantifier_matches_shared_guard_but_keeps_exact_read_and_binder() {
     let changed_memory = intern_memory(memory.as_ref().clone().store(
         Address {
             base: "loaded-quantifier".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         },
         ProgramValue::Int32(OldMachineTerm::constant(7)),
     ));
@@ -129,8 +129,10 @@ fn loaded_quantifier_matches_shared_guard_but_keeps_exact_read_and_binder() {
             3 => pointer.base = "other-block".into(),
             4 => kind = LoadKind::UInt32,
             5 => {
-                pointer.offset =
-                    AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(920_003)), 4)
+                pointer.offset = OldAddressOffset::scaled_int32_node(
+                    OldMachineTerm::Variable(Variable(920_003)),
+                    4,
+                )
             }
             _ => {}
         }
@@ -158,7 +160,7 @@ fn loaded_quantifier_shared_guard_does_not_rename_a_variable_inside_state() {
             .store(
                 Address {
                     base: "loaded-quantifier".into(),
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0),
                 },
                 ProgramValue::Int32(OldMachineTerm::Variable(Variable(920_001))),
             ),
@@ -185,7 +187,7 @@ fn loaded_quantifier_native_guard_does_not_capture_a_variable_inside_state() {
                     .store(
                         Address {
                             base: "loaded-quantifier".into(),
-                            offset: AddressOffset::Constant(0),
+                            offset: OldAddressOffset::Constant(0),
                         },
                         ProgramValue::Int32(OldMachineTerm::Variable(a)),
                     ),
@@ -232,7 +234,7 @@ fn loaded_quantifier_matching_renames_both_state_binders_without_swapping_free_v
                 .store(
                     Address {
                         base: "loaded-quantifier".into(),
-                        offset: AddressOffset::Constant(0),
+                        offset: OldAddressOffset::Constant(0),
                     },
                     ProgramValue::Int32(OldMachineTerm::Variable(stored)),
                 ),

@@ -16,7 +16,7 @@ enum MemoryMatchOperands<'a> {
         &'a OldMachineTerm,
         &'a OldMachineTerm,
     ),
-    Offsets(&'a AddressOffset, &'a AddressOffset),
+    Offsets(&'a OldAddressOffset, &'a OldAddressOffset),
     Exact,
 }
 
@@ -278,12 +278,12 @@ mod memory_condition_match_tests {
             true
         ));
         let offsets = OldConditionTerm::address_offset_equal(
-            AddressOffset::Variable(Variable(960_006)),
-            AddressOffset::Variable(Variable(960_007)),
+            OldAddressOffset::Variable(Variable(960_006)),
+            OldAddressOffset::Variable(Variable(960_007)),
         );
         let reversed = OldConditionTerm::address_offset_equal(
-            AddressOffset::Variable(Variable(960_007)),
-            AddressOffset::Variable(Variable(960_006)),
+            OldAddressOffset::Variable(Variable(960_007)),
+            OldAddressOffset::Variable(Variable(960_006)),
         );
         assert!(
             PureFactContext::new()
@@ -348,8 +348,8 @@ mod memory_condition_match_tests {
                 0 => OldConditionTerm::signed_less_than(left, right),
                 1 => OldConditionTerm::unsigned_less_than(left, right),
                 _ => OldConditionTerm::address_offset_equal(
-                    AddressOffset::scale_int32(left, 4),
-                    AddressOffset::scale_int32(right, 4),
+                    OldAddressOffset::scale_int32(left, 4),
+                    OldAddressOffset::scale_int32(right, 4),
                 ),
             }
         };
@@ -383,8 +383,8 @@ mod memory_condition_match_tests {
                 0 => OldConditionTerm::signed_less_than(left, right),
                 1 => OldConditionTerm::unsigned_less_than(left, right),
                 _ => OldConditionTerm::address_offset_equal(
-                    AddressOffset::scale_int32(left, 4),
-                    AddressOffset::scale_int32(right, 4),
+                    OldAddressOffset::scale_int32(left, 4),
+                    OldAddressOffset::scale_int32(right, 4),
                 ),
             }
         };

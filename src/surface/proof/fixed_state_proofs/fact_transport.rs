@@ -983,13 +983,16 @@ pub(in crate::surface::proof) fn memory_erased_comparison(
             other => other.clone(),
         }
     }
-    fn erase_offset(offset: &AddressOffset) -> AddressOffset {
+    fn erase_offset(offset: &OldAddressOffset) -> OldAddressOffset {
         match offset {
-            AddressOffset::Add(left, right) => {
-                AddressOffset::Add(Box::new(erase_offset(left)), Box::new(erase_offset(right)))
+            OldAddressOffset::Add(left, right) => {
+                OldAddressOffset::Add(Box::new(erase_offset(left)), Box::new(erase_offset(right)))
             }
-            AddressOffset::Int32Scaled { value, byte_width } => {
-                AddressOffset::scaled_int32_node(erase_term(value.structural_value()), *byte_width)
+            OldAddressOffset::Int32Scaled { value, byte_width } => {
+                OldAddressOffset::scaled_int32_node(
+                    erase_term(value.structural_value()),
+                    *byte_width,
+                )
             }
             other => other.clone(),
         }
@@ -1417,7 +1420,7 @@ mod path_condition_tests {
         let memory = SymbolicMemory::new();
         let base = Address {
             base: "bytes".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let source = Proposition::MemoryLoadable {
             memory: memory.clone(),
@@ -1457,8 +1460,8 @@ mod path_condition_tests {
 
     #[test]
     fn pointer_offset_path_equality_accepts_reversed_operands() {
-        let left = AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(41)), 4);
-        let right = AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(42)), 4);
+        let left = OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(41)), 4);
+        let right = OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(42)), 4);
         let forward = Proposition::condition_is(
             OldConditionTerm::AddressOffsetEqual(Box::new(left.clone()), Box::new(right.clone())),
             true,

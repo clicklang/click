@@ -84,7 +84,7 @@ fn destination<'a>(
         == Some(&layout.size_bytes());
     let base = Address {
         base: selected.pointer.base.clone(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let within_raw_parent = state
         .memory

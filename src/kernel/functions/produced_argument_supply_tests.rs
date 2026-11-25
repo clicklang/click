@@ -16,7 +16,7 @@ fn state(count: u32) -> ExecutionState {
             "cells",
             ProgramValue::pointer(Address {
                 base: "produced-cells".into(),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             }),
         )
         .with_memory(SymbolicMemory::new().with_block("produced-cells", count * 4))

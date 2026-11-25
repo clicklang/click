@@ -11,11 +11,11 @@ use crate::kernel::{CompareRelation, MachineIntegerType};
 fn checked_loadability_ignores_unrelated_free_history() {
     let external = |id| Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(id)), 4),
+        offset: OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(id)), 4),
     };
     let heap = |id| Address {
         base: AddressBase::Heap(id),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let target = external(93_504);
     let extra = heap(94_000);
@@ -91,7 +91,7 @@ fn unaddressable_scalar_owners_do_not_restate_observable_memory_frames() {
         .unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
             Address {
                 base: AddressBase::ExternalArgument,
-                offset: AddressOffset::Variable(Variable(93_600)),
+                offset: OldAddressOffset::Variable(Variable(93_600)),
             },
             0u32.into(),
             1u32.into(),
@@ -99,7 +99,7 @@ fn unaddressable_scalar_owners_do_not_restate_observable_memory_frames() {
         .unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
             Address {
                 base: AddressBase::ExternalArgument,
-                offset: AddressOffset::Variable(Variable(93_601)),
+                offset: OldAddressOffset::Variable(Variable(93_601)),
             },
             0u32.into(),
             1u32.into(),
@@ -191,11 +191,11 @@ fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
     let memory = SymbolicMemory::new();
     let storage = Address {
         base: "viewed-storage".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let result = Address {
         base: AddressBase::Symbolic(Variable(9_300_100)),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let equality = Proposition::condition_is(
         OldConditionTerm::address_equal(result.clone(), storage.clone()),
@@ -230,7 +230,7 @@ fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
                 memory: memory.clone(),
                 base: Address {
                     base: format!("unrelated-view-{index}").into(),
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0),
                 },
                 bytes: (OldMachineTerm::constant(4)).into(),
                 wide: false,
@@ -286,7 +286,7 @@ fn memory_loadable_query_ignores_same_block_unrelated_pointer_shapes() {
     let memory = SymbolicMemory::new();
     let target = Address {
         base: "indexed-viewable-shapes".into(),
-        offset: AddressOffset::Constant(10_000),
+        offset: OldAddressOffset::Constant(10_000),
     };
     let samples = [16, 32, 64, 128]
         .into_iter()
@@ -303,7 +303,7 @@ fn memory_loadable_query_ignores_same_block_unrelated_pointer_shapes() {
                     memory: memory.clone(),
                     base: Address {
                         base: target.base.clone(),
-                        offset: AddressOffset::Constant(index as i64),
+                        offset: OldAddressOffset::Constant(index as i64),
                     },
                     bytes: (OldMachineTerm::constant(4)).into(),
                     wide: false,
@@ -337,7 +337,7 @@ fn composition_store_separation_uses_checked_aliases_without_scanning_other_owne
 
     let parameter = |id| Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(id)), 4),
+        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(id)), 4),
     };
     let write_base = parameter(95_001);
     let read = parameter(95_002);
@@ -413,7 +413,7 @@ fn composition_store_separation_uses_checked_aliases_without_scanning_other_owne
 fn load_equality_resolves_through_stored_cell_chains_of_any_length() {
     let base = Address {
         base: "chain".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let cell = |index: usize| base.offset_by_elements(OldMachineTerm::constant(index as u32), 4);
     let mut samples = Vec::new();
@@ -548,7 +548,7 @@ fn bounded_unsigned_native_indices_project_only_with_full_width_evidence() {
     let native = OldMachineTerm::Variable(Variable(983_110));
     let alias = OldMachineTerm::Variable(Variable(983_111));
     let last = |n| OldMachineTerm::uint64_subtract(n, OldMachineTerm::uint64_constant(1));
-    let wide = |n| AddressOffset::scaled_int64_node(n, 4, true);
+    let wide = |n| OldAddressOffset::scaled_int64_node(n, 4, true);
     let projected = OldMachineTerm::uint32_from_64(last(native.clone()));
     let query = wide(last(alias.clone()));
     let bound = OldConditionTerm::uint64_less_equal(
@@ -827,7 +827,7 @@ fn stated_pointer_separation_lookup_visits_only_its_anchor_index() {
             } else {
                 AddressBase::ExternalArgument
             },
-            offset: AddressOffset::Variable(Variable(id)),
+            offset: OldAddressOffset::Variable(Variable(id)),
         };
         let fact = |id| Proposition::ResourceSeparate {
             left: Box::new(Resource::Memory(memory_range(pointer(id, false), 0, 1))),
@@ -890,7 +890,7 @@ fn stated_pointer_separation_lookup_visits_only_its_anchor_index() {
 fn kept_frame_class_lookup_adds_only_selected_physical_coverage() {
     let pointer = |id| Address {
         base: AddressBase::Symbolic(Variable(id)),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let queried = pointer(951_001);
     let middle = pointer(951_002);
@@ -1018,7 +1018,7 @@ fn one_owned_member_does_not_trigger_store_alias_reasoning() {
 
     let base = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(99_700)), 4),
+        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(99_700)), 4),
     };
     let index = OldMachineTerm::Variable(Variable(99_701));
     let write = base.offset_by_bytes(12);
@@ -1087,7 +1087,7 @@ fn fixed_overlapping_ranges_ignore_unrelated_separation_facts() {
         let _session = crate::kernel::VerificationSession::enter();
         let base = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(9_893_000)), 4),
+            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(9_893_000)), 4),
         };
         let outer = MemoryRange::new(base.clone(), 0u32.into(), 6u32.into());
         let inner = MemoryRange::new(base, 2u32.into(), 4u32.into());
@@ -1095,14 +1095,14 @@ fn fixed_overlapping_ranges_ignore_unrelated_separation_facts() {
         for index in 0..size {
             let a = Address {
                 base: AddressBase::ExternalArgument,
-                offset: AddressOffset::scale_int32(
+                offset: OldAddressOffset::scale_int32(
                     OldMachineTerm::Variable(Variable(9_894_000 + index * 2)),
                     4,
                 ),
             };
             let b = Address {
                 base: AddressBase::ExternalArgument,
-                offset: AddressOffset::scale_int32(
+                offset: OldAddressOffset::scale_int32(
                     OldMachineTerm::Variable(Variable(9_894_001 + index * 2)),
                     4,
                 ),
@@ -1143,7 +1143,7 @@ fn fixed_overlapping_ranges_ignore_unrelated_separation_facts() {
 fn ownerless_store_separation_ignores_unrelated_composition_history() {
     let object = |index| Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Variable(Variable(950_000 + index)),
+        offset: OldAddressOffset::Variable(Variable(950_000 + index)),
     };
     for growing_partition in [false, true] {
         let mut samples = Vec::new();

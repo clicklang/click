@@ -58,8 +58,8 @@
 use super::alias_candidates::BlockKeyed;
 use super::program_point::{ProgramPoint, ReadKey};
 use super::{
-    Address, AddressBase, AddressOffset, AliasCandidates, HashedOrdMap, HashedOrdMapChange,
-    HashedOrdSet, ProgramType, ProgramValue, SharedMemory,
+    Address, AddressBase, AliasCandidates, HashedOrdMap, HashedOrdMapChange, HashedOrdSet,
+    OldAddressOffset, ProgramType, ProgramValue, SharedMemory,
 };
 use crate::kernel::equality_graph::{NumericAddressConnectivity, NumericAddressOwners};
 use crate::kernel::primitives::LoadKind;
@@ -509,7 +509,7 @@ impl CellRun {
 
     /// The pointer of element `index`, spelled as a load of that address
     /// spells it: the base's offset plus a constant byte shift through
-    /// [`AddressOffset::add`], which folds the shift into a constant the
+    /// [`OldAddressOffset::add`], which folds the shift into a constant the
     /// base already ends in. So element 1 of a run based at `p + 16` with
     /// stride 4 is `p + 20`, not `(p + 16) + 4`, and a question about a load
     /// of `p + 20` is the same question whether a run or a cell answers it.
@@ -517,7 +517,10 @@ impl CellRun {
         let shift = i64::from(index) * i64::from(self.element_width);
         Address {
             base: self.base.base.clone(),
-            offset: AddressOffset::add(self.base.offset.clone(), AddressOffset::Constant(shift)),
+            offset: OldAddressOffset::add(
+                self.base.offset.clone(),
+                OldAddressOffset::Constant(shift),
+            ),
         }
     }
 
@@ -751,14 +754,14 @@ impl Ord for RunSource {
 pub(crate) enum RunAnchor {
     Least,
     Constant(i64),
-    Symbolic(AddressOffset),
+    Symbolic(OldAddressOffset),
     Greatest,
 }
 
 impl RunAnchor {
-    fn of(offset: &AddressOffset) -> Self {
+    fn of(offset: &OldAddressOffset) -> Self {
         match offset {
-            AddressOffset::Constant(constant) => Self::Constant(*constant),
+            OldAddressOffset::Constant(constant) => Self::Constant(*constant),
             offset => Self::Symbolic(offset.clone()),
         }
     }
@@ -1089,7 +1092,7 @@ struct OrderedIndexCache {
     cells: OrderedStoreCells,
     chains: crate::kernel::assumptions::variable_chains::VariableChains,
     block: AddressBase,
-    base: AddressOffset,
+    base: OldAddressOffset,
     stride: i64,
     root: Variable,
     known: HashedOrdMap<usize, Address>,
@@ -1202,23 +1205,25 @@ struct CoverSegment {
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct CoverLine {
     block: AddressBase,
-    stem: Option<AddressOffset>,
+    stem: Option<OldAddressOffset>,
 }
 
-/// An offset as the stem [`AddressOffset::add`] shifts by a constant, and
+/// An offset as the stem [`OldAddressOffset::add`] shifts by a constant, and
 /// that constant: `(None, c)` for a constant offset, `(Some(stem), c)` for
 /// `stem + c` (with every trailing constant `add` folds into one peeled
 /// off), and `(Some(offset), 0)` for any other offset. `add` of a constant
 /// to an offset moves only the constant, so every slot of a run, and every
 /// load spelling one of its addresses, lies on its base's line.
-pub(crate) fn offset_stem_and_constant(offset: &AddressOffset) -> (Option<&AddressOffset>, i64) {
+pub(crate) fn offset_stem_and_constant(
+    offset: &OldAddressOffset,
+) -> (Option<&OldAddressOffset>, i64) {
     let mut stem = offset;
     let mut constant = 0i64;
     loop {
         if let Some(value) = stem.as_const() {
             return (None, constant.saturating_add(value));
         }
-        let AddressOffset::Add(left, right) = stem else {
+        let OldAddressOffset::Add(left, right) = stem else {
             return (Some(stem), constant);
         };
         let Some(value) = right.as_const() else {
@@ -1605,14 +1610,14 @@ impl CellStore {
         match stem {
             None => self
                 .concrete
-                .range(at(AddressOffset::Constant(low))..at(AddressOffset::Constant(high)))
+                .range(at(OldAddressOffset::Constant(low))..at(OldAddressOffset::Constant(high)))
                 .map(native_cell)
                 .collect(),
             Some(stem) => {
                 let shifted = |shift| {
-                    at(AddressOffset::Add(
+                    at(OldAddressOffset::Add(
                         Box::new(stem.clone()),
-                        Box::new(AddressOffset::Constant(shift)),
+                        Box::new(OldAddressOffset::Constant(shift)),
                     ))
                 };
                 let mut result: Vec<_> = self
@@ -1767,7 +1772,7 @@ impl CellStore {
             .range::<_, Address>((
                 Bound::Excluded(Address {
                     base: AddressBase::Temporary(u64::MAX),
-                    offset: AddressOffset::Constant(i64::MAX),
+                    offset: OldAddressOffset::Constant(i64::MAX),
                 }),
                 Bound::Unbounded,
             ))
@@ -2041,7 +2046,7 @@ impl CellStore {
     pub(crate) fn runs_based_at<'a>(
         &'a self,
         block: &AddressBase,
-        offset: &AddressOffset,
+        offset: &OldAddressOffset,
     ) -> impl Iterator<Item = &'a CellRun> + 'a {
         let anchor = RunAnchor::of(offset);
         self.runs_anchored(block, anchor.clone(), anchor)
@@ -3208,8 +3213,8 @@ impl CellStore {
         use crate::kernel::reasoning::store_gap::CONSTANT_LIMIT;
 
         let (stem, offset) = match &pointer.offset {
-            AddressOffset::Constant(offset) => (None, Some(*offset)),
-            AddressOffset::Add(stem, shift) => (Some(stem.as_ref()), shift.as_const()),
+            OldAddressOffset::Constant(offset) => (None, Some(*offset)),
+            OldAddressOffset::Add(stem, shift) => (Some(stem.as_ref()), shift.as_const()),
             stem => (Some(stem), Some(0)),
         };
         let Some(offset) =
@@ -3228,11 +3233,11 @@ impl CellStore {
                 RunAnchor::Constant(-CONSTANT_LIMIT),
                 RunAnchor::Constant(CONSTANT_LIMIT),
             )],
-            Some(stem @ (AddressOffset::Variable(_) | AddressOffset::Int32Scaled { .. })) => {
+            Some(stem @ (OldAddressOffset::Variable(_) | OldAddressOffset::Int32Scaled { .. })) => {
                 let shift = |offset| {
-                    RunAnchor::of(&AddressOffset::Add(
+                    RunAnchor::of(&OldAddressOffset::Add(
                         Box::new(stem.clone()),
-                        Box::new(AddressOffset::Constant(offset)),
+                        Box::new(OldAddressOffset::Constant(offset)),
                     ))
                 };
                 vec![
@@ -3493,7 +3498,7 @@ where
     I: Iterator<Item = &'a Address> + 'a,
 {
     let (line, first, last) = run.slot_line_span();
-    let at = |offset: AddressOffset| Address {
+    let at = |offset: OldAddressOffset| Address {
         base: line.block.clone(),
         offset,
     };
@@ -3501,8 +3506,8 @@ where
     match &line.stem {
         None => {
             intervals.push(range(
-                Bound::Included(at(AddressOffset::Constant(first))),
-                Bound::Included(at(AddressOffset::Constant(last))),
+                Bound::Included(at(OldAddressOffset::Constant(first))),
+                Bound::Included(at(OldAddressOffset::Constant(last))),
             ));
         }
         Some(stem) => {
@@ -3513,9 +3518,9 @@ where
                 ));
             }
             let shifted = |shift: i64| {
-                at(AddressOffset::Add(
+                at(OldAddressOffset::Add(
                     Box::new(stem.clone()),
-                    Box::new(AddressOffset::Constant(shift)),
+                    Box::new(OldAddressOffset::Constant(shift)),
                 ))
             };
             intervals.push(range(
@@ -3705,7 +3710,7 @@ mod tests {
         )
     }
 
-    fn at(block: &AddressBase, offset: AddressOffset) -> Address {
+    fn at(block: &AddressBase, offset: OldAddressOffset) -> Address {
         Address {
             base: block.clone(),
             offset,
@@ -3713,7 +3718,7 @@ mod tests {
     }
 
     fn constant(block: &AddressBase, offset: i64) -> Address {
-        at(block, AddressOffset::Constant(offset))
+        at(block, OldAddressOffset::Constant(offset))
     }
 
     fn run(base: Address, element_width: u32, count: u32, source: &SharedMemory) -> CellRun {
@@ -3795,11 +3800,11 @@ mod tests {
     #[test]
     fn slots_are_spelled_as_loads_spell_their_addresses() {
         let block = AddressBase::Symbolic(Variable(9_310_101));
-        let stem = AddressOffset::Variable(Variable(9_310_102));
+        let stem = OldAddressOffset::Variable(Variable(9_310_102));
         let shifted = |shift: i64| {
             at(
                 &block,
-                AddressOffset::add(stem.clone(), AddressOffset::Constant(shift)),
+                OldAddressOffset::add(stem.clone(), OldAddressOffset::Constant(shift)),
             )
         };
         let seeded = run(shifted(16), 4, 3, &source(1));
@@ -3838,11 +3843,11 @@ mod tests {
         let global = AddressBase::Concrete("cell-store-global".to_string());
         let other = AddressBase::Concrete("cell-store-other".to_string());
         let symbolic = AddressBase::Symbolic(Variable(9_310_001));
-        let anchor = AddressOffset::Variable(Variable(9_310_002));
+        let anchor = OldAddressOffset::Variable(Variable(9_310_002));
         let symbolic_bases = [
             anchor.clone(),
-            AddressOffset::add(anchor.clone(), AddressOffset::Constant(8)),
-            AddressOffset::add(anchor.clone(), AddressOffset::Constant(-8)),
+            OldAddressOffset::add(anchor.clone(), OldAddressOffset::Constant(8)),
+            OldAddressOffset::add(anchor.clone(), OldAddressOffset::Constant(-8)),
         ];
         let sources = [source(1), source(2)];
         for seed_value in 1..=24u64 {
@@ -3865,7 +3870,7 @@ mod tests {
             for shift in (-8..32).filter(|shift| *shift != 0) {
                 pointers.push(at(
                     &symbolic,
-                    AddressOffset::add(anchor.clone(), AddressOffset::Constant(shift)),
+                    OldAddressOffset::add(anchor.clone(), OldAddressOffset::Constant(shift)),
                 ));
             }
             let mut runs_seen = Vec::<CellRun>::new();
@@ -3936,13 +3941,13 @@ mod tests {
                     }
                     8 => {
                         let modulus = 2 + stream.next(3) as i64;
-                        let keep = |pointer: &Address, _: &ProgramValue| !matches!(pointer.offset, AddressOffset::Constant(offset) if offset % (4 * modulus) == 0);
+                        let keep = |pointer: &Address, _: &ProgramValue| !matches!(pointer.offset, OldAddressOffset::Constant(offset) if offset % (4 * modulus) == 0);
                         store.retain(keep);
                         model.retain(|pointer, value| keep(pointer, value));
                     }
                     _ => {
                         let only = AliasCandidates::only_block(&global);
-                        let keep = |pointer: &Address, _: &ProgramValue| !matches!(pointer.offset, AddressOffset::Constant(offset) if offset % 8 == 4);
+                        let keep = |pointer: &Address, _: &ProgramValue| !matches!(pointer.offset, OldAddressOffset::Constant(offset) if offset % 8 == 4);
                         store.retain_candidates_outside_by(&only, &[], keep, |_| {
                             (SlotSet::PerSlot, RuleAnswer::Exact)
                         });
@@ -4350,7 +4355,7 @@ mod tests {
                 Box::new(|index| {
                     at(
                         &symbolic,
-                        AddressOffset::Variable(Variable(9_340_000 + index as u64)),
+                        OldAddressOffset::Variable(Variable(9_340_000 + index as u64)),
                     )
                 }),
             ),

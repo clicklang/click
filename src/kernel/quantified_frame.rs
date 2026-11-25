@@ -405,7 +405,7 @@ mod wide_condition_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = Address {
             base: "wide-equality-frame".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let assumptions = PureFactContext::new();
         let before = SymbolicMemory::new().with_block("wide-equality-frame", 16);

@@ -556,7 +556,7 @@ mod producer_tests {
         let expected =
             crate::kernel::reasoning::substitute_bitvector_variable(&native, free, &replacement);
         let root = KernelTermImport::default().machine(MachineIntegerType::Int32, &native);
-        let offset = AddressOffset::Int32Scaled {
+        let offset = OldAddressOffset::Int32Scaled {
             value: SharedMachineIntegerTerm::from_shared(MachineIntegerType::Int32, root).unwrap(),
             byte_width: 4,
         };
@@ -567,7 +567,7 @@ mod producer_tests {
             &replacement,
         );
         assert_eq!(KernelTermExport::machine_export_count(), before);
-        let AddressOffset::Int32Scaled { value, .. } = result else {
+        let OldAddressOffset::Int32Scaled { value, .. } = result else {
             panic!("fold index")
         };
         let actual = KernelTermExport::machine(value.shared_operand().unwrap()).unwrap();

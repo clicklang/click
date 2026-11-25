@@ -35,7 +35,7 @@ fn failed_check_cell_capture_is_bounded_and_ignores_unrelated_facts() {
     let _session = crate::kernel::VerificationSession::enter();
     let base = Address {
         base: "diagnostic-access".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let memory = crate::kernel::intern_memory(
         SymbolicMemory::new()

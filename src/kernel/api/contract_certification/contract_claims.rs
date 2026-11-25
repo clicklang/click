@@ -290,7 +290,7 @@ mod cached_read_completion_tests {
     fn pointer(block: &str, offset: i32) -> Address {
         Address {
             base: block.into(),
-            offset: AddressOffset::Constant(i64::from(offset)),
+            offset: OldAddressOffset::Constant(i64::from(offset)),
         }
     }
 
@@ -889,7 +889,7 @@ mod range_list_equality_graph_tests {
             crate::kernel::intern_memory(SymbolicMemory::new().with_block("range-list", 8));
         let pointer = |index| Address {
             base: "range-list".into(),
-            offset: AddressOffset::scale_int32(index, 4),
+            offset: OldAddressOffset::scale_int32(index, 4),
         };
         let load = |memory: &SharedMemory, index| {
             OldMachineTerm::Variable(crate::kernel::load_variable_for_cell_with_origin(
@@ -1094,7 +1094,7 @@ fn materialized_load_is_unchanged(
         ProgramValue::Pointer(pointer_value) => match pointer_value.address() {
             Address {
                 base: AddressBase::FunctionSymbolic(variable),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             } if matches!(
                 pointer_value.program_type(),
                 ProgramType::FunctionPointer(_)
@@ -1103,7 +1103,7 @@ fn materialized_load_is_unchanged(
                 load_of(&OldMachineTerm::Variable(*variable))
             }
             Address {
-                offset: AddressOffset::Int32Scaled { value: bits, .. },
+                offset: OldAddressOffset::Int32Scaled { value: bits, .. },
                 ..
             } => bits
                 .operand_view()
@@ -3295,7 +3295,7 @@ mod heap_free_effect_tests {
     fn a_free_effect_reinstates_a_64_bit_claim_in_its_format() {
         let base = Address {
             base: AddressBase::Heap(940_100),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let bytes = OldMachineTerm::uint64_multiply(
             OldMachineTerm::Variable(Variable(940_101)),
@@ -3538,7 +3538,7 @@ mod heap_status_equality_tests {
     fn outcome_equality_distinguishes_heap_statuses() {
         let block = Address {
             base: AddressBase::Heap(424_242),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let mut base = SymbolicMemory::new().with_block(block.base.clone(), 4);
         std::sync::Arc::make_mut(&mut base.heap)
@@ -3660,7 +3660,7 @@ mod materialized_function_load_tests {
     fn canonical_function_pointer_cache_preserves_memory() {
         let address = Address {
             base: "callback-cache".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let memory = SymbolicMemory::new().with_block("callback-cache", 16);
         let value = callback_load(
@@ -3682,7 +3682,7 @@ mod materialized_function_load_tests {
     fn function_pointer_cache_requires_the_exact_cell_and_pointer_load() {
         let address = Address {
             base: "callback-cache-controls".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let memory = SymbolicMemory::new().with_block("callback-cache-controls", 16);
         let facts = PureFactContext::new();

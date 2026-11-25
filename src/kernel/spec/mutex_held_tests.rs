@@ -4,7 +4,7 @@ use crate::kernel::mutexes::MutexContext;
 fn address(index: usize) -> Address {
     Address {
         base: format!("typed-held-{index}").into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     }
 }
 fn observe(state: &ExecutionState, assumptions: &PureFactContext) -> SpecPropositionPath {

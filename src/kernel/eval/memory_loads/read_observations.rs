@@ -355,7 +355,7 @@ mod tests {
             .with_memory(entry.memory().clone().with_block(local.base, 4));
         let pointer = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let origin = state.program_point();
         let version = origin
@@ -469,7 +469,7 @@ mod tests {
     fn cyclic_frame_read(index: u64) -> (Proposition, Variable) {
         let pointer = Address {
             base: format!("local:frame-origin-{index}").into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let memory = intern_memory(SymbolicMemory::new().with_block(pointer.base.clone(), 4));
         let read = crate::kernel::OldMachineTerm::read_named(
@@ -481,7 +481,7 @@ mod tests {
         let range = MemoryRange::new_with_element_width(
             Address {
                 base: "frame-target".into(),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
             0u32.into(),
             OldMachineTerm::add_at(

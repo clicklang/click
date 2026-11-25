@@ -46,7 +46,10 @@ fn wide_equality_bounds_use_incremental_index_and_preserve_branches() {
 fn loadable_object_provenance_lookup_ignores_unrelated_external_pointers() {
     let external = |variable| Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(variable)), 4),
+        offset: OldAddressOffset::scaled_int32_node(
+            OldMachineTerm::Variable(Variable(variable)),
+            4,
+        ),
     };
     let target = external(31_070);
     let loadable = |base| Proposition::MemoryLoadable {
@@ -173,7 +176,7 @@ fn exact_signed_mirror_normalization_ignores_unrelated_facts() {
 fn resource_object_provenance_does_not_scan_same_raw_block() {
     let pointer = |id| Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Variable(Variable(895_000 + id)),
+        offset: OldAddressOffset::Variable(Variable(895_000 + id)),
     };
     let target = pointer(0);
     let expression = crate::kernel::program_expression::less_equal(

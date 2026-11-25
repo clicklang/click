@@ -313,7 +313,7 @@ mod tests {
         let _session = VerificationSession::enter();
         let pointer = Address {
             base: AddressBase::Symbolic(Variable(1005300)),
-            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(1005301)), 4),
+            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(1005301)), 4),
         };
         let memory = intern_memory(SymbolicMemory::new());
         let load = crate::kernel::eval::load_variable_for_cell(&memory, &pointer, LoadKind::Int32);

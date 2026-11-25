@@ -1214,7 +1214,7 @@ mod tests {
     #[test]
     fn retained_syntax_preserves_captured_and_pointer_index_states() {
         use crate::kernel::{
-            Address, AddressOffset, LoadKind, OldPointer, ProgramType, SymbolicMemory, Variable,
+            Address, LoadKind, OldAddressOffset, OldPointer, ProgramType, SymbolicMemory, Variable,
         };
         let _session = VerificationSession::enter();
         let memory = SymbolicMemory::new();
@@ -1226,7 +1226,7 @@ mod tests {
             OldPointer::new(
                 Address {
                     base: "indexed".into(),
-                    offset: AddressOffset::Int32Scaled {
+                    offset: OldAddressOffset::Int32Scaled {
                         value: SharedMachineIntegerTerm::index(
                             MachineIntegerType::Int32,
                             OldMachineTerm::read_named(

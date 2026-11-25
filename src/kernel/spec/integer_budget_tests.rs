@@ -265,7 +265,7 @@ fn integer_fold_loadable_obligation_keeps_carriers_separate() {
         memory: SymbolicMemory::new(),
         base: Address {
             base: AddressBase::Concrete("array".into()),
-            offset: AddressOffset::scaled_int32_node(integer_address, 4),
+            offset: OldAddressOffset::scaled_int32_node(integer_address, 4),
         },
         bytes: (OldMachineTerm::constant(4)).into(),
         wide: false,
@@ -300,7 +300,7 @@ fn integer_fold_loadable_obligation_keeps_carriers_separate() {
         memory: SymbolicMemory::new(),
         base: Address {
             base: AddressBase::Concrete("array".into()),
-            offset: AddressOffset::scaled_int32_node(OldMachineTerm::Variable(shared_id), 4),
+            offset: OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(shared_id), 4),
         },
         bytes: (OldMachineTerm::constant(4)).into(),
         wide: false,
@@ -326,7 +326,7 @@ fn integer_fold_loadable_obligation_sees_integer_in_registered_pointer() {
     let memory = crate::kernel::intern_memory(SymbolicMemory::new().with_block("array", 16));
     let pointer = Address {
         base: AddressBase::Concrete("array".into()),
-        offset: AddressOffset::scaled_int32_node(
+        offset: OldAddressOffset::scaled_int32_node(
             OldMachineTerm::IntegerToMachine {
                 value: IntegerTerm::var(accumulator).into(),
                 destination: MachineIntegerType::Int32,
@@ -343,7 +343,7 @@ fn integer_fold_loadable_obligation_sees_integer_in_registered_pointer() {
         memory: SymbolicMemory::new(),
         base: Address {
             base: AddressBase::Concrete("array".into()),
-            offset: AddressOffset::scaled_int32_node(OldMachineTerm::Variable(load), 4),
+            offset: OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(load), 4),
         },
         bytes: (OldMachineTerm::constant(4)).into(),
         wide: false,
@@ -368,7 +368,7 @@ fn integer_fold_loadable_obligation_sees_integer_in_registered_pointer() {
         memory: SymbolicMemory::new(),
         base: Address {
             base: AddressBase::Concrete("array".into()),
-            offset: AddressOffset::Variable(load),
+            offset: OldAddressOffset::Variable(load),
         },
         bytes: (OldMachineTerm::constant(4)).into(),
         wide: false,
@@ -394,7 +394,7 @@ fn integer_fold_loadable_obligation_keeps_accumulator_for_two_hop_direct_offset(
         &memory,
         &Address {
             base: AddressBase::Concrete("array".into()),
-            offset: AddressOffset::scaled_int32_node(
+            offset: OldAddressOffset::scaled_int32_node(
                 OldMachineTerm::IntegerToMachine {
                     value: IntegerTerm::var(accumulator).into(),
                     destination: MachineIntegerType::Int32,
@@ -408,9 +408,9 @@ fn integer_fold_loadable_obligation_keeps_accumulator_for_two_hop_direct_offset(
         &memory,
         &Address {
             base: AddressBase::Concrete("array".into()),
-            offset: AddressOffset::Add(
-                Box::new(AddressOffset::Constant(0)),
-                Box::new(AddressOffset::Variable(inner)),
+            offset: OldAddressOffset::Add(
+                Box::new(OldAddressOffset::Constant(0)),
+                Box::new(OldAddressOffset::Variable(inner)),
             ),
         },
         crate::kernel::LoadKind::Int32,
@@ -419,7 +419,7 @@ fn integer_fold_loadable_obligation_keeps_accumulator_for_two_hop_direct_offset(
         memory: SymbolicMemory::new(),
         base: Address {
             base: AddressBase::Concrete("array".into()),
-            offset: AddressOffset::Variable(outer),
+            offset: OldAddressOffset::Variable(outer),
         },
         bytes: (OldMachineTerm::constant(4)).into(),
         wide: false,
@@ -446,7 +446,7 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
     let memory = crate::kernel::intern_memory(SymbolicMemory::new().with_block("array", 16));
     let pointer = Address {
         base: AddressBase::Concrete("array".into()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let load = crate::kernel::eval::load_variable_for_cell(
         &memory,
@@ -495,7 +495,7 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
             right: Box::new(OldMachineTerm::read_named(
                 ProgramPoint::at(&registered_memory),
                 Box::new(Address {
-                    offset: AddressOffset::Constant(4),
+                    offset: OldAddressOffset::Constant(4),
                     ..registered_pointer.clone()
                 }),
                 crate::kernel::LoadKind::Int32,
@@ -568,7 +568,7 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
 fn defined_memory_load_retains_typed_validity_after_dropping_registry_metadata() {
     let pointer = Address {
         base: AddressBase::Concrete("array".into()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let proposition = SpecProposition::Defined(SpecExpression::MemoryLoad {
         point: SpecPoint::At(ProgramPoint::of_memory(&SymbolicMemory::new())),
@@ -603,7 +603,7 @@ fn defined_memory_load_retains_typed_validity_after_dropping_registry_metadata()
 fn defined_memory_load_retains_typed_validity_for_an_already_known_cell() {
     let pointer = Address {
         base: AddressBase::Concrete("array".into()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let proposition = SpecProposition::Defined(SpecExpression::MemoryLoad {
         point: SpecPoint::At(ProgramPoint::of_memory(&SymbolicMemory::new().store(
@@ -659,7 +659,7 @@ fn integer_existential_branch_filters_exact_load_definitions_only() {
     let memory = crate::kernel::intern_memory(SymbolicMemory::new().with_block("array", 16));
     let pointer = Address {
         base: AddressBase::Concrete("array".into()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let load = crate::kernel::eval::load_variable_for_exact_cell(
         &memory,
@@ -708,7 +708,7 @@ fn integer_existential_branch_filters_exact_load_definitions_only() {
     assert!(contains(&exact_branch, &marker));
 
     let tampered_pointer = Address {
-        offset: AddressOffset::Constant(4),
+        offset: OldAddressOffset::Constant(4),
         ..registered_pointer.clone()
     };
     let tampered_pointer_definition = defining(registered_memory.clone(), tampered_pointer, load);
@@ -779,7 +779,7 @@ fn integer_existential_branch_filters_exact_load_definitions_only() {
 fn empty_integer_fold_preserves_shape_without_live_load_obligation() {
     let missing_pointer = Address {
         base: AddressBase::Concrete("missing".into()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let body = SpecIntegerExpression::FromMachine(Box::new(SpecExpression::MemoryLoad {
         point: SpecPoint::At(ProgramPoint::of_memory(&SymbolicMemory::new())),
@@ -837,7 +837,7 @@ fn nonempty_integer_fold_is_logical_but_checked_reads_remain_scoped() {
             OldPointer::new(
                 Address {
                     base: AddressBase::Symbolic(Variable(71_104)),
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0),
                 },
                 ProgramType::Int32Pointer,
             ),

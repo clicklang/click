@@ -374,15 +374,15 @@ struct PointerOffsetStorage {
 }
 
 enum PointerOffsetValue {
-    Native(AddressOffset),
+    Native(OldAddressOffset),
     Shared {
         root: SharedAddressOffset,
-        native: OnceLock<AddressOffset>,
+        native: OnceLock<OldAddressOffset>,
     },
 }
 
-impl From<AddressOffset> for StoredPointerOffset {
-    fn from(written: AddressOffset) -> Self {
+impl From<OldAddressOffset> for StoredPointerOffset {
+    fn from(written: OldAddressOffset) -> Self {
         Self::from_input(KernelAddressOffset::try_import(&written), || written)
     }
 }
@@ -404,13 +404,13 @@ impl StoredPointerOffset {
         matches!(&self.0.value, PointerOffsetValue::Shared { native, .. } if native.get().is_some())
     }
 
-    pub(in crate::kernel) fn from_written(written: &AddressOffset) -> Self {
+    pub(in crate::kernel) fn from_written(written: &OldAddressOffset) -> Self {
         Self::from_input(KernelAddressOffset::try_import(written), || written.clone())
     }
 
     fn from_input(
         root: Result<SharedAddressOffset, &'static str>,
-        native: impl FnOnce() -> AddressOffset,
+        native: impl FnOnce() -> OldAddressOffset,
     ) -> Self {
         match root {
             Ok(root) => Self::from_rewritten_root(root),
@@ -425,7 +425,7 @@ impl StoredPointerOffset {
         }
     }
 
-    pub(crate) fn old_form(&self) -> &AddressOffset {
+    pub(crate) fn old_form(&self) -> &OldAddressOffset {
         match &self.0.value {
             PointerOffsetValue::Native(written) => written,
             PointerOffsetValue::Shared { root, native } => {
@@ -678,10 +678,14 @@ mod protocol_value_tests {
     #[test]
     fn retained_contract_offset_preserves_written_identity_after_input_drops() {
         let _session = crate::kernel::VerificationSession::enter();
-        let first = AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(998981)), 4);
-        let second =
-            AddressOffset::scaled_int64_node(OldMachineTerm::Variable(Variable(998982)), 8, true);
-        let input = AddressOffset::Add(Box::new(first), Box::new(second));
+        let first =
+            OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(998981)), 4);
+        let second = OldAddressOffset::scaled_int64_node(
+            OldMachineTerm::Variable(Variable(998982)),
+            8,
+            true,
+        );
+        let input = OldAddressOffset::Add(Box::new(first), Box::new(second));
         let expected_debug = format!("{input:?}");
         let stored = StoredPointerOffset::from(input);
         assert!(stored.root().is_some());
@@ -690,8 +694,8 @@ mod protocol_value_tests {
         assert_eq!(format!("{stored:?}"), expected_debug);
 
         let same = StoredPointerOffset::from(stored.old_form().clone());
-        let distinct = StoredPointerOffset::from(AddressOffset::Add(
-            Box::new(AddressOffset::Constant(0)),
+        let distinct = StoredPointerOffset::from(OldAddressOffset::Add(
+            Box::new(OldAddressOffset::Constant(0)),
             Box::new(stored.old_form().clone()),
         ));
         assert_eq!(stored, same);
@@ -713,7 +717,7 @@ mod protocol_value_tests {
                 arguments: vec![OldMachineTerm::Variable(Variable(998985))],
             },
         );
-        let source = AddressOffset::Int32Scaled {
+        let source = OldAddressOffset::Int32Scaled {
             value: index.clone(),
             byte_width: 4,
         };
@@ -725,7 +729,7 @@ mod protocol_value_tests {
             index.structural_value()
         ));
         assert_eq!(first, index);
-        let equal = StoredPointerOffset::from(AddressOffset::Int32Scaled {
+        let equal = StoredPointerOffset::from(OldAddressOffset::Int32Scaled {
             value: SharedMachineIntegerTerm::index(index.ty(), index.structural_value().clone()),
             byte_width: 4,
         });
@@ -1297,11 +1301,11 @@ mod term_payload_contract_tests {
     #[test]
     fn consuming_program_storage_moves_an_owned_native_address_prefix() {
         for size in [16, 64, 256] {
-            let mut offset = AddressOffset::Constant(0);
+            let mut offset = OldAddressOffset::Constant(0);
             for index in 0..size {
-                offset = AddressOffset::Add(
+                offset = OldAddressOffset::Add(
                     Box::new(offset),
-                    Box::new(AddressOffset::Variable(Variable(991730 + index))),
+                    Box::new(OldAddressOffset::Variable(Variable(991730 + index))),
                 );
             }
             let value = ProgramValue::pointer(Address {
@@ -1311,7 +1315,7 @@ mod term_payload_contract_tests {
             let ProgramValue::Pointer(pointer) = &value else {
                 unreachable!()
             };
-            let AddressOffset::Add(left, right) = &pointer.address().offset else {
+            let OldAddressOffset::Add(left, right) = &pointer.address().offset else {
                 unreachable!()
             };
             let allocations = [
@@ -1323,7 +1327,7 @@ mod term_payload_contract_tests {
                 unreachable!()
             };
             let address = pointer.into_pointer();
-            let AddressOffset::Add(left, right) = &address.offset else {
+            let OldAddressOffset::Add(left, right) = &address.offset else {
                 unreachable!()
             };
             assert_eq!(

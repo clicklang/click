@@ -4,7 +4,7 @@ use super::*;
 fn pointer(block: &str, offset: i64) -> Address {
     Address {
         base: block.into(),
-        offset: AddressOffset::Constant(offset),
+        offset: OldAddressOffset::Constant(offset),
     }
 }
 fn fresh(count: u32) -> SymbolicMemory {

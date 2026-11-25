@@ -9,8 +9,8 @@ use super::*;
 fn memory_resolution_graph_offset_queries_scale_without_legacy_fact_index() {
     for size in [16u64, 64, 256, 512] {
         let scalar = |id| OldMachineTerm::Variable(Variable(92_000 + id));
-        let offset = |id| AddressOffset::scale_int32(scalar(id), 4);
-        let named = AddressOffset::Variable(Variable(94_000));
+        let offset = |id| OldAddressOffset::scale_int32(scalar(id), 4);
+        let named = OldAddressOffset::Variable(Variable(94_000));
         let mut context = PureFactContext::new().assume_condition(
             OldConditionTerm::address_offset_equal(offset(0), named.clone()),
             true,
@@ -41,11 +41,11 @@ fn memory_resolution_graph_offset_queries_scale_without_legacy_fact_index() {
 fn stored_load_alias_lookup_ignores_unrelated_cells() {
     let target = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(8_991_001)), 4),
+        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(8_991_001)), 4),
     };
     let alias = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(8_991_002)), 4),
+        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(8_991_002)), 4),
     };
     let assumptions = PureFactContext::new().assume_condition(
         OldConditionTerm::address_offset_equal(target.offset.clone(), alias.offset.clone()),
@@ -58,7 +58,7 @@ fn stored_load_alias_lookup_ignores_unrelated_cells() {
             memory = memory.store(
                 Address {
                     base: AddressBase::ExternalArgument,
-                    offset: AddressOffset::Constant(index * 4),
+                    offset: OldAddressOffset::Constant(index * 4),
                 },
                 ProgramValue::Int32(OldMachineTerm::constant(0)),
             );
@@ -91,15 +91,15 @@ fn stored_load_alias_lookup_ignores_unrelated_cells() {
 fn interior_base_alias_frames_only_distinct_objects_and_is_indexed() {
     let base = Address {
         base: AddressBase::Heap(920_000),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let alias = Address {
         base: AddressBase::Symbolic(Variable(920_001)),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let local = Address {
         base: "local:interior-alias-store".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let equality = OldConditionTerm::address_equal(alias.clone(), base.clone());
     let mut samples = Vec::new();
@@ -110,11 +110,11 @@ fn interior_base_alias_frames_only_distinct_objects_and_is_indexed() {
                 OldConditionTerm::address_equal(
                     Address {
                         base: AddressBase::Symbolic(Variable(930_000 + index)),
-                        offset: AddressOffset::Constant(0),
+                        offset: OldAddressOffset::Constant(0),
                     },
                     Address {
                         base: AddressBase::Heap(940_000 + index),
-                        offset: AddressOffset::Constant(0),
+                        offset: OldAddressOffset::Constant(0),
                     },
                 ),
                 true,
@@ -125,7 +125,7 @@ fn interior_base_alias_frames_only_distinct_objects_and_is_indexed() {
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for offset in [-1i64, 0, 1, 2, 3, 16] {
                 let read = Address {
-                    offset: AddressOffset::Constant(offset),
+                    offset: OldAddressOffset::Constant(offset),
                     ..alias.clone()
                 };
                 assert!(pointers_proven_distinct_for_memory_resolution(
@@ -140,7 +140,7 @@ fn interior_base_alias_frames_only_distinct_objects_and_is_indexed() {
         });
         samples.push((size, work));
         let interior = Address {
-            offset: AddressOffset::Constant(1),
+            offset: OldAddressOffset::Constant(1),
             ..alias.clone()
         };
         assert!(!pointers_proven_distinct_for_memory_resolution(
@@ -171,8 +171,8 @@ fn mixed_index_offsets_work_ignores_unrelated_facts() {
     use crate::kernel::{IntegerTerm, MachineIntegerType};
     let wide = OldMachineTerm::Variable(Variable(82001));
     let narrow = OldMachineTerm::Variable(Variable(82002));
-    let native = AddressOffset::scale_int64(wide.clone(), 1, true);
-    let signed = AddressOffset::scale_int32(narrow.clone(), 1);
+    let native = OldAddressOffset::scale_int64(wide.clone(), 1, true);
+    let signed = OldAddressOffset::scale_int32(narrow.clone(), 1);
     let fact = OldConditionTerm::IntegerEqual(
         IntegerTerm::from_machine(MachineIntegerType::UInt64, wide)
             .unwrap()
@@ -224,7 +224,7 @@ fn unresolved_load_projection_ignores_earlier_objects_and_hidden_slots() {
         );
         let slot = |index: usize| Address {
             base: AddressBase::Concrete(format!("local:hidden{index}")),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let object = |index: usize| Address::symbolic(Variable(98_700 + index as u64));
         let value = |index: usize| ProgramValue::Int32((index as u32).into());
@@ -322,7 +322,7 @@ fn run_access_retains_cold_shared_index_dags() {
             let retained = MachineOperandView::Shared(&term).retain(ty);
             let base = Address {
                 base: "retained_run".into(),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             };
             let run = CellRun::new(
                 base.clone(),
@@ -333,12 +333,12 @@ fn run_access_retains_cold_shared_index_dags() {
                 Default::default(),
             );
             let offset = if ty == MachineIntegerType::Int32 {
-                AddressOffset::Int32Scaled {
+                OldAddressOffset::Int32Scaled {
                     value: retained.clone(),
                     byte_width: 4,
                 }
             } else {
-                AddressOffset::Int64Scaled {
+                OldAddressOffset::Int64Scaled {
                     value: retained.clone(),
                     byte_width: 4,
                     unsigned: true,
@@ -402,14 +402,14 @@ fn wide_offset_step_retains_dags_and_ignores_unrelated_facts() {
                 index.operand_view(),
                 MachineOperandView::Old(&OldMachineTerm::uint64_constant(1)),
             );
-            let scaled = |value| AddressOffset::Int64Scaled {
+            let scaled = |value| OldAddressOffset::Int64Scaled {
                 value,
                 byte_width: 8,
                 unsigned: true,
             };
-            let stepped = AddressOffset::Add(
+            let stepped = OldAddressOffset::Add(
                 Box::new(scaled(index.clone())),
-                Box::new(AddressOffset::Constant(8)),
+                Box::new(OldAddressOffset::Constant(8)),
             );
             let whole = scaled(advanced);
             let mut facts = PureFactContext::new().assume_condition(
@@ -473,11 +473,11 @@ fn a_byte_product_comparison_ignores_unrelated_bounded_indices() {
         for id in 1..=size {
             context = bounds(context, id);
         }
-        let bytes = AddressOffset::scale_int32(
+        let bytes = OldAddressOffset::scale_int32(
             OldMachineTerm::multiply(scalar(0), OldMachineTerm::constant(4)),
             1,
         );
-        let elements = AddressOffset::scale_int32(scalar(0), 4);
+        let elements = OldAddressOffset::scale_int32(scalar(0), 4);
         let _scope = context.enter_id_scope();
         let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
             assert_eq!(

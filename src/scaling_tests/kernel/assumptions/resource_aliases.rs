@@ -36,7 +36,7 @@ fn kept_frame_misses_do_not_walk_aliases_or_unrelated_ranges() {
             let _session = crate::kernel::VerificationSession::enter();
             let pointer = |id| Address {
                 base: AddressBase::ExternalArgument,
-                offset: AddressOffset::Variable(Variable(890_000 + id)),
+                offset: OldAddressOffset::Variable(Variable(890_000 + id)),
             };
             let query = pointer(0);
             let mut context = PureFactContext::new();
@@ -86,7 +86,7 @@ fn selected_read_validity_and_kept_frames_ignore_large_alias_classes() {
         let _session = crate::kernel::VerificationSession::enter();
         let source = Address {
             base: AddressBase::Heap(900_000),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let field = source.offset_by_bytes(4);
         let memory = SymbolicMemory::new()

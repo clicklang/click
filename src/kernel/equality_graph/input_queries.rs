@@ -10,8 +10,8 @@ use std::collections::BTreeSet;
 impl EqualityGraph {
     pub(in crate::kernel) fn offsets_with_an_alias_at_root(
         &self,
-        root: &Option<AddressOffset>,
-    ) -> Vec<AddressOffset> {
+        root: &Option<OldAddressOffset>,
+    ) -> Vec<OldAddressOffset> {
         self.admitted
             .pointer_offset_aliases_by_root
             .get(root)

@@ -2626,8 +2626,8 @@ fn index_bitvector_equality_fact(
         {
             match (left.as_ref(), right.as_ref()) {
                 (
-                    AddressOffset::Int32Scaled { value: left, .. },
-                    AddressOffset::Int32Scaled { value: right, .. },
+                    OldAddressOffset::Int32Scaled { value: left, .. },
+                    OldAddressOffset::Int32Scaled { value: right, .. },
                 ) => {
                     let mut atoms = BTreeSet::new();
                     selected_atoms::collect(left, &mut atoms);
@@ -3242,11 +3242,12 @@ fn collect_load_address_atoms(
     let mut pending = vec![&pointer.offset];
     while let Some(offset) = pending.pop() {
         match offset {
-            AddressOffset::Add(left, right) => {
+            OldAddressOffset::Add(left, right) => {
                 pending.push(left);
                 pending.push(right);
             }
-            AddressOffset::Int32Scaled { value, .. } | AddressOffset::Int64Scaled { value, .. } => {
+            OldAddressOffset::Int32Scaled { value, .. }
+            | OldAddressOffset::Int64Scaled { value, .. } => {
                 if let Some(atom) = selected_atoms::root_atom(value.operand_view()) {
                     atoms.insert(atom);
                 }
@@ -3254,7 +3255,7 @@ fn collect_load_address_atoms(
                     collect_load_address_atoms(*inner, atoms, depth + 1);
                 }
             }
-            AddressOffset::Constant(_) | AddressOffset::Variable(_) => {}
+            OldAddressOffset::Constant(_) | OldAddressOffset::Variable(_) => {}
         }
     }
 }
@@ -3276,7 +3277,7 @@ fn collect_pointer_bitvector_atoms(
 }
 
 fn collect_pointer_offset_bitvector_atoms(
-    offset: &AddressOffset,
+    offset: &OldAddressOffset,
     atoms: &mut BTreeSet<BitvectorEqualityAtomKey>,
 ) {
     offset.for_each_scaled_operand(|value| selected_atoms::collect(value, atoms));
@@ -3611,7 +3612,7 @@ fn collect_owned_atomic_conjuncts(fact: &Proposition, output: &mut Vec<Propositi
 mod integer_equality_fact_index_tests {
     use super::*;
     use crate::kernel::{
-        Address, AddressOffset, IntegerRangeFoldIndex, IntegerTerm, MachineIntegerType,
+        Address, IntegerRangeFoldIndex, IntegerTerm, MachineIntegerType, OldAddressOffset,
         OldMachineTerm, ProgramValue, SharedIntegerRangeEndpoint, SharedIntegerTerm,
         SharedMachineIntegerTerm, Sort, SymbolicMemory, Variable,
     };
@@ -3718,7 +3719,7 @@ mod integer_equality_fact_index_tests {
                     ProgramPoint::at(memory),
                     Box::new(Address {
                         base: "retained_state-alpha-facts".into(),
-                        offset: AddressOffset::Constant(0),
+                        offset: OldAddressOffset::Constant(0),
                     }),
                     crate::kernel::LoadKind::Int32,
                 ),
@@ -3733,11 +3734,11 @@ mod integer_equality_fact_index_tests {
         free_offset: Option<Variable>,
         bytes: u32,
     ) -> Proposition {
-        let bound_offset = AddressOffset::scaled_int32_node(OldMachineTerm::Variable(binder), 4);
+        let bound_offset = OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(binder), 4);
         let offset = free_offset.map_or(bound_offset.clone(), |free| {
-            AddressOffset::Add(
+            OldAddressOffset::Add(
                 Box::new(bound_offset),
-                Box::new(AddressOffset::scaled_int32_node(
+                Box::new(OldAddressOffset::scaled_int32_node(
                     OldMachineTerm::Variable(free),
                     1,
                 )),
@@ -3767,11 +3768,11 @@ mod integer_equality_fact_index_tests {
         free_offset: Option<Variable>,
         bytes: u32,
     ) -> Proposition {
-        let bound_offset = AddressOffset::scaled_int32_node(OldMachineTerm::Variable(binder), 4);
+        let bound_offset = OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(binder), 4);
         let offset = free_offset.map_or(bound_offset.clone(), |free| {
-            AddressOffset::Add(
+            OldAddressOffset::Add(
                 Box::new(bound_offset),
-                Box::new(AddressOffset::scaled_int32_node(
+                Box::new(OldAddressOffset::scaled_int32_node(
                     OldMachineTerm::Variable(free),
                     1,
                 )),
@@ -3799,7 +3800,7 @@ mod integer_equality_fact_index_tests {
             crate::kernel::Resource::Memory(crate::kernel::MemoryRange::new(
                 Address {
                     base: block.into(),
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0),
                 },
                 OldMachineTerm::constant(0),
                 OldMachineTerm::Variable(Variable(210_000)),
@@ -3983,7 +3984,7 @@ mod integer_equality_fact_index_tests {
         let changed = crate::kernel::intern_memory(before.as_ref().clone().store(
             Address {
                 base: "retained_state-alpha-facts".into(),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
             ProgramValue::Int32(OldMachineTerm::constant(7)),
         ));
@@ -4019,7 +4020,7 @@ mod integer_equality_fact_index_tests {
             .store(
                 Address {
                     base: "quantified-viewable".into(),
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0),
                 },
                 // A value the binder does not name: an occurrence of the
                 // binder inside the body's state would be bound too.
@@ -4028,7 +4029,7 @@ mod integer_equality_fact_index_tests {
         let changed_memory = memory.clone().store(
             Address {
                 base: "quantified-viewable".into(),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
             ProgramValue::Int32(OldMachineTerm::constant(7)),
         );
@@ -4181,7 +4182,7 @@ mod integer_equality_fact_index_tests {
         let changed_memory = memory.clone().store(
             Address {
                 base: block.into(),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
             ProgramValue::Int32(OldMachineTerm::constant(1)),
         );
@@ -4491,7 +4492,7 @@ mod integer_equality_fact_index_tests {
         let changed = crate::kernel::intern_memory(before.as_ref().clone().store(
             Address {
                 base: "retained_state-alpha-facts".into(),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
             ProgramValue::Int32(OldMachineTerm::constant(7)),
         ));
@@ -4706,7 +4707,7 @@ mod held_separation_tests {
         Resource::Memory(MemoryRange::new(
             Address {
                 base: "shared".into(),
-                offset: AddressOffset::Variable(Variable(980_000 + index)),
+                offset: OldAddressOffset::Variable(Variable(980_000 + index)),
             },
             OldMachineTerm::constant(0),
             OldMachineTerm::constant(1),

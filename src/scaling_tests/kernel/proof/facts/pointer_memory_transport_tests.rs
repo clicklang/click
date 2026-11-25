@@ -4,7 +4,7 @@ fn full_pointer_fact_transport_checks_provenance_and_the_whole_read() {
     let _session = VerificationSession::enter();
     let cell = Address {
         base: "pointer-retained_state-cell".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let before = intern_memory(SymbolicMemory::new().with_block(cell.base.clone(), 8));
     let after = intern_memory(before.memory().clone().with_block("other-local", 4));

@@ -4486,8 +4486,8 @@ fn registered_load_pointer(term: &OldMachineTerm) -> Option<Address> {
 }
 
 fn pointer_array_index_pair(
-    source: &AddressOffset,
-    target: &AddressOffset,
+    source: &OldAddressOffset,
+    target: &OldAddressOffset,
 ) -> Option<(OldMachineTerm, OldMachineTerm)> {
     let source = pointer_offset_addends(source)?;
     let target = pointer_offset_addends(target)?;
@@ -4506,10 +4506,10 @@ fn pointer_array_index_pair(
     Some((source_index, target_index))
 }
 
-fn pointer_offset_addends(offset: &AddressOffset) -> Option<Vec<AddressOffset>> {
+fn pointer_offset_addends(offset: &OldAddressOffset) -> Option<Vec<OldAddressOffset>> {
     match offset {
-        AddressOffset::Constant(0) => Some(Vec::new()),
-        AddressOffset::Add(left, right) => {
+        OldAddressOffset::Constant(0) => Some(Vec::new()),
+        OldAddressOffset::Add(left, right) => {
             let mut addends = pointer_offset_addends(left)?;
             addends.extend(pointer_offset_addends(right)?);
             Some(addends)
@@ -4518,8 +4518,8 @@ fn pointer_offset_addends(offset: &AddressOffset) -> Option<Vec<AddressOffset>> 
     }
 }
 
-fn pointer_int32_scaled_value(offset: &AddressOffset) -> Option<OldMachineTerm> {
-    let AddressOffset::Int32Scaled { value, byte_width } = offset else {
+fn pointer_int32_scaled_value(offset: &OldAddressOffset) -> Option<OldMachineTerm> {
+    let OldAddressOffset::Int32Scaled { value, byte_width } = offset else {
         return None;
     };
     (*byte_width == 4).then(|| value.structural_value().clone())

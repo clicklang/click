@@ -15,10 +15,10 @@ fn pointer_rewrite_integer_reads_preserves_state_kind_and_scales() {
             let mut q = Address::symbolic(Variable(241_001)).offset_by_bytes(3);
             if same_block {
                 p.offset =
-                    AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(241_002)), 1);
+                    OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(241_002)), 1);
                 q.base = p.base.clone();
                 q.offset =
-                    AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(241_003)), 1);
+                    OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(241_003)), 1);
             }
             let cited = Proposition::condition_is(
                 OldConditionTerm::address_equal(p.clone(), q.clone()),
@@ -117,7 +117,7 @@ fn pointer_read_rewrite_preserves_value_state_and_scales() {
         let owner = Address::symbolic(Variable(211_000));
         let alias = Address {
             base: AddressBase::Symbolic(Variable(211_001)),
-            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(211_002)), 4),
+            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(211_002)), 4),
         };
         let address = owner.offset_by_bytes(16);
         let alias_address = alias.offset_by_bytes(16);
@@ -180,7 +180,7 @@ fn pointer_read_rewrite_preserves_value_state_and_scales() {
             panic!("full pointer equality retained");
         };
         assert_eq!(rhs.as_ref(), &leaf);
-        assert_eq!(actual.offset, AddressOffset::Constant(0));
+        assert_eq!(actual.offset, OldAddressOffset::Constant(0));
         let expected = read(&memory, &alias_address);
         assert!(context.pointers_known_equal(actual, &expected));
         assert!(!ResourceContext::new().permits_memory_read(&alias_address, 8, &context));
@@ -439,7 +439,7 @@ fn cited_read_rewrite_requires_unchanged_cells_and_its_named_premise() {
     let _session = crate::kernel::VerificationSession::enter();
     let pointer = Address {
         base: "rewrite-selected-read".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     crate::kernel::eval::declare_load_access_width(&pointer, 4);
     let before = SymbolicMemory::new().with_block("rewrite-selected-read", 4);
@@ -497,8 +497,8 @@ fn cited_read_rewrite_requires_unchanged_cells_and_its_named_premise() {
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn same_block_pointer_view_rewrite_preserves_span_and_selected_work() {
     let _session = crate::kernel::VerificationSession::enter();
-    let source = AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(192_920)), 1);
-    let target = AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(192_921)), 1);
+    let source = OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(192_920)), 1);
+    let target = OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(192_921)), 1);
     let cited = Proposition::condition_is(
         OldConditionTerm::AddressOffsetEqual(Box::new(source.clone()), Box::new(target.clone())),
         true,
@@ -509,7 +509,7 @@ fn same_block_pointer_view_rewrite_preserves_span_and_selected_work() {
         memory: memory.clone(),
         base: Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::add(source, AddressOffset::Constant(2)),
+            offset: OldAddressOffset::add(source, OldAddressOffset::Constant(2)),
         },
         bytes: (span.clone()).into(),
         wide: false,
@@ -555,7 +555,7 @@ fn same_block_pointer_view_rewrite_preserves_span_and_selected_work() {
         assert_eq!(base.base, AddressBase::ExternalArgument);
         assert_eq!(
             base.offset,
-            AddressOffset::add(target.clone(), AddressOffset::Constant(2))
+            OldAddressOffset::add(target.clone(), OldAddressOffset::Constant(2))
         );
         assert_eq!(bytes.old_form(), &span);
         costs.push(work);
@@ -680,7 +680,7 @@ fn pointer_rewrite_enters_scalar_calls_and_preserves_scope_and_states() {
         OldConditionTerm::address_equal(
             Address {
                 base: source.base.clone(),
-                offset: AddressOffset::Constant(4),
+                offset: OldAddressOffset::Constant(4),
             },
             target.clone(),
         ),
@@ -967,18 +967,18 @@ fn pointer_read_chain_rewrite_work(
     let _session = VerificationSession::enter();
     let from = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(998_950)), 8),
+        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(998_950)), 8),
     };
     let to = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(998_951)), 8),
+        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(998_951)), 8),
     };
     let mut memory = SymbolicMemory::new();
     for index in 0..cells {
         memory = memory.store(
             Address {
                 base: AddressBase::Temporary(999_000 + index),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
             ProgramValue::Int32(7u32.into()),
         );
@@ -1261,7 +1261,7 @@ fn retained_pointer_index_rewrite_scales_with_distinct_nodes() {
         let index = SharedMachineIntegerTerm::from_shared(ty, root).unwrap();
         let pointer = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Int32Scaled {
+            offset: OldAddressOffset::Int32Scaled {
                 value: index.clone(),
                 byte_width: 4,
             },

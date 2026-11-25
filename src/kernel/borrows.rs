@@ -2024,7 +2024,7 @@ impl LocalViewBacking {
         let entire = MemoryRange::new_with_element_width(
             super::Address {
                 base: range.base().base.clone(),
-                offset: super::AddressOffset::Constant(0),
+                offset: super::OldAddressOffset::Constant(0),
             },
             0.into(),
             bytes,
@@ -2063,7 +2063,7 @@ impl LocalViewBacking {
         let data = &ledger.storage.data;
         let origin = Address {
             base: self.block.clone(),
-            offset: super::AddressOffset::Constant(0),
+            offset: super::OldAddressOffset::Constant(0),
         };
         let has_possible_symbolic_overlap =
             data.automatic_storage_borrows.contains_key(&self.block)
@@ -6629,7 +6629,7 @@ impl BorrowLedger {
         let attempted = MemoryRange::new_with_element_width(
             Address {
                 base: block.clone(),
-                offset: super::AddressOffset::Constant(0),
+                offset: super::OldAddressOffset::Constant(0),
             },
             0u32.into(),
             size.clone(),

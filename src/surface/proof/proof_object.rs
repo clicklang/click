@@ -1502,7 +1502,7 @@ impl Proof<'_> {
                     match (&pointer.address().base, &pointer.address().offset) {
                         (
                             crate::kernel::AddressBase::Symbolic(variable),
-                            AddressOffset::Constant(0),
+                            OldAddressOffset::Constant(0),
                         ) => Some(*variable),
                         _ => None,
                     }
@@ -1578,11 +1578,12 @@ fn diagnostic_value_variable(value: &ProgramValue) -> Option<Variable> {
             _ => None,
         },
         ProgramValue::Pointer(pointer) => match &pointer.address().offset {
-            AddressOffset::Variable(variable) => Some(*variable),
+            OldAddressOffset::Variable(variable) => Some(*variable),
             // C pointers to sized elements keep their direct symbolic offset
             // in element units. An added displacement is composite and does
             // not identify the pointer local itself.
-            AddressOffset::Int32Scaled { value, .. } | AddressOffset::Int64Scaled { value, .. } => {
+            OldAddressOffset::Int32Scaled { value, .. }
+            | OldAddressOffset::Int64Scaled { value, .. } => {
                 value.operand_view().variable().copied()
             }
             _ => None,

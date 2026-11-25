@@ -7,7 +7,7 @@ use crate::kernel::*;
 fn address(index: usize) -> Address {
     Address {
         base: format!("direct-loop-{index}").into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     }
 }
 fn spec() -> ResourceSpec {

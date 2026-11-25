@@ -59,7 +59,7 @@ use super::*;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 // These operation tests also exercise kernel proposition search explicitly.
 use crate::kernel::{
-    Address, AddressBase, AddressOffset, ComparisonOperator, CompositeResourceDefinition,
+    Address, AddressBase, ComparisonOperator, CompositeResourceDefinition, OldAddressOffset,
     OldMachineTerm, ProgramType, ProgramValue, ResourceAccessMode, ResourceFact, ResourceSpec,
     SpecExpression, SymbolicMemory, int32, program_function,
 };
@@ -560,7 +560,7 @@ fn cached_body_loadability_preserves_exact_range_and_state_barriers() {
     let before = SymbolicMemory::new();
     let at = |block: &str| Address {
         base: block.into(),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let cached = before.clone().with_seeded_cells(
         at("cache"),
@@ -1666,7 +1666,7 @@ fn checked_call_event_must_name_a_call_introduced_by_its_statement() {
     let assumptions = PureFactContext::new();
     let pointer = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let range = MemoryRange::new(
         pointer,
@@ -1894,7 +1894,7 @@ fn checked_function_entry_rebase_rejects_semantic_memory_and_population_changes(
     )]);
     let pointer = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let caller = ExecutionState::new()
         .with_memory(SymbolicMemory::new().store(
@@ -2047,7 +2047,7 @@ fn checked_composite_events_reject_forged_resources_facts_memory_and_definitions
     );
     let pointer = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let changed_memory = observed.clone().with_memory(
         SymbolicMemory::new().store(pointer, ProgramValue::Int32(OldMachineTerm::constant(1))),
@@ -2148,11 +2148,11 @@ fn checked_join_effects_require_exact_arm_deltas_and_summarize_alternatives() {
     let before = ExecutionState::new();
     let left_pointer = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let right_pointer = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(4),
+        offset: OldAddressOffset::Constant(4),
     };
     let left = before.clone().with_memory(
         before
@@ -2236,7 +2236,7 @@ fn checked_interface_effects_reject_uncertified_memory_effects() {
     let before = ExecutionState::new();
     let pointer = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let after = before
         .clone()
@@ -2268,11 +2268,11 @@ fn checked_interface_effects_require_memory_diff_coverage() {
     let before = ExecutionState::new();
     let changed_pointer = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(4),
+        offset: OldAddressOffset::Constant(4),
     };
     let declared_pointer = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let after = before.clone().with_memory(
         before
@@ -2365,7 +2365,7 @@ fn checked_interface_effects_require_memory_diff_coverage() {
 fn conditional_heap_free_is_checked_as_a_guarded_lifetime_join() {
     let allocation_base = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let before = ExecutionState::new().with_memory(
         SymbolicMemory::new()
@@ -2756,7 +2756,7 @@ fn interface_logical_read_does_not_establish_validity() {
     let state = ExecutionState::new();
     let pointer = crate::kernel::Address {
         base: "interface_cell".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let load = SpecExpression::MemoryLoad {
         point: SpecPoint::Current,
@@ -2873,7 +2873,7 @@ fn interface_load_definition_rejects_wrong_variable_address_and_state() {
     let memory = crate::kernel::intern_memory(SymbolicMemory::new());
     let pointer = Address {
         base: "interface_definition".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let variable = crate::kernel::eval::load_variable_for_cell(
         &memory,
@@ -2912,7 +2912,7 @@ fn interface_load_definition_rejects_wrong_variable_address_and_state() {
         crate::kernel::ProgramPoint::at(&memory),
         Address {
             base: "other".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         },
     );
     let wrong_state = equation(
@@ -2942,7 +2942,7 @@ fn interface_successor_fact_checks_pay_for_exported_resources_once() {
                 MemoryRange::new(
                     Address {
                         base: crate::kernel::AddressBase::ExternalArgument,
-                        offset: crate::kernel::AddressOffset::Constant(index as i64 * 8),
+                        offset: crate::kernel::OldAddressOffset::Constant(index as i64 * 8),
                     },
                     OldMachineTerm::constant(0),
                     OldMachineTerm::constant(1),
@@ -3492,7 +3492,7 @@ fn resource_cell_naming_checks_the_recorded_integer_version_after_forgetting_a_n
     let _session = crate::kernel::VerificationSession::enter();
     let slot = Address {
         base: crate::kernel::AddressBase::ExternalArgument,
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let start = ExecutionState::new().with_memory(SymbolicMemory::new().with_block("other", 4));
     let without_name = || {
@@ -3538,7 +3538,7 @@ fn resource_pointer_cell_keeps_the_complete_read_from_its_recorded_store() {
     let _session = crate::kernel::VerificationSession::enter();
     let slot = Address {
         base: crate::kernel::AddressBase::ExternalArgument,
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let ty = ProgramType::Int32Pointer;
     let bytes = ty.byte_width();
@@ -3601,7 +3601,7 @@ fn resource_float_cell_naming_distinguishes_equal_memory_source_points() {
     let _session = crate::kernel::VerificationSession::enter();
     let slot = Address {
         base: crate::kernel::AddressBase::ExternalArgument,
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let before = ExecutionState::new().begin_function_entry_memory();
     let other = before.clone().begin_function_entry_memory();
@@ -3631,7 +3631,7 @@ fn resource_cell_naming_checks_the_entry_point_without_a_store() {
     let _session = crate::kernel::VerificationSession::enter();
     let slot = Address {
         base: crate::kernel::AddressBase::ExternalArgument,
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let before = ExecutionState::new().begin_function_entry_memory();
     let source = before.program_point();
@@ -3666,7 +3666,7 @@ fn resource_run_naming_checks_the_source_without_expanding_slots() {
     let _session = crate::kernel::VerificationSession::enter();
     let slot = Address {
         base: crate::kernel::AddressBase::ExternalArgument,
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let before = ExecutionState::new().begin_function_entry_memory();
     let point = before.program_point();

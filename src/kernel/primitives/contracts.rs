@@ -2594,7 +2594,7 @@ impl MemoryRange {
             (
                 Address {
                     base: self.base.base.clone(),
-                    offset: rest.cloned().unwrap_or(AddressOffset::Constant(0)),
+                    offset: rest.cloned().unwrap_or(OldAddressOffset::Constant(0)),
                 },
                 layout,
                 field,
@@ -3012,12 +3012,14 @@ impl MemoryRange {
             term.operand_view().variable() == Some(&variable)
         };
         let (base_offset, scaled) = match &pointer.offset {
-            AddressOffset::Add(base, scaled) => (base.as_ref().clone(), scaled.as_ref()),
-            scaled => (AddressOffset::Constant(0), scaled),
+            OldAddressOffset::Add(base, scaled) => (base.as_ref().clone(), scaled.as_ref()),
+            scaled => (OldAddressOffset::Constant(0), scaled),
         };
         let kind = match scaled {
-            AddressOffset::Int32Scaled { value, .. } if is_variable(value) => RangeIndexKind::Int32,
-            AddressOffset::Int64Scaled {
+            OldAddressOffset::Int32Scaled { value, .. } if is_variable(value) => {
+                RangeIndexKind::Int32
+            }
+            OldAddressOffset::Int64Scaled {
                 value,
                 unsigned: true,
                 ..
@@ -3230,7 +3232,7 @@ impl MemoryRange {
         Self::new_with_element_width(
             Address {
                 base: super::AddressBase::Symbolic(UNNAMED_FOOTPRINT_BLOCK),
-                offset: super::AddressOffset::Constant(0),
+                offset: super::OldAddressOffset::Constant(0),
             },
             OldMachineTerm::constant(0),
             // Endpoints are `int32` values: this is the largest span whose
@@ -4507,7 +4509,7 @@ mod guarded_quantified_cell_tests {
     fn parameter() -> Address {
         Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(7)), 1),
+            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(7)), 1),
         }
     }
 
@@ -4578,7 +4580,7 @@ mod guarded_quantified_cell_tests {
         // A base that moves with the binder is not one fixed range.
         let moving = wide_cell(&Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(index()), 1),
+            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(index()), 1),
         });
         assert_eq!(
             MemoryRange::guarded_quantified_cells(&moving, index(), &bound, 1),

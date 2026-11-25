@@ -449,11 +449,11 @@ fn retained_load_terms_grow_without_rewalking_states_or_prior_arithmetic() {
 fn retained_named_reads_do_not_rewalk_their_address_on_each_import() {
     let _session = crate::kernel::VerificationSession::enter();
     for size in [16, 64, 256] {
-        let mut offset = AddressOffset::Variable(Variable(993500));
+        let mut offset = OldAddressOffset::Variable(Variable(993500));
         for index in 0..size {
-            offset = AddressOffset::Add(
+            offset = OldAddressOffset::Add(
                 Box::new(offset),
-                Box::new(AddressOffset::Variable(Variable(993501 + index))),
+                Box::new(OldAddressOffset::Variable(Variable(993501 + index))),
             );
         }
         let raw = OldMachineTerm::read_named(
@@ -544,7 +544,7 @@ fn nested_read_address_import_is_linear_beside_unrelated_memory() {
                     ProgramPoint::at(&memory),
                     Box::new(Address {
                         base: AddressBase::Symbolic(Variable(996999)),
-                        offset: AddressOffset::scaled_int32_node(raw, 4),
+                        offset: OldAddressOffset::scaled_int32_node(raw, 4),
                     }),
                     LoadKind::Int32,
                 );
@@ -672,7 +672,7 @@ fn repeated_scalar_read_imports_reuse_live_address_components() {
         }
         let pointer = Address {
             base: AddressBase::Concrete("shared-read-hot".into()),
-            offset: AddressOffset::Int32Scaled {
+            offset: OldAddressOffset::Int32Scaled {
                 value: SharedMachineIntegerTerm::from_shared(MachineIntegerType::Int32, index)
                     .unwrap(),
                 byte_width: 4,
@@ -1087,7 +1087,7 @@ fn growing_common_boolean_comparisons_keep_operands_shared() {
             );
             let pointer = crate::kernel::Address {
                 base: block.into(),
-                offset: crate::kernel::AddressOffset::Constant(0),
+                offset: crate::kernel::OldAddressOffset::Constant(0),
             };
             KernelTermImport::default().machine(
                 format,

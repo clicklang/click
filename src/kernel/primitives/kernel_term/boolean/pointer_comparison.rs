@@ -37,11 +37,11 @@ mod tests {
             Address::symbolic(Variable(999001)),
             Address {
                 base: AddressBase::FunctionSymbolic(Variable(999001)),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
             Address {
                 base: AddressBase::ExternalObject(Variable(999001)),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
             crate::kernel::SymbolicMemory::global_pointer("raw-pointer"),
             Address::loaded_value(
@@ -56,16 +56,16 @@ mod tests {
                         OldMachineTerm::Variable(Variable(999002)),
                     ))],
                 )),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
         ];
         let base = values.clone();
         for pointer in base {
             values.push(Address {
                 base: pointer.base,
-                offset: AddressOffset::Add(
-                    Box::new(AddressOffset::Constant(0)),
-                    Box::new(AddressOffset::scaled_int32_node(
+                offset: OldAddressOffset::Add(
+                    Box::new(OldAddressOffset::Constant(0)),
+                    Box::new(OldAddressOffset::scaled_int32_node(
                         OldMachineTerm::Variable(Variable(999002)),
                         4,
                     )),
@@ -105,9 +105,9 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let target = Address {
             base: AddressBase::Symbolic(Variable(999010)),
-            offset: AddressOffset::Add(
-                Box::new(AddressOffset::Constant(1)),
-                Box::new(AddressOffset::Constant(2)),
+            offset: OldAddressOffset::Add(
+                Box::new(OldAddressOffset::Constant(1)),
+                Box::new(OldAddressOffset::Constant(2)),
             ),
         };
         for pointer in pointers() {
@@ -180,7 +180,7 @@ mod tests {
             let source = OldConditionTerm::AddressEqual(
                 Box::new(Address {
                     base: block,
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0),
                 }),
                 Box::new(Address::null()),
             );
@@ -233,9 +233,9 @@ mod tests {
                     },
                 );
                 let offset = if wide {
-                    AddressOffset::scaled_int64_node(value, 8, false)
+                    OldAddressOffset::scaled_int64_node(value, 8, false)
                 } else {
-                    AddressOffset::scaled_int32_node(value, 4)
+                    OldAddressOffset::scaled_int32_node(value, 4)
                 };
                 OldConditionTerm::AddressEqual(
                     Box::new(Address {

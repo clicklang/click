@@ -32,7 +32,7 @@ fn graph_for_memory_query(assumptions: &PureFactContext, pointer: &Address) -> E
     if matches!(pointer.base, AddressBase::Load(_)) {
         let read = Address {
             base: pointer.base.clone(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         if let Some(stored) =
             crate::kernel::memory_history::checked_pointer_read_stored_value(&read, assumptions)
@@ -46,7 +46,7 @@ fn graph_for_memory_query(assumptions: &PureFactContext, pointer: &Address) -> E
     // the caller.
     let mut offsets = vec![&pointer.offset];
     while let Some(offset) = offsets.pop() {
-        if let AddressOffset::Add(left, right) = offset {
+        if let OldAddressOffset::Add(left, right) = offset {
             offsets.push(right);
             offsets.push(left);
             continue;
@@ -271,7 +271,7 @@ impl MemoryAddresses {
         // indexed miss, even when they contribute no address row.
         let Some(base) = graph.canonical_pointer(&Address {
             base: range.base().base.clone(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         }) else {
             self.incomplete = true;
             return;
@@ -791,7 +791,7 @@ impl MemoryAccessCandidates {
         if read && !self.entries.exact() {
             let direct = ResourceContext::sole_access_supplier(&self.index, &self.query, true);
             let owner = direct.or_else(|| {
-                (!matches!(self.query.offset, AddressOffset::Add(_, _)))
+                (!matches!(self.query.offset, OldAddressOffset::Add(_, _)))
                     .then(|| self.index.graph.additive_address(&self.query))
                     .flatten()
                     .and_then(|query| {
@@ -869,7 +869,7 @@ impl MemoryAccessCandidates {
             {
                 return Some(address);
             }
-            let spelling = if matches!(self.query.offset, AddressOffset::Add(_, _)) {
+            let spelling = if matches!(self.query.offset, OldAddressOffset::Add(_, _)) {
                 self.query.clone()
             } else {
                 self.index
@@ -962,8 +962,10 @@ impl ObjectEvidenceSources {
             loop {
                 keys.insert(base.clone());
                 base.offset = match &base.offset {
-                    AddressOffset::Add(left, _) => (**left).clone(),
-                    AddressOffset::Constant(value) if *value != 0 => AddressOffset::Constant(0),
+                    OldAddressOffset::Add(left, _) => (**left).clone(),
+                    OldAddressOffset::Constant(value) if *value != 0 => {
+                        OldAddressOffset::Constant(0)
+                    }
                     _ => break,
                 };
             }
@@ -1403,7 +1405,7 @@ impl MemoryFactEntries {
                         // neighbour starts, spelled as that neighbour is.
                         Some(Address {
                             base: root.base,
-                            offset: AddressOffset::add(
+                            offset: OldAddressOffset::add(
                                 root.offset,
                                 crate::kernel::memory_history::rebuild_scaled_pointer_index(
                                     end,
@@ -1528,7 +1530,7 @@ impl MemoryQuery<'_> {
             Self::Address(pointer) => {
                 let mut pending = vec![pointer.offset.clone()];
                 while let Some(offset) = pending.pop() {
-                    if let AddressOffset::Add(left, right) = &offset {
+                    if let OldAddressOffset::Add(left, right) = &offset {
                         pending.push(left.as_ref().clone());
                         pending.push(right.as_ref().clone());
                     }
@@ -1539,7 +1541,7 @@ impl MemoryQuery<'_> {
                 }
                 graph.address_class(&Address {
                     base: pointer.base.clone(),
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0),
                 });
             }
             Self::Footprint(range) => {
@@ -2626,7 +2628,7 @@ impl ResourceContext {
         if let Some(entry) = index.symbolic.sole_base(class, owned) {
             return Some(entry);
         }
-        if let AddressOffset::Add(left, right) = &pointer.offset {
+        if let OldAddressOffset::Add(left, right) = &pointer.offset {
             for part in [left, right] {
                 let part = Address {
                     base: pointer.base.clone(),
@@ -2639,7 +2641,7 @@ impl ResourceContext {
         }
         let root = Address {
             base: pointer.base.clone(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let class = index.graph.address_class(&root)?;
         index.symbolic.sole_base(class, owned)
@@ -2708,7 +2710,7 @@ impl ResourceContext {
                 }
             }
             let (prefix, bytes) = match &base.offset {
-                AddressOffset::Add(left, right) => {
+                OldAddressOffset::Add(left, right) => {
                     if let Some(bytes) = right.as_const() {
                         (left.as_ref().clone(), bytes)
                     } else {
@@ -2716,8 +2718,8 @@ impl ResourceContext {
                         (right.as_ref().clone(), bytes)
                     }
                 }
-                AddressOffset::Constant(bytes) if *bytes != 0 => {
-                    (AddressOffset::Constant(0), *bytes)
+                OldAddressOffset::Constant(bytes) if *bytes != 0 => {
+                    (OldAddressOffset::Constant(0), *bytes)
                 }
                 _ => return None,
             };
@@ -2765,7 +2767,7 @@ impl ResourceContext {
         // A reference result may capture an interior address without an
         // additive syntax tree. Its checked class retains a producer spelling
         // with that base; use it for indexed supplier selection only.
-        let spelling = (!matches!(pointer.offset, AddressOffset::Add(_, _)))
+        let spelling = (!matches!(pointer.offset, OldAddressOffset::Add(_, _)))
             .then(|| index.graph.additive_address(pointer))
             .flatten();
         let selected_pointer = spelling.as_ref().unwrap_or(pointer);
@@ -3095,9 +3097,9 @@ mod tests {
         let owner = Address::symbolic(Variable(989_810));
         let query = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::add(
-                AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(989_811)), 4),
-                AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(989_812)), 4),
+            offset: OldAddressOffset::add(
+                OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(989_811)), 4),
+                OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(989_812)), 4),
             ),
         };
         let equality = Proposition::condition_is(
@@ -3119,7 +3121,7 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let base = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(989_100)), 1),
+            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(989_100)), 1),
         };
         let narrow = base.offset_by_elements(OldMachineTerm::Variable(Variable(989_101)), 1);
         let index = OldMachineTerm::Variable(Variable(989_102));
@@ -3195,7 +3197,7 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let base = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         }
         .offset_by_elements(OldMachineTerm::Variable(Variable(983_710)), 1);
         let whole = OldMachineTerm::Variable(Variable(983_711));
@@ -3290,21 +3292,21 @@ mod tests {
         let model = Address::symbolic(Variable(4065536));
         let old_read = Address {
             base: parent.base.clone(),
-            offset: AddressOffset::scale_int32(
+            offset: OldAddressOffset::scale_int32(
                 OldMachineTerm::Variable(Variable(1542185793994)),
                 4,
             ),
         };
         let cursor = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(
+            offset: OldAddressOffset::scale_int32(
                 OldMachineTerm::Variable(Variable(2035320285104)),
                 4,
             ),
         };
         let parameter = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(100000)), 4),
+            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(100000)), 4),
         };
         let facts = PureFactContext::new()
             .assume_condition(
@@ -3368,21 +3370,21 @@ mod tests {
         let model = Address::symbolic(Variable(4065536));
         let old_read = Address {
             base: parent.base.clone(),
-            offset: AddressOffset::scale_int32(
+            offset: OldAddressOffset::scale_int32(
                 OldMachineTerm::Variable(Variable(1542185793994)),
                 4,
             ),
         };
         let cursor = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(
+            offset: OldAddressOffset::scale_int32(
                 OldMachineTerm::Variable(Variable(2035320285104)),
                 4,
             ),
         };
         let parameter = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(100000)), 4),
+            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(100000)), 4),
         };
         let facts = PureFactContext::new()
             .assume_condition(OldConditionTerm::address_equal(parameter, parent), true)
@@ -3453,7 +3455,7 @@ mod tests {
         // A shorter nearest predecessor must not hide the longer view.
         let interior = Address {
             base: base.base.clone(),
-            offset: AddressOffset::Constant(4),
+            offset: OldAddressOffset::Constant(4),
         };
         assert!(mixed.permits_memory_read(&interior, 4, &facts));
         let restored = mixed.clone().without_exact_representation(&short).unwrap();
@@ -3472,7 +3474,7 @@ mod tests {
             .unchecked_with_fact(view(&base, 4, 12));
         let at = |offset| Address {
             base: base.base.clone(),
-            offset: AddressOffset::Constant(offset),
+            offset: OldAddressOffset::Constant(offset),
         };
         assert!(resources.concrete_read_entries(&at(6), 6, &facts).is_some());
         assert!(resources.permits_memory_read(&at(6), 6, &facts));
@@ -3498,7 +3500,7 @@ mod tests {
         let sibling = resources.clone();
         let displaced = Address {
             base: base.base.clone(),
-            offset: AddressOffset::Constant(8),
+            offset: OldAddressOffset::Constant(8),
         };
         let facts = empty
             .clone()
@@ -3575,7 +3577,7 @@ mod tests {
         let middle = Address::symbolic(Variable(851_022));
         let displaced = Address {
             base: base.base.clone(),
-            offset: AddressOffset::Constant(8),
+            offset: OldAddressOffset::Constant(8),
         };
         let facts = empty
             .assume_condition(
@@ -3585,7 +3587,7 @@ mod tests {
             .assume_condition(OldConditionTerm::address_equal(middle, alias.clone()), true);
         let interior = Address {
             base: alias.base,
-            offset: AddressOffset::Constant(4),
+            offset: OldAddressOffset::Constant(4),
         };
         assert!(
             resources
