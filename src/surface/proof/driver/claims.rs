@@ -5738,8 +5738,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                                 applied.added_facts().contains(goal)
                                             }) =>
                                         {
-                                            let completed =
-                                                focused.driver().apply_step(ProofStep::Known)?;
+                                            let completed = focused.complete_known_proposition()?;
                                             outcome_proof = Some(applied.clone());
                                             record_claim_closure(
                                                 &mut outcome_proof,
@@ -5752,7 +5751,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                                     claims[index].key(),
                                                     path_index,
                                                     Vec::new(),
-                                                    completed.completed_proposition()?,
+                                                    completed,
                                                 ),
                                             )?;
                                         }

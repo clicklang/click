@@ -727,6 +727,16 @@ impl<'a> Proof<'a> {
         );
     }
 
+    /// Complete a proposition from an already published fact without a new
+    /// surface tactic. The enclosing outcome step supplies the certificate.
+    pub(in crate::surface::proof) fn complete_known_proposition(
+        &self,
+    ) -> Result<crate::kernel::proof::CheckedProposition, ClickError> {
+        self.apply_known()?
+            .completed_proposition()
+            .ok_or_else(|| self.step_error("completed proof is not a proposition judgment"))
+    }
+
     /// Apply exact facts and the selected live-partition separation rule.
     /// No ambient compositions or candidate resources are enumerated.
     pub(super) fn apply_known(&self) -> Result<KernelProofHandle, ClickError> {
