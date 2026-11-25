@@ -851,7 +851,7 @@ pub(super) fn instantiate_theorem_statement(
 ) -> Result<TheoremDefinition, String> {
     if definition.type_parameters().is_empty() {
         return Ok(TheoremDefinition {
-            axiom: definition.axiom,
+            kind: definition.kind,
             generic_pointer_parameters: definition.generic_pointer_parameters.clone(),
             body: parser::DeclarationBody::default(),
             name: definition.name.clone(),
@@ -906,7 +906,7 @@ fn instantiate_theorem_with_proof(
         })
         .collect::<BTreeMap<_, _>>();
     Ok(TheoremDefinition {
-        axiom: definition.axiom,
+        kind: definition.kind,
         generic_pointer_parameters: definition.generic_pointer_parameters.clone(),
         body: if include_proof {
             definition.parsed_body().clone()

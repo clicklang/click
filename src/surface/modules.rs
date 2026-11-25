@@ -159,6 +159,12 @@ pub(in crate::surface) fn resolve_click_project_with_layouts(
             .filter_map(|imported| locals.get(imported))
             .flat_map(module_declarations)
             .collect::<Vec<_>>();
+        let imported_c_library_values = imported_ids
+            .iter()
+            .filter_map(|imported| locals.get(imported))
+            .flat_map(|file| file.c_library_values.iter())
+            .map(|(name, declaration)| (name.clone(), declaration.clone()))
+            .collect();
         let catalog = library_contracts
             .as_deref()
             .filter(|_| identity == project.entry());
@@ -178,6 +184,7 @@ pub(in crate::surface) fn resolve_click_project_with_layouts(
             &imported_proposition_functions,
             &imported_pointer_functions,
             &imported_integer_parameters,
+            imported_c_library_values,
             layouts.clone(),
             catalog,
             &imported_models,
@@ -1391,6 +1398,140 @@ FILE* via_library() { ensures result == stdout; }
         );
         let error = verify("", native, sidecar).expect_err("missing library declaration");
         assert!(error.message().contains("but has no definition"), "{error}");
+    }
+
+    #[test]
+    fn standalone_theorems_share_linked_library_values_with_c() {
+        let interface = r#"FILE *const default_stream;
+theorem default_nonnull() {
+    ensures default_stream != 0;
+}
+"#;
+        let caller = r#"import "values.interface.click";
+verifying "caller.c";
+
+theorem linked_stream_is_nonnull() {
+    ensures default_stream != 0 by {
+        apply(default_nonnull());
+        close();
+    }
+}
+
+theorem a_parameter_can_shadow_a_library_value(default_stream: int32) {
+    requires default_stream == 0;
+    ensures default_stream == 0 by { close(); }
+}
+
+FILE* output() {
+    ensures result != 0;
+} by {
+    step_until(function.exit);
+    apply(default_nonnull());
+    close();
+}
+"#;
+        let native = r#"typedef struct stream { int count; } FILE;
+extern FILE *const default_stream;
+FILE *output(void) { return default_stream; }
+"#;
+        let project = ClickProject::new(
+            "caller.click",
+            [
+                ClickModuleSource::new("values.interface.click", interface, []),
+                ClickModuleSource::new(
+                    "caller.click",
+                    caller,
+                    ["values.interface.click".to_string()],
+                ),
+            ],
+        );
+        let sources = ProgramInputs::Bundle(vec![("caller.c", native)]);
+        let (summary, verified) = verify_project_with_summary(&project, &sources).unwrap();
+        verified.unwrap_or_else(|error| panic!("{error}"));
+        assert!(
+            summary
+                .interface_theorem_assumptions
+                .contains("default_nonnull")
+        );
+        assert!(summary.assumptions["output"].iter().any(|assumption| {
+            assumption.name == "default_stream" && assumption.family == ModelFamily::CLibrary
+        }));
+
+        let mutable = native.replace("FILE *const default_stream", "FILE *default_stream");
+        let error = verify_project_with_summary(
+            &project,
+            &ProgramInputs::Bundle(vec![("caller.c", &mutable)]),
+        )
+        .expect_err("an interface theorem cannot assume a mutable object is stable");
+        assert!(
+            error
+                .message()
+                .contains("requires a matching linked const declaration"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn proofless_interface_theorems_are_assumptions_for_consumers() {
+        let export = r#"theorem library_value(n: int32) {
+    requires n > 0;
+    ensures n != 41;
+}"#;
+        let caller = r#"import "values.interface.click";
+theorem caller(n: int32) {
+    requires n > 0;
+    ensures n != 41 by {
+        apply(library_value(n));
+        close();
+    }
+}"#;
+        let project = |source: &str| {
+            ClickProject::new(
+                "caller.click",
+                [
+                    ClickModuleSource::new("values.interface.click", export, []),
+                    ClickModuleSource::new(
+                        "caller.click",
+                        source,
+                        ["values.interface.click".to_string()],
+                    ),
+                ],
+            )
+        };
+        let inputs = ProgramInputs::Bundle(vec![]);
+        let (summary, result) = verify_project_with_summary(&project(caller), &inputs).unwrap();
+        result.unwrap();
+        assert_eq!(
+            summary.interface_theorem_assumptions,
+            BTreeSet::from(["library_value".into()])
+        );
+        assert_eq!(summary.selected_proof_count, 1);
+
+        let no_premise = caller.replace("    requires n > 0;\n", "");
+        let (_, result) = verify_project_with_summary(&project(&no_premise), &inputs).unwrap();
+        assert!(
+            result.is_err(),
+            "an assumed interface theorem still requires its premises"
+        );
+
+        let verify_declaration = |identity: &str, source: &str| {
+            verify_project_with_summary(
+                &ClickProject::new(identity, [ClickModuleSource::new(identity, source, [])]),
+                &inputs,
+            )
+            .unwrap()
+        };
+        let (summary, result) = verify_declaration("values.interface.click", export);
+        result.unwrap();
+        assert_eq!(summary.selected_proof_count, 0);
+
+        let (summary, result) = verify_declaration("values.click", export);
+        assert!(result.is_err(), "an ordinary theorem must be proved");
+        assert!(summary.interface_theorem_assumptions.is_empty());
+        let with_proof = export.replace("ensures n != 41;", "ensures n != 41 by { close(); }");
+        let (summary, result) = verify_declaration("values.interface.click", &with_proof);
+        assert!(result.is_err(), "proofs written in interfaces are checked");
+        assert!(summary.interface_theorem_assumptions.is_empty());
     }
 
     #[test]
