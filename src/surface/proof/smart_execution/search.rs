@@ -356,8 +356,16 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             )
             .is_none()
             {
-                return Err(search_input
-                    .step_error("`transport` requires a source derivable from its ambient facts"));
+                let missing = describe_missing_pure_fact(
+                    &checked_source,
+                    search_input.facts(),
+                    view.fixed_state.state.resources().facts(),
+                    view.parameter_binding,
+                    view.effect_facts,
+                );
+                return Err(search_input.step_error(format!(
+                    "`transport` requires a source derivable from its ambient facts: {missing}"
+                )));
             }
             let checked_target =
                 search_input.lower_surface_proposition_direct(target, "`transport` target")?;
