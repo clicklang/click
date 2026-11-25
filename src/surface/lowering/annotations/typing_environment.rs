@@ -77,6 +77,27 @@ impl<'a> TypingEnvironment<'a> {
         }
     }
 
+    /// The program type of a name bound to an enum or library value: a
+    /// binder's declared type when it is one, or an outer name's lowered
+    /// value's.
+    pub(super) fn bound_enum_value_type<Q: crate::surface::binders::BinderKey + ?Sized>(
+        &self,
+        name: &Q,
+    ) -> Option<ProgramType> {
+        match self.binders.get(name) {
+            Some(click_type) => click_type
+                .interface_type()
+                .map(InterfaceType::to_kernel_type)
+                .filter(|ty| matches!(ty, ProgramType::Parameter(_))),
+            None => self.outer.bound_enum_value_type(name),
+        }
+    }
+
+    /// The call whose result `result` and region results name here.
+    pub(super) fn call_result_point(&self) -> Option<&'a ProgramPointSelector> {
+        self.outer.call_result_point.as_ref()
+    }
+
     /// Whether bare `result` names the contract's return value here.
     pub(super) fn contract_result_in_scope(&self) -> bool {
         self.outer.contract_result_in_scope

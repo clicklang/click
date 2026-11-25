@@ -86,8 +86,12 @@ impl AnnotationLowerer<'_> {
                 SurfaceProposition::Not(Box::new(equal))
             });
         }
-        let has_algebraic = self.enum_program_value_type(left, environment).is_some()
-            || self.enum_program_value_type(right, environment).is_some()
+        let has_algebraic = self
+            .enum_program_value_type(left, &TypingEnvironment::of(environment))
+            .is_some()
+            || self
+                .enum_program_value_type(right, &TypingEnvironment::of(environment))
+                .is_some()
             || contract_expression_is_algebraic(
                 left,
                 self.spec_definitions.functions,

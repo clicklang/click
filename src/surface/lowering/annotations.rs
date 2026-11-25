@@ -278,6 +278,17 @@ impl SpecElaborationContext {
             .map(|array_ref| array_ref.element_type)
     }
 
+    /// The program type of a name bound to an enum or library value.
+    fn bound_enum_value_type<Q: crate::surface::binders::BinderKey + ?Sized>(
+        &self,
+        name: &Q,
+    ) -> Option<ProgramType> {
+        match self.values.get(name)? {
+            SpecExpression::Value(value @ ProgramValue::Parameter(_)) => Some(value.program_type()),
+            _ => None,
+        }
+    }
+
     /// The pointee type of a name bound to a pointer value.
     fn bound_pointer_pointee_type<Q: crate::surface::binders::BinderKey + ?Sized>(
         &self,
@@ -7776,9 +7787,9 @@ impl AnnotationLowerer<'_> {
     fn enum_program_name_type(
         &self,
         name: &str,
-        environment: &SpecElaborationContext,
+        typing: &TypingEnvironment<'_>,
     ) -> Option<crate::kernel::TypeParameterName> {
-        match self.program_name_type(name, environment)? {
+        match self.program_name_type(name, typing)? {
             ProgramType::Parameter(enum_type) if crate::surface::holds_spec_value(enum_type) => {
                 Some(enum_type)
             }
@@ -7791,24 +7802,22 @@ impl AnnotationLowerer<'_> {
     fn program_name_type(
         &self,
         name: impl Into<crate::kernel::BindingName>,
-        environment: &SpecElaborationContext,
+        typing: &TypingEnvironment<'_>,
     ) -> Option<ProgramType> {
         let name = self.source_binding(name.into());
         if name == crate::kernel::CONTRACT_RESULT {
             return Some(self.result_type);
         }
         if matches!(name, crate::kernel::BindingName::Generated(_)) {
-            return environment
-                .values
-                .get(&name)
-                .and_then(spec_expression_click_type)
+            return typing
+                .program_binding_click_type(&name)
                 .and_then(|ty| ty.interface_type())
                 .map(|ty| ty.to_kernel_type());
         }
         if name.unresolved_name().is_none() {
             return name.program_type();
         }
-        if name.named_in(&environment.algebraic_values).is_some() {
+        if typing.binding_is_algebraic(&name) {
             return None;
         }
         if name.is_named("result") {
@@ -7826,12 +7835,7 @@ impl AnnotationLowerer<'_> {
                         })
                         // A name bound to a value in this context: a fixed state's
                         // local, including one that keeps an enum in memory.
-                        .or_else(|| match name.named_in(&environment.values)? {
-                            SpecExpression::Value(value @ ProgramValue::Parameter(_)) => {
-                                Some(value.program_type())
-                            }
-                            _ => None,
-                        })
+                        .or_else(|| typing.bound_enum_value_type(&name))
                 })
         }
     }
@@ -7840,23 +7844,20 @@ impl AnnotationLowerer<'_> {
     fn enum_program_value_type(
         &self,
         expression: &SyntaxTerm,
-        environment: &SpecElaborationContext,
+        typing: &TypingEnvironment<'_>,
     ) -> Option<crate::kernel::TypeParameterName> {
         match expression {
             SyntaxTerm::Binding(name)
             | SyntaxTerm::ProgramBinding(name)
             | SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(name),
-            )) => self.enum_program_name_type(name, environment),
+            )) => self.enum_program_name_type(name, typing),
             SyntaxTerm::ProgramExpression(ProgramExpression::Load(pointer)) => {
                 let value_type = match pointer.as_ref() {
                     ProgramExpression::Variable(name) => {
-                        self.program_name_type(name, environment)?.pointee_type()?
+                        self.program_name_type(name, typing)?.pointee_type()?
                     }
-                    _ => self.program_expression_array_element_type(
-                        pointer,
-                        &TypingEnvironment::of(environment),
-                    )?,
+                    _ => self.program_expression_array_element_type(pointer, typing)?,
                 };
                 match value_type {
                     ProgramType::Parameter(ty) if crate::surface::holds_spec_value(ty) => Some(ty),
@@ -7867,12 +7868,12 @@ impl AnnotationLowerer<'_> {
                 value_type: ProgramType::Parameter(ty),
                 ..
             } if crate::surface::holds_spec_value(*ty) => Some(*ty),
-            SyntaxTerm::Old(inner) => self.enum_program_value_type(inner, environment),
+            SyntaxTerm::Old(inner) => self.enum_program_value_type(inner, typing),
             // The enum value a call returned.
             SyntaxTerm::RegionResult(region) => {
                 match self
                     .retained_states?
-                    .region_result_value_at(region, environment.call_result_point.as_ref())
+                    .region_result_value_at(region, typing.call_result_point())
                     .ok()?
                 {
                     ProgramValue::Parameter(term) => {
@@ -7900,7 +7901,9 @@ impl AnnotationLowerer<'_> {
         if let Some(reduced) = lambdas::reduce_head(expression)? {
             return self.lower_contract_algebraic_to_spec(&reduced, environment);
         }
-        if let Some(enum_type) = self.enum_program_value_type(expression, environment) {
+        if let Some(enum_type) =
+            self.enum_program_value_type(expression, &TypingEnvironment::of(environment))
+        {
             return Ok(SpecAlgebraicExpression {
                 algebraic_type: enum_type.algebraic_type(),
                 node: SpecAlgebraicExpressionNode::ProgramValue(Box::new(
