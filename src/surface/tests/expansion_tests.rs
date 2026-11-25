@@ -22685,6 +22685,28 @@ fn terminal_throwing_call_requires_a_frontier_split_and_expands() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_77")]
+fn call_outcomes_cannot_split_an_already_executed_call() {
+    let (source, sources) = mdtest_sources("mdtests/outcomes_payload_bindings.md");
+    let sources = crate::cli::source_refs(&sources);
+    let prefix = source.trim_end().strip_suffix('}').unwrap();
+    let late = "outcomes { returned => { close(); } threw(error) => { close(); } }";
+    for suffix in [
+        late.to_owned(),
+        format!("if result == 6 {{ {late} }} else {{ close(); }}"),
+    ] {
+        let written = format!("{prefix} {suffix} }}");
+        let error = verify_c_sources(&written, &sources).expect_err("the call already ran");
+        assert!(
+            error
+                .message()
+                .contains("`outcomes` requires a maybe-throwing call at the execution frontier"),
+            "{error}"
+        );
+    }
+}
+
+#[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_77")]
 fn exceptional_claim_label_expands_routed_throw_fixture() {
     check_exceptional_claim_label_expansion("outcomes_routes_a_throw_that_leaves_the_function");
 }
@@ -26726,6 +26748,7 @@ test_batches! {
         exceptional_claim_label_expands_two_throwing_calls_fixture,
         exceptional_claim_label_expands_grouped_outcomes_fixture,
         terminal_throwing_call_requires_a_frontier_split_and_expands,
+        call_outcomes_cannot_split_an_already_executed_call,
         exceptional_claim_label_expands_routed_throw_fixture,
         exceptional_claim_labels_preserve_names_and_covering_proofs_in_projects,
     ],

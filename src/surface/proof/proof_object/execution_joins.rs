@@ -1739,13 +1739,9 @@ impl<'a> Proof<'a> {
                         path_evidence.checked_leaf_facts = None;
                     }
 
-                    if let Some(call) = call {
-                        // An `outcomes` nested in this arm was joined first, so
-                        // its edge follows this one.
-                        path_evidence.call_routes.insert(
-                            0,
-                            CallOutcomeEdge::from_payloads(arm_index == 0, &call.payloads),
-                        );
+                    if call_outcomes {
+                        // A nested split was joined first, so its edge follows this one.
+                        path_evidence.call_routes.insert(0, arm_index == 0);
                     }
                     // A returned path of a summarized loop carries what the arm
                     // had established when its loop was summarized, not what the
@@ -1888,7 +1884,7 @@ impl<'a> Proof<'a> {
                 .presentation
                 .outcome_evidence
                 .iter()
-                .map(|path| path.call_routes.first().map(|edge| edge.returned))
+                .map(|path| path.call_routes.first().copied())
                 .collect();
         }
         execution.core.has_structured_branch_history = true;
@@ -2082,7 +2078,6 @@ impl<'a> Proof<'a> {
                 attribution.source_index,
                 if call_outcomes {
                     PostExecutionTactic::CallOutcomes {
-                        payload_bindings: [None, None],
                         returned_tactics: Arc::new(then_post_execution),
                         threw_tactics: Arc::new(else_post_execution),
                     }

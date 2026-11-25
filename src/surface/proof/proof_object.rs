@@ -171,22 +171,6 @@ struct CallOutcomeSplitPresentation {
     payloads: [Option<StoredExecutionValue>; 2],
 }
 
-/// The selected checked call edge and its payload, if the transition exposes one.
-#[derive(Clone)]
-pub(super) struct CallOutcomeEdge {
-    pub(super) returned: bool,
-    pub(super) payload: Option<StoredExecutionValue>,
-}
-
-impl CallOutcomeEdge {
-    fn from_payloads(returned: bool, payloads: &[Option<StoredExecutionValue>; 2]) -> Self {
-        Self {
-            returned,
-            payload: payloads[usize::from(!returned)].clone(),
-        }
-    }
-}
-
 /// What a proof-level case split splits on, as written. A proof `if P`
 /// gives its arms `P` and `not P`; `cases` gives them the two sides of an
 /// available disjunction, nested on the left for more than two arms as
@@ -1210,38 +1194,49 @@ impl ProofExecutionView<'_> {
     }
 
     /// Selects the leaf of a retained surface certificate that one checked
-    /// outcome reaches, following each terminal surface `if` the way
-    /// [`append_surface_step_to_leaves`] does. Decisions are the same typed
+    /// outcome reaches, following terminal proof cases and call outcomes the
+    /// way [`append_surface_step_to_leaves`] does. Decisions are the same typed
     /// split outcome_evidence [`Self::surface_branch_path`] reads.
     pub(super) fn surface_step_branch_path(
         &self,
         path_index: usize,
         steps: &[ProofStep],
     ) -> Option<Vec<bool>> {
-        let mut decisions = self
-            .outcome_evidence
-            .get(path_index)
-            .map(|outcome_evidence| &outcome_evidence.branch_decisions)
+        let outcome_evidence = self.outcome_evidence.get(path_index);
+        let mut decisions = outcome_evidence
+            .map(|evidence| &evidence.branch_decisions)
             .unwrap_or(&self.execution.presentation.branch_decisions)
+            .iter();
+        let mut call_routes = outcome_evidence
+            .map(|evidence| evidence.call_routes.as_slice())
+            .unwrap_or(&[])
             .iter();
         let mut path = Vec::new();
         let mut current = super::execution_state::through_single_arm_matches(steps);
-        while let Some(ProofStep::If {
-            condition,
-            then_proof,
-            else_proof,
-            ..
-        }) = current.last()
-        {
-            let selected_then = decisions
-                .find(|decision| same_branch_condition(&decision.condition, condition))?
-                .value;
-            path.push(selected_then);
-            current = super::execution_state::through_single_arm_matches(if selected_then {
-                then_proof.steps()
-            } else {
-                else_proof.steps()
-            });
+        loop {
+            let (selected, first, second) = match current.last() {
+                Some(ProofStep::If {
+                    condition,
+                    then_proof,
+                    else_proof,
+                    ..
+                }) => (
+                    decisions
+                        .find(|decision| same_branch_condition(&decision.condition, condition))?
+                        .value,
+                    then_proof,
+                    else_proof,
+                ),
+                Some(ProofStep::CallOutcomes {
+                    returned_proof,
+                    threw_proof,
+                    ..
+                }) => (*call_routes.next()?, returned_proof, threw_proof),
+                _ => break,
+            };
+            path.push(selected);
+            let arm = if selected { first } else { second };
+            current = super::execution_state::through_single_arm_matches(arm.steps());
         }
         Some(path)
     }
@@ -1298,7 +1293,7 @@ impl ProofExecutionView<'_> {
                     )
                 }
                 ProofTactic::CallOutcomes(outcomes) => {
-                    let returned = call_routes.next()?.returned;
+                    let returned = *call_routes.next()?;
                     (
                         returned,
                         if returned {
@@ -1340,7 +1335,7 @@ struct OutcomeEvidence {
     /// `outcomes` first, with their checked call payloads. A surrounding branch can add
     /// paths that never visited a call, so this belongs to each outcome
     /// rather than to the joined frontier as one flat vector.
-    call_routes: Vec<CallOutcomeEdge>,
+    call_routes: Vec<bool>,
     branch_decisions: ExecutionBranchDecisions,
     match_arms: OutcomeMatchArms,
     /// Ordinary exhaustiveness proofs completed before either case arm.
@@ -2630,7 +2625,7 @@ pub(in crate::surface::proof) struct OutcomeProofPresentation {
     branch_decisions: ExecutionBranchDecisions,
     /// The checked call edges this outcome took, outermost `outcomes`
     /// first, with their checked call payloads.
-    pub(in crate::surface::proof) call_routes: Vec<CallOutcomeEdge>,
+    pub(in crate::surface::proof) call_routes: Vec<bool>,
     /// The arm each `match` deferred after execution took on this path, by
     /// the match's source occurrence, with that arm's field bindings.
     pub(in crate::surface::proof) match_arms: OutcomeMatchArms,

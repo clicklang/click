@@ -24,6 +24,8 @@ pub(in crate::surface::proof) enum Decline {
     /// `MAX_CHECKED_EXECUTION_REGION_DEPTH`, so the diagnostic names that
     /// bound instead of calling the shape unimplemented.
     RegionDepth,
+    /// A written call split was reached after execution finished.
+    OutcomesAfterExit,
 }
 
 /// A driver's result: the checked value, a typed decline, or a terminal
@@ -153,12 +155,14 @@ fn defer_post_execution_case_split<'a>(
         .expect("the case is deferred on a terminal frontier")
         .presentation
         .deferred_obtain_names;
-    let Some(then_tactics) = deferred_region_with_obtains(then_branch, obtains) else {
-        return decline();
-    };
-    let Some(else_tactics) = deferred_region_with_obtains(else_branch, obtains) else {
-        return decline();
-    };
+    let then_tactics = driven!(Ok::<_, ClickError>(deferred_region_with_obtains(
+        then_branch,
+        obtains
+    )));
+    let else_tactics = driven!(Ok::<_, ClickError>(deferred_region_with_obtains(
+        else_branch,
+        obtains
+    )));
     let nested = then_tactics
         .iter()
         .chain(else_tactics.iter())
@@ -246,11 +250,13 @@ fn defer_post_execution_match<'a>(
         .expect("the match is deferred on a terminal frontier")
         .presentation
         .deferred_obtain_names;
-    let Some(deferred) =
-        deferred_post_execution_match(index, source_index, proof_match, arms, obtains)
-    else {
-        return decline();
-    };
+    let deferred = driven!(Ok::<_, ClickError>(deferred_post_execution_match(
+        index,
+        source_index,
+        proof_match,
+        arms,
+        obtains,
+    )));
     let before = outcome_path_count(&proof);
     let proof = match proof.driver().split_outcome_paths(&deferred) {
         Ok(split) => split,
@@ -498,13 +504,7 @@ fn checked_execution_region_end_at(
                 ..
             } => {
                 if initial == CheckedExecutionRegionEnd::FunctionExit {
-                    if deferred_post_execution_region(returned_branch).is_none()
-                        || deferred_post_execution_region(threw_branch).is_none()
-                    {
-                        return Err(Decline::Shape);
-                    }
-                    node = continuation;
-                    continue;
+                    return Err(Decline::OutcomesAfterExit);
                 }
                 let returned_end =
                     checked_execution_region_end_at(returned_branch, depth + 1, initial)?;
@@ -953,7 +953,7 @@ fn flat_post_execution_tactic(tactic: &ProofTactic) -> Option<PostExecutionTacti
     }
 }
 
-fn deferred_post_execution_region(node: &InternalProofNode) -> Option<DeferredArm> {
+fn deferred_post_execution_region(node: &InternalProofNode) -> Result<DeferredArm, Decline> {
     deferred_region_with_obtains(node, &PersistentBinderMap::default())
 }
 
@@ -964,19 +964,20 @@ fn deferred_post_execution_region(node: &InternalProofNode) -> Option<DeferredAr
 fn deferred_region_with_obtains(
     node: &InternalProofNode,
     obtains: &PersistentBinderMap<()>,
-) -> Option<DeferredArm> {
+) -> Result<DeferredArm, Decline> {
     let mut obtains = obtains.clone();
     let mut deferred = Vec::new();
     let mut node = node;
     loop {
         node = match node {
-            InternalProofNode::Done => return Some(Arc::new(deferred)),
+            InternalProofNode::Done => return Ok(Arc::new(deferred)),
             InternalProofNode::Linear {
                 tactics,
                 continuation,
             } => {
                 for indexed in tactics {
-                    let tactic = flat_post_execution_tactic(&indexed.tactic)?;
+                    let tactic =
+                        flat_post_execution_tactic(&indexed.tactic).ok_or(Decline::Shape)?;
                     deferred.push(DeferredPostExecutionTactic {
                         lexical_bindings: None,
                         reads_deferred_obtain: tactic.reads_deferred_obtain(&obtains),
@@ -1017,27 +1018,7 @@ fn deferred_region_with_obtains(
                 });
                 continuation
             }
-            InternalProofNode::CallOutcomes {
-                index,
-                source_index,
-                payload_bindings,
-                returned_branch,
-                threw_branch,
-                continuation,
-            } => {
-                deferred.push(DeferredPostExecutionTactic {
-                    lexical_bindings: None,
-                    reads_deferred_obtain: false,
-                    tactic_index: *index,
-                    source_index: *source_index,
-                    tactic: PostExecutionTactic::CallOutcomes {
-                        payload_bindings: payload_bindings.clone(),
-                        returned_tactics: deferred_region_with_obtains(returned_branch, &obtains)?,
-                        threw_tactics: deferred_region_with_obtains(threw_branch, &obtains)?,
-                    },
-                });
-                continuation
-            }
+            InternalProofNode::CallOutcomes { .. } => return Err(Decline::OutcomesAfterExit),
             InternalProofNode::Cases {
                 index,
                 source_index,
@@ -1077,7 +1058,9 @@ fn deferred_region_with_obtains(
                 )?);
                 continuation
             }
-            InternalProofNode::Open { .. } | InternalProofNode::Branch { .. } => return None,
+            InternalProofNode::Open { .. } | InternalProofNode::Branch { .. } => {
+                return Err(Decline::Shape);
+            }
         };
     }
 }
@@ -1092,16 +1075,16 @@ fn deferred_post_execution_match(
     proof_match: &Arc<ProofMatch>,
     arms: &[InternalProofNode],
     obtains: &PersistentBinderMap<()>,
-) -> Option<DeferredPostExecutionTactic> {
+) -> Result<DeferredPostExecutionTactic, Decline> {
     if proof_match.ensuring.is_some()
         || proof_match
             .arms
             .iter()
             .any(|arm| matches!(arm.tactics.as_slice(), [ProofTactic::Contradiction(_)]))
     {
-        return None;
+        return Err(Decline::Shape);
     }
-    Some(DeferredPostExecutionTactic {
+    Ok(DeferredPostExecutionTactic {
         lexical_bindings: None,
         reads_deferred_obtain: false,
         tactic_index,
@@ -1111,7 +1094,7 @@ fn deferred_post_execution_match(
             arms: arms
                 .iter()
                 .map(|arm| deferred_region_with_obtains(arm, obtains))
-                .collect::<Option<_>>()?,
+                .collect::<Result<_, _>>()?,
         },
     })
 }
@@ -2039,64 +2022,48 @@ fn try_check_structural_function_proof_inner<'a>(
             }
             InternalProofNode::CallOutcomes {
                 index,
-                source_index,
                 payload_bindings,
                 returned_branch,
                 threw_branch,
                 continuation,
+                ..
             } => {
-                if !proof.is_at_function_exit() {
-                    let owner = proof.clone();
-                    let proof_at_call = proof.with_execution_tactic_index(*index)?;
-                    let Some((split, record)) =
-                        proof_at_call.split_focused_call_outcomes(payload_bindings.clone())?
-                    else {
-                        return decline();
-                    };
-                    let mut advanced = split;
-                    for (take_returned, region) in [
-                        (true, returned_branch.as_ref()),
-                        (false, threw_branch.as_ref()),
-                    ] {
-                        let focused =
-                            advanced.focus_call_outcome_arm(&record, take_returned, &owner)?;
-                        let next = driven!(advance_focused_execution_region(
-                            focused,
-                            Some(&record),
-                            region,
-                            staged_expansion_capture.as_mut(),
-                            proof_site.as_ref(),
-                            owning_source_index,
-                            1,
-                        ));
-                        advanced = next.leave_call_outcome_arm(&owner);
-                    }
-                    if !advanced.is_at_function_exit() {
-                        return decline();
-                    }
-                    proof = advanced
-                        .join_focused_call_outcomes_terminal(&record)?
-                        .restore_execution_tactic_attribution(&owner)?;
-                    saw_structure = true;
-                    current = continuation;
-                    continue;
+                if proof.is_at_function_exit() {
+                    return Err(proof.with_execution_tactic_index(*index)?.step_error(
+                        "`outcomes` requires a maybe-throwing call at the execution frontier",
+                    ));
                 }
-                let Some(returned_tactics) = deferred_post_execution_region(returned_branch) else {
+                let owner = proof.clone();
+                let proof_at_call = proof.with_execution_tactic_index(*index)?;
+                let Some((split, record)) =
+                    proof_at_call.split_focused_call_outcomes(payload_bindings.clone())?
+                else {
                     return decline();
                 };
-                let Some(threw_tactics) = deferred_post_execution_region(threw_branch) else {
+                let mut advanced = split;
+                for (take_returned, region) in [
+                    (true, returned_branch.as_ref()),
+                    (false, threw_branch.as_ref()),
+                ] {
+                    let focused =
+                        advanced.focus_call_outcome_arm(&record, take_returned, &owner)?;
+                    let next = driven!(advance_focused_execution_region(
+                        focused,
+                        Some(&record),
+                        region,
+                        staged_expansion_capture.as_mut(),
+                        proof_site.as_ref(),
+                        owning_source_index,
+                        1,
+                    ));
+                    advanced = next.leave_call_outcome_arm(&owner);
+                }
+                if !advanced.is_at_function_exit() {
                     return decline();
-                };
-                proof = proof.defer_post_execution_source_tactic(
-                    *index,
-                    *source_index,
-                    PostExecutionTactic::CallOutcomes {
-                        payload_bindings: payload_bindings.clone(),
-                        returned_tactics,
-                        threw_tactics,
-                    },
-                    staged_expansion_capture.as_mut(),
-                )?;
+                }
+                proof = advanced
+                    .join_focused_call_outcomes_terminal(&record)?
+                    .restore_execution_tactic_attribution(&owner)?;
                 saw_structure = true;
                 current = continuation;
             }
@@ -2649,8 +2616,14 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a, 'node>(
     loop {
         check_verification_deadline()?;
         if proof.is_at_function_exit() && !matches!(node, InternalProofNode::Done) {
-            let tactics = deferred_post_execution_region(node).ok_or_else(|| {
-                proof.step_error("unsupported proof structure after a loop-body return")
+            let tactics = deferred_post_execution_region(node).map_err(|reason| {
+                if reason == Decline::OutcomesAfterExit {
+                    proof.step_error(
+                        "`outcomes` requires a maybe-throwing call at the execution frontier",
+                    )
+                } else {
+                    proof.step_error("unsupported proof structure after a loop-body return")
+                }
             })?;
             for deferred in Arc::unwrap_or_clone(tactics) {
                 proof = proof.defer_post_execution_source_tactic(
@@ -2917,6 +2890,8 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a, 'node>(
                                 tactic_name(&indexed.tactic)
                                 )).with_failed_tactic(tactic_name(&indexed.tactic));
                                 let diagnostic = match declined {
+                                    Err(Decline::OutcomesAfterExit) => diagnostic
+                                        .with_context("`outcomes` requires a maybe-throwing call at the execution frontier"),
                                     Err(Decline::ShortOfExit) => diagnostic
                                         .with_proof_refusal(ProofRefusal::IncompleteProof),
                                     Err(Decline::RegionDepth) => diagnostic
@@ -4205,98 +4180,82 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
             }
             InternalProofNode::CallOutcomes {
                 index,
-                source_index,
                 payload_bindings,
                 returned_branch,
                 threw_branch,
                 continuation,
+                ..
             } => {
-                if !proof.is_at_function_exit() {
-                    let owner = proof.clone();
-                    let at_outcomes = proof.with_execution_tactic_index(*index)?;
-                    let Some((split, record)) =
-                        at_outcomes.split_focused_call_outcomes(payload_bindings.clone())?
+                if proof.is_at_function_exit() {
+                    return Err(proof.with_execution_tactic_index(*index)?.step_error(
+                        "`outcomes` requires a maybe-throwing call at the execution frontier",
+                    ));
+                }
+                let owner = proof.clone();
+                let at_outcomes = proof.with_execution_tactic_index(*index)?;
+                let Some((split, record)) =
+                    at_outcomes.split_focused_call_outcomes(payload_bindings.clone())?
+                else {
+                    return decline();
+                };
+                let mut advanced = split;
+                for (take_returned, region) in [
+                    (true, returned_branch.as_ref()),
+                    (false, threw_branch.as_ref()),
+                ] {
+                    let focused =
+                        advanced.focus_call_outcome_arm(&record, take_returned, &owner)?;
+                    let next = driven!(advance_focused_execution_region(
+                        focused,
+                        Some(&record),
+                        region,
+                        expansion_capture.as_deref_mut(),
+                        proof_site,
+                        owning_source_index,
+                        depth + 1,
+                    ));
+                    advanced = next.leave_call_outcome_arm(&owner);
+                }
+                let returned_exit = advanced.arm_at_function_exit(&record, true);
+                let threw_exit = advanced.arm_at_function_exit(&record, false);
+                let mixed = returned_exit != threw_exit;
+                if mixed {
+                    let (Some(enclosing_record), Some(branch_continuation)) =
+                        (enclosing_record, branch_continuation)
                     else {
                         return decline();
                     };
-                    let mut advanced = split;
-                    for (take_returned, region) in [
-                        (true, returned_branch.as_ref()),
-                        (false, threw_branch.as_ref()),
-                    ] {
-                        let focused =
-                            advanced.focus_call_outcome_arm(&record, take_returned, &owner)?;
-                        let next = driven!(advance_focused_execution_region(
-                            focused,
-                            Some(&record),
-                            region,
-                            expansion_capture.as_deref_mut(),
-                            proof_site,
-                            owning_source_index,
-                            depth + 1,
-                        ));
-                        advanced = next.leave_call_outcome_arm(&owner);
-                    }
-                    let returned_exit = advanced.arm_at_function_exit(&record, true);
-                    let threw_exit = advanced.arm_at_function_exit(&record, false);
-                    let mixed = returned_exit != threw_exit;
-                    if mixed {
-                        let (Some(enclosing_record), Some(branch_continuation)) =
-                            (enclosing_record, branch_continuation)
-                        else {
-                            return decline();
-                        };
-                        if !matches!(continuation.as_ref(), InternalProofNode::Done) {
-                            return decline();
-                        }
-                        let continuing = advanced.focus_split_arm(&record, !returned_exit)?;
-                        if !continuing.is_at_region_boundary() {
-                            return decline();
-                        }
-                        let continuing =
-                            continuing.continue_arm_into_parent_frontier(enclosing_record)?;
-                        // The enclosing branch's continuation runs inside the
-                        // continuing outcome, so it is charged at that
-                        // outcome's level: this is a genuine nested descent.
-                        let continued = driven!(advance_focused_execution_region(
-                            continuing,
-                            Some(enclosing_record),
-                            branch_continuation,
-                            expansion_capture.as_deref_mut(),
-                            proof_site,
-                            owning_source_index,
-                            depth + 1,
-                        ));
-                        advanced = continued;
-                    }
-                    if !advanced.is_at_function_exit() {
+                    if !matches!(continuation.as_ref(), InternalProofNode::Done) {
                         return decline();
                     }
-                    let joined = advanced.join_focused_call_outcomes_terminal(&record)?;
-                    proof = joined.restore_execution_tactic_attribution(&owner)?;
-                    if mixed {
-                        return join_terminal_execution_cases(proof, &mut terminal_cases);
+                    let continuing = advanced.focus_split_arm(&record, !returned_exit)?;
+                    if !continuing.is_at_region_boundary() {
+                        return decline();
                     }
-                    region = continuation;
-                    branch_continuation = None;
-                    continue;
+                    let continuing =
+                        continuing.continue_arm_into_parent_frontier(enclosing_record)?;
+                    // The enclosing branch's continuation runs inside the
+                    // continuing outcome, so it is charged at that
+                    // outcome's level: this is a genuine nested descent.
+                    let continued = driven!(advance_focused_execution_region(
+                        continuing,
+                        Some(enclosing_record),
+                        branch_continuation,
+                        expansion_capture.as_deref_mut(),
+                        proof_site,
+                        owning_source_index,
+                        depth + 1,
+                    ));
+                    advanced = continued;
                 }
-                let Some(returned_tactics) = deferred_post_execution_region(returned_branch) else {
+                if !advanced.is_at_function_exit() {
                     return decline();
-                };
-                let Some(threw_tactics) = deferred_post_execution_region(threw_branch) else {
-                    return decline();
-                };
-                proof = proof.defer_post_execution_source_tactic(
-                    *index,
-                    *source_index,
-                    PostExecutionTactic::CallOutcomes {
-                        payload_bindings: payload_bindings.clone(),
-                        returned_tactics,
-                        threw_tactics,
-                    },
-                    expansion_capture.as_deref_mut(),
-                )?;
+                }
+                let joined = advanced.join_focused_call_outcomes_terminal(&record)?;
+                proof = joined.restore_execution_tactic_attribution(&owner)?;
+                if mixed {
+                    return join_terminal_execution_cases(proof, &mut terminal_cases);
+                }
                 region = continuation;
                 branch_continuation = None;
             }

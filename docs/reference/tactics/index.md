@@ -1319,11 +1319,10 @@ it took.
 
 Write `returned(value)` to name the checked value of a call whose result the
 program uses. Write `threw(error)` to name the thrown payload. Each name is a
-proof binding scoped to its arm. At function exit, the same syntax selects
-the call edge already recorded on the path and binds the same call payload.
-For example, a call's returned value still names that value after the caller
-transforms it, and a caught exception names the original thrown value even
-if the caller returns normally. An arm without a name can ignore its payload.
+proof binding scoped to its arm, including after the arm reaches function exit. A call's
+returned value still names that value after the caller transforms it, and a
+caught exception names the original thrown value even if the caller returns
+normally. An arm without a name can ignore its payload.
 
 **Failure, checking, and tools:**
 
