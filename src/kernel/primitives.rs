@@ -16748,6 +16748,8 @@ pub struct CertifiedExecutionFactTransport {
 pub(super) struct CertifiedMemoryStore {
     pub(super) before: SymbolicMemory,
     pub(super) after: SymbolicMemory,
+    /// `after`, named by its memory and placed at the store's point.
+    pub(super) after_point: ProgramPoint,
     pub(super) pointer: Address,
     pub(super) value: ProgramValue,
     pub(super) authorized_range: Option<MemoryRange>,

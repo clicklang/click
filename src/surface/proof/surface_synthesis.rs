@@ -6206,11 +6206,7 @@ fn synthesize_typed_word_read(
             bound_variables,
         );
     }
-    let read = crate::kernel::canonical_form_of_load(
-        memory.shared_memory().clone(),
-        pointer.as_ref().clone(),
-        *kind,
-    );
+    let read = crate::kernel::canonical_form_of_load_at(memory, pointer.as_ref().clone(), *kind);
     let at_state = |load: &MachineTerm, state: &ExecutionState| {
         let MachineTerm::MemoryLoad(_, pointer, _) = load else {
             return None;

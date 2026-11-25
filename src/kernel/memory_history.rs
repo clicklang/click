@@ -4875,11 +4875,7 @@ pub(crate) fn rewrite_condition_through_certified_stores(
         };
         equations.push((
             canonicalize_atomic_loads(&value_term),
-            MachineTerm::memory_read(
-                crate::kernel::intern_memory(store.after.clone()),
-                store.pointer.clone(),
-                kind,
-            ),
+            MachineTerm::read_named(store.after_point.clone(), store.pointer.clone(), kind),
         ));
     }
     if equations.is_empty() {

@@ -847,7 +847,11 @@ fn rewrite_through_loaded_address_base(
         };
         // Name the legacy scalar-carrier read, too: folding stored bits can
         // discard the rewritten read or cease to be a pointer carrier.
-        let load = crate::kernel::canonical_form_of_load(memory, address, kind);
+        let load = crate::kernel::canonical_form_of_load_at(
+            &crate::kernel::ProgramPoint::read_at_optional(&memory, site),
+            address,
+            kind,
+        );
         let variable = match load {
             MachineTerm::Variable(variable) => variable,
             load @ MachineTerm::MemoryLoad(_, _, _) => {

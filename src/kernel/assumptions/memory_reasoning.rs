@@ -3369,11 +3369,8 @@ impl PureFactContext {
         // index carries the raw load (or vice versa); try both forms.
         let mut forms = vec![term.as_ref().clone()];
         if let MachineTerm::MemoryLoad(memory, pointer, kind) = term.as_ref() {
-            let named = crate::kernel::canonical_form_of_load(
-                memory.shared_memory().clone(),
-                pointer.as_ref().clone(),
-                *kind,
-            );
+            let named =
+                crate::kernel::canonical_form_of_load_at(memory, pointer.as_ref().clone(), *kind);
             if !forms.contains(&named) {
                 forms.push(named);
             }

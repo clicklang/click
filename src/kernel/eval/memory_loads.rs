@@ -6098,11 +6098,7 @@ fn record_load_variable_defining_fact_with_source_and_pointer(
             right: Box::new(if has_selected_read_point(memory) {
                 load.clone()
             } else {
-                canonical_form_of_load(
-                    memory.shared_memory().clone(),
-                    pointer.as_ref().clone(),
-                    *kind,
-                )
+                canonical_form_of_load_at(memory, pointer.as_ref().clone(), *kind)
             }),
         },
         true,

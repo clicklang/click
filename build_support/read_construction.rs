@@ -55,7 +55,9 @@ impl Form {
             Self::LoadBase => "`AddressBase::Load(..)`",
             Self::Bits64 => "`LoadKind::Bits64` spellings",
             Self::PointerWordRead => "`legacy_pointer_word_read(..)` calls",
-            Self::UnplacedPoint => "`ProgramPoint::unplaced(..)` calls",
+            Self::UnplacedPoint => {
+                "`ProgramPoint::unplaced(..)`, `canonical_form_of_load(..)` and `memory_read(..)` calls"
+            }
         }
     }
 
@@ -155,13 +157,13 @@ const BASELINE: &[(&str, Form, usize)] = &[
     ("src/kernel/assumptions.rs", Form::UnplacedPoint, 1),
     ("src/kernel/equality_graph.rs", Form::UnplacedPoint, 2),
     ("src/kernel/equality_graph/terms.rs", Form::UnplacedPoint, 1),
-    ("src/kernel/eval/memory_loads.rs", Form::UnplacedPoint, 7),
+    ("src/kernel/eval/memory_loads.rs", Form::UnplacedPoint, 8),
     (
         "src/kernel/eval/memory_loads/read_observations.rs",
         Form::UnplacedPoint,
         5,
     ),
-    ("src/kernel/memory_history.rs", Form::UnplacedPoint, 1),
+    ("src/kernel/memory_history.rs", Form::UnplacedPoint, 3),
     ("src/kernel/primitives.rs", Form::UnplacedPoint, 1),
     (
         "src/kernel/primitives/cell_store.rs",
@@ -185,6 +187,11 @@ const BASELINE: &[(&str, Form, usize)] = &[
     ),
     (
         "src/kernel/primitives/term_operations.rs",
+        Form::UnplacedPoint,
+        1,
+    ),
+    (
+        "src/kernel/proof/equality_rewrite.rs",
         Form::UnplacedPoint,
         1,
     ),
@@ -315,6 +322,11 @@ impl<'ast> Visit<'ast> for Counter {
                 [.., owner, last]
                     if *last == "unplaced" && (*owner == "ProgramPoint" || *owner == "Self") =>
                 {
+                    self.add(Form::UnplacedPoint)
+                }
+                // The wrappers that build a read from a bare memory make an
+                // unplaced point for each caller.
+                [.., last] if *last == "canonical_form_of_load" || *last == "memory_read" => {
                     self.add(Form::UnplacedPoint)
                 }
                 [.., owner, last]
