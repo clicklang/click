@@ -5023,8 +5023,10 @@ impl RecordedStates {
         &self,
         memory: &crate::kernel::SharedMemory,
     ) -> Option<(&ProgramPointSelector, &ExecutionState)> {
-        let selector = self.memory_points.get(&memory.read_identity())?;
-        Some((selector, self.get_exact(selector)?))
+        match self.memory_points.get(&memory.read_identity()) {
+            Some(selector) => Some((selector, self.get_exact(selector)?)),
+            None => self.point_holding_shared_memory(memory),
+        }
     }
 
     /// Select a recorded read by its own point and verify the retained view.
@@ -5052,10 +5054,42 @@ impl RecordedStates {
             return self.point_naming_read(point);
         }
         let memory = point.shared_memory();
-        self.point_reading_memory(memory).or_else(|| {
-            let source = crate::kernel::load_projection_source(memory, pointer)?;
-            self.point_reading_memory(&source)
-        })
+        self.point_reading_memory(memory)
+            .or_else(|| {
+                let source = crate::kernel::load_projection_source(memory, pointer)?;
+                self.point_reading_memory(&source)
+            })
+            .or_else(|| self.point_holding_memory(point))
+    }
+
+    /// The recorded point a memory-named point's memory is the state at,
+    /// when that point has a name.
+    fn point_holding_memory(
+        &self,
+        point: &crate::kernel::ProgramPoint,
+    ) -> Option<(&ProgramPointSelector, &ExecutionState)> {
+        self.recorded_point_holding(point.memory_point_id()?)
+    }
+
+    /// The recorded point a memory first occurred at, when it has a name.
+    fn point_holding_shared_memory(
+        &self,
+        memory: &crate::kernel::SharedMemory,
+    ) -> Option<(&ProgramPointSelector, &ExecutionState)> {
+        self.recorded_point_holding(crate::kernel::ProgramPoint::memory_occurrence_id(memory)?)
+    }
+
+    fn recorded_point_holding(
+        &self,
+        id: crate::kernel::program_point::ProgramPointId,
+    ) -> Option<(&ProgramPointSelector, &ExecutionState)> {
+        crate::instrumentation::record_deterministic_work(1);
+        // The memory is that point's state; the state recorded there may be
+        // a view of it with more cells named. The raiser checks that its
+        // spelling there reads the same cell, and lowering it there names
+        // the same snapshot.
+        let selector = self.point_name(id)?;
+        Some((selector, self.get_exact(selector)?))
     }
 
     /// A recorded point at which a scalar local held exactly `term`, the

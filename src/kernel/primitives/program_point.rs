@@ -1650,6 +1650,24 @@ impl ProgramPoint {
         }
     }
 
+    /// The first point whose state `memory` is, or of which it is a view.
+    pub(crate) fn memory_occurrence_id(memory: &SharedMemory) -> Option<ProgramPointId> {
+        memory.occurrence().map(|node| node.id)
+    }
+
+    /// The point this point's memory is the state at: its own path's point,
+    /// or the point a memory-named point is placed as true at. `None` when
+    /// it is only walked from a read, or has no place.
+    pub(crate) fn memory_point_id(&self) -> Option<ProgramPointId> {
+        if let Some(id) = self.path.id() {
+            return Some(id);
+        }
+        match &self.read {
+            ReadSelection::Legacy(LegacyPlace::TrueAt(node)) => Some(node.id),
+            _ => None,
+        }
+    }
+
     /// The point on a path a read through this point was made at: the
     /// point's own path when it has one, else the place its memory was
     /// given. `None` for an unplaced point.
