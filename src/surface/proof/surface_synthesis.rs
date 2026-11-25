@@ -8759,7 +8759,7 @@ fn synthesize_surface_pointer_expression_routes(
         && let Some((name, pointer_type)) =
             crate::surface::proof_diagnostics::render::c_library_pointer_name(pointer)
     {
-        return Some(SurfaceTerm::QualifiedC {
+        return Some(SyntaxTerm::QualifiedC {
             name,
             lowered: ProgramExpression::Value(ProgramValue::typed_pointer(
                 pointer.clone(),
