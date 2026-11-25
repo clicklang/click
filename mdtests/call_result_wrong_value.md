@@ -37,7 +37,7 @@ int classify(int x) {
             step();
             have result == classified(x) by {
                 unfold(classified(x));
-                normalize() using { x == 0; };
+                close() using { x == 0; };
             }
             close();
         }
@@ -46,7 +46,7 @@ int classify(int x) {
     step();
     have result == classified(x) by {
         unfold(classified(x));
-        normalize() using { not(x == 0); };
+        close() using { not(x == 0); };
     }
     close();
 }
@@ -58,7 +58,7 @@ int has_class(int x) {
     let { result: r } = step(classify);
     have r == classified(x) + 1 by {
         rewrite(r, classified(x));
-        normalize();
+        close();
     }
     branch { true => { step(); close(); } false => {} }
     step();
@@ -67,5 +67,5 @@ int has_class(int x) {
 ```
 
 ```expect
-fail: `normalize` goal did not normalize to true
+fail: could not establish `to_integer(classified(x)) == (to_integer(classified(x)) + 1)`
 ```
