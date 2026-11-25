@@ -1009,17 +1009,33 @@ int32 identity(int32 x) {
             "{written}"
         );
 
-        let double_divisor = directory.path().join("double_divisor.click");
+        let double_division = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("mdtests/float64_division_by_literal.md");
+        check(&double_division, "double_divisor_bound.ensures_0").unwrap();
+        for (claim, sign) in [
+            ("divide_positive.ensures_0", "positive"),
+            ("divide_negative.ensures_0", "negative"),
+        ] {
+            let expanded = check(&double_division, claim).unwrap();
+            for bound in ["lower", "upper"] {
+                assert!(
+                    expanded.contains(&format!("float64_divide_{sign}_{bound}")),
+                    "{claim}: {expanded}"
+                );
+            }
+        }
+
+        let negative_product = directory.path().join("negative_product.click");
         fs::write(
-            &double_divisor,
-            r#"theorem double_divisor_bound(x: double) {
-    requires x >= float64_from_bits(0xc024000000000000u64);
-    ensures x / float64_from_bits(0xc000000000000000u64) <= float64_from_bits(0x4014000000000000u64) by close();
+            &negative_product,
+            r#"theorem negative_product(x: float) {
+    requires x >= float32_from_bits(0xc1200000);
+    ensures x * float32_from_bits(0xc0000000) <= float32_from_bits(0x41a00000) by close();
 }
 "#,
         )
         .unwrap();
-        let generated = check(&double_divisor, "double_divisor_bound.ensures_0").unwrap_err();
+        let generated = check(&negative_product, "negative_product.ensures_0").unwrap_err();
         assert!(
             generated.contains("Expanded proof still contains normalize()"),
             "{generated}"

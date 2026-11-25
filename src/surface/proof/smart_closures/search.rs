@@ -4161,6 +4161,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_float_scale_bound");
+        use crate::kernel::KernelFloatType;
         use crate::kernel::proof::arithmetic_special::{
             FloatScaleOperation::{DivideNegative, DividePositive, MultiplyLeft, MultiplyRight},
             float_scale_bound_weakening,
@@ -4182,9 +4183,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         };
         let literal = |bits| {
-            ContractExpression::ProgramExpression(
-                crate::kernel::program_expression::float32_literal(bits),
-            )
+            ContractExpression::ProgramExpression(match plan.format {
+                KernelFloatType::Float32 => {
+                    crate::kernel::program_expression::float32_literal(bits as u32)
+                }
+                KernelFloatType::Float64 => {
+                    crate::kernel::program_expression::float64_literal(bits)
+                }
+            })
         };
         let factor = literal(factor);
         let finite = ClickProposition::FloatClassification {
@@ -4202,18 +4208,22 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             right: sign_right,
         };
         let name = match (scale, plan.lower) {
-            (MultiplyLeft, true) => "float32_scale_lower",
-            (MultiplyLeft, false) => "float32_scale_upper",
-            (MultiplyRight, true) => "float32_scale_right_lower",
-            (MultiplyRight, false) => "float32_scale_right_upper",
-            (DividePositive, true) => "float32_divide_positive_lower",
-            (DividePositive, false) => "float32_divide_positive_upper",
-            (DivideNegative, true) => "float32_divide_negative_lower",
-            (DivideNegative, false) => "float32_divide_negative_upper",
+            (MultiplyLeft, true) => "scale_lower",
+            (MultiplyLeft, false) => "scale_upper",
+            (MultiplyRight, true) => "scale_right_lower",
+            (MultiplyRight, false) => "scale_right_upper",
+            (DividePositive, true) => "divide_positive_lower",
+            (DividePositive, false) => "divide_positive_upper",
+            (DivideNegative, true) => "divide_negative_lower",
+            (DivideNegative, false) => "divide_negative_upper",
+        };
+        let module_width = match plan.format {
+            KernelFloatType::Float32 => "float32",
+            KernelFloatType::Float64 => "float64",
         };
         let application = ProofStep::ApplyPlannedTheorem {
             application: TheoremApplication {
-                name: format!("click::float_order::{name}"),
+                name: format!("click::float_order::{module_width}_{name}"),
                 arguments: vec![factor, x, endpoint],
             },
             premises: vec![source_surface.clone(), finite, sign],
