@@ -158,7 +158,7 @@ theorem certification consumes checks that theorem once. A proved library
 theorem is trusted to the extent that the check of its proof is; a kernel
 standard theorem is trusted to the extent that its builder is.
 
-The library also declares 148 `axiom`s, which are trusted, not proved.
+The library also declares 150 `axiom`s, which are trusted, not proved.
 Seven are the laws of the primitive type `Vec<T>` in
 `library/rust/vec.click`, which relate its bodyless operations `vec::len`,
 `vec::get`, `vec::push` and `vec::set`
@@ -262,6 +262,11 @@ each non-strict bound, including on overflow to infinity.
 The finiteness laws infer a finite value between two finite endpoints,
 which supplies the guard on multiplication by zero. The square laws give
 a zero lower bound and use the larger rounded endpoint square above.
+
+Two finite-addend order axioms in `library/float_order.click` preserve
+order under rounded addition, in both operand positions. An ordered input
+comparison excludes NaNs and a finite addend keeps addition defined at
+either infinity.
 
 The floating reciprocal laws in `library/float_order.click` use a positive
 finite numerator and a positive bound on the divisor. An infinite positive

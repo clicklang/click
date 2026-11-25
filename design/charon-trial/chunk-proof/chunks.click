@@ -33,7 +33,17 @@ fn cover(bytes: &[u8]) -> usize {
                 have (bytes.len() - bytes.len() % 4u64 - at(head, iter.v.len())) + 4u64 == bytes.len() - bytes.len() % 4u64 - iter.v.len();
                 have iter.v == bytes + (bytes.len() - bytes.len() % 4u64 - iter.v.len());
                 have iter.v.len() < at(head, iter.v.len()) by {
-                    normalize() using { at(head, 4u64 <= iter.v.len()); };
+                    have iter.v.len() == at(head, iter.v.len()) - 4u64;
+                    have 4 <= to_integer(at(head, iter.v.len()));
+                    apply(click::integer::uint64_subtract_to_integer(at(head, iter.v.len()), 4u64));
+                    have to_integer(iter.v.len()) == to_integer(at(head, iter.v.len()) - 4u64);
+                    have to_integer(iter.v.len()) < to_integer(at(head, iter.v.len())) by {
+                        close() using {
+                            to_integer(iter.v.len()) == to_integer(at(head, iter.v.len()) - 4u64);
+                            to_integer(at(head, iter.v.len()) - 4u64) == to_integer(at(head, iter.v.len())) - to_integer(4u64);
+                        };
+                    }
+                    close();
                 }
                 have tail.len() == bytes.len() % 4u64 implies iter.chunk_size == 4u64 implies
                     iter.v == bytes + (bytes.len() - bytes.len() % 4u64 - iter.v.len()) by {

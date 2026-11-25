@@ -3752,7 +3752,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         attempt::candidate_outcome(proof.driver().apply_step(step))
     }
 
-    fn establish_arithmetic_bounds(
+    pub(super) fn establish_arithmetic_bounds(
         input: &Proof<'a>,
         requirements: &[Proposition],
         introduced_surfaces: &[SyntaxProposition],
@@ -4069,8 +4069,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_float_literal_sum_or_difference_bound");
         use crate::kernel::KernelFloatType;
-        use crate::kernel::proof::arithmetic_special::float_literal_sum_or_difference_bound;
-        let Some((plan, bits, literal_on_left, subtract)) =
+        use crate::kernel::proof::arithmetic_special::{
+            FloatLiteralSumOperation::{AddAtInfinity, Subtract},
+            float_literal_sum_or_difference_bound,
+        };
+        let Some((plan, bits, literal_on_left, operation)) =
             float_literal_sum_or_difference_bound(source, goal)
         else {
             return Ok(None);
@@ -4081,6 +4084,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
             KernelFloatType::Float64 => crate::kernel::program_expression::float64_literal(bits),
         });
+        if matches!(operation, AddAtInfinity) {
+            return Self::try_float_add_at_infinite_bound(input, &plan, literal, source_surface);
+        }
         let reflexive = SyntaxProposition::Comparison {
             left: literal.clone(),
             operator: ComparisonOperator::LessEqual,
@@ -4091,7 +4097,76 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         } else {
             [source_surface.clone(), reflexive]
         };
-        Self::try_apply_float_pair_bound(input, &plan, subtract, premises)
+        Self::try_apply_float_pair_bound(input, &plan, matches!(operation, Subtract), premises)
+    }
+
+    fn try_float_add_at_infinite_bound(
+        input: &Proof<'a>,
+        plan: &crate::kernel::proof::arithmetic_special::FloatBoundWeakening,
+        literal: SyntaxTerm,
+        source: &SyntaxProposition,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_float_add_at_infinite_bound");
+        use crate::kernel::KernelFloatType;
+        let Some(intermediate) = input.structural_proposition_candidate(&plan.intermediate) else {
+            return Ok(None);
+        };
+        let Some((proof, ordered, left, right)) =
+            Self::prepare_float_bound(input, plan.format, source.clone())?
+        else {
+            return Ok(None);
+        };
+        let less_equal = SyntaxProposition::Comparison {
+            left: left.clone(),
+            operator: ComparisonOperator::LessEqual,
+            right: right.clone(),
+        };
+        let proof = if ordered == less_equal {
+            proof
+        } else {
+            let step =
+                super::super::wide_arithmetic::have(less_equal.clone(), vec![ProofStep::Known]);
+            let Some(retained) = attempt::candidate_outcome(proof.driver().apply_step(step))?
+            else {
+                return Ok(None);
+            };
+            retained
+        };
+        let finite = SyntaxProposition::FloatClassification {
+            expression: literal.clone(),
+            classification: syntax::CFloatClassification::Finite,
+        };
+        let name = match plan.format {
+            KernelFloatType::Float32 => "click::float_order::float32_add_finite_monotone",
+            KernelFloatType::Float64 => "click::float_order::float64_add_finite_monotone",
+        };
+        let application = ProofStep::ApplyPlannedTheorem {
+            application: TheoremApplication {
+                name: name.into(),
+                arguments: vec![literal, left, right],
+            },
+            premises: vec![less_equal, finite],
+        };
+        let Some(scope) =
+            attempt::candidate_outcome(proof.driver().open_have(intermediate.clone()))?
+        else {
+            return Ok(None);
+        };
+        let Some(mut scope) = attempt::candidate_outcome(scope.driver().apply_step(application))?
+        else {
+            return Ok(None);
+        };
+        if !scope.is_complete() {
+            // The theorem gives both operand orders. Close the focused one.
+            let Some(closed) =
+                attempt::candidate_outcome(scope.driver().apply_step(ProofStep::Known))?
+            else {
+                return Ok(None);
+            };
+            scope = closed;
+        }
+        Self::try_float_bound_weakening(&scope.join()?, plan, intermediate)
     }
 
     pub(super) fn retain_float_adjacent_bound(
@@ -4483,12 +4558,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_bounded_arithmetic_closure");
         use crate::kernel::proof::arithmetic_special::{
-            checks_selected_float_bounds, float_compound_bound_operand, float_finiteness_bounds,
-            float_finiteness_source, float_zero_product_premise, is_float_bound,
-            positive_divisor_product_guards, promoted_right_shift_bound,
-            shift_count_mask_requirements, shifted_one_bounds, signed_max_shift_count_bound,
-            signed_product_guard_candidates, signed_quotient_bridge_requirement,
-            signed_shift_bound_mask_identity,
+            checks_selected_float_bounds, float_compound_bound_operand, float_finiteness_source,
+            float_zero_product_premise, is_float_bound, positive_divisor_product_guards,
+            promoted_right_shift_bound, shift_count_mask_requirements, shifted_one_bounds,
+            signed_max_shift_count_bound, signed_product_guard_candidates,
+            signed_quotient_bridge_requirement, signed_shift_bound_mask_identity,
         };
         let Some(goal) = search_input.goal() else {
             return Ok(None);
@@ -4717,15 +4791,23 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 return Ok(Some(closed));
             }
         }
+        if let Some(source) =
+            float_finiteness_source(goal).or_else(|| float_zero_product_premise(goal))
+            && let Some((proof, _)) =
+                Self::establish_arithmetic_bounds(search_input, &[source], introduced_surfaces)?
+            && let Some(closed) =
+                attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Known))?
+        {
+            return Ok(Some(closed));
+        }
+        if let Some(closed) =
+            Self::try_float_finite_interval(search_input, goal, introduced_surfaces)?
+        {
+            return Ok(Some(closed));
+        }
         let derived_requirements = [false, true]
             .into_iter()
             .filter_map(|swap| positive_divisor_product_guards(goal, swap))
-            .chain(
-                float_finiteness_source(goal)
-                    .or_else(|| float_zero_product_premise(goal))
-                    .map(|premise| vec![premise]),
-            )
-            .chain(float_finiteness_bounds(goal).map(Vec::from))
             .chain(float_compound_bound_operand(goal).map(|bound| vec![bound]));
         for requirements in derived_requirements {
             if let Some(closed) = Self::try_normalize_after_arithmetic_bounds(

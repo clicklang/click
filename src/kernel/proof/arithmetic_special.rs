@@ -4354,6 +4354,28 @@ pub(crate) fn float_finiteness_bounds(goal: &Proposition) -> Option<[Proposition
     ])
 }
 
+/// The largest finite endpoints give an inclusive interval for finiteness.
+pub(crate) fn float_finite_interval(
+    goal: &Proposition,
+) -> Option<(KernelFloatType, [Proposition; 2])> {
+    let operand = float_finiteness_operand(goal)?;
+    let format = operand.format();
+    let maximum = float_infinity(format) - 1;
+    Some((
+        format,
+        [
+            float_bound_proposition(
+                format,
+                operand,
+                maximum | float_sign_bit(format),
+                true,
+                false,
+            )?,
+            float_bound_proposition(format, operand, maximum, false, false)?,
+        ],
+    ))
+}
+
 /// Finite self-subtraction gives zero. Finite, nonzero self-division gives
 /// one, including when the shared operand is subnormal.
 pub(super) fn float_self_operation_bounds(
@@ -4599,11 +4621,17 @@ pub(crate) fn float_pair_bound_weakening(
     ))
 }
 
+pub(crate) enum FloatLiteralSumOperation {
+    Add,
+    AddAtInfinity,
+    Subtract,
+}
+
 /// An addition or subtraction law can use reflexive order for a literal operand.
 pub(crate) fn float_literal_sum_or_difference_bound(
     source: &Proposition,
     goal: &Proposition,
-) -> Option<(FloatBoundWeakening, u64, bool, bool)> {
+) -> Option<(FloatBoundWeakening, u64, bool, FloatLiteralSumOperation)> {
     use crate::kernel::FloatBinaryOperator::{Add, Subtract};
     let input = float_bound(source)?;
     let result = float_bound(goal)?;
@@ -4620,12 +4648,19 @@ pub(crate) fn float_literal_sum_or_difference_bound(
     if !same_float_operand(input.operand, operand) || !float_bound_weakens(source, goal) {
         return None;
     }
+    let law = if operator == Subtract {
+        FloatLiteralSumOperation::Subtract
+    } else if input.endpoint & !float_sign_bit(input.format) == float_infinity(input.format) {
+        FloatLiteralSumOperation::AddAtInfinity
+    } else {
+        FloatLiteralSumOperation::Add
+    };
     let (endpoint, strict) = operation.apply(result.format, input.endpoint, false);
     Some((
         FloatBoundWeakening::from_goal(goal, endpoint, strict)?,
         literal,
         literal_on_left,
-        operator == Subtract,
+        law,
     ))
 }
 

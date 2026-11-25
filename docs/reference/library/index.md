@@ -11013,3 +11013,23 @@ axiom float64_scale_negative_right_upper(factor: double, x: double, bound: doubl
     ensures x * factor <= bound * factor;
 }
 ```
+
+### `float_order::float32_add_finite_monotone`
+
+```click
+axiom float32_add_finite_monotone(c: float, a: float, b: float) {
+    requires a <= b;
+    requires isfinite(c);
+    ensures a + c <= b + c and c + a <= c + b;
+}
+```
+
+### `float_order::float64_add_finite_monotone`
+
+```click
+axiom float64_add_finite_monotone(c: double, a: double, b: double) {
+    requires a <= b;
+    requires isfinite(c);
+    ensures a + c <= b + c and c + a <= c + b;
+}
+```

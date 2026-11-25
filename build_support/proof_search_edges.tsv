@@ -875,9 +875,9 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::establish_arithme
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_normalize_after_arithmetic_bounds	establish_arithmetic_bounds	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_signed_max_shift_bound	driver	5
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_signed_max_shift_bound	establish_arithmetic_bounds	1
-src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_bounded_arithmetic_closure	establish_arithmetic_bounds	2
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_bounded_arithmetic_closure	establish_arithmetic_bounds	3
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_bounded_arithmetic_closure	try_signed_max_shift_bound	1
-src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_bounded_arithmetic_closure	driver	11
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_bounded_arithmetic_closure	driver	12
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_bounded_arithmetic_closure	resolve_solve_premises_unmeasured	2
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_bounded_arithmetic_closure	select_arithmetic_bound	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_bounded_arithmetic_closure	try_normalize_after_arithmetic_bounds	2
@@ -977,3 +977,10 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::retain_float_adja
 src/surface/proof/smart_closures/float_intervals.rs	search	ProofSearch::prepare_float_interval_bounds	resolve_float_interval_bound	1
 src/surface/proof/smart_closures/float_intervals.rs	search	ProofSearch::prepare_float_interval_bounds	retain_float_adjacent_bound	1
 src/surface/proof/smart_closures/float_intervals.rs	search	ProofSearch::prepare_float_interval_bounds	prepare_float_bound	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_bounded_arithmetic_closure	try_float_finite_interval	1
+src/surface/proof/smart_closures/float_intervals.rs	search	ProofSearch::try_float_finite_interval	driver	1
+src/surface/proof/smart_closures/float_intervals.rs	search	ProofSearch::try_float_finite_interval	establish_arithmetic_bounds	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_float_literal_sum_or_difference_bound	try_float_add_at_infinite_bound	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_float_add_at_infinite_bound	driver	4
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_float_add_at_infinite_bound	prepare_float_bound	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_float_add_at_infinite_bound	try_float_bound_weakening	1
