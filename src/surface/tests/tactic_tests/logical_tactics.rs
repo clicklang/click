@@ -623,8 +623,8 @@ fn parses_existential_proof_tactics() {
         if binding.bindings == [("k".to_string(), Some(ClickType::Program(InterfaceType::Int32)))]));
     assert_eq!(
         tactics[2],
-        ProofTactic::Witness(ProofWitness::single(SurfaceTerm::Add(
-            Box::new(SurfaceTerm::Binding("k".to_string())),
+        ProofTactic::Witness(ProofWitness::single(SyntaxTerm::Add(
+            Box::new(SyntaxTerm::Binding("k".to_string())),
             Box::new(current_int(1)),
         )))
     );
@@ -763,27 +763,27 @@ fn parses_click_proposition_syntax() {
     assert_eq!(file.predicate_definitions()[0].name(), "nonnegative");
     assert!(matches!(
         function.requires()[0],
-        Requirement::Proposition(SurfaceProposition::And(_, _))
+        Requirement::Proposition(SyntaxProposition::And(_, _))
     ));
     assert!(matches!(
         function.requires()[1],
-        Requirement::Proposition(SurfaceProposition::PredicateCall { .. })
+        Requirement::Proposition(SyntaxProposition::PredicateCall { .. })
     ));
     assert!(matches!(
         function.ensures()[0].ensure(),
-        Ensure::Proposition(SurfaceProposition::And(_, _))
+        Ensure::Proposition(SyntaxProposition::And(_, _))
     ));
     assert!(matches!(
         function.ensures()[1].ensure(),
-        Ensure::Proposition(SurfaceProposition::Implies(_, _))
+        Ensure::Proposition(SyntaxProposition::Implies(_, _))
     ));
     assert!(matches!(
         function.ensures()[2].ensure(),
-        Ensure::Proposition(SurfaceProposition::PredicateCall { .. })
+        Ensure::Proposition(SyntaxProposition::PredicateCall { .. })
     ));
     assert!(matches!(
         function.ensures()[3].ensure(),
-        Ensure::Proposition(SurfaceProposition::ForAll { .. })
+        Ensure::Proposition(SyntaxProposition::ForAll { .. })
     ));
 }
 
@@ -801,7 +801,7 @@ fn parses_rust_style_let_annotations() {
 
     assert!(matches!(
         body,
-        SurfaceTerm::Let {
+        SyntaxTerm::Let {
             name,
             click_type: Some(ClickType::Program(InterfaceType::Int32)),
             ..
@@ -826,8 +826,8 @@ fn parses_contract_level_let_bindings() {
 
     assert!(matches!(
         ensure.ensure(),
-        Ensure::Proposition(SurfaceProposition::Comparison {
-            right: SurfaceTerm::Let {
+        Ensure::Proposition(SyntaxProposition::Comparison {
+            right: SyntaxTerm::Let {
                 name,
                 click_type: Some(ClickType::Program(InterfaceType::Int32)),
                 ..
@@ -854,13 +854,13 @@ fn parses_contract_level_let_where_bindings() {
 
     assert!(matches!(
         ensure.ensure(),
-        Ensure::Proposition(SurfaceProposition::Exists {
+        Ensure::Proposition(SyntaxProposition::Exists {
             click_type: ClickType::Program(InterfaceType::Int32),
             name,
             body,
             ..
         }) if name == "k"
-            && matches!(body.as_ref(), SurfaceProposition::And(_, _))
+            && matches!(body.as_ref(), SyntaxProposition::And(_, _))
     ));
 }
 
@@ -882,7 +882,7 @@ fn parses_proposition_let_where_bindings() {
 
     assert!(matches!(
         ensure.ensure(),
-        Ensure::Proposition(SurfaceProposition::Exists {
+        Ensure::Proposition(SyntaxProposition::Exists {
             click_type: ClickType::Program(InterfaceType::Int32),
             name,
             ..
@@ -1153,7 +1153,7 @@ fn unfolds_predicate_requirement_to_prove_consequence() {
                 ProofTactic::ExecuteUntil(ExecutionPoint::FUNCTION_EXIT),
                 ProofTactic::UnfoldFunction(ClickFunctionApplication {
                     name: "sorted_pair".into(),
-                    arguments: vec![SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+                    arguments: vec![SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
                         "p".into()
                     ))]
                 }),

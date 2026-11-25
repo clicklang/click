@@ -21,7 +21,7 @@ fn target(name: &str, identity: u64, argument: u32) -> ResourceClause {
             access: ResourceAccessMode::Own,
             kind: ResourceKind::Token,
             name: "pair".into(),
-            arguments: vec![SurfaceTerm::ProgramExpression(ProgramExpression::Value(
+            arguments: vec![SyntaxTerm::ProgramExpression(ProgramExpression::Value(
                 int32(argument),
             ))],
             parameter_types: vec![],

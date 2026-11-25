@@ -7,7 +7,7 @@ pub(in crate::surface) fn evaluate_contract_expression_with_environment(
     post_state: &ExecutionState,
     result: Option<&ProgramValue>,
     assumptions: &PureFactContext,
-    expression: &SurfaceTerm,
+    expression: &SyntaxTerm,
     spec_definitions: SpecDefinitions<'_>,
     recorded_states: &RecordedStates,
     opaque_click_functions: &mut BTreeSet<String>,

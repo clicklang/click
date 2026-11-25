@@ -8,7 +8,7 @@ use super::*;
 fn nested_case_partition_reuses_decisions_without_relowering_or_forking() {
     for size in [4, 8, 16, 32] {
         let conditions = (0..size)
-            .map(|index| SurfaceProposition::PredicateCall {
+            .map(|index| SyntaxProposition::PredicateCall {
                 name: format!("case_{index}"),
                 arguments: Vec::new(),
             })
@@ -84,7 +84,7 @@ fn nested_case_partition_reuses_decisions_without_relowering_or_forking() {
 
 #[test]
 fn branch_decision_lookup_does_not_scan_history_and_refuses_conflicts() {
-    let selected = SurfaceProposition::PredicateCall {
+    let selected = SyntaxProposition::PredicateCall {
         name: "selected".to_string(),
         arguments: Vec::new(),
     };
@@ -99,7 +99,7 @@ fn branch_decision_lookup_does_not_scan_history_and_refuses_conflicts() {
         for index in 0..size {
             decisions.push(ExecutionBranchDecision {
                 fingerprint: std::sync::OnceLock::new(),
-                condition: SurfaceProposition::PredicateCall {
+                condition: SyntaxProposition::PredicateCall {
                     name: format!("unrelated_{index}"),
                     arguments: Vec::new(),
                 },
@@ -130,7 +130,7 @@ fn branch_decision_lookup_does_not_scan_history_and_refuses_conflicts() {
 fn flat_haves_before_a_case_use_linear_work_and_constant_traversal_stack() {
     for size in [32, 128, 512] {
         let have = ProofHave {
-            proposition: SurfaceProposition::PredicateCall {
+            proposition: SyntaxProposition::PredicateCall {
                 name: "proved".into(),
                 arguments: vec![],
             },

@@ -893,7 +893,7 @@ impl<'a> Proof<'a> {
                     if *field.click_type() == ClickType::Integer
                         && let Some(value) = written.get_mut(field.name())
                     {
-                        *value = SurfaceTerm::IntegerContext(Box::new(value.clone()));
+                        *value = SyntaxTerm::IntegerContext(Box::new(value.clone()));
                     } else if let Some(value) = written.get_mut(field.name()) {
                         // The kernel evaluates the initializer at the field's
                         // declared type. Keep that same conversion in the
@@ -917,7 +917,7 @@ impl<'a> Proof<'a> {
                 match &body.matched {
                     None => Some(context.resource_environment.fold_source(name)?.body.clone()),
                     Some(matched) => match written.get(&matched.field) {
-                        Some(SurfaceTerm::AlgebraicConstructor {
+                        Some(SyntaxTerm::AlgebraicConstructor {
                             variant, arguments, ..
                         }) => {
                             let (bindings, arm) = context
@@ -937,7 +937,7 @@ impl<'a> Proof<'a> {
                             written.extend(bindings.iter().cloned().zip(arguments).map(
                                 |((name, click_type), argument)| {
                                     let value = if click_type == ClickType::Integer {
-                                        SurfaceTerm::IntegerContext(Box::new(argument))
+                                        SyntaxTerm::IntegerContext(Box::new(argument))
                                     } else {
                                         crate::surface::lowering::pure_function_parameter_argument(
                                             &FunctionParameter {
@@ -1271,7 +1271,7 @@ impl<'a> Proof<'a> {
                 crate::kernel::ResourceFieldValue::Program(value) => {
                     locals.set_values(locals.values.with_inserted(
                         name.clone(),
-                        SurfaceTerm::ProgramExpression(ProgramExpression::Value(value.clone())),
+                        SyntaxTerm::ProgramExpression(ProgramExpression::Value(value.clone())),
                     ));
                 }
                 // Declaration expansion admits only C-typed field binders.
@@ -1308,7 +1308,7 @@ impl<'a> Proof<'a> {
             ProofContext::Execution(context) => context.spec_definitions,
         };
         if definitions.predicates.get(&application.name).is_some() {
-            return self.apply_local_predicate_unfold(&SurfaceProposition::PredicateCall {
+            return self.apply_local_predicate_unfold(&SyntaxProposition::PredicateCall {
                 name: application.name.clone(),
                 arguments: application.arguments.clone(),
             });
@@ -1463,8 +1463,8 @@ impl<'a> Proof<'a> {
         selector: Option<&ProgramPointSelector>,
     ) -> Result<CheckedFocusedTransition, ClickError> {
         // Both sides of an equation at a program point are read there.
-        let at_point = |expression: SurfaceTerm| match selector {
-            Some(selector) => SurfaceTerm::At {
+        let at_point = |expression: SyntaxTerm| match selector {
+            Some(selector) => SyntaxTerm::At {
                 selector: selector.clone(),
                 expression: Box::new(expression),
             },
@@ -1539,8 +1539,8 @@ impl<'a> Proof<'a> {
         };
         let checked_body =
             crate::surface::lowering::pure_function_result_value(&definition, checked_body);
-        let checked_equality = SurfaceProposition::Comparison {
-            left: at_point(SurfaceTerm::Call {
+        let checked_equality = SyntaxProposition::Comparison {
+            left: at_point(SyntaxTerm::Call {
                 name: application.name.clone(),
                 arguments: checked_arguments.clone(),
             }),
@@ -1618,7 +1618,7 @@ impl<'a> Proof<'a> {
                     // spelling of the same refreshed claim, and install it only
                     // when it lowers back to exactly this kernel proposition.
                     let surface = goal.surface.as_deref().and_then(|surface_goal| {
-                        let lower = |candidate: &SurfaceProposition| {
+                        let lower = |candidate: &SyntaxProposition| {
                             let candidate = self
                                 .substitute_fixed_state_locals_in_proposition(candidate)
                                 .ok()?;
@@ -1757,11 +1757,11 @@ impl<'a> Proof<'a> {
                     .map_err(|message| self.step_error(message))?;
                 let surface_body =
                     crate::surface::lowering::pure_function_result_value(&definition, surface_body);
-                let surface_application = SurfaceTerm::Call {
+                let surface_application = SyntaxTerm::Call {
                     name: application.name.clone(),
                     arguments: application.arguments.clone(),
                 };
-                let surface_equality = SurfaceProposition::Comparison {
+                let surface_equality = SyntaxProposition::Comparison {
                     left: at_point(surface_application),
                     operator: ComparisonOperator::Equal,
                     right: at_point(surface_body),
@@ -1926,7 +1926,7 @@ impl<'a> Proof<'a> {
                 .map(lambdas::reduce_head_fully)
                 .transpose()
                 .map_err(|message| self.step_error(message))?;
-            let Some(SurfaceTerm::RangeFold {
+            let Some(SyntaxTerm::RangeFold {
                 start,
                 end,
                 initial,
@@ -2035,7 +2035,7 @@ impl<'a> Proof<'a> {
             .map(lambdas::reduce_head_fully)
             .transpose()
             .map_err(|message| self.step_error(message))?;
-        let Some(SurfaceTerm::RangeFold {
+        let Some(SyntaxTerm::RangeFold {
             start,
             end,
             initial,
@@ -2096,12 +2096,12 @@ impl<'a> Proof<'a> {
         &self,
         application: &ClickFunctionApplication,
         definition: &ClickFunctionDefinition,
-        surface_goal: &SurfaceProposition,
+        surface_goal: &SyntaxProposition,
         refreshed_kernel: &Proposition,
-        lower: &dyn Fn(&SurfaceProposition) -> Option<Proposition>,
-    ) -> Option<SurfaceProposition> {
+        lower: &dyn Fn(&SyntaxProposition) -> Option<Proposition>,
+    ) -> Option<SyntaxProposition> {
         let fold_body = lambdas::reduce_head_fully(definition.body()?).ok()?;
-        let SurfaceTerm::RangeFold {
+        let SyntaxTerm::RangeFold {
             end,
             initial,
             accumulator,
@@ -2123,10 +2123,10 @@ impl<'a> Proof<'a> {
                 )
             })
             .collect::<BTreeMap<_, _>>();
-        let substitute = |expression: &SurfaceTerm| {
+        let substitute = |expression: &SyntaxTerm| {
             substitute_contract_expression(expression, &substitutions).ok()
         };
-        let whole = SurfaceTerm::Call {
+        let whole = SyntaxTerm::Call {
             name: application.name.clone(),
             arguments: application.arguments.clone(),
         };
@@ -2144,16 +2144,16 @@ impl<'a> Proof<'a> {
             .filter(|position| *position < application.arguments.len())
             && let Some(body) = substitute(body)
         {
-            let predecessor_end = SurfaceTerm::Subtract(
+            let predecessor_end = SyntaxTerm::Subtract(
                 Box::new(application.arguments[position].clone()),
-                Box::new(SurfaceTerm::IntegerLiteral("1".to_string())),
+                Box::new(SyntaxTerm::IntegerLiteral("1".to_string())),
             );
             let mut arguments = application.arguments.clone();
             arguments[position] = predecessor_end.clone();
             let cell = BTreeMap::from([
                 (
                     accumulator.clone(),
-                    SurfaceTerm::Call {
+                    SyntaxTerm::Call {
                         name: application.name.clone(),
                         arguments,
                     },
@@ -2172,7 +2172,7 @@ impl<'a> Proof<'a> {
         }
         for candidate in candidates {
             crate::instrumentation::record_deterministic_work(1);
-            let equality = SurfaceProposition::Comparison {
+            let equality = SyntaxProposition::Comparison {
                 left: whole.clone(),
                 operator: ComparisonOperator::Equal,
                 // The call supplied its Integer carrier. Keep that carrier
@@ -2242,9 +2242,9 @@ impl<'a> Proof<'a> {
     pub(in crate::surface::proof) fn unfold_goal_surface(
         &self,
         predicates: &PredicateEnvironment,
-        surface: &SurfaceProposition,
+        surface: &SyntaxProposition,
         names: &[String],
-    ) -> Result<SurfaceProposition, String> {
+    ) -> Result<SyntaxProposition, String> {
         let parameters = match self.context.as_ref() {
             ProofContext::FixedState(context) => Some(context.parameter_binding.parameters),
             ProofContext::Execution(context) => Some(context.parameter_binding().parameters),
@@ -2283,7 +2283,7 @@ impl<'a> Proof<'a> {
             )));
         }
         let state = &*execution.core.state;
-        let evaluate = |expression: &SurfaceTerm| {
+        let evaluate = |expression: &SyntaxTerm| {
             let expression = self.substitute_fixed_state_locals_in_expression(expression)?;
             let names = contract_expression_referenced_names(&expression);
             let (values, array_refs) =
@@ -2377,7 +2377,7 @@ impl<'a> Proof<'a> {
         })?;
         // Capture the descriptor just as a Resource theorem argument does.
         // The evidence is for current access even when the operands are saved.
-        let descriptor = SurfaceProposition::Contains {
+        let descriptor = SyntaxProposition::Contains {
             parent: resource.clone(),
             child: ResourceSubject::Emp,
         };
@@ -2390,7 +2390,7 @@ impl<'a> Proof<'a> {
             crate::kernel::Resource::Memory(range) => self.record_memory_observation(
                 view.fixed_state.state,
                 range,
-                SurfaceProposition::ResourceViewable {
+                SyntaxProposition::ResourceViewable {
                     resource: resource.clone(),
                 },
             ),
@@ -2424,7 +2424,7 @@ impl<'a> Proof<'a> {
         else {
             unreachable!()
         };
-        let surface = SurfaceProposition::Loadable { segment };
+        let surface = SyntaxProposition::Loadable { segment };
         self.record_memory_observation(view.fixed_state.state, range, surface)
     }
 
@@ -2432,7 +2432,7 @@ impl<'a> Proof<'a> {
         &self,
         state: &ExecutionState,
         range: &crate::kernel::MemoryRange,
-        surface: SurfaceProposition,
+        surface: SyntaxProposition,
     ) -> Result<CheckedFocusedTransition, ClickError> {
         let theorem = crate::kernel::observe_memory_view(state, range).ok_or_else(|| {
             self.step_error(
@@ -2690,7 +2690,7 @@ impl<'a> Proof<'a> {
             }
             locals.set_values(locals.values.with_inserted(
                 name.clone(),
-                SurfaceTerm::ProgramExpression(ProgramExpression::Value(value.clone())),
+                SyntaxTerm::ProgramExpression(ProgramExpression::Value(value.clone())),
             ));
         }
         Ok(())
@@ -2795,7 +2795,7 @@ impl<'a> Proof<'a> {
         };
         if !arguments
             .iter()
-            .any(|argument| matches!(argument, SurfaceTerm::Old(_)))
+            .any(|argument| matches!(argument, SyntaxTerm::Old(_)))
         {
             return Ok(resource.clone());
         }
@@ -2821,8 +2821,8 @@ impl<'a> Proof<'a> {
         let mut resolved = resource.clone();
         if let ResourceClause::Declared { arguments, .. } = &mut resolved {
             for (argument, value) in arguments.iter_mut().zip(values) {
-                if let (SurfaceTerm::Old(_), AlgebraicValue::Program(value)) = (&*argument, value) {
-                    *argument = SurfaceTerm::ProgramExpression(ProgramExpression::Value(value));
+                if let (SyntaxTerm::Old(_), AlgebraicValue::Program(value)) = (&*argument, value) {
+                    *argument = SyntaxTerm::ProgramExpression(ProgramExpression::Value(value));
                 }
             }
         }
@@ -2863,7 +2863,7 @@ impl<'a> Proof<'a> {
                 .values
                 .iter()
                 .filter_map(|(name, value)| match value {
-                    SurfaceTerm::ProgramExpression(ProgramExpression::Value(value)) => {
+                    SyntaxTerm::ProgramExpression(ProgramExpression::Value(value)) => {
                         Some((value.clone(), name.clone()))
                     }
                     _ => None,
@@ -3018,7 +3018,7 @@ impl<'a> Proof<'a> {
             resource,
             &BTreeMap::from([(
                 "result".to_string(),
-                SurfaceTerm::ProgramExpression(ProgramExpression::Value(
+                SyntaxTerm::ProgramExpression(ProgramExpression::Value(
                     goal.data.core.result.clone().into_native(),
                 )),
             )]),
@@ -3334,13 +3334,11 @@ impl<'a> Proof<'a> {
 /// smaller endpoint. A substitution failure counts as an occurrence: the
 /// check refuses rather than guesses.
 fn contract_expression_reads_binding(
-    expression: &SurfaceTerm,
+    expression: &SyntaxTerm,
     binding: &crate::kernel::BindingName,
 ) -> bool {
-    let substitutions = BTreeMap::from([(
-        binding.clone(),
-        SurfaceTerm::IntegerLiteral("0".to_string()),
-    )]);
+    let substitutions =
+        BTreeMap::from([(binding.clone(), SyntaxTerm::IntegerLiteral("0".to_string()))]);
     substitute_contract_expression(expression, &substitutions)
         .map(|substituted| &substituted != expression)
         .unwrap_or(true)
@@ -3348,12 +3346,10 @@ fn contract_expression_reads_binding(
 
 /// The parameter a range fold uses directly as its end. The append law
 /// restates the shorter fold as the same application at the predecessor.
-fn fold_end_parameter_binding(end: &SurfaceTerm) -> Option<crate::kernel::BindingName> {
+fn fold_end_parameter_binding(end: &SyntaxTerm) -> Option<crate::kernel::BindingName> {
     match end {
-        SurfaceTerm::Binding(binding) | SurfaceTerm::ProgramBinding(binding) => {
-            Some(binding.into())
-        }
-        SurfaceTerm::ProgramExpression(ProgramExpression::Variable(binding))
+        SyntaxTerm::Binding(binding) | SyntaxTerm::ProgramBinding(binding) => Some(binding.into()),
+        SyntaxTerm::ProgramExpression(ProgramExpression::Variable(binding))
             if binding.named().is_some() || binding.slice_length_of().is_some() =>
         {
             Some(binding.clone())
@@ -3379,13 +3375,13 @@ mod search;
 
 /// An explicit unfold selects known constructor arms. Substitute only each
 /// selected scrutinee and the final body so nested matches keep linear work.
-fn select_known_unfold_body(body: &SurfaceTerm) -> Result<SurfaceTerm, String> {
+fn select_known_unfold_body(body: &SyntaxTerm) -> Result<SyntaxTerm, String> {
     let mut selected = body;
     let mut bindings = BTreeMap::new();
-    while let SurfaceTerm::AlgebraicMatch { scrutinee, arms } = selected {
+    while let SyntaxTerm::AlgebraicMatch { scrutinee, arms } = selected {
         crate::instrumentation::record_deterministic_work(1);
         let scrutinee = substitute_contract_expression(scrutinee, &bindings)?;
-        let SurfaceTerm::AlgebraicConstructor {
+        let SyntaxTerm::AlgebraicConstructor {
             algebraic_type,
             variant,
             arguments,

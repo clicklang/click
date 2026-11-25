@@ -6,7 +6,7 @@ use super::*;
 
 #[test]
 fn integer_argument_state_selection_scales_with_referenced_names() {
-    let expression = SurfaceTerm::Binding("used".into());
+    let expression = SyntaxTerm::Binding("used".into());
     for size in [16, 256, 4096] {
         let mut state = ExecutionState::new().with_local(
             "used",
@@ -43,13 +43,13 @@ fn integer_argument_state_selection_scales_with_referenced_names() {
 
 #[test]
 fn proposition_state_selection_scales_with_referenced_names() {
-    let proposition = SurfaceProposition::Comparison {
-        left: SurfaceTerm::At {
+    let proposition = SyntaxProposition::Comparison {
+        left: SyntaxTerm::At {
             selector: ProgramPointSelector::Mark("before".into()),
-            expression: Box::new(SurfaceTerm::Binding("used".into())),
+            expression: Box::new(SyntaxTerm::Binding("used".into())),
         },
         operator: ComparisonOperator::Equal,
-        right: SurfaceTerm::Old(Box::new(SurfaceTerm::Binding("used".into()))),
+        right: SyntaxTerm::Old(Box::new(SyntaxTerm::Binding("used".into()))),
     };
     for size in [16, 64, 256, 1024] {
         let mut state = ExecutionState::new().with_local("used", crate::kernel::int32(7));

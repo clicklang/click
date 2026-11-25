@@ -2,13 +2,13 @@ use super::*;
 
 #[derive(Clone)]
 struct Link {
-    left: SurfaceTerm,
-    right: SurfaceTerm,
+    left: SyntaxTerm,
+    right: SyntaxTerm,
     strict: bool,
 }
 
 impl Link {
-    fn from_surface(proposition: &SurfaceProposition) -> Option<Self> {
+    fn from_surface(proposition: &SyntaxProposition) -> Option<Self> {
         let comparison = surface_comparison_with_anchored_operands(proposition);
         let strict = surface_strict_parts(&comparison);
         let (left, right) = strict
@@ -21,8 +21,8 @@ impl Link {
         })
     }
 
-    fn surface(&self) -> SurfaceProposition {
-        SurfaceProposition::Comparison {
+    fn surface(&self) -> SyntaxProposition {
+        SyntaxProposition::Comparison {
             left: self.left.clone(),
             operator: if self.strict {
                 ComparisonOperator::LessThan
@@ -33,7 +33,7 @@ impl Link {
         }
     }
 
-    fn gap(left: &SurfaceTerm, right: &SurfaceTerm) -> Option<Self> {
+    fn gap(left: &SyntaxTerm, right: &SyntaxTerm) -> Option<Self> {
         let left_value = Self::literal(left)?;
         let right_value = Self::literal(right)?;
         (left_value < right_value).then(|| Self {
@@ -43,15 +43,15 @@ impl Link {
         })
     }
 
-    fn literal(expression: &SurfaceTerm) -> Option<i32> {
+    fn literal(expression: &SyntaxTerm) -> Option<i32> {
         match expression {
-            SurfaceTerm::IntegerLiteral(text) => text.parse().ok(),
-            SurfaceTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Int32(term))) => {
+            SyntaxTerm::IntegerLiteral(text) => text.parse().ok(),
+            SyntaxTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Int32(term))) => {
                 term.constant32().map(|bits| bits as i32)
             }
-            SurfaceTerm::At { expression, .. } => Self::literal(expression),
-            SurfaceTerm::Negate(inner) => {
-                let SurfaceTerm::IntegerLiteral(text) = inner.as_ref() else {
+            SyntaxTerm::At { expression, .. } => Self::literal(expression),
+            SyntaxTerm::Negate(inner) => {
+                let SyntaxTerm::IntegerLiteral(text) = inner.as_ref() else {
                     return None;
                 };
                 i32::try_from(text.parse::<i64>().ok()?.checked_neg()?).ok()
@@ -63,8 +63,8 @@ impl Link {
 
 fn application(
     name: &str,
-    arguments: Vec<SurfaceTerm>,
-    premises: Vec<SurfaceProposition>,
+    arguments: Vec<SyntaxTerm>,
+    premises: Vec<SyntaxProposition>,
 ) -> ProofStep {
     ProofStep::ApplyPlannedTheorem {
         application: TheoremApplication {
@@ -77,7 +77,7 @@ fn application(
 
 fn retain<'a>(
     proof: Proof<'a>,
-    goal: SurfaceProposition,
+    goal: SyntaxProposition,
     step: ProofStep,
 ) -> Result<Proof<'a>, ClickError> {
     let kernel = proof.lower_surface_proposition(&goal, "signed order bound")?;
@@ -114,8 +114,8 @@ fn weaken<'a>(proof: Proof<'a>, link: &Link) -> Result<Proof<'a>, ClickError> {
 /// frontier lets the next store cite them, including inside a branch.
 fn retain_bounds<'a>(
     input: &Proof<'a>,
-    goal: &SurfaceProposition,
-    premises: &[SurfaceProposition],
+    goal: &SyntaxProposition,
+    premises: &[SyntaxProposition],
 ) -> Option<Proof<'a>> {
     let requested = Link::from_surface(goal)?;
     let mut cursor = requested.left.clone();
@@ -198,7 +198,7 @@ fn retain_bounds<'a>(
 impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn retain_signed_order_bounds(
         frontier: &Proof<'a>,
-        goal: &SurfaceProposition,
+        goal: &SyntaxProposition,
         minimum_edges: usize,
     ) -> Option<Proof<'a>> {
         #[cfg(test)]
@@ -227,7 +227,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
 
     pub(super) fn close_selected_signed_order(
         input: &Proof<'a>,
-        premises: &[SurfaceProposition],
+        premises: &[SyntaxProposition],
     ) -> Option<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("close_selected_signed_order");

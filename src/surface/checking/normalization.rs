@@ -613,10 +613,10 @@ mod tests {
                     },
                     true,
                 );
-                let surface = SurfaceProposition::Comparison {
-                    left: SurfaceTerm::IntegerLiteral(index.to_string()),
+                let surface = SyntaxProposition::Comparison {
+                    left: SyntaxTerm::IntegerLiteral(index.to_string()),
                     operator: ComparisonOperator::Equal,
-                    right: SurfaceTerm::IntegerLiteral((100 + index).to_string()),
+                    right: SyntaxTerm::IntegerLiteral((100 + index).to_string()),
                 };
                 (kernel, surface)
             })

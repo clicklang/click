@@ -3,11 +3,11 @@
 use super::*;
 
 pub(in crate::surface::proof) fn collect_surface_conjunct_leaves(
-    proposition: &SurfaceProposition,
-    leaves: &mut Vec<SurfaceProposition>,
+    proposition: &SyntaxProposition,
+    leaves: &mut Vec<SyntaxProposition>,
 ) {
     match proposition {
-        SurfaceProposition::And(left, right) => {
+        SyntaxProposition::And(left, right) => {
             collect_surface_conjunct_leaves(left, leaves);
             collect_surface_conjunct_leaves(right, leaves);
         }

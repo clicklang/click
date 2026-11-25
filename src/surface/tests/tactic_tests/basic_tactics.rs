@@ -413,7 +413,7 @@ fn produced_call_output_is_a_resource_unfold_target() {
             arguments,
             ..
         } if name == "parent"
-            && arguments == &[SurfaceTerm::Binding("out.p".to_string())]
+            && arguments == &[SyntaxTerm::Binding("out.p".to_string())]
     ));
 }
 

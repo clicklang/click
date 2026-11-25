@@ -74,7 +74,7 @@ is a constant; negating a bound expression retains a negation node.
 A rewrite can remove the last operand that supplied `Integer` context.
 Structural comparison synthesis therefore gives its left operand an explicit
 type context, for example `((1 + 1) : Integer) == 2`.
-`SurfaceTerm::IntegerContext` supplies mathematical arithmetic context without
+`SyntaxTerm::IntegerContext` supplies mathematical arithmetic context without
 introducing a variable or changing the kernel term. The right operand inherits
 mathematical context. Negation nodes similarly annotate their operands to
 distinguish an operator over a constant from a signed numeral. Source printing

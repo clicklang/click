@@ -243,9 +243,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// the checked successor so callers reuse its ordinary proof.
     pub(in crate::surface::proof) fn try_fixed_state_fact_transport(
         search_input: &Proof<'a>,
-        source: &SurfaceProposition,
-        target: &SurfaceProposition,
-        candidates: impl IntoIterator<Item = SurfaceProposition>,
+        source: &SyntaxProposition,
+        target: &SyntaxProposition,
+        candidates: impl IntoIterator<Item = SyntaxProposition>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_fixed_state_fact_transport");
@@ -271,8 +271,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// proposition scope by retaining the separation and preservation proof.
     pub(in crate::surface::proof) fn try_execution_proposition_read_preservation(
         search_input: &Proof<'a>,
-        source: &SurfaceProposition,
-        target: &SurfaceProposition,
+        source: &SyntaxProposition,
+        target: &SyntaxProposition,
         point_limit: usize,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
@@ -298,8 +298,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// it has a relevance index rather than an environment-wide scan.
     pub(in crate::surface::proof) fn try_execution_fact_transport(
         search_input: &Proof<'a>,
-        source: &SurfaceProposition,
-        target: &SurfaceProposition,
+        source: &SyntaxProposition,
+        target: &SyntaxProposition,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_execution_fact_transport");
@@ -322,8 +322,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// check already ran.
     pub(in crate::surface::proof) fn try_execution_fact_transport_or_refusal(
         search_input: &Proof<'a>,
-        source: &SurfaceProposition,
-        target: &SurfaceProposition,
+        source: &SyntaxProposition,
+        target: &SyntaxProposition,
     ) -> Result<Result<Proof<'a>, Option<ClickError>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_execution_fact_transport_or_refusal");
@@ -382,9 +382,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// the execution planner that needs to report a written operation.
     pub(in crate::surface::proof) fn try_fact_transport_from_candidates(
         search_input: &Proof<'a>,
-        source: &SurfaceProposition,
-        target: &SurfaceProposition,
-        candidates: impl IntoIterator<Item = SurfaceProposition>,
+        source: &SyntaxProposition,
+        target: &SyntaxProposition,
+        candidates: impl IntoIterator<Item = SyntaxProposition>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_fact_transport_from_candidates");
@@ -404,9 +404,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// the outer error is a stopped search.
     pub(in crate::surface::proof) fn fact_transport_candidate_search(
         search_input: &Proof<'a>,
-        source: &SurfaceProposition,
-        target: &SurfaceProposition,
-        candidates: impl IntoIterator<Item = SurfaceProposition>,
+        source: &SyntaxProposition,
+        target: &SyntaxProposition,
+        candidates: impl IntoIterator<Item = SyntaxProposition>,
     ) -> Result<Result<Proof<'a>, Option<ClickError>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("fact_transport_candidate_search");
@@ -435,7 +435,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if let Some(proof) = Self::try_history_indexed_equalities(search_input, source, target)? {
             return Ok(Ok(proof));
         }
-        let apply = |premises: Vec<SurfaceProposition>| {
+        let apply = |premises: Vec<SyntaxProposition>| {
             search_input
                 .driver()
                 .apply_step(ProofStep::CompatibilityFactTransport {

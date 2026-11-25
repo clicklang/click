@@ -392,7 +392,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
     /// use the same `have` scope as a written proof; no transport node remains.
     pub(in crate::surface::proof) fn apply_ordinary_transport_steps(
         &self,
-        target: &SurfaceProposition,
+        target: &SyntaxProposition,
         steps: Vec<ProofStep>,
     ) -> Result<Proof<'a>, ClickError> {
         if self.proof.surface_goal() == Some(target) {
@@ -450,8 +450,8 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             && matches!(driver_proof.goal(), Some(Proposition::ForAll { .. }))
         {
             match driver_proof.surface_goal() {
-                Some(SurfaceProposition::ForAll { name, .. })
-                | Some(SurfaceProposition::RangeAll { item: name, .. })
+                Some(SyntaxProposition::ForAll { name, .. })
+                | Some(SyntaxProposition::RangeAll { item: name, .. })
                     if matches!(name, SurfaceBinder::Generated(_)) =>
                 {
                     ProofStep::IntroBinder(name.clone())
@@ -787,7 +787,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
     /// body leaves this immutable root untouched.
     pub(in crate::surface::proof) fn apply_have_step(
         &self,
-        proposition: &SurfaceProposition,
+        proposition: &SyntaxProposition,
         proof: &ProofCertificate,
     ) -> Result<Proof<'a>, ClickError> {
         let driver_proof = self.proof;

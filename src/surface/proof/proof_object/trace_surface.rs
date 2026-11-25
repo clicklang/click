@@ -50,7 +50,7 @@ impl Proof<'_> {
             )
         });
         let hints = match &surface {
-            Some(SurfaceProposition::Comparison { left, right, .. }) => vec![left, right],
+            Some(SyntaxProposition::Comparison { left, right, .. }) => vec![left, right],
             _ => vec![],
         };
         let recent = view.fixed_state.recorded_states.recent(MAX_TRACE_STATES);
@@ -71,7 +71,7 @@ impl Proof<'_> {
             let immutable_name = locals
                 .iter()
                 .find_map(|(name, expression)| match expression {
-                    SurfaceTerm::ProgramExpression(ProgramExpression::Value(
+                    SyntaxTerm::ProgramExpression(ProgramExpression::Value(
                         ProgramValue::Pointer(value),
                     )) if value.address() == pointer => Some(name.clone()),
                     _ => None,
@@ -171,21 +171,21 @@ impl Proof<'_> {
 }
 
 fn immutable_field_hint(
-    expression: &SurfaceTerm,
+    expression: &SyntaxTerm,
     address: &Address,
-    locals: &BinderMap<SurfaceTerm>,
+    locals: &BinderMap<SyntaxTerm>,
 ) -> Option<String> {
     let mut expression = expression;
     for _ in 0..MAX_TRACE_FACT_DEPTH {
         match expression {
-            SurfaceTerm::At {
+            SyntaxTerm::At {
                 expression: inner, ..
             }
-            | SurfaceTerm::Old(inner) => expression = inner,
+            | SyntaxTerm::Old(inner) => expression = inner,
             _ => break,
         }
     }
-    let SurfaceTerm::Field {
+    let SyntaxTerm::Field {
         base,
         field,
         offset_bytes,
@@ -202,11 +202,11 @@ fn immutable_field_hint(
         return None;
     }
     let (name, base) = match base.as_ref() {
-        SurfaceTerm::Binding(name)
-        | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+        SyntaxTerm::Binding(name)
+        | SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::Named(name),
         )) => {
-            let SurfaceTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Pointer(
+            let SyntaxTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Pointer(
                 base,
             ))) = locals.get(name)?
             else {
@@ -216,8 +216,8 @@ fn immutable_field_hint(
         }
         // Checked surface forms substitute model binders with their exact
         // values. Recover the immutable binder before spelling the field.
-        SurfaceTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Pointer(base))) => {
-            let (name, _) = locals.iter().find(|(_, value)| matches!(value, SurfaceTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Pointer(candidate))) if candidate == base))?;
+        SyntaxTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Pointer(base))) => {
+            let (name, _) = locals.iter().find(|(_, value)| matches!(value, SyntaxTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Pointer(candidate))) if candidate == base))?;
             (name.clone(), base)
         }
         _ => return None,
@@ -236,9 +236,9 @@ mod pointer_trace_tests {
     fn field_hint_recovers_substituted_immutable_binders_only_at_their_exact_address() {
         let base = Address::symbolic(Variable(990001));
         let value = ProgramValue::typed_pointer(base.clone(), ProgramType::Int32Pointer);
-        let local = SurfaceTerm::ProgramExpression(ProgramExpression::Value(value.clone()));
+        let local = SyntaxTerm::ProgramExpression(ProgramExpression::Value(value.clone()));
         let locals: BinderMap<_> = (BTreeMap::from([("zid".to_string(), local.clone())])).into();
-        let hint = |base_expression, value_type| SurfaceTerm::Field {
+        let hint = |base_expression, value_type| SyntaxTerm::Field {
             pointee_struct: None,
             base: Box::new(base_expression),
             field: "left".into(),
@@ -272,7 +272,7 @@ mod pointer_trace_tests {
         );
         let reassigned: BinderMap<_> = (BTreeMap::from([(
             "zid".to_string(),
-            SurfaceTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::typed_pointer(
+            SyntaxTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::typed_pointer(
                 Address::symbolic(Variable(990002)),
                 ProgramType::Int32Pointer,
             ))),
@@ -286,7 +286,7 @@ mod pointer_trace_tests {
         assert_eq!(
             immutable_field_hint(
                 &hint(
-                    SurfaceTerm::ProgramBinding("zid".into()),
+                    SyntaxTerm::ProgramBinding("zid".into()),
                     ProgramType::Int32Pointer
                 ),
                 &address,

@@ -17,7 +17,7 @@ fn typed_lambda_validation_scales_with_body_and_ignores_unrelated_bindings() {
                 .map(|index| {
                     let name = format!("capture{index}");
                     integers.insert(name.clone());
-                    SurfaceTerm::Binding(name)
+                    SyntaxTerm::Binding(name)
                 })
                 .collect::<Vec<_>>();
             while level.len() > 1 {
@@ -26,11 +26,11 @@ fn typed_lambda_validation_scales_with_body_and_ignores_unrelated_bindings() {
                     .0
                     .iter()
                     .map(|pair| {
-                        SurfaceTerm::Add(Box::new(pair[0].clone()), Box::new(pair[1].clone()))
+                        SyntaxTerm::Add(Box::new(pair[0].clone()), Box::new(pair[1].clone()))
                     })
                     .collect();
             }
-            let expression = SurfaceTerm::Lambda {
+            let expression = SyntaxTerm::Lambda {
                 parameters: vec![("x".into(), ClickType::Integer)],
                 result: ClickType::Integer,
                 body: Box::new(level.pop().unwrap()),
@@ -82,7 +82,7 @@ fn lambda_fold_typing_scales_with_captures_and_ignores_unrelated_bindings() {
                 .map(|index| {
                     let name = format!("capture{index}");
                     integers.insert(name.clone());
-                    SurfaceTerm::Binding(name)
+                    SyntaxTerm::Binding(name)
                 })
                 .collect::<Vec<_>>();
             while level.len() > 1 {
@@ -91,30 +91,30 @@ fn lambda_fold_typing_scales_with_captures_and_ignores_unrelated_bindings() {
                     .0
                     .iter()
                     .map(|pair| {
-                        SurfaceTerm::Add(Box::new(pair[0].clone()), Box::new(pair[1].clone()))
+                        SyntaxTerm::Add(Box::new(pair[0].clone()), Box::new(pair[1].clone()))
                     })
                     .collect();
             }
-            let step = SurfaceTerm::Lambda {
+            let step = SyntaxTerm::Lambda {
                 parameters: vec![
                     ("acc".into(), ClickType::Integer),
                     ("k".into(), ClickType::Program(InterfaceType::Int32)),
                 ],
                 result: ClickType::Integer,
-                body: Box::new(SurfaceTerm::Add(
-                    Box::new(SurfaceTerm::Binding("acc".into())),
+                body: Box::new(SyntaxTerm::Add(
+                    Box::new(SyntaxTerm::Binding("acc".into())),
                     Box::new(level.pop().unwrap()),
                 )),
             };
             let literal = |value| {
-                SurfaceTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Int32(
+                SyntaxTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Int32(
                     MachineTerm::uint32_constant(value),
                 )))
             };
             let expression = lambdas::range_fold(
                 literal(0),
                 literal(3),
-                SurfaceTerm::IntegerLiteral("0".into()),
+                SyntaxTerm::IntegerLiteral("0".into()),
                 step,
             );
             let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -164,10 +164,10 @@ fn proposition_lambda_and_range_validation_ignore_unrelated_scopes() {
                 .map(|index| {
                     let name = format!("capture{index}");
                     integers.insert(name.clone());
-                    SurfaceProposition::Comparison {
-                        left: SurfaceTerm::Binding(name.clone()),
+                    SyntaxProposition::Comparison {
+                        left: SyntaxTerm::Binding(name.clone()),
                         operator: ComparisonOperator::Equal,
-                        right: SurfaceTerm::Binding(name),
+                        right: SyntaxTerm::Binding(name),
                     }
                 })
                 .collect::<Vec<_>>();
@@ -177,20 +177,17 @@ fn proposition_lambda_and_range_validation_ignore_unrelated_scopes() {
                     .0
                     .iter()
                     .map(|pair| {
-                        SurfaceProposition::And(
-                            Box::new(pair[0].clone()),
-                            Box::new(pair[1].clone()),
-                        )
+                        SyntaxProposition::And(Box::new(pair[0].clone()), Box::new(pair[1].clone()))
                     })
                     .collect();
             }
-            let predicate = SurfaceTerm::Lambda {
+            let predicate = SyntaxTerm::Lambda {
                 parameters: vec![("x".into(), ClickType::Program(InterfaceType::Int32))],
                 result: ClickType::Proposition,
-                body: Box::new(SurfaceTerm::Proposition(Box::new(level.pop().unwrap()))),
+                body: Box::new(SyntaxTerm::Proposition(Box::new(level.pop().unwrap()))),
             };
             let literal = |value| {
-                SurfaceTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Int32(
+                SyntaxTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Int32(
                     MachineTerm::uint32_constant(value),
                 )))
             };
@@ -242,9 +239,9 @@ fn memory_lambda_validation_scales_with_reads_and_ignores_unrelated_bindings() {
                 .map(|index| {
                     let name = format!("capture{index}");
                     variables.insert(name.clone(), InterfaceType::Int32Pointer);
-                    SurfaceTerm::Index(
-                        Box::new(SurfaceTerm::Binding(name)),
-                        Box::new(SurfaceTerm::Binding("x".into())),
+                    SyntaxTerm::Index(
+                        Box::new(SyntaxTerm::Binding(name)),
+                        Box::new(SyntaxTerm::Binding("x".into())),
                     )
                 })
                 .collect::<Vec<_>>();
@@ -254,11 +251,11 @@ fn memory_lambda_validation_scales_with_reads_and_ignores_unrelated_bindings() {
                     .0
                     .iter()
                     .map(|pair| {
-                        SurfaceTerm::Add(Box::new(pair[0].clone()), Box::new(pair[1].clone()))
+                        SyntaxTerm::Add(Box::new(pair[0].clone()), Box::new(pair[1].clone()))
                     })
                     .collect();
             }
-            let expression = SurfaceTerm::Lambda {
+            let expression = SyntaxTerm::Lambda {
                 parameters: vec![("x".into(), ClickType::Program(InterfaceType::Int32))],
                 result: ClickType::Program(InterfaceType::Int32),
                 body: Box::new(level.pop().unwrap()),
@@ -330,9 +327,9 @@ fn callback_parameter_typing_scales_with_selected_body_and_ignores_other_functio
         }
         for size in [8, 16, 32, 64] {
             let mut nodes = (0..size)
-                .map(|_| SurfaceTerm::Apply {
-                    function: Box::new(SurfaceTerm::Binding("f".into())),
-                    arguments: vec![SurfaceTerm::Binding("x".into())],
+                .map(|_| SyntaxTerm::Apply {
+                    function: Box::new(SyntaxTerm::Binding("f".into())),
+                    arguments: vec![SyntaxTerm::Binding("x".into())],
                 })
                 .collect::<Vec<_>>();
             while nodes.len() > 1 {
@@ -341,7 +338,7 @@ fn callback_parameter_typing_scales_with_selected_body_and_ignores_other_functio
                     .0
                     .iter()
                     .map(|pair| {
-                        SurfaceTerm::Add(Box::new(pair[0].clone()), Box::new(pair[1].clone()))
+                        SyntaxTerm::Add(Box::new(pair[0].clone()), Box::new(pair[1].clone()))
                     })
                     .collect();
             }

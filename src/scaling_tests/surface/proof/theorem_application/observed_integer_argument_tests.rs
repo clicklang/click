@@ -13,9 +13,9 @@ fn integer_theorem_argument_capture_scales_with_unused_bindings_and_applications
         let theorem = &parsed.theorem_definitions()[0];
         let application = TheoremApplication {
             name: "reflexive".into(),
-            arguments: vec![SurfaceTerm::Call {
+            arguments: vec![SyntaxTerm::Call {
                 name: "to_integer".into(),
-                arguments: vec![SurfaceTerm::Binding("x".into())],
+                arguments: vec![SyntaxTerm::Binding("x".into())],
             }],
         };
         let mut state = ExecutionState::new().with_local("x", int32(7u32));

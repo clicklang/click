@@ -6,7 +6,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
     /// Use established antecedents directly and retain proofs for open ones.
     pub(in crate::surface::proof) fn apply_fact_application(
         &self,
-        fact: &SurfaceProposition,
+        fact: &SyntaxProposition,
     ) -> Result<Proof<'a>, ClickError> {
         let (antecedents, _) = crate::surface::proof::driver::fact_application_parts(fact);
         if antecedents.is_empty() {
@@ -80,7 +80,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
     pub(in crate::surface::proof) fn apply_induction_application(
         &self,
         hypothesis: &str,
-        arguments: &[SurfaceTerm],
+        arguments: &[SyntaxTerm],
     ) -> Result<Proof<'a>, ClickError> {
         let step = ProofStep::ApplyInduction {
             hypothesis: hypothesis.to_string(),
@@ -117,7 +117,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
     /// the joined scope makes the same application replay using checked facts.
     fn prove_application_obligation(
         &self,
-        surface: SurfaceProposition,
+        surface: SyntaxProposition,
         allow_solve: bool,
         refusal: impl FnOnce(&Proof<'a>) -> ClickError,
     ) -> Result<Proof<'a>, ClickError> {

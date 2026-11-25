@@ -126,7 +126,7 @@ fn indexed_load_base<'a>(
     }
 }
 
-fn side_as_c(expression: &SurfaceTerm) -> Result<ProgramExpression, String> {
+fn side_as_c(expression: &SyntaxTerm) -> Result<ProgramExpression, String> {
     resource_body_program_expression(expression).ok_or_else(|| {
         format!(
             "`{}` is not a C expression",
@@ -142,10 +142,10 @@ fn is_index(expression: &ProgramExpression, index: &SurfaceBinder) -> bool {
 /// One bound of the `where` proposition: `Ok(Some((true, lo)))` for a lower
 /// bound `lo <= k`, `Ok(Some((false, hi)))` for an upper bound `k < hi`.
 fn range_bound(
-    proposition: &SurfaceProposition,
+    proposition: &SyntaxProposition,
     index: &SurfaceBinder,
 ) -> Result<Option<(bool, ProgramExpression)>, String> {
-    let SurfaceProposition::Comparison {
+    let SyntaxProposition::Comparison {
         left,
         operator,
         right,
@@ -165,13 +165,13 @@ fn range_bound(
 
 /// The `where` proposition's bounds as written: `(lo, hi)` for `lo <= k and
 /// k < hi` in any of the accepted spellings.
-fn written_range_bounds(clause: &IteratedResourceClause) -> Option<(SurfaceTerm, SurfaceTerm)> {
+fn written_range_bounds(clause: &IteratedResourceClause) -> Option<(SyntaxTerm, SyntaxTerm)> {
     let index = &clause.binder;
-    let SurfaceProposition::And(first, second) = &clause.range else {
+    let SyntaxProposition::And(first, second) = &clause.range else {
         return None;
     };
-    let bound = |proposition: &SurfaceProposition| {
-        let SurfaceProposition::Comparison {
+    let bound = |proposition: &SyntaxProposition| {
+        let SyntaxProposition::Comparison {
             left,
             operator,
             right,
@@ -179,7 +179,7 @@ fn written_range_bounds(clause: &IteratedResourceClause) -> Option<(SurfaceTerm,
         else {
             return None;
         };
-        let at = |side: &SurfaceTerm| side_as_c(side).is_ok_and(|side| is_index(&side, index));
+        let at = |side: &SyntaxTerm| side_as_c(side).is_ok_and(|side| is_index(&side, index));
         match operator {
             ComparisonOperator::LessEqual if at(right) => Some((true, left.clone())),
             ComparisonOperator::GreaterEqual if at(left) => Some((true, right.clone())),
@@ -242,7 +242,7 @@ pub(in crate::surface) fn iterated_clause_shape(
             "the index range must be written `lo <= {index} and {index} < hi` with bounds that do not mention `{index}`"
         )
     };
-    let SurfaceProposition::And(first, second) = &clause.range else {
+    let SyntaxProposition::And(first, second) = &clause.range else {
         return Err(bounded());
     };
     let (Some(first), Some(second)) = (range_bound(first, index)?, range_bound(second, index)?)
@@ -308,7 +308,7 @@ pub(in crate::surface) fn iterated_clause_shape(
                     "the guard must compare one guard cell at the index with a value, `g[{index}] == v` or `g[{index}] != v`"
                 )
             };
-            let SurfaceProposition::Comparison {
+            let SyntaxProposition::Comparison {
                 left,
                 operator,
                 right,
@@ -356,21 +356,21 @@ pub(in crate::surface) fn iterated_clause_shape(
 /// reuse the hygienic binder handling of `forall`: the element segment rides
 /// along as a `loadable(...)` atom and is read back by
 /// [`iterated_clause_from_proposition`].
-fn iterated_clause_as_proposition(clause: &IteratedResourceClause) -> SurfaceProposition {
-    let element = SurfaceProposition::Loadable {
+fn iterated_clause_as_proposition(clause: &IteratedResourceClause) -> SyntaxProposition {
+    let element = SyntaxProposition::Loadable {
         segment: clause.element.clone(),
     };
     let body = match &clause.guard {
-        Some(guard) => SurfaceProposition::And(
+        Some(guard) => SyntaxProposition::And(
             Box::new(clause.range.clone()),
-            Box::new(SurfaceProposition::And(
+            Box::new(SyntaxProposition::And(
                 Box::new(guard.clone()),
                 Box::new(element),
             )),
         ),
-        None => SurfaceProposition::And(Box::new(clause.range.clone()), Box::new(element)),
+        None => SyntaxProposition::And(Box::new(clause.range.clone()), Box::new(element)),
     };
-    SurfaceProposition::ForAll {
+    SyntaxProposition::ForAll {
         click_type: ClickType::Program(InterfaceType::Int32),
         name: clause.binder.clone(),
         written_name: None,
@@ -379,22 +379,22 @@ fn iterated_clause_as_proposition(clause: &IteratedResourceClause) -> SurfacePro
 }
 
 fn iterated_clause_from_proposition(
-    proposition: SurfaceProposition,
+    proposition: SyntaxProposition,
     template: &IteratedResourceClause,
 ) -> Result<IteratedResourceClause, String> {
     let malformed = || "iterated ownership clause changed shape under substitution".to_string();
-    let SurfaceProposition::ForAll { name, body, .. } = proposition else {
+    let SyntaxProposition::ForAll { name, body, .. } = proposition else {
         return Err(malformed());
     };
-    let SurfaceProposition::And(range, rest) = *body else {
+    let SyntaxProposition::And(range, rest) = *body else {
         return Err(malformed());
     };
     let (guard, element) = match (*rest, template.guard.is_some()) {
-        (SurfaceProposition::And(guard, element), true) => (Some(*guard), *element),
+        (SyntaxProposition::And(guard, element), true) => (Some(*guard), *element),
         (element, false) => (None, element),
         _ => return Err(malformed()),
     };
-    let SurfaceProposition::Loadable { segment } = element else {
+    let SyntaxProposition::Loadable { segment } = element else {
         return Err(malformed());
     };
     Ok(IteratedResourceClause {

@@ -10,8 +10,8 @@ fn conclusion_index_ignores_unrelated_theorems_on_hits_and_misses() {
         for ordinal in 0..size {
             let mut theorem = template.clone();
             theorem.name = format!("unused{ordinal}");
-            let Ensure::Proposition(SurfaceProposition::Comparison {
-                left: SurfaceTerm::Call { name, .. },
+            let Ensure::Proposition(SyntaxProposition::Comparison {
+                left: SyntaxTerm::Call { name, .. },
                 ..
             }) = &mut theorem.ensures[0].ensure
             else {
@@ -24,7 +24,7 @@ fn conclusion_index_ignores_unrelated_theorems_on_hits_and_misses() {
         for reversed in [false, true] {
             let mut goal = goal.clone();
             if reversed {
-                let SurfaceProposition::Comparison { left, right, .. } = &mut goal else {
+                let SyntaxProposition::Comparison { left, right, .. } = &mut goal else {
                     panic!()
                 };
                 std::mem::swap(left, right);
@@ -41,11 +41,11 @@ fn conclusion_index_ignores_unrelated_theorems_on_hits_and_misses() {
                 "index scanned {size} unrelated theorems: {lookup_work}"
             );
             let mut missing = goal.clone();
-            let SurfaceProposition::Comparison { left, right, .. } = &mut missing else {
+            let SyntaxProposition::Comparison { left, right, .. } = &mut missing else {
                 panic!()
             };
             match (left, right) {
-                (SurfaceTerm::Call { name, .. }, _) | (_, SurfaceTerm::Call { name, .. }) => {
+                (SyntaxTerm::Call { name, .. }, _) | (_, SyntaxTerm::Call { name, .. }) => {
                     *name = "absent".into()
                 }
                 _ => panic!(),

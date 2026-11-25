@@ -132,7 +132,7 @@ pub(in crate::surface::proof) struct InvariantBodyContext {
     /// the order of `ranking_measures`. The back edge's descent member is
     /// spelled from them, `m < at(<iteration entry>, m)`, as a contract's
     /// `ensures` with `old(m)` is spelled by its author.
-    pub(in crate::surface::proof) ranking_surfaces: Vec<SurfaceTerm>,
+    pub(in crate::surface::proof) ranking_surfaces: Vec<SyntaxTerm>,
     /// The loop's structural `decreases` binder, when the clause named one
     /// instead of int32 components (D6). It is not a bundle member: the back
     /// edge decides the descent against the loop head.
@@ -141,7 +141,7 @@ pub(in crate::surface::proof) struct InvariantBodyContext {
     /// invariant list. This is the only source list used to attach a
     /// presentation to a two-obligation body; broader loop-head premises are
     /// intentionally excluded from that correspondence.
-    pub(in crate::surface::proof) declared_invariant_surfaces: Vec<SurfaceProposition>,
+    pub(in crate::surface::proof) declared_invariant_surfaces: Vec<SyntaxProposition>,
     /// The loop head's own premises: the declared invariants as written,
     /// then those invariants and, for a pre-tested loop, the guard, re-read
     /// at iteration entry. A smart bundle closure may cite these and the
@@ -150,7 +150,7 @@ pub(in crate::surface::proof) struct InvariantBodyContext {
     /// by the loop head and the contract rather than selected from the
     /// ambient fact context. A spelling that is not exactly available where
     /// the member is proved is dropped before any candidate is tried.
-    pub(in crate::surface::proof) loop_head_premises: Vec<SurfaceProposition>,
+    pub(in crate::surface::proof) loop_head_premises: Vec<SyntaxProposition>,
     /// The binders this loop's `owns name: resource(...)` clauses declare.
     /// The back edge binds those names again on whatever the body ends
     /// holding before any invariant reads a binder field.

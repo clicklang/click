@@ -123,7 +123,7 @@ impl Parser {
         &mut self,
         name: impl Into<SurfaceBinder>,
         click_type: Option<&ClickType>,
-        value: Option<&SurfaceTerm>,
+        value: Option<&SyntaxTerm>,
     ) -> ShadowedLet {
         let name = name.into();
         let previous_nominal = match click_type {
@@ -137,20 +137,18 @@ impl Parser {
             Some(ClickType::Proposition) => Some(SpecificationBinding::Proposition),
             Some(_) => None,
             None => value.and_then(|value| match value {
-                SurfaceTerm::Lambda { result, .. } => Some(SpecificationBinding::Function {
+                SyntaxTerm::Lambda { result, .. } => Some(SpecificationBinding::Function {
                     proposition_result: *result == ClickType::Proposition,
                 }),
-                SurfaceTerm::Proposition(_) => Some(SpecificationBinding::Proposition),
-                SurfaceTerm::Call { name, .. }
-                    if self.proposition_function_names.contains(name) =>
-                {
+                SyntaxTerm::Proposition(_) => Some(SpecificationBinding::Proposition),
+                SyntaxTerm::Call { name, .. } if self.proposition_function_names.contains(name) => {
                     Some(SpecificationBinding::Proposition)
                 }
-                SurfaceTerm::Apply { function, .. } => {
+                SyntaxTerm::Apply { function, .. } => {
                     let proposition_result = match function.as_ref() {
-                        SurfaceTerm::Binding(name)
-                        | SurfaceTerm::ProgramBinding(name)
-                        | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+                        SyntaxTerm::Binding(name)
+                        | SyntaxTerm::ProgramBinding(name)
+                        | SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
                             crate::kernel::BindingName::Named(name),
                         )) => matches!(
                             self.specification_binding_kind(name),
@@ -164,9 +162,9 @@ impl Parser {
                     };
                     proposition_result.then_some(SpecificationBinding::Proposition)
                 }
-                SurfaceTerm::Binding(name)
-                | SurfaceTerm::ProgramBinding(name)
-                | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+                SyntaxTerm::Binding(name)
+                | SyntaxTerm::ProgramBinding(name)
+                | SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
                     crate::kernel::BindingName::Named(name),
                 )) => self.specification_binding_kind(name),
                 _ => None,
@@ -283,11 +281,11 @@ impl Parser {
 
     /// Whether `value` is a value with only a C meaning: a pointer or a
     /// floating-point value, or arithmetic on one.
-    fn c_only_value(&self, value: &SurfaceTerm) -> bool {
+    fn c_only_value(&self, value: &SyntaxTerm) -> bool {
         match value {
-            SurfaceTerm::Binding(name)
-            | SurfaceTerm::ProgramBinding(name)
-            | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+            SyntaxTerm::Binding(name)
+            | SyntaxTerm::ProgramBinding(name)
+            | SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(name),
             )) if self.local_operand(&LocalOperands::new(), name).is_some() => {
                 self.local_operand(&LocalOperands::new(), name) == Some(LocalOperand::COnly)
@@ -318,9 +316,9 @@ impl Parser {
     /// meaning.
     pub(super) fn reads_as_integer_comparison(
         &self,
-        left: &SurfaceTerm,
+        left: &SyntaxTerm,
         operator: ComparisonOperator,
-        right: &SurfaceTerm,
+        right: &SyntaxTerm,
     ) -> bool {
         if !self.integer_arithmetic || operator == ComparisonOperator::In {
             return false;
@@ -338,18 +336,18 @@ impl Parser {
 
     pub(super) fn specification_comparison(
         &self,
-        left: SurfaceTerm,
+        left: SyntaxTerm,
         operator: ComparisonOperator,
-        right: SurfaceTerm,
-    ) -> SurfaceProposition {
+        right: SyntaxTerm,
+    ) -> SyntaxProposition {
         if self.reads_as_integer_comparison(&left, operator, &right) {
-            return SurfaceProposition::Comparison {
+            return SyntaxProposition::Comparison {
                 left: self.observe_machine_operands(left),
                 operator,
                 right: self.observe_machine_operands(right),
             };
         }
-        SurfaceProposition::Comparison {
+        SyntaxProposition::Comparison {
             left,
             operator,
             right,
@@ -358,7 +356,7 @@ impl Parser {
 
     /// `expression` read where an Integer is expected: its arithmetic, if
     /// it does any on values with an Integer observation, is exact.
-    pub(super) fn at_integer_position(&self, expression: SurfaceTerm) -> SurfaceTerm {
+    pub(super) fn at_integer_position(&self, expression: SyntaxTerm) -> SyntaxTerm {
         if self.integer_arithmetic
             && has_arithmetic_spine(&expression)
             && !self.has_c_only_operand(&expression)
@@ -375,7 +373,7 @@ impl Parser {
     pub(super) fn refuse_untyped_machine_arithmetic(
         &self,
         name: &str,
-        value: &SurfaceTerm,
+        value: &SyntaxTerm,
     ) -> Result<(), ClickError> {
         if !self.integer_arithmetic
             || !has_arithmetic_spine(value)
@@ -407,7 +405,7 @@ impl Parser {
         &self,
         name: &str,
         interface_type: InterfaceType,
-        value: &SurfaceTerm,
+        value: &SyntaxTerm,
     ) -> Result<(), ClickError> {
         if !matches!(
             interface_type,
@@ -422,17 +420,17 @@ impl Parser {
         let mut pending = vec![value];
         while let Some(expression) = pending.pop() {
             match expression {
-                SurfaceTerm::Add(left, right)
-                | SurfaceTerm::Subtract(left, right)
-                | SurfaceTerm::Multiply(left, right)
-                | SurfaceTerm::BitwiseAnd(left, right)
-                | SurfaceTerm::BitwiseOr(left, right)
-                | SurfaceTerm::BitwiseXor(left, right) => {
+                SyntaxTerm::Add(left, right)
+                | SyntaxTerm::Subtract(left, right)
+                | SyntaxTerm::Multiply(left, right)
+                | SyntaxTerm::BitwiseAnd(left, right)
+                | SyntaxTerm::BitwiseOr(left, right)
+                | SyntaxTerm::BitwiseXor(left, right) => {
                     pending.push(right);
                     pending.push(left);
                 }
-                SurfaceTerm::BitwiseNot(operand) => pending.push(operand),
-                SurfaceTerm::IntegerLiteral(_) => {}
+                SyntaxTerm::BitwiseNot(operand) => pending.push(operand),
+                SyntaxTerm::IntegerLiteral(_) => {}
                 leaf => {
                     if let Some(actual) = self.machine_operand_type(leaf)
                         && actual != interface_type
@@ -482,12 +480,12 @@ impl Parser {
         &self,
         name: &str,
         interface_type: InterfaceType,
-        value: SurfaceTerm,
-    ) -> Result<SurfaceTerm, ClickError> {
+        value: SyntaxTerm,
+    ) -> Result<SyntaxTerm, ClickError> {
         let (digits, negative) = match &value {
-            SurfaceTerm::IntegerLiteral(digits) => (digits, false),
-            SurfaceTerm::Negate(inner) => match inner.as_ref() {
-                SurfaceTerm::IntegerLiteral(digits) => (digits, true),
+            SyntaxTerm::IntegerLiteral(digits) => (digits, false),
+            SyntaxTerm::Negate(inner) => match inner.as_ref() {
+                SyntaxTerm::IntegerLiteral(digits) => (digits, true),
                 _ => return Ok(value),
             },
             _ => return Ok(value),
@@ -500,7 +498,7 @@ impl Parser {
             suffix: Some(suffix),
         };
         match literal.native_value(negative) {
-            Ok(fixed) => Ok(SurfaceTerm::ProgramExpression(ProgramExpression::Value(
+            Ok(fixed) => Ok(SyntaxTerm::ProgramExpression(ProgramExpression::Value(
                 fixed,
             ))),
             Err(_) => {
@@ -517,34 +515,30 @@ impl Parser {
 
     /// Whether `expression` is already an exact Integer: an Integer
     /// binding, a `to_integer` observation, or arithmetic over them.
-    pub(super) fn integer_operand(&self, expression: &SurfaceTerm) -> bool {
+    pub(super) fn integer_operand(&self, expression: &SyntaxTerm) -> bool {
         self.integer_operand_in_scope(expression, &mut LocalOperands::new())
     }
 
-    fn integer_operand_in_scope(
-        &self,
-        expression: &SurfaceTerm,
-        scope: &mut LocalOperands,
-    ) -> bool {
+    fn integer_operand_in_scope(&self, expression: &SyntaxTerm, scope: &mut LocalOperands) -> bool {
         if let Some(id) = expression.generated_binder() {
             return self.local_operand(scope, &id) == Some(LocalOperand::Integer);
         }
 
         match expression {
-            SurfaceTerm::IntegerContext(_) => true,
+            SyntaxTerm::IntegerContext(_) => true,
 
-            SurfaceTerm::Add(left, right)
-            | SurfaceTerm::Subtract(left, right)
-            | SurfaceTerm::Multiply(left, right) => {
+            SyntaxTerm::Add(left, right)
+            | SyntaxTerm::Subtract(left, right)
+            | SyntaxTerm::Multiply(left, right) => {
                 self.integer_operand_in_scope(left, scope)
                     || self.integer_operand_in_scope(right, scope)
             }
-            SurfaceTerm::Negate(inner)
-            | SurfaceTerm::Old(inner)
-            | SurfaceTerm::At {
+            SyntaxTerm::Negate(inner)
+            | SyntaxTerm::Old(inner)
+            | SyntaxTerm::At {
                 expression: inner, ..
             } => self.integer_operand_in_scope(inner, scope),
-            SurfaceTerm::Let {
+            SyntaxTerm::Let {
                 name,
                 click_type,
                 value,
@@ -566,7 +560,7 @@ impl Parser {
             }
             // A match or a conditional is an Integer when a value it can
             // produce is one.
-            SurfaceTerm::If {
+            SyntaxTerm::If {
                 then_branch,
                 else_branch,
                 ..
@@ -574,15 +568,15 @@ impl Parser {
                 self.integer_operand_in_scope(then_branch, scope)
                     || self.integer_operand_in_scope(else_branch, scope)
             }
-            SurfaceTerm::AlgebraicMatch { arms, .. } => arms.iter().any(|arm| {
+            SyntaxTerm::AlgebraicMatch { arms, .. } => arms.iter().any(|arm| {
                 with_locals(scope, self.arm_operands(arm), |scope| {
                     self.integer_operand_in_scope(&arm.body, scope)
                 })
             }),
             // `program::name` is the program's binding, never a Click Integer.
-            SurfaceTerm::ProgramBinding(_) => false,
-            SurfaceTerm::Binding(name)
-            | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+            SyntaxTerm::ProgramBinding(_) => false,
+            SyntaxTerm::Binding(name)
+            | SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(name),
             )) => match self.local_operand(scope, name) {
                 Some(operand) => operand == LocalOperand::Integer,
@@ -592,16 +586,16 @@ impl Parser {
         }
     }
 
-    fn integer_leaf(&self, expression: &SurfaceTerm) -> bool {
+    fn integer_leaf(&self, expression: &SyntaxTerm) -> bool {
         match expression {
-            SurfaceTerm::Call { name, .. } => {
+            SyntaxTerm::Call { name, .. } => {
                 name == "to_integer"
                     || crate::surface::integer_truncation::is_integer_truncation(name)
                     || self.integer_function_names.contains(name)
             }
-            SurfaceTerm::ProgramBinding(_) => false,
-            SurfaceTerm::Binding(name)
-            | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+            SyntaxTerm::ProgramBinding(_) => false,
+            SyntaxTerm::Binding(name)
+            | SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(name),
             )) => {
                 self.names.contains_any(NameKind::INTEGERS, name)
@@ -612,7 +606,7 @@ impl Parser {
                     )
             }
             // A fold is an Integer when a value it can produce is one.
-            SurfaceTerm::RangeFold { initial, body, .. } => {
+            SyntaxTerm::RangeFold { initial, body, .. } => {
                 self.integer_operand(initial) || self.integer_operand(body)
             }
             _ => false,
@@ -652,28 +646,28 @@ impl Parser {
     /// Whether an arithmetic operand of `expression` has only a C meaning:
     /// a pointer parameter, an `address(p)` of a pointer, or a floating-point
     /// value, which has no Integer observation.
-    pub(super) fn has_c_only_operand(&self, expression: &SurfaceTerm) -> bool {
+    pub(super) fn has_c_only_operand(&self, expression: &SyntaxTerm) -> bool {
         self.has_c_only_operand_in_scope(expression, &mut LocalOperands::new())
     }
 
     fn has_c_only_operand_in_scope(
         &self,
-        expression: &SurfaceTerm,
+        expression: &SyntaxTerm,
         scope: &mut LocalOperands,
     ) -> bool {
         match expression {
-            SurfaceTerm::Add(left, right)
-            | SurfaceTerm::Subtract(left, right)
-            | SurfaceTerm::Multiply(left, right) => {
+            SyntaxTerm::Add(left, right)
+            | SyntaxTerm::Subtract(left, right)
+            | SyntaxTerm::Multiply(left, right) => {
                 self.has_c_only_operand_in_scope(left, scope)
                     || self.has_c_only_operand_in_scope(right, scope)
             }
-            SurfaceTerm::Negate(inner)
-            | SurfaceTerm::Old(inner)
-            | SurfaceTerm::At {
+            SyntaxTerm::Negate(inner)
+            | SyntaxTerm::Old(inner)
+            | SyntaxTerm::At {
                 expression: inner, ..
             } => self.has_c_only_operand_in_scope(inner, scope),
-            SurfaceTerm::If {
+            SyntaxTerm::If {
                 then_branch,
                 else_branch,
                 ..
@@ -681,21 +675,21 @@ impl Parser {
                 self.has_c_only_operand_in_scope(then_branch, scope)
                     || self.has_c_only_operand_in_scope(else_branch, scope)
             }
-            SurfaceTerm::AlgebraicMatch { arms, .. } => arms.iter().any(|arm| {
+            SyntaxTerm::AlgebraicMatch { arms, .. } => arms.iter().any(|arm| {
                 with_locals(scope, self.arm_operands(arm), |scope| {
                     self.has_c_only_operand_in_scope(&arm.body, scope)
                 })
             }),
-            SurfaceTerm::Binding(name)
-            | SurfaceTerm::ProgramBinding(name)
-            | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+            SyntaxTerm::Binding(name)
+            | SyntaxTerm::ProgramBinding(name)
+            | SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(name),
             )) if self.local_operand(scope, name).is_some() => {
                 self.local_operand(scope, name) == Some(LocalOperand::COnly)
             }
-            SurfaceTerm::Binding(name)
-            | SurfaceTerm::ProgramBinding(name)
-            | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+            SyntaxTerm::Binding(name)
+            | SyntaxTerm::ProgramBinding(name)
+            | SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(name),
             )) if matches!(
                 self.names.arm_binding_types.get(name),
@@ -705,7 +699,7 @@ impl Parser {
                 true
             }
             // A call of a pure function that returns a pointer.
-            SurfaceTerm::Call { name, .. }
+            SyntaxTerm::Call { name, .. }
                 if self.pointer_result_functions.contains(name)
                     || names::library_pointer_result_functions().contains(name) =>
             {
@@ -713,22 +707,22 @@ impl Parser {
             }
             // A method that is a library function returning a pointer,
             // `s.as_ptr()`.
-            SurfaceTerm::MethodCall { method, .. }
+            SyntaxTerm::MethodCall { method, .. }
                 if names::library_pointer_result_methods().contains(method.as_str()) =>
             {
                 true
             }
             // An address, `&r->arr[0]`, or a cast to a pointer or float type.
-            SurfaceTerm::ProgramExpression(
+            SyntaxTerm::ProgramExpression(
                 ProgramExpression::AddressOf(_) | ProgramExpression::CheckedObjectAddress(_),
             )
-            | SurfaceTerm::CUnary {
+            | SyntaxTerm::CUnary {
                 lowered:
                     ProgramExpression::AddressOf(_) | ProgramExpression::CheckedObjectAddress(_),
                 ..
             } => true,
-            SurfaceTerm::ProgramExpression(ProgramExpression::Cast { target_type, .. })
-            | SurfaceTerm::CUnary {
+            SyntaxTerm::ProgramExpression(ProgramExpression::Cast { target_type, .. })
+            | SyntaxTerm::CUnary {
                 lowered: ProgramExpression::Cast { target_type, .. },
                 ..
             } if target_type.is_pointer()
@@ -736,15 +730,15 @@ impl Parser {
             {
                 true
             }
-            SurfaceTerm::ProgramExpression(ProgramExpression::Value(value)) => {
+            SyntaxTerm::ProgramExpression(ProgramExpression::Value(value)) => {
                 matches!(
                     value.program_type(),
                     ProgramType::Float32 | ProgramType::Float64
                 )
             }
-            SurfaceTerm::Binding(name)
-            | SurfaceTerm::ProgramBinding(name)
-            | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+            SyntaxTerm::Binding(name)
+            | SyntaxTerm::ProgramBinding(name)
+            | SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(name),
             )) => {
                 let c_only = |interface_type: &InterfaceType| {
@@ -769,21 +763,21 @@ impl Parser {
                             .as_ref()
                             .is_some_and(c_only))
             }
-            SurfaceTerm::ProgramExpression(ProgramExpression::TypedLoad { value_type, .. })
-            | SurfaceTerm::MemoryLoad { value_type, .. }
-            | SurfaceTerm::CUnary {
+            SyntaxTerm::ProgramExpression(ProgramExpression::TypedLoad { value_type, .. })
+            | SyntaxTerm::MemoryLoad { value_type, .. }
+            | SyntaxTerm::CUnary {
                 lowered: ProgramExpression::TypedLoad { value_type, .. },
                 ..
             }
-            | SurfaceTerm::Field {
+            | SyntaxTerm::Field {
                 lowered: ProgramExpression::TypedLoad { value_type, .. },
                 ..
             } => {
                 value_type.is_pointer()
                     || matches!(value_type, ProgramType::Float32 | ProgramType::Float64)
             }
-            SurfaceTerm::ProgramExpression(cast @ ProgramExpression::Cast { .. })
-            | SurfaceTerm::CUnary {
+            SyntaxTerm::ProgramExpression(cast @ ProgramExpression::Cast { .. })
+            | SyntaxTerm::CUnary {
                 lowered: cast @ ProgramExpression::Cast { .. },
                 ..
             } => self.address_casts.contains(cast),
@@ -795,56 +789,56 @@ impl Parser {
     /// with `to_integer`, in every arm of a match and branch of a conditional
     /// it produces. Unsuffixed literals take the Integer type from context,
     /// and Integer operands are left as they are.
-    pub(super) fn observe_machine_operands(&self, expression: SurfaceTerm) -> SurfaceTerm {
+    pub(super) fn observe_machine_operands(&self, expression: SyntaxTerm) -> SyntaxTerm {
         self.observe_machine_operands_in_scope(expression, &mut LocalOperands::new())
     }
 
     fn observe_machine_operands_in_scope(
         &self,
-        expression: SurfaceTerm,
+        expression: SyntaxTerm,
         scope: &mut LocalOperands,
-    ) -> SurfaceTerm {
-        let observe = |expression: Box<SurfaceTerm>, scope: &mut LocalOperands| {
+    ) -> SyntaxTerm {
+        let observe = |expression: Box<SyntaxTerm>, scope: &mut LocalOperands| {
             Box::new(self.observe_machine_operands_in_scope(*expression, scope))
         };
         match expression {
-            SurfaceTerm::Add(left, right) => {
-                SurfaceTerm::Add(observe(left, scope), observe(right, scope))
+            SyntaxTerm::Add(left, right) => {
+                SyntaxTerm::Add(observe(left, scope), observe(right, scope))
             }
-            SurfaceTerm::Subtract(left, right) => {
-                SurfaceTerm::Subtract(observe(left, scope), observe(right, scope))
+            SyntaxTerm::Subtract(left, right) => {
+                SyntaxTerm::Subtract(observe(left, scope), observe(right, scope))
             }
-            SurfaceTerm::Multiply(left, right) => {
-                SurfaceTerm::Multiply(observe(left, scope), observe(right, scope))
+            SyntaxTerm::Multiply(left, right) => {
+                SyntaxTerm::Multiply(observe(left, scope), observe(right, scope))
             }
-            SurfaceTerm::Negate(inner) => SurfaceTerm::Negate(observe(inner, scope)),
-            SurfaceTerm::Old(inner) if has_arithmetic_spine(&inner) => {
-                SurfaceTerm::Old(observe(inner, scope))
+            SyntaxTerm::Negate(inner) => SyntaxTerm::Negate(observe(inner, scope)),
+            SyntaxTerm::Old(inner) if has_arithmetic_spine(&inner) => {
+                SyntaxTerm::Old(observe(inner, scope))
             }
-            SurfaceTerm::At {
+            SyntaxTerm::At {
                 selector,
                 expression,
             } if has_arithmetic_spine(&expression)
                 || self.integer_operand_in_scope(&expression, scope) =>
             {
-                SurfaceTerm::At {
+                SyntaxTerm::At {
                     selector,
                     expression: observe(expression, scope),
                 }
             }
             // Each branch is in the position the conditional is in; the
             // condition is a proposition, read as it was parsed.
-            SurfaceTerm::If {
+            SyntaxTerm::If {
                 condition,
                 then_branch,
                 else_branch,
-            } => SurfaceTerm::If {
+            } => SyntaxTerm::If {
                 condition,
                 then_branch: observe(then_branch, scope),
                 else_branch: observe(else_branch, scope),
             },
             // Each arm is in the position the match is in.
-            SurfaceTerm::AlgebraicMatch { scrutinee, arms } => SurfaceTerm::AlgebraicMatch {
+            SyntaxTerm::AlgebraicMatch { scrutinee, arms } => SyntaxTerm::AlgebraicMatch {
                 scrutinee,
                 arms: arms
                     .into_iter()
@@ -868,16 +862,16 @@ impl Parser {
                     })
                     .collect(),
             },
-            SurfaceTerm::IntegerLiteral(value) => SurfaceTerm::IntegerLiteral(value),
-            SurfaceTerm::Binding(ref name)
-            | SurfaceTerm::ProgramBinding(ref name)
-            | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+            SyntaxTerm::IntegerLiteral(value) => SyntaxTerm::IntegerLiteral(value),
+            SyntaxTerm::Binding(ref name)
+            | SyntaxTerm::ProgramBinding(ref name)
+            | SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(ref name),
             )) if self.local_operand(scope, name) == Some(LocalOperand::Unknown) => expression,
             // An Integer operand, including one under `old` or `at`, is
             // already exact.
             leaf if self.integer_operand_in_scope(&leaf, scope) => leaf,
-            leaf => SurfaceTerm::Call {
+            leaf => SyntaxTerm::Call {
                 name: "to_integer".to_string(),
                 arguments: vec![leaf],
             },
@@ -888,36 +882,36 @@ impl Parser {
     /// branches, that is a machine value.
     fn machine_spine_operand<'a>(
         &self,
-        expression: &'a SurfaceTerm,
+        expression: &'a SyntaxTerm,
         scope: &mut LocalOperands,
-    ) -> Option<&'a SurfaceTerm> {
+    ) -> Option<&'a SyntaxTerm> {
         match expression {
-            SurfaceTerm::Add(left, right)
-            | SurfaceTerm::Subtract(left, right)
-            | SurfaceTerm::Multiply(left, right) => self
+            SyntaxTerm::Add(left, right)
+            | SyntaxTerm::Subtract(left, right)
+            | SyntaxTerm::Multiply(left, right) => self
                 .machine_spine_operand(left, scope)
                 .or_else(|| self.machine_spine_operand(right, scope)),
-            SurfaceTerm::Negate(inner) => self.machine_spine_operand(inner, scope),
-            SurfaceTerm::Old(inner)
-            | SurfaceTerm::At {
+            SyntaxTerm::Negate(inner) => self.machine_spine_operand(inner, scope),
+            SyntaxTerm::Old(inner)
+            | SyntaxTerm::At {
                 expression: inner, ..
             } if has_arithmetic_spine(inner) => self.machine_spine_operand(inner, scope),
-            SurfaceTerm::If {
+            SyntaxTerm::If {
                 then_branch,
                 else_branch,
                 ..
             } => self
                 .machine_spine_operand(then_branch, scope)
                 .or_else(|| self.machine_spine_operand(else_branch, scope)),
-            SurfaceTerm::AlgebraicMatch { arms, .. } => arms.iter().find_map(|arm| {
+            SyntaxTerm::AlgebraicMatch { arms, .. } => arms.iter().find_map(|arm| {
                 with_locals(scope, self.arm_operands(arm), |scope| {
                     self.machine_spine_operand(&arm.body, scope)
                 })
             }),
-            SurfaceTerm::IntegerLiteral(_) => None,
-            SurfaceTerm::Binding(name)
-            | SurfaceTerm::ProgramBinding(name)
-            | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+            SyntaxTerm::IntegerLiteral(_) => None,
+            SyntaxTerm::Binding(name)
+            | SyntaxTerm::ProgramBinding(name)
+            | SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(name),
             )) if self.local_operand(scope, name).is_some() => (self.local_operand(scope, name)
                 == Some(LocalOperand::Machine))
@@ -933,20 +927,20 @@ impl Parser {
 
     /// The machine type of an arithmetic operand, where its spelling shows
     /// it: a parameter, `result`, a suffixed constant, a load or a cast.
-    fn machine_operand_type(&self, operand: &SurfaceTerm) -> Option<InterfaceType> {
+    fn machine_operand_type(&self, operand: &SyntaxTerm) -> Option<InterfaceType> {
         if let Some(id) = operand.generated_binder() {
             return self.let_operands.machine_types.get(&id).copied();
         }
 
         match operand {
-            SurfaceTerm::Old(inner)
-            | SurfaceTerm::Exact(inner)
-            | SurfaceTerm::At {
+            SyntaxTerm::Old(inner)
+            | SyntaxTerm::Exact(inner)
+            | SyntaxTerm::At {
                 expression: inner, ..
             } => self.machine_operand_type(inner),
-            SurfaceTerm::Binding(name)
-            | SurfaceTerm::ProgramBinding(name)
-            | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+            SyntaxTerm::Binding(name)
+            | SyntaxTerm::ProgramBinding(name)
+            | SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(name),
             )) => self
                 .names
@@ -960,7 +954,7 @@ impl Parser {
                         .then_some(self.current_result_interface_type)
                         .flatten()
                 }),
-            SurfaceTerm::ProgramExpression(lowered) | SurfaceTerm::CUnary { lowered, .. } => {
+            SyntaxTerm::ProgramExpression(lowered) | SyntaxTerm::CUnary { lowered, .. } => {
                 match lowered {
                     ProgramExpression::Variable(name) if name.named().is_none() => name
                         .program_type()
@@ -980,11 +974,11 @@ impl Parser {
                     _ => None,
                 }
             }
-            SurfaceTerm::Field {
+            SyntaxTerm::Field {
                 lowered: ProgramExpression::TypedLoad { value_type, .. },
                 ..
             }
-            | SurfaceTerm::MemoryLoad { value_type, .. } => Some(
+            | SyntaxTerm::MemoryLoad { value_type, .. } => Some(
                 crate::surface::generics::interface_type_from_program_type(*value_type),
             ),
             _ => None,
@@ -994,16 +988,16 @@ impl Parser {
 
 /// Whether `expression` is `+ - * & | ^ ~` at its root, the arithmetic a
 /// narrow position makes its type's own (decision G2).
-pub(in crate::surface) fn is_narrow_arithmetic(expression: &SurfaceTerm) -> bool {
+pub(in crate::surface) fn is_narrow_arithmetic(expression: &SyntaxTerm) -> bool {
     matches!(
         expression,
-        SurfaceTerm::Add(..)
-            | SurfaceTerm::Subtract(..)
-            | SurfaceTerm::Multiply(..)
-            | SurfaceTerm::BitwiseAnd(..)
-            | SurfaceTerm::BitwiseOr(..)
-            | SurfaceTerm::BitwiseXor(..)
-            | SurfaceTerm::BitwiseNot(..)
+        SyntaxTerm::Add(..)
+            | SyntaxTerm::Subtract(..)
+            | SyntaxTerm::Multiply(..)
+            | SyntaxTerm::BitwiseAnd(..)
+            | SyntaxTerm::BitwiseOr(..)
+            | SyntaxTerm::BitwiseXor(..)
+            | SyntaxTerm::BitwiseNot(..)
     )
 }
 
@@ -1026,13 +1020,13 @@ pub(in crate::surface) fn mixed_narrow_arithmetic_message(
 
 /// Whether `expression` or an operand of its arithmetic is a population
 /// count, looking through `old`.
-pub(super) fn has_count_operand(expression: &SurfaceTerm) -> bool {
+pub(super) fn has_count_operand(expression: &SyntaxTerm) -> bool {
     match expression {
-        SurfaceTerm::ResourceCount(_) => true,
-        SurfaceTerm::Add(left, right)
-        | SurfaceTerm::Subtract(left, right)
-        | SurfaceTerm::Multiply(left, right) => has_count_operand(left) || has_count_operand(right),
-        SurfaceTerm::Negate(inner) | SurfaceTerm::Old(inner) => has_count_operand(inner),
+        SyntaxTerm::ResourceCount(_) => true,
+        SyntaxTerm::Add(left, right)
+        | SyntaxTerm::Subtract(left, right)
+        | SyntaxTerm::Multiply(left, right) => has_count_operand(left) || has_count_operand(right),
+        SyntaxTerm::Negate(inner) | SyntaxTerm::Old(inner) => has_count_operand(inner),
         _ => false,
     }
 }
@@ -1040,21 +1034,21 @@ pub(super) fn has_count_operand(expression: &SurfaceTerm) -> bool {
 /// Whether `expression` does `+`, `-`, `*` or negation at its top, looking
 /// through `old`, `at`, the arms of a match and the branches of a
 /// conditional, each of which is in the position the whole is in.
-pub(in crate::surface) fn has_arithmetic_spine(expression: &SurfaceTerm) -> bool {
+pub(in crate::surface) fn has_arithmetic_spine(expression: &SyntaxTerm) -> bool {
     match expression {
-        SurfaceTerm::Add(..) | SurfaceTerm::Subtract(..) | SurfaceTerm::Multiply(..) => true,
+        SyntaxTerm::Add(..) | SyntaxTerm::Subtract(..) | SyntaxTerm::Multiply(..) => true,
         // A negative literal, `-128`, is a constant, not arithmetic.
-        SurfaceTerm::Negate(inner) => !matches!(inner.as_ref(), SurfaceTerm::IntegerLiteral(_)),
-        SurfaceTerm::Old(inner)
-        | SurfaceTerm::At {
+        SyntaxTerm::Negate(inner) => !matches!(inner.as_ref(), SyntaxTerm::IntegerLiteral(_)),
+        SyntaxTerm::Old(inner)
+        | SyntaxTerm::At {
             expression: inner, ..
         } => has_arithmetic_spine(inner),
-        SurfaceTerm::If {
+        SyntaxTerm::If {
             then_branch,
             else_branch,
             ..
         } => has_arithmetic_spine(then_branch) || has_arithmetic_spine(else_branch),
-        SurfaceTerm::AlgebraicMatch { arms, .. } => {
+        SyntaxTerm::AlgebraicMatch { arms, .. } => {
             arms.iter().any(|arm| has_arithmetic_spine(&arm.body))
         }
         _ => false,
@@ -1121,14 +1115,14 @@ impl Parser {
     pub(super) fn observe_integer_arguments(
         &self,
         name: &str,
-        mut arguments: Vec<SurfaceTerm>,
-    ) -> Vec<SurfaceTerm> {
+        mut arguments: Vec<SyntaxTerm>,
+    ) -> Vec<SyntaxTerm> {
         let Some(positions) = self.integer_parameters_of(name) else {
             return arguments;
         };
         for &position in positions {
             if let Some(argument) = arguments.get_mut(position) {
-                let written = std::mem::replace(argument, SurfaceTerm::ResourceWildcard);
+                let written = std::mem::replace(argument, SyntaxTerm::ResourceWildcard);
                 *argument = self.at_integer_position(written);
             }
         }
@@ -1141,8 +1135,8 @@ impl Parser {
         &self,
         type_name: &str,
         variant: &str,
-        mut arguments: Vec<SurfaceTerm>,
-    ) -> Vec<SurfaceTerm> {
+        mut arguments: Vec<SyntaxTerm>,
+    ) -> Vec<SyntaxTerm> {
         let Some(fields) = self
             .algebraic_variant_fields
             .get(&(type_name.to_string(), variant.to_string()))
@@ -1151,7 +1145,7 @@ impl Parser {
         };
         for (argument, field) in arguments.iter_mut().zip(fields) {
             if *field == AlgebraicFieldType::Integer {
-                let written = std::mem::replace(argument, SurfaceTerm::ResourceWildcard);
+                let written = std::mem::replace(argument, SyntaxTerm::ResourceWildcard);
                 *argument = self.at_integer_position(written);
             }
         }

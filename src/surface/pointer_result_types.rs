@@ -225,12 +225,12 @@ impl Analysis<'_> {
 
     fn expression(
         &mut self,
-        expression: &SurfaceTerm,
+        expression: &SyntaxTerm,
         bindings: &mut BinderMap<Origins>,
     ) -> Origins {
         // One lexical context per source expression. Reusing the origin when
         // validating enclosing calls avoids revisiting nested argument trees.
-        let key = expression as *const SurfaceTerm as usize;
+        let key = expression as *const SyntaxTerm as usize;
         if let Some(origin) = self.expressions.get(&key) {
             return origin.clone();
         }
@@ -242,22 +242,22 @@ impl Analysis<'_> {
 
     fn expression_inner(
         &mut self,
-        expression: &SurfaceTerm,
+        expression: &SyntaxTerm,
         bindings: &mut BinderMap<Origins>,
     ) -> Origins {
         match expression {
-            SurfaceTerm::IntegerLiteral(value) if value == "0" => Some(null_origins()),
-            SurfaceTerm::Binding(name) | SurfaceTerm::ProgramBinding(name) => {
+            SyntaxTerm::IntegerLiteral(value) if value == "0" => Some(null_origins()),
+            SyntaxTerm::Binding(name) | SyntaxTerm::ProgramBinding(name) => {
                 bindings.get(name).cloned().flatten()
             }
-            SurfaceTerm::ProgramExpression(expression) => {
+            SyntaxTerm::ProgramExpression(expression) => {
                 Self::program_expression(expression, bindings)
             }
-            SurfaceTerm::CUnary {
+            SyntaxTerm::CUnary {
                 operand,
                 lowered: ProgramExpression::Cast { target_type, .. },
             } if target_type.is_object_pointer() => self.expression(operand, bindings),
-            SurfaceTerm::If {
+            SyntaxTerm::If {
                 then_branch,
                 else_branch,
                 ..
@@ -269,7 +269,7 @@ impl Analysis<'_> {
                 );
                 Some(Arc::new(result))
             }
-            SurfaceTerm::Let {
+            SyntaxTerm::Let {
                 name, value, body, ..
             } => {
                 let value = self.expression(value, bindings);
@@ -278,7 +278,7 @@ impl Analysis<'_> {
                 restore(bindings, name, previous);
                 result
             }
-            SurfaceTerm::AlgebraicMatch { arms, .. } => {
+            SyntaxTerm::AlgebraicMatch { arms, .. } => {
                 let mut result = (*null_origins()).clone();
                 for arm in arms {
                     let model = *self.models.get(arm.type_name.as_str())?;
@@ -304,7 +304,7 @@ impl Analysis<'_> {
                 }
                 (!arms.is_empty()).then(|| Arc::new(result))
             }
-            SurfaceTerm::Call { name, arguments } => {
+            SyntaxTerm::Call { name, arguments } => {
                 let callee = self.function(name)?;
                 let mut result = PurePointerResult {
                     classes: callee.classes.clone(),
@@ -362,7 +362,7 @@ impl Analysis<'_> {
 
     fn require_class(
         &mut self,
-        expression: &SurfaceTerm,
+        expression: &SyntaxTerm,
         class: &CAccessClass,
         bindings: &mut BinderMap<Origins>,
         definition: &ClickFunctionDefinition,
@@ -393,24 +393,22 @@ impl Analysis<'_> {
 
     fn check_expression(
         &mut self,
-        expression: &SurfaceTerm,
+        expression: &SyntaxTerm,
         bindings: &mut BinderMap<Origins>,
         definition: &ClickFunctionDefinition,
     ) -> Result<(), String> {
         crate::instrumentation::record_deterministic_work(1);
         match expression {
-            SurfaceTerm::IntegerContext(value) => {
+            SyntaxTerm::IntegerContext(value) => {
                 self.check_expression(value, bindings, definition)?;
             }
 
-            SurfaceTerm::Proposition(proposition) => {
+            SyntaxTerm::Proposition(proposition) => {
                 self.check_proposition(proposition, bindings, definition)?
             }
-            SurfaceTerm::Resource(_) => {}
-            SurfaceTerm::Lambda { body, .. } => {
-                self.check_expression(body, bindings, definition)?
-            }
-            SurfaceTerm::Apply {
+            SyntaxTerm::Resource(_) => {}
+            SyntaxTerm::Lambda { body, .. } => self.check_expression(body, bindings, definition)?,
+            SyntaxTerm::Apply {
                 function,
                 arguments,
             } => {
@@ -420,7 +418,7 @@ impl Analysis<'_> {
                 }
             }
 
-            SurfaceTerm::AlgebraicConstructor {
+            SyntaxTerm::AlgebraicConstructor {
                 algebraic_type,
                 variant,
                 arguments,
@@ -449,7 +447,7 @@ impl Analysis<'_> {
                     self.check_expression(argument, bindings, definition)?;
                 }
             }
-            SurfaceTerm::MethodCall {
+            SyntaxTerm::MethodCall {
                 receiver,
                 arguments,
                 ..
@@ -459,7 +457,7 @@ impl Analysis<'_> {
                     self.check_expression(argument, bindings, definition)?;
                 }
             }
-            SurfaceTerm::Call { name, arguments } => {
+            SyntaxTerm::Call { name, arguments } => {
                 if let Some(callee) = self
                     .functions
                     .get(generic_instance_source_name(name))
@@ -481,7 +479,7 @@ impl Analysis<'_> {
                     self.check_expression(argument, bindings, definition)?;
                 }
             }
-            SurfaceTerm::AlgebraicMatch { scrutinee, arms } => {
+            SyntaxTerm::AlgebraicMatch { scrutinee, arms } => {
                 self.check_expression(scrutinee, bindings, definition)?;
                 for arm in arms {
                     let fields = self
@@ -510,7 +508,7 @@ impl Analysis<'_> {
                     checked?;
                 }
             }
-            SurfaceTerm::Let {
+            SyntaxTerm::Let {
                 name, value, body, ..
             } => {
                 self.check_expression(value, bindings, definition)?;
@@ -520,7 +518,7 @@ impl Analysis<'_> {
                 restore(bindings, name, previous);
                 checked?;
             }
-            SurfaceTerm::If {
+            SyntaxTerm::If {
                 condition,
                 then_branch,
                 else_branch,
@@ -529,7 +527,7 @@ impl Analysis<'_> {
                 self.check_expression(then_branch, bindings, definition)?;
                 self.check_expression(else_branch, bindings, definition)?;
             }
-            SurfaceTerm::RangeFold {
+            SyntaxTerm::RangeFold {
                 start,
                 end,
                 initial,
@@ -549,109 +547,109 @@ impl Analysis<'_> {
                 restore(bindings, accumulator, old_accumulator);
                 checked?;
             }
-            SurfaceTerm::CUnary { operand: inner, .. }
-            | SurfaceTerm::MemoryLoad { pointer: inner, .. }
-            | SurfaceTerm::Negate(inner)
-            | SurfaceTerm::BitwiseNot(inner)
-            | SurfaceTerm::Old(inner)
-            | SurfaceTerm::Exact(inner)
-            | SurfaceTerm::At {
+            SyntaxTerm::CUnary { operand: inner, .. }
+            | SyntaxTerm::MemoryLoad { pointer: inner, .. }
+            | SyntaxTerm::Negate(inner)
+            | SyntaxTerm::BitwiseNot(inner)
+            | SyntaxTerm::Old(inner)
+            | SyntaxTerm::Exact(inner)
+            | SyntaxTerm::At {
                 expression: inner, ..
             }
-            | SurfaceTerm::Field { base: inner, .. } => {
+            | SyntaxTerm::Field { base: inner, .. } => {
                 self.check_expression(inner, bindings, definition)?;
             }
-            binary_contract_expression!(left, right) | SurfaceTerm::SequenceConcat(left, right) => {
+            binary_contract_expression!(left, right) | SyntaxTerm::SequenceConcat(left, right) => {
                 self.check_expression(left, bindings, definition)?;
                 self.check_expression(right, bindings, definition)?;
             }
-            SurfaceTerm::SequenceLiteral(values) => {
+            SyntaxTerm::SequenceLiteral(values) => {
                 for value in values {
                     self.check_expression(value, bindings, definition)?;
                 }
             }
-            SurfaceTerm::ArrayIndex { base, indexes, .. } => {
+            SyntaxTerm::ArrayIndex { base, indexes, .. } => {
                 self.check_expression(base, bindings, definition)?;
                 for index in indexes {
                     self.check_expression(index, bindings, definition)?;
                 }
             }
-            SurfaceTerm::ResourceCount(resource) => {
+            SyntaxTerm::ResourceCount(resource) => {
                 if let ResourceClause::Declared { arguments, .. } = resource.as_ref() {
                     for argument in arguments {
                         self.check_expression(argument, bindings, definition)?;
                     }
                 }
             }
-            SurfaceTerm::IntegerLiteral(_)
-            | SurfaceTerm::QualifiedC { .. }
-            | SurfaceTerm::ResourceField(_)
-            | SurfaceTerm::ResourceWildcard
-            | SurfaceTerm::AlgebraicVariable { .. }
-            | SurfaceTerm::Binding(_)
-            | SurfaceTerm::ProgramBinding(_)
-            | SurfaceTerm::RegionResult(_)
-            | SurfaceTerm::RegionAllocation(_)
-            | SurfaceTerm::RegionParameter { .. }
-            | SurfaceTerm::ProgramExpression(_) => {}
+            SyntaxTerm::IntegerLiteral(_)
+            | SyntaxTerm::QualifiedC { .. }
+            | SyntaxTerm::ResourceField(_)
+            | SyntaxTerm::ResourceWildcard
+            | SyntaxTerm::AlgebraicVariable { .. }
+            | SyntaxTerm::Binding(_)
+            | SyntaxTerm::ProgramBinding(_)
+            | SyntaxTerm::RegionResult(_)
+            | SyntaxTerm::RegionAllocation(_)
+            | SyntaxTerm::RegionParameter { .. }
+            | SyntaxTerm::ProgramExpression(_) => {}
         }
         Ok(())
     }
 
     fn check_proposition(
         &mut self,
-        proposition: &SurfaceProposition,
+        proposition: &SyntaxProposition,
         bindings: &mut BinderMap<Origins>,
         definition: &ClickFunctionDefinition,
     ) -> Result<(), String> {
         match proposition {
-            SurfaceProposition::Value(expression) => {
+            SyntaxProposition::Value(expression) => {
                 self.check_expression(expression, bindings, definition)?;
             }
-            SurfaceProposition::Comparison { left, right, .. } => {
+            SyntaxProposition::Comparison { left, right, .. } => {
                 self.check_expression(left, bindings, definition)?;
                 self.check_expression(right, bindings, definition)?;
             }
-            SurfaceProposition::FloatClassification { expression, .. }
-            | SurfaceProposition::Defined { expression }
-            | SurfaceProposition::IsA {
+            SyntaxProposition::FloatClassification { expression, .. }
+            | SyntaxProposition::Defined { expression }
+            | SyntaxProposition::IsA {
                 pointer: expression,
                 ..
             } => {
                 self.check_expression(expression, bindings, definition)?;
             }
-            SurfaceProposition::PredicateCall { arguments, .. } => {
+            SyntaxProposition::PredicateCall { arguments, .. } => {
                 for argument in arguments {
                     self.check_expression(argument, bindings, definition)?;
                 }
             }
-            SurfaceProposition::And(left, right)
-            | SurfaceProposition::Or(left, right)
-            | SurfaceProposition::Implies(left, right) => {
+            SyntaxProposition::And(left, right)
+            | SyntaxProposition::Or(left, right)
+            | SyntaxProposition::Implies(left, right) => {
                 self.check_proposition(left, bindings, definition)?;
                 self.check_proposition(right, bindings, definition)?;
             }
-            SurfaceProposition::Not(body)
-            | SurfaceProposition::At {
+            SyntaxProposition::Not(body)
+            | SyntaxProposition::At {
                 proposition: body, ..
             } => {
                 self.check_proposition(body, bindings, definition)?;
             }
-            SurfaceProposition::ForAll { name, body, .. }
-            | SurfaceProposition::Exists { name, body, .. } => {
+            SyntaxProposition::ForAll { name, body, .. }
+            | SyntaxProposition::Exists { name, body, .. } => {
                 let previous = bindings.insert(name.clone(), None);
                 let checked = self.check_proposition(body, bindings, definition);
                 restore(bindings, name, previous);
                 checked?;
             }
-            SurfaceProposition::RangeAll {
+            SyntaxProposition::RangeAll {
                 start,
                 end,
                 item,
                 body,
                 ..
             }
-            | SurfaceProposition::RangeAny {
+            | SyntaxProposition::RangeAny {
                 start,
                 end,
                 item,
@@ -667,10 +665,10 @@ impl Analysis<'_> {
             }
             // These query resources; their arguments cannot return a value
             // into the enclosing function's result or lexical bindings.
-            SurfaceProposition::Separate { .. }
-            | SurfaceProposition::ResourceViewable { .. }
-            | SurfaceProposition::Contains { .. }
-            | SurfaceProposition::Loadable { .. } => {}
+            SyntaxProposition::Separate { .. }
+            | SyntaxProposition::ResourceViewable { .. }
+            | SyntaxProposition::Contains { .. }
+            | SyntaxProposition::Loadable { .. } => {}
         }
         Ok(())
     }

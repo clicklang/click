@@ -1,6 +1,6 @@
 use super::*;
 
-fn parse_binding_expression(text: &str, source: &str) -> Result<SurfaceTerm, ClickError> {
+fn parse_binding_expression(text: &str, source: &str) -> Result<SyntaxTerm, ClickError> {
     let function = syntax::parse_functions_for_source(source, "bindings.c")
         .unwrap()
         .remove(0);
@@ -32,7 +32,7 @@ fn source_declaration_selectors_resolve_the_same_typed_reference() {
         canonical,
         parse_binding_expression("f.local(1)", source).unwrap()
     );
-    let SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+    let SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
         crate::kernel::BindingName::Local(id),
     )) = canonical
     else {
@@ -60,7 +60,7 @@ fn compound_literal_occurrences_are_distinct_from_local_declarations() {
     let field = parse_binding_expression("f.compound_literal(1).value", source).unwrap();
     assert!(matches!(
         field,
-        SurfaceTerm::Field {
+        SyntaxTerm::Field {
             offset_bytes: crate::kernel::LayoutOffset::Bytes(4),
             ..
         }
@@ -89,15 +89,13 @@ fn declaration_references_retain_nominal_fields_and_array_shapes() {
     let field = parse_binding_expression("f.local(1).value", source).unwrap();
     assert!(matches!(
         field,
-        SurfaceTerm::Field {
+        SyntaxTerm::Field {
             offset_bytes: crate::kernel::LayoutOffset::Bytes(4),
             ..
         }
     ));
     let array = parse_binding_expression("f.local(0)[1][2]", source).unwrap();
-    assert!(
-        matches!(array, SurfaceTerm::ArrayIndex { dimensions, .. } if dimensions == vec![2, 3])
-    );
+    assert!(matches!(array, SyntaxTerm::ArrayIndex { dimensions, .. } if dimensions == vec![2, 3]));
 }
 
 #[test]
@@ -129,7 +127,7 @@ fn assert_automatic_storage_reference_round_trips(
     instance: crate::kernel::LocalStorageInstance,
 ) {
     let expression = parse_binding_expression(text, source).unwrap();
-    let SurfaceTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Pointer(pointer))) =
+    let SyntaxTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Pointer(pointer))) =
         &expression
     else {
         panic!("storage pointer")
@@ -163,7 +161,7 @@ fn parameter_declaration_references_keep_pointer_field_syntax() {
     .unwrap();
     assert!(matches!(
         expression,
-        SurfaceTerm::Field {
+        SyntaxTerm::Field {
             offset_bytes: crate::kernel::LayoutOffset::Bytes(4),
             ..
         }
@@ -174,11 +172,11 @@ fn parameter_declaration_references_keep_pointer_field_syntax() {
 fn function_statics_keep_types_and_exact_storage_spelling() {
     let source = "struct pair { int padding; int value; int storage; }; int f(void) { static int a[2][3]; static struct pair p; return 0; }";
     let array = parse_binding_expression("f.static(0)[1][2]", source).unwrap();
-    assert!(matches!(array, SurfaceTerm::ArrayIndex { dimensions, .. } if dimensions == vec![2,3]));
+    assert!(matches!(array, SyntaxTerm::ArrayIndex { dimensions, .. } if dimensions == vec![2,3]));
     let field = parse_binding_expression("f.static(1).value", source).unwrap();
     assert!(matches!(
         field,
-        SurfaceTerm::Field {
+        SyntaxTerm::Field {
             offset_bytes: crate::kernel::LayoutOffset::Bytes(4),
             ..
         }
@@ -186,13 +184,13 @@ fn function_statics_keep_types_and_exact_storage_spelling() {
     let field = parse_binding_expression("f.static(1).storage", source).unwrap();
     assert!(matches!(
         field,
-        SurfaceTerm::Field {
+        SyntaxTerm::Field {
             offset_bytes: crate::kernel::LayoutOffset::Bytes(8),
             ..
         }
     ));
     let expression = parse_binding_expression("f.static(0).storage()", source).unwrap();
-    let SurfaceTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Pointer(pointer))) =
+    let SyntaxTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Pointer(pointer))) =
         expression
     else {
         panic!("static address");
@@ -243,7 +241,7 @@ fn frontend_temporaries_have_no_declaration_selector() {
 fn contract_result_slot_has_an_exact_surface_spelling() {
     let expression = parse_binding_expression("result.storage()", "int f(void) { return 0; }")
         .expect("typed result slot parses without a C declaration");
-    let SurfaceTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Pointer(pointer))) =
+    let SyntaxTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Pointer(pointer))) =
         expression
     else {
         panic!("a typed result slot pointer")
@@ -260,7 +258,7 @@ fn contract_result_slot_has_an_exact_surface_spelling() {
     assert_eq!(text, "result.storage()");
     assert_eq!(
         parse_binding_expression(&text, "int f(void) { return 0; }").unwrap(),
-        SurfaceTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Pointer(pointer)))
+        SyntaxTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Pointer(pointer)))
     );
 }
 
@@ -268,7 +266,7 @@ fn contract_result_slot_has_an_exact_surface_spelling() {
 fn contract_exception_slot_has_an_exact_surface_spelling() {
     let expression = parse_binding_expression("exception.storage()", "int f(void) { return 0; }")
         .expect("typed exception slot parses without a C declaration");
-    let SurfaceTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Pointer(pointer))) =
+    let SyntaxTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Pointer(pointer))) =
         expression
     else {
         panic!("a typed exception slot pointer")
@@ -285,7 +283,7 @@ fn contract_exception_slot_has_an_exact_surface_spelling() {
     assert_eq!(text, "exception.storage()");
     assert_eq!(
         parse_binding_expression(&text, "int f(void) { return 0; }").unwrap(),
-        SurfaceTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Pointer(pointer)))
+        SyntaxTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Pointer(pointer)))
     );
 }
 
@@ -306,9 +304,8 @@ fn aggregate_return_storage_round_trips_the_full_frame_identity() {
     for frame in [0, 1, u32::MAX as u64 + 1, u64::MAX] {
         let text = format!("result.storage(frame, {frame})");
         let expression = parse_binding_expression(&text, source).unwrap();
-        let SurfaceTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Pointer(
-            pointer,
-        ))) = &expression
+        let SyntaxTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Pointer(pointer))) =
+            &expression
         else {
             panic!("typed return storage")
         };

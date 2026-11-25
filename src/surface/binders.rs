@@ -23,11 +23,11 @@ impl SurfaceBinder {
             Self::Generated(id) => id.binding_name(),
         }
     }
-    pub(crate) fn reference(&self) -> SurfaceTerm {
+    pub(crate) fn reference(&self) -> SyntaxTerm {
         match self {
-            Self::Written(name) => SurfaceTerm::Binding(name.clone()),
+            Self::Written(name) => SyntaxTerm::Binding(name.clone()),
             Self::Generated(id) => {
-                SurfaceTerm::ProgramExpression(ProgramExpression::Variable(id.binding_name()))
+                SyntaxTerm::ProgramExpression(ProgramExpression::Variable(id.binding_name()))
             }
         }
     }
@@ -585,7 +585,7 @@ impl PartialEq<SurfaceBinder> for &str {
     }
 }
 
-impl SurfaceTerm {
+impl SyntaxTerm {
     pub(super) fn generated_binder(&self) -> Option<GeneratedBinderId> {
         match self {
             Self::ProgramExpression(ProgramExpression::Variable(
@@ -671,11 +671,11 @@ mod tests {
     }
     #[test]
     fn selected_substitutions_include_resource_parameters() {
-        let parameter = SurfaceTerm::Resource(Box::new(ResourceSubject::Parameter {
+        let parameter = SyntaxTerm::Resource(Box::new(ResourceSubject::Parameter {
             name: "A".into(),
             index: 0,
         }));
-        let replacement = SurfaceTerm::Resource(Box::new(ResourceSubject::Emp));
+        let replacement = SyntaxTerm::Resource(Box::new(ResourceSubject::Emp));
         let substitutions = BTreeMap::from([("A".to_owned(), replacement.clone())]);
         assert_eq!(
             lowering::substitute_contract_expression(&parameter, &substitutions).unwrap(),
@@ -685,12 +685,12 @@ mod tests {
     #[test]
     fn cloned_generated_binders_do_not_capture_replacements() {
         let bound = SurfaceBinder::fresh();
-        let expression = SurfaceTerm::Lambda {
+        let expression = SyntaxTerm::Lambda {
             parameters: vec![(bound.clone(), ClickType::Integer)],
             result: ClickType::Integer,
-            body: Box::new(SurfaceTerm::Add(
+            body: Box::new(SyntaxTerm::Add(
                 Box::new(bound.reference()),
-                Box::new(SurfaceTerm::Binding("input".into())),
+                Box::new(SyntaxTerm::Binding("input".into())),
             )),
         };
         let changed = lowering::substitute_contract_expression(
@@ -698,7 +698,7 @@ mod tests {
             &BTreeMap::from([("input".to_owned(), bound.reference())]),
         )
         .unwrap();
-        let SurfaceTerm::Lambda { parameters, .. } = &changed else {
+        let SyntaxTerm::Lambda { parameters, .. } = &changed else {
             panic!("lambda")
         };
         assert_ne!(parameters[0].0, bound);

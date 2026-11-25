@@ -10,7 +10,7 @@ pub(super) fn literal_token(tokens: &[Token], index: usize) -> bool {
 }
 
 impl Parser {
-    pub(super) fn parse_float_bits(&mut self, width: u32) -> Result<SurfaceTerm, ClickError> {
+    pub(super) fn parse_float_bits(&mut self, width: u32) -> Result<SyntaxTerm, ClickError> {
         let name = format!("float{width}_from_bits");
         let error = || {
             format!(
@@ -54,7 +54,7 @@ impl Parser {
         } else {
             ProgramValue::Float64(MachineTerm::uint64_constant(bits))
         };
-        Ok(SurfaceTerm::ProgramExpression(ProgramExpression::Value(
+        Ok(SyntaxTerm::ProgramExpression(ProgramExpression::Value(
             value,
         )))
     }

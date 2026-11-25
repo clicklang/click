@@ -25,7 +25,7 @@ thread_local! {
 /// them.
 pub(in crate::surface) fn theorem_requirement_propositions(
     theorem: &TheoremDefinition,
-) -> Result<Vec<SurfaceProposition>, ClickError> {
+) -> Result<Vec<SyntaxProposition>, ClickError> {
     theorem
         .requires()
         .iter()
@@ -241,7 +241,7 @@ pub(in crate::surface) fn verify_concrete_theorem_definition(
 pub(super) struct PureTheoremContext {
     /// Immutable specification parameter names, retained for diagnostics.
     pub(super) diagnostic_names: std::sync::Arc<[(Variable, String)]>,
-    pub(super) declaration_bindings: BTreeMap<String, SurfaceTerm>,
+    pub(super) declaration_bindings: BTreeMap<String, SyntaxTerm>,
     /// The theorem's starting point: the memory it quantifies over, as the
     /// first point of a path of its own.
     pub(super) point: crate::kernel::ProgramPoint,
@@ -255,7 +255,7 @@ pub(super) struct PureTheoremContext {
 impl PureTheoremContext {
     fn with_declaration_bindings(
         &self,
-        bindings: &[(String, Option<ClickType>, SurfaceTerm)],
+        bindings: &[(String, Option<ClickType>, SyntaxTerm)],
         spec_definitions: SpecDefinitions<'_>,
     ) -> Result<Self, ClickError> {
         let mut context = self.clone();
@@ -268,7 +268,7 @@ impl PureTheoremContext {
             if let Some(value) = self.values.get(&name) {
                 substitutions.insert(
                     name.clone(),
-                    SurfaceTerm::ProgramExpression(ProgramExpression::Value(value.clone())),
+                    SyntaxTerm::ProgramExpression(ProgramExpression::Value(value.clone())),
                 );
             } else if let Some(value) = self.integer_values.get(&name) {
                 // This spelling cannot be written by a source-level binder.
@@ -276,7 +276,7 @@ impl PureTheoremContext {
                 context.integer_values = context
                     .integer_values
                     .with_inserted(captured.clone(), value.clone());
-                substitutions.insert(name, SurfaceTerm::Binding(captured));
+                substitutions.insert(name, SyntaxTerm::Binding(captured));
             }
         }
         let assumptions = assumptions_from_propositions(&context.requires);
@@ -291,9 +291,9 @@ impl PureTheoremContext {
             let is_integer = match click_type.as_ref() {
                 Some(ClickType::Integer) => true,
                 Some(_) => false,
-                None if matches!(value, SurfaceTerm::Lambda { .. })
+                None if matches!(value, SyntaxTerm::Lambda { .. })
                     || lambdas::is_proposition_value(&value)
-                    || matches!(&value, SurfaceTerm::Call { name, .. } if spec_definitions.functions.get(name).is_some_and(|definition| definition.return_type() == &ClickType::Proposition)) =>
+                    || matches!(&value, SyntaxTerm::Call { name, .. } if spec_definitions.functions.get(name).is_some_and(|definition| definition.return_type() == &ClickType::Proposition)) =>
                 {
                     false
                 }
@@ -324,10 +324,10 @@ impl PureTheoremContext {
                                 values.with_inserted(name, value)
                             });
                         let spec = crate::surface::lowering::elaborate_fixed_state_proposition_with_algebraic_and_integer_values(
-                            &SurfaceProposition::Comparison {
+                            &SyntaxProposition::Comparison {
                                 left: promoted,
                                 operator: ComparisonOperator::Equal,
-                                right: SurfaceTerm::IntegerLiteral("0".into()),
+                                right: SyntaxTerm::IntegerLiteral("0".into()),
                             }, BTreeMap::new(), BTreeMap::new(), &state, &state, ProgramValueBindings::new(), ProgramValueBindings::new(),
                             BTreeMap::new(), &integer_values, None, &RecordedStates::new(), spec_definitions,
                             BTreeSet::new(), BTreeMap::new(),).map_err(ClickError::new)?;
@@ -354,16 +354,16 @@ impl PureTheoremContext {
                 context.integer_values = context
                     .integer_values
                     .with_inserted(captured.clone(), value);
-                SurfaceTerm::Binding(captured)
+                SyntaxTerm::Binding(captured)
             } else if crate::surface::lowering::narrow_typed_arithmetic(click_type.as_ref(), &value)
             {
                 // A narrow typed `let` names its native sum (G2), as the
                 // clauses read it; the bare value would be C's promoted one.
-                SurfaceTerm::Let {
+                SyntaxTerm::Let {
                     name: name.clone().into(),
                     click_type: click_type.clone(),
                     value: Box::new(value),
-                    body: Box::new(SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+                    body: Box::new(SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
                         (name.clone()).into(),
                     ))),
                 }
@@ -383,8 +383,8 @@ impl PureTheoremContext {
 pub(super) struct PureInductionSetup {
     pub(super) parameter: String,
     pub(super) hypothesis: String,
-    pub(super) surface_requires: Vec<SurfaceProposition>,
-    pub(super) surface_goal: SurfaceProposition,
+    pub(super) surface_requires: Vec<SyntaxProposition>,
+    pub(super) surface_goal: SyntaxProposition,
     /// Present for algebraic induction; applications may instantiate all parameters.
     pub(super) structural_parameters: Option<Vec<FunctionParameter>>,
     pub(super) structural_root: Option<crate::kernel::AlgebraicTerm>,
@@ -394,7 +394,7 @@ pub(super) struct PureInductionSetup {
 pub(super) struct PureStructuralInductionApplication {
     /// The selected theorem's exact requirements and their written forms.
     pub(super) kernel_premises: Vec<Proposition>,
-    pub(super) surface_premises: Vec<SurfaceProposition>,
+    pub(super) surface_premises: Vec<SyntaxProposition>,
     pub(super) implication: Proposition,
     pub(super) conclusion: Proposition,
 }
@@ -413,13 +413,13 @@ pub(super) struct PureStructuralInductionBranchSetup {
 
 /// The bare parameter or binding name an induction argument spells, when it
 /// spells one rather than a compound term.
-pub(super) fn induction_argument_name(argument: &SurfaceTerm) -> Option<&str> {
+pub(super) fn induction_argument_name(argument: &SyntaxTerm) -> Option<&str> {
     match argument {
-        SurfaceTerm::Binding(name)
-        | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+        SyntaxTerm::Binding(name)
+        | SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::Named(name),
         )) => Some(name),
-        SurfaceTerm::AlgebraicVariable { name, .. } => name.written(),
+        SyntaxTerm::AlgebraicVariable { name, .. } => name.written(),
         _ => None,
     }
 }
@@ -429,8 +429,8 @@ pub(super) fn induction_argument_name(argument: &SurfaceTerm) -> Option<&str> {
 /// application spells that position alone.
 pub(super) fn structural_induction_descent_argument(
     parameter_index: usize,
-    arguments: &[SurfaceTerm],
-) -> Option<&SurfaceTerm> {
+    arguments: &[SyntaxTerm],
+) -> Option<&SyntaxTerm> {
     if arguments.len() == 1 {
         arguments.first()
     } else {
@@ -450,8 +450,8 @@ pub(super) fn structural_induction_hypothesis_substitution(
     parameters: &[FunctionParameter],
     parameter: &str,
     hypothesis: &str,
-    arguments: &[SurfaceTerm],
-) -> Result<BTreeMap<String, SurfaceTerm>, ClickError> {
+    arguments: &[SyntaxTerm],
+) -> Result<BTreeMap<String, SyntaxTerm>, ClickError> {
     if arguments.len() == 1 {
         return Ok(BTreeMap::from([(
             parameter.to_string(),
@@ -581,7 +581,7 @@ pub(super) fn pure_induction_hypothesis(
 
 fn prepare_pure_induction_setup(
     theorem: &TheoremDefinition,
-    goal: &SurfaceProposition,
+    goal: &SyntaxProposition,
     tactics: &[ProofTactic],
     context: &PureTheoremContext,
     spec_definitions: SpecDefinitions<'_>,
@@ -662,7 +662,7 @@ fn prepare_pure_induction_setup(
         };
         let state = ExecutionState::at_point(&context.point);
         let captured = capture_fixed_state_algebraic_expression(
-            &SurfaceTerm::AlgebraicVariable {
+            &SyntaxTerm::AlgebraicVariable {
                 name: parameter.clone().into(),
                 algebraic_type: algebraic_type.clone(),
                 binder_index: index,
@@ -804,7 +804,7 @@ pub(super) fn pure_theorem_context(
                 let name = parameter.name().to_owned();
                 Some((
                     name.clone(),
-                    SurfaceTerm::AlgebraicVariable {
+                    SyntaxTerm::AlgebraicVariable {
                         name: name.into(),
                         algebraic_type: algebraic_type.clone(),
                         binder_index,
@@ -1588,7 +1588,7 @@ fn verify_contract_refinement_theorem(
     ensure_index: usize,
     ensure_clause: &EnsureClause,
     claim_label: &str,
-    surface_goal: &SurfaceProposition,
+    surface_goal: &SyntaxProposition,
     context: &PureTheoremContext,
     spec_definitions: SpecDefinitions<'_>,
     theorem_environment: &TheoremEnvironment,
@@ -1597,7 +1597,7 @@ fn verify_contract_refinement_theorem(
     use super::smart_closures::LinearScriptDecline;
     use crate::surface::{ClickErrorKind, ProofRefusal};
 
-    let SurfaceProposition::PredicateCall { name, arguments } = surface_goal else {
+    let SyntaxProposition::PredicateCall { name, arguments } = surface_goal else {
         return Ok(None);
     };
     let Some(contract_definition) = spec_definitions.predicates.contract_definition(name) else {
@@ -1608,7 +1608,7 @@ fn verify_contract_refinement_theorem(
     let Some(argument) = arguments.first() else {
         return Ok(None);
     };
-    let lower = |proposition: &SurfaceProposition| {
+    let lower = |proposition: &SyntaxProposition| {
         lower_pure_theorem_proposition_with_integer_values(
             theorem.name(),
             proposition,
@@ -1632,8 +1632,8 @@ fn verify_contract_refinement_theorem(
     })?;
     let concrete_target = contract_expression_function_address(argument);
     let symbolic_binding = match argument {
-        SurfaceTerm::Binding(name)
-        | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+        SyntaxTerm::Binding(name)
+        | SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::Named(name),
         )) => Some(name.as_str()),
         _ => None,
@@ -1670,7 +1670,7 @@ fn verify_contract_refinement_theorem(
                 "`{claim_label}`: abstract contract refinement requires exactly one source-contract fact"
             )));
         };
-        let Some(SurfaceProposition::PredicateCall {
+        let Some(SyntaxProposition::PredicateCall {
             name: source_name,
             arguments: source_arguments,
         }) = requirement.proposition()
@@ -1725,7 +1725,7 @@ fn verify_contract_refinement_theorem(
     let selected_application = |tactic: &ProofTactic| -> Result<Option<Proposition>, ClickError> {
         let target = match tactic {
             ProofTactic::UnfoldProposition(target) => target.clone(),
-            ProofTactic::UnfoldFunction(application) => SurfaceProposition::PredicateCall {
+            ProofTactic::UnfoldFunction(application) => SyntaxProposition::PredicateCall {
                 name: application.name.clone(),
                 arguments: application.arguments.clone(),
             },
@@ -1886,13 +1886,13 @@ fn verify_contract_refinement_theorem(
     let mut pending = vec![(&proof_goal, &presentation)];
     while let Some((kernel, surface)) = pending.pop() {
         match (kernel, surface) {
-            (Proposition::And(kl, kr), SurfaceProposition::And(sl, sr))
-            | (Proposition::Or(kl, kr), SurfaceProposition::Or(sl, sr))
-            | (Proposition::Implies(kl, kr), SurfaceProposition::Implies(sl, sr)) => {
+            (Proposition::And(kl, kr), SyntaxProposition::And(sl, sr))
+            | (Proposition::Or(kl, kr), SyntaxProposition::Or(sl, sr))
+            | (Proposition::Implies(kl, kr), SyntaxProposition::Implies(sl, sr)) => {
                 pending.push((kl, sl));
                 pending.push((kr, sr));
             }
-            (Proposition::Not(k), SurfaceProposition::Not(s)) => pending.push((k, s)),
+            (Proposition::Not(k), SyntaxProposition::Not(s)) => pending.push((k, s)),
             _ => surfaces.record_lowering(surface, kernel)?,
         }
     }
@@ -2084,7 +2084,7 @@ fn check_direct_pure_goal_with_proof(
     implicit: bool,
     claim_label: &str,
     context: &PureTheoremContext,
-    surface_goal: &SurfaceProposition,
+    surface_goal: &SyntaxProposition,
     goal: &Proposition,
     goal_introductions: &crate::kernel::LoweringIntroductions,
     entry_requirements: &super::execution_planning::OpenObligationProbe,
@@ -2602,7 +2602,7 @@ fn verify_kernel_standard_theorem_axiom(
 fn check_pure_script_with_proof(
     claim_label: &str,
     context: &PureTheoremContext,
-    surface_goal: &SurfaceProposition,
+    surface_goal: &SyntaxProposition,
     goal: &Proposition,
     goal_introductions: &crate::kernel::LoweringIntroductions,
     entry_requirements: &super::execution_planning::OpenObligationProbe,
@@ -2718,8 +2718,8 @@ fn check_pure_script_with_proof(
 }
 
 pub(super) fn click_function_applications(
-    proposition: &SurfaceProposition,
-    known_facts: &[SurfaceProposition],
+    proposition: &SyntaxProposition,
+    known_facts: &[SyntaxProposition],
 ) -> Vec<ClickFunctionApplication> {
     click_function_applications_with(
         proposition,
@@ -2736,7 +2736,7 @@ pub(super) fn click_function_applications(
 /// application in either arm is valid, so a guard read here only directs the
 /// search.
 pub(super) fn click_function_applications_deciding_constant_guards(
-    proposition: &SurfaceProposition,
+    proposition: &SyntaxProposition,
 ) -> Vec<ClickFunctionApplication> {
     click_function_applications_with(
         proposition,
@@ -2749,23 +2749,23 @@ pub(super) fn click_function_applications_deciding_constant_guards(
 
 /// What decides an `if` guard while collecting applications.
 struct KnownGuards<'a> {
-    facts: &'a [SurfaceProposition],
+    facts: &'a [SyntaxProposition],
     /// Also decide a guard that compares constants.
     constants: bool,
 }
 
 fn click_function_applications_with(
-    proposition: &SurfaceProposition,
+    proposition: &SyntaxProposition,
     known_facts: &KnownGuards<'_>,
 ) -> Vec<ClickFunctionApplication> {
     fn fact_polarity(
-        proposition: &SurfaceProposition,
+        proposition: &SyntaxProposition,
         known_facts: &KnownGuards<'_>,
     ) -> Option<bool> {
         if known_facts.facts.contains(proposition) {
             return Some(true);
         }
-        let negated = SurfaceProposition::Not(Box::new(proposition.clone()));
+        let negated = SyntaxProposition::Not(Box::new(proposition.clone()));
         if known_facts.facts.contains(&negated) {
             return Some(false);
         }
@@ -2776,22 +2776,22 @@ fn click_function_applications_with(
     }
 
     fn expression(
-        term: &SurfaceTerm,
+        term: &SyntaxTerm,
         known_facts: &KnownGuards<'_>,
         applications: &mut Vec<ClickFunctionApplication>,
     ) {
         match term {
-            SurfaceTerm::IntegerContext(value) => expression(value, known_facts, applications),
+            SyntaxTerm::IntegerContext(value) => expression(value, known_facts, applications),
 
-            SurfaceTerm::Proposition(proposition) => {
+            SyntaxTerm::Proposition(proposition) => {
                 proposition_inner(proposition, known_facts, applications)
             }
-            SurfaceTerm::Resource(_) => {}
-            SurfaceTerm::RegionResult(_)
-            | SurfaceTerm::RegionAllocation(_)
-            | SurfaceTerm::RegionParameter { .. } => {}
-            SurfaceTerm::Lambda { .. } => {}
-            SurfaceTerm::Apply {
+            SyntaxTerm::Resource(_) => {}
+            SyntaxTerm::RegionResult(_)
+            | SyntaxTerm::RegionAllocation(_)
+            | SyntaxTerm::RegionParameter { .. } => {}
+            SyntaxTerm::Lambda { .. } => {}
+            SyntaxTerm::Apply {
                 function,
                 arguments,
             } => {
@@ -2801,34 +2801,34 @@ fn click_function_applications_with(
                 }
             }
 
-            SurfaceTerm::IntegerLiteral(_) => {}
-            SurfaceTerm::CUnary { operand: inner, .. }
-            | SurfaceTerm::MemoryLoad { pointer: inner, .. }
-            | SurfaceTerm::Negate(inner) => expression(inner, known_facts, applications),
-            SurfaceTerm::ResourceField(_)
-            | SurfaceTerm::AlgebraicVariable { .. }
-            | SurfaceTerm::Binding(_) => {}
-            SurfaceTerm::AlgebraicConstructor { arguments, .. } => {
+            SyntaxTerm::IntegerLiteral(_) => {}
+            SyntaxTerm::CUnary { operand: inner, .. }
+            | SyntaxTerm::MemoryLoad { pointer: inner, .. }
+            | SyntaxTerm::Negate(inner) => expression(inner, known_facts, applications),
+            SyntaxTerm::ResourceField(_)
+            | SyntaxTerm::AlgebraicVariable { .. }
+            | SyntaxTerm::Binding(_) => {}
+            SyntaxTerm::AlgebraicConstructor { arguments, .. } => {
                 for argument in arguments {
                     expression(argument, known_facts, applications);
                 }
             }
-            SurfaceTerm::AlgebraicMatch { scrutinee, arms } => {
+            SyntaxTerm::AlgebraicMatch { scrutinee, arms } => {
                 expression(scrutinee, known_facts, applications);
                 for arm in arms {
                     expression(&arm.body, known_facts, applications);
                 }
             }
-            SurfaceTerm::SequenceLiteral(elements) => {
+            SyntaxTerm::SequenceLiteral(elements) => {
                 for element in elements {
                     expression(element, known_facts, applications);
                 }
             }
-            SurfaceTerm::SequenceConcat(left, right) => {
+            SyntaxTerm::SequenceConcat(left, right) => {
                 expression(left, known_facts, applications);
                 expression(right, known_facts, applications);
             }
-            SurfaceTerm::MethodCall {
+            SyntaxTerm::MethodCall {
                 receiver,
                 arguments,
                 ..
@@ -2838,7 +2838,7 @@ fn click_function_applications_with(
                     expression(argument, known_facts, applications);
                 }
             }
-            SurfaceTerm::Call { name, arguments } => {
+            SyntaxTerm::Call { name, arguments } => {
                 for argument in arguments {
                     expression(argument, known_facts, applications);
                 }
@@ -2853,18 +2853,18 @@ fn click_function_applications_with(
                     applications.push(application);
                 }
             }
-            SurfaceTerm::Field { base, .. }
-            | SurfaceTerm::Old(base)
-            | SurfaceTerm::Exact(base)
-            | SurfaceTerm::At {
+            SyntaxTerm::Field { base, .. }
+            | SyntaxTerm::Old(base)
+            | SyntaxTerm::Exact(base)
+            | SyntaxTerm::At {
                 expression: base, ..
             }
-            | SurfaceTerm::BitwiseNot(base) => expression(base, known_facts, applications),
+            | SyntaxTerm::BitwiseNot(base) => expression(base, known_facts, applications),
             crate::surface::binary_contract_expression!(left, right) => {
                 expression(left, known_facts, applications);
                 expression(right, known_facts, applications);
             }
-            SurfaceTerm::If {
+            SyntaxTerm::If {
                 condition,
                 then_branch,
                 else_branch,
@@ -2876,7 +2876,7 @@ fn click_function_applications_with(
                     None => {}
                 }
             }
-            SurfaceTerm::RangeFold {
+            SyntaxTerm::RangeFold {
                 start,
                 end,
                 initial,
@@ -2888,78 +2888,78 @@ fn click_function_applications_with(
                 expression(initial, known_facts, applications);
                 expression(body, known_facts, applications);
             }
-            SurfaceTerm::Let { value, body, .. } => {
+            SyntaxTerm::Let { value, body, .. } => {
                 expression(value, known_facts, applications);
                 expression(body, known_facts, applications);
             }
-            SurfaceTerm::ResourceCount(resource) => {
+            SyntaxTerm::ResourceCount(resource) => {
                 if let ResourceClause::Declared { arguments, .. } = resource.as_ref() {
                     for argument in arguments {
                         expression(argument, known_facts, applications);
                     }
                 }
             }
-            SurfaceTerm::QualifiedC { .. }
-            | SurfaceTerm::ProgramExpression(_)
-            | SurfaceTerm::ArrayIndex { .. }
-            | SurfaceTerm::ProgramBinding(_)
-            | SurfaceTerm::ResourceWildcard => {}
+            SyntaxTerm::QualifiedC { .. }
+            | SyntaxTerm::ProgramExpression(_)
+            | SyntaxTerm::ArrayIndex { .. }
+            | SyntaxTerm::ProgramBinding(_)
+            | SyntaxTerm::ResourceWildcard => {}
         }
     }
 
     fn proposition_inner(
-        proposition: &SurfaceProposition,
+        proposition: &SyntaxProposition,
         known_facts: &KnownGuards<'_>,
         applications: &mut Vec<ClickFunctionApplication>,
     ) {
         match proposition {
-            SurfaceProposition::Value(value) => expression(value, known_facts, applications),
-            SurfaceProposition::Comparison { left, right, .. } => {
+            SyntaxProposition::Value(value) => expression(value, known_facts, applications),
+            SyntaxProposition::Comparison { left, right, .. } => {
                 expression(left, known_facts, applications);
                 expression(right, known_facts, applications);
             }
-            SurfaceProposition::FloatClassification {
+            SyntaxProposition::FloatClassification {
                 expression: value, ..
             } => {
                 expression(value, known_facts, applications);
             }
-            SurfaceProposition::Defined { expression: value }
-            | SurfaceProposition::IsA { pointer: value, .. } => {
+            SyntaxProposition::Defined { expression: value }
+            | SyntaxProposition::IsA { pointer: value, .. } => {
                 expression(value, known_facts, applications)
             }
-            SurfaceProposition::And(left, right)
-            | SurfaceProposition::Or(left, right)
-            | SurfaceProposition::Implies(left, right) => {
+            SyntaxProposition::And(left, right)
+            | SyntaxProposition::Or(left, right)
+            | SyntaxProposition::Implies(left, right) => {
                 proposition_inner(left, known_facts, applications);
                 proposition_inner(right, known_facts, applications);
             }
-            SurfaceProposition::Not(body)
-            | SurfaceProposition::At {
+            SyntaxProposition::Not(body)
+            | SyntaxProposition::At {
                 proposition: body, ..
             }
-            | SurfaceProposition::ForAll { body, .. }
-            | SurfaceProposition::Exists { body, .. } => {
+            | SyntaxProposition::ForAll { body, .. }
+            | SyntaxProposition::Exists { body, .. } => {
                 proposition_inner(body, known_facts, applications)
             }
-            SurfaceProposition::RangeAll {
+            SyntaxProposition::RangeAll {
                 start, end, body, ..
             }
-            | SurfaceProposition::RangeAny {
+            | SyntaxProposition::RangeAny {
                 start, end, body, ..
             } => {
                 expression(start, known_facts, applications);
                 expression(end, known_facts, applications);
                 proposition_inner(body, known_facts, applications);
             }
-            SurfaceProposition::PredicateCall { arguments, .. } => {
+            SyntaxProposition::PredicateCall { arguments, .. } => {
                 for argument in arguments {
                     expression(argument, known_facts, applications);
                 }
             }
-            SurfaceProposition::Separate { .. }
-            | SurfaceProposition::ResourceViewable { .. }
-            | SurfaceProposition::Contains { .. }
-            | SurfaceProposition::Loadable { .. } => {}
+            SyntaxProposition::Separate { .. }
+            | SyntaxProposition::ResourceViewable { .. }
+            | SyntaxProposition::Contains { .. }
+            | SyntaxProposition::Loadable { .. } => {}
         }
     }
 
@@ -2970,19 +2970,19 @@ fn click_function_applications_with(
 
 pub(super) fn induction_application_surface_premises(
     setup: &PureInductionSetup,
-    argument: &SurfaceTerm,
-) -> Result<Vec<SurfaceProposition>, ClickError> {
-    let zero = SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(0)));
-    let current = SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+    argument: &SyntaxTerm,
+) -> Result<Vec<SyntaxProposition>, ClickError> {
+    let zero = SyntaxTerm::ProgramExpression(ProgramExpression::Value(int32(0)));
+    let current = SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
         (setup.parameter.clone()).into(),
     ));
     let mut premises = vec![
-        SurfaceProposition::Comparison {
+        SyntaxProposition::Comparison {
             left: zero,
             operator: ComparisonOperator::LessEqual,
             right: argument.clone(),
         },
-        SurfaceProposition::Comparison {
+        SyntaxProposition::Comparison {
             left: argument.clone(),
             operator: ComparisonOperator::LessThan,
             right: current,
@@ -2996,7 +2996,7 @@ pub(super) fn induction_application_surface_premises(
         .map_err(ClickError::new)?;
         let mut pending = vec![substituted];
         while let Some(premise) = pending.pop() {
-            if let SurfaceProposition::And(left, right) = premise {
+            if let SyntaxProposition::And(left, right) = premise {
                 pending.push(*right);
                 pending.push(*left);
             } else if !premises.contains(&premise) {
@@ -3009,7 +3009,7 @@ pub(super) fn induction_application_surface_premises(
 
 pub(super) fn lower_pure_theorem_proposition(
     theorem_name: &str,
-    proposition: &SurfaceProposition,
+    proposition: &SyntaxProposition,
     contract_environment: ContractEnvironment<'_>,
     at: &crate::kernel::ProgramPoint,
     spec_definitions: SpecDefinitions<'_>,
@@ -3026,7 +3026,7 @@ pub(super) fn lower_pure_theorem_proposition(
 
 pub(super) fn lower_pure_theorem_proposition_with_integer_values(
     theorem_name: &str,
-    proposition: &SurfaceProposition,
+    proposition: &SyntaxProposition,
     contract_environment: ContractEnvironment<'_>,
     integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
     at: &crate::kernel::ProgramPoint,
@@ -3046,7 +3046,7 @@ pub(super) fn lower_pure_theorem_proposition_with_integer_values(
 #[allow(clippy::too_many_arguments)]
 pub(super) fn lower_pure_theorem_proposition_with_algebraic_and_integer_values(
     theorem_name: &str,
-    proposition: &SurfaceProposition,
+    proposition: &SyntaxProposition,
     contract_environment: ContractEnvironment<'_>,
     algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
     integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
@@ -3072,7 +3072,7 @@ pub(super) fn lower_pure_theorem_proposition_with_algebraic_and_integer_values(
 #[allow(clippy::too_many_arguments)]
 pub(super) fn lower_pure_theorem_proposition_recording_introductions(
     theorem_name: &str,
-    proposition: &SurfaceProposition,
+    proposition: &SyntaxProposition,
     assumptions: &PureFactContext,
     contract_environment: ContractEnvironment<'_>,
     algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
@@ -3096,7 +3096,7 @@ pub(super) fn lower_pure_theorem_proposition_recording_introductions(
 #[allow(clippy::too_many_arguments)]
 pub(super) fn lower_pure_theorem_proposition_for_proof(
     theorem_name: &str,
-    proposition: &SurfaceProposition,
+    proposition: &SyntaxProposition,
     assumptions: &PureFactContext,
     contract_environment: ContractEnvironment<'_>,
     algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
@@ -3128,7 +3128,7 @@ pub(super) fn lower_pure_theorem_proposition_for_proof(
 /// applications.
 fn lower_pure_theorem_proposition_with_opaque_calls(
     theorem_name: &str,
-    proposition: &SurfaceProposition,
+    proposition: &SyntaxProposition,
     contract_environment: ContractEnvironment<'_>,
     at: &crate::kernel::ProgramPoint,
     spec_definitions: SpecDefinitions<'_>,
@@ -3151,7 +3151,7 @@ fn lower_pure_theorem_proposition_with_opaque_calls(
 
 fn lower_pure_theorem_proposition_opaque(
     theorem_name: &str,
-    proposition: &SurfaceProposition,
+    proposition: &SyntaxProposition,
     assumptions: &PureFactContext,
     context: &PureTheoremContext,
     spec_definitions: SpecDefinitions<'_>,
@@ -4521,12 +4521,12 @@ mod function_candidate_tests {
 
     #[test]
     fn unfolding_candidates_descend_through_integer_conversions() {
-        let call = SurfaceTerm::Call {
+        let call = SyntaxTerm::Call {
             name: "count".into(),
             arguments: vec![],
         };
-        let goal = SurfaceProposition::Defined {
-            expression: SurfaceTerm::Call {
+        let goal = SyntaxProposition::Defined {
+            expression: SyntaxTerm::Call {
                 name: "to_integer".into(),
                 arguments: vec![call],
             },
@@ -4541,10 +4541,10 @@ mod function_candidate_tests {
 /// integer literal or a machine integer constant, through casts, `+`, `-` and
 /// negation; any step that leaves its type's range, or a comparison of a
 /// signed with an unsigned value, is left undecided.
-fn constant_guard_value(proposition: &SurfaceProposition) -> Option<bool> {
+fn constant_guard_value(proposition: &SyntaxProposition) -> Option<bool> {
     match proposition {
-        SurfaceProposition::Not(body) => constant_guard_value(body).map(|value| !value),
-        SurfaceProposition::Comparison {
+        SyntaxProposition::Not(body) => constant_guard_value(body).map(|value| !value),
+        SyntaxProposition::Comparison {
             left,
             operator,
             right,
@@ -4616,15 +4616,15 @@ impl ConstantType {
 
 /// A constant integer expression's value and machine type, `None` for an
 /// `Integer` literal.
-fn constant_integer(expression: &SurfaceTerm) -> Option<(i128, Option<ConstantType>)> {
+fn constant_integer(expression: &SyntaxTerm) -> Option<(i128, Option<ConstantType>)> {
     let in_range = |value: i128, ty: Option<ConstantType>| {
         ty.is_none_or(|ty| ty.contains(value))
             .then_some((value, ty))
     };
     match expression {
-        SurfaceTerm::IntegerLiteral(text) => Some((text.parse().ok()?, None)),
-        SurfaceTerm::IntegerContext(inner) => constant_integer(inner),
-        SurfaceTerm::ProgramExpression(ProgramExpression::Value(value)) => {
+        SyntaxTerm::IntegerLiteral(text) => Some((text.parse().ok()?, None)),
+        SyntaxTerm::IntegerContext(inner) => constant_integer(inner),
+        SyntaxTerm::ProgramExpression(ProgramExpression::Value(value)) => {
             let ty = ConstantType::of(value.program_type())?;
             let value = MachineIntegerType::from_program_type(value.program_type())?
                 .constant_from_value(value)?
@@ -4633,12 +4633,12 @@ fn constant_integer(expression: &SurfaceTerm) -> Option<(i128, Option<ConstantTy
         }
         // A string literal is read-only, so its byte at a constant index is
         // a constant: `"hi"[1u64]` is `105u8`.
-        SurfaceTerm::Index(base, index) => {
+        SyntaxTerm::Index(base, index) => {
             let mut base = base.as_ref();
-            while let SurfaceTerm::At { expression, .. } = base {
+            while let SyntaxTerm::At { expression, .. } = base {
                 base = expression;
             }
-            let SurfaceTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Pointer(
+            let SyntaxTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Pointer(
                 pointer,
             ))) = base
             else {
@@ -4664,25 +4664,25 @@ fn constant_integer(expression: &SurfaceTerm) -> Option<(i128, Option<ConstantTy
                 (i128::from(byte), Some(ConstantType::UInt8))
             })
         }
-        SurfaceTerm::CUnary {
+        SyntaxTerm::CUnary {
             operand,
             lowered: ProgramExpression::Cast { target_type, .. },
         } => {
             let (value, _) = constant_integer(operand)?;
             in_range(value, Some(ConstantType::of(*target_type)?))
         }
-        SurfaceTerm::Negate(inner) => {
+        SyntaxTerm::Negate(inner) => {
             let (value, ty) = constant_integer(inner)?;
             in_range(-value, ty)
         }
-        SurfaceTerm::Add(left, right) | SurfaceTerm::Subtract(left, right) => {
+        SyntaxTerm::Add(left, right) | SyntaxTerm::Subtract(left, right) => {
             let (left_value, left_type) = constant_integer(left)?;
             let (right_value, right_type) = constant_integer(right)?;
             let ty = match (left_type, right_type) {
                 (Some(left), Some(right)) if left != right => return None,
                 (left, right) => left.or(right),
             };
-            let value = if matches!(expression, SurfaceTerm::Add(..)) {
+            let value = if matches!(expression, SyntaxTerm::Add(..)) {
                 left_value + right_value
             } else {
                 left_value - right_value
@@ -4699,43 +4699,43 @@ fn constant_integer(expression: &SurfaceTerm) -> Option<(i128, Option<ConstantTy
 /// == at(region(1).entry, format_length(..))`. The call's array arguments
 /// are read at that point, so its value is a different term elsewhere.
 pub(super) fn application_point(
-    proposition: &SurfaceProposition,
+    proposition: &SyntaxProposition,
     application: &ClickFunctionApplication,
 ) -> Option<ProgramPointSelector> {
     fn in_expression(
-        term: &SurfaceTerm,
+        term: &SyntaxTerm,
         application: &ClickFunctionApplication,
     ) -> Option<ProgramPointSelector> {
         match term {
-            SurfaceTerm::At {
+            SyntaxTerm::At {
                 selector,
                 expression,
             } => match expression.as_ref() {
-                SurfaceTerm::Call { name, arguments }
+                SyntaxTerm::Call { name, arguments }
                     if *name == application.name && *arguments == application.arguments =>
                 {
                     Some(selector.clone())
                 }
                 inner => in_expression(inner, application),
             },
-            SurfaceTerm::AlgebraicConstructor { arguments, .. }
-            | SurfaceTerm::Call { arguments, .. } => arguments
+            SyntaxTerm::AlgebraicConstructor { arguments, .. }
+            | SyntaxTerm::Call { arguments, .. } => arguments
                 .iter()
                 .find_map(|argument| in_expression(argument, application)),
-            SurfaceTerm::Proposition(proposition) => application_point(proposition, application),
+            SyntaxTerm::Proposition(proposition) => application_point(proposition, application),
             _ => None,
         }
     }
     match proposition {
-        SurfaceProposition::Value(value) => in_expression(value, application),
-        SurfaceProposition::Comparison { left, right, .. } => {
+        SyntaxProposition::Value(value) => in_expression(value, application),
+        SyntaxProposition::Comparison { left, right, .. } => {
             in_expression(left, application).or_else(|| in_expression(right, application))
         }
-        SurfaceProposition::And(left, right) | SurfaceProposition::Or(left, right) => {
+        SyntaxProposition::And(left, right) | SyntaxProposition::Or(left, right) => {
             application_point(left, application).or_else(|| application_point(right, application))
         }
-        SurfaceProposition::Not(body)
-        | SurfaceProposition::At {
+        SyntaxProposition::Not(body)
+        | SyntaxProposition::At {
             proposition: body, ..
         } => application_point(body, application),
         _ => None,
@@ -4757,9 +4757,9 @@ pub(super) fn largest_constant_argument(application: &ClickFunctionApplication) 
 
 /// The constant `value` of type `ty` as an expression: a machine constant, or
 /// an `Integer` literal when `ty` is `None`.
-fn constant_expression(value: i128, ty: Option<ConstantType>) -> Option<SurfaceTerm> {
+fn constant_expression(value: i128, ty: Option<ConstantType>) -> Option<SyntaxTerm> {
     let value = match ty {
-        None => return Some(SurfaceTerm::IntegerLiteral(value.to_string())),
+        None => return Some(SyntaxTerm::IntegerLiteral(value.to_string())),
         Some(ConstantType::Int8) => {
             crate::kernel::int8(MachineTerm::constant(i8::try_from(value).ok()? as u32))
         }
@@ -4779,7 +4779,7 @@ fn constant_expression(value: i128, ty: Option<ConstantType>) -> Option<SurfaceT
             ProgramValue::UInt64(MachineTerm::uint64_constant(u64::try_from(value).ok()?))
         }
     };
-    Some(SurfaceTerm::ProgramExpression(ProgramExpression::Value(
+    Some(SyntaxTerm::ProgramExpression(ProgramExpression::Value(
         value,
     )))
 }
@@ -4809,7 +4809,7 @@ fn with_constant_arguments(application: &ClickFunctionApplication) -> ClickFunct
 pub(super) fn ground_recursion_level(
     functions: &ClickFunctionEnvironment,
     application: &ClickFunctionApplication,
-) -> Option<(SurfaceTerm, Option<ClickFunctionApplication>)> {
+) -> Option<(SyntaxTerm, Option<ClickFunctionApplication>)> {
     let definition = functions.get(&application.name)?;
     if definition.decreases().is_none()
         || !definition.type_parameters().is_empty()
@@ -4835,7 +4835,7 @@ pub(super) fn ground_recursion_level(
         &substitutions,
     )
     .ok()?;
-    while let SurfaceTerm::If {
+    while let SyntaxTerm::If {
         condition,
         then_branch,
         else_branch,
@@ -4847,7 +4847,7 @@ pub(super) fn ground_recursion_level(
             *else_branch
         };
     }
-    let calls = click_function_applications(&SurfaceProposition::Value(arm.clone()), &[])
+    let calls = click_function_applications(&SyntaxProposition::Value(arm.clone()), &[])
         .into_iter()
         .filter(|call| call.name == application.name)
         .collect::<Vec<_>>();
@@ -4862,13 +4862,13 @@ pub(super) fn ground_recursion_level(
 /// `expression` with each constant field of its constructors written as its
 /// value, such as a string literal's byte, so the equality closure compares
 /// it with a written list.
-fn with_constant_fields(expression: &SurfaceTerm) -> SurfaceTerm {
+fn with_constant_fields(expression: &SyntaxTerm) -> SyntaxTerm {
     match expression {
-        SurfaceTerm::AlgebraicConstructor {
+        SyntaxTerm::AlgebraicConstructor {
             algebraic_type,
             variant,
             arguments,
-        } => SurfaceTerm::AlgebraicConstructor {
+        } => SyntaxTerm::AlgebraicConstructor {
             algebraic_type: algebraic_type.clone(),
             variant: variant.clone(),
             arguments: arguments.iter().map(with_constant_fields).collect(),
@@ -4885,8 +4885,8 @@ fn with_constant_fields(expression: &SurfaceTerm) -> SurfaceTerm {
 /// an arm holds its call where no value can be put.
 pub(super) fn ground_recursion_value(
     name: &str,
-    levels: &[(ClickFunctionApplication, SurfaceTerm)],
-) -> Option<SurfaceTerm> {
+    levels: &[(ClickFunctionApplication, SyntaxTerm)],
+) -> Option<SyntaxTerm> {
     let ((_, base), rest) = levels.split_last()?;
     let mut value = base.clone();
     for (_, arm) in rest.iter().rev() {
@@ -4898,30 +4898,30 @@ pub(super) fn ground_recursion_value(
 /// `expression` with its one call of `name` replaced by `value`, through
 /// constructors and `+` and `-`, the places a recursive arm holds its call.
 fn with_call_replaced(
-    expression: &SurfaceTerm,
+    expression: &SyntaxTerm,
     name: &str,
-    value: &SurfaceTerm,
-) -> Option<SurfaceTerm> {
-    let replace = |expression: &SurfaceTerm| with_call_replaced(expression, name, value);
+    value: &SyntaxTerm,
+) -> Option<SyntaxTerm> {
+    let replace = |expression: &SyntaxTerm| with_call_replaced(expression, name, value);
     Some(match expression {
-        SurfaceTerm::Call { name: called, .. } if called == name => value.clone(),
-        SurfaceTerm::AlgebraicConstructor {
+        SyntaxTerm::Call { name: called, .. } if called == name => value.clone(),
+        SyntaxTerm::AlgebraicConstructor {
             algebraic_type,
             variant,
             arguments,
-        } => SurfaceTerm::AlgebraicConstructor {
+        } => SyntaxTerm::AlgebraicConstructor {
             algebraic_type: algebraic_type.clone(),
             variant: variant.clone(),
             arguments: arguments.iter().map(replace).collect::<Option<_>>()?,
         },
-        SurfaceTerm::Add(left, right) => {
-            SurfaceTerm::Add(Box::new(replace(left)?), Box::new(replace(right)?))
+        SyntaxTerm::Add(left, right) => {
+            SyntaxTerm::Add(Box::new(replace(left)?), Box::new(replace(right)?))
         }
-        SurfaceTerm::Subtract(left, right) => {
-            SurfaceTerm::Subtract(Box::new(replace(left)?), Box::new(replace(right)?))
+        SyntaxTerm::Subtract(left, right) => {
+            SyntaxTerm::Subtract(Box::new(replace(left)?), Box::new(replace(right)?))
         }
         other => {
-            let calls = click_function_applications(&SurfaceProposition::Value(other.clone()), &[]);
+            let calls = click_function_applications(&SyntaxProposition::Value(other.clone()), &[]);
             if calls.iter().any(|call| call.name == name) {
                 return None;
             }

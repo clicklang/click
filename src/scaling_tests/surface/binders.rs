@@ -2,11 +2,11 @@ use super::*;
 use crate::surface::lowering::{ContractSubstitutions, SubstitutionSourceMap};
 #[derive(Debug)]
 struct Source {
-    values: BTreeMap<String, SurfaceTerm>,
+    values: BTreeMap<String, SyntaxTerm>,
     queries: std::cell::Cell<usize>,
 }
 impl SubstitutionSourceMap for Source {
-    fn replacement(&self, name: &crate::kernel::BindingName) -> Option<&SurfaceTerm> {
+    fn replacement(&self, name: &crate::kernel::BindingName) -> Option<&SyntaxTerm> {
         self.queries.set(self.queries.get() + 1);
         name.named().and_then(|name| self.values.get(name))
     }
@@ -22,7 +22,7 @@ fn typed_binder_freshening_scales_with_selected_replacements_and_ignores_ambient
                     .map(|i| {
                         (
                             format!("unrelated_{i}"),
-                            SurfaceTerm::IntegerLiteral("0".into()),
+                            SyntaxTerm::IntegerLiteral("0".into()),
                         )
                     })
                     .collect(),
@@ -34,22 +34,22 @@ fn typed_binder_freshening_scales_with_selected_replacements_and_ignores_ambient
                 let name = format!("y{i}");
                 source
                     .values
-                    .insert(format!("x{i}"), SurfaceTerm::Binding(name.clone()));
+                    .insert(format!("x{i}"), SyntaxTerm::Binding(name.clone()));
                 parameters.push((SurfaceBinder::from(name.clone()), ClickType::Integer));
-                leaves.push(SurfaceTerm::Add(
-                    Box::new(SurfaceTerm::Binding(format!("x{i}"))),
-                    Box::new(SurfaceTerm::Binding(name)),
+                leaves.push(SyntaxTerm::Add(
+                    Box::new(SyntaxTerm::Binding(format!("x{i}"))),
+                    Box::new(SyntaxTerm::Binding(name)),
                 ));
             }
             while leaves.len() > 1 {
                 leaves = leaves
                     .chunks(2)
                     .map(|pair| {
-                        SurfaceTerm::Add(Box::new(pair[0].clone()), Box::new(pair[1].clone()))
+                        SyntaxTerm::Add(Box::new(pair[0].clone()), Box::new(pair[1].clone()))
                     })
                     .collect();
             }
-            let expression = SurfaceTerm::Lambda {
+            let expression = SyntaxTerm::Lambda {
                 parameters,
                 result: ClickType::Integer,
                 body: Box::new(leaves.pop().unwrap()),
@@ -85,11 +85,11 @@ fn typed_binder_freshening_scales_with_selected_replacements_and_ignores_ambient
 
 #[derive(Debug)]
 struct ReferenceSource {
-    values: BTreeMap<crate::kernel::BindingName, SurfaceTerm>,
+    values: BTreeMap<crate::kernel::BindingName, SyntaxTerm>,
     queries: std::cell::Cell<usize>,
 }
 impl SubstitutionSourceMap for ReferenceSource {
-    fn replacement(&self, name: &crate::kernel::BindingName) -> Option<&SurfaceTerm> {
+    fn replacement(&self, name: &crate::kernel::BindingName) -> Option<&SyntaxTerm> {
         self.queries.set(self.queries.get() + 1);
         self.values.get(name)
     }
@@ -98,10 +98,10 @@ impl SubstitutionSourceMap for ReferenceSource {
 fn reference_substitution_selects_only_its_carrier_and_keeps_lexical_captures_free() {
     use crate::kernel::BindingName;
     let carrier = BindingName::reference_carrier("x");
-    let expression = SurfaceTerm::Lambda {
+    let expression = SyntaxTerm::Lambda {
         parameters: vec![("y".into(), ClickType::Integer)],
         result: ClickType::Integer,
-        body: Box::new(SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+        body: Box::new(SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
             carrier.clone(),
         ))),
     };
@@ -112,7 +112,7 @@ fn reference_substitution_selects_only_its_carrier_and_keeps_lexical_captures_fr
                 .map(|i| {
                     (
                         BindingName::reference_carrier(format!("unused_{i}")),
-                        SurfaceTerm::IntegerLiteral("0".into()),
+                        SyntaxTerm::IntegerLiteral("0".into()),
                     )
                 })
                 .collect(),
@@ -120,7 +120,7 @@ fn reference_substitution_selects_only_its_carrier_and_keeps_lexical_captures_fr
         };
         source
             .values
-            .insert(carrier.clone(), SurfaceTerm::Binding("y".into()));
+            .insert(carrier.clone(), SyntaxTerm::Binding("y".into()));
         let ((actual, work), persistent_work) = crate::persistent::measure_persistent_work(|| {
             crate::instrumentation::measure_deterministic_work(|| {
                 lowering::substitute_contract_expression(
@@ -146,15 +146,15 @@ fn interface_substitution_reads_only_referenced_proof_bindings() {
     use crate::kernel::BindingName;
 
     let generated = SurfaceBinder::fresh();
-    let selected = SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(42)));
-    let fact = SurfaceProposition::ForAll {
+    let selected = SyntaxTerm::ProgramExpression(ProgramExpression::Value(int32(42)));
+    let fact = SyntaxProposition::ForAll {
         name: "x".into(),
         written_name: None,
         click_type: ClickType::Integer,
-        body: Box::new(SurfaceProposition::Comparison {
-            left: SurfaceTerm::Binding("n".into()),
+        body: Box::new(SyntaxProposition::Comparison {
+            left: SyntaxTerm::Binding("n".into()),
             operator: ComparisonOperator::Equal,
-            right: SurfaceTerm::Binding("x".into()),
+            right: SyntaxTerm::Binding("x".into()),
         }),
     };
     let resource = ResourceClause::Declared {
@@ -173,7 +173,7 @@ fn interface_substitution_reads_only_referenced_proof_bindings() {
             .map(|index| (format!("unused_{index}"), selected.clone()))
             .collect();
         bindings.insert("x", selected.clone());
-        bindings.insert("n", SurfaceTerm::Binding("x".into()));
+        bindings.insert("n", SyntaxTerm::Binding("x".into()));
         bindings.insert(generated.clone(), selected.clone());
         let ((rewritten_fact, rewritten_resource), work) =
             crate::persistent::measure_persistent_work(|| {

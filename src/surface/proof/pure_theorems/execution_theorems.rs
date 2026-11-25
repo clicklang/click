@@ -43,7 +43,7 @@ pub(super) fn verify_execution_theorem(
         return Err(error("requires exactly one target-contract conclusion"));
     };
     let Ensure::Proposition(
-        goal @ SurfaceProposition::PredicateCall {
+        goal @ SyntaxProposition::PredicateCall {
             name: target_name,
             arguments,
         },
@@ -104,9 +104,9 @@ pub(super) fn verify_execution_theorem(
             ));
         }
     }
-    let is_callback = |arguments: &[SurfaceTerm]| {
-        matches!(arguments.first(), Some(SurfaceTerm::Binding(name)) if name == &execution.callback)
-            || matches!(arguments.first(), Some(SurfaceTerm::ProgramExpression(ProgramExpression::Variable(name))) if name.is_named(&execution.callback))
+    let is_callback = |arguments: &[SyntaxTerm]| {
+        matches!(arguments.first(), Some(SyntaxTerm::Binding(name)) if name == &execution.callback)
+            || matches!(arguments.first(), Some(SyntaxTerm::ProgramExpression(ProgramExpression::Variable(name))) if name.is_named(&execution.callback))
     };
     if concrete_callee.is_none() && !is_callback(arguments) {
         return Err(error("the conclusion must describe the executed callback"));
@@ -117,7 +117,7 @@ pub(super) fn verify_execution_theorem(
         .ok_or_else(|| error("the conclusion must name a function contract"))?;
     // A contract fact's values, lowered as the theorem's conclusion is.
     let context = pure_theorem_context(theorem, spec_definitions)?;
-    let lower = |proposition: &SurfaceProposition| {
+    let lower = |proposition: &SyntaxProposition| {
         lower_pure_theorem_proposition(
             theorem.name(),
             proposition,
@@ -149,7 +149,7 @@ pub(super) fn verify_execution_theorem(
             return Err(error("requires at least one source-contract assumption"));
         }
         for requirement in theorem.requires() {
-            let Some(SurfaceProposition::PredicateCall { name, arguments }) =
+            let Some(SyntaxProposition::PredicateCall { name, arguments }) =
                 requirement.proposition()
             else {
                 return Err(error(
@@ -246,7 +246,7 @@ pub(super) fn verify_execution_theorem(
         .map(|(declared, written)| {
             (
                 declared.name().to_string(),
-                SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+                SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
                     (written.name().to_string()).into(),
                 )),
             )
@@ -314,12 +314,12 @@ pub(super) fn verify_execution_theorem(
             .iter()
             .zip(&target_values)
             .map(|(parameter, value)| {
-                Requirement::Proposition(SurfaceProposition::Comparison {
-                    left: SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+                Requirement::Proposition(SyntaxProposition::Comparison {
+                    left: SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
                         (parameter.name().to_string()).into(),
                     )),
                     operator: ComparisonOperator::Equal,
-                    right: SurfaceTerm::ProgramExpression(ProgramExpression::Value(value.clone())),
+                    right: SyntaxTerm::ProgramExpression(ProgramExpression::Value(value.clone())),
                 })
             }),
     );

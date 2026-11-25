@@ -48,10 +48,10 @@ use crate::languages::c::syntax::{self, CExpression, LongRank};
 use crate::languages::interface::InterfaceType;
 use crate::persistent::PersistentMap;
 
-fn contract_expression_function_address(expression: &SurfaceTerm) -> Option<&str> {
+fn contract_expression_function_address(expression: &SyntaxTerm) -> Option<&str> {
     match expression {
-        SurfaceTerm::ProgramExpression(ProgramExpression::FunctionAddress(name)) => Some(name),
-        SurfaceTerm::ProgramExpression(ProgramExpression::AddressOf(expression)) => {
+        SyntaxTerm::ProgramExpression(ProgramExpression::FunctionAddress(name)) => Some(name),
+        SyntaxTerm::ProgramExpression(ProgramExpression::AddressOf(expression)) => {
             match expression.as_ref() {
                 ProgramExpression::Variable(name) => name.named(),
                 _ => None,
@@ -502,7 +502,7 @@ pub(crate) fn rust_iterator_accessors(
 pub(crate) fn rust_iterator_method(
     iterator: &crate::languages::interface::RustLoopIterator,
     accessor: &str,
-) -> Result<SurfaceTerm, String> {
+) -> Result<SyntaxTerm, String> {
     use crate::languages::interface::RustIteratorKind as K;
     let expression = match (iterator.kind, accessor) {
         // A slice iterator is the slice it still covers: `iter.as_slice()`
@@ -537,10 +537,10 @@ pub(crate) fn rust_iterator_method(
                 "end" | "end()" => end,
                 "len()" => ProgramExpression::Subtract(Box::new(end), Box::new(start)),
                 _ => {
-                    return proposition_bool_value(SurfaceProposition::Comparison {
-                        left: SurfaceTerm::ProgramExpression(start),
+                    return proposition_bool_value(SyntaxProposition::Comparison {
+                        left: SyntaxTerm::ProgramExpression(start),
                         operator: ComparisonOperator::GreaterThan,
-                        right: SurfaceTerm::ProgramExpression(end),
+                        right: SyntaxTerm::ProgramExpression(end),
                     });
                 }
             }
@@ -559,7 +559,7 @@ pub(crate) fn rust_iterator_method(
                 "rem.len()" => &fields.remainder_length,
                 "chunk_size" => &fields.size,
                 _ => {
-                    return Ok(SurfaceTerm::ProgramExpression(ProgramExpression::Divide(
+                    return Ok(SyntaxTerm::ProgramExpression(ProgramExpression::Divide(
                         Box::new(ProgramExpression::Variable(fields.remaining_length.clone())),
                         Box::new(ProgramExpression::Variable(fields.size.clone())),
                     )));
@@ -592,7 +592,7 @@ pub(crate) fn rust_iterator_method(
             ));
         }
     };
-    Ok(SurfaceTerm::ProgramExpression(expression))
+    Ok(SyntaxTerm::ProgramExpression(expression))
 }
 
 /// The Rust spelling of the importer's iterator state variable `name` in a
@@ -605,7 +605,7 @@ pub(crate) fn rust_iterator_spelling(
     current: Option<usize>,
     name: &crate::kernel::BindingName,
 ) -> Option<String> {
-    let variable = SurfaceTerm::ProgramExpression(ProgramExpression::Variable(name.clone()));
+    let variable = SyntaxTerm::ProgramExpression(ProgramExpression::Variable(name.clone()));
     let accessor_of = |iterator: &crate::languages::interface::RustLoopIterator| {
         rust_iterator_accessors(iterator.kind)
             .iter()
@@ -631,7 +631,7 @@ pub(crate) fn rust_iterator_spelling(
 pub(crate) fn loop_iterator_bindings(
     signature: &FunctionSignature,
     loop_index: usize,
-) -> Vec<(String, SurfaceTerm)> {
+) -> Vec<(String, SyntaxTerm)> {
     let Some(iterator) = signature
         .rust_loop_iterators()
         .get(loop_index)
@@ -1259,7 +1259,7 @@ pub struct AlgebraicMatchArm {
     type_name: String,
     variant: String,
     bindings: Vec<SurfaceBinder>,
-    body: SurfaceTerm,
+    body: SyntaxTerm,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1267,7 +1267,7 @@ pub struct PredicateDefinition {
     name: String,
     type_parameters: Vec<String>,
     parameters: Vec<FunctionParameter>,
-    body: SurfaceProposition,
+    body: SyntaxProposition,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1280,11 +1280,11 @@ pub struct ClickFunctionDefinition {
     /// declared return type as a C function's declaration gives it
     /// (`design/effective-types.md`).
     return_object_class: Option<crate::kernel::effective_type::CAccessClass>,
-    decreases: Option<SurfaceTerm>,
+    decreases: Option<SyntaxTerm>,
     /// `None` for a library primitive operation, `function len<T>(v:
     /// Vec<T>) -> uint64;`: an uninterpreted function, known only through
     /// the library's axioms. Only library modules declare one.
-    body: Option<SurfaceTerm>,
+    body: Option<SyntaxTerm>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1309,9 +1309,9 @@ pub struct CompositeResourceBody {
     children: Vec<ResourceChildBody>,
     fields: Vec<ResourceFieldDefinition>,
     matched: Option<ResourceMatchBody>,
-    condition: Option<SurfaceProposition>,
+    condition: Option<SyntaxProposition>,
     contains: Vec<ResourceClause>,
-    facts: Vec<SurfaceProposition>,
+    facts: Vec<SyntaxProposition>,
     /// Existential witnesses (`let next: struct node* where P;`). The
     /// `where` proposition is also one of `facts`; the witness name is in
     /// scope for every later clause of the body.
@@ -1327,7 +1327,7 @@ pub struct ResourceChildBody {
     /// equations are checked against.
     resource: String,
     identity: crate::kernel::InstanceId,
-    arguments: Vec<SurfaceTerm>,
+    arguments: Vec<SyntaxTerm>,
     field_bindings: Vec<crate::kernel::ResourceChildField>,
 }
 
@@ -1560,14 +1560,14 @@ pub struct CallBinderTransport {
     /// `step(callee, { ... })`: the step names its C function, and the call's
     /// arguments are the call at the frontier, which must call `callee`.
     frontier: bool,
-    arguments: Vec<SurfaceTerm>,
+    arguments: Vec<SyntaxTerm>,
     binders: Vec<CallBinderBinding>,
     produced: Vec<CallBinderBinding>,
     /// Runtime binders that name a resource type, with the type written.
     type_arguments: Vec<(String, Variable, ResourceClause)>,
     /// The values the call map gives the callee's `let` value parameters,
     /// `{ n: k }`, each with the parameter it names.
-    value_arguments: Vec<(String, SurfaceTerm)>,
+    value_arguments: Vec<(String, SyntaxTerm)>,
     result: Option<String>,
 }
 
@@ -1604,7 +1604,7 @@ impl CallBinderTransport {
         Ok(self)
     }
 
-    pub fn value_arguments(&self) -> &[(String, SurfaceTerm)] {
+    pub fn value_arguments(&self) -> &[(String, SyntaxTerm)] {
         &self.value_arguments
     }
 
@@ -1626,7 +1626,7 @@ impl CallBinderTransport {
             .collect()
     }
 
-    pub fn arguments(&self) -> &[SurfaceTerm] {
+    pub fn arguments(&self) -> &[SyntaxTerm] {
         &self.arguments
     }
 
@@ -1862,11 +1862,11 @@ fn source_positions(sources: impl Iterator<Item = Option<usize>>) -> Vec<(usize,
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum FunctionDecrease {
     /// The parsed expression, before resolution decides what it names.
-    Unresolved(SurfaceTerm),
-    Numeric(SurfaceTerm),
+    Unresolved(SyntaxTerm),
+    Numeric(SyntaxTerm),
     /// A tuple of numeric components, `decreases (m, n);`, ranked
     /// lexicographically as a loop's tuple is.
-    Lexicographic(Vec<SurfaceTerm>),
+    Lexicographic(Vec<SyntaxTerm>),
     Resource(ResourceClause),
     /// A contract resource binder named without arguments, as in
     /// `owns t: tree_at(root); decreases t;`.
@@ -2090,13 +2090,13 @@ pub(in crate::surface) fn pointee_field_places<'a>(
 pub enum Requirement {
     LoadableSegment { segment: ContractSegment },
     Resource(ResourceClause),
-    Proposition(SurfaceProposition),
+    Proposition(SyntaxProposition),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EnsureClause {
     /// Value aliases visible where this claim and its proof were written.
-    proof_bindings: Vec<(String, Option<ClickType>, SurfaceTerm)>,
+    proof_bindings: Vec<(String, Option<ClickType>, SyntaxTerm)>,
     name: Option<String>,
     ensure: Ensure,
     proof: SourceProof,
@@ -2108,7 +2108,7 @@ pub struct EnsureClause {
     /// A resource ensure nested in a contract `if`. The condition is a
     /// pre-state proposition; the clause is present in the post-state only
     /// when that proposition is established at the call boundary.
-    condition: Option<SurfaceProposition>,
+    condition: Option<SyntaxProposition>,
 }
 
 /// A loop or function region's clause. Its contents are shared by its
@@ -2171,7 +2171,7 @@ pub struct StructuralClauseData {
     /// proof `match` arm's bindings, `let { ... } = unfold(...)` names, call-result
     /// binders. The clause keeps its written spelling, which expansion
     /// prints; every lowering reads it through [`StructuralClause::resolved`].
-    scope: BinderMap<SurfaceTerm>,
+    scope: BinderMap<SyntaxTerm>,
     /// Resource clauses declared beside the invariants. They give the region
     /// the write and read authority of a callee contract: the body executes
     /// owning exactly these resources, and the loop's write footprint is the
@@ -2184,24 +2184,24 @@ pub struct StructuralClauseData {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TerminationMeasure {
-    components: Vec<SurfaceTerm>,
+    components: Vec<SyntaxTerm>,
     /// The components as written, when resolving a loop clause's proof
     /// scope rewrote them. A proof-local name such as a `let { field: name }
     /// = unfold(...)` binder is replaced by the value it names, but the
     /// termination plan reads the written clause, so the loop head keeps the
     /// written spelling to name the component by.
-    written: Option<Vec<Option<SurfaceTerm>>>,
+    written: Option<Vec<Option<SyntaxTerm>>>,
 }
 
 impl TerminationMeasure {
-    pub(crate) fn new(components: Vec<SurfaceTerm>) -> Self {
+    pub(crate) fn new(components: Vec<SyntaxTerm>) -> Self {
         Self {
             components,
             written: None,
         }
     }
 
-    pub fn components(&self) -> &[SurfaceTerm] {
+    pub fn components(&self) -> &[SyntaxTerm] {
         &self.components
     }
 
@@ -2210,7 +2210,7 @@ impl TerminationMeasure {
     pub(in crate::surface) fn rewritten_component_source(
         &self,
         index: usize,
-    ) -> Option<&SurfaceTerm> {
+    ) -> Option<&SyntaxTerm> {
         self.written.as_ref()?.get(index)?.as_ref()
     }
 }
@@ -2224,14 +2224,14 @@ pub enum CodeRegion {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StructuralItem {
-    claim: SurfaceProposition,
+    claim: SyntaxProposition,
     /// The label the invariant was written with, `invariant name: P;`.
     name: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Ensure {
-    Proposition(SurfaceProposition),
+    Proposition(SyntaxProposition),
     Resource(ResourceClause),
 }
 
@@ -2240,7 +2240,7 @@ pub enum ResourceClause {
     /// A resource owned or viewed exactly when its contract condition holds.
     /// Initially exposed in loop contracts, using ordinary resource assertions.
     Conditional {
-        condition: SurfaceProposition,
+        condition: SyntaxProposition,
         resource: Box<ResourceClause>,
     },
     Named {
@@ -2258,14 +2258,14 @@ pub enum ResourceClause {
         segments: Vec<ContractSegment>,
     },
     Quantified {
-        quantity: SurfaceTerm,
+        quantity: SyntaxTerm,
         resource: Box<ResourceClause>,
     },
     Declared {
         access: ResourceAccessMode,
         kind: ResourceKind,
         name: String,
-        arguments: Vec<SurfaceTerm>,
+        arguments: Vec<SyntaxTerm>,
         /// Checked field shape when this declaration is used as a resource type.
         /// This does not name an occurrence or provide any field observations.
         type_schema: Option<crate::kernel::ResourceFieldSchema>,
@@ -2293,7 +2293,7 @@ pub enum IteratedTactic {
 pub struct IteratedTarget {
     resource: ResourceClause,
     point: Option<ProgramPointSelector>,
-    index: Option<SurfaceTerm>,
+    index: Option<SyntaxTerm>,
 }
 
 impl IteratedTactic {
@@ -2316,9 +2316,9 @@ pub struct IteratedResourceClause {
     /// The index binder, as written.
     pub(crate) binder: SurfaceBinder,
     /// The `where` proposition bounding the index.
-    pub(crate) range: SurfaceProposition,
+    pub(crate) range: SyntaxProposition,
     /// The optional `if` guard selecting which indices are held.
-    pub(crate) guard: Option<SurfaceProposition>,
+    pub(crate) guard: Option<SyntaxProposition>,
     /// The element range at index `binder`.
     pub(crate) element: ContractSegment,
 }
@@ -2336,7 +2336,7 @@ pub struct ResourceInstanceBinding {
     schema: Option<crate::kernel::ResourceFieldSchema>,
     fields: Option<crate::kernel::ResourceFieldValues>,
     /// Present only on an explicit proof-side resource construction.
-    fold_fields: Option<Vec<(String, SurfaceTerm)>>,
+    fold_fields: Option<Vec<(String, SyntaxTerm)>>,
     /// Explicit child slot, surface name, and instance identity. Shared to
     /// keep recursive tactic syntax small.
     child_bindings: Option<std::sync::Arc<[(String, String, crate::kernel::InstanceId)]>>,
@@ -2403,15 +2403,15 @@ pub enum ResourceSubject {
     Memory(ContractSegment),
     /// A pointer range whose base or bounds may use proof expressions.
     SavedMemory {
-        base: SurfaceTerm,
-        start: SurfaceTerm,
+        base: SyntaxTerm,
+        start: SyntaxTerm,
         /// None names one cell at `start`, without computing `start + 1`.
-        end: Option<SurfaceTerm>,
+        end: Option<SyntaxTerm>,
     },
     Declared {
         kind: ResourceKind,
         name: String,
-        arguments: Vec<SurfaceTerm>,
+        arguments: Vec<SyntaxTerm>,
         parameter_types: Vec<InterfaceType>,
     },
 }
@@ -2429,16 +2429,16 @@ pub enum ResourceKind {
 }
 
 #[derive(Debug, Eq, PartialEq, Hash)]
-pub enum SurfaceProposition {
+pub enum SyntaxProposition {
     /// Assert a proposition-valued expression, such as a lambda application.
-    Value(SurfaceTerm),
+    Value(SyntaxTerm),
     Comparison {
-        left: SurfaceTerm,
+        left: SyntaxTerm,
         operator: ComparisonOperator,
-        right: SurfaceTerm,
+        right: SyntaxTerm,
     },
     FloatClassification {
-        expression: SurfaceTerm,
+        expression: SyntaxTerm,
         classification: syntax::CFloatClassification,
     },
     Separate {
@@ -2456,30 +2456,30 @@ pub enum SurfaceProposition {
         segment: ContractSegment,
     },
     /// `defined(e)`: the definedness special form. Unlike the point
-    /// selectors `old`, `at` and `exact`, which are `SurfaceTerm`s, it is a
+    /// selectors `old`, `at` and `exact`, which are `SyntaxTerm`s, it is a
     /// proposition, and it lowers `e` keeping native address checks
     /// (`checking_definedness`). See `docs/reference/glossary.md#special-forms`.
     Defined {
-        expression: SurfaceTerm,
+        expression: SyntaxTerm,
     },
     /// `at(point, P)`: the `at` special form in proposition position, the
-    /// whole proposition `P` stated at `point`. `SurfaceTerm::At` is the term
+    /// whole proposition `P` stated at `point`. `SyntaxTerm::At` is the term
     /// position.
     At {
         selector: ProgramPointSelector,
-        proposition: Box<SurfaceProposition>,
+        proposition: Box<SyntaxProposition>,
     },
-    And(Box<SurfaceProposition>, Box<SurfaceProposition>),
-    Or(Box<SurfaceProposition>, Box<SurfaceProposition>),
-    Not(Box<SurfaceProposition>),
-    Implies(Box<SurfaceProposition>, Box<SurfaceProposition>),
+    And(Box<SyntaxProposition>, Box<SyntaxProposition>),
+    Or(Box<SyntaxProposition>, Box<SyntaxProposition>),
+    Not(Box<SyntaxProposition>),
+    Implies(Box<SyntaxProposition>, Box<SyntaxProposition>),
     ForAll {
         click_type: ClickType,
         /// The hygienic name used while lowering the body.
         name: SurfaceBinder,
         /// The source spelling retained when hygiene changes `name`.
         written_name: Option<String>,
-        body: Box<SurfaceProposition>,
+        body: Box<SyntaxProposition>,
     },
     Exists {
         click_type: ClickType,
@@ -2487,101 +2487,99 @@ pub enum SurfaceProposition {
         name: SurfaceBinder,
         /// The source spelling retained when hygiene changes `name`.
         written_name: Option<String>,
-        body: Box<SurfaceProposition>,
+        body: Box<SyntaxProposition>,
     },
     RangeAll {
-        start: SurfaceTerm,
-        end: SurfaceTerm,
+        start: SyntaxTerm,
+        end: SyntaxTerm,
         /// The hygienic name used while lowering the body.
         item: SurfaceBinder,
         /// The source spelling retained when hygiene changes `item`.
         written_item: Option<String>,
-        body: Box<SurfaceProposition>,
+        body: Box<SyntaxProposition>,
     },
     RangeAny {
-        start: SurfaceTerm,
-        end: SurfaceTerm,
+        start: SyntaxTerm,
+        end: SyntaxTerm,
         /// The hygienic name used while lowering the body.
         item: SurfaceBinder,
         /// The source spelling retained when hygiene changes `item`.
         written_item: Option<String>,
-        body: Box<SurfaceProposition>,
+        body: Box<SyntaxProposition>,
     },
     PredicateCall {
         name: String,
-        arguments: Vec<SurfaceTerm>,
+        arguments: Vec<SyntaxTerm>,
     },
     /// `is_a<T>(p)`: the object `p` points to is a `T`. It holds exactly
     /// where the proof has type evidence for `p`, such as a resource body's
     /// typed call or a typed parameter, and lowers to that evidence's fact.
     IsA {
         class: crate::kernel::effective_type::CAccessClass,
-        pointer: SurfaceTerm,
+        pointer: SyntaxTerm,
     },
 }
 
-impl Clone for SurfaceProposition {
+impl Clone for SyntaxProposition {
     fn clone(&self) -> Self {
         clone_click_proposition_iteratively(self)
     }
 }
 
-fn clone_click_proposition_atom(proposition: &SurfaceProposition) -> SurfaceProposition {
+fn clone_click_proposition_atom(proposition: &SyntaxProposition) -> SyntaxProposition {
     match proposition {
-        SurfaceProposition::Value(expression) => SurfaceProposition::Value(expression.clone()),
+        SyntaxProposition::Value(expression) => SyntaxProposition::Value(expression.clone()),
 
-        SurfaceProposition::Comparison {
+        SyntaxProposition::Comparison {
             left,
             operator,
             right,
-        } => SurfaceProposition::Comparison {
+        } => SyntaxProposition::Comparison {
             left: left.clone(),
             operator: *operator,
             right: right.clone(),
         },
-        SurfaceProposition::FloatClassification {
+        SyntaxProposition::FloatClassification {
             expression,
             classification,
-        } => SurfaceProposition::FloatClassification {
+        } => SyntaxProposition::FloatClassification {
             expression: expression.clone(),
             classification: *classification,
         },
-        SurfaceProposition::Separate { left, right } => SurfaceProposition::Separate {
+        SyntaxProposition::Separate { left, right } => SyntaxProposition::Separate {
             left: left.clone(),
             right: right.clone(),
         },
-        SurfaceProposition::ResourceViewable { resource } => SurfaceProposition::ResourceViewable {
+        SyntaxProposition::ResourceViewable { resource } => SyntaxProposition::ResourceViewable {
             resource: resource.clone(),
         },
-        SurfaceProposition::Contains { parent, child } => SurfaceProposition::Contains {
+        SyntaxProposition::Contains { parent, child } => SyntaxProposition::Contains {
             parent: parent.clone(),
             child: child.clone(),
         },
-        SurfaceProposition::Loadable { segment } => SurfaceProposition::Loadable {
+        SyntaxProposition::Loadable { segment } => SyntaxProposition::Loadable {
             segment: segment.clone(),
         },
-        SurfaceProposition::Defined { expression } => SurfaceProposition::Defined {
+        SyntaxProposition::Defined { expression } => SyntaxProposition::Defined {
             expression: expression.clone(),
         },
-        SurfaceProposition::IsA { class, pointer } => SurfaceProposition::IsA {
+        SyntaxProposition::IsA { class, pointer } => SyntaxProposition::IsA {
             class: class.clone(),
             pointer: pointer.clone(),
         },
-        SurfaceProposition::PredicateCall { name, arguments } => {
-            SurfaceProposition::PredicateCall {
-                name: name.clone(),
-                arguments: arguments.clone(),
-            }
-        }
-        SurfaceProposition::At { .. }
-        | SurfaceProposition::And(..)
-        | SurfaceProposition::Or(..)
-        | SurfaceProposition::Not(..)
-        | SurfaceProposition::Implies(..)
-        | SurfaceProposition::ForAll { .. }
-        | SurfaceProposition::Exists { .. }
-        | SurfaceProposition::RangeAll { .. }
-        | SurfaceProposition::RangeAny { .. } => {
+        SyntaxProposition::PredicateCall { name, arguments } => SyntaxProposition::PredicateCall {
+            name: name.clone(),
+            arguments: arguments.clone(),
+        },
+        SyntaxProposition::At { .. }
+        | SyntaxProposition::And(..)
+        | SyntaxProposition::Or(..)
+        | SyntaxProposition::Not(..)
+        | SyntaxProposition::Implies(..)
+        | SyntaxProposition::ForAll { .. }
+        | SyntaxProposition::Exists { .. }
+        | SyntaxProposition::RangeAll { .. }
+        | SyntaxProposition::RangeAny { .. } => {
             unreachable!("structural propositions are cloned by the iterative traversal")
         }
     }
@@ -2597,14 +2595,14 @@ thread_local! {
 
 /// The specification `bool` literal `true` or `false`: a C `bool` value,
 /// exactly `1` or `0`.
-pub(crate) fn bool_literal(value: bool) -> SurfaceTerm {
-    SurfaceTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::bool_constant(value)))
+pub(crate) fn bool_literal(value: bool) -> SyntaxTerm {
+    SyntaxTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::bool_constant(value)))
 }
 
 /// The value of a `bool` literal written as `true` or `false`.
-pub(crate) fn bool_literal_value(expression: &SurfaceTerm) -> Option<bool> {
+pub(crate) fn bool_literal_value(expression: &SyntaxTerm) -> Option<bool> {
     match expression {
-        SurfaceTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Bool(value))) => {
+        SyntaxTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Bool(value))) => {
             value.bool_constant_value()
         }
         _ => None,
@@ -2612,8 +2610,8 @@ pub(crate) fn bool_literal_value(expression: &SurfaceTerm) -> Option<bool> {
 }
 
 /// A `bool` value claimed as a proposition: `value == true`.
-pub(crate) fn bool_truth(value: SurfaceTerm) -> SurfaceProposition {
-    SurfaceProposition::Comparison {
+pub(crate) fn bool_truth(value: SyntaxTerm) -> SyntaxProposition {
+    SyntaxProposition::Comparison {
         left: value,
         operator: ComparisonOperator::Equal,
         right: bool_literal(true),
@@ -2628,16 +2626,14 @@ pub(crate) fn bool_truth(value: SurfaceTerm) -> SurfaceProposition {
 /// `if p { if q { true } else { false } } else { false }`, and `or`, `not`
 /// and `implies` likewise. Opening a connective can repeat a branch, so the
 /// result is bounded; a proposition past the bound is refused.
-pub(crate) fn proposition_bool_value(
-    proposition: SurfaceProposition,
-) -> Result<SurfaceTerm, String> {
+pub(crate) fn proposition_bool_value(proposition: SyntaxProposition) -> Result<SyntaxTerm, String> {
     const BOOL_VALUE_CONDITIONALS: usize = 256;
     fn branch(
-        condition: SurfaceProposition,
-        then_branch: SurfaceTerm,
-        else_branch: SurfaceTerm,
+        condition: SyntaxProposition,
+        then_branch: SyntaxTerm,
+        else_branch: SyntaxTerm,
         conditionals: &mut usize,
-    ) -> Result<SurfaceTerm, String> {
+    ) -> Result<SyntaxTerm, String> {
         *conditionals += 1;
         if *conditionals > BOOL_VALUE_CONDITIONALS {
             return Err(format!(
@@ -2646,20 +2642,20 @@ pub(crate) fn proposition_bool_value(
             ));
         }
         match condition {
-            SurfaceProposition::And(left, right) => {
+            SyntaxProposition::And(left, right) => {
                 let then_branch = branch(*right, then_branch, else_branch.clone(), conditionals)?;
                 branch(*left, then_branch, else_branch, conditionals)
             }
-            SurfaceProposition::Or(left, right) => {
+            SyntaxProposition::Or(left, right) => {
                 let else_branch = branch(*right, then_branch.clone(), else_branch, conditionals)?;
                 branch(*left, then_branch, else_branch, conditionals)
             }
-            SurfaceProposition::Implies(left, right) => {
+            SyntaxProposition::Implies(left, right) => {
                 let consequent = branch(*right, then_branch.clone(), else_branch, conditionals)?;
                 branch(*left, consequent, then_branch, conditionals)
             }
-            SurfaceProposition::Not(body) => branch(*body, else_branch, then_branch, conditionals),
-            condition => Ok(SurfaceTerm::If {
+            SyntaxProposition::Not(body) => branch(*body, else_branch, then_branch, conditionals),
+            condition => Ok(SyntaxTerm::If {
                 condition: Box::new(condition),
                 then_branch: Box::new(then_branch),
                 else_branch: Box::new(else_branch),
@@ -2667,22 +2663,22 @@ pub(crate) fn proposition_bool_value(
         }
     }
     match proposition {
-        SurfaceProposition::Comparison {
+        SyntaxProposition::Comparison {
             left,
             operator: ComparisonOperator::Equal,
             right,
         } if bool_literal_value(&right) == Some(true) => Ok(left),
         // A written `true` or `false` is that literal value.
-        SurfaceProposition::Value(literal) if bool_literal_value(&literal).is_some() => Ok(literal),
+        SyntaxProposition::Value(literal) if bool_literal_value(&literal).is_some() => Ok(literal),
         proposition => branch(proposition, bool_literal(true), bool_literal(false), &mut 0),
     }
 }
 
 pub(crate) fn clone_click_proposition_iteratively(
-    proposition: &SurfaceProposition,
-) -> SurfaceProposition {
+    proposition: &SyntaxProposition,
+) -> SyntaxProposition {
     enum Frame<'a> {
-        Visit(&'a SurfaceProposition),
+        Visit(&'a SyntaxProposition),
         BuildAt(ProgramPointSelector),
         BuildAnd,
         BuildOr,
@@ -2699,14 +2695,14 @@ pub(crate) fn clone_click_proposition_iteratively(
             written_name: Option<String>,
         },
         BuildRangeAll {
-            start: SurfaceTerm,
-            end: SurfaceTerm,
+            start: SyntaxTerm,
+            end: SyntaxTerm,
             item: SurfaceBinder,
             written_item: Option<String>,
         },
         BuildRangeAny {
-            start: SurfaceTerm,
-            end: SurfaceTerm,
+            start: SyntaxTerm,
+            end: SyntaxTerm,
             item: SurfaceBinder,
             written_item: Option<String>,
         },
@@ -2720,33 +2716,33 @@ pub(crate) fn clone_click_proposition_iteratively(
                 #[cfg(test)]
                 CLICK_PROPOSITION_NODES_COPIED.with(|copied| copied.set(copied.get() + 1));
                 match proposition {
-                    SurfaceProposition::At {
+                    SyntaxProposition::At {
                         selector,
                         proposition,
                     } => {
                         frames.push(Frame::BuildAt(selector.clone()));
                         frames.push(Frame::Visit(proposition));
                     }
-                    SurfaceProposition::And(left, right) => {
+                    SyntaxProposition::And(left, right) => {
                         frames.push(Frame::BuildAnd);
                         frames.push(Frame::Visit(right));
                         frames.push(Frame::Visit(left));
                     }
-                    SurfaceProposition::Or(left, right) => {
+                    SyntaxProposition::Or(left, right) => {
                         frames.push(Frame::BuildOr);
                         frames.push(Frame::Visit(right));
                         frames.push(Frame::Visit(left));
                     }
-                    SurfaceProposition::Not(body) => {
+                    SyntaxProposition::Not(body) => {
                         frames.push(Frame::BuildNot);
                         frames.push(Frame::Visit(body));
                     }
-                    SurfaceProposition::Implies(left, right) => {
+                    SyntaxProposition::Implies(left, right) => {
                         frames.push(Frame::BuildImplies);
                         frames.push(Frame::Visit(right));
                         frames.push(Frame::Visit(left));
                     }
-                    SurfaceProposition::ForAll {
+                    SyntaxProposition::ForAll {
                         click_type,
                         name,
                         written_name,
@@ -2759,7 +2755,7 @@ pub(crate) fn clone_click_proposition_iteratively(
                         });
                         frames.push(Frame::Visit(body));
                     }
-                    SurfaceProposition::Exists {
+                    SyntaxProposition::Exists {
                         click_type,
                         name,
                         written_name,
@@ -2772,7 +2768,7 @@ pub(crate) fn clone_click_proposition_iteratively(
                         });
                         frames.push(Frame::Visit(body));
                     }
-                    SurfaceProposition::RangeAll {
+                    SyntaxProposition::RangeAll {
                         start,
                         end,
                         item,
@@ -2787,7 +2783,7 @@ pub(crate) fn clone_click_proposition_iteratively(
                         });
                         frames.push(Frame::Visit(body));
                     }
-                    SurfaceProposition::RangeAny {
+                    SyntaxProposition::RangeAny {
                         start,
                         end,
                         item,
@@ -2807,7 +2803,7 @@ pub(crate) fn clone_click_proposition_iteratively(
             }
             Frame::BuildAt(selector) => {
                 let proposition = values.pop().expect("the anchored proposition is cloned");
-                values.push(SurfaceProposition::At {
+                values.push(SyntaxProposition::At {
                     selector,
                     proposition: Box::new(proposition),
                 });
@@ -2815,21 +2811,21 @@ pub(crate) fn clone_click_proposition_iteratively(
             Frame::BuildAnd => {
                 let right = values.pop().expect("the right proposition is cloned");
                 let left = values.pop().expect("the left proposition is cloned");
-                values.push(SurfaceProposition::And(Box::new(left), Box::new(right)));
+                values.push(SyntaxProposition::And(Box::new(left), Box::new(right)));
             }
             Frame::BuildOr => {
                 let right = values.pop().expect("the right proposition is cloned");
                 let left = values.pop().expect("the left proposition is cloned");
-                values.push(SurfaceProposition::Or(Box::new(left), Box::new(right)));
+                values.push(SyntaxProposition::Or(Box::new(left), Box::new(right)));
             }
             Frame::BuildNot => {
                 let body = values.pop().expect("the proposition body is cloned");
-                values.push(SurfaceProposition::Not(Box::new(body)));
+                values.push(SyntaxProposition::Not(Box::new(body)));
             }
             Frame::BuildImplies => {
                 let right = values.pop().expect("the implication consequent is cloned");
                 let left = values.pop().expect("the implication antecedent is cloned");
-                values.push(SurfaceProposition::Implies(Box::new(left), Box::new(right)));
+                values.push(SyntaxProposition::Implies(Box::new(left), Box::new(right)));
             }
             Frame::BuildForAll {
                 click_type,
@@ -2837,7 +2833,7 @@ pub(crate) fn clone_click_proposition_iteratively(
                 written_name,
             } => {
                 let body = values.pop().expect("the forall body is cloned");
-                values.push(SurfaceProposition::ForAll {
+                values.push(SyntaxProposition::ForAll {
                     click_type,
                     name,
                     written_name,
@@ -2850,7 +2846,7 @@ pub(crate) fn clone_click_proposition_iteratively(
                 written_name,
             } => {
                 let body = values.pop().expect("the exists body is cloned");
-                values.push(SurfaceProposition::Exists {
+                values.push(SyntaxProposition::Exists {
                     click_type,
                     name,
                     written_name,
@@ -2864,7 +2860,7 @@ pub(crate) fn clone_click_proposition_iteratively(
                 written_item,
             } => {
                 let body = values.pop().expect("the range-all body is cloned");
-                values.push(SurfaceProposition::RangeAll {
+                values.push(SyntaxProposition::RangeAll {
                     start,
                     end,
                     item,
@@ -2879,7 +2875,7 @@ pub(crate) fn clone_click_proposition_iteratively(
                 written_item,
             } => {
                 let body = values.pop().expect("the range-any body is cloned");
-                values.push(SurfaceProposition::RangeAny {
+                values.push(SyntaxProposition::RangeAny {
                     start,
                     end,
                     item,
@@ -2961,7 +2957,7 @@ fn clone_ensure_clause_iteratively(clause: &EnsureClause) -> EnsureClause {
     }
 }
 
-impl SurfaceProposition {
+impl SyntaxProposition {
     fn written_quantifier_name(&self) -> Option<&str> {
         match self {
             Self::ForAll { written_name, .. } | Self::Exists { written_name, .. } => {
@@ -3128,24 +3124,22 @@ fn collect_current_resource_subject_variables(
 }
 
 pub(crate) fn collect_current_contract_expression_variables(
-    expression: &SurfaceTerm,
+    expression: &SyntaxTerm,
     names: &mut BTreeSet<String>,
 ) {
     match expression {
-        SurfaceTerm::IntegerContext(value) => {
+        SyntaxTerm::IntegerContext(value) => {
             collect_current_contract_expression_variables(value, names)
         }
 
-        SurfaceTerm::Proposition(proposition) => {
+        SyntaxTerm::Proposition(proposition) => {
             collect_current_proposition_variables(proposition, names)
         }
-        SurfaceTerm::Resource(subject) => {
-            collect_current_resource_subject_variables(subject, names)
-        }
-        SurfaceTerm::RegionResult(_)
-        | SurfaceTerm::RegionAllocation(_)
-        | SurfaceTerm::RegionParameter { .. } => {}
-        SurfaceTerm::Lambda {
+        SyntaxTerm::Resource(subject) => collect_current_resource_subject_variables(subject, names),
+        SyntaxTerm::RegionResult(_)
+        | SyntaxTerm::RegionAllocation(_)
+        | SyntaxTerm::RegionParameter { .. } => {}
+        SyntaxTerm::Lambda {
             parameters, body, ..
         } => {
             let mut captures = BTreeSet::new();
@@ -3157,7 +3151,7 @@ pub(crate) fn collect_current_contract_expression_variables(
             }
             names.extend(captures);
         }
-        SurfaceTerm::Apply {
+        SyntaxTerm::Apply {
             function,
             arguments,
         } => {
@@ -3167,18 +3161,18 @@ pub(crate) fn collect_current_contract_expression_variables(
             }
         }
 
-        SurfaceTerm::ResourceField(_) | SurfaceTerm::IntegerLiteral(_) => {}
-        SurfaceTerm::AlgebraicVariable { name, .. } => {
+        SyntaxTerm::ResourceField(_) | SyntaxTerm::IntegerLiteral(_) => {}
+        SyntaxTerm::AlgebraicVariable { name, .. } => {
             if let Some(name) = name.written() {
                 names.insert(name.to_owned());
             }
         }
-        SurfaceTerm::AlgebraicConstructor { arguments, .. } => {
+        SyntaxTerm::AlgebraicConstructor { arguments, .. } => {
             for argument in arguments {
                 collect_current_contract_expression_variables(argument, names);
             }
         }
-        SurfaceTerm::AlgebraicMatch { scrutinee, arms } => {
+        SyntaxTerm::AlgebraicMatch { scrutinee, arms } => {
             collect_current_contract_expression_variables(scrutinee, names);
             for arm in arms {
                 let mut arm_names = BTreeSet::new();
@@ -3191,32 +3185,32 @@ pub(crate) fn collect_current_contract_expression_variables(
                 names.extend(arm_names);
             }
         }
-        SurfaceTerm::SequenceLiteral(elements) => {
+        SyntaxTerm::SequenceLiteral(elements) => {
             for element in elements {
                 collect_current_contract_expression_variables(element, names);
             }
         }
-        SurfaceTerm::SequenceConcat(left, right) => {
+        SyntaxTerm::SequenceConcat(left, right) => {
             collect_current_contract_expression_variables(left, names);
             collect_current_contract_expression_variables(right, names);
         }
-        SurfaceTerm::QualifiedC {
+        SyntaxTerm::QualifiedC {
             lowered: expression,
             ..
         }
-        | SurfaceTerm::ProgramExpression(expression) => {
+        | SyntaxTerm::ProgramExpression(expression) => {
             collect_program_expression_variables(expression, names);
         }
         // A `program::name` base is skipped like a bare `program::name`: its
         // lowered C form names the same binding, not a Click value such as
         // the contract `result`.
-        SurfaceTerm::Field { base, lowered, .. } => {
+        SyntaxTerm::Field { base, lowered, .. } => {
             collect_current_contract_expression_variables(base, names);
-            if !matches!(base.as_ref(), SurfaceTerm::ProgramBinding(_)) {
+            if !matches!(base.as_ref(), SyntaxTerm::ProgramBinding(_)) {
                 collect_program_expression_variables(lowered, names);
             }
         }
-        SurfaceTerm::ArrayIndex {
+        SyntaxTerm::ArrayIndex {
             base,
             indexes,
             lowered,
@@ -3226,33 +3220,33 @@ pub(crate) fn collect_current_contract_expression_variables(
             for index in indexes {
                 collect_current_contract_expression_variables(index, names);
             }
-            if !matches!(base.as_ref(), SurfaceTerm::ProgramBinding(_)) {
+            if !matches!(base.as_ref(), SyntaxTerm::ProgramBinding(_)) {
                 collect_program_expression_variables(lowered, names);
             }
         }
-        SurfaceTerm::Binding(name) => {
+        SyntaxTerm::Binding(name) => {
             names.insert(name.clone());
         }
-        SurfaceTerm::ProgramBinding(_) | SurfaceTerm::ResourceWildcard => {}
-        SurfaceTerm::ResourceCount(resource) => {
+        SyntaxTerm::ProgramBinding(_) | SyntaxTerm::ResourceWildcard => {}
+        SyntaxTerm::ResourceCount(resource) => {
             collect_current_resource_clause_variables(resource, names);
         }
         // Explicitly anchored expressions are stable across a local write.
-        SurfaceTerm::Old(_) | SurfaceTerm::At { .. } => {}
-        SurfaceTerm::BitwiseNot(inner) => {
+        SyntaxTerm::Old(_) | SyntaxTerm::At { .. } => {}
+        SyntaxTerm::BitwiseNot(inner) => {
             collect_current_contract_expression_variables(inner, names);
         }
-        SurfaceTerm::CUnary { operand: inner, .. }
-        | SurfaceTerm::MemoryLoad { pointer: inner, .. }
-        | SurfaceTerm::Negate(inner)
-        | SurfaceTerm::Exact(inner) => {
+        SyntaxTerm::CUnary { operand: inner, .. }
+        | SyntaxTerm::MemoryLoad { pointer: inner, .. }
+        | SyntaxTerm::Negate(inner)
+        | SyntaxTerm::Exact(inner) => {
             collect_current_contract_expression_variables(inner, names);
         }
         crate::surface::binary_contract_expression!(left, right) => {
             collect_current_contract_expression_variables(left, names);
             collect_current_contract_expression_variables(right, names);
         }
-        SurfaceTerm::If {
+        SyntaxTerm::If {
             condition,
             then_branch,
             else_branch,
@@ -3261,7 +3255,7 @@ pub(crate) fn collect_current_contract_expression_variables(
             collect_current_contract_expression_variables(then_branch, names);
             collect_current_contract_expression_variables(else_branch, names);
         }
-        SurfaceTerm::RangeFold {
+        SyntaxTerm::RangeFold {
             start,
             end,
             initial,
@@ -3273,11 +3267,11 @@ pub(crate) fn collect_current_contract_expression_variables(
             collect_current_contract_expression_variables(initial, names);
             collect_current_contract_expression_variables(body, names);
         }
-        SurfaceTerm::Let { value, body, .. } => {
+        SyntaxTerm::Let { value, body, .. } => {
             collect_current_contract_expression_variables(value, names);
             collect_current_contract_expression_variables(body, names);
         }
-        SurfaceTerm::MethodCall {
+        SyntaxTerm::MethodCall {
             receiver,
             arguments,
             ..
@@ -3287,7 +3281,7 @@ pub(crate) fn collect_current_contract_expression_variables(
                 collect_current_contract_expression_variables(argument, names);
             }
         }
-        SurfaceTerm::Call { arguments, .. } => {
+        SyntaxTerm::Call { arguments, .. } => {
             for argument in arguments {
                 collect_current_contract_expression_variables(argument, names);
             }
@@ -3296,39 +3290,39 @@ pub(crate) fn collect_current_contract_expression_variables(
 }
 
 fn collect_current_proposition_variables(
-    proposition: &SurfaceProposition,
+    proposition: &SyntaxProposition,
     names: &mut BTreeSet<String>,
 ) {
     let mut pending = vec![proposition];
     while let Some(proposition) = pending.pop() {
         match proposition {
-            SurfaceProposition::Value(expression) => {
+            SyntaxProposition::Value(expression) => {
                 collect_current_contract_expression_variables(expression, names)
             }
 
-            SurfaceProposition::Comparison { left, right, .. } => {
+            SyntaxProposition::Comparison { left, right, .. } => {
                 collect_current_contract_expression_variables(left, names);
                 collect_current_contract_expression_variables(right, names);
             }
-            SurfaceProposition::FloatClassification { expression, .. } => {
+            SyntaxProposition::FloatClassification { expression, .. } => {
                 collect_current_contract_expression_variables(expression, names);
             }
-            SurfaceProposition::ResourceViewable { resource } => {
+            SyntaxProposition::ResourceViewable { resource } => {
                 collect_current_resource_subject_variables(resource, names)
             }
-            SurfaceProposition::Separate { left, right }
-            | SurfaceProposition::Contains {
+            SyntaxProposition::Separate { left, right }
+            | SyntaxProposition::Contains {
                 parent: left,
                 child: right,
             } => {
                 collect_current_resource_subject_variables(left, names);
                 collect_current_resource_subject_variables(right, names);
             }
-            SurfaceProposition::Loadable { segment } => {
+            SyntaxProposition::Loadable { segment } => {
                 collect_current_segment_variables(segment, names);
             }
-            SurfaceProposition::Defined { expression }
-            | SurfaceProposition::IsA {
+            SyntaxProposition::Defined { expression }
+            | SyntaxProposition::IsA {
                 pointer: expression,
                 ..
             } => {
@@ -3336,29 +3330,29 @@ fn collect_current_proposition_variables(
             }
             // The proposition itself is anchored, so current-local writes cannot
             // change its meaning even if its body contains a C fragment.
-            SurfaceProposition::At { .. } => {}
-            SurfaceProposition::And(left, right)
-            | SurfaceProposition::Or(left, right)
-            | SurfaceProposition::Implies(left, right) => {
+            SyntaxProposition::At { .. } => {}
+            SyntaxProposition::And(left, right)
+            | SyntaxProposition::Or(left, right)
+            | SyntaxProposition::Implies(left, right) => {
                 pending.push(right);
                 pending.push(left);
             }
-            SurfaceProposition::Not(body)
-            | SurfaceProposition::ForAll { body, .. }
-            | SurfaceProposition::Exists { body, .. } => {
+            SyntaxProposition::Not(body)
+            | SyntaxProposition::ForAll { body, .. }
+            | SyntaxProposition::Exists { body, .. } => {
                 pending.push(body);
             }
-            SurfaceProposition::RangeAll {
+            SyntaxProposition::RangeAll {
                 start, end, body, ..
             }
-            | SurfaceProposition::RangeAny {
+            | SyntaxProposition::RangeAny {
                 start, end, body, ..
             } => {
                 collect_current_contract_expression_variables(start, names);
                 collect_current_contract_expression_variables(end, names);
                 pending.push(body);
             }
-            SurfaceProposition::PredicateCall { arguments, .. } => {
+            SyntaxProposition::PredicateCall { arguments, .. } => {
                 for argument in arguments {
                     collect_current_contract_expression_variables(argument, names);
                 }
@@ -3377,14 +3371,14 @@ pub(crate) const RUST_SUBSLICE_LEN: &str = "click::rust::slice::subslice_len";
 
 /// Source expressions shared by declarations, proof claims and raised terms.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub enum SurfaceTerm {
+pub enum SyntaxTerm {
     Resource(Box<ResourceSubject>),
     /// An unsuffixed decimal retained until specification type checking. The
     /// same source spelling can denote a C literal or an exact Integer when
     /// its surrounding expression supplies that context.
     IntegerLiteral(String),
     /// Mathematical Integer type context, written `(value : Integer)`.
-    IntegerContext(Box<SurfaceTerm>),
+    IntegerContext(Box<SyntaxTerm>),
     /// A translation-unit-qualified C object. Retain its spelling for checked
     /// proof expansion while lowering its stable storage identity, not a local.
     QualifiedC {
@@ -3397,7 +3391,7 @@ pub enum SurfaceTerm {
     AlgebraicConstructor {
         algebraic_type: AlgebraicTypeApplication,
         variant: String,
-        arguments: Vec<SurfaceTerm>,
+        arguments: Vec<SyntaxTerm>,
     },
     /// A method call on a value of a Click type, `s.len()`, as written: its
     /// meaning comes from the receiver's type, so declaration expansion
@@ -3406,9 +3400,9 @@ pub enum SurfaceTerm {
     /// index `s[a..b]` on such a receiver are the methods `[]` and `[..]`,
     /// `[a..]`, `[..b]` or `[a..b]`, with the written bounds as arguments.
     MethodCall {
-        receiver: Box<SurfaceTerm>,
+        receiver: Box<SyntaxTerm>,
         method: String,
-        arguments: Vec<SurfaceTerm>,
+        arguments: Vec<SyntaxTerm>,
     },
     /// A Click-native binder whose value is not a C object or scalar.
     AlgebraicVariable {
@@ -3423,22 +3417,22 @@ pub enum SurfaceTerm {
     /// Exhaustive elimination of an algebraic value. Its arms may produce a
     /// common C or algebraic result type.
     AlgebraicMatch {
-        scrutinee: Box<SurfaceTerm>,
+        scrutinee: Box<SyntaxTerm>,
         arms: Vec<AlgebraicMatchArm>,
     },
     /// An immutable, finite specification sequence. Elements remain ordinary
     /// scalar contract expressions and are evaluated at the surrounding
     /// state.
-    SequenceLiteral(Vec<SurfaceTerm>),
+    SequenceLiteral(Vec<SyntaxTerm>),
     /// Persistent sequence concatenation. This is specification syntax only;
     /// it does not denote C pointer arithmetic or allocate C memory.
-    SequenceConcat(Box<SurfaceTerm>, Box<SurfaceTerm>),
+    SequenceConcat(Box<SyntaxTerm>, Box<SyntaxTerm>),
     /// A C expression fragment appearing inside Surface Click.
     ProgramExpression(ProgramExpression),
     /// A typed read in the surrounding memory. The pointer expression may
     /// select an address in a different state.
     MemoryLoad {
-        pointer: Box<SurfaceTerm>,
+        pointer: Box<SyntaxTerm>,
         value_type: ProgramType,
         volatile: bool,
         pointee_constant: bool,
@@ -3448,7 +3442,7 @@ pub enum SurfaceTerm {
     /// in that case `lowered` retains the cast metadata with a placeholder, and
     /// conversion back to a C fragment must rebuild from `operand` or refuse.
     CUnary {
-        operand: Box<SurfaceTerm>,
+        operand: Box<SyntaxTerm>,
         lowered: ProgramExpression,
     },
     /// A source-level struct field place paired with its lowered C expression.
@@ -3459,7 +3453,7 @@ pub enum SurfaceTerm {
         /// Declared struct identity of a pointer-valued field, retained for
         /// nominal type validation independently of its scalar C carrier.
         pointee_struct: Option<String>,
-        base: Box<SurfaceTerm>,
+        base: Box<SyntaxTerm>,
         field: String,
         lowered: ProgramExpression,
         /// Byte offset of `field` from the address denoted by `base`.
@@ -3498,103 +3492,103 @@ pub enum SurfaceTerm {
     },
     /// `old(e)`: a point-selecting special form, sugar for
     /// `at(function.entry, e)`. The special forms are `old`, `at`, `exact`
-    /// and `defined` (`SurfaceProposition::Defined`); see
+    /// and `defined` (`SyntaxProposition::Defined`); see
     /// `docs/reference/glossary.md#special-forms`.
-    Old(Box<SurfaceTerm>),
+    Old(Box<SyntaxTerm>),
     /// `at(point, e)`: a point-selecting special form, `e` read when the
-    /// proof path was at `point`. `SurfaceProposition::At` is the same form in
+    /// proof path was at `point`. `SyntaxProposition::At` is the same form in
     /// proposition position.
     At {
         selector: ProgramPointSelector,
-        expression: Box<SurfaceTerm>,
+        expression: Box<SyntaxTerm>,
     },
     /// `exact(place)`, a point-selecting special form: the read of `place`
     /// named by the state in scope itself, with no version walk
     /// (`design/exact-reads.md`). It applies to the outermost read only;
     /// reads computing the place's address stay ordinary. It grants no
     /// access and adds no facts.
-    Exact(Box<SurfaceTerm>),
-    Negate(Box<SurfaceTerm>),
-    Add(Box<SurfaceTerm>, Box<SurfaceTerm>),
-    Subtract(Box<SurfaceTerm>, Box<SurfaceTerm>),
-    Multiply(Box<SurfaceTerm>, Box<SurfaceTerm>),
-    Divide(Box<SurfaceTerm>, Box<SurfaceTerm>),
-    Remainder(Box<SurfaceTerm>, Box<SurfaceTerm>),
-    ShiftLeft(Box<SurfaceTerm>, Box<SurfaceTerm>),
+    Exact(Box<SyntaxTerm>),
+    Negate(Box<SyntaxTerm>),
+    Add(Box<SyntaxTerm>, Box<SyntaxTerm>),
+    Subtract(Box<SyntaxTerm>, Box<SyntaxTerm>),
+    Multiply(Box<SyntaxTerm>, Box<SyntaxTerm>),
+    Divide(Box<SyntaxTerm>, Box<SyntaxTerm>),
+    Remainder(Box<SyntaxTerm>, Box<SyntaxTerm>),
+    ShiftLeft(Box<SyntaxTerm>, Box<SyntaxTerm>),
     /// Rust shifts preserve the operand width and owe only count bounds.
-    RustShiftLeft(Box<SurfaceTerm>, Box<SurfaceTerm>),
-    RustShiftRight(Box<SurfaceTerm>, Box<SurfaceTerm>),
-    ShiftRight(Box<SurfaceTerm>, Box<SurfaceTerm>),
-    BitwiseAnd(Box<SurfaceTerm>, Box<SurfaceTerm>),
-    BitwiseOr(Box<SurfaceTerm>, Box<SurfaceTerm>),
-    BitwiseXor(Box<SurfaceTerm>, Box<SurfaceTerm>),
-    BitwiseNot(Box<SurfaceTerm>),
-    Index(Box<SurfaceTerm>, Box<SurfaceTerm>),
+    RustShiftLeft(Box<SyntaxTerm>, Box<SyntaxTerm>),
+    RustShiftRight(Box<SyntaxTerm>, Box<SyntaxTerm>),
+    ShiftRight(Box<SyntaxTerm>, Box<SyntaxTerm>),
+    BitwiseAnd(Box<SyntaxTerm>, Box<SyntaxTerm>),
+    BitwiseOr(Box<SyntaxTerm>, Box<SyntaxTerm>),
+    BitwiseXor(Box<SyntaxTerm>, Box<SyntaxTerm>),
+    BitwiseNot(Box<SyntaxTerm>),
+    Index(Box<SyntaxTerm>, Box<SyntaxTerm>),
     /// A multidimensional C array access. `lowered` carries the flattened
     /// pointer access used by the kernel while `indexes` retain their binding
     /// syntax and source rank. Dimensions recover the row-major strides when
     /// the source operands need separate namespace lowering.
     ArrayIndex {
-        base: Box<SurfaceTerm>,
-        indexes: Vec<SurfaceTerm>,
+        base: Box<SyntaxTerm>,
+        indexes: Vec<SyntaxTerm>,
         dimensions: Vec<u32>,
         lowered: ProgramExpression,
     },
     If {
-        condition: Box<SurfaceProposition>,
-        then_branch: Box<SurfaceTerm>,
-        else_branch: Box<SurfaceTerm>,
+        condition: Box<SyntaxProposition>,
+        then_branch: Box<SyntaxTerm>,
+        else_branch: Box<SyntaxTerm>,
     },
     /// A proposition carried as a specification value.
-    Proposition(Box<SurfaceProposition>),
+    Proposition(Box<SyntaxProposition>),
     /// A typed, lexically scoped specification function; reads use application state.
     Lambda {
         parameters: Vec<(SurfaceBinder, ClickType)>,
         result: ClickType,
-        body: Box<SurfaceTerm>,
+        body: Box<SyntaxTerm>,
     },
     /// Application of an expression whose value is a specification function.
     Apply {
-        function: Box<SurfaceTerm>,
-        arguments: Vec<SurfaceTerm>,
+        function: Box<SyntaxTerm>,
+        arguments: Vec<SyntaxTerm>,
     },
     RangeFold {
-        start: Box<SurfaceTerm>,
-        end: Box<SurfaceTerm>,
-        initial: Box<SurfaceTerm>,
+        start: Box<SyntaxTerm>,
+        end: Box<SyntaxTerm>,
+        initial: Box<SyntaxTerm>,
         accumulator: SurfaceBinder,
         item: SurfaceBinder,
-        body: Box<SurfaceTerm>,
+        body: Box<SyntaxTerm>,
     },
     Let {
         name: SurfaceBinder,
         click_type: Option<ClickType>,
-        value: Box<SurfaceTerm>,
-        body: Box<SurfaceTerm>,
+        value: Box<SyntaxTerm>,
+        body: Box<SyntaxTerm>,
     },
     Call {
         name: String,
-        arguments: Vec<SurfaceTerm>,
+        arguments: Vec<SyntaxTerm>,
     },
 }
 
-/// Matches every arithmetic, bitwise and indexing binary [`SurfaceTerm`], binding the
+/// Matches every arithmetic, bitwise and indexing binary [`SyntaxTerm`], binding the
 /// operands to `$left` and `$right`.
 macro_rules! binary_contract_expression {
     ($left:pat, $right:pat) => {
-        $crate::surface::SurfaceTerm::Add($left, $right)
-            | $crate::surface::SurfaceTerm::Subtract($left, $right)
-            | $crate::surface::SurfaceTerm::Multiply($left, $right)
-            | $crate::surface::SurfaceTerm::Divide($left, $right)
-            | $crate::surface::SurfaceTerm::Remainder($left, $right)
-            | $crate::surface::SurfaceTerm::BitwiseAnd($left, $right)
-            | $crate::surface::SurfaceTerm::BitwiseOr($left, $right)
-            | $crate::surface::SurfaceTerm::BitwiseXor($left, $right)
-            | $crate::surface::SurfaceTerm::ShiftLeft($left, $right)
-            | $crate::surface::SurfaceTerm::RustShiftLeft($left, $right)
-            | $crate::surface::SurfaceTerm::ShiftRight($left, $right)
-            | $crate::surface::SurfaceTerm::RustShiftRight($left, $right)
-            | $crate::surface::SurfaceTerm::Index($left, $right)
+        $crate::surface::SyntaxTerm::Add($left, $right)
+            | $crate::surface::SyntaxTerm::Subtract($left, $right)
+            | $crate::surface::SyntaxTerm::Multiply($left, $right)
+            | $crate::surface::SyntaxTerm::Divide($left, $right)
+            | $crate::surface::SyntaxTerm::Remainder($left, $right)
+            | $crate::surface::SyntaxTerm::BitwiseAnd($left, $right)
+            | $crate::surface::SyntaxTerm::BitwiseOr($left, $right)
+            | $crate::surface::SyntaxTerm::BitwiseXor($left, $right)
+            | $crate::surface::SyntaxTerm::ShiftLeft($left, $right)
+            | $crate::surface::SyntaxTerm::RustShiftLeft($left, $right)
+            | $crate::surface::SyntaxTerm::ShiftRight($left, $right)
+            | $crate::surface::SyntaxTerm::RustShiftRight($left, $right)
+            | $crate::surface::SyntaxTerm::Index($left, $right)
     };
 }
 pub(crate) use binary_contract_expression;
@@ -4727,7 +4721,7 @@ impl RecordedStates {
         binding: &crate::kernel::BindingName,
         value: &crate::kernel::StoredExecutionValue,
         selector: Option<&ProgramPointSelector>,
-    ) -> Option<SurfaceTerm> {
+    ) -> Option<SyntaxTerm> {
         if !binding
             .local_id()
             .is_some_and(crate::kernel::LocalBindingId::is_temporary)
@@ -4744,9 +4738,9 @@ impl RecordedStates {
         if recorded.program_type() != value.program_type() || recorded != value.native().as_ref() {
             return None;
         }
-        let expression = SurfaceTerm::RegionResult(source);
+        let expression = SyntaxTerm::RegionResult(source);
         Some(match selector {
-            Some(selector) => SurfaceTerm::At {
+            Some(selector) => SyntaxTerm::At {
                 selector: selector.clone(),
                 expression: Box::new(expression),
             },
@@ -5220,14 +5214,14 @@ impl RecordedStates {
     }
 
     /// Name the address of frontend-owned storage by its producing region.
-    fn produced_address_expression(&self, pointer: &crate::kernel::Address) -> Option<SurfaceTerm> {
+    fn produced_address_expression(&self, pointer: &crate::kernel::Address) -> Option<SyntaxTerm> {
         use crate::kernel::AddressBase;
         match &pointer.base {
             AddressBase::AutomaticLocal { binding, .. } if binding.is_temporary() => {
                 self.call_result_address_expression(pointer)
             }
             AddressBase::Heap(_) => Self::displaced_result_address(pointer, |base| {
-                Some(SurfaceTerm::RegionAllocation(self.allocation_result(base)?))
+                Some(SyntaxTerm::RegionAllocation(self.allocation_result(base)?))
             }),
             _ => None,
         }
@@ -5236,12 +5230,12 @@ impl RecordedStates {
     fn call_result_address_expression(
         &self,
         pointer: &crate::kernel::Address,
-    ) -> Option<SurfaceTerm> {
+    ) -> Option<SyntaxTerm> {
         if let Some(region) = self.call_result_naming_pointer(pointer) {
-            return Some(SurfaceTerm::RegionResult(region));
+            return Some(SyntaxTerm::RegionResult(region));
         }
         Self::displaced_result_address(pointer, |base| {
-            Some(SurfaceTerm::RegionResult(
+            Some(SyntaxTerm::RegionResult(
                 self.call_result_naming_pointer(base)?,
             ))
         })
@@ -5249,8 +5243,8 @@ impl RecordedStates {
 
     fn displaced_result_address(
         pointer: &crate::kernel::Address,
-        name_base: impl FnOnce(&crate::kernel::Address) -> Option<SurfaceTerm>,
-    ) -> Option<SurfaceTerm> {
+        name_base: impl FnOnce(&crate::kernel::Address) -> Option<SyntaxTerm>,
+    ) -> Option<SyntaxTerm> {
         use crate::kernel::{Address, AddressOffset};
         let AddressOffset::Constant(bytes) = pointer.offset else {
             return None;
@@ -5263,7 +5257,7 @@ impl RecordedStates {
             base: pointer.base.clone(),
             offset: AddressOffset::Constant(0),
         };
-        Some(SurfaceTerm::CUnary {
+        Some(SyntaxTerm::CUnary {
             operand: Box::new(name_base(&base)?),
             lowered: ProgramExpression::PointerOffsetBytes {
                 pointer: Box::new(ProgramExpression::Value(crate::kernel::int32(0))),
@@ -6038,14 +6032,14 @@ pub struct ContractSegment {
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 enum ContractSegmentSurface {
     Range {
-        base: SurfaceTerm,
-        start: SurfaceTerm,
-        end: SurfaceTerm,
+        base: SyntaxTerm,
+        start: SyntaxTerm,
+        end: SyntaxTerm,
     },
     StructRange {
-        base: SurfaceTerm,
-        start: SurfaceTerm,
-        end: SurfaceTerm,
+        base: SyntaxTerm,
+        start: SyntaxTerm,
+        end: SyntaxTerm,
         layout: std::sync::Arc<StructRangeLayout>,
     },
     Field {
@@ -6053,7 +6047,7 @@ enum ContractSegmentSurface {
         /// parse had it. A base reached through a link reads as `old->left`
         /// there, which is what the user wrote; the lowered `ProgramExpression` for
         /// the same place reads as `load<int32*>(old)`, which is not.
-        base: Option<Box<SurfaceTerm>>,
+        base: Option<Box<SyntaxTerm>>,
         name: String,
         element_width: Option<u32>,
         element_type: Option<ProgramType>,
@@ -6108,7 +6102,7 @@ impl ContractSegment {
     /// A diagnostic that names the cell a single-cell condition came from
     /// reads them here: the cell is `<base>[<start>]`, which is the spelling
     /// the reader has in front of them.
-    pub(crate) fn surface_range(&self) -> Option<(&SurfaceTerm, &SurfaceTerm, &SurfaceTerm)> {
+    pub(crate) fn surface_range(&self) -> Option<(&SyntaxTerm, &SyntaxTerm, &SyntaxTerm)> {
         match &self.surface {
             ContractSegmentSurface::Range { base, start, end }
             | ContractSegmentSurface::StructRange {
@@ -6282,7 +6276,7 @@ pub enum ProofTactic {
     Synthetic(Box<ProofTactic>),
     SmartExecute,
     ExecuteUntil(ExecutionPoint),
-    UnfoldProposition(SurfaceProposition),
+    UnfoldProposition(SyntaxProposition),
     UnfoldFunction(ClickFunctionApplication),
     UnfoldResource(ResourceClause),
     ReleaseView(ResourceClause),
@@ -6300,18 +6294,18 @@ pub enum ProofTactic {
     },
     ApplyInduction {
         hypothesis: String,
-        arguments: Vec<SurfaceTerm>,
+        arguments: Vec<SyntaxTerm>,
     },
     /// Apply an established implication, proving its antecedents.
-    ApplyFact(SurfaceProposition),
+    ApplyFact(SyntaxProposition),
     ApplyFactUsing {
-        fact: SurfaceProposition,
-        premises: Vec<SurfaceProposition>,
+        fact: SyntaxProposition,
+        premises: Vec<SyntaxProposition>,
     },
     ApplyTheorem(TheoremApplication),
     ApplyTheoremUsing {
         application: TheoremApplication,
-        premises: Vec<SurfaceProposition>,
+        premises: Vec<SyntaxProposition>,
     },
     Have(ProofHave),
     Open(ProofOpen),
@@ -6339,10 +6333,10 @@ pub enum ProofTactic {
     Close,
     Known,
     Normalize,
-    NormalizeUsing(Vec<SurfaceProposition>),
+    NormalizeUsing(Vec<SyntaxProposition>),
     /// A compatibility check used in verification. It has no expansion spelling.
-    CompatibilityNormalize(Option<Vec<SurfaceProposition>>),
-    ArithmeticUsing(Vec<SurfaceProposition>),
+    CompatibilityNormalize(Option<Vec<SyntaxProposition>>),
+    ArithmeticUsing(Vec<SyntaxProposition>),
     /// An internal introduction step used while building a checked scope.
     Intro,
     /// Internal named introductions used by proof plans and their certificates.
@@ -6354,24 +6348,24 @@ pub enum ProofTactic {
         body: Vec<ProofTactic>,
     },
     Enumerate,
-    Contradiction(SurfaceProposition),
+    Contradiction(SyntaxProposition),
     CloseInvariants,
-    Rewrite(SurfaceProposition),
-    Preserve(SurfaceProposition),
+    Rewrite(SyntaxProposition),
+    Preserve(SyntaxProposition),
     Transport {
-        source: SurfaceProposition,
-        target: SurfaceProposition,
+        source: SyntaxProposition,
+        target: SyntaxProposition,
     },
     /// A legacy frame check with no ordinary Surface expansion.
     CompatibilityFactTransport {
-        source: SurfaceProposition,
-        target: SurfaceProposition,
-        premises: Vec<SurfaceProposition>,
+        source: SyntaxProposition,
+        target: SyntaxProposition,
+        premises: Vec<SyntaxProposition>,
     },
     /// Substitute consecutive universal binders, preserving the residual body and guards.
     Instantiate {
-        quantified: SurfaceProposition,
-        arguments: Vec<SurfaceTerm>,
+        quantified: SyntaxProposition,
+        arguments: Vec<SyntaxTerm>,
     },
     Solve,
     /// The driver schedules ordinary `solve` for every remaining claim.
@@ -7015,13 +7009,13 @@ pub enum StepProofCertificate {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StepRequirementCertificate {
     pub(crate) label: Option<String>,
-    pub(crate) proposition: SurfaceProposition,
+    pub(crate) proposition: SyntaxProposition,
     pub(crate) proof: ProofCertificate,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProofHave {
-    proposition: SurfaceProposition,
+    proposition: SyntaxProposition,
     proof: SourceProof,
 }
 
@@ -7070,7 +7064,7 @@ impl ProofOpen {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProofIf {
-    condition: SurfaceProposition,
+    condition: SyntaxProposition,
     /// What the rejoined proof keeps when the arms end in different states.
     ensuring: Option<Vec<ProofAssertion>>,
     then_tactics: Vec<ProofTactic>,
@@ -7108,7 +7102,7 @@ pub struct ProofAll {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ProofAllArm {
-    pub(crate) proposition: SurfaceProposition,
+    pub(crate) proposition: SyntaxProposition,
     pub(crate) tactics: Vec<ProofTactic>,
 }
 
@@ -7124,19 +7118,19 @@ pub struct ProofCases {
 /// One arm of `cases`: the disjunct it assumes and the proof under it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProofCaseArm {
-    assumption: SurfaceProposition,
+    assumption: SyntaxProposition,
     tactics: Vec<ProofTactic>,
 }
 
 impl ProofCaseArm {
-    pub(crate) fn new(assumption: SurfaceProposition, tactics: Vec<ProofTactic>) -> Self {
+    pub(crate) fn new(assumption: SyntaxProposition, tactics: Vec<ProofTactic>) -> Self {
         Self {
             assumption,
             tactics,
         }
     }
 
-    pub(crate) fn assumption(&self) -> &SurfaceProposition {
+    pub(crate) fn assumption(&self) -> &SyntaxProposition {
         &self.assumption
     }
 
@@ -7157,14 +7151,14 @@ impl ProofCases {
     }
 
     /// The disjunction the arms eliminate.
-    pub(crate) fn disjunction(&self) -> SurfaceProposition {
+    pub(crate) fn disjunction(&self) -> SyntaxProposition {
         case_arms_disjunction(&self.arms)
     }
 
     /// The same arms with each assumption and tactic list rewritten.
     pub(crate) fn try_map<E>(
         &self,
-        mut assumption: impl FnMut(&SurfaceProposition) -> Result<SurfaceProposition, E>,
+        mut assumption: impl FnMut(&SyntaxProposition) -> Result<SyntaxProposition, E>,
         mut tactics: impl FnMut(&[ProofTactic]) -> Result<Vec<ProofTactic>, E>,
     ) -> Result<Self, E> {
         Ok(Self {
@@ -7183,7 +7177,7 @@ impl ProofCases {
 
     /// The two-armed form the kernel splits on: every arm but the last
     /// against the last, with the leading arms as a nested `cases`.
-    pub(crate) fn binary(&self) -> (SurfaceProposition, Vec<ProofTactic>, Vec<ProofTactic>) {
+    pub(crate) fn binary(&self) -> (SyntaxProposition, Vec<ProofTactic>, Vec<ProofTactic>) {
         let (last, leading) = self.arms.split_last().expect("`cases` has arms");
         let left = match leading {
             [only] => only.tactics.clone(),
@@ -7198,7 +7192,7 @@ impl ProofCases {
     /// that is itself the `cases` on the left disjunct, as [`Self::binary`]
     /// writes one.
     pub(crate) fn from_binary(
-        disjunction: &SurfaceProposition,
+        disjunction: &SyntaxProposition,
         left: Vec<ProofTactic>,
         right: Vec<ProofTactic>,
     ) -> Self {
@@ -7224,18 +7218,16 @@ impl ProofCases {
 /// The two disjuncts of a written `cases` disjunction. A disjunction read at
 /// a state, `at(s, A or B)`, splits into `at(s, A)` and `at(s, B)`.
 fn split_case_disjunction(
-    disjunction: &SurfaceProposition,
-) -> Option<(SurfaceProposition, SurfaceProposition)> {
+    disjunction: &SyntaxProposition,
+) -> Option<(SyntaxProposition, SyntaxProposition)> {
     match disjunction {
-        SurfaceProposition::Or(left, right) => {
-            Some((left.as_ref().clone(), right.as_ref().clone()))
-        }
-        SurfaceProposition::At {
+        SyntaxProposition::Or(left, right) => Some((left.as_ref().clone(), right.as_ref().clone())),
+        SyntaxProposition::At {
             selector,
             proposition,
         } => {
             let (left, right) = split_case_disjunction(proposition)?;
-            let at = |proposition| SurfaceProposition::At {
+            let at = |proposition| SyntaxProposition::At {
                 selector: selector.clone(),
                 proposition: Box::new(proposition),
             };
@@ -7246,18 +7238,18 @@ fn split_case_disjunction(
 }
 
 /// The disjunction of the arms' assumptions, grouped left to right.
-pub(crate) fn case_arms_disjunction(arms: &[ProofCaseArm]) -> SurfaceProposition {
+pub(crate) fn case_arms_disjunction(arms: &[ProofCaseArm]) -> SyntaxProposition {
     let mut arms = arms.iter();
     let first = arms.next().expect("`cases` has arms").assumption.clone();
     arms.fold(first, |disjunction, arm| {
-        SurfaceProposition::Or(Box::new(disjunction), Box::new(arm.assumption.clone()))
+        SyntaxProposition::Or(Box::new(disjunction), Box::new(arm.assumption.clone()))
     })
 }
 
 /// Explicit proof-by-constructor-cases, not evaluation of a pure expression.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProofMatch {
-    scrutinee: SurfaceTerm,
+    scrutinee: SyntaxTerm,
     /// What the rejoined proof keeps when the arms end in different states.
     ensuring: Option<Vec<ProofAssertion>>,
     arms: Vec<ProofInductionArm>,
@@ -7334,7 +7326,7 @@ pub struct ProofCallOutcomes {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProofSolveUsing {
-    premises: Vec<SurfaceProposition>,
+    premises: Vec<SyntaxProposition>,
 }
 
 /// The checked signed-int32 arithmetic rule family. Surface nodes retain
@@ -7368,56 +7360,56 @@ pub struct SignedInt32Interval {
 pub enum SignedArithmeticStep {
     Premise {
         index: usize,
-        proposition: SurfaceProposition,
-        result: SurfaceProposition,
+        proposition: SyntaxProposition,
+        result: SyntaxProposition,
     },
     Scale {
         source: usize,
-        coefficient: SurfaceTerm,
-        result: SurfaceProposition,
+        coefficient: SyntaxTerm,
+        result: SyntaxProposition,
     },
     Add {
         left: usize,
         right: usize,
-        result: SurfaceProposition,
+        result: SyntaxProposition,
     },
     EqualityToLessEqual {
         source: usize,
         reverse: bool,
-        result: SurfaceProposition,
+        result: SyntaxProposition,
     },
     EqualityFromBounds {
         lower: usize,
         upper: usize,
-        result: SurfaceProposition,
+        result: SyntaxProposition,
     },
     StrictFromDisequal {
         bound: usize,
         disequal: usize,
-        result: SurfaceProposition,
+        result: SyntaxProposition,
     },
     Trivial {
-        result: SurfaceProposition,
+        result: SyntaxProposition,
     },
     /// One opaque term's int32 range bound, `t <= 2147483647` or
     /// `-2147483648 <= t`.
     Int32Range {
-        result: SurfaceProposition,
+        result: SyntaxProposition,
     },
     IntervalFromAffine {
         source: usize,
-        term: SurfaceTerm,
+        term: SyntaxTerm,
         lower: i64,
         upper: i64,
     },
     IntervalFromAffineDirect {
         source: usize,
-        term: SurfaceTerm,
+        term: SyntaxTerm,
         lower: i64,
         upper: i64,
     },
     IntervalAtom {
-        term: SurfaceTerm,
+        term: SyntaxTerm,
         lower: i64,
         upper: i64,
     },
@@ -7428,7 +7420,7 @@ pub enum SignedArithmeticStep {
     },
     DefinedPremise {
         index: usize,
-        term: SurfaceTerm,
+        term: SyntaxTerm,
     },
     IntervalAdd {
         left: usize,
@@ -7496,24 +7488,24 @@ pub enum SignedArithmeticStep {
         left: usize,
         right: usize,
         comparison: SignedInt32Comparison,
-        result: SurfaceProposition,
+        result: SyntaxProposition,
     },
     AffinePremise {
         source: usize,
         left_evidence: usize,
         right_evidence: usize,
-        result: SurfaceProposition,
+        result: SyntaxProposition,
     },
     AffineConclusion {
         source: usize,
         evidence: usize,
-        result: SurfaceProposition,
+        result: SyntaxProposition,
     },
     AffineConclusionWithEvidence {
         source: usize,
         left_evidence: usize,
         right_evidence: usize,
-        result: SurfaceProposition,
+        result: SyntaxProposition,
     },
 }
 
@@ -7523,7 +7515,7 @@ pub enum SignedArithmeticStep {
 /// parser/printer.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SpecializedCompositionPlan {
-    pub premises: Vec<SurfaceProposition>,
+    pub premises: Vec<SyntaxProposition>,
     pub nodes: Vec<SpecialArithmeticNode>,
     pub conclusion: usize,
 }
@@ -7532,41 +7524,41 @@ pub struct SpecializedCompositionPlan {
 pub enum SpecialArithmeticNode {
     IntegerPolynomialIdentity {
         bounds: Vec<usize>,
-        result: SurfaceProposition,
+        result: SyntaxProposition,
     },
     IntegerCastIdentity {
         bounds: Vec<usize>,
-        result: SurfaceProposition,
+        result: SyntaxProposition,
     },
     UnsignedSumBound {
         bounds: Vec<usize>,
-        result: SurfaceProposition,
+        result: SyntaxProposition,
     },
     PointerTranslation {
         relation: usize,
         bounds: Vec<usize>,
-        result: SurfaceProposition,
+        result: SyntaxProposition,
     },
     PointerAlignment {
         premise: Option<usize>,
-        result: SurfaceProposition,
+        result: SyntaxProposition,
     },
     PointerWordEquality {
         relation: usize,
         alignments: Vec<usize>,
-        result: SurfaceProposition,
+        result: SyntaxProposition,
     },
     PointerWordFromAlignment {
         alignments: Vec<usize>,
-        result: SurfaceProposition,
+        result: SyntaxProposition,
     },
     FloatBound {
         premise: usize,
-        result: SurfaceProposition,
+        result: SyntaxProposition,
     },
     FloatReflexive {
         finite: usize,
-        result: SurfaceProposition,
+        result: SyntaxProposition,
     },
     /// `defined(left + right)` or `defined(left - right)` over `int32`
     /// (`int32_defined`) or `int64` (`int64_defined`), from the operands'
@@ -7574,26 +7566,26 @@ pub enum SpecialArithmeticNode {
     SignedDefined {
         width: crate::kernel::SignedDefinedWidth,
         bounds: Vec<usize>,
-        result: SurfaceProposition,
+        result: SyntaxProposition,
     },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ProofAssertion {
-    Fact(SurfaceProposition),
+    Fact(SyntaxProposition),
     Resource(ResourceClause),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TheoremApplication {
     name: String,
-    arguments: Vec<SurfaceTerm>,
+    arguments: Vec<SyntaxTerm>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClickFunctionApplication {
     name: String,
-    arguments: Vec<SurfaceTerm>,
+    arguments: Vec<SyntaxTerm>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -7736,7 +7728,7 @@ pub(crate) fn program_point_can_name_result(selector: Option<&ProgramPointSelect
 }
 
 /// Whether `result` occurs in a proposition outside any nested state.
-pub(crate) fn proposition_names_result(proposition: &SurfaceProposition) -> bool {
+pub(crate) fn proposition_names_result(proposition: &SyntaxProposition) -> bool {
     let mut names = BTreeSet::new();
     collect_current_proposition_variables(proposition, &mut names);
     names.contains("result")
@@ -7777,21 +7769,21 @@ impl ExecutionPoint {
 /// with the supplied values, in order.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProofWitness {
-    values: Vec<SurfaceTerm>,
+    values: Vec<SyntaxTerm>,
 }
 
 impl ProofWitness {
-    pub(crate) fn single(value: SurfaceTerm) -> Self {
+    pub(crate) fn single(value: SyntaxTerm) -> Self {
         Self {
             values: vec![value],
         }
     }
 
-    pub(crate) fn new(values: Vec<SurfaceTerm>) -> Self {
+    pub(crate) fn new(values: Vec<SyntaxTerm>) -> Self {
         Self { values }
     }
 
-    pub(crate) fn values(&self) -> impl Iterator<Item = &SurfaceTerm> {
+    pub(crate) fn values(&self) -> impl Iterator<Item = &SyntaxTerm> {
         self.values.iter()
     }
 
@@ -7804,7 +7796,7 @@ impl ProofWitness {
         self.values.len() == 1
     }
 
-    pub(crate) fn value(&self) -> &SurfaceTerm {
+    pub(crate) fn value(&self) -> &SyntaxTerm {
         debug_assert!(
             self.is_single(),
             "a multi-binder witness is applied value by value"
@@ -7814,7 +7806,7 @@ impl ProofWitness {
 
     pub(crate) fn try_map_values<E>(
         &self,
-        map: impl FnMut(&SurfaceTerm) -> Result<SurfaceTerm, E>,
+        map: impl FnMut(&SyntaxTerm) -> Result<SyntaxTerm, E>,
     ) -> Result<Self, E> {
         Ok(Self {
             values: self.values.iter().map(map).collect::<Result<_, E>>()?,
@@ -7826,7 +7818,7 @@ impl ProofWitness {
 pub struct ProofLetSatisfy {
     // Range existentials infer a machine-integer type during lowering.
     bindings: Vec<(String, Option<ClickType>)>,
-    proposition: SurfaceProposition,
+    proposition: SyntaxProposition,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -8347,19 +8339,19 @@ fn memory_independent_click_functions(definitions: &[ClickFunctionDefinition]) -
     candidates
 }
 
-fn contract_expression_reads_memory(expression: &SurfaceTerm, callees: &mut Vec<String>) -> bool {
+fn contract_expression_reads_memory(expression: &SyntaxTerm, callees: &mut Vec<String>) -> bool {
     match expression {
-        SurfaceTerm::IntegerContext(value) => contract_expression_reads_memory(value, callees),
+        SyntaxTerm::IntegerContext(value) => contract_expression_reads_memory(value, callees),
 
-        SurfaceTerm::Proposition(proposition) => {
+        SyntaxTerm::Proposition(proposition) => {
             click_proposition_reads_memory(proposition, callees)
         }
-        SurfaceTerm::Resource(_) => false,
-        SurfaceTerm::RegionResult(_)
-        | SurfaceTerm::RegionAllocation(_)
-        | SurfaceTerm::RegionParameter { .. } => false,
-        SurfaceTerm::Lambda { body, .. } => contract_expression_reads_memory(body, callees),
-        SurfaceTerm::Apply {
+        SyntaxTerm::Resource(_) => false,
+        SyntaxTerm::RegionResult(_)
+        | SyntaxTerm::RegionAllocation(_)
+        | SyntaxTerm::RegionParameter { .. } => false,
+        SyntaxTerm::Lambda { body, .. } => contract_expression_reads_memory(body, callees),
+        SyntaxTerm::Apply {
             function,
             arguments,
         } => {
@@ -8369,17 +8361,17 @@ fn contract_expression_reads_memory(expression: &SurfaceTerm, callees: &mut Vec<
                     .any(|argument| contract_expression_reads_memory(argument, callees))
         }
 
-        SurfaceTerm::IntegerLiteral(_)
-        | SurfaceTerm::AlgebraicVariable { .. }
-        | SurfaceTerm::Binding(_)
-        | SurfaceTerm::ProgramBinding(_)
-        | SurfaceTerm::ProgramExpression(
+        SyntaxTerm::IntegerLiteral(_)
+        | SyntaxTerm::AlgebraicVariable { .. }
+        | SyntaxTerm::Binding(_)
+        | SyntaxTerm::ProgramBinding(_)
+        | SyntaxTerm::ProgramExpression(
             ProgramExpression::Variable(crate::kernel::BindingName::Named(_))
             | ProgramExpression::Value(_),
         ) => false,
         // `address(p)` of a name is that pointer value's integer
         // representation: it reads nothing its operand does not.
-        SurfaceTerm::CUnary {
+        SyntaxTerm::CUnary {
             operand,
             lowered:
                 ProgramExpression::Cast {
@@ -8395,7 +8387,7 @@ fn contract_expression_reads_memory(expression: &SurfaceTerm, callees: &mut Vec<
         {
             contract_expression_reads_memory(operand, callees)
         }
-        SurfaceTerm::ProgramExpression(ProgramExpression::Cast {
+        SyntaxTerm::ProgramExpression(ProgramExpression::Cast {
             expression,
             target_type: ProgramType::UInt64,
             ..
@@ -8409,49 +8401,49 @@ fn contract_expression_reads_memory(expression: &SurfaceTerm, callees: &mut Vec<
         }
         // A memory read, a program point selector, a resource observation, or any
         // C fragment richer than a name is conservatively memory-dependent.
-        SurfaceTerm::QualifiedC { .. }
-        | SurfaceTerm::ResourceField(_)
-        | SurfaceTerm::ResourceCount(_)
-        | SurfaceTerm::ResourceWildcard
-        | SurfaceTerm::ProgramExpression(_)
-        | SurfaceTerm::CUnary { .. }
-        | SurfaceTerm::MemoryLoad { .. }
-        | SurfaceTerm::Field { .. }
-        | SurfaceTerm::Index(_, _)
-        | SurfaceTerm::ArrayIndex { .. }
-        | SurfaceTerm::Old(_)
-        | SurfaceTerm::Exact(_)
-        | SurfaceTerm::At { .. } => true,
-        SurfaceTerm::AlgebraicConstructor { arguments, .. }
-        | SurfaceTerm::SequenceLiteral(arguments) => arguments
+        SyntaxTerm::QualifiedC { .. }
+        | SyntaxTerm::ResourceField(_)
+        | SyntaxTerm::ResourceCount(_)
+        | SyntaxTerm::ResourceWildcard
+        | SyntaxTerm::ProgramExpression(_)
+        | SyntaxTerm::CUnary { .. }
+        | SyntaxTerm::MemoryLoad { .. }
+        | SyntaxTerm::Field { .. }
+        | SyntaxTerm::Index(_, _)
+        | SyntaxTerm::ArrayIndex { .. }
+        | SyntaxTerm::Old(_)
+        | SyntaxTerm::Exact(_)
+        | SyntaxTerm::At { .. } => true,
+        SyntaxTerm::AlgebraicConstructor { arguments, .. }
+        | SyntaxTerm::SequenceLiteral(arguments) => arguments
             .iter()
             .any(|argument| contract_expression_reads_memory(argument, callees)),
-        SurfaceTerm::AlgebraicMatch { scrutinee, arms } => {
+        SyntaxTerm::AlgebraicMatch { scrutinee, arms } => {
             contract_expression_reads_memory(scrutinee, callees)
                 || arms
                     .iter()
                     .any(|arm| contract_expression_reads_memory(&arm.body, callees))
         }
-        SurfaceTerm::SequenceConcat(left, right)
-        | SurfaceTerm::Add(left, right)
-        | SurfaceTerm::Subtract(left, right)
-        | SurfaceTerm::Multiply(left, right)
-        | SurfaceTerm::Divide(left, right)
-        | SurfaceTerm::Remainder(left, right)
-        | SurfaceTerm::ShiftLeft(left, right)
-        | SurfaceTerm::RustShiftLeft(left, right)
-        | SurfaceTerm::ShiftRight(left, right)
-        | SurfaceTerm::RustShiftRight(left, right)
-        | SurfaceTerm::BitwiseAnd(left, right)
-        | SurfaceTerm::BitwiseOr(left, right)
-        | SurfaceTerm::BitwiseXor(left, right) => {
+        SyntaxTerm::SequenceConcat(left, right)
+        | SyntaxTerm::Add(left, right)
+        | SyntaxTerm::Subtract(left, right)
+        | SyntaxTerm::Multiply(left, right)
+        | SyntaxTerm::Divide(left, right)
+        | SyntaxTerm::Remainder(left, right)
+        | SyntaxTerm::ShiftLeft(left, right)
+        | SyntaxTerm::RustShiftLeft(left, right)
+        | SyntaxTerm::ShiftRight(left, right)
+        | SyntaxTerm::RustShiftRight(left, right)
+        | SyntaxTerm::BitwiseAnd(left, right)
+        | SyntaxTerm::BitwiseOr(left, right)
+        | SyntaxTerm::BitwiseXor(left, right) => {
             contract_expression_reads_memory(left, callees)
                 || contract_expression_reads_memory(right, callees)
         }
-        SurfaceTerm::Negate(inner) | SurfaceTerm::BitwiseNot(inner) => {
+        SyntaxTerm::Negate(inner) | SyntaxTerm::BitwiseNot(inner) => {
             contract_expression_reads_memory(inner, callees)
         }
-        SurfaceTerm::If {
+        SyntaxTerm::If {
             condition,
             then_branch,
             else_branch,
@@ -8460,7 +8452,7 @@ fn contract_expression_reads_memory(expression: &SurfaceTerm, callees: &mut Vec<
                 || contract_expression_reads_memory(then_branch, callees)
                 || contract_expression_reads_memory(else_branch, callees)
         }
-        SurfaceTerm::RangeFold {
+        SyntaxTerm::RangeFold {
             start,
             end,
             initial,
@@ -8472,11 +8464,11 @@ fn contract_expression_reads_memory(expression: &SurfaceTerm, callees: &mut Vec<
                 || contract_expression_reads_memory(initial, callees)
                 || contract_expression_reads_memory(body, callees)
         }
-        SurfaceTerm::Let { value, body, .. } => {
+        SyntaxTerm::Let { value, body, .. } => {
             contract_expression_reads_memory(value, callees)
                 || contract_expression_reads_memory(body, callees)
         }
-        SurfaceTerm::MethodCall {
+        SyntaxTerm::MethodCall {
             receiver,
             arguments,
             ..
@@ -8486,7 +8478,7 @@ fn contract_expression_reads_memory(expression: &SurfaceTerm, callees: &mut Vec<
                     .iter()
                     .any(|argument| contract_expression_reads_memory(argument, callees))
         }
-        SurfaceTerm::Call { name, arguments } => {
+        SyntaxTerm::Call { name, arguments } => {
             // Numeric conversions and exact integer operations are pure;
             // any memory read remains visible in their explicit arguments.
             if !integer_conversions::is_integer_conversion(name)
@@ -8503,45 +8495,45 @@ fn contract_expression_reads_memory(expression: &SurfaceTerm, callees: &mut Vec<
 }
 
 fn click_proposition_reads_memory(
-    proposition: &SurfaceProposition,
+    proposition: &SyntaxProposition,
     callees: &mut Vec<String>,
 ) -> bool {
     match proposition {
-        SurfaceProposition::Value(expression) => {
+        SyntaxProposition::Value(expression) => {
             contract_expression_reads_memory(expression, callees)
         }
-        SurfaceProposition::Comparison { left, right, .. } => {
+        SyntaxProposition::Comparison { left, right, .. } => {
             contract_expression_reads_memory(left, callees)
                 || contract_expression_reads_memory(right, callees)
         }
-        SurfaceProposition::FloatClassification { expression, .. }
-        | SurfaceProposition::Defined { expression }
-        | SurfaceProposition::IsA {
+        SyntaxProposition::FloatClassification { expression, .. }
+        | SyntaxProposition::Defined { expression }
+        | SyntaxProposition::IsA {
             pointer: expression,
             ..
         } => contract_expression_reads_memory(expression, callees),
         // Resource separation, containment, loadability, states, and
         // predicates all observe the C state.
-        SurfaceProposition::Separate { .. }
-        | SurfaceProposition::ResourceViewable { .. }
-        | SurfaceProposition::Contains { .. }
-        | SurfaceProposition::Loadable { .. }
-        | SurfaceProposition::At { .. }
-        | SurfaceProposition::PredicateCall { .. } => true,
-        SurfaceProposition::And(left, right)
-        | SurfaceProposition::Or(left, right)
-        | SurfaceProposition::Implies(left, right) => {
+        SyntaxProposition::Separate { .. }
+        | SyntaxProposition::ResourceViewable { .. }
+        | SyntaxProposition::Contains { .. }
+        | SyntaxProposition::Loadable { .. }
+        | SyntaxProposition::At { .. }
+        | SyntaxProposition::PredicateCall { .. } => true,
+        SyntaxProposition::And(left, right)
+        | SyntaxProposition::Or(left, right)
+        | SyntaxProposition::Implies(left, right) => {
             click_proposition_reads_memory(left, callees)
                 || click_proposition_reads_memory(right, callees)
         }
-        SurfaceProposition::Not(inner) => click_proposition_reads_memory(inner, callees),
-        SurfaceProposition::ForAll { body, .. } | SurfaceProposition::Exists { body, .. } => {
+        SyntaxProposition::Not(inner) => click_proposition_reads_memory(inner, callees),
+        SyntaxProposition::ForAll { body, .. } | SyntaxProposition::Exists { body, .. } => {
             click_proposition_reads_memory(body, callees)
         }
-        SurfaceProposition::RangeAll {
+        SyntaxProposition::RangeAll {
             start, end, body, ..
         }
-        | SurfaceProposition::RangeAny {
+        | SyntaxProposition::RangeAny {
             start, end, body, ..
         } => {
             contract_expression_reads_memory(start, callees)
@@ -8710,7 +8702,7 @@ impl TheoremEnvironment {
 
     fn conclusion_candidates<'a>(
         &'a self,
-        goal: &SurfaceProposition,
+        goal: &SyntaxProposition,
     ) -> impl Iterator<Item = &'a planning::theorems::TheoremCandidate> {
         self.definition_conclusions
             .candidates(goal, usize::MAX)
@@ -9034,7 +9026,7 @@ enum PathCaseSplit {
     /// No split has a Click spelling.
     Unspelled,
     /// A proof `if` on this source condition, first.
-    Condition(SurfaceProposition),
+    Condition(SyntaxProposition),
     /// A proof `match` on an enum value, one arm per variant, as a Rust
     /// `match` of a value whose variant is not yet known needs.
     Match(ProofMatch),
@@ -9136,8 +9128,8 @@ impl<'a> VerificationDiagnostic<'a> {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::surface) struct TheoremRequirementSource {
     index: usize,
-    clause: SurfaceProposition,
-    bindings: std::sync::Arc<[(String, SurfaceTerm)]>,
+    clause: SyntaxProposition,
+    bindings: std::sync::Arc<[(String, SyntaxTerm)]>,
 }
 
 /// A required kernel verification condition that a checked execution step
@@ -9162,7 +9154,7 @@ pub(in crate::surface) struct UnresolvedRequirement {
     /// The Surface spelling the tactic that owes this requirement gave it
     /// where it created it, such as a `fold` body fact with the resource's
     /// arguments substituted. Proofs state the requirement this way.
-    pub(in crate::surface) surface: Option<SurfaceProposition>,
+    pub(in crate::surface) surface: Option<SyntaxProposition>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -9367,7 +9359,7 @@ impl PredicateDefinition {
         &self.type_parameters
     }
 
-    pub fn body(&self) -> &SurfaceProposition {
+    pub fn body(&self) -> &SyntaxProposition {
         &self.body
     }
 }
@@ -9393,13 +9385,13 @@ impl ClickFunctionDefinition {
         self.return_object_class.as_ref()
     }
 
-    pub fn decreases(&self) -> Option<&SurfaceTerm> {
+    pub fn decreases(&self) -> Option<&SyntaxTerm> {
         self.decreases.as_ref()
     }
 
     /// The definition, or `None` for a library primitive operation, which
     /// nothing unfolds or evaluates.
-    pub fn body(&self) -> Option<&SurfaceTerm> {
+    pub fn body(&self) -> Option<&SyntaxTerm> {
         self.body.as_ref()
     }
 }
@@ -9516,7 +9508,7 @@ impl CompositeResourceBody {
         slots
     }
 
-    pub fn condition(&self) -> Option<&SurfaceProposition> {
+    pub fn condition(&self) -> Option<&SyntaxProposition> {
         self.condition.as_ref()
     }
 
@@ -9524,7 +9516,7 @@ impl CompositeResourceBody {
         &self.contains
     }
 
-    pub fn facts(&self) -> &[SurfaceProposition] {
+    pub fn facts(&self) -> &[SyntaxProposition] {
         &self.facts
     }
 
@@ -9738,7 +9730,7 @@ impl FunctionBlock {
             .map(|(from, to)| {
                 (
                     from.clone(),
-                    SurfaceTerm::ProgramExpression(crate::kernel::program_expression::variable(
+                    SyntaxTerm::ProgramExpression(crate::kernel::program_expression::variable(
                         to.clone(),
                     )),
                 )
@@ -9837,7 +9829,7 @@ impl FunctionBlock {
 
     /// This contract's clauses with each parameter in `renames` read as the
     /// expression it maps to.
-    fn renamed(&self, renames: &BTreeMap<String, SurfaceTerm>) -> Result<Self, String> {
+    fn renamed(&self, renames: &BTreeMap<String, SyntaxTerm>) -> Result<Self, String> {
         let mut renamed = self.clone();
         renamed.requires = self
             .requires
@@ -10308,7 +10300,7 @@ impl FunctionParameter {
 }
 
 impl Requirement {
-    fn proposition(&self) -> Option<&SurfaceProposition> {
+    fn proposition(&self) -> Option<&SyntaxProposition> {
         match self {
             Self::Proposition(proposition) => Some(proposition),
             _ => None,
@@ -10328,12 +10320,12 @@ impl Requirement {
     ///
     /// `owns`, `consumes` and `produces` have no reading here at all, and
     /// stay refused where this returns `None`.
-    pub(crate) fn theorem_proposition(&self) -> Option<SurfaceProposition> {
+    pub(crate) fn theorem_proposition(&self) -> Option<SyntaxProposition> {
         match self {
             Self::Proposition(proposition) => {
                 Some(clone_click_proposition_iteratively(proposition))
             }
-            Self::LoadableSegment { segment } => Some(SurfaceProposition::Loadable {
+            Self::LoadableSegment { segment } => Some(SyntaxProposition::Loadable {
                 segment: segment.clone(),
             }),
             Self::Resource(resource) => theorem_resource_proposition(resource),
@@ -10346,9 +10338,9 @@ impl Requirement {
 /// no separation, so the whole of what it claims in a pure scope is that its
 /// bytes are loadable. An aggregate `views` clause names several ranges at
 /// once and claims that of each of them.
-fn theorem_resource_proposition(resource: &ResourceClause) -> Option<SurfaceProposition> {
+fn theorem_resource_proposition(resource: &ResourceClause) -> Option<SyntaxProposition> {
     match resource {
-        ResourceClause::ViewMemory(segment) => Some(SurfaceProposition::Loadable {
+        ResourceClause::ViewMemory(segment) => Some(SyntaxProposition::Loadable {
             segment: segment.clone(),
         }),
         ResourceClause::MemoryAggregate {
@@ -10356,10 +10348,10 @@ fn theorem_resource_proposition(resource: &ResourceClause) -> Option<SurfaceProp
             segments,
         } => segments
             .iter()
-            .map(|segment| SurfaceProposition::Loadable {
+            .map(|segment| SyntaxProposition::Loadable {
                 segment: segment.clone(),
             })
-            .reduce(|left, right| SurfaceProposition::And(Box::new(left), Box::new(right))),
+            .reduce(|left, right| SyntaxProposition::And(Box::new(left), Box::new(right))),
         _ => None,
     }
 }
@@ -10393,7 +10385,7 @@ impl EnsureClause {
     }
 
     /// The pre-state guard of a conditional resource ensure, if any.
-    pub fn condition(&self) -> Option<&SurfaceProposition> {
+    pub fn condition(&self) -> Option<&SyntaxProposition> {
         self.condition.as_ref()
     }
 
@@ -10452,7 +10444,7 @@ impl StructuralClause {
     }
 
     /// This clause tagged with the proof locals it was written under.
-    pub(in crate::surface) fn with_scope(&self, scope: impl Into<BinderMap<SurfaceTerm>>) -> Self {
+    pub(in crate::surface) fn with_scope(&self, scope: impl Into<BinderMap<SyntaxTerm>>) -> Self {
         let mut clause = self.clone();
         clause.scope = scope.into();
         clause
@@ -10476,7 +10468,7 @@ impl StructuralClause {
     /// there. SymbolicMemory segments are left as written; they name C places.
     pub(in crate::surface) fn with_substituted_bindings(
         &self,
-        substitutions: &BinderMap<SurfaceTerm>,
+        substitutions: &BinderMap<SyntaxTerm>,
     ) -> Result<Self, String> {
         let mut clause = self.clone();
         clause.items = self
@@ -10539,7 +10531,7 @@ impl StructuralClause {
 /// terms; memory segments name C places and are left as written.
 fn substitute_resource_clause_bindings(
     resource: &ResourceClause,
-    substitutions: &BinderMap<SurfaceTerm>,
+    substitutions: &BinderMap<SyntaxTerm>,
 ) -> Result<ResourceClause, String> {
     Ok(match resource {
         ResourceClause::Conditional {
@@ -10624,7 +10616,7 @@ impl StructuralItem {
         }
     }
 
-    pub fn proposition(&self) -> &SurfaceProposition {
+    pub fn proposition(&self) -> &SyntaxProposition {
         &self.claim
     }
 }
@@ -11707,14 +11699,14 @@ impl ClickError {
 
     /// Records the condition a proof-level case split separates this
     /// refusal's path cases on first.
-    pub(crate) fn with_path_case_condition(mut self, condition: SurfaceProposition) -> Self {
+    pub(crate) fn with_path_case_condition(mut self, condition: SyntaxProposition) -> Self {
         self.path_case_split = Some(std::sync::Arc::new(PathCaseSplit::Condition(condition)));
         self
     }
 
     /// The condition a proof-level case split separates this refusal's path
     /// cases on first, when one has a Click spelling.
-    pub(crate) fn path_case_condition(&self) -> Option<&SurfaceProposition> {
+    pub(crate) fn path_case_condition(&self) -> Option<&SyntaxProposition> {
         match self.path_case_split.as_deref() {
             Some(PathCaseSplit::Condition(condition)) => Some(condition),
             _ => None,
@@ -11878,7 +11870,7 @@ impl ClickError {
     pub(in crate::surface) fn with_spelled_requirement(
         mut self,
         proposition: Proposition,
-        surface: SurfaceProposition,
+        surface: SyntaxProposition,
         context: String,
     ) -> Self {
         self.unresolved_requirement = Some(std::sync::Arc::new(UnresolvedRequirement {

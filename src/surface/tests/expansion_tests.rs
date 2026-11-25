@@ -14293,10 +14293,10 @@ fn execution_branch_arm_terminal_proof_if_stays_on_one_proof() {
             Some(ProofTactic::Branch(outer))
                 if outer.then_tactics.iter().any(|tactic| matches!(
                     tactic,
-                    ProofTactic::If(inner) if inner.condition == SurfaceProposition::Comparison {
-                        left: SurfaceTerm::ProgramExpression(ProgramExpression::Variable(("x".to_string()).into())),
+                    ProofTactic::If(inner) if inner.condition == SyntaxProposition::Comparison {
+                        left: SyntaxTerm::ProgramExpression(ProgramExpression::Variable(("x".to_string()).into())),
                         operator: ComparisonOperator::GreaterEqual,
-                        right: SurfaceTerm::IntegerLiteral("0".into()),
+                        right: SyntaxTerm::IntegerLiteral("0".into()),
                     }
                 ))
         ),
@@ -14404,7 +14404,7 @@ fn branch_interface_retains_its_checked_abstract_join() {
                 ..
             ] if matches!(
                 branch.ensuring.as_deref(),
-                Some([ProofAssertion::Fact(SurfaceProposition::Comparison {
+                Some([ProofAssertion::Fact(SyntaxProposition::Comparison {
                     operator: ComparisonOperator::GreaterEqual,
                     ..
                 })])
@@ -14707,7 +14707,7 @@ fn branch_join_retains_a_bare_theorem_application_in_its_continuation() {
                 ..
             ] if matches!(
                     branch.ensuring.as_deref(),
-                    Some([ProofAssertion::Fact(SurfaceProposition::Comparison {
+                    Some([ProofAssertion::Fact(SyntaxProposition::Comparison {
                         operator: ComparisonOperator::LessThan,
                         ..
                     })])
@@ -14779,7 +14779,7 @@ fn branch_join_retains_a_bare_fact_transport_in_its_continuation() {
                 ..
             ] if matches!(
                     branch.ensuring.as_deref(),
-                    Some([ProofAssertion::Fact(SurfaceProposition::Comparison {
+                    Some([ProofAssertion::Fact(SyntaxProposition::Comparison {
                         operator: ComparisonOperator::LessThan,
                         ..
                     })])
@@ -14871,11 +14871,11 @@ fn branch_join_retains_a_nested_have_in_its_continuation() {
             ] if matches!(
                     branch.ensuring.as_deref(),
                     Some([
-                        ProofAssertion::Fact(SurfaceProposition::Comparison {
+                        ProofAssertion::Fact(SyntaxProposition::Comparison {
                             operator: ComparisonOperator::GreaterThan,
                             ..
                         }),
-                        ProofAssertion::Fact(SurfaceProposition::Comparison {
+                        ProofAssertion::Fact(SyntaxProposition::Comparison {
                             operator: ComparisonOperator::LessThan,
                             ..
                         }),
@@ -14957,11 +14957,11 @@ fn branch_join_retains_linear_execute_on_its_common_successor() {
             ] if matches!(
                     branch.ensuring.as_deref(),
                     Some([
-                        ProofAssertion::Fact(SurfaceProposition::Comparison {
+                        ProofAssertion::Fact(SyntaxProposition::Comparison {
                             operator: ComparisonOperator::GreaterThan,
                             ..
                         }),
-                        ProofAssertion::Fact(SurfaceProposition::Comparison {
+                        ProofAssertion::Fact(SyntaxProposition::Comparison {
                             operator: ComparisonOperator::LessThan,
                             ..
                         }),

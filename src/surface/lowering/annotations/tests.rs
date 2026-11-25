@@ -33,19 +33,19 @@ fn addressed_result_members_bind_the_builtin_and_preserve_explicit_program_names
     };
     for (base, expected, in_scope, operand_name) in [
         (
-            SurfaceTerm::ProgramExpression(ProgramExpression::Variable("result".into())),
+            SyntaxTerm::ProgramExpression(ProgramExpression::Variable("result".into())),
             crate::kernel::CONTRACT_RESULT,
             true,
             "result",
         ),
         (
-            SurfaceTerm::ProgramBinding("result".into()),
+            SyntaxTerm::ProgramBinding("result".into()),
             crate::kernel::BindingName::from("result"),
             true,
             "result",
         ),
         (
-            SurfaceTerm::ProgramExpression(ProgramExpression::Variable("bound".into())),
+            SyntaxTerm::ProgramExpression(ProgramExpression::Variable("bound".into())),
             crate::kernel::BindingName::from("bound"),
             false,
             "bound",
@@ -53,8 +53,8 @@ fn addressed_result_members_bind_the_builtin_and_preserve_explicit_program_names
     ] {
         context.contract_result_in_scope = in_scope;
         let place = member(operand_name);
-        let expression = SurfaceTerm::CUnary {
-            operand: Box::new(SurfaceTerm::Field {
+        let expression = SyntaxTerm::CUnary {
+            operand: Box::new(SyntaxTerm::Field {
                 pointee_struct: None,
                 base: Box::new(base),
                 field: "value".into(),
@@ -209,15 +209,15 @@ fn nested_state_propositions_lower_with_small_frames_and_linear_visits() {
             let functions = ClickFunctionEnvironment::new(&[]);
             let mut retained_states = RecordedStates::default();
             retained_states.insert(ProgramPointSelector::Mark("before".into()), state.clone());
-            let atom = || SurfaceProposition::Comparison {
-                left: SurfaceTerm::At {
+            let atom = || SyntaxProposition::Comparison {
+                left: SyntaxTerm::At {
                     selector: ProgramPointSelector::Mark("before".into()),
-                    expression: Box::new(SurfaceTerm::ProgramExpression(
+                    expression: Box::new(SyntaxTerm::ProgramExpression(
                         ProgramExpression::Variable("x".into()),
                     )),
                 },
                 operator: ComparisonOperator::Equal,
-                right: SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(7))),
+                right: SyntaxTerm::ProgramExpression(ProgramExpression::Value(int32(7))),
             };
             for depth in [4, 8, 16, 32] {
                 let mut proposition = atom();
@@ -225,9 +225,9 @@ fn nested_state_propositions_lower_with_small_frames_and_linear_visits() {
                     let left = Box::new(atom());
                     let right = Box::new(proposition);
                     proposition = match level % 3 {
-                        0 => SurfaceProposition::And(left, right),
-                        1 => SurfaceProposition::Or(left, right),
-                        _ => SurfaceProposition::Implies(left, right),
+                        0 => SyntaxProposition::And(left, right),
+                        1 => SyntaxProposition::Or(left, right),
+                        _ => SyntaxProposition::Implies(left, right),
                     };
                 }
                 let (mut lowerer, context) = fixed_state_elaboration(
@@ -287,12 +287,12 @@ fn nested_state_propositions_lower_with_small_frames_and_linear_visits() {
 /// `at(...)` state, including a loop's own entry, are refused.
 #[test]
 fn a_fixed_state_anywhere_in_a_measure_is_found() {
-    let current = SurfaceTerm::ProgramBinding("n".to_string());
+    let current = SyntaxTerm::ProgramBinding("n".to_string());
     assert!(fixed_measure_state(&current).is_none());
 
-    let old = SurfaceTerm::Subtract(
+    let old = SyntaxTerm::Subtract(
         Box::new(current.clone()),
-        Box::new(SurfaceTerm::Old(Box::new(current.clone()))),
+        Box::new(SyntaxTerm::Old(Box::new(current.clone()))),
     );
     assert!(matches!(
         fixed_measure_state(&old),
@@ -303,9 +303,9 @@ fn a_fixed_state_anywhere_in_a_measure_is_found() {
         region: CodeRegionRef::Loop(0),
         kind: ProgramPointKind::Entry,
     });
-    let at = SurfaceTerm::Call {
+    let at = SyntaxTerm::Call {
         name: "head".to_string(),
-        arguments: vec![SurfaceTerm::At {
+        arguments: vec![SyntaxTerm::At {
             selector: loop_entry.clone(),
             expression: Box::new(current),
         }],
@@ -436,23 +436,20 @@ fn ordinary_integer_arithmetic_retains_structure_and_deferred_domain_checks() {
     context.integer_values = context
         .integer_values
         .with_inserted("x", Spec::Term(x.clone()));
-    let binding = || Box::new(SurfaceTerm::Binding("x".into()));
-    let one = || Box::new(SurfaceTerm::IntegerLiteral("1".into()));
+    let binding = || Box::new(SyntaxTerm::Binding("x".into()));
+    let one = || Box::new(SyntaxTerm::IntegerLiteral("1".into()));
     for (expression, expected) in [
+        (SyntaxTerm::Negate(binding()), Int::Negate(x.clone().into())),
         (
-            SurfaceTerm::Negate(binding()),
-            Int::Negate(x.clone().into()),
-        ),
-        (
-            SurfaceTerm::Add(binding(), one()),
+            SyntaxTerm::Add(binding(), one()),
             Int::Add(x.clone().into(), Int::constant_i64(1).into()),
         ),
         (
-            SurfaceTerm::Subtract(binding(), binding()),
+            SyntaxTerm::Subtract(binding(), binding()),
             Int::Subtract(x.clone().into(), x.clone().into()),
         ),
         (
-            SurfaceTerm::Multiply(binding(), one()),
+            SyntaxTerm::Multiply(binding(), one()),
             Int::Multiply(x.clone().into(), Int::constant_i64(1).into()),
         ),
     ] {
@@ -464,7 +461,7 @@ fn ordinary_integer_arithmetic_retains_structure_and_deferred_domain_checks() {
         );
     }
     for name in ["truncating_quotient", "truncating_remainder"] {
-        let call = |divisor| SurfaceTerm::Call {
+        let call = |divisor| SyntaxTerm::Call {
             name: name.into(),
             arguments: vec![*binding(), divisor],
         };
@@ -514,8 +511,8 @@ fn fixed_contract_result_is_separate_from_lexical_result_in_old_states() {
         .unwrap();
     for (context, lexical) in [(&context, 7), (&old_context, 3)] {
         for expression in [
-            SurfaceTerm::Binding("result".into()),
-            SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+            SyntaxTerm::Binding("result".into()),
+            SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::CONTRACT_RESULT,
             )),
         ] {
@@ -529,7 +526,7 @@ fn fixed_contract_result_is_separate_from_lexical_result_in_old_states() {
         assert_eq!(
             lowerer
                 .lower_contract_expression_to_spec(
-                    &SurfaceTerm::ProgramBinding("result".into()),
+                    &SyntaxTerm::ProgramBinding("result".into()),
                     context
                 )
                 .unwrap(),
@@ -547,11 +544,11 @@ fn common_integer_comparisons_keep_operands_and_native_fact_shape() {
         "x",
         SpecIntegerExpression::Term(IntegerTerm::Variable(variable)),
     );
-    let left = SurfaceTerm::Add(
-        Box::new(SurfaceTerm::Binding("x".into())),
-        Box::new(SurfaceTerm::IntegerLiteral("1".into())),
+    let left = SyntaxTerm::Add(
+        Box::new(SyntaxTerm::Binding("x".into())),
+        Box::new(SyntaxTerm::IntegerLiteral("1".into())),
     );
-    let right = SurfaceTerm::Binding("x".into());
+    let right = SyntaxTerm::Binding("x".into());
     let a: crate::kernel::SharedIntegerTerm = IntegerTerm::Add(
         IntegerTerm::Variable(variable).into(),
         IntegerTerm::constant_i64(1).into(),
@@ -593,7 +590,7 @@ fn common_integer_comparisons_keep_operands_and_native_fact_shape() {
             KernelTermNode::IntegerOperation { .. }
         ));
         assert!(matches!(arguments[1].node(), KernelTermNode::Variable(v) if *v == variable));
-        let source = SurfaceProposition::Comparison {
+        let source = SyntaxProposition::Comparison {
             left: left.clone(),
             operator,
             right: right.clone(),
@@ -639,10 +636,10 @@ fn an_exact_read_marks_only_its_outermost_read() {
         ProgramExpression::Index(Box::new(ProgramExpression::Variable("pp".into())), zero());
     let outer = ProgramExpression::Index(Box::new(inner.clone()), zero());
     let place = |expression: &ProgramExpression| {
-        Box::new(SurfaceTerm::ProgramExpression(expression.clone()))
+        Box::new(SyntaxTerm::ProgramExpression(expression.clone()))
     };
     let mut lower =
-        |expression: SurfaceTerm| lowerer.lower_contract_expression_to_spec(&expression, &context);
+        |expression: SyntaxTerm| lowerer.lower_contract_expression_to_spec(&expression, &context);
     // Returns the read's `exact` flag and, for a read through a pointer read,
     // that inner read's flag.
     fn flags(read: &SpecExpression) -> (bool, Option<bool>) {
@@ -659,7 +656,7 @@ fn an_exact_read_marks_only_its_outermost_read() {
         (*exact, inner)
     }
     let ordinary = lower(*place(&inner)).unwrap();
-    let exact = lower(SurfaceTerm::Exact(place(&inner))).unwrap();
+    let exact = lower(SyntaxTerm::Exact(place(&inner))).unwrap();
     assert_eq!(flags(&ordinary), (false, None));
     assert_eq!(flags(&exact), (true, None));
     // Apart from naming, the exact read is the ordinary one.
@@ -680,22 +677,19 @@ fn an_exact_read_marks_only_its_outermost_read() {
     assert_eq!(unmarked, ordinary);
 
     // `exact(pp[0][0])`: the address read `pp[0]` stays ordinary.
-    let outermost = lower(SurfaceTerm::Exact(place(&outer))).unwrap();
+    let outermost = lower(SyntaxTerm::Exact(place(&outer))).unwrap();
     assert_eq!(flags(&outermost), (true, Some(false)));
     assert_eq!(flags(&lower(*place(&outer)).unwrap()), (false, Some(false)));
     // `exact(exact(pp[0])[0])` makes both reads exact.
-    let both = lower(SurfaceTerm::Exact(Box::new(SurfaceTerm::Index(
-        Box::new(SurfaceTerm::Exact(place(&inner))),
-        Box::new(SurfaceTerm::IntegerLiteral("0".into())),
+    let both = lower(SyntaxTerm::Exact(Box::new(SyntaxTerm::Index(
+        Box::new(SyntaxTerm::Exact(place(&inner))),
+        Box::new(SyntaxTerm::IntegerLiteral("0".into())),
     ))))
     .unwrap();
     assert_eq!(flags(&both), (true, Some(true)));
 
     // A parameter's value is not a memory read.
-    let refused = lower(SurfaceTerm::Exact(Box::new(SurfaceTerm::Binding(
-        "x".into(),
-    ))))
-    .unwrap_err();
+    let refused = lower(SyntaxTerm::Exact(Box::new(SyntaxTerm::Binding("x".into())))).unwrap_err();
     assert!(
         refused.contains("`exact` takes a memory read, such as `p[i]` or `h->next`"),
         "{refused}"

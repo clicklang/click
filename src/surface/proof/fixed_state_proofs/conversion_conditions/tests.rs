@@ -64,9 +64,9 @@ fn unproved(proposition: Proposition) -> Vec<crate::kernel::ProofObligation> {
 #[test]
 fn an_expression_form_names_itself_its_cell_and_its_repair() {
     let (values, state) = indexed_pointer_site();
-    let expression = SurfaceTerm::Call {
+    let expression = SyntaxTerm::Call {
         name: "to_integer".to_string(),
-        arguments: vec![SurfaceTerm::ProgramExpression(
+        arguments: vec![SyntaxTerm::ProgramExpression(
             ProgramExpression::TypedLoad {
                 pointer: Box::new(ProgramExpression::Add(
                     Box::new(ProgramExpression::Variable(("p".to_string()).into())),
@@ -278,12 +278,12 @@ fn an_assumable_obligation_is_not_refused() {
 
 /// `icount(p, 0, index) == (0..index).fold(0, |acc, k| acc + to_integer(p[k]))`,
 /// the defining equation a function `unfold` lowers.
-fn fold_defining_equation() -> SurfaceProposition {
-    let read = SurfaceTerm::ArrayIndex {
-        base: Box::new(SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+fn fold_defining_equation() -> SyntaxProposition {
+    let read = SyntaxTerm::ArrayIndex {
+        base: Box::new(SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
             ("p".to_string()).into(),
         ))),
-        indexes: vec![SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+        indexes: vec![SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
             ("k".to_string()).into(),
         ))],
         dimensions: vec![1],
@@ -299,31 +299,31 @@ fn fold_defining_equation() -> SurfaceProposition {
             source: Default::default(),
         },
     };
-    SurfaceProposition::Comparison {
-        left: SurfaceTerm::Call {
+    SyntaxProposition::Comparison {
+        left: SyntaxTerm::Call {
             name: "icount".to_string(),
             arguments: vec![
-                SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+                SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
                     ("p".to_string()).into(),
                 )),
-                SurfaceTerm::IntegerLiteral("0".to_string()),
-                SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+                SyntaxTerm::IntegerLiteral("0".to_string()),
+                SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
                     ("index".to_string()).into(),
                 )),
             ],
         },
         operator: ComparisonOperator::Equal,
-        right: SurfaceTerm::RangeFold {
-            start: Box::new(SurfaceTerm::IntegerLiteral("0".to_string())),
-            end: Box::new(SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+        right: SyntaxTerm::RangeFold {
+            start: Box::new(SyntaxTerm::IntegerLiteral("0".to_string())),
+            end: Box::new(SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
                 ("index".to_string()).into(),
             ))),
-            initial: Box::new(SurfaceTerm::IntegerLiteral("0".to_string())),
+            initial: Box::new(SyntaxTerm::IntegerLiteral("0".to_string())),
             accumulator: "acc".to_string().into(),
             item: "k".to_string().into(),
-            body: Box::new(SurfaceTerm::Add(
-                Box::new(SurfaceTerm::Binding("acc".to_string())),
-                Box::new(SurfaceTerm::Call {
+            body: Box::new(SyntaxTerm::Add(
+                Box::new(SyntaxTerm::Binding("acc".to_string())),
+                Box::new(SyntaxTerm::Call {
                     name: "to_integer".to_string(),
                     arguments: vec![read],
                 }),
@@ -410,12 +410,12 @@ fn a_conditional_fold_body_quotes_the_condition_it_carried_out() {
 
 #[test]
 fn one_outer_parenthesis_pair_is_dropped_and_a_composed_one_is_kept() {
-    let sum = SurfaceTerm::ProgramExpression(ProgramExpression::Add(
+    let sum = SyntaxTerm::ProgramExpression(ProgramExpression::Add(
         Box::new(ProgramExpression::Variable(("a".to_string()).into())),
         Box::new(ProgramExpression::Variable(("b".to_string()).into())),
     ));
     assert_eq!(spelled_alone(&sum), "a + b");
-    let nested = SurfaceTerm::ProgramExpression(ProgramExpression::Add(
+    let nested = SyntaxTerm::ProgramExpression(ProgramExpression::Add(
         Box::new(ProgramExpression::Add(
             Box::new(ProgramExpression::Variable(("a".to_string()).into())),
             Box::new(ProgramExpression::Variable(("b".to_string()).into())),
@@ -426,8 +426,7 @@ fn one_outer_parenthesis_pair_is_dropped_and_a_composed_one_is_kept() {
         )),
     ));
     assert_eq!(spelled_alone(&nested), "(a + b) + (c + d)");
-    let bare =
-        SurfaceTerm::ProgramExpression(ProgramExpression::Variable(("a".to_string()).into()));
+    let bare = SyntaxTerm::ProgramExpression(ProgramExpression::Variable(("a".to_string()).into()));
     assert_eq!(spelled_alone(&bare), "a");
 }
 

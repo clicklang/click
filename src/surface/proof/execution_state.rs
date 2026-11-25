@@ -49,7 +49,7 @@ pub(super) struct ProofMatchArmCase {
 #[derive(Clone)]
 pub(super) struct CaseAssumption {
     pub(super) tactic_index: usize,
-    pub(super) condition: SurfaceProposition,
+    pub(super) condition: SyntaxProposition,
     pub(super) value: bool,
     pub(super) fact: Option<Proposition>,
     /// Set when this case is one arm of a proof `match` rather than one
@@ -512,10 +512,10 @@ pub(super) struct SurfaceIfArmEnd {
 
 #[derive(Clone, PartialEq)]
 pub(super) enum SurfacePathSelector {
-    Proposition(SurfaceProposition),
+    Proposition(SyntaxProposition),
     /// The arm of a `cases` split on this disjunction: `true` is its left
     /// side.
-    Disjunction(SurfaceProposition),
+    Disjunction(SyntaxProposition),
     CallOutcome,
     /// The arm of a constructor `match`, by its index in the written arms.
     /// The choice's `value` is unused.
@@ -769,7 +769,7 @@ fn append_surface_step_to_leaves_ref(steps: &mut Vec<ProofStep>, step: &ProofSte
 /// making the certificate quadratic in the constructor count.
 fn match_arm_suffix(
     step: &ProofStep,
-    scrutinee: &SurfaceTerm,
+    scrutinee: &SyntaxTerm,
     arms: &[CertificateInductionArm],
     index: usize,
 ) -> Option<Vec<ProofStep>> {
@@ -810,19 +810,19 @@ fn match_arm_suffix(
 /// so a condition that selects all of them or none of them is not one, and
 /// keeping both sides for it preserves the earlier two-constructor rule.
 fn match_arm_selection(
-    condition: &SurfaceProposition,
-    scrutinee: &SurfaceTerm,
+    condition: &SyntaxProposition,
+    scrutinee: &SyntaxTerm,
     arms: &[CertificateInductionArm],
 ) -> Option<Vec<bool>> {
-    let SurfaceProposition::Comparison {
+    let SyntaxProposition::Comparison {
         left:
-            SurfaceTerm::AlgebraicMatch {
+            SyntaxTerm::AlgebraicMatch {
                 scrutinee: selected,
                 arms: selector_arms,
             },
         operator: ComparisonOperator::Equal,
         right:
-            SurfaceTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Int32(
+            SyntaxTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Int32(
                 int32_constant!(1,),
             ))),
     } = condition
@@ -836,7 +836,7 @@ fn match_arm_selection(
         .iter()
         .zip(selector_arms)
         .map(|(arm, selector)| {
-            let SurfaceTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Int32(
+            let SyntaxTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Int32(
                 int32_constant!(value),
             ))) = &selector.body
             else {
@@ -1542,7 +1542,7 @@ fn synthesize_surface_cursors(paths: Vec<SurfacePathCursor<'_>>) -> Result<Vec<P
 /// the source scope, including when different outcomes select different arms.
 fn synthesize_scoped_if<'p>(
     mut prefix: Vec<ProofStep>,
-    condition: &SurfaceProposition,
+    condition: &SyntaxProposition,
     then_paths: Vec<SurfacePathCursor<'p>>,
     else_paths: Vec<SurfacePathCursor<'p>>,
 ) -> Result<Vec<ProofStep>, String> {
@@ -1606,7 +1606,7 @@ pub(super) fn boolean_return_split<'a>(
     Some((|| {
         Ok(ProofStep::If {
             ensuring: None,
-            condition: crate::surface::bool_truth(SurfaceTerm::ProgramExpression(
+            condition: crate::surface::bool_truth(SyntaxTerm::ProgramExpression(
                 ProgramExpression::Variable(crate::kernel::BindingName::ContractResult),
             )),
             then_proof: admit(then_steps)?,
@@ -1642,15 +1642,15 @@ pub(super) enum PostExecutionTactic {
     /// A bare `transport`, which searches for its premises. A written
     /// `rewrite` is a leaf.
     Transport {
-        source: SurfaceProposition,
-        target: SurfaceProposition,
+        source: SyntaxProposition,
+        target: SyntaxProposition,
     },
     /// Surface-only control structure scheduled after terminal execution.
     /// The arms contain no semantic state: ordered finalization asks the
     /// focused outcome `Proof` to decide the condition, then applies only the
     /// selected arm's checked operations to that same descendant.
     If {
-        condition: SurfaceProposition,
+        condition: SyntaxProposition,
         /// The arms are the two sides of `condition`, a `cases` disjunction,
         /// rather than `condition` and its negation.
         disjunction: bool,
@@ -1748,7 +1748,7 @@ pub(super) struct LoopReturnProof {
 
 #[derive(Clone)]
 pub(super) struct DeferredPostExecutionTactic {
-    pub(super) lexical_bindings: Option<PersistentBinderMap<SurfaceTerm>>,
+    pub(super) lexical_bindings: Option<PersistentBinderMap<SyntaxTerm>>,
     /// Whether case preparation must leave this proposition for the ordered
     /// outcome checker, which has the bindings produced by earlier obtains.
     pub(super) reads_deferred_obtain: bool,
@@ -1765,10 +1765,10 @@ mod proof_fact_store_tests {
     fn outcome_suffix_placement_skips_pruned_arms_in_linear_work() {
         fn branch(then_proof: ProofCertificate, else_proof: ProofCertificate) -> ProofStep {
             ProofStep::If {
-                condition: SurfaceProposition::Comparison {
-                    left: SurfaceTerm::IntegerLiteral("0".into()),
+                condition: SyntaxProposition::Comparison {
+                    left: SyntaxTerm::IntegerLiteral("0".into()),
                     operator: ComparisonOperator::Equal,
-                    right: SurfaceTerm::IntegerLiteral("0".into()),
+                    right: SyntaxTerm::IntegerLiteral("0".into()),
                 },
                 ensuring: None,
                 then_proof: Box::new(then_proof),
