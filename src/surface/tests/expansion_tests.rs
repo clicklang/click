@@ -23195,14 +23195,7 @@ fn outcome_instantiation_expands_and_closes_without_search() {
     let (source, sources) = mdtest_sources("mdtests/instantiate_at_function_exit.md");
     let sources = crate::cli::source_refs(&sources);
     let label = "at_exit.contract";
-    // Close the three contract bookkeeping goals after the last proposition.
-    let explicit = source
-        .replace("step_until(function.exit);", "step();")
-        .trim_end()
-        .strip_suffix('}')
-        .unwrap()
-        .to_owned()
-        + "    close();\n    close();\n    close();\n}\n";
+    let explicit = source.replace("step_until(function.exit);", "step();");
     for source in [
         explicit,
         expand_c_claim_source_by_label(&source, &sources, label)

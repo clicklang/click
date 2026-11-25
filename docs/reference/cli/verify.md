@@ -73,7 +73,7 @@ rather than checking their proofs.
 
 | Option | Meaning |
 | --- | --- |
-| `--checked-only` | Replay with proof search disabled. Write the execution steps and obligation proofs explicitly. Requires full or location-selected verification without `--allow-sorry` or `--changed-since`. |
+| `--checked-only` | Replay with proof search disabled. Write the execution steps and claim proofs explicitly. Contract finalization runs automatically. Requires full or location-selected verification without `--allow-sorry` or `--changed-since`. |
 | `--locked` | Require existing, current captures and skip compiler invocation. |
 | `--work-limit UNITS` | Set the deterministic whole-run work budget independently for each selected sidecar, mdtest, or proof unit. The default is `50000000`. |
 | `--time-limit DURATION` | Set the wall-clock crash-containment bound independently for each selected sidecar, mdtest, or proof unit. The default is `10m`. This is not a verdict about the proof; see [Deterministic verdicts](#deterministic-verdicts). |

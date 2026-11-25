@@ -49,8 +49,8 @@ location. Imported declarations and unselected C function contracts are
 assumptions; their proof bodies are not recursively selected.
 
 `--checked-only` verifies with proof search disabled. Write the execution
-steps and every obligation proof explicitly, as in a whole claim emitted by
-`click expand`.
+steps and claim proofs explicitly, as in a whole claim emitted by `click expand`.
+The verifier checks contract finalization automatically after the last claim.
 
 An mdtest is verified from its embedded ```c or ```cpp and ```click blocks,
 prepared exactly as the mdtests gate prepares them. Locations are lines of
