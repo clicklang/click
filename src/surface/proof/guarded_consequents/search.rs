@@ -42,7 +42,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             else {
                 continue;
             };
-            let fact = ClickProposition::Implies(
+            let fact = SurfaceProposition::Implies(
                 Box::new(surface_guard.clone()),
                 Box::new(surface_consequent.clone()),
             );
@@ -92,8 +92,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// the list does not state.
     pub(in crate::surface::proof) fn try_restricted_guarded_consequent(
         search_input: &Proof<'a>,
-        surfaces: &[ClickProposition],
-        premise_pairs: &[(Proposition, ClickProposition)],
+        surfaces: &[SurfaceProposition],
+        premise_pairs: &[(Proposition, SurfaceProposition)],
     ) -> Option<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_restricted_guarded_consequent");
@@ -101,7 +101,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let Proposition::Implies(guard, consequent) = kernel else {
                 continue;
             };
-            let ClickProposition::Implies(surface_guard, surface_consequent) = surface else {
+            let SurfaceProposition::Implies(surface_guard, surface_consequent) = surface else {
                 continue;
             };
             if !crate::kernel::proof::is_definedness_guard(guard)
@@ -191,7 +191,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// is already available.
     pub(in crate::surface::proof) fn prove_guard(
         search_input: &Proof<'a>,
-        surface_guard: &ClickProposition,
+        surface_guard: &SurfaceProposition,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("prove_guard");

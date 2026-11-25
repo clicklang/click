@@ -48,12 +48,10 @@ use crate::languages::c::syntax::{self, CExpression, LongRank};
 use crate::languages::interface::InterfaceType;
 use crate::persistent::PersistentMap;
 
-fn contract_expression_function_address(expression: &ContractExpression) -> Option<&str> {
+fn contract_expression_function_address(expression: &SurfaceTerm) -> Option<&str> {
     match expression {
-        ContractExpression::ProgramExpression(ProgramExpression::FunctionAddress(name)) => {
-            Some(name)
-        }
-        ContractExpression::ProgramExpression(ProgramExpression::AddressOf(expression)) => {
+        SurfaceTerm::ProgramExpression(ProgramExpression::FunctionAddress(name)) => Some(name),
+        SurfaceTerm::ProgramExpression(ProgramExpression::AddressOf(expression)) => {
             match expression.as_ref() {
                 ProgramExpression::Variable(name) => name.named(),
                 _ => None,
@@ -504,7 +502,7 @@ pub(crate) fn rust_iterator_accessors(
 pub(crate) fn rust_iterator_method(
     iterator: &crate::languages::interface::RustLoopIterator,
     accessor: &str,
-) -> Result<ContractExpression, String> {
+) -> Result<SurfaceTerm, String> {
     use crate::languages::interface::RustIteratorKind as K;
     let expression = match (iterator.kind, accessor) {
         // A slice iterator is the slice it still covers: `iter.as_slice()`
@@ -539,10 +537,10 @@ pub(crate) fn rust_iterator_method(
                 "end" | "end()" => end,
                 "len()" => ProgramExpression::Subtract(Box::new(end), Box::new(start)),
                 _ => {
-                    return proposition_bool_value(ClickProposition::Comparison {
-                        left: ContractExpression::ProgramExpression(start),
+                    return proposition_bool_value(SurfaceProposition::Comparison {
+                        left: SurfaceTerm::ProgramExpression(start),
                         operator: ComparisonOperator::GreaterThan,
-                        right: ContractExpression::ProgramExpression(end),
+                        right: SurfaceTerm::ProgramExpression(end),
                     });
                 }
             }
@@ -561,12 +559,10 @@ pub(crate) fn rust_iterator_method(
                 "rem.len()" => &fields.remainder_length,
                 "chunk_size" => &fields.size,
                 _ => {
-                    return Ok(ContractExpression::ProgramExpression(
-                        ProgramExpression::Divide(
-                            Box::new(ProgramExpression::Variable(fields.remaining_length.clone())),
-                            Box::new(ProgramExpression::Variable(fields.size.clone())),
-                        ),
-                    ));
+                    return Ok(SurfaceTerm::ProgramExpression(ProgramExpression::Divide(
+                        Box::new(ProgramExpression::Variable(fields.remaining_length.clone())),
+                        Box::new(ProgramExpression::Variable(fields.size.clone())),
+                    )));
                 }
             };
             ProgramExpression::Variable(field.clone())
@@ -596,7 +592,7 @@ pub(crate) fn rust_iterator_method(
             ));
         }
     };
-    Ok(ContractExpression::ProgramExpression(expression))
+    Ok(SurfaceTerm::ProgramExpression(expression))
 }
 
 /// The Rust spelling of the importer's iterator state variable `name` in a
@@ -609,7 +605,7 @@ pub(crate) fn rust_iterator_spelling(
     current: Option<usize>,
     name: &crate::kernel::BindingName,
 ) -> Option<String> {
-    let variable = ContractExpression::ProgramExpression(ProgramExpression::Variable(name.clone()));
+    let variable = SurfaceTerm::ProgramExpression(ProgramExpression::Variable(name.clone()));
     let accessor_of = |iterator: &crate::languages::interface::RustLoopIterator| {
         rust_iterator_accessors(iterator.kind)
             .iter()
@@ -635,7 +631,7 @@ pub(crate) fn rust_iterator_spelling(
 pub(crate) fn loop_iterator_bindings(
     signature: &FunctionSignature,
     loop_index: usize,
-) -> Vec<(String, ContractExpression)> {
+) -> Vec<(String, SurfaceTerm)> {
     let Some(iterator) = signature
         .rust_loop_iterators()
         .get(loop_index)
@@ -1251,7 +1247,7 @@ pub struct AlgebraicMatchArm {
     type_name: String,
     variant: String,
     bindings: Vec<SurfaceBinder>,
-    body: ContractExpression,
+    body: SurfaceTerm,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1259,7 +1255,7 @@ pub struct PredicateDefinition {
     name: String,
     type_parameters: Vec<String>,
     parameters: Vec<FunctionParameter>,
-    body: ClickProposition,
+    body: SurfaceProposition,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1272,11 +1268,11 @@ pub struct ClickFunctionDefinition {
     /// declared return type as a C function's declaration gives it
     /// (`design/effective-types.md`).
     return_object_class: Option<crate::kernel::effective_type::CAccessClass>,
-    decreases: Option<ContractExpression>,
+    decreases: Option<SurfaceTerm>,
     /// `None` for a library primitive operation, `function len<T>(v:
     /// Vec<T>) -> uint64;`: an uninterpreted function, known only through
     /// the library's axioms. Only library modules declare one.
-    body: Option<ContractExpression>,
+    body: Option<SurfaceTerm>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1301,9 +1297,9 @@ pub struct CompositeResourceBody {
     children: Vec<ResourceChildBody>,
     fields: Vec<ResourceFieldDefinition>,
     matched: Option<ResourceMatchBody>,
-    condition: Option<ClickProposition>,
+    condition: Option<SurfaceProposition>,
     contains: Vec<ResourceClause>,
-    facts: Vec<ClickProposition>,
+    facts: Vec<SurfaceProposition>,
     /// Existential witnesses (`let next: struct node* where P;`). The
     /// `where` proposition is also one of `facts`; the witness name is in
     /// scope for every later clause of the body.
@@ -1319,7 +1315,7 @@ pub struct ResourceChildBody {
     /// equations are checked against.
     resource: String,
     identity: crate::kernel::InstanceId,
-    arguments: Vec<ContractExpression>,
+    arguments: Vec<SurfaceTerm>,
     field_bindings: Vec<crate::kernel::ResourceChildField>,
 }
 
@@ -1545,14 +1541,14 @@ pub struct CallBinderTransport {
     /// `step(callee, { ... })`: the step names its C function, and the call's
     /// arguments are the call at the frontier, which must call `callee`.
     frontier: bool,
-    arguments: Vec<ContractExpression>,
+    arguments: Vec<SurfaceTerm>,
     binders: Vec<CallBinderBinding>,
     produced: Vec<CallBinderBinding>,
     /// Runtime binders that name a resource type, with the type written.
     type_arguments: Vec<(String, Variable, ResourceClause)>,
     /// The values the call map gives the callee's `let` value parameters,
     /// `{ n: k }`, each with the parameter it names.
-    value_arguments: Vec<(String, ContractExpression)>,
+    value_arguments: Vec<(String, SurfaceTerm)>,
     result: Option<String>,
 }
 
@@ -1589,7 +1585,7 @@ impl CallBinderTransport {
         Ok(self)
     }
 
-    pub fn value_arguments(&self) -> &[(String, ContractExpression)] {
+    pub fn value_arguments(&self) -> &[(String, SurfaceTerm)] {
         &self.value_arguments
     }
 
@@ -1611,7 +1607,7 @@ impl CallBinderTransport {
             .collect()
     }
 
-    pub fn arguments(&self) -> &[ContractExpression] {
+    pub fn arguments(&self) -> &[SurfaceTerm] {
         &self.arguments
     }
 
@@ -1847,11 +1843,11 @@ fn source_positions(sources: impl Iterator<Item = Option<usize>>) -> Vec<(usize,
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum FunctionDecrease {
     /// The parsed expression, before resolution decides what it names.
-    Unresolved(ContractExpression),
-    Numeric(ContractExpression),
+    Unresolved(SurfaceTerm),
+    Numeric(SurfaceTerm),
     /// A tuple of numeric components, `decreases (m, n);`, ranked
     /// lexicographically as a loop's tuple is.
-    Lexicographic(Vec<ContractExpression>),
+    Lexicographic(Vec<SurfaceTerm>),
     Resource(ResourceClause),
     /// A contract resource binder named without arguments, as in
     /// `owns t: tree_at(root); decreases t;`.
@@ -2075,13 +2071,13 @@ pub(in crate::surface) fn pointee_field_places<'a>(
 pub enum Requirement {
     LoadableSegment { segment: ContractSegment },
     Resource(ResourceClause),
-    Proposition(ClickProposition),
+    Proposition(SurfaceProposition),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EnsureClause {
     /// Value aliases visible where this claim and its proof were written.
-    proof_bindings: Vec<(String, Option<ClickType>, ContractExpression)>,
+    proof_bindings: Vec<(String, Option<ClickType>, SurfaceTerm)>,
     name: Option<String>,
     ensure: Ensure,
     proof: SourceProof,
@@ -2093,7 +2089,7 @@ pub struct EnsureClause {
     /// A resource ensure nested in a contract `if`. The condition is a
     /// pre-state proposition; the clause is present in the post-state only
     /// when that proposition is established at the call boundary.
-    condition: Option<ClickProposition>,
+    condition: Option<SurfaceProposition>,
 }
 
 /// A loop or function region's clause. Its contents are shared by its
@@ -2156,7 +2152,7 @@ pub struct StructuralClauseData {
     /// proof `match` arm's bindings, `let { ... } = unfold(...)` names, call-result
     /// binders. The clause keeps its written spelling, which expansion
     /// prints; every lowering reads it through [`StructuralClause::resolved`].
-    scope: BinderMap<ContractExpression>,
+    scope: BinderMap<SurfaceTerm>,
     /// Resource clauses declared beside the invariants. They give the region
     /// the write and read authority of a callee contract: the body executes
     /// owning exactly these resources, and the loop's write footprint is the
@@ -2169,24 +2165,24 @@ pub struct StructuralClauseData {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TerminationMeasure {
-    components: Vec<ContractExpression>,
+    components: Vec<SurfaceTerm>,
     /// The components as written, when resolving a loop clause's proof
     /// scope rewrote them. A proof-local name such as a `let { field: name }
     /// = unfold(...)` binder is replaced by the value it names, but the
     /// termination plan reads the written clause, so the loop head keeps the
     /// written spelling to name the component by.
-    written: Option<Vec<Option<ContractExpression>>>,
+    written: Option<Vec<Option<SurfaceTerm>>>,
 }
 
 impl TerminationMeasure {
-    pub(crate) fn new(components: Vec<ContractExpression>) -> Self {
+    pub(crate) fn new(components: Vec<SurfaceTerm>) -> Self {
         Self {
             components,
             written: None,
         }
     }
 
-    pub fn components(&self) -> &[ContractExpression] {
+    pub fn components(&self) -> &[SurfaceTerm] {
         &self.components
     }
 
@@ -2195,7 +2191,7 @@ impl TerminationMeasure {
     pub(in crate::surface) fn rewritten_component_source(
         &self,
         index: usize,
-    ) -> Option<&ContractExpression> {
+    ) -> Option<&SurfaceTerm> {
         self.written.as_ref()?.get(index)?.as_ref()
     }
 }
@@ -2209,14 +2205,14 @@ pub enum CodeRegion {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StructuralItem {
-    claim: ClickProposition,
+    claim: SurfaceProposition,
     /// The label the invariant was written with, `invariant name: P;`.
     name: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Ensure {
-    Proposition(ClickProposition),
+    Proposition(SurfaceProposition),
     Resource(ResourceClause),
 }
 
@@ -2225,7 +2221,7 @@ pub enum ResourceClause {
     /// A resource owned or viewed exactly when its contract condition holds.
     /// Initially exposed in loop contracts, using ordinary resource assertions.
     Conditional {
-        condition: ClickProposition,
+        condition: SurfaceProposition,
         resource: Box<ResourceClause>,
     },
     Named {
@@ -2243,14 +2239,14 @@ pub enum ResourceClause {
         segments: Vec<ContractSegment>,
     },
     Quantified {
-        quantity: ContractExpression,
+        quantity: SurfaceTerm,
         resource: Box<ResourceClause>,
     },
     Declared {
         access: ResourceAccessMode,
         kind: ResourceKind,
         name: String,
-        arguments: Vec<ContractExpression>,
+        arguments: Vec<SurfaceTerm>,
         /// Checked field shape when this declaration is used as a resource type.
         /// This does not name an occurrence or provide any field observations.
         type_schema: Option<crate::kernel::ResourceFieldSchema>,
@@ -2278,7 +2274,7 @@ pub enum IteratedTactic {
 pub struct IteratedTarget {
     resource: ResourceClause,
     point: Option<ProgramPointSelector>,
-    index: Option<ContractExpression>,
+    index: Option<SurfaceTerm>,
 }
 
 impl IteratedTactic {
@@ -2301,9 +2297,9 @@ pub struct IteratedResourceClause {
     /// The index binder, as written.
     pub(crate) binder: SurfaceBinder,
     /// The `where` proposition bounding the index.
-    pub(crate) range: ClickProposition,
+    pub(crate) range: SurfaceProposition,
     /// The optional `if` guard selecting which indices are held.
-    pub(crate) guard: Option<ClickProposition>,
+    pub(crate) guard: Option<SurfaceProposition>,
     /// The element range at index `binder`.
     pub(crate) element: ContractSegment,
 }
@@ -2321,7 +2317,7 @@ pub struct ResourceInstanceBinding {
     schema: Option<crate::kernel::ResourceFieldSchema>,
     fields: Option<crate::kernel::ResourceFieldValues>,
     /// Present only on an explicit proof-side resource construction.
-    fold_fields: Option<Vec<(String, ContractExpression)>>,
+    fold_fields: Option<Vec<(String, SurfaceTerm)>>,
     /// Explicit child slot, surface name, and instance identity. Shared to
     /// keep recursive tactic syntax small.
     child_bindings: Option<std::sync::Arc<[(String, String, crate::kernel::InstanceId)]>>,
@@ -2388,15 +2384,15 @@ pub enum ResourceSubject {
     Memory(ContractSegment),
     /// A pointer range whose base or bounds may use proof expressions.
     SavedMemory {
-        base: ContractExpression,
-        start: ContractExpression,
+        base: SurfaceTerm,
+        start: SurfaceTerm,
         /// None names one cell at `start`, without computing `start + 1`.
-        end: Option<ContractExpression>,
+        end: Option<SurfaceTerm>,
     },
     Declared {
         kind: ResourceKind,
         name: String,
-        arguments: Vec<ContractExpression>,
+        arguments: Vec<SurfaceTerm>,
         parameter_types: Vec<InterfaceType>,
     },
 }
@@ -2505,69 +2501,68 @@ pub enum SurfaceProposition {
     },
 }
 
-/// Compatibility name for [`SurfaceProposition`].
-pub use self::SurfaceProposition as ClickProposition;
-
 impl Clone for SurfaceProposition {
     fn clone(&self) -> Self {
         clone_click_proposition_iteratively(self)
     }
 }
 
-fn clone_click_proposition_atom(proposition: &ClickProposition) -> ClickProposition {
+fn clone_click_proposition_atom(proposition: &SurfaceProposition) -> SurfaceProposition {
     match proposition {
-        ClickProposition::Value(expression) => ClickProposition::Value(expression.clone()),
+        SurfaceProposition::Value(expression) => SurfaceProposition::Value(expression.clone()),
 
-        ClickProposition::Comparison {
+        SurfaceProposition::Comparison {
             left,
             operator,
             right,
-        } => ClickProposition::Comparison {
+        } => SurfaceProposition::Comparison {
             left: left.clone(),
             operator: *operator,
             right: right.clone(),
         },
-        ClickProposition::FloatClassification {
+        SurfaceProposition::FloatClassification {
             expression,
             classification,
-        } => ClickProposition::FloatClassification {
+        } => SurfaceProposition::FloatClassification {
             expression: expression.clone(),
             classification: *classification,
         },
-        ClickProposition::Separate { left, right } => ClickProposition::Separate {
+        SurfaceProposition::Separate { left, right } => SurfaceProposition::Separate {
             left: left.clone(),
             right: right.clone(),
         },
-        ClickProposition::ResourceViewable { resource } => ClickProposition::ResourceViewable {
+        SurfaceProposition::ResourceViewable { resource } => SurfaceProposition::ResourceViewable {
             resource: resource.clone(),
         },
-        ClickProposition::Contains { parent, child } => ClickProposition::Contains {
+        SurfaceProposition::Contains { parent, child } => SurfaceProposition::Contains {
             parent: parent.clone(),
             child: child.clone(),
         },
-        ClickProposition::Loadable { segment } => ClickProposition::Loadable {
+        SurfaceProposition::Loadable { segment } => SurfaceProposition::Loadable {
             segment: segment.clone(),
         },
-        ClickProposition::Defined { expression } => ClickProposition::Defined {
+        SurfaceProposition::Defined { expression } => SurfaceProposition::Defined {
             expression: expression.clone(),
         },
-        ClickProposition::IsA { class, pointer } => ClickProposition::IsA {
+        SurfaceProposition::IsA { class, pointer } => SurfaceProposition::IsA {
             class: class.clone(),
             pointer: pointer.clone(),
         },
-        ClickProposition::PredicateCall { name, arguments } => ClickProposition::PredicateCall {
-            name: name.clone(),
-            arguments: arguments.clone(),
-        },
-        ClickProposition::At { .. }
-        | ClickProposition::And(..)
-        | ClickProposition::Or(..)
-        | ClickProposition::Not(..)
-        | ClickProposition::Implies(..)
-        | ClickProposition::ForAll { .. }
-        | ClickProposition::Exists { .. }
-        | ClickProposition::RangeAll { .. }
-        | ClickProposition::RangeAny { .. } => {
+        SurfaceProposition::PredicateCall { name, arguments } => {
+            SurfaceProposition::PredicateCall {
+                name: name.clone(),
+                arguments: arguments.clone(),
+            }
+        }
+        SurfaceProposition::At { .. }
+        | SurfaceProposition::And(..)
+        | SurfaceProposition::Or(..)
+        | SurfaceProposition::Not(..)
+        | SurfaceProposition::Implies(..)
+        | SurfaceProposition::ForAll { .. }
+        | SurfaceProposition::Exists { .. }
+        | SurfaceProposition::RangeAll { .. }
+        | SurfaceProposition::RangeAny { .. } => {
             unreachable!("structural propositions are cloned by the iterative traversal")
         }
     }
@@ -2583,25 +2578,23 @@ thread_local! {
 
 /// The specification `bool` literal `true` or `false`: a C `bool` value,
 /// exactly `1` or `0`.
-pub(crate) fn bool_literal(value: bool) -> ContractExpression {
-    ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::bool_constant(
-        value,
-    )))
+pub(crate) fn bool_literal(value: bool) -> SurfaceTerm {
+    SurfaceTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::bool_constant(value)))
 }
 
 /// The value of a `bool` literal written as `true` or `false`.
-pub(crate) fn bool_literal_value(expression: &ContractExpression) -> Option<bool> {
+pub(crate) fn bool_literal_value(expression: &SurfaceTerm) -> Option<bool> {
     match expression {
-        ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::Bool(
-            value,
-        ))) => value.bool_constant_value(),
+        SurfaceTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Bool(value))) => {
+            value.bool_constant_value()
+        }
         _ => None,
     }
 }
 
 /// A `bool` value claimed as a proposition: `value == true`.
-pub(crate) fn bool_truth(value: ContractExpression) -> ClickProposition {
-    ClickProposition::Comparison {
+pub(crate) fn bool_truth(value: SurfaceTerm) -> SurfaceProposition {
+    SurfaceProposition::Comparison {
         left: value,
         operator: ComparisonOperator::Equal,
         right: bool_literal(true),
@@ -2617,15 +2610,15 @@ pub(crate) fn bool_truth(value: ContractExpression) -> ClickProposition {
 /// and `implies` likewise. Opening a connective can repeat a branch, so the
 /// result is bounded; a proposition past the bound is refused.
 pub(crate) fn proposition_bool_value(
-    proposition: ClickProposition,
-) -> Result<ContractExpression, String> {
+    proposition: SurfaceProposition,
+) -> Result<SurfaceTerm, String> {
     const BOOL_VALUE_CONDITIONALS: usize = 256;
     fn branch(
-        condition: ClickProposition,
-        then_branch: ContractExpression,
-        else_branch: ContractExpression,
+        condition: SurfaceProposition,
+        then_branch: SurfaceTerm,
+        else_branch: SurfaceTerm,
         conditionals: &mut usize,
-    ) -> Result<ContractExpression, String> {
+    ) -> Result<SurfaceTerm, String> {
         *conditionals += 1;
         if *conditionals > BOOL_VALUE_CONDITIONALS {
             return Err(format!(
@@ -2634,20 +2627,20 @@ pub(crate) fn proposition_bool_value(
             ));
         }
         match condition {
-            ClickProposition::And(left, right) => {
+            SurfaceProposition::And(left, right) => {
                 let then_branch = branch(*right, then_branch, else_branch.clone(), conditionals)?;
                 branch(*left, then_branch, else_branch, conditionals)
             }
-            ClickProposition::Or(left, right) => {
+            SurfaceProposition::Or(left, right) => {
                 let else_branch = branch(*right, then_branch.clone(), else_branch, conditionals)?;
                 branch(*left, then_branch, else_branch, conditionals)
             }
-            ClickProposition::Implies(left, right) => {
+            SurfaceProposition::Implies(left, right) => {
                 let consequent = branch(*right, then_branch.clone(), else_branch, conditionals)?;
                 branch(*left, consequent, then_branch, conditionals)
             }
-            ClickProposition::Not(body) => branch(*body, else_branch, then_branch, conditionals),
-            condition => Ok(ContractExpression::If {
+            SurfaceProposition::Not(body) => branch(*body, else_branch, then_branch, conditionals),
+            condition => Ok(SurfaceTerm::If {
                 condition: Box::new(condition),
                 then_branch: Box::new(then_branch),
                 else_branch: Box::new(else_branch),
@@ -2655,22 +2648,22 @@ pub(crate) fn proposition_bool_value(
         }
     }
     match proposition {
-        ClickProposition::Comparison {
+        SurfaceProposition::Comparison {
             left,
             operator: ComparisonOperator::Equal,
             right,
         } if bool_literal_value(&right) == Some(true) => Ok(left),
         // A written `true` or `false` is that literal value.
-        ClickProposition::Value(literal) if bool_literal_value(&literal).is_some() => Ok(literal),
+        SurfaceProposition::Value(literal) if bool_literal_value(&literal).is_some() => Ok(literal),
         proposition => branch(proposition, bool_literal(true), bool_literal(false), &mut 0),
     }
 }
 
 pub(crate) fn clone_click_proposition_iteratively(
-    proposition: &ClickProposition,
-) -> ClickProposition {
+    proposition: &SurfaceProposition,
+) -> SurfaceProposition {
     enum Frame<'a> {
-        Visit(&'a ClickProposition),
+        Visit(&'a SurfaceProposition),
         BuildAt(ProgramPointSelector),
         BuildAnd,
         BuildOr,
@@ -2687,14 +2680,14 @@ pub(crate) fn clone_click_proposition_iteratively(
             written_name: Option<String>,
         },
         BuildRangeAll {
-            start: ContractExpression,
-            end: ContractExpression,
+            start: SurfaceTerm,
+            end: SurfaceTerm,
             item: SurfaceBinder,
             written_item: Option<String>,
         },
         BuildRangeAny {
-            start: ContractExpression,
-            end: ContractExpression,
+            start: SurfaceTerm,
+            end: SurfaceTerm,
             item: SurfaceBinder,
             written_item: Option<String>,
         },
@@ -2708,33 +2701,33 @@ pub(crate) fn clone_click_proposition_iteratively(
                 #[cfg(test)]
                 CLICK_PROPOSITION_NODES_COPIED.with(|copied| copied.set(copied.get() + 1));
                 match proposition {
-                    ClickProposition::At {
+                    SurfaceProposition::At {
                         selector,
                         proposition,
                     } => {
                         frames.push(Frame::BuildAt(selector.clone()));
                         frames.push(Frame::Visit(proposition));
                     }
-                    ClickProposition::And(left, right) => {
+                    SurfaceProposition::And(left, right) => {
                         frames.push(Frame::BuildAnd);
                         frames.push(Frame::Visit(right));
                         frames.push(Frame::Visit(left));
                     }
-                    ClickProposition::Or(left, right) => {
+                    SurfaceProposition::Or(left, right) => {
                         frames.push(Frame::BuildOr);
                         frames.push(Frame::Visit(right));
                         frames.push(Frame::Visit(left));
                     }
-                    ClickProposition::Not(body) => {
+                    SurfaceProposition::Not(body) => {
                         frames.push(Frame::BuildNot);
                         frames.push(Frame::Visit(body));
                     }
-                    ClickProposition::Implies(left, right) => {
+                    SurfaceProposition::Implies(left, right) => {
                         frames.push(Frame::BuildImplies);
                         frames.push(Frame::Visit(right));
                         frames.push(Frame::Visit(left));
                     }
-                    ClickProposition::ForAll {
+                    SurfaceProposition::ForAll {
                         click_type,
                         name,
                         written_name,
@@ -2747,7 +2740,7 @@ pub(crate) fn clone_click_proposition_iteratively(
                         });
                         frames.push(Frame::Visit(body));
                     }
-                    ClickProposition::Exists {
+                    SurfaceProposition::Exists {
                         click_type,
                         name,
                         written_name,
@@ -2760,7 +2753,7 @@ pub(crate) fn clone_click_proposition_iteratively(
                         });
                         frames.push(Frame::Visit(body));
                     }
-                    ClickProposition::RangeAll {
+                    SurfaceProposition::RangeAll {
                         start,
                         end,
                         item,
@@ -2775,7 +2768,7 @@ pub(crate) fn clone_click_proposition_iteratively(
                         });
                         frames.push(Frame::Visit(body));
                     }
-                    ClickProposition::RangeAny {
+                    SurfaceProposition::RangeAny {
                         start,
                         end,
                         item,
@@ -2795,7 +2788,7 @@ pub(crate) fn clone_click_proposition_iteratively(
             }
             Frame::BuildAt(selector) => {
                 let proposition = values.pop().expect("the anchored proposition is cloned");
-                values.push(ClickProposition::At {
+                values.push(SurfaceProposition::At {
                     selector,
                     proposition: Box::new(proposition),
                 });
@@ -2803,21 +2796,21 @@ pub(crate) fn clone_click_proposition_iteratively(
             Frame::BuildAnd => {
                 let right = values.pop().expect("the right proposition is cloned");
                 let left = values.pop().expect("the left proposition is cloned");
-                values.push(ClickProposition::And(Box::new(left), Box::new(right)));
+                values.push(SurfaceProposition::And(Box::new(left), Box::new(right)));
             }
             Frame::BuildOr => {
                 let right = values.pop().expect("the right proposition is cloned");
                 let left = values.pop().expect("the left proposition is cloned");
-                values.push(ClickProposition::Or(Box::new(left), Box::new(right)));
+                values.push(SurfaceProposition::Or(Box::new(left), Box::new(right)));
             }
             Frame::BuildNot => {
                 let body = values.pop().expect("the proposition body is cloned");
-                values.push(ClickProposition::Not(Box::new(body)));
+                values.push(SurfaceProposition::Not(Box::new(body)));
             }
             Frame::BuildImplies => {
                 let right = values.pop().expect("the implication consequent is cloned");
                 let left = values.pop().expect("the implication antecedent is cloned");
-                values.push(ClickProposition::Implies(Box::new(left), Box::new(right)));
+                values.push(SurfaceProposition::Implies(Box::new(left), Box::new(right)));
             }
             Frame::BuildForAll {
                 click_type,
@@ -2825,7 +2818,7 @@ pub(crate) fn clone_click_proposition_iteratively(
                 written_name,
             } => {
                 let body = values.pop().expect("the forall body is cloned");
-                values.push(ClickProposition::ForAll {
+                values.push(SurfaceProposition::ForAll {
                     click_type,
                     name,
                     written_name,
@@ -2838,7 +2831,7 @@ pub(crate) fn clone_click_proposition_iteratively(
                 written_name,
             } => {
                 let body = values.pop().expect("the exists body is cloned");
-                values.push(ClickProposition::Exists {
+                values.push(SurfaceProposition::Exists {
                     click_type,
                     name,
                     written_name,
@@ -2852,7 +2845,7 @@ pub(crate) fn clone_click_proposition_iteratively(
                 written_item,
             } => {
                 let body = values.pop().expect("the range-all body is cloned");
-                values.push(ClickProposition::RangeAll {
+                values.push(SurfaceProposition::RangeAll {
                     start,
                     end,
                     item,
@@ -2867,7 +2860,7 @@ pub(crate) fn clone_click_proposition_iteratively(
                 written_item,
             } => {
                 let body = values.pop().expect("the range-any body is cloned");
-                values.push(ClickProposition::RangeAny {
+                values.push(SurfaceProposition::RangeAny {
                     start,
                     end,
                     item,
@@ -3116,24 +3109,24 @@ fn collect_current_resource_subject_variables(
 }
 
 pub(crate) fn collect_current_contract_expression_variables(
-    expression: &ContractExpression,
+    expression: &SurfaceTerm,
     names: &mut BTreeSet<String>,
 ) {
     match expression {
-        ContractExpression::IntegerContext(value) => {
+        SurfaceTerm::IntegerContext(value) => {
             collect_current_contract_expression_variables(value, names)
         }
 
-        ContractExpression::Proposition(proposition) => {
+        SurfaceTerm::Proposition(proposition) => {
             collect_current_proposition_variables(proposition, names)
         }
-        ContractExpression::Resource(subject) => {
+        SurfaceTerm::Resource(subject) => {
             collect_current_resource_subject_variables(subject, names)
         }
-        ContractExpression::RegionResult(_)
-        | ContractExpression::RegionAllocation(_)
-        | ContractExpression::RegionParameter { .. } => {}
-        ContractExpression::Lambda {
+        SurfaceTerm::RegionResult(_)
+        | SurfaceTerm::RegionAllocation(_)
+        | SurfaceTerm::RegionParameter { .. } => {}
+        SurfaceTerm::Lambda {
             parameters, body, ..
         } => {
             let mut captures = BTreeSet::new();
@@ -3145,7 +3138,7 @@ pub(crate) fn collect_current_contract_expression_variables(
             }
             names.extend(captures);
         }
-        ContractExpression::Apply {
+        SurfaceTerm::Apply {
             function,
             arguments,
         } => {
@@ -3155,18 +3148,18 @@ pub(crate) fn collect_current_contract_expression_variables(
             }
         }
 
-        ContractExpression::ResourceField(_) | ContractExpression::IntegerLiteral(_) => {}
-        ContractExpression::AlgebraicVariable { name, .. } => {
+        SurfaceTerm::ResourceField(_) | SurfaceTerm::IntegerLiteral(_) => {}
+        SurfaceTerm::AlgebraicVariable { name, .. } => {
             if let Some(name) = name.written() {
                 names.insert(name.to_owned());
             }
         }
-        ContractExpression::AlgebraicConstructor { arguments, .. } => {
+        SurfaceTerm::AlgebraicConstructor { arguments, .. } => {
             for argument in arguments {
                 collect_current_contract_expression_variables(argument, names);
             }
         }
-        ContractExpression::AlgebraicMatch { scrutinee, arms } => {
+        SurfaceTerm::AlgebraicMatch { scrutinee, arms } => {
             collect_current_contract_expression_variables(scrutinee, names);
             for arm in arms {
                 let mut arm_names = BTreeSet::new();
@@ -3179,32 +3172,32 @@ pub(crate) fn collect_current_contract_expression_variables(
                 names.extend(arm_names);
             }
         }
-        ContractExpression::SequenceLiteral(elements) => {
+        SurfaceTerm::SequenceLiteral(elements) => {
             for element in elements {
                 collect_current_contract_expression_variables(element, names);
             }
         }
-        ContractExpression::SequenceConcat(left, right) => {
+        SurfaceTerm::SequenceConcat(left, right) => {
             collect_current_contract_expression_variables(left, names);
             collect_current_contract_expression_variables(right, names);
         }
-        ContractExpression::QualifiedC {
+        SurfaceTerm::QualifiedC {
             lowered: expression,
             ..
         }
-        | ContractExpression::ProgramExpression(expression) => {
+        | SurfaceTerm::ProgramExpression(expression) => {
             collect_program_expression_variables(expression, names);
         }
         // A `program::name` base is skipped like a bare `program::name`: its
         // lowered C form names the same binding, not a Click value such as
         // the contract `result`.
-        ContractExpression::Field { base, lowered, .. } => {
+        SurfaceTerm::Field { base, lowered, .. } => {
             collect_current_contract_expression_variables(base, names);
-            if !matches!(base.as_ref(), ContractExpression::ProgramBinding(_)) {
+            if !matches!(base.as_ref(), SurfaceTerm::ProgramBinding(_)) {
                 collect_program_expression_variables(lowered, names);
             }
         }
-        ContractExpression::ArrayIndex {
+        SurfaceTerm::ArrayIndex {
             base,
             indexes,
             lowered,
@@ -3214,33 +3207,33 @@ pub(crate) fn collect_current_contract_expression_variables(
             for index in indexes {
                 collect_current_contract_expression_variables(index, names);
             }
-            if !matches!(base.as_ref(), ContractExpression::ProgramBinding(_)) {
+            if !matches!(base.as_ref(), SurfaceTerm::ProgramBinding(_)) {
                 collect_program_expression_variables(lowered, names);
             }
         }
-        ContractExpression::Binding(name) => {
+        SurfaceTerm::Binding(name) => {
             names.insert(name.clone());
         }
-        ContractExpression::ProgramBinding(_) | ContractExpression::ResourceWildcard => {}
-        ContractExpression::ResourceCount(resource) => {
+        SurfaceTerm::ProgramBinding(_) | SurfaceTerm::ResourceWildcard => {}
+        SurfaceTerm::ResourceCount(resource) => {
             collect_current_resource_clause_variables(resource, names);
         }
         // Explicitly anchored expressions are stable across a local write.
-        ContractExpression::Old(_) | ContractExpression::At { .. } => {}
-        ContractExpression::BitwiseNot(inner) => {
+        SurfaceTerm::Old(_) | SurfaceTerm::At { .. } => {}
+        SurfaceTerm::BitwiseNot(inner) => {
             collect_current_contract_expression_variables(inner, names);
         }
-        ContractExpression::CUnary { operand: inner, .. }
-        | ContractExpression::MemoryLoad { pointer: inner, .. }
-        | ContractExpression::Negate(inner)
-        | ContractExpression::Exact(inner) => {
+        SurfaceTerm::CUnary { operand: inner, .. }
+        | SurfaceTerm::MemoryLoad { pointer: inner, .. }
+        | SurfaceTerm::Negate(inner)
+        | SurfaceTerm::Exact(inner) => {
             collect_current_contract_expression_variables(inner, names);
         }
         crate::surface::binary_contract_expression!(left, right) => {
             collect_current_contract_expression_variables(left, names);
             collect_current_contract_expression_variables(right, names);
         }
-        ContractExpression::If {
+        SurfaceTerm::If {
             condition,
             then_branch,
             else_branch,
@@ -3249,7 +3242,7 @@ pub(crate) fn collect_current_contract_expression_variables(
             collect_current_contract_expression_variables(then_branch, names);
             collect_current_contract_expression_variables(else_branch, names);
         }
-        ContractExpression::RangeFold {
+        SurfaceTerm::RangeFold {
             start,
             end,
             initial,
@@ -3261,11 +3254,11 @@ pub(crate) fn collect_current_contract_expression_variables(
             collect_current_contract_expression_variables(initial, names);
             collect_current_contract_expression_variables(body, names);
         }
-        ContractExpression::Let { value, body, .. } => {
+        SurfaceTerm::Let { value, body, .. } => {
             collect_current_contract_expression_variables(value, names);
             collect_current_contract_expression_variables(body, names);
         }
-        ContractExpression::MethodCall {
+        SurfaceTerm::MethodCall {
             receiver,
             arguments,
             ..
@@ -3275,7 +3268,7 @@ pub(crate) fn collect_current_contract_expression_variables(
                 collect_current_contract_expression_variables(argument, names);
             }
         }
-        ContractExpression::Call { arguments, .. } => {
+        SurfaceTerm::Call { arguments, .. } => {
             for argument in arguments {
                 collect_current_contract_expression_variables(argument, names);
             }
@@ -3284,39 +3277,39 @@ pub(crate) fn collect_current_contract_expression_variables(
 }
 
 fn collect_current_proposition_variables(
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     names: &mut BTreeSet<String>,
 ) {
     let mut pending = vec![proposition];
     while let Some(proposition) = pending.pop() {
         match proposition {
-            ClickProposition::Value(expression) => {
+            SurfaceProposition::Value(expression) => {
                 collect_current_contract_expression_variables(expression, names)
             }
 
-            ClickProposition::Comparison { left, right, .. } => {
+            SurfaceProposition::Comparison { left, right, .. } => {
                 collect_current_contract_expression_variables(left, names);
                 collect_current_contract_expression_variables(right, names);
             }
-            ClickProposition::FloatClassification { expression, .. } => {
+            SurfaceProposition::FloatClassification { expression, .. } => {
                 collect_current_contract_expression_variables(expression, names);
             }
-            ClickProposition::ResourceViewable { resource } => {
+            SurfaceProposition::ResourceViewable { resource } => {
                 collect_current_resource_subject_variables(resource, names)
             }
-            ClickProposition::Separate { left, right }
-            | ClickProposition::Contains {
+            SurfaceProposition::Separate { left, right }
+            | SurfaceProposition::Contains {
                 parent: left,
                 child: right,
             } => {
                 collect_current_resource_subject_variables(left, names);
                 collect_current_resource_subject_variables(right, names);
             }
-            ClickProposition::Loadable { segment } => {
+            SurfaceProposition::Loadable { segment } => {
                 collect_current_segment_variables(segment, names);
             }
-            ClickProposition::Defined { expression }
-            | ClickProposition::IsA {
+            SurfaceProposition::Defined { expression }
+            | SurfaceProposition::IsA {
                 pointer: expression,
                 ..
             } => {
@@ -3324,29 +3317,29 @@ fn collect_current_proposition_variables(
             }
             // The proposition itself is anchored, so current-local writes cannot
             // change its meaning even if its body contains a C fragment.
-            ClickProposition::At { .. } => {}
-            ClickProposition::And(left, right)
-            | ClickProposition::Or(left, right)
-            | ClickProposition::Implies(left, right) => {
+            SurfaceProposition::At { .. } => {}
+            SurfaceProposition::And(left, right)
+            | SurfaceProposition::Or(left, right)
+            | SurfaceProposition::Implies(left, right) => {
                 pending.push(right);
                 pending.push(left);
             }
-            ClickProposition::Not(body)
-            | ClickProposition::ForAll { body, .. }
-            | ClickProposition::Exists { body, .. } => {
+            SurfaceProposition::Not(body)
+            | SurfaceProposition::ForAll { body, .. }
+            | SurfaceProposition::Exists { body, .. } => {
                 pending.push(body);
             }
-            ClickProposition::RangeAll {
+            SurfaceProposition::RangeAll {
                 start, end, body, ..
             }
-            | ClickProposition::RangeAny {
+            | SurfaceProposition::RangeAny {
                 start, end, body, ..
             } => {
                 collect_current_contract_expression_variables(start, names);
                 collect_current_contract_expression_variables(end, names);
                 pending.push(body);
             }
-            ClickProposition::PredicateCall { arguments, .. } => {
+            SurfaceProposition::PredicateCall { arguments, .. } => {
                 for argument in arguments {
                     collect_current_contract_expression_variables(argument, names);
                 }
@@ -3355,12 +3348,9 @@ fn collect_current_proposition_variables(
     }
 }
 
-/// Compatibility name while expression consumers migrate to `SurfaceTerm`.
 mod binders;
 pub use binders::SurfaceBinder;
 use binders::{BinderMap, BinderSet, PersistentBinderMap, ScopedBinders};
-
-pub type ContractExpression = SurfaceTerm;
 
 /// The library function a Rust subslice's length lowers through; its call
 /// owes the subslice's bounds.
@@ -3388,7 +3378,7 @@ pub enum SurfaceTerm {
     AlgebraicConstructor {
         algebraic_type: AlgebraicTypeApplication,
         variant: String,
-        arguments: Vec<ContractExpression>,
+        arguments: Vec<SurfaceTerm>,
     },
     /// A method call on a value of a Click type, `s.len()`, as written: its
     /// meaning comes from the receiver's type, so declaration expansion
@@ -3397,9 +3387,9 @@ pub enum SurfaceTerm {
     /// index `s[a..b]` on such a receiver are the methods `[]` and `[..]`,
     /// `[a..]`, `[..b]` or `[a..b]`, with the written bounds as arguments.
     MethodCall {
-        receiver: Box<ContractExpression>,
+        receiver: Box<SurfaceTerm>,
         method: String,
-        arguments: Vec<ContractExpression>,
+        arguments: Vec<SurfaceTerm>,
     },
     /// A Click-native binder whose value is not a C object or scalar.
     AlgebraicVariable {
@@ -3414,16 +3404,16 @@ pub enum SurfaceTerm {
     /// Exhaustive elimination of an algebraic value. Its arms may produce a
     /// common C or algebraic result type.
     AlgebraicMatch {
-        scrutinee: Box<ContractExpression>,
+        scrutinee: Box<SurfaceTerm>,
         arms: Vec<AlgebraicMatchArm>,
     },
     /// An immutable, finite specification sequence. Elements remain ordinary
     /// scalar contract expressions and are evaluated at the surrounding
     /// state.
-    SequenceLiteral(Vec<ContractExpression>),
+    SequenceLiteral(Vec<SurfaceTerm>),
     /// Persistent sequence concatenation. This is specification syntax only;
     /// it does not denote C pointer arithmetic or allocate C memory.
-    SequenceConcat(Box<ContractExpression>, Box<ContractExpression>),
+    SequenceConcat(Box<SurfaceTerm>, Box<SurfaceTerm>),
     /// A C expression fragment appearing inside Surface Click.
     ProgramExpression(ProgramExpression),
     /// A typed read in the surrounding memory. The pointer expression may
@@ -3439,7 +3429,7 @@ pub enum SurfaceTerm {
     /// in that case `lowered` retains the cast metadata with a placeholder, and
     /// conversion back to a C fragment must rebuild from `operand` or refuse.
     CUnary {
-        operand: Box<ContractExpression>,
+        operand: Box<SurfaceTerm>,
         lowered: ProgramExpression,
     },
     /// A source-level struct field place paired with its lowered C expression.
@@ -3450,7 +3440,7 @@ pub enum SurfaceTerm {
         /// Declared struct identity of a pointer-valued field, retained for
         /// nominal type validation independently of its scalar C carrier.
         pointee_struct: Option<String>,
-        base: Box<ContractExpression>,
+        base: Box<SurfaceTerm>,
         field: String,
         lowered: ProgramExpression,
         /// Byte offset of `field` from the address denoted by `base`.
@@ -3489,103 +3479,103 @@ pub enum SurfaceTerm {
     },
     /// `old(e)`: a point-selecting special form, sugar for
     /// `at(function.entry, e)`. The special forms are `old`, `at`, `exact`
-    /// and `defined` (`ClickProposition::Defined`); see
+    /// and `defined` (`SurfaceProposition::Defined`); see
     /// `docs/reference/glossary.md#special-forms`.
-    Old(Box<ContractExpression>),
+    Old(Box<SurfaceTerm>),
     /// `at(point, e)`: a point-selecting special form, `e` read when the
-    /// proof path was at `point`. `ClickProposition::At` is the same form in
+    /// proof path was at `point`. `SurfaceProposition::At` is the same form in
     /// proposition position.
     At {
         selector: ProgramPointSelector,
-        expression: Box<ContractExpression>,
+        expression: Box<SurfaceTerm>,
     },
     /// `exact(place)`, a point-selecting special form: the read of `place`
     /// named by the state in scope itself, with no version walk
     /// (`design/exact-reads.md`). It applies to the outermost read only;
     /// reads computing the place's address stay ordinary. It grants no
     /// access and adds no facts.
-    Exact(Box<ContractExpression>),
-    Negate(Box<ContractExpression>),
-    Add(Box<ContractExpression>, Box<ContractExpression>),
-    Subtract(Box<ContractExpression>, Box<ContractExpression>),
-    Multiply(Box<ContractExpression>, Box<ContractExpression>),
-    Divide(Box<ContractExpression>, Box<ContractExpression>),
-    Remainder(Box<ContractExpression>, Box<ContractExpression>),
-    ShiftLeft(Box<ContractExpression>, Box<ContractExpression>),
+    Exact(Box<SurfaceTerm>),
+    Negate(Box<SurfaceTerm>),
+    Add(Box<SurfaceTerm>, Box<SurfaceTerm>),
+    Subtract(Box<SurfaceTerm>, Box<SurfaceTerm>),
+    Multiply(Box<SurfaceTerm>, Box<SurfaceTerm>),
+    Divide(Box<SurfaceTerm>, Box<SurfaceTerm>),
+    Remainder(Box<SurfaceTerm>, Box<SurfaceTerm>),
+    ShiftLeft(Box<SurfaceTerm>, Box<SurfaceTerm>),
     /// Rust shifts preserve the operand width and owe only count bounds.
-    RustShiftLeft(Box<ContractExpression>, Box<ContractExpression>),
-    RustShiftRight(Box<ContractExpression>, Box<ContractExpression>),
-    ShiftRight(Box<ContractExpression>, Box<ContractExpression>),
-    BitwiseAnd(Box<ContractExpression>, Box<ContractExpression>),
-    BitwiseOr(Box<ContractExpression>, Box<ContractExpression>),
-    BitwiseXor(Box<ContractExpression>, Box<ContractExpression>),
-    BitwiseNot(Box<ContractExpression>),
-    Index(Box<ContractExpression>, Box<ContractExpression>),
+    RustShiftLeft(Box<SurfaceTerm>, Box<SurfaceTerm>),
+    RustShiftRight(Box<SurfaceTerm>, Box<SurfaceTerm>),
+    ShiftRight(Box<SurfaceTerm>, Box<SurfaceTerm>),
+    BitwiseAnd(Box<SurfaceTerm>, Box<SurfaceTerm>),
+    BitwiseOr(Box<SurfaceTerm>, Box<SurfaceTerm>),
+    BitwiseXor(Box<SurfaceTerm>, Box<SurfaceTerm>),
+    BitwiseNot(Box<SurfaceTerm>),
+    Index(Box<SurfaceTerm>, Box<SurfaceTerm>),
     /// A multidimensional C array access. `lowered` carries the flattened
     /// pointer access used by the kernel while `indexes` retain their binding
     /// syntax and source rank. Dimensions recover the row-major strides when
     /// the source operands need separate namespace lowering.
     ArrayIndex {
-        base: Box<ContractExpression>,
-        indexes: Vec<ContractExpression>,
+        base: Box<SurfaceTerm>,
+        indexes: Vec<SurfaceTerm>,
         dimensions: Vec<u32>,
         lowered: ProgramExpression,
     },
     If {
-        condition: Box<ClickProposition>,
-        then_branch: Box<ContractExpression>,
-        else_branch: Box<ContractExpression>,
+        condition: Box<SurfaceProposition>,
+        then_branch: Box<SurfaceTerm>,
+        else_branch: Box<SurfaceTerm>,
     },
     /// A proposition carried as a specification value.
-    Proposition(Box<ClickProposition>),
+    Proposition(Box<SurfaceProposition>),
     /// A typed, lexically scoped specification function; reads use application state.
     Lambda {
         parameters: Vec<(SurfaceBinder, ClickType)>,
         result: ClickType,
-        body: Box<ContractExpression>,
+        body: Box<SurfaceTerm>,
     },
     /// Application of an expression whose value is a specification function.
     Apply {
-        function: Box<ContractExpression>,
-        arguments: Vec<ContractExpression>,
+        function: Box<SurfaceTerm>,
+        arguments: Vec<SurfaceTerm>,
     },
     RangeFold {
-        start: Box<ContractExpression>,
-        end: Box<ContractExpression>,
-        initial: Box<ContractExpression>,
+        start: Box<SurfaceTerm>,
+        end: Box<SurfaceTerm>,
+        initial: Box<SurfaceTerm>,
         accumulator: SurfaceBinder,
         item: SurfaceBinder,
-        body: Box<ContractExpression>,
+        body: Box<SurfaceTerm>,
     },
     Let {
         name: SurfaceBinder,
         click_type: Option<ClickType>,
-        value: Box<ContractExpression>,
-        body: Box<ContractExpression>,
+        value: Box<SurfaceTerm>,
+        body: Box<SurfaceTerm>,
     },
     Call {
         name: String,
-        arguments: Vec<ContractExpression>,
+        arguments: Vec<SurfaceTerm>,
     },
 }
 
-/// Matches every arithmetic, bitwise and indexing binary [`ContractExpression`], binding the
+/// Matches every arithmetic, bitwise and indexing binary [`SurfaceTerm`], binding the
 /// operands to `$left` and `$right`.
 macro_rules! binary_contract_expression {
     ($left:pat, $right:pat) => {
-        $crate::surface::ContractExpression::Add($left, $right)
-            | $crate::surface::ContractExpression::Subtract($left, $right)
-            | $crate::surface::ContractExpression::Multiply($left, $right)
-            | $crate::surface::ContractExpression::Divide($left, $right)
-            | $crate::surface::ContractExpression::Remainder($left, $right)
-            | $crate::surface::ContractExpression::BitwiseAnd($left, $right)
-            | $crate::surface::ContractExpression::BitwiseOr($left, $right)
-            | $crate::surface::ContractExpression::BitwiseXor($left, $right)
-            | $crate::surface::ContractExpression::ShiftLeft($left, $right)
-            | $crate::surface::ContractExpression::RustShiftLeft($left, $right)
-            | $crate::surface::ContractExpression::ShiftRight($left, $right)
-            | $crate::surface::ContractExpression::RustShiftRight($left, $right)
-            | $crate::surface::ContractExpression::Index($left, $right)
+        $crate::surface::SurfaceTerm::Add($left, $right)
+            | $crate::surface::SurfaceTerm::Subtract($left, $right)
+            | $crate::surface::SurfaceTerm::Multiply($left, $right)
+            | $crate::surface::SurfaceTerm::Divide($left, $right)
+            | $crate::surface::SurfaceTerm::Remainder($left, $right)
+            | $crate::surface::SurfaceTerm::BitwiseAnd($left, $right)
+            | $crate::surface::SurfaceTerm::BitwiseOr($left, $right)
+            | $crate::surface::SurfaceTerm::BitwiseXor($left, $right)
+            | $crate::surface::SurfaceTerm::ShiftLeft($left, $right)
+            | $crate::surface::SurfaceTerm::RustShiftLeft($left, $right)
+            | $crate::surface::SurfaceTerm::ShiftRight($left, $right)
+            | $crate::surface::SurfaceTerm::RustShiftRight($left, $right)
+            | $crate::surface::SurfaceTerm::Index($left, $right)
     };
 }
 pub(crate) use binary_contract_expression;
@@ -4718,7 +4708,7 @@ impl RecordedStates {
         binding: &crate::kernel::BindingName,
         value: &crate::kernel::StoredExecutionValue,
         selector: Option<&ProgramPointSelector>,
-    ) -> Option<ContractExpression> {
+    ) -> Option<SurfaceTerm> {
         if !binding
             .local_id()
             .is_some_and(crate::kernel::LocalBindingId::is_temporary)
@@ -4735,9 +4725,9 @@ impl RecordedStates {
         if recorded.program_type() != value.program_type() || recorded != value.native().as_ref() {
             return None;
         }
-        let expression = ContractExpression::RegionResult(source);
+        let expression = SurfaceTerm::RegionResult(source);
         Some(match selector {
-            Some(selector) => ContractExpression::At {
+            Some(selector) => SurfaceTerm::At {
                 selector: selector.clone(),
                 expression: Box::new(expression),
             },
@@ -5211,19 +5201,14 @@ impl RecordedStates {
     }
 
     /// Name the address of frontend-owned storage by its producing region.
-    fn produced_address_expression(
-        &self,
-        pointer: &crate::kernel::Address,
-    ) -> Option<ContractExpression> {
+    fn produced_address_expression(&self, pointer: &crate::kernel::Address) -> Option<SurfaceTerm> {
         use crate::kernel::AddressBase;
         match &pointer.base {
             AddressBase::AutomaticLocal { binding, .. } if binding.is_temporary() => {
                 self.call_result_address_expression(pointer)
             }
             AddressBase::Heap(_) => Self::displaced_result_address(pointer, |base| {
-                Some(ContractExpression::RegionAllocation(
-                    self.allocation_result(base)?,
-                ))
+                Some(SurfaceTerm::RegionAllocation(self.allocation_result(base)?))
             }),
             _ => None,
         }
@@ -5232,12 +5217,12 @@ impl RecordedStates {
     fn call_result_address_expression(
         &self,
         pointer: &crate::kernel::Address,
-    ) -> Option<ContractExpression> {
+    ) -> Option<SurfaceTerm> {
         if let Some(region) = self.call_result_naming_pointer(pointer) {
-            return Some(ContractExpression::RegionResult(region));
+            return Some(SurfaceTerm::RegionResult(region));
         }
         Self::displaced_result_address(pointer, |base| {
-            Some(ContractExpression::RegionResult(
+            Some(SurfaceTerm::RegionResult(
                 self.call_result_naming_pointer(base)?,
             ))
         })
@@ -5245,8 +5230,8 @@ impl RecordedStates {
 
     fn displaced_result_address(
         pointer: &crate::kernel::Address,
-        name_base: impl FnOnce(&crate::kernel::Address) -> Option<ContractExpression>,
-    ) -> Option<ContractExpression> {
+        name_base: impl FnOnce(&crate::kernel::Address) -> Option<SurfaceTerm>,
+    ) -> Option<SurfaceTerm> {
         use crate::kernel::{Address, AddressOffset};
         let AddressOffset::Constant(bytes) = pointer.offset else {
             return None;
@@ -5259,7 +5244,7 @@ impl RecordedStates {
             base: pointer.base.clone(),
             offset: AddressOffset::Constant(0),
         };
-        Some(ContractExpression::CUnary {
+        Some(SurfaceTerm::CUnary {
             operand: Box::new(name_base(&base)?),
             lowered: ProgramExpression::PointerOffsetBytes {
                 pointer: Box::new(ProgramExpression::Value(crate::kernel::int32(0))),
@@ -6034,14 +6019,14 @@ pub struct ContractSegment {
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 enum ContractSegmentSurface {
     Range {
-        base: ContractExpression,
-        start: ContractExpression,
-        end: ContractExpression,
+        base: SurfaceTerm,
+        start: SurfaceTerm,
+        end: SurfaceTerm,
     },
     StructRange {
-        base: ContractExpression,
-        start: ContractExpression,
-        end: ContractExpression,
+        base: SurfaceTerm,
+        start: SurfaceTerm,
+        end: SurfaceTerm,
         layout: std::sync::Arc<StructRangeLayout>,
     },
     Field {
@@ -6049,7 +6034,7 @@ enum ContractSegmentSurface {
         /// parse had it. A base reached through a link reads as `old->left`
         /// there, which is what the user wrote; the lowered `ProgramExpression` for
         /// the same place reads as `load<int32*>(old)`, which is not.
-        base: Option<Box<ContractExpression>>,
+        base: Option<Box<SurfaceTerm>>,
         name: String,
         element_width: Option<u32>,
         element_type: Option<ProgramType>,
@@ -6104,13 +6089,7 @@ impl ContractSegment {
     /// A diagnostic that names the cell a single-cell condition came from
     /// reads them here: the cell is `<base>[<start>]`, which is the spelling
     /// the reader has in front of them.
-    pub(crate) fn surface_range(
-        &self,
-    ) -> Option<(
-        &ContractExpression,
-        &ContractExpression,
-        &ContractExpression,
-    )> {
+    pub(crate) fn surface_range(&self) -> Option<(&SurfaceTerm, &SurfaceTerm, &SurfaceTerm)> {
         match &self.surface {
             ContractSegmentSurface::Range { base, start, end }
             | ContractSegmentSurface::StructRange {
@@ -6284,7 +6263,7 @@ pub enum ProofTactic {
     Synthetic(Box<ProofTactic>),
     SmartExecute,
     ExecuteUntil(ExecutionPoint),
-    UnfoldProposition(ClickProposition),
+    UnfoldProposition(SurfaceProposition),
     UnfoldFunction(ClickFunctionApplication),
     UnfoldResource(ResourceClause),
     ReleaseView(ResourceClause),
@@ -6302,18 +6281,18 @@ pub enum ProofTactic {
     },
     ApplyInduction {
         hypothesis: String,
-        arguments: Vec<ContractExpression>,
+        arguments: Vec<SurfaceTerm>,
     },
     /// Apply an established implication, proving its antecedents.
-    ApplyFact(ClickProposition),
+    ApplyFact(SurfaceProposition),
     ApplyFactUsing {
-        fact: ClickProposition,
-        premises: Vec<ClickProposition>,
+        fact: SurfaceProposition,
+        premises: Vec<SurfaceProposition>,
     },
     ApplyTheorem(TheoremApplication),
     ApplyTheoremUsing {
         application: TheoremApplication,
-        premises: Vec<ClickProposition>,
+        premises: Vec<SurfaceProposition>,
     },
     Have(ProofHave),
     Open(ProofOpen),
@@ -6341,10 +6320,10 @@ pub enum ProofTactic {
     Close,
     Known,
     Normalize,
-    NormalizeUsing(Vec<ClickProposition>),
+    NormalizeUsing(Vec<SurfaceProposition>),
     /// A compatibility check used in verification. It has no expansion spelling.
-    CompatibilityNormalize(Option<Vec<ClickProposition>>),
-    ArithmeticUsing(Vec<ClickProposition>),
+    CompatibilityNormalize(Option<Vec<SurfaceProposition>>),
+    ArithmeticUsing(Vec<SurfaceProposition>),
     /// An internal introduction step used while building a checked scope.
     Intro,
     /// Internal named introductions used by proof plans and their certificates.
@@ -6356,29 +6335,29 @@ pub enum ProofTactic {
         body: Vec<ProofTactic>,
     },
     Enumerate,
-    Contradiction(ClickProposition),
+    Contradiction(SurfaceProposition),
     CloseInvariants,
-    Rewrite(ClickProposition),
-    Preserve(ClickProposition),
+    Rewrite(SurfaceProposition),
+    Preserve(SurfaceProposition),
     Transport {
-        source: ClickProposition,
-        target: ClickProposition,
+        source: SurfaceProposition,
+        target: SurfaceProposition,
     },
     TransportUsing {
-        source: ClickProposition,
-        target: ClickProposition,
-        premises: Vec<ClickProposition>,
+        source: SurfaceProposition,
+        target: SurfaceProposition,
+        premises: Vec<SurfaceProposition>,
     },
     /// A legacy frame check with no ordinary Surface expansion.
     CompatibilityFactTransport {
-        source: ClickProposition,
-        target: ClickProposition,
-        premises: Vec<ClickProposition>,
+        source: SurfaceProposition,
+        target: SurfaceProposition,
+        premises: Vec<SurfaceProposition>,
     },
     /// Substitute consecutive universal binders, preserving the residual body and guards.
     Instantiate {
-        quantified: ClickProposition,
-        arguments: Vec<ContractExpression>,
+        quantified: SurfaceProposition,
+        arguments: Vec<SurfaceTerm>,
     },
     Solve,
     /// The driver schedules ordinary `solve` for every remaining claim.
@@ -7049,13 +7028,13 @@ pub enum StepProofCertificate {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StepRequirementCertificate {
     pub(crate) label: Option<String>,
-    pub(crate) proposition: ClickProposition,
+    pub(crate) proposition: SurfaceProposition,
     pub(crate) proof: ProofCertificate,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProofHave {
-    proposition: ClickProposition,
+    proposition: SurfaceProposition,
     proof: SourceProof,
 }
 
@@ -7104,7 +7083,7 @@ impl ProofOpen {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProofIf {
-    condition: ClickProposition,
+    condition: SurfaceProposition,
     /// What the rejoined proof keeps when the arms end in different states.
     ensuring: Option<Vec<ProofAssertion>>,
     then_tactics: Vec<ProofTactic>,
@@ -7142,7 +7121,7 @@ pub struct ProofAll {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ProofAllArm {
-    pub(crate) proposition: ClickProposition,
+    pub(crate) proposition: SurfaceProposition,
     pub(crate) tactics: Vec<ProofTactic>,
 }
 
@@ -7158,19 +7137,19 @@ pub struct ProofCases {
 /// One arm of `cases`: the disjunct it assumes and the proof under it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProofCaseArm {
-    assumption: ClickProposition,
+    assumption: SurfaceProposition,
     tactics: Vec<ProofTactic>,
 }
 
 impl ProofCaseArm {
-    pub(crate) fn new(assumption: ClickProposition, tactics: Vec<ProofTactic>) -> Self {
+    pub(crate) fn new(assumption: SurfaceProposition, tactics: Vec<ProofTactic>) -> Self {
         Self {
             assumption,
             tactics,
         }
     }
 
-    pub(crate) fn assumption(&self) -> &ClickProposition {
+    pub(crate) fn assumption(&self) -> &SurfaceProposition {
         &self.assumption
     }
 
@@ -7191,14 +7170,14 @@ impl ProofCases {
     }
 
     /// The disjunction the arms eliminate.
-    pub(crate) fn disjunction(&self) -> ClickProposition {
+    pub(crate) fn disjunction(&self) -> SurfaceProposition {
         case_arms_disjunction(&self.arms)
     }
 
     /// The same arms with each assumption and tactic list rewritten.
     pub(crate) fn try_map<E>(
         &self,
-        mut assumption: impl FnMut(&ClickProposition) -> Result<ClickProposition, E>,
+        mut assumption: impl FnMut(&SurfaceProposition) -> Result<SurfaceProposition, E>,
         mut tactics: impl FnMut(&[ProofTactic]) -> Result<Vec<ProofTactic>, E>,
     ) -> Result<Self, E> {
         Ok(Self {
@@ -7217,7 +7196,7 @@ impl ProofCases {
 
     /// The two-armed form the kernel splits on: every arm but the last
     /// against the last, with the leading arms as a nested `cases`.
-    pub(crate) fn binary(&self) -> (ClickProposition, Vec<ProofTactic>, Vec<ProofTactic>) {
+    pub(crate) fn binary(&self) -> (SurfaceProposition, Vec<ProofTactic>, Vec<ProofTactic>) {
         let (last, leading) = self.arms.split_last().expect("`cases` has arms");
         let left = match leading {
             [only] => only.tactics.clone(),
@@ -7232,7 +7211,7 @@ impl ProofCases {
     /// that is itself the `cases` on the left disjunct, as [`Self::binary`]
     /// writes one.
     pub(crate) fn from_binary(
-        disjunction: &ClickProposition,
+        disjunction: &SurfaceProposition,
         left: Vec<ProofTactic>,
         right: Vec<ProofTactic>,
     ) -> Self {
@@ -7258,16 +7237,18 @@ impl ProofCases {
 /// The two disjuncts of a written `cases` disjunction. A disjunction read at
 /// a state, `at(s, A or B)`, splits into `at(s, A)` and `at(s, B)`.
 fn split_case_disjunction(
-    disjunction: &ClickProposition,
-) -> Option<(ClickProposition, ClickProposition)> {
+    disjunction: &SurfaceProposition,
+) -> Option<(SurfaceProposition, SurfaceProposition)> {
     match disjunction {
-        ClickProposition::Or(left, right) => Some((left.as_ref().clone(), right.as_ref().clone())),
-        ClickProposition::At {
+        SurfaceProposition::Or(left, right) => {
+            Some((left.as_ref().clone(), right.as_ref().clone()))
+        }
+        SurfaceProposition::At {
             selector,
             proposition,
         } => {
             let (left, right) = split_case_disjunction(proposition)?;
-            let at = |proposition| ClickProposition::At {
+            let at = |proposition| SurfaceProposition::At {
                 selector: selector.clone(),
                 proposition: Box::new(proposition),
             };
@@ -7278,18 +7259,18 @@ fn split_case_disjunction(
 }
 
 /// The disjunction of the arms' assumptions, grouped left to right.
-pub(crate) fn case_arms_disjunction(arms: &[ProofCaseArm]) -> ClickProposition {
+pub(crate) fn case_arms_disjunction(arms: &[ProofCaseArm]) -> SurfaceProposition {
     let mut arms = arms.iter();
     let first = arms.next().expect("`cases` has arms").assumption.clone();
     arms.fold(first, |disjunction, arm| {
-        ClickProposition::Or(Box::new(disjunction), Box::new(arm.assumption.clone()))
+        SurfaceProposition::Or(Box::new(disjunction), Box::new(arm.assumption.clone()))
     })
 }
 
 /// Explicit proof-by-constructor-cases, not evaluation of a pure expression.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProofMatch {
-    scrutinee: ContractExpression,
+    scrutinee: SurfaceTerm,
     /// What the rejoined proof keeps when the arms end in different states.
     ensuring: Option<Vec<ProofAssertion>>,
     arms: Vec<ProofInductionArm>,
@@ -7366,7 +7347,7 @@ pub struct ProofCallOutcomes {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProofSolveUsing {
-    premises: Vec<ClickProposition>,
+    premises: Vec<SurfaceProposition>,
 }
 
 /// The checked signed-int32 arithmetic rule family. Surface nodes retain
@@ -7400,56 +7381,56 @@ pub struct SignedInt32Interval {
 pub enum SignedArithmeticStep {
     Premise {
         index: usize,
-        proposition: ClickProposition,
-        result: ClickProposition,
+        proposition: SurfaceProposition,
+        result: SurfaceProposition,
     },
     Scale {
         source: usize,
-        coefficient: ContractExpression,
-        result: ClickProposition,
+        coefficient: SurfaceTerm,
+        result: SurfaceProposition,
     },
     Add {
         left: usize,
         right: usize,
-        result: ClickProposition,
+        result: SurfaceProposition,
     },
     EqualityToLessEqual {
         source: usize,
         reverse: bool,
-        result: ClickProposition,
+        result: SurfaceProposition,
     },
     EqualityFromBounds {
         lower: usize,
         upper: usize,
-        result: ClickProposition,
+        result: SurfaceProposition,
     },
     StrictFromDisequal {
         bound: usize,
         disequal: usize,
-        result: ClickProposition,
+        result: SurfaceProposition,
     },
     Trivial {
-        result: ClickProposition,
+        result: SurfaceProposition,
     },
     /// One opaque term's int32 range bound, `t <= 2147483647` or
     /// `-2147483648 <= t`.
     Int32Range {
-        result: ClickProposition,
+        result: SurfaceProposition,
     },
     IntervalFromAffine {
         source: usize,
-        term: ContractExpression,
+        term: SurfaceTerm,
         lower: i64,
         upper: i64,
     },
     IntervalFromAffineDirect {
         source: usize,
-        term: ContractExpression,
+        term: SurfaceTerm,
         lower: i64,
         upper: i64,
     },
     IntervalAtom {
-        term: ContractExpression,
+        term: SurfaceTerm,
         lower: i64,
         upper: i64,
     },
@@ -7460,7 +7441,7 @@ pub enum SignedArithmeticStep {
     },
     DefinedPremise {
         index: usize,
-        term: ContractExpression,
+        term: SurfaceTerm,
     },
     IntervalAdd {
         left: usize,
@@ -7528,24 +7509,24 @@ pub enum SignedArithmeticStep {
         left: usize,
         right: usize,
         comparison: SignedInt32Comparison,
-        result: ClickProposition,
+        result: SurfaceProposition,
     },
     AffinePremise {
         source: usize,
         left_evidence: usize,
         right_evidence: usize,
-        result: ClickProposition,
+        result: SurfaceProposition,
     },
     AffineConclusion {
         source: usize,
         evidence: usize,
-        result: ClickProposition,
+        result: SurfaceProposition,
     },
     AffineConclusionWithEvidence {
         source: usize,
         left_evidence: usize,
         right_evidence: usize,
-        result: ClickProposition,
+        result: SurfaceProposition,
     },
 }
 
@@ -7555,7 +7536,7 @@ pub enum SignedArithmeticStep {
 /// parser/printer.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SpecializedCompositionPlan {
-    pub premises: Vec<ClickProposition>,
+    pub premises: Vec<SurfaceProposition>,
     pub nodes: Vec<SpecialArithmeticNode>,
     pub conclusion: usize,
 }
@@ -7564,41 +7545,41 @@ pub struct SpecializedCompositionPlan {
 pub enum SpecialArithmeticNode {
     IntegerPolynomialIdentity {
         bounds: Vec<usize>,
-        result: ClickProposition,
+        result: SurfaceProposition,
     },
     IntegerCastIdentity {
         bounds: Vec<usize>,
-        result: ClickProposition,
+        result: SurfaceProposition,
     },
     UnsignedSumBound {
         bounds: Vec<usize>,
-        result: ClickProposition,
+        result: SurfaceProposition,
     },
     PointerTranslation {
         relation: usize,
         bounds: Vec<usize>,
-        result: ClickProposition,
+        result: SurfaceProposition,
     },
     PointerAlignment {
         premise: Option<usize>,
-        result: ClickProposition,
+        result: SurfaceProposition,
     },
     PointerWordEquality {
         relation: usize,
         alignments: Vec<usize>,
-        result: ClickProposition,
+        result: SurfaceProposition,
     },
     PointerWordFromAlignment {
         alignments: Vec<usize>,
-        result: ClickProposition,
+        result: SurfaceProposition,
     },
     FloatBound {
         premise: usize,
-        result: ClickProposition,
+        result: SurfaceProposition,
     },
     FloatReflexive {
         finite: usize,
-        result: ClickProposition,
+        result: SurfaceProposition,
     },
     /// `defined(left + right)` or `defined(left - right)` over `int32`
     /// (`int32_defined`) or `int64` (`int64_defined`), from the operands'
@@ -7606,26 +7587,26 @@ pub enum SpecialArithmeticNode {
     SignedDefined {
         width: crate::kernel::SignedDefinedWidth,
         bounds: Vec<usize>,
-        result: ClickProposition,
+        result: SurfaceProposition,
     },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ProofAssertion {
-    Fact(ClickProposition),
+    Fact(SurfaceProposition),
     Resource(ResourceClause),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TheoremApplication {
     name: String,
-    arguments: Vec<ContractExpression>,
+    arguments: Vec<SurfaceTerm>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClickFunctionApplication {
     name: String,
-    arguments: Vec<ContractExpression>,
+    arguments: Vec<SurfaceTerm>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -7768,7 +7749,7 @@ pub(crate) fn program_point_can_name_result(selector: Option<&ProgramPointSelect
 }
 
 /// Whether `result` occurs in a proposition outside any nested state.
-pub(crate) fn proposition_names_result(proposition: &ClickProposition) -> bool {
+pub(crate) fn proposition_names_result(proposition: &SurfaceProposition) -> bool {
     let mut names = BTreeSet::new();
     collect_current_proposition_variables(proposition, &mut names);
     names.contains("result")
@@ -7809,21 +7790,21 @@ impl ExecutionPoint {
 /// with the supplied values, in order.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProofWitness {
-    values: Vec<ContractExpression>,
+    values: Vec<SurfaceTerm>,
 }
 
 impl ProofWitness {
-    pub(crate) fn single(value: ContractExpression) -> Self {
+    pub(crate) fn single(value: SurfaceTerm) -> Self {
         Self {
             values: vec![value],
         }
     }
 
-    pub(crate) fn new(values: Vec<ContractExpression>) -> Self {
+    pub(crate) fn new(values: Vec<SurfaceTerm>) -> Self {
         Self { values }
     }
 
-    pub(crate) fn values(&self) -> impl Iterator<Item = &ContractExpression> {
+    pub(crate) fn values(&self) -> impl Iterator<Item = &SurfaceTerm> {
         self.values.iter()
     }
 
@@ -7836,7 +7817,7 @@ impl ProofWitness {
         self.values.len() == 1
     }
 
-    pub(crate) fn value(&self) -> &ContractExpression {
+    pub(crate) fn value(&self) -> &SurfaceTerm {
         debug_assert!(
             self.is_single(),
             "a multi-binder witness is applied value by value"
@@ -7846,7 +7827,7 @@ impl ProofWitness {
 
     pub(crate) fn try_map_values<E>(
         &self,
-        map: impl FnMut(&ContractExpression) -> Result<ContractExpression, E>,
+        map: impl FnMut(&SurfaceTerm) -> Result<SurfaceTerm, E>,
     ) -> Result<Self, E> {
         Ok(Self {
             values: self.values.iter().map(map).collect::<Result<_, E>>()?,
@@ -7858,7 +7839,7 @@ impl ProofWitness {
 pub struct ProofLetSatisfy {
     // Range existentials infer a machine-integer type during lowering.
     bindings: Vec<(String, Option<ClickType>)>,
-    proposition: ClickProposition,
+    proposition: SurfaceProposition,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -8379,24 +8360,19 @@ fn memory_independent_click_functions(definitions: &[ClickFunctionDefinition]) -
     candidates
 }
 
-fn contract_expression_reads_memory(
-    expression: &ContractExpression,
-    callees: &mut Vec<String>,
-) -> bool {
+fn contract_expression_reads_memory(expression: &SurfaceTerm, callees: &mut Vec<String>) -> bool {
     match expression {
-        ContractExpression::IntegerContext(value) => {
-            contract_expression_reads_memory(value, callees)
-        }
+        SurfaceTerm::IntegerContext(value) => contract_expression_reads_memory(value, callees),
 
-        ContractExpression::Proposition(proposition) => {
+        SurfaceTerm::Proposition(proposition) => {
             click_proposition_reads_memory(proposition, callees)
         }
-        ContractExpression::Resource(_) => false,
-        ContractExpression::RegionResult(_)
-        | ContractExpression::RegionAllocation(_)
-        | ContractExpression::RegionParameter { .. } => false,
-        ContractExpression::Lambda { body, .. } => contract_expression_reads_memory(body, callees),
-        ContractExpression::Apply {
+        SurfaceTerm::Resource(_) => false,
+        SurfaceTerm::RegionResult(_)
+        | SurfaceTerm::RegionAllocation(_)
+        | SurfaceTerm::RegionParameter { .. } => false,
+        SurfaceTerm::Lambda { body, .. } => contract_expression_reads_memory(body, callees),
+        SurfaceTerm::Apply {
             function,
             arguments,
         } => {
@@ -8406,17 +8382,17 @@ fn contract_expression_reads_memory(
                     .any(|argument| contract_expression_reads_memory(argument, callees))
         }
 
-        ContractExpression::IntegerLiteral(_)
-        | ContractExpression::AlgebraicVariable { .. }
-        | ContractExpression::Binding(_)
-        | ContractExpression::ProgramBinding(_)
-        | ContractExpression::ProgramExpression(
+        SurfaceTerm::IntegerLiteral(_)
+        | SurfaceTerm::AlgebraicVariable { .. }
+        | SurfaceTerm::Binding(_)
+        | SurfaceTerm::ProgramBinding(_)
+        | SurfaceTerm::ProgramExpression(
             ProgramExpression::Variable(crate::kernel::BindingName::Named(_))
             | ProgramExpression::Value(_),
         ) => false,
         // `address(p)` of a name is that pointer value's integer
         // representation: it reads nothing its operand does not.
-        ContractExpression::CUnary {
+        SurfaceTerm::CUnary {
             operand,
             lowered:
                 ProgramExpression::Cast {
@@ -8432,7 +8408,7 @@ fn contract_expression_reads_memory(
         {
             contract_expression_reads_memory(operand, callees)
         }
-        ContractExpression::ProgramExpression(ProgramExpression::Cast {
+        SurfaceTerm::ProgramExpression(ProgramExpression::Cast {
             expression,
             target_type: ProgramType::UInt64,
             ..
@@ -8446,49 +8422,49 @@ fn contract_expression_reads_memory(
         }
         // A memory read, a program point selector, a resource observation, or any
         // C fragment richer than a name is conservatively memory-dependent.
-        ContractExpression::QualifiedC { .. }
-        | ContractExpression::ResourceField(_)
-        | ContractExpression::ResourceCount(_)
-        | ContractExpression::ResourceWildcard
-        | ContractExpression::ProgramExpression(_)
-        | ContractExpression::CUnary { .. }
-        | ContractExpression::MemoryLoad { .. }
-        | ContractExpression::Field { .. }
-        | ContractExpression::Index(_, _)
-        | ContractExpression::ArrayIndex { .. }
-        | ContractExpression::Old(_)
-        | ContractExpression::Exact(_)
-        | ContractExpression::At { .. } => true,
-        ContractExpression::AlgebraicConstructor { arguments, .. }
-        | ContractExpression::SequenceLiteral(arguments) => arguments
+        SurfaceTerm::QualifiedC { .. }
+        | SurfaceTerm::ResourceField(_)
+        | SurfaceTerm::ResourceCount(_)
+        | SurfaceTerm::ResourceWildcard
+        | SurfaceTerm::ProgramExpression(_)
+        | SurfaceTerm::CUnary { .. }
+        | SurfaceTerm::MemoryLoad { .. }
+        | SurfaceTerm::Field { .. }
+        | SurfaceTerm::Index(_, _)
+        | SurfaceTerm::ArrayIndex { .. }
+        | SurfaceTerm::Old(_)
+        | SurfaceTerm::Exact(_)
+        | SurfaceTerm::At { .. } => true,
+        SurfaceTerm::AlgebraicConstructor { arguments, .. }
+        | SurfaceTerm::SequenceLiteral(arguments) => arguments
             .iter()
             .any(|argument| contract_expression_reads_memory(argument, callees)),
-        ContractExpression::AlgebraicMatch { scrutinee, arms } => {
+        SurfaceTerm::AlgebraicMatch { scrutinee, arms } => {
             contract_expression_reads_memory(scrutinee, callees)
                 || arms
                     .iter()
                     .any(|arm| contract_expression_reads_memory(&arm.body, callees))
         }
-        ContractExpression::SequenceConcat(left, right)
-        | ContractExpression::Add(left, right)
-        | ContractExpression::Subtract(left, right)
-        | ContractExpression::Multiply(left, right)
-        | ContractExpression::Divide(left, right)
-        | ContractExpression::Remainder(left, right)
-        | ContractExpression::ShiftLeft(left, right)
-        | ContractExpression::RustShiftLeft(left, right)
-        | ContractExpression::ShiftRight(left, right)
-        | ContractExpression::RustShiftRight(left, right)
-        | ContractExpression::BitwiseAnd(left, right)
-        | ContractExpression::BitwiseOr(left, right)
-        | ContractExpression::BitwiseXor(left, right) => {
+        SurfaceTerm::SequenceConcat(left, right)
+        | SurfaceTerm::Add(left, right)
+        | SurfaceTerm::Subtract(left, right)
+        | SurfaceTerm::Multiply(left, right)
+        | SurfaceTerm::Divide(left, right)
+        | SurfaceTerm::Remainder(left, right)
+        | SurfaceTerm::ShiftLeft(left, right)
+        | SurfaceTerm::RustShiftLeft(left, right)
+        | SurfaceTerm::ShiftRight(left, right)
+        | SurfaceTerm::RustShiftRight(left, right)
+        | SurfaceTerm::BitwiseAnd(left, right)
+        | SurfaceTerm::BitwiseOr(left, right)
+        | SurfaceTerm::BitwiseXor(left, right) => {
             contract_expression_reads_memory(left, callees)
                 || contract_expression_reads_memory(right, callees)
         }
-        ContractExpression::Negate(inner) | ContractExpression::BitwiseNot(inner) => {
+        SurfaceTerm::Negate(inner) | SurfaceTerm::BitwiseNot(inner) => {
             contract_expression_reads_memory(inner, callees)
         }
-        ContractExpression::If {
+        SurfaceTerm::If {
             condition,
             then_branch,
             else_branch,
@@ -8497,7 +8473,7 @@ fn contract_expression_reads_memory(
                 || contract_expression_reads_memory(then_branch, callees)
                 || contract_expression_reads_memory(else_branch, callees)
         }
-        ContractExpression::RangeFold {
+        SurfaceTerm::RangeFold {
             start,
             end,
             initial,
@@ -8509,11 +8485,11 @@ fn contract_expression_reads_memory(
                 || contract_expression_reads_memory(initial, callees)
                 || contract_expression_reads_memory(body, callees)
         }
-        ContractExpression::Let { value, body, .. } => {
+        SurfaceTerm::Let { value, body, .. } => {
             contract_expression_reads_memory(value, callees)
                 || contract_expression_reads_memory(body, callees)
         }
-        ContractExpression::MethodCall {
+        SurfaceTerm::MethodCall {
             receiver,
             arguments,
             ..
@@ -8523,7 +8499,7 @@ fn contract_expression_reads_memory(
                     .iter()
                     .any(|argument| contract_expression_reads_memory(argument, callees))
         }
-        ContractExpression::Call { name, arguments } => {
+        SurfaceTerm::Call { name, arguments } => {
             // Numeric conversions and exact integer operations are pure;
             // any memory read remains visible in their explicit arguments.
             if !integer_conversions::is_integer_conversion(name)
@@ -8540,45 +8516,45 @@ fn contract_expression_reads_memory(
 }
 
 fn click_proposition_reads_memory(
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     callees: &mut Vec<String>,
 ) -> bool {
     match proposition {
-        ClickProposition::Value(expression) => {
+        SurfaceProposition::Value(expression) => {
             contract_expression_reads_memory(expression, callees)
         }
-        ClickProposition::Comparison { left, right, .. } => {
+        SurfaceProposition::Comparison { left, right, .. } => {
             contract_expression_reads_memory(left, callees)
                 || contract_expression_reads_memory(right, callees)
         }
-        ClickProposition::FloatClassification { expression, .. }
-        | ClickProposition::Defined { expression }
-        | ClickProposition::IsA {
+        SurfaceProposition::FloatClassification { expression, .. }
+        | SurfaceProposition::Defined { expression }
+        | SurfaceProposition::IsA {
             pointer: expression,
             ..
         } => contract_expression_reads_memory(expression, callees),
         // Resource separation, containment, loadability, states, and
         // predicates all observe the C state.
-        ClickProposition::Separate { .. }
-        | ClickProposition::ResourceViewable { .. }
-        | ClickProposition::Contains { .. }
-        | ClickProposition::Loadable { .. }
-        | ClickProposition::At { .. }
-        | ClickProposition::PredicateCall { .. } => true,
-        ClickProposition::And(left, right)
-        | ClickProposition::Or(left, right)
-        | ClickProposition::Implies(left, right) => {
+        SurfaceProposition::Separate { .. }
+        | SurfaceProposition::ResourceViewable { .. }
+        | SurfaceProposition::Contains { .. }
+        | SurfaceProposition::Loadable { .. }
+        | SurfaceProposition::At { .. }
+        | SurfaceProposition::PredicateCall { .. } => true,
+        SurfaceProposition::And(left, right)
+        | SurfaceProposition::Or(left, right)
+        | SurfaceProposition::Implies(left, right) => {
             click_proposition_reads_memory(left, callees)
                 || click_proposition_reads_memory(right, callees)
         }
-        ClickProposition::Not(inner) => click_proposition_reads_memory(inner, callees),
-        ClickProposition::ForAll { body, .. } | ClickProposition::Exists { body, .. } => {
+        SurfaceProposition::Not(inner) => click_proposition_reads_memory(inner, callees),
+        SurfaceProposition::ForAll { body, .. } | SurfaceProposition::Exists { body, .. } => {
             click_proposition_reads_memory(body, callees)
         }
-        ClickProposition::RangeAll {
+        SurfaceProposition::RangeAll {
             start, end, body, ..
         }
-        | ClickProposition::RangeAny {
+        | SurfaceProposition::RangeAny {
             start, end, body, ..
         } => {
             contract_expression_reads_memory(start, callees)
@@ -8747,7 +8723,7 @@ impl TheoremEnvironment {
 
     fn conclusion_candidates<'a>(
         &'a self,
-        goal: &ClickProposition,
+        goal: &SurfaceProposition,
     ) -> impl Iterator<Item = &'a planning::theorems::TheoremCandidate> {
         self.definition_conclusions
             .candidates(goal, usize::MAX)
@@ -9074,7 +9050,7 @@ enum PathCaseSplit {
     /// No split has a Click spelling.
     Unspelled,
     /// A proof `if` on this source condition, first.
-    Condition(ClickProposition),
+    Condition(SurfaceProposition),
     /// A proof `match` on an enum value, one arm per variant, as a Rust
     /// `match` of a value whose variant is not yet known needs.
     Match(ProofMatch),
@@ -9174,8 +9150,8 @@ impl<'a> VerificationDiagnostic<'a> {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::surface) struct TheoremRequirementSource {
     index: usize,
-    clause: ClickProposition,
-    bindings: std::sync::Arc<[(String, ContractExpression)]>,
+    clause: SurfaceProposition,
+    bindings: std::sync::Arc<[(String, SurfaceTerm)]>,
 }
 
 /// A required kernel verification condition that a checked execution step
@@ -9200,7 +9176,7 @@ pub(in crate::surface) struct UnresolvedRequirement {
     /// The Surface spelling the tactic that owes this requirement gave it
     /// where it created it, such as a `fold` body fact with the resource's
     /// arguments substituted. Proofs state the requirement this way.
-    pub(in crate::surface) surface: Option<ClickProposition>,
+    pub(in crate::surface) surface: Option<SurfaceProposition>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -9402,7 +9378,7 @@ impl PredicateDefinition {
         &self.type_parameters
     }
 
-    pub fn body(&self) -> &ClickProposition {
+    pub fn body(&self) -> &SurfaceProposition {
         &self.body
     }
 }
@@ -9428,13 +9404,13 @@ impl ClickFunctionDefinition {
         self.return_object_class.as_ref()
     }
 
-    pub fn decreases(&self) -> Option<&ContractExpression> {
+    pub fn decreases(&self) -> Option<&SurfaceTerm> {
         self.decreases.as_ref()
     }
 
     /// The definition, or `None` for a library primitive operation, which
     /// nothing unfolds or evaluates.
-    pub fn body(&self) -> Option<&ContractExpression> {
+    pub fn body(&self) -> Option<&SurfaceTerm> {
         self.body.as_ref()
     }
 }
@@ -9551,7 +9527,7 @@ impl CompositeResourceBody {
         slots
     }
 
-    pub fn condition(&self) -> Option<&ClickProposition> {
+    pub fn condition(&self) -> Option<&SurfaceProposition> {
         self.condition.as_ref()
     }
 
@@ -9559,7 +9535,7 @@ impl CompositeResourceBody {
         &self.contains
     }
 
-    pub fn facts(&self) -> &[ClickProposition] {
+    pub fn facts(&self) -> &[SurfaceProposition] {
         &self.facts
     }
 
@@ -9768,9 +9744,9 @@ impl FunctionBlock {
             .map(|(from, to)| {
                 (
                     from.clone(),
-                    ContractExpression::ProgramExpression(
-                        crate::kernel::program_expression::variable(to.clone()),
-                    ),
+                    SurfaceTerm::ProgramExpression(crate::kernel::program_expression::variable(
+                        to.clone(),
+                    )),
                 )
             })
             .collect::<BTreeMap<_, _>>();
@@ -9867,7 +9843,7 @@ impl FunctionBlock {
 
     /// This contract's clauses with each parameter in `renames` read as the
     /// expression it maps to.
-    fn renamed(&self, renames: &BTreeMap<String, ContractExpression>) -> Result<Self, String> {
+    fn renamed(&self, renames: &BTreeMap<String, SurfaceTerm>) -> Result<Self, String> {
         let mut renamed = self.clone();
         renamed.requires = self
             .requires
@@ -10338,7 +10314,7 @@ impl FunctionParameter {
 }
 
 impl Requirement {
-    fn proposition(&self) -> Option<&ClickProposition> {
+    fn proposition(&self) -> Option<&SurfaceProposition> {
         match self {
             Self::Proposition(proposition) => Some(proposition),
             _ => None,
@@ -10358,12 +10334,12 @@ impl Requirement {
     ///
     /// `owns`, `consumes` and `produces` have no reading here at all, and
     /// stay refused where this returns `None`.
-    pub(crate) fn theorem_proposition(&self) -> Option<ClickProposition> {
+    pub(crate) fn theorem_proposition(&self) -> Option<SurfaceProposition> {
         match self {
             Self::Proposition(proposition) => {
                 Some(clone_click_proposition_iteratively(proposition))
             }
-            Self::LoadableSegment { segment } => Some(ClickProposition::Loadable {
+            Self::LoadableSegment { segment } => Some(SurfaceProposition::Loadable {
                 segment: segment.clone(),
             }),
             Self::Resource(resource) => theorem_resource_proposition(resource),
@@ -10376,9 +10352,9 @@ impl Requirement {
 /// no separation, so the whole of what it claims in a pure scope is that its
 /// bytes are loadable. An aggregate `views` clause names several ranges at
 /// once and claims that of each of them.
-fn theorem_resource_proposition(resource: &ResourceClause) -> Option<ClickProposition> {
+fn theorem_resource_proposition(resource: &ResourceClause) -> Option<SurfaceProposition> {
     match resource {
-        ResourceClause::ViewMemory(segment) => Some(ClickProposition::Loadable {
+        ResourceClause::ViewMemory(segment) => Some(SurfaceProposition::Loadable {
             segment: segment.clone(),
         }),
         ResourceClause::MemoryAggregate {
@@ -10386,10 +10362,10 @@ fn theorem_resource_proposition(resource: &ResourceClause) -> Option<ClickPropos
             segments,
         } => segments
             .iter()
-            .map(|segment| ClickProposition::Loadable {
+            .map(|segment| SurfaceProposition::Loadable {
                 segment: segment.clone(),
             })
-            .reduce(|left, right| ClickProposition::And(Box::new(left), Box::new(right))),
+            .reduce(|left, right| SurfaceProposition::And(Box::new(left), Box::new(right))),
         _ => None,
     }
 }
@@ -10423,7 +10399,7 @@ impl EnsureClause {
     }
 
     /// The pre-state guard of a conditional resource ensure, if any.
-    pub fn condition(&self) -> Option<&ClickProposition> {
+    pub fn condition(&self) -> Option<&SurfaceProposition> {
         self.condition.as_ref()
     }
 
@@ -10482,10 +10458,7 @@ impl StructuralClause {
     }
 
     /// This clause tagged with the proof locals it was written under.
-    pub(in crate::surface) fn with_scope(
-        &self,
-        scope: impl Into<BinderMap<ContractExpression>>,
-    ) -> Self {
+    pub(in crate::surface) fn with_scope(&self, scope: impl Into<BinderMap<SurfaceTerm>>) -> Self {
         let mut clause = self.clone();
         clause.scope = scope.into();
         clause
@@ -10509,7 +10482,7 @@ impl StructuralClause {
     /// there. SymbolicMemory segments are left as written; they name C places.
     pub(in crate::surface) fn with_substituted_bindings(
         &self,
-        substitutions: &BinderMap<ContractExpression>,
+        substitutions: &BinderMap<SurfaceTerm>,
     ) -> Result<Self, String> {
         let mut clause = self.clone();
         clause.items = self
@@ -10572,7 +10545,7 @@ impl StructuralClause {
 /// terms; memory segments name C places and are left as written.
 fn substitute_resource_clause_bindings(
     resource: &ResourceClause,
-    substitutions: &BinderMap<ContractExpression>,
+    substitutions: &BinderMap<SurfaceTerm>,
 ) -> Result<ResourceClause, String> {
     Ok(match resource {
         ResourceClause::Conditional {
@@ -10657,7 +10630,7 @@ impl StructuralItem {
         }
     }
 
-    pub fn proposition(&self) -> &ClickProposition {
+    pub fn proposition(&self) -> &SurfaceProposition {
         &self.claim
     }
 }
@@ -11728,14 +11701,14 @@ impl ClickError {
 
     /// Records the condition a proof-level case split separates this
     /// refusal's path cases on first.
-    pub(crate) fn with_path_case_condition(mut self, condition: ClickProposition) -> Self {
+    pub(crate) fn with_path_case_condition(mut self, condition: SurfaceProposition) -> Self {
         self.path_case_split = Some(std::sync::Arc::new(PathCaseSplit::Condition(condition)));
         self
     }
 
     /// The condition a proof-level case split separates this refusal's path
     /// cases on first, when one has a Click spelling.
-    pub(crate) fn path_case_condition(&self) -> Option<&ClickProposition> {
+    pub(crate) fn path_case_condition(&self) -> Option<&SurfaceProposition> {
         match self.path_case_split.as_deref() {
             Some(PathCaseSplit::Condition(condition)) => Some(condition),
             _ => None,
@@ -11899,7 +11872,7 @@ impl ClickError {
     pub(in crate::surface) fn with_spelled_requirement(
         mut self,
         proposition: Proposition,
-        surface: ClickProposition,
+        surface: SurfaceProposition,
         context: String,
     ) -> Self {
         self.unresolved_requirement = Some(std::sync::Arc::new(UnresolvedRequirement {

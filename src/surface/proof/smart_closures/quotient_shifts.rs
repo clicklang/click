@@ -1,41 +1,37 @@
 //! Guarded quotient translations through the ordinary truncation library.
 use super::*;
-fn number(n: i64) -> ContractExpression {
+fn number(n: i64) -> SurfaceTerm {
     super::super::surface_synthesis::integer_typed_expression(surface_signed_integer_literal(
         &BigInt::from(n),
     ))
 }
-fn compare(
-    a: ContractExpression,
-    operator: ComparisonOperator,
-    b: ContractExpression,
-) -> ClickProposition {
-    ClickProposition::Comparison {
+fn compare(a: SurfaceTerm, operator: ComparisonOperator, b: SurfaceTerm) -> SurfaceProposition {
+    SurfaceProposition::Comparison {
         left: a,
         operator,
         right: b,
     }
 }
-fn le(a: ContractExpression, b: ContractExpression) -> ClickProposition {
+fn le(a: SurfaceTerm, b: SurfaceTerm) -> SurfaceProposition {
     compare(a, ComparisonOperator::LessEqual, b)
 }
-fn eq(a: ContractExpression, b: ContractExpression) -> ClickProposition {
+fn eq(a: SurfaceTerm, b: SurfaceTerm) -> SurfaceProposition {
     compare(a, ComparisonOperator::Equal, b)
 }
-fn add(a: ContractExpression, b: ContractExpression) -> ContractExpression {
-    ContractExpression::Add(Box::new(a), Box::new(b))
+fn add(a: SurfaceTerm, b: SurfaceTerm) -> SurfaceTerm {
+    SurfaceTerm::Add(Box::new(a), Box::new(b))
 }
-fn mul(a: ContractExpression, b: ContractExpression) -> ContractExpression {
-    ContractExpression::Multiply(Box::new(a), Box::new(b))
+fn mul(a: SurfaceTerm, b: SurfaceTerm) -> SurfaceTerm {
+    SurfaceTerm::Multiply(Box::new(a), Box::new(b))
 }
-fn quotient(n: ContractExpression, d: ContractExpression) -> ContractExpression {
-    ContractExpression::Call {
+fn quotient(n: SurfaceTerm, d: SurfaceTerm) -> SurfaceTerm {
+    SurfaceTerm::Call {
         name: "truncating_quotient".into(),
         arguments: vec![n, d],
     }
 }
-fn arguments(e: &ContractExpression) -> Option<(&ContractExpression, &ContractExpression)> {
-    let ContractExpression::Call { name, arguments } = e else {
+fn arguments(e: &SurfaceTerm) -> Option<(&SurfaceTerm, &SurfaceTerm)> {
+    let SurfaceTerm::Call { name, arguments } = e else {
         return None;
     };
     if name.rsplit("::").next() != Some("truncating_quotient") {
@@ -48,8 +44,8 @@ fn arguments(e: &ContractExpression) -> Option<(&ContractExpression, &ContractEx
 }
 // Plain solve proposes only the guards named by the goal's shift shape.
 // The selected emitter checks their availability and writes them explicitly.
-pub(super) fn guard_candidates(goal: &ClickProposition) -> Vec<Vec<ClickProposition>> {
-    let ClickProposition::Comparison {
+pub(super) fn guard_candidates(goal: &SurfaceProposition) -> Vec<Vec<SurfaceProposition>> {
+    let SurfaceProposition::Comparison {
         left,
         operator: ComparisonOperator::Equal,
         right,
@@ -62,7 +58,7 @@ pub(super) fn guard_candidates(goal: &ClickProposition) -> Vec<Vec<ClickProposit
         if arguments(lhs).is_none() {
             continue;
         }
-        let ContractExpression::Add(a, b) = rhs else {
+        let SurfaceTerm::Add(a, b) = rhs else {
             continue;
         };
         for (q, k) in [(a.as_ref(), b.as_ref()), (b.as_ref(), a.as_ref())] {
@@ -76,7 +72,7 @@ pub(super) fn guard_candidates(goal: &ClickProposition) -> Vec<Vec<ClickProposit
 impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_quotient_shift_using(
         input: &Proof<'a>,
-        premises: &[ClickProposition],
+        premises: &[SurfaceProposition],
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_quotient_shift_using");
@@ -87,7 +83,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         {
             return Ok(None);
         }
-        let Some(ClickProposition::Comparison {
+        let Some(SurfaceProposition::Comparison {
             left,
             operator: ComparisonOperator::Equal,
             right,
@@ -108,7 +104,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let Some((numerator, divisor)) = arguments(lhs) else {
                 continue;
             };
-            let ContractExpression::Add(a, b) = rhs else {
+            let SurfaceTerm::Add(a, b) = rhs else {
                 continue;
             };
             for (q, k) in [(a.as_ref(), b.as_ref()), (b.as_ref(), a.as_ref())] {

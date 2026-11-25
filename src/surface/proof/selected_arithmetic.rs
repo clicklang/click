@@ -151,7 +151,7 @@ impl MachineOrder {
         }
     }
 
-    fn typed_literals(self, expression: &ContractExpression) -> ContractExpression {
+    fn typed_literals(self, expression: &SurfaceTerm) -> SurfaceTerm {
         match self {
             Self::Int32 | Self::Equal64 => expression.clone(),
             Self::Wide(carrier) => carrier.typed_literals(expression),
@@ -174,7 +174,7 @@ impl MachineOrder {
 /// One carried fact: how it is established and its source spelling.
 struct Carried {
     establish: Establish,
-    surface: ClickProposition,
+    surface: SurfaceProposition,
 }
 
 enum Establish {
@@ -184,9 +184,9 @@ enum Establish {
     /// a signed operation once it is defined, which `solve` proves when it is
     /// not already a fact, and an unsigned one once it stays in range.
     Operation {
-        operation: ContractExpression,
-        left: ContractExpression,
-        right: ContractExpression,
+        operation: SurfaceTerm,
+        left: SurfaceTerm,
+        right: SurfaceTerm,
         subtract: bool,
         /// The operation's machine format.
         format: crate::kernel::MachineIntegerFormat,
@@ -216,13 +216,13 @@ thread_local! {
     // A bridge may ask for this operation's definedness or no-wrap bound.
     // Proving that prerequisite can find the same operation among connected
     // machine facts. Re-entering its bridge cannot establish new evidence.
-    static ACTIVE_OPERATION_BRIDGES: std::cell::RefCell<Vec<ContractExpression>> = const { std::cell::RefCell::new(Vec::new()) };
+    static ACTIVE_OPERATION_BRIDGES: std::cell::RefCell<Vec<SurfaceTerm>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
 struct OperationBridgeScope;
 
 impl OperationBridgeScope {
-    fn enter(operation: &ContractExpression) -> Option<Self> {
+    fn enter(operation: &SurfaceTerm) -> Option<Self> {
         ACTIVE_OPERATION_BRIDGES.with(|active| {
             let mut active = active.borrow_mut();
             if active.contains(operation) {
@@ -244,10 +244,7 @@ impl Drop for OperationBridgeScope {
 
 /// The type range of the observation of `value`, a machine value of
 /// `format`.
-fn range_items(
-    value: &ContractExpression,
-    format: crate::kernel::MachineIntegerFormat,
-) -> Vec<Carried> {
+fn range_items(value: &SurfaceTerm, format: crate::kernel::MachineIntegerFormat) -> Vec<Carried> {
     let (minimum, maximum) = format.bounds();
     let (minimum, maximum) = (minimum.to_string(), maximum.to_string());
     [
@@ -291,10 +288,10 @@ pub(in crate::surface::proof) enum RewriteClosers<'p> {
     Selected,
     /// `normalize` and an atomic plan over these premises alone, for
     /// `close() using`, which reads no ambient fact.
-    Listed(&'p [(Proposition, ClickProposition)]),
+    Listed(&'p [(Proposition, SurfaceProposition)]),
     /// A replayable rewrite chain closes with the selected fact or direct
     /// computation once its rewrites have exposed it.
-    ExactListed(&'p [(Proposition, ClickProposition)]),
+    ExactListed(&'p [(Proposition, SurfaceProposition)]),
 }
 
 /// Whether `kernel` is an equality the `rewrite` step can use.
@@ -325,28 +322,28 @@ fn is_rewrite_equality(kernel: &Proposition) -> bool {
 /// An equality in both directions, each with its kernel form.
 fn oriented_forms(
     kernel: Proposition,
-    surface: ClickProposition,
-) -> Vec<(Proposition, ClickProposition)> {
+    surface: SurfaceProposition,
+) -> Vec<(Proposition, SurfaceProposition)> {
     // Arithmetic operands need an explicit observation when reparsed under
     // Integer arithmetic. Ordinary equalities retain their source spelling.
     let machine_arithmetic = crate::kernel::machine_integer::representation::is_ring_operation;
-    let arithmetic = |mut operand: &ContractExpression| {
+    let arithmetic = |mut operand: &SurfaceTerm| {
         loop {
             match operand {
-                ContractExpression::Old(inner)
-                | ContractExpression::At {
+                SurfaceTerm::Old(inner)
+                | SurfaceTerm::At {
                     expression: inner, ..
                 } => operand = inner,
-                ContractExpression::Add(..)
-                | ContractExpression::Subtract(..)
-                | ContractExpression::Multiply(..)
-                | ContractExpression::Negate(_) => return true,
-                ContractExpression::ProgramExpression(
+                SurfaceTerm::Add(..)
+                | SurfaceTerm::Subtract(..)
+                | SurfaceTerm::Multiply(..)
+                | SurfaceTerm::Negate(_) => return true,
+                SurfaceTerm::ProgramExpression(
                     ProgramExpression::Add(..)
                     | ProgramExpression::Subtract(..)
                     | ProgramExpression::Multiply(..),
                 ) => return true,
-                ContractExpression::ProgramExpression(ProgramExpression::Value(value)) => {
+                SurfaceTerm::ProgramExpression(ProgramExpression::Value(value)) => {
                     return matches!(
                     value.numeric_value(), crate::kernel::integer_c_value!(term) if machine_arithmetic(term));
                 }
@@ -355,13 +352,13 @@ fn oriented_forms(
         }
     };
     let mut written = &surface;
-    while let ClickProposition::At { proposition, .. } | ClickProposition::Not(proposition) =
+    while let SurfaceProposition::At { proposition, .. } | SurfaceProposition::Not(proposition) =
         written
     {
         written = proposition;
     }
     let surface = if matches!(written,
-        ClickProposition::Comparison { left, right, .. } if arithmetic(left) || arithmetic(right))
+        SurfaceProposition::Comparison { left, right, .. } if arithmetic(left) || arithmetic(right))
     {
         super::smart_closures::observed_native_surface_comparison(&kernel, &surface)
     } else {
@@ -377,16 +374,13 @@ fn oriented_forms(
 /// observation. This also makes arithmetic in a recorded source round-trip.
 fn explicit_native_rewrite_equality(
     kernel: &Proposition,
-    surface: &ClickProposition,
-) -> Option<ClickProposition> {
+    surface: &SurfaceProposition,
+) -> Option<SurfaceProposition> {
     let Some((ConditionTerm::Compare { format, .. }, _)) = kernel.condition_native() else {
         return None;
     };
-    fn cast(
-        operand: &ContractExpression,
-        format: crate::kernel::MachineIntegerType,
-    ) -> ContractExpression {
-        ContractExpression::CUnary {
+    fn cast(operand: &SurfaceTerm, format: crate::kernel::MachineIntegerType) -> SurfaceTerm {
+        SurfaceTerm::CUnary {
             operand: Box::new(operand.clone()),
             lowered: ProgramExpression::Cast {
                 expression: Box::new(ProgramExpression::Value(int32(0))),
@@ -401,19 +395,19 @@ fn explicit_native_rewrite_equality(
         }
     }
     match surface {
-        ClickProposition::Comparison {
+        SurfaceProposition::Comparison {
             left,
             operator,
             right,
-        } => Some(ClickProposition::Comparison {
+        } => Some(SurfaceProposition::Comparison {
             left: cast(left, *format),
             operator: *operator,
             right: cast(right, *format),
         }),
-        ClickProposition::At {
+        SurfaceProposition::At {
             selector,
             proposition,
-        } => Some(ClickProposition::At {
+        } => Some(SurfaceProposition::At {
             selector: selector.clone(),
             proposition: Box::new(explicit_native_rewrite_equality(kernel, proposition)?),
         }),
@@ -422,22 +416,22 @@ fn explicit_native_rewrite_equality(
 }
 
 /// `l == r` for an equality spelled `at(S, l) == at(S, r)` or `at(S, l == r)`.
-fn unanchored_equality(surface: &ClickProposition) -> Option<ClickProposition> {
+fn unanchored_equality(surface: &SurfaceProposition) -> Option<SurfaceProposition> {
     match surface {
-        ClickProposition::At { proposition, .. } => Some(proposition.as_ref().clone()),
-        ClickProposition::Comparison {
+        SurfaceProposition::At { proposition, .. } => Some(proposition.as_ref().clone()),
+        SurfaceProposition::Comparison {
             left:
-                ContractExpression::At {
+                SurfaceTerm::At {
                     selector: left_selector,
                     expression: left,
                 },
             operator,
             right:
-                ContractExpression::At {
+                SurfaceTerm::At {
                     selector: right_selector,
                     expression: right,
                 },
-        } if left_selector == right_selector => Some(ClickProposition::Comparison {
+        } if left_selector == right_selector => Some(SurfaceProposition::Comparison {
             left: left.as_ref().clone(),
             operator: *operator,
             right: right.as_ref().clone(),
@@ -472,37 +466,34 @@ fn is_constructor(term: &crate::kernel::AlgebraicTerm) -> bool {
 }
 
 /// An `Integer` literal, negative ones as a negation of their magnitude.
-fn integer_literal(text: &str) -> ContractExpression {
+fn integer_literal(text: &str) -> SurfaceTerm {
     match text.strip_prefix('-') {
-        Some(magnitude) => ContractExpression::Negate(Box::new(
-            ContractExpression::IntegerLiteral(magnitude.into()),
-        )),
-        None => ContractExpression::IntegerLiteral(text.into()),
+        Some(magnitude) => {
+            SurfaceTerm::Negate(Box::new(SurfaceTerm::IntegerLiteral(magnitude.into())))
+        }
+        None => SurfaceTerm::IntegerLiteral(text.into()),
     }
 }
 
 /// The sums and differences observed by `to_integer(...)` in `expression`.
-fn observed_operations(expression: &ContractExpression, found: &mut Vec<ContractExpression>) {
-    if let ContractExpression::Call { name, arguments } = expression
+fn observed_operations(expression: &SurfaceTerm, found: &mut Vec<SurfaceTerm>) {
+    if let SurfaceTerm::Call { name, arguments } = expression
         && name == "to_integer"
         && let [argument] = arguments.as_slice()
-        && matches!(
-            argument,
-            ContractExpression::Add(..) | ContractExpression::Subtract(..)
-        )
+        && matches!(argument, SurfaceTerm::Add(..) | SurfaceTerm::Subtract(..))
         && !found.contains(argument)
     {
         found.push(argument.clone());
     }
     match expression {
-        ContractExpression::Add(left, right)
-        | ContractExpression::Subtract(left, right)
-        | ContractExpression::Multiply(left, right) => {
+        SurfaceTerm::Add(left, right)
+        | SurfaceTerm::Subtract(left, right)
+        | SurfaceTerm::Multiply(left, right) => {
             observed_operations(left, found);
             observed_operations(right, found);
         }
-        ContractExpression::Negate(value) => observed_operations(value, found),
-        ContractExpression::Call { arguments, .. } => {
+        SurfaceTerm::Negate(value) => observed_operations(value, found),
+        SurfaceTerm::Call { arguments, .. } => {
             for argument in arguments {
                 observed_operations(argument, found);
             }
@@ -511,9 +502,9 @@ fn observed_operations(expression: &ContractExpression, found: &mut Vec<Contract
     }
 }
 
-fn proposition_operations(proposition: &ClickProposition) -> Vec<ContractExpression> {
+fn proposition_operations(proposition: &SurfaceProposition) -> Vec<SurfaceTerm> {
     let mut found = Vec::new();
-    if let ClickProposition::Comparison { left, right, .. } = proposition {
+    if let SurfaceProposition::Comparison { left, right, .. } = proposition {
         observed_operations(left, &mut found);
         observed_operations(right, &mut found);
     }
@@ -534,7 +525,7 @@ impl<'a> Proof<'a> {
 /// The proof `if`s `solve` writes through a definition, and their ends.
 enum DefinitionPlan {
     Split {
-        condition: ClickProposition,
+        condition: SurfaceProposition,
         then_plan: Box<DefinitionPlan>,
         else_plan: Box<DefinitionPlan>,
     },
@@ -542,7 +533,7 @@ enum DefinitionPlan {
     /// followed into their definitions, each unfolded after the fact's own.
     End {
         unfolds: Vec<ClickFunctionApplication>,
-        value: ContractExpression,
+        value: SurfaceTerm,
     },
 }
 
@@ -552,17 +543,17 @@ enum DefinitionPlan {
 /// as lowered here.
 struct DefinitionGoal<'g> {
     text: String,
-    surface: &'g ClickProposition,
+    surface: &'g SurfaceProposition,
     kernel: &'g Proposition,
 }
 
 /// Whether two propositions are comparisons with the same operator, or
 /// otherwise of the same kind: a lowered comparison is tried only then.
-fn same_shape(left: &ClickProposition, right: &ClickProposition) -> bool {
+fn same_shape(left: &SurfaceProposition, right: &SurfaceProposition) -> bool {
     match (left, right) {
         (
-            ClickProposition::Comparison { operator: left, .. },
-            ClickProposition::Comparison {
+            SurfaceProposition::Comparison { operator: left, .. },
+            SurfaceProposition::Comparison {
                 operator: right, ..
             },
         ) => left == right,
@@ -572,32 +563,29 @@ fn same_shape(left: &ClickProposition, right: &ClickProposition) -> bool {
 
 struct DefinitionRefutation {
     application: ClickFunctionApplication,
-    differs: ClickProposition,
-    fact: ClickProposition,
+    differs: SurfaceProposition,
+    fact: SurfaceProposition,
 }
 
 /// An integer constant, or a `bool` one as `1` or `0`: a definition's end
 /// and the value a fact gives its application.
-fn definition_end_value(expression: &ContractExpression) -> Option<i128> {
+fn definition_end_value(expression: &SurfaceTerm) -> Option<i128> {
     integer_literal_value(expression)
         .or_else(|| crate::surface::bool_literal_value(expression).map(i128::from))
 }
 
-fn integer_literal_value(expression: &ContractExpression) -> Option<i128> {
+fn integer_literal_value(expression: &SurfaceTerm) -> Option<i128> {
     match expression {
-        ContractExpression::IntegerLiteral(text) => text.parse().ok(),
+        SurfaceTerm::IntegerLiteral(text) => text.parse().ok(),
         _ => None,
     }
 }
 
 /// Whether either side of a written comparison is a sum or a difference.
-fn writes_sum_or_difference(left: &ContractExpression, right: &ContractExpression) -> bool {
-    [left, right].into_iter().any(|side| {
-        matches!(
-            side,
-            ContractExpression::Add(..) | ContractExpression::Subtract(..)
-        )
-    })
+fn writes_sum_or_difference(left: &SurfaceTerm, right: &SurfaceTerm) -> bool {
+    [left, right]
+        .into_iter()
+        .any(|side| matches!(side, SurfaceTerm::Add(..) | SurfaceTerm::Subtract(..)))
 }
 
 #[cfg(test)]
@@ -989,13 +977,12 @@ theorem black_color_is_black(color: Color) {
             },
             true,
         );
-        let name = |name: &str| {
-            ContractExpression::ProgramExpression(ProgramExpression::Variable(name.into()))
-        };
-        let surface = ClickProposition::Comparison {
+        let name =
+            |name: &str| SurfaceTerm::ProgramExpression(ProgramExpression::Variable(name.into()));
+        let surface = SurfaceProposition::Comparison {
             left: name("capacity"),
             operator: ComparisonOperator::Equal,
-            right: ContractExpression::Add(Box::new(name("used")), Box::new(name("slots"))),
+            right: SurfaceTerm::Add(Box::new(name("used")), Box::new(name("slots"))),
         };
         let forms = oriented_forms(kernel, surface);
         assert_eq!(forms.len(), 2);

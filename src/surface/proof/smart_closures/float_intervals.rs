@@ -7,30 +7,30 @@ use crate::kernel::proof::arithmetic_special::{
 };
 use crate::kernel::{FloatBinaryOperator, KernelFloatType};
 
-fn literal(format: KernelFloatType, bits: u64) -> ContractExpression {
-    ContractExpression::ProgramExpression(match format {
+fn literal(format: KernelFloatType, bits: u64) -> SurfaceTerm {
+    SurfaceTerm::ProgramExpression(match format {
         KernelFloatType::Float32 => crate::kernel::program_expression::float32_literal(bits as u32),
         KernelFloatType::Float64 => crate::kernel::program_expression::float64_literal(bits),
     })
 }
 
-fn finite(expression: &ContractExpression) -> ClickProposition {
-    ClickProposition::FloatClassification {
+fn finite(expression: &SurfaceTerm) -> SurfaceProposition {
+    SurfaceProposition::FloatClassification {
         expression: expression.clone(),
         classification: syntax::CFloatClassification::Finite,
     }
 }
 
-fn less(left: ContractExpression, right: ContractExpression) -> ClickProposition {
-    ClickProposition::Comparison {
+fn less(left: SurfaceTerm, right: SurfaceTerm) -> SurfaceProposition {
+    SurfaceProposition::Comparison {
         left,
         operator: ComparisonOperator::LessThan,
         right,
     }
 }
 
-fn at_most(left: ContractExpression, right: ContractExpression) -> ClickProposition {
-    ClickProposition::Comparison {
+fn at_most(left: SurfaceTerm, right: SurfaceTerm) -> SurfaceProposition {
+    SurfaceProposition::Comparison {
         left,
         operator: ComparisonOperator::LessEqual,
         right,
@@ -40,13 +40,13 @@ fn at_most(left: ContractExpression, right: ContractExpression) -> ClickProposit
 fn corner_order(
     operator: FloatBinaryOperator,
     plan: &FloatBoundWeakening,
-    left: &ContractExpression,
-    right: &ContractExpression,
-) -> ClickProposition {
+    left: &SurfaceTerm,
+    right: &SurfaceTerm,
+) -> SurfaceProposition {
     let (left, right) = (Box::new(left.clone()), Box::new(right.clone()));
     let corner = match operator {
-        FloatBinaryOperator::Multiply => ContractExpression::Multiply(left, right),
-        FloatBinaryOperator::Divide => ContractExpression::Divide(left, right),
+        FloatBinaryOperator::Multiply => SurfaceTerm::Multiply(left, right),
+        FloatBinaryOperator::Divide => SurfaceTerm::Divide(left, right),
         _ => unreachable!("finite product or quotient"),
     };
     let bound = literal(plan.format, plan.actual_endpoint);
@@ -62,8 +62,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     fn resolve_float_interval_bound(
         input: &Proof<'a>,
         bound: &Proposition,
-        introduced_surfaces: &[ClickProposition],
-    ) -> Option<(ClickProposition, (ContractExpression, ContractExpression))> {
+        introduced_surfaces: &[SurfaceProposition],
+    ) -> Option<(SurfaceProposition, (SurfaceTerm, SurfaceTerm))> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("resolve_float_interval_bound");
         let surface = Self::resolve_solve_premises_unmeasured(
@@ -81,8 +81,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         input: &Proof<'a>,
         plan: &FloatBoundWeakening,
         name: &str,
-        arguments: Vec<ContractExpression>,
-        premises: Vec<ClickProposition>,
+        arguments: Vec<SurfaceTerm>,
+        premises: Vec<SurfaceProposition>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_apply_float_interval_bound");
@@ -99,10 +99,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
 
     fn try_retain_float_interval_fact(
         input: &Proof<'a>,
-        intermediate: &ClickProposition,
+        intermediate: &SurfaceProposition,
         name: &str,
-        arguments: Vec<ContractExpression>,
-        premises: Vec<ClickProposition>,
+        arguments: Vec<SurfaceTerm>,
+        premises: Vec<SurfaceProposition>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_retain_float_interval_fact");
@@ -127,7 +127,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         input: &Proof<'a>,
         source: &Proposition,
         goal: &Proposition,
-        source_surface: &ClickProposition,
+        source_surface: &SurfaceProposition,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_rounded_int32_to_float32_bound");
@@ -148,7 +148,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let observation = super::super::wide_arithmetic::to_integer(&value);
         let integer_literal = |n: i64| surface_signed_integer_literal(&BigInt::from(n));
         let endpoint = i64::from(endpoint);
-        let ordered = |endpoint: ContractExpression| {
+        let ordered = |endpoint: SurfaceTerm| {
             if plan.lower {
                 [endpoint, observation.clone()]
             } else {
@@ -204,7 +204,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         input: &Proof<'a>,
         goal: &Proposition,
         bounds: &[Proposition; 2],
-        introduced_surfaces: &[ClickProposition],
+        introduced_surfaces: &[SurfaceProposition],
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_float_zero_product_bound");
@@ -242,7 +242,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         input: &Proof<'a>,
         goal: &Proposition,
         bounds: &[Proposition; 2],
-        introduced_surfaces: &[ClickProposition],
+        introduced_surfaces: &[SurfaceProposition],
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_float_square_bound");
@@ -256,11 +256,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         };
         let upper = literal(plan.format, upper);
-        let square_bound = |endpoint: &ContractExpression| ClickProposition::Comparison {
-            left: ContractExpression::Multiply(
-                Box::new(endpoint.clone()),
-                Box::new(endpoint.clone()),
-            ),
+        let square_bound = |endpoint: &SurfaceTerm| SurfaceProposition::Comparison {
+            left: SurfaceTerm::Multiply(Box::new(endpoint.clone()), Box::new(endpoint.clone())),
             operator: ComparisonOperator::LessEqual,
             right: upper.clone(),
         };
@@ -283,7 +280,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         input: &Proof<'a>,
         goal: &Proposition,
         bounds: &[Proposition; 2],
-        introduced_surfaces: &[ClickProposition],
+        introduced_surfaces: &[SurfaceProposition],
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_positive_float_product_bound");
@@ -316,7 +313,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         input: &Proof<'a>,
         goal: &Proposition,
         bounds: &[Proposition; 4],
-        introduced_surfaces: &[ClickProposition],
+        introduced_surfaces: &[SurfaceProposition],
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_float_corner_bound");
@@ -347,7 +344,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         use FloatBinaryOperator::{Divide, Multiply};
         let advanced = if operator == Divide {
             let zero = literal(plan.format, 0);
-            let sign = ClickProposition::Or(
+            let sign = SurfaceProposition::Or(
                 Box::new(less(zero.clone(), b.clone())),
                 Box::new(less(d.clone(), zero)),
             );
@@ -392,7 +389,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         input: &Proof<'a>,
         source: &Proposition,
         goal: &Proposition,
-        source_surface: &ClickProposition,
+        source_surface: &SurfaceProposition,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_float_reciprocal_bound");
@@ -433,7 +430,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         "strictly_positive_minimum",
                         vec![source_bound.clone(), divisor.clone()],
                         vec![
-                            ClickProposition::Comparison {
+                            SurfaceProposition::Comparison {
                                 left: source_bound,
                                 operator: ComparisonOperator::Equal,
                                 right: zero.clone(),
@@ -485,12 +482,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             );
         }
 
-        let sign = ClickProposition::Or(
-            Box::new(ClickProposition::And(
+        let sign = SurfaceProposition::Or(
+            Box::new(SurfaceProposition::And(
                 Box::new(less(zero.clone(), bound.clone())),
                 Box::new(at_most(bound.clone(), divisor.clone())),
             )),
-            Box::new(ClickProposition::And(
+            Box::new(SurfaceProposition::And(
                 Box::new(less(bound.clone(), zero.clone())),
                 Box::new(at_most(divisor.clone(), bound.clone())),
             )),

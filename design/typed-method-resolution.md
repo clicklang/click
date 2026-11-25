@@ -45,7 +45,7 @@ one rule for every receiver, however the receiver was introduced.
 ### Surface form
 
 The parser reads `x.m(args)` as a method call node,
-`ContractExpression::MethodCall { receiver, method, arguments }`, in every
+`SurfaceTerm::MethodCall { receiver, method, arguments }`, in every
 sidecar language, whenever the receiver is not one whose C or C++ type the
 parser already knows. Indexing `x[i]` and `x[a..b]` on such a receiver keep
 their own forms, an index and a range index, with the receiver unresolved.

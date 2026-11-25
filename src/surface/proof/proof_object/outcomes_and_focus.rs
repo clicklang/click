@@ -836,7 +836,7 @@ impl<'a> Proof<'a> {
     pub(in crate::surface::proof) fn begin_contract_claim(
         &self,
         goal: &crate::kernel::ContractClaimGoal,
-        surface: &ClickProposition,
+        surface: &SurfaceProposition,
     ) -> Result<Self, ClickError> {
         #[cfg(test)]
         let _operation = crate::kernel::search::FastOperationScope::enter("begin_contract_claim");

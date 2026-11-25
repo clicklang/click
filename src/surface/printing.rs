@@ -33,7 +33,7 @@ impl Drop for ContractValueParameterScope {
     }
 }
 
-fn source_contract_application(name: &str, arguments: &[ContractExpression]) -> Option<String> {
+fn source_contract_application(name: &str, arguments: &[SurfaceTerm]) -> Option<String> {
     CONTRACT_VALUE_PARAMETERS.with(|slot| {
         let scope = slot.borrow();
         let parameters = scope.as_ref()?.get(name)?;
@@ -61,12 +61,12 @@ pub(super) const COMPATIBILITY_FACT_TRANSPORT: &str = "<verification-only fact t
 pub(super) const COMPATIBILITY_NORMALIZATION: &str = "<verification-only normalization>";
 pub(super) const UNRAISED_CONJUNCT: &str = "<unraised conjunct>";
 
-pub(in crate::surface) fn source_click_proposition(proposition: &ClickProposition) -> String {
+pub(in crate::surface) fn source_click_proposition(proposition: &SurfaceProposition) -> String {
     with_lexical_binder_names(|| identity_click_proposition(proposition))
 }
 
 /// Internal comparison spelling that preserves generated binder identities.
-pub(in crate::surface) fn identity_click_proposition(proposition: &ClickProposition) -> String {
+pub(in crate::surface) fn identity_click_proposition(proposition: &SurfaceProposition) -> String {
     let _null_literals = NullLiteralSourceScope::enter();
     print_proposition(proposition, PropositionSpelling::Source)
 }
@@ -74,10 +74,10 @@ pub(in crate::surface) fn identity_click_proposition(proposition: &ClickProposit
 // The checker retains equality evidence internally. The Surface operation
 // states its directed endpoints separately, preserving the same source type
 // barriers as an equality comparison.
-fn source_rewrite_arguments(equality: &ClickProposition) -> String {
-    fn operands(equality: &ClickProposition, positive: bool) -> (String, String) {
+fn source_rewrite_arguments(equality: &SurfaceProposition) -> String {
+    fn operands(equality: &SurfaceProposition, positive: bool) -> (String, String) {
         match equality {
-            ClickProposition::Comparison {
+            SurfaceProposition::Comparison {
                 left,
                 operator,
                 right,
@@ -89,7 +89,7 @@ fn source_rewrite_arguments(equality: &ClickProposition) -> String {
                     comparison_operand(right, left, PropositionSpelling::Source),
                 )
             }
-            ClickProposition::At {
+            SurfaceProposition::At {
                 selector,
                 proposition,
             } => {
@@ -100,7 +100,7 @@ fn source_rewrite_arguments(equality: &ClickProposition) -> String {
                     format!("at({selector}, {right})"),
                 )
             }
-            ClickProposition::Not(inner) => operands(inner, !positive),
+            SurfaceProposition::Not(inner) => operands(inner, !positive),
             _ => unreachable!("a checked rewrite must carry equality evidence"),
         }
     }
@@ -110,10 +110,10 @@ fn source_rewrite_arguments(equality: &ClickProposition) -> String {
 
 // Preserve retains its exact separation evidence internally. Its public
 // arguments select the kept resource and the transition independently.
-fn source_preserve_arguments(separation: &ClickProposition) -> String {
-    fn operands(separation: &ClickProposition) -> (String, String) {
+fn source_preserve_arguments(separation: &SurfaceProposition) -> String {
+    fn operands(separation: &SurfaceProposition) -> (String, String) {
         match separation {
-            ClickProposition::Separate { left, right } => {
+            SurfaceProposition::Separate { left, right } => {
                 let (region, resource) = match (left, right) {
                     (ResourceSubject::Footprint(region), resource)
                     | (resource, ResourceSubject::Footprint(region)) => (region, resource),
@@ -124,7 +124,7 @@ fn source_preserve_arguments(separation: &ClickProposition) -> String {
                     describe_code_region_ref(region),
                 )
             }
-            ClickProposition::At {
+            SurfaceProposition::At {
                 selector,
                 proposition,
             } => {
@@ -147,13 +147,13 @@ fn source_preserve_arguments(separation: &ClickProposition) -> String {
 /// A proposition spelled for a refusal a person reads. It may print a term
 /// as what it means, such as an unsigned order, in a form that is not Click
 /// source, so it never reaches generated source.
-pub(in crate::surface) fn refusal_click_proposition(proposition: &ClickProposition) -> String {
+pub(in crate::surface) fn refusal_click_proposition(proposition: &SurfaceProposition) -> String {
     print_proposition(proposition, PropositionSpelling::Refusal)
 }
 
 // Diagnostic quotations retain the declaration's spelling; certificate-only
 // type barriers must not change messages about an authored proposition.
-pub(in crate::surface) fn authored_click_proposition(proposition: &ClickProposition) -> String {
+pub(in crate::surface) fn authored_click_proposition(proposition: &SurfaceProposition) -> String {
     print_proposition(proposition, PropositionSpelling::Authored)
 }
 
@@ -169,34 +169,32 @@ pub(super) enum PropositionSpelling {
 // must keep that type when reparsed: Integer specification arithmetic
 // otherwise promotes a comparison containing `count(...)`.
 fn comparison_operand(
-    expression: &ContractExpression,
-    other: &ContractExpression,
+    expression: &SurfaceTerm,
+    other: &SurfaceTerm,
     mode: PropositionSpelling,
 ) -> String {
     // A pointer comparison supplies the type of the null pointer constant.
     // The diagnostic spelling `NULL` requires a C macro that Click source
     // cannot assume.
     if mode == PropositionSpelling::Source
-        && let ContractExpression::ProgramExpression(ProgramExpression::Value(
-            ProgramValue::Pointer(pointer),
-        )) = expression
+        && let SurfaceTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Pointer(
+            pointer,
+        ))) = expression
         && pointer.is_null()
     {
         return "0".into();
     }
-    fn typed_count_reference(expression: &ContractExpression) -> Option<String> {
+    fn typed_count_reference(expression: &SurfaceTerm) -> Option<String> {
         match expression {
-            ContractExpression::ResourceCount(_) => Some(format!(
+            SurfaceTerm::ResourceCount(_) => Some(format!(
                 "({})",
                 crate::surface::diagnostics::click_cast(
                     &describe_contract_expression(expression),
                     "int32"
                 )
             )),
-            ContractExpression::Old(inner) => {
-                Some(format!("old({})", typed_count_reference(inner)?))
-            }
-            ContractExpression::At {
+            SurfaceTerm::Old(inner) => Some(format!("old({})", typed_count_reference(inner)?)),
+            SurfaceTerm::At {
                 selector,
                 expression,
             } => Some(format!(
@@ -230,17 +228,17 @@ fn comparison_operand(
 /// `int32` zero is not one, since it also spells the null pointer. A
 /// comparison with such an operand compares integer words, so its other
 /// operand's `+` or `-` is word arithmetic, never pointer arithmetic.
-fn integer_comparison_type(other: &ContractExpression) -> Option<&'static str> {
+fn integer_comparison_type(other: &SurfaceTerm) -> Option<&'static str> {
     let mut inner = other;
-    while let ContractExpression::Old(next)
-    | ContractExpression::At {
+    while let SurfaceTerm::Old(next)
+    | SurfaceTerm::At {
         expression: next, ..
     } = inner
     {
         inner = next;
     }
     match inner {
-        ContractExpression::ProgramExpression(ProgramExpression::Value(value)) => match value {
+        SurfaceTerm::ProgramExpression(ProgramExpression::Value(value)) => match value {
             ProgramValue::UInt32(_) => Some("uint32"),
             ProgramValue::Int64(_) => Some("int64"),
             ProgramValue::UInt64(_) => Some("uint64"),
@@ -263,13 +261,13 @@ fn integer_comparison_type(other: &ContractExpression) -> Option<&'static str> {
 /// `+` or `-` is word arithmetic too, and receives the barrier, since the
 /// parser reads a comparison operand that does arithmetic as an Integer.
 fn machine_arithmetic(
-    expression: &ContractExpression,
+    expression: &SurfaceTerm,
     comparison: Option<&'static str>,
 ) -> Option<&'static str> {
     let mut inner = expression;
     let mut retained_state = false;
-    while let ContractExpression::Old(next)
-    | ContractExpression::At {
+    while let SurfaceTerm::Old(next)
+    | SurfaceTerm::At {
         expression: next, ..
     } = inner
     {
@@ -279,7 +277,7 @@ fn machine_arithmetic(
     // A negative literal prints with a unary minus. Specification parsing
     // reads that as Integer arithmetic, so retain its machine type explicitly.
     if matches!(inner,
-        ContractExpression::ProgramExpression(ProgramExpression::Value(
+        SurfaceTerm::ProgramExpression(ProgramExpression::Value(
             ProgramValue::Int64(crate::kernel::int64_constant!(bits))
         )) if crate::kernel::constant_i64(*bits) < 0)
     {
@@ -291,10 +289,7 @@ fn machine_arithmetic(
     // generated C arithmetic still receives the machine barrier below.
     if !retained_state
         && comparison.is_none()
-        && matches!(
-            inner,
-            ContractExpression::Add(..) | ContractExpression::Subtract(..)
-        )
+        && matches!(inner, SurfaceTerm::Add(..) | SurfaceTerm::Subtract(..))
     {
         return None;
     }
@@ -325,30 +320,30 @@ fn machine_arithmetic(
     let mut opaque = false;
     while let Some(expression) = contract_pending.pop() {
         match expression {
-            ContractExpression::Add(left, right)
-            | ContractExpression::Subtract(left, right)
-            | ContractExpression::Multiply(left, right)
-            | ContractExpression::Divide(left, right)
-            | ContractExpression::Remainder(left, right)
-            | ContractExpression::ShiftLeft(left, right)
-            | ContractExpression::RustShiftLeft(left, right)
-            | ContractExpression::ShiftRight(left, right)
-            | ContractExpression::RustShiftRight(left, right)
-            | ContractExpression::BitwiseAnd(left, right)
-            | ContractExpression::BitwiseOr(left, right)
-            | ContractExpression::BitwiseXor(left, right) => {
+            SurfaceTerm::Add(left, right)
+            | SurfaceTerm::Subtract(left, right)
+            | SurfaceTerm::Multiply(left, right)
+            | SurfaceTerm::Divide(left, right)
+            | SurfaceTerm::Remainder(left, right)
+            | SurfaceTerm::ShiftLeft(left, right)
+            | SurfaceTerm::RustShiftLeft(left, right)
+            | SurfaceTerm::ShiftRight(left, right)
+            | SurfaceTerm::RustShiftRight(left, right)
+            | SurfaceTerm::BitwiseAnd(left, right)
+            | SurfaceTerm::BitwiseOr(left, right)
+            | SurfaceTerm::BitwiseXor(left, right) => {
                 contract_pending.push(left);
                 contract_pending.push(right);
             }
-            ContractExpression::Negate(operand) | ContractExpression::BitwiseNot(operand) => {
+            SurfaceTerm::Negate(operand) | SurfaceTerm::BitwiseNot(operand) => {
                 contract_pending.push(operand)
             }
-            ContractExpression::IntegerLiteral(_) => return None,
-            ContractExpression::ProgramExpression(ProgramExpression::Value(value)) if !top => {
+            SurfaceTerm::IntegerLiteral(_) => return None,
+            SurfaceTerm::ProgramExpression(ProgramExpression::Value(value)) if !top => {
                 machine = true;
                 interface_types.push(value.clone());
             }
-            ContractExpression::ProgramExpression(fragment) => {
+            SurfaceTerm::ProgramExpression(fragment) => {
                 if top && !c_arithmetic(fragment) {
                     return None;
                 }
@@ -406,7 +401,7 @@ fn machine_arithmetic(
 }
 
 pub(super) fn print_proposition(
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     mode: PropositionSpelling,
 ) -> String {
     if let Some((pointer, alignment)) = aligned_sugar(proposition) {
@@ -423,8 +418,8 @@ pub(super) fn print_proposition(
         );
     }
     match proposition {
-        ClickProposition::Value(expression) => describe_contract_expression(expression),
-        ClickProposition::Comparison {
+        SurfaceProposition::Value(expression) => describe_contract_expression(expression),
+        SurfaceProposition::Comparison {
             left,
             operator,
             right,
@@ -433,7 +428,7 @@ pub(super) fn print_proposition(
             comparison_operand(left, right, mode),
             comparison_operand(right, left, mode)
         ),
-        ClickProposition::FloatClassification {
+        SurfaceProposition::FloatClassification {
             expression,
             classification,
         } => format!(
@@ -447,42 +442,40 @@ pub(super) fn print_proposition(
             },
             describe_contract_expression(expression)
         ),
-        ClickProposition::Separate { left, right } => format!(
+        SurfaceProposition::Separate { left, right } => format!(
             "separate({}, {})",
             describe_resource_subject(left),
             describe_resource_subject(right)
         ),
-        ClickProposition::Contains { parent, child } => format!(
+        SurfaceProposition::Contains { parent, child } => format!(
             "contains({}, {})",
             describe_resource_subject(parent),
             describe_resource_subject(child)
         ),
-        ClickProposition::ResourceViewable { resource } => {
+        SurfaceProposition::ResourceViewable { resource } => {
             format!("viewable({})", describe_resource_subject(resource))
         }
-        ClickProposition::Loadable { segment } => {
+        SurfaceProposition::Loadable { segment } => {
             format!("viewable({})", describe_contract_segment(segment))
         }
-        ClickProposition::IsA { class, pointer } => format!(
+        SurfaceProposition::IsA { class, pointer } => format!(
             "is_a<{}>({})",
             crate::kernel::object_class_spelling(class),
             describe_contract_expression(pointer)
         ),
-        ClickProposition::Defined { expression } => {
+        SurfaceProposition::Defined { expression } => {
             // Keep the indexed read when its base is an object address.
             // A bare local can lower to a held value and lose the typed
             // read-definedness fact that this proposition establishes.
             let indexed = match expression {
-                ContractExpression::Index(base, index) => Some((
+                SurfaceTerm::Index(base, index) => Some((
                     describe_contract_expression(base),
                     describe_contract_expression(index),
                 )),
-                ContractExpression::ProgramExpression(ProgramExpression::Index(base, index)) => {
-                    Some((
-                        describe_program_expression(base),
-                        describe_program_expression(index),
-                    ))
-                }
+                SurfaceTerm::ProgramExpression(ProgramExpression::Index(base, index)) => Some((
+                    describe_program_expression(base),
+                    describe_program_expression(index),
+                )),
                 _ => None,
             };
             if let Some((base, index)) = indexed
@@ -493,7 +486,7 @@ pub(super) fn print_proposition(
             }
             format!("defined({})", describe_contract_expression(expression))
         }
-        ClickProposition::At {
+        SurfaceProposition::At {
             selector,
             proposition,
         } => format!(
@@ -505,28 +498,28 @@ pub(super) fn print_proposition(
         // parentheses Click's precedence needs (`docs/reference/language/
         // grammar.md`): `implies` binds loosest and to the right, then `or`,
         // `and`, and prefix `not`.
-        ClickProposition::And(left, right) => format!(
+        SurfaceProposition::And(left, right) => format!(
             "{} and {}",
             proposition_operand(left, CONNECTIVE_AND, mode),
             proposition_operand(right, CONNECTIVE_NOT, mode)
         ),
-        ClickProposition::Or(left, right) => format!(
+        SurfaceProposition::Or(left, right) => format!(
             "{} or {}",
             proposition_operand(left, CONNECTIVE_OR, mode),
             proposition_operand(right, CONNECTIVE_AND, mode)
         ),
-        ClickProposition::Not(proposition) => {
+        SurfaceProposition::Not(proposition) => {
             format!(
                 "not {}",
                 proposition_operand(proposition, CONNECTIVE_NOT, mode)
             )
         }
-        ClickProposition::Implies(left, right) => format!(
+        SurfaceProposition::Implies(left, right) => format!(
             "{} implies {}",
             proposition_operand(left, CONNECTIVE_OR, mode),
             proposition_operand(right, CONNECTIVE_IMPLIES, mode)
         ),
-        ClickProposition::ForAll {
+        SurfaceProposition::ForAll {
             click_type,
             name,
             body,
@@ -536,7 +529,7 @@ pub(super) fn print_proposition(
             validation::describe_click_type(click_type),
             print_proposition(body, mode)
         ),
-        ClickProposition::Exists {
+        SurfaceProposition::Exists {
             click_type,
             name,
             body,
@@ -546,11 +539,11 @@ pub(super) fn print_proposition(
             validation::describe_click_type(click_type),
             print_proposition(body, mode)
         ),
-        ClickProposition::RangeAll { start, end, .. }
-        | ClickProposition::RangeAny { start, end, .. }
+        SurfaceProposition::RangeAll { start, end, .. }
+        | SurfaceProposition::RangeAny { start, end, .. }
             if let Some(predicate) = lambdas::range_predicate(proposition) =>
         {
-            let method = if matches!(proposition, ClickProposition::RangeAll { .. }) {
+            let method = if matches!(proposition, SurfaceProposition::RangeAll { .. }) {
                 "all"
             } else {
                 "any"
@@ -562,7 +555,7 @@ pub(super) fn print_proposition(
                 describe_contract_expression(predicate)
             )
         }
-        ClickProposition::RangeAll {
+        SurfaceProposition::RangeAll {
             start,
             end,
             item,
@@ -583,7 +576,7 @@ pub(super) fn print_proposition(
                 format!("({start}..{end}).all({item} => {body})")
             }
         }
-        ClickProposition::RangeAny {
+        SurfaceProposition::RangeAny {
             start,
             end,
             item,
@@ -604,13 +597,13 @@ pub(super) fn print_proposition(
                 format!("({start}..{end}).any({item} => {body})")
             }
         }
-        ClickProposition::PredicateCall { name, arguments }
+        SurfaceProposition::PredicateCall { name, arguments }
             if crate::kernel::TerminationAtomKind::from_spelling(name).is_some() =>
         {
             let arguments = arguments
                 .iter()
                 .map(|argument| {
-                    let ContractExpression::Binding(name) = argument else {
+                    let SurfaceTerm::Binding(name) = argument else {
                         unreachable!("termination labels are quoted names")
                     };
                     format!("{name:?}")
@@ -619,7 +612,7 @@ pub(super) fn print_proposition(
                 .join(", ");
             format!("{name}({arguments})")
         }
-        ClickProposition::PredicateCall { name, arguments } => {
+        SurfaceProposition::PredicateCall { name, arguments } => {
             if mode == PropositionSpelling::Source
                 && let Some(application) = source_contract_application(name, arguments)
             {
@@ -645,15 +638,15 @@ const CONNECTIVE_NOT: u8 = 4;
 /// A proposition as an operand of a connective that needs at least
 /// `minimum` precedence there, parenthesized when it binds more loosely.
 fn proposition_operand(
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     minimum: u8,
     mode: PropositionSpelling,
 ) -> String {
     let precedence = match proposition {
-        ClickProposition::Implies(..) => CONNECTIVE_IMPLIES,
-        ClickProposition::Or(..) => CONNECTIVE_OR,
-        ClickProposition::And(..) => CONNECTIVE_AND,
-        ClickProposition::Not(..) => CONNECTIVE_NOT,
+        SurfaceProposition::Implies(..) => CONNECTIVE_IMPLIES,
+        SurfaceProposition::Or(..) => CONNECTIVE_OR,
+        SurfaceProposition::And(..) => CONNECTIVE_AND,
+        SurfaceProposition::Not(..) => CONNECTIVE_NOT,
         _ => u8::MAX,
     };
     let text = print_proposition(proposition, mode);
@@ -1357,7 +1350,7 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
         ProofTactic::IntroAs(name) => line(output, &prefix, &format!("let {name} = intro();")),
         ProofTactic::IntroBinder(name) => line(output, &prefix, &format!("let {name} = intro();")),
         ProofTactic::Enumerate => line(output, &prefix, "enumerate();"),
-        ProofTactic::Contradiction(ClickProposition::Value(value))
+        ProofTactic::Contradiction(SurfaceProposition::Value(value))
             if bool_literal_value(value) == Some(false) =>
         {
             line(output, &prefix, "contradiction();")
@@ -1499,7 +1492,7 @@ fn write_proof(output: &mut String, proof: &SourceProof, indent: usize) {
 fn write_using_premises(
     output: &mut String,
     name: &str,
-    premises: &[ClickProposition],
+    premises: &[SurfaceProposition],
     indent: usize,
 ) {
     let prefix = "    ".repeat(indent);
@@ -1512,7 +1505,7 @@ fn write_using_premises(
     line(output, &prefix, "};");
 }
 
-fn write_premise_list(output: &mut String, facts: &[ClickProposition], indent: usize) {
+fn write_premise_list(output: &mut String, facts: &[SurfaceProposition], indent: usize) {
     let prefix = "    ".repeat(indent);
     for fact in facts {
         wrapped_line(
@@ -1638,7 +1631,7 @@ fn resource_access(resource: &ResourceClause) -> ResourceAccessMode {
 
 /// An induction hypothesis is applied at the theorem's parameter list, so its
 /// arguments print exactly like an ordinary theorem application's.
-fn describe_induction_arguments(arguments: &[ContractExpression]) -> String {
+fn describe_induction_arguments(arguments: &[SurfaceTerm]) -> String {
     arguments
         .iter()
         .map(describe_contract_expression)
@@ -1814,11 +1807,11 @@ mod tests {
     #[test]
     fn negative_int64_source_barrier_does_not_change_diagnostic_spelling() {
         let word = |n| {
-            ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::Int64(
+            SurfaceTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Int64(
                 crate::kernel::MachineTerm::int64_constant(n),
             )))
         };
-        let proposition = ClickProposition::Comparison {
+        let proposition = SurfaceProposition::Comparison {
             left: word(-9),
             operator: ComparisonOperator::LessEqual,
             right: word(100),
@@ -1850,16 +1843,15 @@ mod tests {
             let Requirement::Proposition(proposition) = requirement else {
                 panic!("expected a proposition");
             };
-            let ClickProposition::Comparison { left, .. } = proposition else {
+            let SurfaceProposition::Comparison { left, .. } = proposition else {
                 panic!("expected an address comparison");
             };
             let address = match left {
-                ContractExpression::BitwiseAnd(address, _) => address.as_mut(),
+                SurfaceTerm::BitwiseAnd(address, _) => address.as_mut(),
                 address => address,
             };
-            let ContractExpression::ProgramExpression(ProgramExpression::Cast {
-                expression, ..
-            }) = address
+            let SurfaceTerm::ProgramExpression(ProgramExpression::Cast { expression, .. }) =
+                address
             else {
                 panic!("expected a pointer-to-address cast");
             };
@@ -1883,7 +1875,7 @@ mod tests {
 
     #[test]
     fn population_count_comparisons_preserve_their_numeric_type_when_reparsed() {
-        fn requirement(source: &str) -> ClickProposition {
+        fn requirement(source: &str) -> SurfaceProposition {
             let parsed = parser::parse(source).unwrap();
             let Requirement::Proposition(proposition) = &parsed.function_blocks()[0].requires()[0]
             else {
@@ -1904,8 +1896,8 @@ mod tests {
                 "authorized resource token() {{}} void f(int32 value) {{ requires {rendered}; ensures value == value; }}"
             ));
             let (
-                ClickProposition::Comparison { left: original, .. },
-                ClickProposition::Comparison { left: reparsed, .. },
+                SurfaceProposition::Comparison { left: original, .. },
+                SurfaceProposition::Comparison { left: reparsed, .. },
             ) = (original, reparsed)
             else {
                 panic!("expected comparisons before and after printing");
@@ -1921,7 +1913,7 @@ mod tests {
     // (`mdtests/a_size_t_store_search_miss_names_the_word_fact.md`).
     #[test]
     fn word_arithmetic_compared_with_a_typed_word_reparses_as_the_word() {
-        fn requirement(source: &str) -> ClickProposition {
+        fn requirement(source: &str) -> SurfaceProposition {
             let parsed = parser::parse(source).unwrap();
             let Requirement::Proposition(proposition) = &parsed.function_blocks()[0].requires()[0]
             else {
@@ -1930,24 +1922,24 @@ mod tests {
             proposition.clone()
         }
         let word = |value: u64| {
-            ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::UInt64(
+            SurfaceTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::UInt64(
                 crate::kernel::MachineTerm::uint64_constant(value),
             )))
         };
-        let n = || ContractExpression::ProgramExpression(ProgramExpression::Variable("n".into()));
+        let n = || SurfaceTerm::ProgramExpression(ProgramExpression::Variable("n".into()));
         for (arithmetic, spelled, bare) in [
             (
-                ContractExpression::Subtract(Box::new(n()), Box::new(word(1))),
+                SurfaceTerm::Subtract(Box::new(n()), Box::new(word(1))),
                 "(n - 1u64) as uint64 != 0u64",
                 "n - 1u64 != 0u64",
             ),
             (
-                ContractExpression::Add(Box::new(n()), Box::new(n())),
+                SurfaceTerm::Add(Box::new(n()), Box::new(n())),
                 "(n + n) as uint64 != 0u64",
                 "n + n != 0u64",
             ),
         ] {
-            let synthesized = ClickProposition::Comparison {
+            let synthesized = SurfaceProposition::Comparison {
                 left: arithmetic,
                 operator: ComparisonOperator::NotEqual,
                 right: word(0),
@@ -1998,19 +1990,19 @@ mod tests {
         // Call substitution retains a Surface index; lowered C expressions
         // can also carry the read. Both must print the original lvalue.
         for read in [
-            ContractExpression::Index(
-                Box::new(ContractExpression::ProgramExpression(address.clone())),
-                Box::new(ContractExpression::ProgramExpression(zero.clone())),
+            SurfaceTerm::Index(
+                Box::new(SurfaceTerm::ProgramExpression(address.clone())),
+                Box::new(SurfaceTerm::ProgramExpression(zero.clone())),
             ),
-            ContractExpression::ProgramExpression(ProgramExpression::Index(
+            SurfaceTerm::ProgramExpression(ProgramExpression::Index(
                 Box::new(address),
                 Box::new(zero),
             )),
         ] {
-            let proposition = ClickProposition::Comparison {
+            let proposition = SurfaceProposition::Comparison {
                 left: read,
                 operator: ComparisonOperator::LessEqual,
-                right: ContractExpression::ProgramExpression(ProgramExpression::Value(
+                right: SurfaceTerm::ProgramExpression(ProgramExpression::Value(
                     ProgramValue::Int32(MachineTerm::constant(10)),
                 )),
             };
@@ -2030,12 +2022,12 @@ mod tests {
 
     #[test]
     fn array_field_read_through_an_erased_pointer_keeps_its_element_type() {
-        let read = ContractExpression::Index(
-            Box::new(ContractExpression::Field {
+        let read = SurfaceTerm::Index(
+            Box::new(SurfaceTerm::Field {
                 pointee_struct: None,
-                base: Box::new(ContractExpression::ProgramExpression(
-                    ProgramExpression::Variable("p".into()),
-                )),
+                base: Box::new(SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+                    "p".into(),
+                ))),
                 field: "items".into(),
                 lowered: ProgramExpression::TypedLoad {
                     pointer: Box::new(ProgramExpression::PointerOffsetBytes {
@@ -2050,14 +2042,12 @@ mod tests {
                 },
                 offset_bytes: 4.into(),
             }),
-            Box::new(ContractExpression::ProgramExpression(
-                ProgramExpression::Variable("index".into()),
-            )),
+            Box::new(SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+                "index".into(),
+            ))),
         );
-        let goal = ClickProposition::Comparison {
-            left: ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                "result".into(),
-            )),
+        let goal = SurfaceProposition::Comparison {
+            left: SurfaceTerm::ProgramExpression(ProgramExpression::Variable("result".into())),
             operator: ComparisonOperator::Equal,
             right: read,
         };
@@ -2087,18 +2077,18 @@ mod tests {
 
     #[test]
     fn marked_conjunction_uses_parseable_click_connectives() {
-        let equality = |name: &str| ClickProposition::Comparison {
-            left: ContractExpression::ProgramExpression(ProgramExpression::Variable(
+        let equality = |name: &str| SurfaceProposition::Comparison {
+            left: SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                 (name.to_string()).into(),
             )),
             operator: ComparisonOperator::Equal,
-            right: ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            right: SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                 (name.to_string()).into(),
             )),
         };
-        let proposition = ClickProposition::At {
+        let proposition = SurfaceProposition::At {
             selector: ProgramPointSelector::Mark("checkpoint".to_string()),
-            proposition: Box::new(ClickProposition::And(
+            proposition: Box::new(SurfaceProposition::And(
                 Box::new(equality("left")),
                 Box::new(equality("right")),
             )),

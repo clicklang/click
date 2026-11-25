@@ -142,7 +142,7 @@ fn static_declaration_preparation_is_linear_and_selector_lookup_is_indexed() {
             parser.local_bindings = layouts.local_bindings.clone();
             parser.parse_contract_expression().unwrap()
         });
-        let ContractExpression::ProgramExpression(ProgramExpression::Variable(
+        let SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::Static(id),
         )) = expression
         else {
@@ -158,7 +158,7 @@ fn static_declaration_preparation_is_linear_and_selector_lookup_is_indexed() {
 #[test]
 fn embedded_field_identity_uses_only_its_explicit_path() {
     use crate::languages::interface::RecordLayout;
-    fn fixture(depth: usize, unrelated: usize) -> (Parser, ContractExpression) {
+    fn fixture(depth: usize, unrelated: usize) -> (Parser, SurfaceTerm) {
         let leaf = RecordLayout::from_explicit_fields(
             vec![("data".into(), InterfaceType::Int32Pointer, 0, 8)],
             8,
@@ -198,9 +198,9 @@ fn embedded_field_identity_uses_only_its_explicit_path() {
         }
         let mut parser = Parser::new_with_layouts("", layouts, BTreeMap::new()).unwrap();
         parser.names.struct_params.insert("object".into(), previous);
-        let mut expression = ContractExpression::Binding("object".into());
+        let mut expression = SurfaceTerm::Binding("object".into());
         for _ in 0..depth {
-            expression = ContractExpression::Field {
+            expression = SurfaceTerm::Field {
                 pointee_struct: None,
                 base: Box::new(expression),
                 field: "inner".into(),

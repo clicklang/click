@@ -937,7 +937,7 @@ fn advance_execution_proof_statement(
                             continue;
                         };
                         let exit_condition =
-                            ClickProposition::Not(Box::new(surface_program_condition(
+                            SurfaceProposition::Not(Box::new(surface_program_condition(
                                 condition,
                                 exit_state,
                                 Some(&recorded_states),

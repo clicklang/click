@@ -49,7 +49,7 @@ pub(super) struct ProofMatchArmCase {
 #[derive(Clone)]
 pub(super) struct CaseAssumption {
     pub(super) tactic_index: usize,
-    pub(super) condition: ClickProposition,
+    pub(super) condition: SurfaceProposition,
     pub(super) value: bool,
     pub(super) fact: Option<Proposition>,
     /// Set when this case is one arm of a proof `match` rather than one
@@ -512,10 +512,10 @@ pub(super) struct SurfaceIfArmEnd {
 
 #[derive(Clone, PartialEq)]
 pub(super) enum SurfacePathSelector {
-    Proposition(ClickProposition),
+    Proposition(SurfaceProposition),
     /// The arm of a `cases` split on this disjunction: `true` is its left
     /// side.
-    Disjunction(ClickProposition),
+    Disjunction(SurfaceProposition),
     CallOutcome([Option<String>; 2]),
     /// The arm of a constructor `match`, by its index in the written arms.
     /// The choice's `value` is unused.
@@ -778,7 +778,7 @@ fn append_surface_step_to_leaves_ref(steps: &mut Vec<ProofStep>, step: &ProofSte
 /// making the certificate quadratic in the constructor count.
 fn match_arm_suffix(
     step: &ProofStep,
-    scrutinee: &ContractExpression,
+    scrutinee: &SurfaceTerm,
     arms: &[CertificateInductionArm],
     index: usize,
 ) -> Option<Vec<ProofStep>> {
@@ -819,19 +819,19 @@ fn match_arm_suffix(
 /// so a condition that selects all of them or none of them is not one, and
 /// keeping both sides for it preserves the earlier two-constructor rule.
 fn match_arm_selection(
-    condition: &ClickProposition,
-    scrutinee: &ContractExpression,
+    condition: &SurfaceProposition,
+    scrutinee: &SurfaceTerm,
     arms: &[CertificateInductionArm],
 ) -> Option<Vec<bool>> {
-    let ClickProposition::Comparison {
+    let SurfaceProposition::Comparison {
         left:
-            ContractExpression::AlgebraicMatch {
+            SurfaceTerm::AlgebraicMatch {
                 scrutinee: selected,
                 arms: selector_arms,
             },
         operator: ComparisonOperator::Equal,
         right:
-            ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::Int32(
+            SurfaceTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Int32(
                 int32_constant!(1,),
             ))),
     } = condition
@@ -845,9 +845,9 @@ fn match_arm_selection(
         .iter()
         .zip(selector_arms)
         .map(|(arm, selector)| {
-            let ContractExpression::ProgramExpression(ProgramExpression::Value(
-                ProgramValue::Int32(int32_constant!(value)),
-            )) = &selector.body
+            let SurfaceTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Int32(
+                int32_constant!(value),
+            ))) = &selector.body
             else {
                 return None;
             };
@@ -1572,7 +1572,7 @@ fn synthesize_surface_cursors(paths: Vec<SurfacePathCursor<'_>>) -> Result<Vec<P
 /// the source scope, including when different outcomes select different arms.
 fn synthesize_scoped_if<'p>(
     mut prefix: Vec<ProofStep>,
-    condition: &ClickProposition,
+    condition: &SurfaceProposition,
     then_paths: Vec<SurfacePathCursor<'p>>,
     else_paths: Vec<SurfacePathCursor<'p>>,
 ) -> Result<Vec<ProofStep>, String> {
@@ -1636,7 +1636,7 @@ pub(super) fn boolean_return_split<'a>(
     Some((|| {
         Ok(ProofStep::If {
             ensuring: None,
-            condition: crate::surface::bool_truth(ContractExpression::ProgramExpression(
+            condition: crate::surface::bool_truth(SurfaceTerm::ProgramExpression(
                 ProgramExpression::Variable(crate::kernel::BindingName::ContractResult),
             )),
             then_proof: admit(then_steps)?,
@@ -1672,15 +1672,15 @@ pub(super) enum PostExecutionTactic {
     /// A bare `transport`, which searches for its premises. A written
     /// `transport using` is a leaf.
     Transport {
-        source: ClickProposition,
-        target: ClickProposition,
+        source: SurfaceProposition,
+        target: SurfaceProposition,
     },
     /// Surface-only control structure scheduled after terminal execution.
     /// The arms contain no semantic state: ordered finalization asks the
     /// focused outcome `Proof` to decide the condition, then applies only the
     /// selected arm's checked operations to that same descendant.
     If {
-        condition: ClickProposition,
+        condition: SurfaceProposition,
         /// The arms are the two sides of `condition`, a `cases` disjunction,
         /// rather than `condition` and its negation.
         disjunction: bool,
@@ -1778,7 +1778,7 @@ pub(super) struct LoopReturnProof {
 
 #[derive(Clone)]
 pub(super) struct DeferredPostExecutionTactic {
-    pub(super) lexical_bindings: Option<PersistentBinderMap<ContractExpression>>,
+    pub(super) lexical_bindings: Option<PersistentBinderMap<SurfaceTerm>>,
     /// Whether case preparation must leave this proposition for the ordered
     /// outcome checker, which has the bindings produced by earlier obtains.
     pub(super) reads_deferred_obtain: bool,
@@ -1795,10 +1795,10 @@ mod proof_fact_store_tests {
     fn outcome_suffix_placement_skips_pruned_arms_in_linear_work() {
         fn branch(then_proof: ProofCertificate, else_proof: ProofCertificate) -> ProofStep {
             ProofStep::If {
-                condition: ClickProposition::Comparison {
-                    left: ContractExpression::IntegerLiteral("0".into()),
+                condition: SurfaceProposition::Comparison {
+                    left: SurfaceTerm::IntegerLiteral("0".into()),
                     operator: ComparisonOperator::Equal,
-                    right: ContractExpression::IntegerLiteral("0".into()),
+                    right: SurfaceTerm::IntegerLiteral("0".into()),
                 },
                 ensuring: None,
                 then_proof: Box::new(then_proof),

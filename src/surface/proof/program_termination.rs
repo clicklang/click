@@ -131,23 +131,23 @@ impl TerminationDiagnostics {
     }
 }
 
-pub(super) fn spelling(scope: &OrdinaryTerminationScope, goal: &Proposition) -> ClickProposition {
+pub(super) fn spelling(scope: &OrdinaryTerminationScope, goal: &Proposition) -> SurfaceProposition {
     if let Some((kind, name)) = scope.spelling(goal) {
-        return ClickProposition::PredicateCall {
+        return SurfaceProposition::PredicateCall {
             name: kind.spelling().to_string(),
             arguments: if kind == crate::kernel::TerminationAtomKind::Callbacks {
                 vec![]
             } else {
-                vec![ContractExpression::Binding(name)]
+                vec![SurfaceTerm::Binding(name)]
             },
         };
     }
     match goal {
-        Proposition::And(left, right) => ClickProposition::And(
+        Proposition::And(left, right) => SurfaceProposition::And(
             Box::new(spelling(scope, left)),
             Box::new(spelling(scope, right)),
         ),
-        Proposition::Not(inner) => ClickProposition::Not(Box::new(spelling(scope, inner))),
+        Proposition::Not(inner) => SurfaceProposition::Not(Box::new(spelling(scope, inner))),
         _ => unreachable!("termination producer creates only scoped atoms and conjunctions"),
     }
 }
@@ -260,14 +260,14 @@ fn failure_error(proof: &Proof<'_>) -> Option<ClickError> {
     )
 }
 
-pub(in crate::surface) fn predicate_spelling(name: &str) -> Option<ClickProposition> {
+pub(in crate::surface) fn predicate_spelling(name: &str) -> Option<SurfaceProposition> {
     let (kind, function) = crate::kernel::termination_predicate_spelling(name)?;
-    Some(ClickProposition::PredicateCall {
+    Some(SurfaceProposition::PredicateCall {
         name: kind.spelling().into(),
         arguments: if kind == crate::kernel::TerminationAtomKind::Callbacks {
             vec![]
         } else {
-            vec![ContractExpression::Binding(function.to_string())]
+            vec![SurfaceTerm::Binding(function.to_string())]
         },
     })
 }

@@ -2,15 +2,15 @@
 //! Reads and calls are opaque. Every simplification is a named word law or a
 //! goal-local calculation; selected alignment facts are retained in applications.
 use super::*;
-use ContractExpression as E;
+use SurfaceTerm as E;
 
 fn number(n: u64) -> E {
     E::ProgramExpression(ProgramExpression::Value(crate::kernel::uint64(
         MachineTerm::uint64_constant(n),
     )))
 }
-fn eq(a: E, b: E) -> ClickProposition {
-    ClickProposition::Comparison {
+fn eq(a: E, b: E) -> SurfaceProposition {
+    SurfaceProposition::Comparison {
         left: cast_word(a),
         operator: ComparisonOperator::Equal,
         right: cast_word(b),
@@ -133,7 +133,7 @@ fn alignment_mask(expression: &E) -> Option<(E, &E)> {
 }
 struct Words<'p, 'a> {
     input: &'p Proof<'a>,
-    alignments: Vec<(E, u64, ClickProposition)>,
+    alignments: Vec<(E, u64, SurfaceProposition)>,
     steps: Vec<ProofStep>,
     written_steps: usize,
     aliases: Vec<(E, E)>,
@@ -203,7 +203,7 @@ impl Words<'_, '_> {
         &mut self,
         name: &str,
         arguments: Vec<E>,
-        premises: Vec<ClickProposition>,
+        premises: Vec<SurfaceProposition>,
         a: E,
         b: E,
     ) -> Result<(), ClickError> {
@@ -219,7 +219,7 @@ impl Words<'_, '_> {
             }],
         )
     }
-    fn aligned(&mut self, base: &E, mask: u64) -> Result<Option<ClickProposition>, ClickError> {
+    fn aligned(&mut self, base: &E, mask: u64) -> Result<Option<SurfaceProposition>, ClickError> {
         for (source, large, fact) in self.alignments.clone() {
             self.charge(0)?;
             if large & mask != mask || !self.same(base, &source)? {
@@ -824,7 +824,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         }) else {
             return Ok(None);
         };
-        let Some(ClickProposition::Comparison { left, right, .. }) = input.surface_goal() else {
+        let Some(SurfaceProposition::Comparison { left, right, .. }) = input.surface_goal() else {
             return Ok(None);
         };
         let Some(pointer_source) = [left, right].into_iter().find_map(|expression| {
@@ -833,7 +833,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         }) else {
             return Ok(None);
         };
-        let equality = ClickProposition::Comparison {
+        let equality = SurfaceProposition::Comparison {
             left: pointer_source,
             operator: ComparisonOperator::Equal,
             right: E::RegionAllocation(region),
@@ -848,7 +848,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
 
     pub(in crate::surface::proof) fn try_address_words_using(
         input: &Proof<'a>,
-        premises: &[ClickProposition],
+        premises: &[SurfaceProposition],
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_address_words_using");
@@ -887,7 +887,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if !native_word_goal {
             return Ok(None);
         }
-        let Some(ClickProposition::Comparison {
+        let Some(SurfaceProposition::Comparison {
             left,
             right,
             operator,
@@ -924,7 +924,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             if !input.facts().listed_premise_available(&k, &[], false) {
                 return Ok(None);
             }
-            if let ClickProposition::Comparison {
+            if let SurfaceProposition::Comparison {
                 left,
                 operator: ComparisonOperator::Equal,
                 right,
@@ -945,7 +945,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             if !word_relation {
                 continue;
             }
-            if let ClickProposition::Comparison {
+            if let SurfaceProposition::Comparison {
                 left,
                 operator: ComparisonOperator::Equal,
                 right,
@@ -960,7 +960,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         }
         let a = words.normalize(left, 0)?;
         let b = words.normalize(right, 0)?;
-        let final_goal = ClickProposition::Comparison {
+        let final_goal = SurfaceProposition::Comparison {
             left: cast_word(a.clone()),
             operator: *operator,
             right: cast_word(b.clone()),
@@ -997,7 +997,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
         }
         if let Some((base, x, y)) = distinct_tags {
-            let distinct = ClickProposition::Comparison {
+            let distinct = SurfaceProposition::Comparison {
                 left: cast_word(x.clone()),
                 operator: ComparisonOperator::NotEqual,
                 right: cast_word(y.clone()),
@@ -1011,7 +1011,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     name: "click::integer::uint64_add_distinct".into(),
                     arguments: vec![base, x.clone(), y.clone()],
                 },
-                premises: vec![ClickProposition::Comparison {
+                premises: vec![SurfaceProposition::Comparison {
                     left: cast_word(x),
                     operator: ComparisonOperator::NotEqual,
                     right: cast_word(y),
@@ -1095,8 +1095,8 @@ mod tests {
                 _ => BigInt::from(value(e, values)),
             }
         }
-        fn holds(p: &ClickProposition, values: &BTreeMap<String, u64>) -> bool {
-            let ClickProposition::Comparison {
+        fn holds(p: &SurfaceProposition, values: &BTreeMap<String, u64>) -> bool {
+            let SurfaceProposition::Comparison {
                 left,
                 operator,
                 right,

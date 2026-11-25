@@ -188,8 +188,8 @@ pub(super) fn plan_special_arithmetic(
 
 pub(in crate::surface) fn special_plan_to_surface(
     plan: &KernelPlan,
-    premises: &[ClickProposition],
-    goal: &ClickProposition,
+    premises: &[SurfaceProposition],
+    goal: &SurfaceProposition,
 ) -> SpecializedCompositionPlan {
     let nodes = plan
         .nodes
@@ -295,9 +295,9 @@ fn cited_premise_indices(node: &mut SpecialArithmeticNode) -> Vec<&mut usize> {
 /// require each to be exactly available again when it is rechecked, though
 /// the proof never depends on them.
 fn cited_premises_only(
-    premises: &[ClickProposition],
+    premises: &[SurfaceProposition],
     mut nodes: Vec<SpecialArithmeticNode>,
-) -> (Vec<ClickProposition>, Vec<SpecialArithmeticNode>) {
+) -> (Vec<SurfaceProposition>, Vec<SpecialArithmeticNode>) {
     let mut cited = vec![false; premises.len()];
     for node in &mut nodes {
         for index in cited_premise_indices(node) {
@@ -1030,11 +1030,11 @@ mod tests {
     use super::*;
     use crate::kernel::{ComparisonOperator as KernelComparisonOperator, MachineTerm, Variable};
 
-    fn bound(value: usize) -> ClickProposition {
-        ClickProposition::Comparison {
-            left: ContractExpression::IntegerLiteral("0".to_string()),
+    fn bound(value: usize) -> SurfaceProposition {
+        SurfaceProposition::Comparison {
+            left: SurfaceTerm::IntegerLiteral("0".to_string()),
             operator: ComparisonOperator::LessEqual,
-            right: ContractExpression::IntegerLiteral(value.to_string()),
+            right: SurfaceTerm::IntegerLiteral(value.to_string()),
         }
     }
 

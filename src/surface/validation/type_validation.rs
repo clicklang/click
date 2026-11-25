@@ -1,19 +1,19 @@
 use super::*;
 
-fn deep_literal_add_type(expression: &ContractExpression) -> Option<InterfaceType> {
+fn deep_literal_add_type(expression: &SurfaceTerm) -> Option<InterfaceType> {
     let mut operands = Vec::new();
     let mut current = expression;
-    while let ContractExpression::Add(left, right) = current {
+    while let SurfaceTerm::Add(left, right) = current {
         operands.push(right.as_ref());
         current = left;
     }
-    if operands.len() <= 128 || !matches!(current, ContractExpression::IntegerLiteral(_)) {
+    if operands.len() <= 128 || !matches!(current, SurfaceTerm::IntegerLiteral(_)) {
         return None;
     }
     operands.push(current);
     let mut result = None;
     for operand in operands {
-        let ContractExpression::IntegerLiteral(value) = operand else {
+        let SurfaceTerm::IntegerLiteral(value) = operand else {
             return None;
         };
         let value = value.parse::<u64>().ok()?;
@@ -61,7 +61,7 @@ pub(super) fn theorem_type_environment(theorem: &TheoremDefinition) -> BinderMap
 }
 
 pub(super) fn validate_proposition_expression_types(
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     variables: &BinderMap<InterfaceType>,
     click_functions: &BinderMap<ClickFunctionType>,
     context: &str,
@@ -69,9 +69,9 @@ pub(super) fn validate_proposition_expression_types(
     let mut pending = vec![proposition];
     while let Some(proposition) = pending.pop() {
         match proposition {
-            ClickProposition::And(left, right)
-            | ClickProposition::Or(left, right)
-            | ClickProposition::Implies(left, right) => {
+            SurfaceProposition::And(left, right)
+            | SurfaceProposition::Or(left, right)
+            | SurfaceProposition::Implies(left, right) => {
                 pending.push(right);
                 pending.push(left);
             }
@@ -87,17 +87,17 @@ pub(super) fn validate_proposition_expression_types(
 }
 
 fn validate_proposition_expression_types_one(
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     variables: &BinderMap<InterfaceType>,
     click_functions: &BinderMap<ClickFunctionType>,
     context: &str,
 ) -> Result<(), ClickError> {
     match proposition {
-        ClickProposition::Value(expression) => require_proposition_value_type(
+        SurfaceProposition::Value(expression) => require_proposition_value_type(
             infer_spec_value_type(expression, variables, click_functions, context)?,
         ),
 
-        ClickProposition::Comparison {
+        SurfaceProposition::Comparison {
             left,
             operator,
             right,
@@ -109,7 +109,7 @@ fn validate_proposition_expression_types_one(
             click_functions,
             context,
         ),
-        ClickProposition::FloatClassification { expression, .. } => {
+        SurfaceProposition::FloatClassification { expression, .. } => {
             let actual =
                 infer_contract_expression_type(expression, variables, click_functions, context)?;
             if let Some(actual) = actual
@@ -122,11 +122,11 @@ fn validate_proposition_expression_types_one(
             }
             Ok(())
         }
-        ClickProposition::Separate { left, right } => {
+        SurfaceProposition::Separate { left, right } => {
             validate_resource_subject_expression_types(left, variables, click_functions, context)?;
             validate_resource_subject_expression_types(right, variables, click_functions, context)
         }
-        ClickProposition::ResourceViewable { resource } => {
+        SurfaceProposition::ResourceViewable { resource } => {
             validate_resource_subject_expression_types(
                 resource,
                 variables,
@@ -134,7 +134,7 @@ fn validate_proposition_expression_types_one(
                 context,
             )
         }
-        ClickProposition::Contains { parent, child } => {
+        SurfaceProposition::Contains { parent, child } => {
             validate_resource_subject_expression_types(
                 parent,
                 variables,
@@ -143,16 +143,16 @@ fn validate_proposition_expression_types_one(
             )?;
             validate_resource_subject_expression_types(child, variables, click_functions, context)
         }
-        ClickProposition::Loadable { segment } => {
+        SurfaceProposition::Loadable { segment } => {
             validate_contract_segment_expression_types(segment, variables, click_functions, context)
         }
-        ClickProposition::Defined { expression } => {
+        SurfaceProposition::Defined { expression } => {
             let _ =
                 infer_contract_expression_type(expression, variables, click_functions, context)?;
             Ok(())
         }
         // `is_a<T>(p)` is about the object a pointer points to.
-        ClickProposition::IsA { pointer, .. } => {
+        SurfaceProposition::IsA { pointer, .. } => {
             match infer_contract_expression_type(pointer, variables, click_functions, context)? {
                 Some(pointer_type) if !pointer_type.is_pointer() => Err(ClickError::new(format!(
                     "{context}: `is_a<T>(p)` expects a C pointer `p`, got `{}`",
@@ -163,21 +163,21 @@ fn validate_proposition_expression_types_one(
                 _ => Ok(()),
             }
         }
-        ClickProposition::And(left, right)
-        | ClickProposition::Or(left, right)
-        | ClickProposition::Implies(left, right) => {
+        SurfaceProposition::And(left, right)
+        | SurfaceProposition::Or(left, right)
+        | SurfaceProposition::Implies(left, right) => {
             validate_proposition_expression_types(left, variables, click_functions, context)?;
             validate_proposition_expression_types(right, variables, click_functions, context)
         }
-        ClickProposition::Not(body)
-        | ClickProposition::At {
+        SurfaceProposition::Not(body)
+        | SurfaceProposition::At {
             proposition: body, ..
         } => validate_proposition_expression_types(body, variables, click_functions, context),
-        ClickProposition::ForAll {
+        SurfaceProposition::ForAll {
             click_type: ClickType::Integer,
             ..
         }
-        | ClickProposition::Exists {
+        | SurfaceProposition::Exists {
             click_type: ClickType::Integer,
             ..
         } => validate_theorem_proposition_expression_types(
@@ -187,13 +187,13 @@ fn validate_proposition_expression_types_one(
             click_functions,
             context,
         ),
-        ClickProposition::ForAll {
+        SurfaceProposition::ForAll {
             click_type: interface_type,
             name,
             body,
             ..
         }
-        | ClickProposition::Exists {
+        | SurfaceProposition::Exists {
             click_type: interface_type,
             name,
             body,
@@ -214,14 +214,14 @@ fn validate_proposition_expression_types_one(
             );
             validate_proposition_expression_types(body, &body_variables, click_functions, context)
         }
-        ClickProposition::RangeAll {
+        SurfaceProposition::RangeAll {
             start,
             end,
             item,
             body,
             ..
         }
-        | ClickProposition::RangeAny {
+        | SurfaceProposition::RangeAny {
             start,
             end,
             item,
@@ -240,7 +240,7 @@ fn validate_proposition_expression_types_one(
             body_variables.insert(item.clone(), range_item_type(start_type, end_type));
             validate_proposition_expression_types(body, &body_variables, click_functions, context)
         }
-        ClickProposition::PredicateCall { name, arguments } => {
+        SurfaceProposition::PredicateCall { name, arguments } => {
             if name == "held" {
                 let [mutex] = arguments.as_slice() else {
                     return Err(ClickError::new(format!(
@@ -303,7 +303,7 @@ fn validate_proposition_expression_types_one(
 /// scalar types; dispatching Integer comparisons here keeps that validator in
 /// place for every proposition that is still entirely C-valued.
 pub(super) fn validate_theorem_proposition_expression_types(
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     variables: &BinderMap<InterfaceType>,
     integer_bindings: &BinderSet,
     click_functions: &BinderMap<ClickFunctionType>,
@@ -320,7 +320,7 @@ pub(super) fn validate_theorem_proposition_expression_types(
 }
 
 fn validate_scoped_proposition_expression_types(
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     variables: &BinderMap<InterfaceType>,
     integer_bindings: &BinderSet,
     click_functions: &BinderMap<ClickFunctionType>,
@@ -353,7 +353,7 @@ fn validate_scoped_proposition_expression_types(
 }
 
 fn validate_scoped_integer_proposition(
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     variables: &mut BinderMap<InterfaceType>,
     integer_bindings: &mut BinderSet,
     click_functions: &BinderMap<ClickFunctionType>,
@@ -363,10 +363,10 @@ fn validate_scoped_integer_proposition(
     let mut pending = vec![proposition];
     while let Some(proposition) = pending.pop() {
         match proposition {
-            ClickProposition::Value(ContractExpression::Proposition(body)) => pending.push(body),
-            ClickProposition::And(left, right)
-            | ClickProposition::Or(left, right)
-            | ClickProposition::Implies(left, right) => {
+            SurfaceProposition::Value(SurfaceTerm::Proposition(body)) => pending.push(body),
+            SurfaceProposition::And(left, right)
+            | SurfaceProposition::Or(left, right)
+            | SurfaceProposition::Implies(left, right) => {
                 pending.push(right);
                 pending.push(left);
             }
@@ -384,7 +384,7 @@ fn validate_scoped_integer_proposition(
 }
 
 fn validate_scoped_integer_proposition_one(
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     variables: &mut BinderMap<InterfaceType>,
     integer_bindings: &mut BinderSet,
     click_functions: &BinderMap<ClickFunctionType>,
@@ -392,11 +392,11 @@ fn validate_scoped_integer_proposition_one(
     check_operands: bool,
 ) -> Result<(), ClickError> {
     match proposition {
-        ClickProposition::PredicateCall { name, arguments }
+        SurfaceProposition::PredicateCall { name, arguments }
             if click_functions.contains_key(name) =>
         {
             let actual = infer_scoped_spec_value_type(
-                &ContractExpression::Call {
+                &SurfaceTerm::Call {
                     name: name.clone(),
                     arguments: arguments.clone(),
                 },
@@ -409,7 +409,7 @@ fn validate_scoped_integer_proposition_one(
             require_proposition_value_type(actual)
         }
 
-        ClickProposition::Value(expression) => {
+        SurfaceProposition::Value(expression) => {
             require_proposition_value_type(infer_scoped_spec_value_type(
                 expression,
                 variables,
@@ -419,7 +419,7 @@ fn validate_scoped_integer_proposition_one(
                 false,
             )?)
         }
-        ClickProposition::Comparison {
+        SurfaceProposition::Comparison {
             left,
             operator,
             right,
@@ -518,9 +518,9 @@ fn validate_scoped_integer_proposition_one(
                 )
             }
         }
-        ClickProposition::And(left, right)
-        | ClickProposition::Or(left, right)
-        | ClickProposition::Implies(left, right) => {
+        SurfaceProposition::And(left, right)
+        | SurfaceProposition::Or(left, right)
+        | SurfaceProposition::Implies(left, right) => {
             validate_scoped_integer_proposition(
                 left,
                 variables,
@@ -538,8 +538,8 @@ fn validate_scoped_integer_proposition_one(
                 check_operands,
             )
         }
-        ClickProposition::Not(body)
-        | ClickProposition::At {
+        SurfaceProposition::Not(body)
+        | SurfaceProposition::At {
             proposition: body, ..
         } => validate_scoped_integer_proposition(
             body,
@@ -549,13 +549,13 @@ fn validate_scoped_integer_proposition_one(
             context,
             check_operands,
         ),
-        ClickProposition::ForAll {
+        SurfaceProposition::ForAll {
             click_type,
             name,
             body,
             ..
         }
-        | ClickProposition::Exists {
+        | SurfaceProposition::Exists {
             click_type,
             name,
             body,
@@ -601,14 +601,14 @@ fn validate_scoped_integer_proposition_one(
             }
             result
         }
-        ClickProposition::RangeAll {
+        SurfaceProposition::RangeAll {
             start,
             end,
             item,
             body,
             ..
         }
-        | ClickProposition::RangeAny {
+        | SurfaceProposition::RangeAny {
             start,
             end,
             item,
@@ -659,7 +659,7 @@ fn validate_scoped_integer_proposition_one(
 // contains only contextual numerals. Numerals alone do not change the domain
 // of an otherwise machine-valued comparison. None is outside this fragment.
 fn integer_expression_kind(
-    expression: &ContractExpression,
+    expression: &SurfaceTerm,
     integer_bindings: &BinderSet,
     click_functions: &BinderMap<ClickFunctionType>,
     locals: &mut BinderSet,
@@ -672,10 +672,10 @@ fn integer_expression_kind(
         return Some(false);
     }
     match expression {
-        ContractExpression::IntegerContext(_) => Some(true),
+        SurfaceTerm::IntegerContext(_) => Some(true),
 
-        ContractExpression::Apply { function, .. } => {
-            if let ContractExpression::Binding(name) = function.as_ref()
+        SurfaceTerm::Apply { function, .. } => {
+            if let SurfaceTerm::Binding(name) = function.as_ref()
                 && let Some(ClickType::Function { result, .. }) =
                     callback_binding_type(name, click_functions)
             {
@@ -685,9 +685,7 @@ fn integer_expression_kind(
                 .ok()
                 .map(|result| result == ClickType::Integer)
         }
-        ContractExpression::Let { value, .. }
-            if matches!(value.as_ref(), ContractExpression::Lambda { .. }) =>
-        {
+        SurfaceTerm::Let { value, .. } if matches!(value.as_ref(), SurfaceTerm::Lambda { .. }) => {
             lambdas::reduce_head(expression)
                 .ok()
                 .flatten()
@@ -696,44 +694,42 @@ fn integer_expression_kind(
                 })
         }
 
-        ContractExpression::IntegerLiteral(_) => Some(false),
-        ContractExpression::Call { name, arguments } if is_integer_truncation(name) => {
+        SurfaceTerm::IntegerLiteral(_) => Some(false),
+        SurfaceTerm::Call { name, arguments } if is_integer_truncation(name) => {
             (arguments.len() == 2).then_some(true)
         }
-        ContractExpression::Call { name, arguments } if name == "to_integer" => {
+        SurfaceTerm::Call { name, arguments } if name == "to_integer" => {
             (arguments.len() == 1).then_some(true)
         }
-        ContractExpression::ResourceField(access)
-            if access.click_type == Some(ClickType::Integer) =>
-        {
+        SurfaceTerm::ResourceField(access) if access.click_type == Some(ClickType::Integer) => {
             Some(true)
         }
-        ContractExpression::Call { name, .. } => click_functions
+        SurfaceTerm::Call { name, .. } => click_functions
             .get(name)
             .and_then(|function| (function.return_type == ClickType::Integer).then_some(true)),
-        ContractExpression::Binding(name) => {
+        SurfaceTerm::Binding(name) => {
             (locals.contains(name) || integer_bindings.contains(name)).then_some(true)
         }
-        ContractExpression::ProgramExpression(ProgramExpression::Variable(
+        SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::Named(name),
         ))
-        | ContractExpression::ProgramBinding(name) => {
+        | SurfaceTerm::ProgramBinding(name) => {
             (locals.contains(name) || integer_bindings.contains(name)).then_some(true)
         }
-        ContractExpression::Negate(inner)
-        | ContractExpression::Old(inner)
-        | ContractExpression::Exact(inner)
-        | ContractExpression::At {
+        SurfaceTerm::Negate(inner)
+        | SurfaceTerm::Old(inner)
+        | SurfaceTerm::Exact(inner)
+        | SurfaceTerm::At {
             expression: inner, ..
         } => integer_expression_kind(inner, integer_bindings, click_functions, locals),
-        ContractExpression::Add(left, right)
-        | ContractExpression::Subtract(left, right)
-        | ContractExpression::Multiply(left, right) => {
+        SurfaceTerm::Add(left, right)
+        | SurfaceTerm::Subtract(left, right)
+        | SurfaceTerm::Multiply(left, right) => {
             let left = integer_expression_kind(left, integer_bindings, click_functions, locals)?;
             let right = integer_expression_kind(right, integer_bindings, click_functions, locals)?;
             Some(left || right)
         }
-        ContractExpression::RangeFold {
+        SurfaceTerm::RangeFold {
             start,
             end,
             initial,
@@ -745,7 +741,7 @@ fn integer_expression_kind(
                 if let Ok(result) = lambdas::application_result_type(step) {
                     return Some(result == ClickType::Integer);
                 }
-                if let ContractExpression::Binding(name) = step
+                if let SurfaceTerm::Binding(name) = step
                     && let Some(ClickType::Function { result, .. }) =
                         callback_binding_type(name, click_functions)
                 {
@@ -794,7 +790,7 @@ fn integer_expression_kind(
             }
             Some(false)
         }
-        ContractExpression::Let {
+        SurfaceTerm::Let {
             name,
             click_type: Some(ClickType::Integer),
             value,
@@ -812,7 +808,7 @@ fn integer_expression_kind(
         // A `let` of a C value names that value in its body, which has its
         // own kind: under Integer arithmetic an observation such as
         // `to_integer(entry) + 1` is Integer although `entry` is not.
-        ContractExpression::Let {
+        SurfaceTerm::Let {
             name, value, body, ..
         } if integer_expression_kind(value, integer_bindings, click_functions, locals)
             != Some(true) =>
@@ -827,7 +823,7 @@ fn integer_expression_kind(
         }
         // Like a match's arms: an Integer branch makes the conditional
         // Integer, and an unsuffixed numeral branch takes the other's type.
-        ContractExpression::If {
+        SurfaceTerm::If {
             then_branch,
             else_branch,
             ..
@@ -838,7 +834,7 @@ fn integer_expression_kind(
                 integer_expression_kind(else_branch, integer_bindings, click_functions, locals)?;
             Some(then_kind || else_kind)
         }
-        ContractExpression::AlgebraicMatch { arms, .. } => {
+        SurfaceTerm::AlgebraicMatch { arms, .. } => {
             if arms.is_empty() {
                 return None;
             }
@@ -887,24 +883,24 @@ enum ScopedExpressionShape {
 }
 
 fn contains_scoped_expression_shape(
-    expression: &ContractExpression,
+    expression: &SurfaceTerm,
     shape: ScopedExpressionShape,
 ) -> bool {
     if deep_literal_add_type(expression).is_some() {
         return false;
     }
     match expression {
-        ContractExpression::IntegerContext(value) => contains_scoped_expression_shape(value, shape),
+        SurfaceTerm::IntegerContext(value) => contains_scoped_expression_shape(value, shape),
 
-        ContractExpression::Proposition(_) => false,
-        ContractExpression::Resource(_) => false,
-        ContractExpression::RegionResult(_)
-        | ContractExpression::RegionAllocation(_)
-        | ContractExpression::RegionParameter { .. } => false,
-        ContractExpression::Lambda { body, .. } => {
+        SurfaceTerm::Proposition(_) => false,
+        SurfaceTerm::Resource(_) => false,
+        SurfaceTerm::RegionResult(_)
+        | SurfaceTerm::RegionAllocation(_)
+        | SurfaceTerm::RegionParameter { .. } => false,
+        SurfaceTerm::Lambda { body, .. } => {
             shape == ScopedExpressionShape::Lambda || contains_scoped_expression_shape(body, shape)
         }
-        ContractExpression::Apply {
+        SurfaceTerm::Apply {
             function,
             arguments,
         } => {
@@ -915,14 +911,14 @@ fn contains_scoped_expression_shape(
                     .any(|argument| contains_scoped_expression_shape(argument, shape))
         }
 
-        ContractExpression::AlgebraicMatch { scrutinee, arms } => {
+        SurfaceTerm::AlgebraicMatch { scrutinee, arms } => {
             shape == ScopedExpressionShape::AlgebraicMatch
                 || contains_scoped_expression_shape(scrutinee, shape)
                 || arms
                     .iter()
                     .any(|arm| contains_scoped_expression_shape(&arm.body, shape))
         }
-        ContractExpression::RangeFold {
+        SurfaceTerm::RangeFold {
             start,
             end,
             initial,
@@ -935,12 +931,12 @@ fn contains_scoped_expression_shape(
                 || contains_scoped_expression_shape(initial, shape)
                 || contains_scoped_expression_shape(body, shape)
         }
-        ContractExpression::AlgebraicConstructor { arguments, .. }
-        | ContractExpression::SequenceLiteral(arguments)
-        | ContractExpression::Call { arguments, .. } => arguments
+        SurfaceTerm::AlgebraicConstructor { arguments, .. }
+        | SurfaceTerm::SequenceLiteral(arguments)
+        | SurfaceTerm::Call { arguments, .. } => arguments
             .iter()
             .any(|argument| contains_scoped_expression_shape(argument, shape)),
-        ContractExpression::MethodCall {
+        SurfaceTerm::MethodCall {
             receiver,
             arguments,
             ..
@@ -950,37 +946,35 @@ fn contains_scoped_expression_shape(
                     .iter()
                     .any(|argument| contains_scoped_expression_shape(argument, shape))
         }
-        ContractExpression::SequenceConcat(left, right)
-        | ContractExpression::Add(left, right)
-        | ContractExpression::Subtract(left, right)
-        | ContractExpression::Multiply(left, right)
-        | ContractExpression::Divide(left, right)
-        | ContractExpression::Remainder(left, right)
-        | ContractExpression::ShiftLeft(left, right)
-        | ContractExpression::RustShiftLeft(left, right)
-        | ContractExpression::ShiftRight(left, right)
-        | ContractExpression::RustShiftRight(left, right)
-        | ContractExpression::BitwiseAnd(left, right)
-        | ContractExpression::BitwiseOr(left, right)
-        | ContractExpression::BitwiseXor(left, right)
-        | ContractExpression::Index(left, right) => {
+        SurfaceTerm::SequenceConcat(left, right)
+        | SurfaceTerm::Add(left, right)
+        | SurfaceTerm::Subtract(left, right)
+        | SurfaceTerm::Multiply(left, right)
+        | SurfaceTerm::Divide(left, right)
+        | SurfaceTerm::Remainder(left, right)
+        | SurfaceTerm::ShiftLeft(left, right)
+        | SurfaceTerm::RustShiftLeft(left, right)
+        | SurfaceTerm::ShiftRight(left, right)
+        | SurfaceTerm::RustShiftRight(left, right)
+        | SurfaceTerm::BitwiseAnd(left, right)
+        | SurfaceTerm::BitwiseOr(left, right)
+        | SurfaceTerm::BitwiseXor(left, right)
+        | SurfaceTerm::Index(left, right) => {
             contains_scoped_expression_shape(left, shape)
                 || contains_scoped_expression_shape(right, shape)
         }
-        ContractExpression::Field { base, .. }
-        | ContractExpression::CUnary { operand: base, .. }
-        | ContractExpression::MemoryLoad { pointer: base, .. }
-        | ContractExpression::Negate(base)
-        | ContractExpression::Old(base)
-        | ContractExpression::Exact(base)
-        | ContractExpression::At {
+        SurfaceTerm::Field { base, .. }
+        | SurfaceTerm::CUnary { operand: base, .. }
+        | SurfaceTerm::MemoryLoad { pointer: base, .. }
+        | SurfaceTerm::Negate(base)
+        | SurfaceTerm::Old(base)
+        | SurfaceTerm::Exact(base)
+        | SurfaceTerm::At {
             expression: base, ..
         }
-        | ContractExpression::BitwiseNot(base) => contains_scoped_expression_shape(base, shape),
-        ContractExpression::ArrayIndex { base, .. } => {
-            contains_scoped_expression_shape(base, shape)
-        }
-        ContractExpression::If {
+        | SurfaceTerm::BitwiseNot(base) => contains_scoped_expression_shape(base, shape),
+        SurfaceTerm::ArrayIndex { base, .. } => contains_scoped_expression_shape(base, shape),
+        SurfaceTerm::If {
             then_branch,
             else_branch,
             ..
@@ -988,24 +982,24 @@ fn contains_scoped_expression_shape(
             contains_scoped_expression_shape(then_branch, shape)
                 || contains_scoped_expression_shape(else_branch, shape)
         }
-        ContractExpression::Let { value, body, .. } => {
+        SurfaceTerm::Let { value, body, .. } => {
             contains_scoped_expression_shape(value, shape)
                 || contains_scoped_expression_shape(body, shape)
         }
-        ContractExpression::IntegerLiteral(_)
-        | ContractExpression::QualifiedC { .. }
-        | ContractExpression::ResourceField(_)
-        | ContractExpression::AlgebraicVariable { .. }
-        | ContractExpression::Binding(_)
-        | ContractExpression::ProgramExpression(_)
-        | ContractExpression::ProgramBinding(_)
-        | ContractExpression::ResourceCount(_)
-        | ContractExpression::ResourceWildcard => false,
+        SurfaceTerm::IntegerLiteral(_)
+        | SurfaceTerm::QualifiedC { .. }
+        | SurfaceTerm::ResourceField(_)
+        | SurfaceTerm::AlgebraicVariable { .. }
+        | SurfaceTerm::Binding(_)
+        | SurfaceTerm::ProgramExpression(_)
+        | SurfaceTerm::ProgramBinding(_)
+        | SurfaceTerm::ResourceCount(_)
+        | SurfaceTerm::ResourceWildcard => false,
     }
 }
 
 fn contains_integer_expression_signal(
-    expression: &ContractExpression,
+    expression: &SurfaceTerm,
     integer_bindings: &BinderSet,
     click_functions: &BinderMap<ClickFunctionType>,
     locals: &BinderSet,
@@ -1015,43 +1009,35 @@ fn contains_integer_expression_signal(
     }
 
     match expression {
-        ContractExpression::IntegerContext(_) => true,
+        SurfaceTerm::IntegerContext(_) => true,
 
-        ContractExpression::Apply { function, .. } => {
+        SurfaceTerm::Apply { function, .. } => {
             lambdas::application_result_type(function) == Ok(ClickType::Integer)
         }
-        ContractExpression::Call { name, arguments } if is_integer_truncation(name) => {
+        SurfaceTerm::Call { name, arguments } if is_integer_truncation(name) => {
             arguments.len() == 2
         }
-        ContractExpression::Call { name, arguments } if name == "to_integer" => {
-            arguments.len() == 1
-        }
-        ContractExpression::ResourceField(access)
-            if access.click_type == Some(ClickType::Integer) =>
-        {
-            true
-        }
-        ContractExpression::Call { name, .. } => click_functions
+        SurfaceTerm::Call { name, arguments } if name == "to_integer" => arguments.len() == 1,
+        SurfaceTerm::ResourceField(access) if access.click_type == Some(ClickType::Integer) => true,
+        SurfaceTerm::Call { name, .. } => click_functions
             .get(name)
             .is_some_and(|function| function.return_type == ClickType::Integer),
-        ContractExpression::Binding(name) => {
-            locals.contains(name) || integer_bindings.contains(name)
-        }
-        ContractExpression::ProgramExpression(ProgramExpression::Variable(
+        SurfaceTerm::Binding(name) => locals.contains(name) || integer_bindings.contains(name),
+        SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::Named(name),
         ))
-        | ContractExpression::ProgramBinding(name) => {
+        | SurfaceTerm::ProgramBinding(name) => {
             locals.contains(name) || integer_bindings.contains(name)
         }
-        ContractExpression::Negate(inner)
-        | ContractExpression::Old(inner)
-        | ContractExpression::Exact(inner)
-        | ContractExpression::At {
+        SurfaceTerm::Negate(inner)
+        | SurfaceTerm::Old(inner)
+        | SurfaceTerm::Exact(inner)
+        | SurfaceTerm::At {
             expression: inner, ..
         } => contains_integer_expression_signal(inner, integer_bindings, click_functions, locals),
-        ContractExpression::Add(left, right)
-        | ContractExpression::Subtract(left, right)
-        | ContractExpression::Multiply(left, right) => {
+        SurfaceTerm::Add(left, right)
+        | SurfaceTerm::Subtract(left, right)
+        | SurfaceTerm::Multiply(left, right) => {
             contains_integer_expression_signal(left, integer_bindings, click_functions, locals)
                 || contains_integer_expression_signal(
                     right,
@@ -1060,7 +1046,7 @@ fn contains_integer_expression_signal(
                     locals,
                 )
         }
-        ContractExpression::RangeFold {
+        SurfaceTerm::RangeFold {
             start,
             end,
             initial,
@@ -1088,7 +1074,7 @@ fn contains_integer_expression_signal(
                     &body_locals,
                 )
         }
-        ContractExpression::Let {
+        SurfaceTerm::Let {
             name,
             click_type,
             value,
@@ -1112,7 +1098,7 @@ fn contains_integer_expression_signal(
                     &body_locals,
                 )
         }
-        ContractExpression::If {
+        SurfaceTerm::If {
             then_branch,
             else_branch,
             ..
@@ -1129,7 +1115,7 @@ fn contains_integer_expression_signal(
                 locals,
             )
         }
-        ContractExpression::AlgebraicMatch { arms, .. } => arms.iter().any(|arm| {
+        SurfaceTerm::AlgebraicMatch { arms, .. } => arms.iter().any(|arm| {
             contains_integer_expression_signal(&arm.body, integer_bindings, click_functions, locals)
         }),
         _ => false,
@@ -1208,10 +1194,10 @@ fn spec_value_matches_click_type(actual: &SpecValueType, expected: &ClickType) -
 /// rather than C's promoted `int32`. `None` when `value` is not such
 /// arithmetic. Each spine node is visited once.
 pub(super) fn narrow_arithmetic_value_type(
-    value: &ContractExpression,
+    value: &SurfaceTerm,
     expected: &ClickType,
     position: &str,
-    infer: &mut dyn FnMut(&ContractExpression) -> Result<SpecValueType, ClickError>,
+    infer: &mut dyn FnMut(&SurfaceTerm) -> Result<SpecValueType, ClickError>,
 ) -> Result<Option<SpecValueType>, ClickError> {
     let ClickType::Program(
         interface_type @ (InterfaceType::Int8
@@ -1223,27 +1209,27 @@ pub(super) fn narrow_arithmetic_value_type(
         return Ok(None);
     };
     fn spine(
-        value: &ContractExpression,
+        value: &SurfaceTerm,
         interface_type: InterfaceType,
         position: &str,
-        infer: &mut dyn FnMut(&ContractExpression) -> Result<SpecValueType, ClickError>,
+        infer: &mut dyn FnMut(&SurfaceTerm) -> Result<SpecValueType, ClickError>,
         root: bool,
     ) -> Result<bool, ClickError> {
         match value {
-            ContractExpression::Add(left, right)
-            | ContractExpression::Subtract(left, right)
-            | ContractExpression::Multiply(left, right)
-            | ContractExpression::BitwiseAnd(left, right)
-            | ContractExpression::BitwiseOr(left, right)
-            | ContractExpression::BitwiseXor(left, right) => {
+            SurfaceTerm::Add(left, right)
+            | SurfaceTerm::Subtract(left, right)
+            | SurfaceTerm::Multiply(left, right)
+            | SurfaceTerm::BitwiseAnd(left, right)
+            | SurfaceTerm::BitwiseOr(left, right)
+            | SurfaceTerm::BitwiseXor(left, right) => {
                 Ok(spine(left, interface_type, position, infer, false)?
                     && spine(right, interface_type, position, infer, false)?)
             }
-            ContractExpression::BitwiseNot(operand) => {
+            SurfaceTerm::BitwiseNot(operand) => {
                 spine(operand, interface_type, position, infer, false)
             }
             _ if root => Ok(false),
-            ContractExpression::IntegerLiteral(_) => Ok(true),
+            SurfaceTerm::IntegerLiteral(_) => Ok(true),
             leaf => match infer(leaf)? {
                 SpecValueType::Scalar(Some(actual)) if actual == interface_type => Ok(true),
                 // An operand of another machine type: a conversion that can
@@ -1369,7 +1355,7 @@ pub(super) fn callback_binding_type(
 }
 
 pub(super) fn infer_scoped_spec_value_type(
-    expression: &ContractExpression,
+    expression: &SurfaceTerm,
     variables: &BinderMap<InterfaceType>,
     integer_bindings: &BinderSet,
     click_functions: &BinderMap<ClickFunctionType>,
@@ -1387,7 +1373,7 @@ pub(super) fn infer_scoped_spec_value_type(
     }
 
     match expression {
-        ContractExpression::IntegerContext(value) => {
+        SurfaceTerm::IntegerContext(value) => {
             let actual = infer_scoped_spec_value_type(
                 value,
                 variables,
@@ -1404,7 +1390,7 @@ pub(super) fn infer_scoped_spec_value_type(
             Ok(SpecValueType::Integer)
         }
 
-        ContractExpression::Binding(name)
+        SurfaceTerm::Binding(name)
             if !variables.contains_key(name)
                 && !integer_bindings.contains(name)
                 && callback_binding_type(name, click_functions).is_some() =>
@@ -1413,7 +1399,7 @@ pub(super) fn infer_scoped_spec_value_type(
                 callback_binding_type(name, click_functions).unwrap(),
             ))
         }
-        ContractExpression::Proposition(proposition) => {
+        SurfaceTerm::Proposition(proposition) => {
             validate_scoped_proposition_expression_types(
                 proposition,
                 variables,
@@ -1424,7 +1410,7 @@ pub(super) fn infer_scoped_spec_value_type(
             )?;
             Ok(SpecValueType::Proposition)
         }
-        ContractExpression::Lambda {
+        SurfaceTerm::Lambda {
             parameters,
             result,
             body,
@@ -1442,12 +1428,12 @@ pub(super) fn infer_scoped_spec_value_type(
                 parameters, result,
             )))
         }
-        ContractExpression::Apply {
+        SurfaceTerm::Apply {
             function,
             arguments,
         } => {
             crate::instrumentation::record_deterministic_work(1 + arguments.len());
-            if matches!(function.as_ref(), ContractExpression::Lambda { .. }) {
+            if matches!(function.as_ref(), SurfaceTerm::Lambda { .. }) {
                 infer_scoped_spec_value_type(
                     function,
                     variables,
@@ -1457,7 +1443,7 @@ pub(super) fn infer_scoped_spec_value_type(
                     false,
                 )?;
             }
-            if !matches!(function.as_ref(), ContractExpression::Lambda { .. }) {
+            if !matches!(function.as_ref(), SurfaceTerm::Lambda { .. }) {
                 let actual = infer_scoped_spec_value_type(
                     function,
                     variables,
@@ -1472,7 +1458,7 @@ pub(super) fn infer_scoped_spec_value_type(
                         "application expects a specification lambda value",
                     ));
                 };
-                let ContractExpression::Apply { arguments, .. } = expression else {
+                let SurfaceTerm::Apply { arguments, .. } = expression else {
                     unreachable!()
                 };
                 if parameters.len() != arguments.len() {
@@ -1519,26 +1505,21 @@ pub(super) fn infer_scoped_spec_value_type(
             )
         }
 
-        ContractExpression::ResourceField(access)
-            if access.click_type == Some(ClickType::Integer) =>
-        {
+        SurfaceTerm::ResourceField(access) if access.click_type == Some(ClickType::Integer) => {
             Ok(SpecValueType::Integer)
         }
-        ContractExpression::IntegerLiteral(_) if expected_integer => Ok(SpecValueType::Integer),
-        ContractExpression::Binding(name) if integer_bindings.contains(name) => {
-            Ok(SpecValueType::Integer)
-        }
-        ContractExpression::ProgramExpression(ProgramExpression::Variable(
+        SurfaceTerm::IntegerLiteral(_) if expected_integer => Ok(SpecValueType::Integer),
+        SurfaceTerm::Binding(name) if integer_bindings.contains(name) => Ok(SpecValueType::Integer),
+        SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::Named(name),
         ))
-        | ContractExpression::ProgramBinding(name)
+        | SurfaceTerm::ProgramBinding(name)
             if integer_bindings.contains(name) =>
         {
             Ok(SpecValueType::Integer)
         }
-        ContractExpression::Negate(inner) => {
-            if !expected_integer && matches!(inner.as_ref(), ContractExpression::IntegerLiteral(_))
-            {
+        SurfaceTerm::Negate(inner) => {
+            if !expected_integer && matches!(inner.as_ref(), SurfaceTerm::IntegerLiteral(_)) {
                 // Type the signed literal as a whole: INT32_MIN's positive
                 // magnitude alone needs int64, but its negation is int32.
                 return infer_contract_expression_type(
@@ -1566,9 +1547,9 @@ pub(super) fn infer_scoped_spec_value_type(
                 ))),
             }
         }
-        ContractExpression::Add(left, right)
-        | ContractExpression::Subtract(left, right)
-        | ContractExpression::Multiply(left, right) => {
+        SurfaceTerm::Add(left, right)
+        | SurfaceTerm::Subtract(left, right)
+        | SurfaceTerm::Multiply(left, right) => {
             let (left, right) = infer_scoped_arithmetic_operands(
                 left,
                 right,
@@ -1584,15 +1565,15 @@ pub(super) fn infer_scoped_spec_value_type(
             let left_c = scoped_scalar_type(&left);
             let right_c = scoped_scalar_type(&right);
             let result = match expression {
-                ContractExpression::Add(_, _) => pointer_arithmetic_type(left_c, right_c)
+                SurfaceTerm::Add(_, _) => pointer_arithmetic_type(left_c, right_c)
                     .or_else(|| arithmetic_result_type(left_c, right_c)),
-                ContractExpression::Subtract(_, _) => subtract_expression_type(left_c, right_c),
-                ContractExpression::Multiply(_, _) => arithmetic_result_type(left_c, right_c),
+                SurfaceTerm::Subtract(_, _) => subtract_expression_type(left_c, right_c),
+                SurfaceTerm::Multiply(_, _) => arithmetic_result_type(left_c, right_c),
                 _ => unreachable!(),
             };
             Ok(SpecValueType::Scalar(result))
         }
-        ContractExpression::Divide(left, right) => {
+        SurfaceTerm::Divide(left, right) => {
             let (left, right) = infer_scoped_arithmetic_operands(
                 left,
                 right,
@@ -1612,14 +1593,14 @@ pub(super) fn infer_scoped_spec_value_type(
                 scoped_scalar_type(&right),
             )))
         }
-        ContractExpression::Remainder(left, right)
-        | ContractExpression::BitwiseAnd(left, right)
-        | ContractExpression::BitwiseOr(left, right)
-        | ContractExpression::BitwiseXor(left, right)
-        | ContractExpression::ShiftLeft(left, right)
-        | ContractExpression::RustShiftLeft(left, right)
-        | ContractExpression::ShiftRight(left, right)
-        | ContractExpression::RustShiftRight(left, right) => {
+        SurfaceTerm::Remainder(left, right)
+        | SurfaceTerm::BitwiseAnd(left, right)
+        | SurfaceTerm::BitwiseOr(left, right)
+        | SurfaceTerm::BitwiseXor(left, right)
+        | SurfaceTerm::ShiftLeft(left, right)
+        | SurfaceTerm::RustShiftLeft(left, right)
+        | SurfaceTerm::ShiftRight(left, right)
+        | SurfaceTerm::RustShiftRight(left, right) => {
             let (left, right) = infer_scoped_arithmetic_operands(
                 left,
                 right,
@@ -1636,13 +1617,13 @@ pub(super) fn infer_scoped_spec_value_type(
             }
             if matches!(
                 expression,
-                ContractExpression::RustShiftLeft(..) | ContractExpression::RustShiftRight(..)
+                SurfaceTerm::RustShiftLeft(..) | SurfaceTerm::RustShiftRight(..)
             ) {
                 return Ok(left);
             }
             if matches!(
                 expression,
-                ContractExpression::ShiftLeft(..) | ContractExpression::ShiftRight(..)
+                SurfaceTerm::ShiftLeft(..) | SurfaceTerm::ShiftRight(..)
             ) {
                 return Ok(SpecValueType::Scalar(contract_shift_result_type(
                     scoped_scalar_type(&left),
@@ -1655,7 +1636,7 @@ pub(super) fn infer_scoped_spec_value_type(
                 scoped_scalar_type(&right),
             )))
         }
-        ContractExpression::BitwiseNot(inner) => {
+        SurfaceTerm::BitwiseNot(inner) => {
             let inner = infer_scoped_spec_value_type(
                 inner,
                 variables,
@@ -1685,7 +1666,7 @@ pub(super) fn infer_scoped_spec_value_type(
                     }),
             ))
         }
-        ContractExpression::Index(base, index) => {
+        SurfaceTerm::Index(base, index) => {
             let _ = infer_scoped_spec_value_type(
                 index,
                 variables,
@@ -1711,7 +1692,7 @@ pub(super) fn infer_scoped_spec_value_type(
                 scoped_scalar_type(&base).and_then(pointer_element_type),
             ))
         }
-        ContractExpression::If {
+        SurfaceTerm::If {
             then_branch,
             else_branch,
             ..
@@ -1753,7 +1734,7 @@ pub(super) fn infer_scoped_spec_value_type(
                 )))
             }
         }
-        ContractExpression::RangeFold { .. } => infer_scoped_range_fold_type(
+        SurfaceTerm::RangeFold { .. } => infer_scoped_range_fold_type(
             expression,
             variables,
             integer_bindings,
@@ -1761,7 +1742,7 @@ pub(super) fn infer_scoped_spec_value_type(
             context,
             expected_integer,
         ),
-        ContractExpression::Let {
+        SurfaceTerm::Let {
             name,
             click_type,
             value,
@@ -1860,7 +1841,7 @@ pub(super) fn infer_scoped_spec_value_type(
                 expected_integer,
             )
         }
-        ContractExpression::Call { name, arguments } if is_integer_truncation(name) => {
+        SurfaceTerm::Call { name, arguments } if is_integer_truncation(name) => {
             let (left, right) =
                 integer_truncation_arguments(name, arguments).map_err(ClickError::new)?;
             for argument in [left, right] {
@@ -1880,7 +1861,7 @@ pub(super) fn infer_scoped_spec_value_type(
             }
             Ok(SpecValueType::Integer)
         }
-        ContractExpression::Call { name, arguments } if name == "to_integer" => {
+        SurfaceTerm::Call { name, arguments } if name == "to_integer" => {
             let argument = integer_conversion_argument(name, arguments).map_err(ClickError::new)?;
             let argument_type = infer_scoped_spec_value_type(
                 argument,
@@ -1914,14 +1895,14 @@ pub(super) fn infer_scoped_spec_value_type(
                 ))),
             }
         }
-        ContractExpression::Call { name, arguments } if name == "to_nat" => {
+        SurfaceTerm::Call { name, arguments } if name == "to_nat" => {
             let argument = integer_conversion_argument(name, arguments).map_err(ClickError::new)?;
             validate_to_nat_argument_type(argument, variables, click_functions, context)?;
             Ok(SpecValueType::Algebraic(
                 AlgebraicTypeApplication::concrete("Nat"),
             ))
         }
-        ContractExpression::Call { name, arguments } => {
+        SurfaceTerm::Call { name, arguments } => {
             let Some(function) = click_functions.get(name) else {
                 return Ok(SpecValueType::Scalar(infer_contract_expression_type(
                     expression,
@@ -2017,9 +1998,9 @@ pub(super) fn infer_scoped_spec_value_type(
                 ClickType::Function { .. } | ClickType::Parameter(_) => SpecValueType::Scalar(None),
             })
         }
-        ContractExpression::Old(inner)
-        | ContractExpression::Exact(inner)
-        | ContractExpression::At {
+        SurfaceTerm::Old(inner)
+        | SurfaceTerm::Exact(inner)
+        | SurfaceTerm::At {
             expression: inner, ..
         } => infer_scoped_spec_value_type(
             inner,
@@ -2034,8 +2015,8 @@ pub(super) fn infer_scoped_spec_value_type(
 }
 
 fn infer_scoped_arithmetic_operands(
-    left: &ContractExpression,
-    right: &ContractExpression,
+    left: &SurfaceTerm,
+    right: &SurfaceTerm,
     variables: &BinderMap<InterfaceType>,
     integer_bindings: &BinderSet,
     click_functions: &BinderMap<ClickFunctionType>,
@@ -2124,14 +2105,14 @@ fn range_item_type(start: Option<InterfaceType>, end: Option<InterfaceType>) -> 
 }
 
 pub(super) fn infer_scoped_range_fold_bindings(
-    expression: &ContractExpression,
+    expression: &SurfaceTerm,
     variables: &BinderMap<InterfaceType>,
     integer_bindings: &BinderSet,
     click_functions: &BinderMap<ClickFunctionType>,
     context: &str,
     expected_integer: bool,
 ) -> Result<(ClickType, ClickType), ClickError> {
-    let ContractExpression::RangeFold {
+    let SurfaceTerm::RangeFold {
         start,
         end,
         initial,
@@ -2164,7 +2145,7 @@ pub(super) fn infer_scoped_range_fold_bindings(
         let uint64 = |ty: &SpecValueType| {
             matches!(ty, SpecValueType::Scalar(Some(InterfaceType::UInt64(_))))
         };
-        let literal = |expression: &ContractExpression| {
+        let literal = |expression: &SurfaceTerm| {
             matches!(
                 contract_expression_as_program_expression(expression),
                 Some(ProgramExpression::Value(ProgramValue::Int32(value)))
@@ -2290,14 +2271,14 @@ pub(super) fn infer_scoped_range_fold_bindings(
 }
 
 fn infer_scoped_range_fold_type(
-    expression: &ContractExpression,
+    expression: &SurfaceTerm,
     variables: &BinderMap<InterfaceType>,
     integer_bindings: &BinderSet,
     click_functions: &BinderMap<ClickFunctionType>,
     context: &str,
     expected_integer: bool,
 ) -> Result<SpecValueType, ClickError> {
-    let ContractExpression::RangeFold {
+    let SurfaceTerm::RangeFold {
         accumulator,
         item,
         body,
@@ -2373,9 +2354,9 @@ fn infer_scoped_range_fold_type(
 }
 
 fn validate_comparison_expression_types(
-    left: &ContractExpression,
+    left: &SurfaceTerm,
     operator: ComparisonOperator,
-    right: &ContractExpression,
+    right: &SurfaceTerm,
     variables: &BinderMap<InterfaceType>,
     click_functions: &BinderMap<ClickFunctionType>,
     context: &str,
@@ -2383,7 +2364,7 @@ fn validate_comparison_expression_types(
     if contains_scoped_expression_shape(left, ScopedExpressionShape::Lambda)
         || contains_scoped_expression_shape(right, ScopedExpressionShape::Lambda)
     {
-        let proposition = ClickProposition::Comparison {
+        let proposition = SurfaceProposition::Comparison {
             left: left.clone(),
             operator,
             right: right.clone(),
@@ -2407,9 +2388,9 @@ fn validate_comparison_expression_types(
 }
 
 fn validate_comparison_expression_types_without_lambda(
-    left: &ContractExpression,
+    left: &SurfaceTerm,
     operator: ComparisonOperator,
-    right: &ContractExpression,
+    right: &SurfaceTerm,
     variables: &BinderMap<InterfaceType>,
     click_functions: &BinderMap<ClickFunctionType>,
     context: &str,
@@ -2555,7 +2536,7 @@ fn validate_comparison_expression_types_without_lambda(
 /// not the claim `count == 1`. A value whose type this pass cannot infer is
 /// left to lowering.
 pub(super) fn refuse_bool_literal_comparisons(
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     variables: &BinderMap<InterfaceType>,
     click_functions: &BinderMap<ClickFunctionType>,
     context: &str,
@@ -2564,12 +2545,12 @@ pub(super) fn refuse_bool_literal_comparisons(
     while let Some((proposition, scoped)) = pending.pop() {
         let scope = scoped.as_ref().unwrap_or(variables);
         match proposition {
-            ClickProposition::Comparison {
+            SurfaceProposition::Comparison {
                 left,
                 operator,
                 right,
             } => {
-                let infer = |expression: &ContractExpression| {
+                let infer = |expression: &SurfaceTerm| {
                     if crate::surface::bool_literal_value(expression).is_some() {
                         return SpecValueType::Scalar(Some(InterfaceType::Bool));
                     }
@@ -2588,25 +2569,25 @@ pub(super) fn refuse_bool_literal_comparisons(
                     context,
                 )?;
             }
-            ClickProposition::And(left, right)
-            | ClickProposition::Or(left, right)
-            | ClickProposition::Implies(left, right) => {
+            SurfaceProposition::And(left, right)
+            | SurfaceProposition::Or(left, right)
+            | SurfaceProposition::Implies(left, right) => {
                 pending.push((right, scoped.clone()));
                 pending.push((left, scoped));
             }
-            ClickProposition::Not(body)
-            | ClickProposition::At {
+            SurfaceProposition::Not(body)
+            | SurfaceProposition::At {
                 proposition: body, ..
             } => {
                 pending.push((body, scoped));
             }
-            ClickProposition::ForAll {
+            SurfaceProposition::ForAll {
                 click_type,
                 name,
                 body,
                 ..
             }
-            | ClickProposition::Exists {
+            | SurfaceProposition::Exists {
                 click_type,
                 name,
                 body,
@@ -2619,8 +2600,8 @@ pub(super) fn refuse_bool_literal_comparisons(
                 };
                 pending.push((body, Some(body_variables)));
             }
-            ClickProposition::RangeAll { item, body, .. }
-            | ClickProposition::RangeAny { item, body, .. } => {
+            SurfaceProposition::RangeAll { item, body, .. }
+            | SurfaceProposition::RangeAny { item, body, .. } => {
                 let mut body_variables = scope.clone();
                 body_variables.remove(item);
                 pending.push((body, Some(body_variables)));
@@ -2636,18 +2617,17 @@ pub(super) fn refuse_bool_literal_comparisons(
 /// `Bool`s ordered, is refused here when both types are known; lowering
 /// refuses the rest.
 fn refuse_bool_integer_comparison(
-    left: &ContractExpression,
+    left: &SurfaceTerm,
     left_type: &SpecValueType,
     operator: ComparisonOperator,
-    right: &ContractExpression,
+    right: &SurfaceTerm,
     right_type: &SpecValueType,
     context: &str,
 ) -> Result<(), ClickError> {
     let is_bool = |value_type: &SpecValueType| {
         matches!(value_type, SpecValueType::Scalar(Some(InterfaceType::Bool)))
     };
-    let is_integer = |expression: &ContractExpression, value_type: &SpecValueType| match value_type
-    {
+    let is_integer = |expression: &SurfaceTerm, value_type: &SpecValueType| match value_type {
         SpecValueType::Scalar(Some(InterfaceType::Bool)) => false,
         SpecValueType::Scalar(Some(interface_type)) => {
             type_is_arithmetic(*interface_type) && !type_is_float(*interface_type)
@@ -2690,7 +2670,7 @@ fn refuse_bool_integer_comparison(
 /// implicit promotion included, is refused; its integer value is the
 /// written cast `b as int32`. Reads the operand types already inferred.
 fn refuse_bool_arithmetic_operands(
-    operands: [(&ContractExpression, Option<InterfaceType>); 2],
+    operands: [(&SurfaceTerm, Option<InterfaceType>); 2],
     context: &str,
 ) -> Result<(), ClickError> {
     for (operand, operand_type) in operands {
@@ -2711,9 +2691,9 @@ fn refuse_bool_arithmetic_operands(
 /// `value == true`, so this is also what refuses `requires count;` for an
 /// integer `count`: Click does not read an integer as a truth value.
 fn refuse_bool_literal_comparison(
-    left: &ContractExpression,
+    left: &SurfaceTerm,
     left_type: &SpecValueType,
-    right: &ContractExpression,
+    right: &SurfaceTerm,
     right_type: &SpecValueType,
     context: &str,
 ) -> Result<(), ClickError> {
@@ -2738,7 +2718,7 @@ fn refuse_bool_literal_comparison(
 }
 
 pub(super) fn validate_to_nat_argument_type(
-    argument: &ContractExpression,
+    argument: &SurfaceTerm,
     variables: &BinderMap<InterfaceType>,
     click_functions: &BinderMap<ClickFunctionType>,
     context: &str,
@@ -2747,20 +2727,20 @@ pub(super) fn validate_to_nat_argument_type(
     // resolved by the Integer lowerer. Contextual numerals inherit the
     // conversion's expected Integer type instead of selecting C arithmetic.
     let valid = match argument {
-        ContractExpression::IntegerLiteral(_) => true,
-        ContractExpression::Binding(name) => !variables.contains_key(name),
-        ContractExpression::Negate(inner)
-        | ContractExpression::Old(inner)
-        | ContractExpression::Exact(inner)
-        | ContractExpression::At {
+        SurfaceTerm::IntegerLiteral(_) => true,
+        SurfaceTerm::Binding(name) => !variables.contains_key(name),
+        SurfaceTerm::Negate(inner)
+        | SurfaceTerm::Old(inner)
+        | SurfaceTerm::Exact(inner)
+        | SurfaceTerm::At {
             expression: inner, ..
         } => {
             validate_to_nat_argument_type(inner, variables, click_functions, context)?;
             true
         }
-        ContractExpression::Add(left, right)
-        | ContractExpression::Subtract(left, right)
-        | ContractExpression::Multiply(left, right) => {
+        SurfaceTerm::Add(left, right)
+        | SurfaceTerm::Subtract(left, right)
+        | SurfaceTerm::Multiply(left, right) => {
             validate_to_nat_argument_type(left, variables, click_functions, context)?;
             validate_to_nat_argument_type(right, variables, click_functions, context)?;
             true
@@ -2797,13 +2777,13 @@ fn return_type_needs_instantiation(click_type: &ClickType) -> bool {
 }
 
 fn infer_spec_value_type(
-    expression: &ContractExpression,
+    expression: &SurfaceTerm,
     variables: &BinderMap<InterfaceType>,
     click_functions: &BinderMap<ClickFunctionType>,
     context: &str,
 ) -> Result<SpecValueType, ClickError> {
     match expression {
-        ContractExpression::IntegerContext(value) => infer_scoped_spec_value_type(
+        SurfaceTerm::IntegerContext(value) => infer_scoped_spec_value_type(
             value,
             variables,
             &BinderSet::new(),
@@ -2812,7 +2792,7 @@ fn infer_spec_value_type(
             true,
         ),
 
-        ContractExpression::Binding(name)
+        SurfaceTerm::Binding(name)
             if !variables.contains_key(name)
                 && callback_binding_type(name, click_functions).is_some() =>
         {
@@ -2821,15 +2801,15 @@ fn infer_spec_value_type(
             ))
         }
 
-        ContractExpression::Proposition(_) => Ok(SpecValueType::Proposition),
-        ContractExpression::Lambda {
+        SurfaceTerm::Proposition(_) => Ok(SpecValueType::Proposition),
+        SurfaceTerm::Lambda {
             parameters, result, ..
         } => Ok(SpecValueType::Function(lambdas::signature(
             parameters, result,
         ))),
-        ContractExpression::Apply { function, .. } => Ok(
+        SurfaceTerm::Apply { function, .. } => Ok(
             match match function.as_ref() {
-                ContractExpression::Binding(name)
+                SurfaceTerm::Binding(name)
                     if callback_binding_type(name, click_functions).is_some() =>
                 {
                     let ClickType::Function { result, .. } =
@@ -2853,12 +2833,10 @@ fn infer_spec_value_type(
             },
         ),
 
-        ContractExpression::ResourceField(access)
-            if access.click_type == Some(ClickType::Integer) =>
-        {
+        SurfaceTerm::ResourceField(access) if access.click_type == Some(ClickType::Integer) => {
             Ok(SpecValueType::Integer)
         }
-        ContractExpression::ResourceField(access)
+        SurfaceTerm::ResourceField(access)
             if matches!(access.click_type, Some(ClickType::Algebraic(_))) =>
         {
             let Some(ClickType::Algebraic(application)) = &access.click_type else {
@@ -2866,13 +2844,13 @@ fn infer_spec_value_type(
             };
             Ok(SpecValueType::Algebraic(application.clone()))
         }
-        ContractExpression::AlgebraicVariable { algebraic_type, .. } => {
+        SurfaceTerm::AlgebraicVariable { algebraic_type, .. } => {
             Ok(SpecValueType::Algebraic(algebraic_type.clone()))
         }
-        ContractExpression::AlgebraicConstructor { algebraic_type, .. } => {
+        SurfaceTerm::AlgebraicConstructor { algebraic_type, .. } => {
             Ok(SpecValueType::Algebraic(algebraic_type.clone()))
         }
-        ContractExpression::If {
+        SurfaceTerm::If {
             then_branch,
             else_branch,
             ..
@@ -2906,7 +2884,7 @@ fn infer_spec_value_type(
                 ))),
             }
         }
-        ContractExpression::AlgebraicMatch { arms, .. } => {
+        SurfaceTerm::AlgebraicMatch { arms, .. } => {
             if let Some(first) = arms.first()
                 && let SpecValueType::Algebraic(application) =
                     infer_spec_value_type(&first.body, variables, click_functions, context)?
@@ -2920,7 +2898,7 @@ fn infer_spec_value_type(
                 context,
             )?))
         }
-        ContractExpression::SequenceLiteral(elements) => {
+        SurfaceTerm::SequenceLiteral(elements) => {
             let mut element_type = None;
             for element in elements {
                 let actual =
@@ -2946,7 +2924,7 @@ fn infer_spec_value_type(
             }
             Ok(SpecValueType::Sequence(element_type))
         }
-        ContractExpression::SequenceConcat(left, right) => {
+        SurfaceTerm::SequenceConcat(left, right) => {
             let SpecValueType::Sequence(left) =
                 infer_spec_value_type(left, variables, click_functions, context)?
             else {
@@ -2972,12 +2950,12 @@ fn infer_spec_value_type(
             }
             Ok(SpecValueType::Sequence(left.or(right)))
         }
-        ContractExpression::Old(inner)
-        | ContractExpression::Exact(inner)
-        | ContractExpression::At {
+        SurfaceTerm::Old(inner)
+        | SurfaceTerm::Exact(inner)
+        | SurfaceTerm::At {
             expression: inner, ..
         } => infer_spec_value_type(inner, variables, click_functions, context),
-        expression @ ContractExpression::RangeFold { .. } => infer_scoped_spec_value_type(
+        expression @ SurfaceTerm::RangeFold { .. } => infer_scoped_spec_value_type(
             expression,
             variables,
             &BinderSet::new(),
@@ -2985,7 +2963,7 @@ fn infer_spec_value_type(
             context,
             false,
         ),
-        ContractExpression::Let {
+        SurfaceTerm::Let {
             name,
             click_type,
             value,
@@ -3029,7 +3007,7 @@ fn infer_spec_value_type(
             .map_err(ClickError::new)?;
             infer_spec_value_type(&substituted, variables, click_functions, context)
         }
-        expression @ ContractExpression::Call { name, .. } if is_integer_truncation(name) => {
+        expression @ SurfaceTerm::Call { name, .. } if is_integer_truncation(name) => {
             infer_scoped_spec_value_type(
                 expression,
                 variables,
@@ -3039,7 +3017,7 @@ fn infer_spec_value_type(
                 true,
             )
         }
-        ContractExpression::Call { name, arguments } if name == "to_integer" => {
+        SurfaceTerm::Call { name, arguments } if name == "to_integer" => {
             let argument = integer_conversion_argument(name, arguments).map_err(ClickError::new)?;
             if let SpecValueType::Algebraic(application) =
                 infer_spec_value_type(argument, variables, click_functions, context)?
@@ -3061,14 +3039,14 @@ fn infer_spec_value_type(
             }
             Ok(SpecValueType::Integer)
         }
-        ContractExpression::Call { name, arguments } if name == "to_nat" => {
+        SurfaceTerm::Call { name, arguments } if name == "to_nat" => {
             let argument = integer_conversion_argument(name, arguments).map_err(ClickError::new)?;
             validate_to_nat_argument_type(argument, variables, click_functions, context)?;
             Ok(SpecValueType::Algebraic(
                 AlgebraicTypeApplication::concrete("Nat"),
             ))
         }
-        ContractExpression::Call { name, arguments } => {
+        SurfaceTerm::Call { name, arguments } => {
             let Some(function) = click_functions.get(name) else {
                 return Ok(SpecValueType::Scalar(infer_contract_expression_type(
                     expression,
@@ -3157,13 +3135,13 @@ fn infer_spec_value_type(
     }
 }
 
-fn is_untyped_integer_literal_expression(expression: &ContractExpression) -> bool {
+fn is_untyped_integer_literal_expression(expression: &SurfaceTerm) -> bool {
     match expression {
-        ContractExpression::IntegerLiteral(_) => true,
-        ContractExpression::Negate(inner) => is_untyped_integer_literal_expression(inner),
-        ContractExpression::Add(left, right)
-        | ContractExpression::Subtract(left, right)
-        | ContractExpression::Multiply(left, right) => {
+        SurfaceTerm::IntegerLiteral(_) => true,
+        SurfaceTerm::Negate(inner) => is_untyped_integer_literal_expression(inner),
+        SurfaceTerm::Add(left, right)
+        | SurfaceTerm::Subtract(left, right)
+        | SurfaceTerm::Multiply(left, right) => {
             is_untyped_integer_literal_expression(left)
                 && is_untyped_integer_literal_expression(right)
         }
@@ -3746,13 +3724,13 @@ pub(in crate::surface) fn implicitly_converts(
 /// type. A literal takes its position's type when it holds its value, and
 /// is refused rather than wrapped when it does not.
 pub(in crate::surface) fn literal_fits(
-    argument: &ContractExpression,
+    argument: &SurfaceTerm,
     expected: InterfaceType,
 ) -> Option<bool> {
     let text = match argument {
-        ContractExpression::IntegerLiteral(text) => text.clone(),
-        ContractExpression::Negate(inner) => match inner.as_ref() {
-            ContractExpression::IntegerLiteral(text) => format!("-{text}"),
+        SurfaceTerm::IntegerLiteral(text) => text.clone(),
+        SurfaceTerm::Negate(inner) => match inner.as_ref() {
+            SurfaceTerm::IntegerLiteral(text) => format!("-{text}"),
             _ => return None,
         },
         _ => return None,
@@ -3921,7 +3899,7 @@ fn resource_types_compatible(
 }
 
 pub(super) fn infer_contract_expression_type(
-    expression: &ContractExpression,
+    expression: &SurfaceTerm,
     variables: &BinderMap<InterfaceType>,
     click_functions: &BinderMap<ClickFunctionType>,
     context: &str,
@@ -3930,24 +3908,20 @@ pub(super) fn infer_contract_expression_type(
         return Ok(Some(value_type));
     }
     match expression {
-        ContractExpression::IntegerContext(_) => Err(ClickError::new(
+        SurfaceTerm::IntegerContext(_) => Err(ClickError::new(
             "an Integer context is not a C scalar value",
         )),
 
-        ContractExpression::Proposition(_) => {
-            Err(ClickError::new("a Prop is not a C scalar value"))
-        }
-        ContractExpression::Resource(_) => {
-            Err(ClickError::new("a Resource descriptor is not a C value"))
-        }
-        ContractExpression::RegionResult(_)
-        | ContractExpression::RegionAllocation(_)
-        | ContractExpression::RegionParameter { .. } => Ok(None),
-        ContractExpression::Lambda { .. } => Err(ClickError::new(
+        SurfaceTerm::Proposition(_) => Err(ClickError::new("a Prop is not a C scalar value")),
+        SurfaceTerm::Resource(_) => Err(ClickError::new("a Resource descriptor is not a C value")),
+        SurfaceTerm::RegionResult(_)
+        | SurfaceTerm::RegionAllocation(_)
+        | SurfaceTerm::RegionParameter { .. } => Ok(None),
+        SurfaceTerm::Lambda { .. } => Err(ClickError::new(
             "a specification lambda is not a scalar value",
         )),
-        ContractExpression::Apply { function, .. } => {
-            if let ContractExpression::Binding(name) = function.as_ref()
+        SurfaceTerm::Apply { function, .. } => {
+            if let SurfaceTerm::Binding(name) = function.as_ref()
                 && let Some(ClickType::Function { result, .. }) =
                     callback_binding_type(name, click_functions)
             {
@@ -3958,12 +3932,12 @@ pub(super) fn infer_contract_expression_type(
                 .interface_type())
         }
 
-        ContractExpression::ResourceField(access) => match &access.click_type {
+        SurfaceTerm::ResourceField(access) => match &access.click_type {
             Some(ClickType::Program(ty)) => Ok(Some(*ty)),
             Some(ClickType::Integer) => Ok(None),
             _ => Err(ClickError::new("expected a scalar resource field")),
         },
-        ContractExpression::IntegerLiteral(value) => {
+        SurfaceTerm::IntegerLiteral(value) => {
             let value = value.parse::<u64>().map_err(|_| {
                 ClickError::new(format!(
                     "arbitrary Integer literal `{value}` needs Integer context"
@@ -3977,8 +3951,8 @@ pub(super) fn infer_contract_expression_type(
                 InterfaceType::UInt64(LongRank::Long)
             }))
         }
-        ContractExpression::Negate(inner) => {
-            if let ContractExpression::IntegerLiteral(value) = inner.as_ref()
+        SurfaceTerm::Negate(inner) => {
+            if let SurfaceTerm::IntegerLiteral(value) = inner.as_ref()
                 && value
                     .parse::<u64>()
                     .is_ok_and(|value| value <= (i32::MAX as u64) + 1)
@@ -3987,12 +3961,13 @@ pub(super) fn infer_contract_expression_type(
             }
             infer_contract_expression_type(inner, variables, click_functions, context)
         }
-        ContractExpression::AlgebraicConstructor { .. }
-        | ContractExpression::AlgebraicVariable { .. } => Err(ClickError::new(format!(
-            "algebraic values are only valid in algebraic equality or as a `match` scrutinee in {context}"
-        ))),
-        ContractExpression::AlgebraicMatch { scrutinee, arms } => {
-            let ContractExpression::AlgebraicConstructor {
+        SurfaceTerm::AlgebraicConstructor { .. } | SurfaceTerm::AlgebraicVariable { .. } => {
+            Err(ClickError::new(format!(
+                "algebraic values are only valid in algebraic equality or as a `match` scrutinee in {context}"
+            )))
+        }
+        SurfaceTerm::AlgebraicMatch { scrutinee, arms } => {
+            let SurfaceTerm::AlgebraicConstructor {
                 variant, arguments, ..
             } = scrutinee.as_ref()
             else {
@@ -4011,23 +3986,23 @@ pub(super) fn infer_contract_expression_type(
             }
             infer_contract_expression_type(&arm.body, &arm_variables, click_functions, context)
         }
-        ContractExpression::SequenceLiteral(_) | ContractExpression::SequenceConcat(_, _) => {
+        SurfaceTerm::SequenceLiteral(_) | SurfaceTerm::SequenceConcat(_, _) => {
             Err(ClickError::new(format!(
                 "sequence values are only valid as operands of `==` or `!=` in {context}"
             )))
         }
-        ContractExpression::MemoryLoad { value_type, .. } => Ok((*value_type != ProgramType::Void)
+        SurfaceTerm::MemoryLoad { value_type, .. } => Ok((*value_type != ProgramType::Void)
             .then(|| generics::interface_type_from_program_type(*value_type))),
-        ContractExpression::QualifiedC {
+        SurfaceTerm::QualifiedC {
             lowered: expression,
             ..
         }
-        | ContractExpression::CUnary {
+        | SurfaceTerm::CUnary {
             lowered: expression,
             ..
         }
-        | ContractExpression::ProgramExpression(expression)
-        | ContractExpression::Field {
+        | SurfaceTerm::ProgramExpression(expression)
+        | SurfaceTerm::Field {
             lowered: expression,
             ..
         } => {
@@ -4042,7 +4017,7 @@ pub(super) fn infer_contract_expression_type(
             refuse_untyped_pointer_access(expression, variables, context)?;
             Ok(infer_program_expression_type(expression, variables))
         }
-        ContractExpression::ArrayIndex { lowered, .. } => {
+        SurfaceTerm::ArrayIndex { lowered, .. } => {
             if !variables.contains_key("result")
                 && program_expression_uses_variable(lowered, "result")
             {
@@ -4053,28 +4028,28 @@ pub(super) fn infer_contract_expression_type(
             refuse_untyped_pointer_access(lowered, variables, context)?;
             Ok(infer_program_expression_type(lowered, variables))
         }
-        ContractExpression::Binding(name) => Ok(variables.get(name).copied()),
+        SurfaceTerm::Binding(name) => Ok(variables.get(name).copied()),
         // C locals are resolved against the concrete program state during
         // lowering, not against the contract namespace used here. In
         // particular, `program::result` must not inherit the type of built-in
         // contract `result`.
-        ContractExpression::ProgramBinding(_) => Ok(None),
-        ContractExpression::ResourceCount(_) => Ok(Some(InterfaceType::Int32)),
-        ContractExpression::ResourceWildcard => Err(ClickError::new(
+        SurfaceTerm::ProgramBinding(_) => Ok(None),
+        SurfaceTerm::ResourceCount(_) => Ok(Some(InterfaceType::Int32)),
+        SurfaceTerm::ResourceWildcard => Err(ClickError::new(
             "`_` is only valid inside a `count(...)` resource pattern",
         )),
-        ContractExpression::Old(expression)
-        | ContractExpression::Exact(expression)
-        | ContractExpression::At { expression, .. } => {
+        SurfaceTerm::Old(expression)
+        | SurfaceTerm::Exact(expression)
+        | SurfaceTerm::At { expression, .. } => {
             infer_contract_expression_type(expression, variables, click_functions, context)
         }
-        ContractExpression::Add(left, right) => {
+        SurfaceTerm::Add(left, right) => {
             infer_add_expression_type(left, right, variables, click_functions, context)
         }
-        ContractExpression::Subtract(left, right) => {
+        SurfaceTerm::Subtract(left, right) => {
             infer_subtract_expression_type(left, right, variables, click_functions, context)
         }
-        ContractExpression::Multiply(left, right) | ContractExpression::Divide(left, right) => {
+        SurfaceTerm::Multiply(left, right) | SurfaceTerm::Divide(left, right) => {
             let (left_expression, right_expression) = (left, right);
             let left = infer_contract_expression_type(left, variables, click_functions, context)?;
             let right = infer_contract_expression_type(right, variables, click_functions, context)?;
@@ -4084,10 +4059,10 @@ pub(super) fn infer_contract_expression_type(
             )?;
             Ok(arithmetic_result_type(left, right))
         }
-        ContractExpression::Remainder(left, right)
-        | ContractExpression::BitwiseAnd(left, right)
-        | ContractExpression::BitwiseOr(left, right)
-        | ContractExpression::BitwiseXor(left, right) => {
+        SurfaceTerm::Remainder(left, right)
+        | SurfaceTerm::BitwiseAnd(left, right)
+        | SurfaceTerm::BitwiseOr(left, right)
+        | SurfaceTerm::BitwiseXor(left, right) => {
             let (left_expression, right_expression) = (left, right);
             let left = infer_contract_expression_type(left, variables, click_functions, context)?;
             let right = infer_contract_expression_type(right, variables, click_functions, context)?;
@@ -4102,10 +4077,10 @@ pub(super) fn infer_contract_expression_type(
                 _ => None,
             })
         }
-        ContractExpression::ShiftLeft(left, right)
-        | ContractExpression::RustShiftLeft(left, right)
-        | ContractExpression::ShiftRight(left, right)
-        | ContractExpression::RustShiftRight(left, right) => infer_contract_shift_type(
+        SurfaceTerm::ShiftLeft(left, right)
+        | SurfaceTerm::RustShiftLeft(left, right)
+        | SurfaceTerm::ShiftRight(left, right)
+        | SurfaceTerm::RustShiftRight(left, right) => infer_contract_shift_type(
             left,
             right,
             variables,
@@ -4113,10 +4088,10 @@ pub(super) fn infer_contract_expression_type(
             context,
             matches!(
                 expression,
-                ContractExpression::RustShiftLeft(..) | ContractExpression::RustShiftRight(..)
+                SurfaceTerm::RustShiftLeft(..) | SurfaceTerm::RustShiftRight(..)
             ),
         ),
-        ContractExpression::BitwiseNot(expression) => {
+        SurfaceTerm::BitwiseNot(expression) => {
             let operand = expression.as_ref();
             let expression =
                 infer_contract_expression_type(expression, variables, click_functions, context)?;
@@ -4130,13 +4105,13 @@ pub(super) fn infer_contract_expression_type(
                     scalar_arithmetic_result_type(interface_type, interface_type)
                 }))
         }
-        ContractExpression::Index(base, index) => {
+        SurfaceTerm::Index(base, index) => {
             let _ = infer_contract_expression_type(index, variables, click_functions, context)?;
             let base = infer_contract_expression_type(base, variables, click_functions, context)?;
             refuse_untyped_pointer_operands([base], context)?;
             Ok(base.and_then(pointer_element_type))
         }
-        ContractExpression::If {
+        SurfaceTerm::If {
             then_branch,
             else_branch,
             ..
@@ -4156,7 +4131,7 @@ pub(super) fn infer_contract_expression_type(
                 (None, None) => None,
             })
         }
-        expression @ ContractExpression::RangeFold { .. } => Ok(
+        expression @ SurfaceTerm::RangeFold { .. } => Ok(
             match infer_spec_value_type(expression, variables, click_functions, context)? {
                 SpecValueType::Scalar(Some(interface_type)) => Some(interface_type),
                 SpecValueType::Integer
@@ -4167,7 +4142,7 @@ pub(super) fn infer_contract_expression_type(
                 | SpecValueType::Algebraic(_) => None,
             },
         ),
-        ContractExpression::Let {
+        SurfaceTerm::Let {
             name,
             click_type,
             value,
@@ -4201,14 +4176,14 @@ pub(super) fn infer_contract_expression_type(
             .map_err(ClickError::new)?;
             infer_contract_expression_type(&substituted, variables, click_functions, context)
         }
-        ContractExpression::MethodCall { method, .. } => Err(ClickError::new(format!(
+        SurfaceTerm::MethodCall { method, .. } => Err(ClickError::new(format!(
             "{context}: the method `{method}` was not resolved by its receiver's type"
         ))),
-        expression @ ContractExpression::Call { name, .. } if is_integer_truncation(name) => {
+        expression @ SurfaceTerm::Call { name, .. } if is_integer_truncation(name) => {
             infer_spec_value_type(expression, variables, click_functions, context)?;
             Ok(None)
         }
-        ContractExpression::Call { name, arguments } if is_integer_conversion(name) => {
+        SurfaceTerm::Call { name, arguments } if is_integer_conversion(name) => {
             let argument = integer_conversion_argument(name, arguments).map_err(ClickError::new)?;
             if name == "to_integer" {
                 if let SpecValueType::Algebraic(application) =
@@ -4238,7 +4213,7 @@ pub(super) fn infer_contract_expression_type(
                 Ok(integer_conversion_target(name))
             }
         }
-        ContractExpression::Call { name, arguments } => {
+        SurfaceTerm::Call { name, arguments } => {
             let Some(function) = click_functions.get(name) else {
                 return Ok(None);
             };
@@ -4725,8 +4700,8 @@ pub(in crate::surface) fn infer_program_expression_type(
 }
 
 fn infer_add_expression_type(
-    left: &ContractExpression,
-    right: &ContractExpression,
+    left: &SurfaceTerm,
+    right: &SurfaceTerm,
     variables: &BinderMap<InterfaceType>,
     click_functions: &BinderMap<ClickFunctionType>,
     context: &str,
@@ -4746,8 +4721,8 @@ fn infer_add_expression_type(
 }
 
 fn infer_subtract_expression_type(
-    left: &ContractExpression,
-    right: &ContractExpression,
+    left: &SurfaceTerm,
+    right: &SurfaceTerm,
     variables: &BinderMap<InterfaceType>,
     click_functions: &BinderMap<ClickFunctionType>,
     context: &str,
@@ -4958,8 +4933,8 @@ fn infer_c_shift_type(
 }
 
 fn infer_contract_shift_type(
-    left: &ContractExpression,
-    right: &ContractExpression,
+    left: &SurfaceTerm,
+    right: &SurfaceTerm,
     variables: &BinderMap<InterfaceType>,
     click_functions: &BinderMap<ClickFunctionType>,
     context: &str,
@@ -5077,19 +5052,19 @@ fn validate_contract_segment_expression_types(
     context: &str,
 ) -> Result<(), ClickError> {
     let _ = infer_contract_expression_type(
-        &ContractExpression::ProgramExpression(segment.base.clone()),
+        &SurfaceTerm::ProgramExpression(segment.base.clone()),
         variables,
         click_functions,
         context,
     )?;
     let _ = infer_contract_expression_type(
-        &ContractExpression::ProgramExpression(segment.start.clone()),
+        &SurfaceTerm::ProgramExpression(segment.start.clone()),
         variables,
         click_functions,
         context,
     )?;
     let _ = infer_contract_expression_type(
-        &ContractExpression::ProgramExpression(segment.end.clone()),
+        &SurfaceTerm::ProgramExpression(segment.end.clone()),
         variables,
         click_functions,
         context,
@@ -5246,7 +5221,7 @@ pub(super) fn validate_resource_clause(
             for (index, argument) in arguments.iter().enumerate() {
                 // Declaration expansion permits wildcards only in a checked
                 // authority pattern; they are not evaluated value arguments.
-                if matches!(argument, ContractExpression::ResourceWildcard) {
+                if matches!(argument, SurfaceTerm::ResourceWildcard) {
                     continue;
                 }
                 validate_contract_expression_calls(argument, click_functions, context)?;
@@ -5274,7 +5249,7 @@ pub(super) fn validate_resource_clause(
 }
 
 pub(super) fn validate_predicate_calls_in_proposition(
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     predicates: &BTreeMap<String, usize>,
     click_functions: &BTreeMap<String, usize>,
     context: &str,
@@ -5282,9 +5257,9 @@ pub(super) fn validate_predicate_calls_in_proposition(
     let mut pending = vec![proposition];
     while let Some(proposition) = pending.pop() {
         match proposition {
-            ClickProposition::And(left, right)
-            | ClickProposition::Or(left, right)
-            | ClickProposition::Implies(left, right) => {
+            SurfaceProposition::And(left, right)
+            | SurfaceProposition::Or(left, right)
+            | SurfaceProposition::Implies(left, right) => {
                 pending.push(right);
                 pending.push(left);
             }
@@ -5302,67 +5277,67 @@ pub(super) fn validate_predicate_calls_in_proposition(
 }
 
 fn validate_predicate_calls_in_proposition_one(
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     predicates: &BTreeMap<String, usize>,
     click_functions: &BTreeMap<String, usize>,
     context: &str,
 ) -> Result<(), ClickError> {
     match proposition {
-        ClickProposition::Value(expression) => {
+        SurfaceProposition::Value(expression) => {
             validate_contract_expression_calls(expression, click_functions, context)
         }
 
-        ClickProposition::Comparison { left, right, .. } => {
+        SurfaceProposition::Comparison { left, right, .. } => {
             validate_contract_expression_calls(left, click_functions, context)?;
             validate_contract_expression_calls(right, click_functions, context)
         }
-        ClickProposition::FloatClassification { expression, .. } => {
+        SurfaceProposition::FloatClassification { expression, .. } => {
             validate_contract_expression_calls(expression, click_functions, context)
         }
-        ClickProposition::Separate { left, right } => {
+        SurfaceProposition::Separate { left, right } => {
             validate_resource_subject_calls(left, click_functions, context)?;
             validate_resource_subject_calls(right, click_functions, context)
         }
-        ClickProposition::ResourceViewable { resource } => {
+        SurfaceProposition::ResourceViewable { resource } => {
             validate_resource_subject_calls(resource, click_functions, context)
         }
-        ClickProposition::Contains { parent, child } => {
+        SurfaceProposition::Contains { parent, child } => {
             validate_resource_subject_calls(parent, click_functions, context)?;
             validate_resource_subject_calls(child, click_functions, context)
         }
-        ClickProposition::Loadable { segment } => {
+        SurfaceProposition::Loadable { segment } => {
             validate_contract_segment_calls(segment, click_functions, context)
         }
-        ClickProposition::Defined { expression }
-        | ClickProposition::IsA {
+        SurfaceProposition::Defined { expression }
+        | SurfaceProposition::IsA {
             pointer: expression,
             ..
         } => validate_contract_expression_calls(expression, click_functions, context),
-        ClickProposition::And(left, right)
-        | ClickProposition::Or(left, right)
-        | ClickProposition::Implies(left, right) => {
+        SurfaceProposition::And(left, right)
+        | SurfaceProposition::Or(left, right)
+        | SurfaceProposition::Implies(left, right) => {
             validate_predicate_calls_in_proposition(left, predicates, click_functions, context)?;
             validate_predicate_calls_in_proposition(right, predicates, click_functions, context)
         }
-        ClickProposition::Not(body)
-        | ClickProposition::At {
+        SurfaceProposition::Not(body)
+        | SurfaceProposition::At {
             proposition: body, ..
         }
-        | ClickProposition::ForAll { body, .. }
-        | ClickProposition::Exists { body, .. } => {
+        | SurfaceProposition::ForAll { body, .. }
+        | SurfaceProposition::Exists { body, .. } => {
             validate_predicate_calls_in_proposition(body, predicates, click_functions, context)
         }
-        ClickProposition::RangeAll {
+        SurfaceProposition::RangeAll {
             start, end, body, ..
         }
-        | ClickProposition::RangeAny {
+        | SurfaceProposition::RangeAny {
             start, end, body, ..
         } => {
             validate_contract_expression_calls(start, click_functions, context)?;
             validate_contract_expression_calls(end, click_functions, context)?;
             validate_predicate_calls_in_proposition(body, predicates, click_functions, context)
         }
-        ClickProposition::PredicateCall { name, arguments } => {
+        SurfaceProposition::PredicateCall { name, arguments } => {
             if name == "held" {
                 if arguments.len() != 1 {
                     return Err(ClickError::new(format!(
@@ -5451,7 +5426,7 @@ pub(super) fn validate_program_valued_function_folds(
 }
 
 pub(super) fn validate_click_function_expression(
-    expression: &ContractExpression,
+    expression: &SurfaceTerm,
     click_functions: &BTreeMap<String, usize>,
     context: &str,
 ) -> Result<(), ClickError> {
@@ -5474,35 +5449,35 @@ fn validate_contract_segment_calls(
     context: &str,
 ) -> Result<(), ClickError> {
     validate_contract_expression_calls(
-        &ContractExpression::ProgramExpression(segment.base.clone()),
+        &SurfaceTerm::ProgramExpression(segment.base.clone()),
         click_functions,
         context,
     )?;
     validate_contract_expression_calls(
-        &ContractExpression::ProgramExpression(segment.start.clone()),
+        &SurfaceTerm::ProgramExpression(segment.start.clone()),
         click_functions,
         context,
     )?;
     validate_contract_expression_calls(
-        &ContractExpression::ProgramExpression(segment.end.clone()),
+        &SurfaceTerm::ProgramExpression(segment.end.clone()),
         click_functions,
         context,
     )
 }
 
 fn validate_contract_expression_calls(
-    expression: &ContractExpression,
+    expression: &SurfaceTerm,
     click_functions: &BTreeMap<String, usize>,
     context: &str,
 ) -> Result<(), ClickError> {
     if deep_literal_add_type(expression).is_some() {
         return Ok(());
     }
-    if let ContractExpression::Apply {
+    if let SurfaceTerm::Apply {
         function,
         arguments,
     } = expression
-        && matches!(function.as_ref(), ContractExpression::Binding(_))
+        && matches!(function.as_ref(), SurfaceTerm::Binding(_))
     {
         for argument in arguments {
             validate_contract_expression_calls(argument, click_functions, context)?;
@@ -5510,71 +5485,69 @@ fn validate_contract_expression_calls(
         return Ok(());
     }
     if let Some(reduced) = lambdas::reduce_head(expression).map_err(ClickError::new)? {
-        if let ContractExpression::Let { value, .. } = expression {
+        if let SurfaceTerm::Let { value, .. } = expression {
             validate_contract_expression_calls(value, click_functions, context)?;
         }
         return validate_contract_expression_calls(&reduced, click_functions, context);
     }
     match expression {
-        ContractExpression::IntegerContext(value) => {
+        SurfaceTerm::IntegerContext(value) => {
             validate_contract_expression_calls(value, click_functions, context)
         }
 
-        ContractExpression::Proposition(proposition) => {
+        SurfaceTerm::Proposition(proposition) => {
             validate_value_proposition_calls(proposition, click_functions, context, true)
         }
-        ContractExpression::Resource(subject) => {
+        SurfaceTerm::Resource(subject) => {
             validate_resource_subject_calls(subject, click_functions, context)
         }
-        ContractExpression::RegionResult(_)
-        | ContractExpression::RegionAllocation(_)
-        | ContractExpression::RegionParameter { .. } => Ok(()),
-        ContractExpression::Lambda { body, .. } => {
+        SurfaceTerm::RegionResult(_)
+        | SurfaceTerm::RegionAllocation(_)
+        | SurfaceTerm::RegionParameter { .. } => Ok(()),
+        SurfaceTerm::Lambda { body, .. } => {
             validate_contract_expression_calls(body, click_functions, context)
         }
-        ContractExpression::Apply { .. } => {
-            Err(ClickError::new("application needs a concrete lambda"))
-        }
+        SurfaceTerm::Apply { .. } => Err(ClickError::new("application needs a concrete lambda")),
 
-        ContractExpression::IntegerLiteral(_) => Ok(()),
-        ContractExpression::CUnary { operand: inner, .. }
-        | ContractExpression::MemoryLoad { pointer: inner, .. }
-        | ContractExpression::Negate(inner) => {
+        SurfaceTerm::IntegerLiteral(_) => Ok(()),
+        SurfaceTerm::CUnary { operand: inner, .. }
+        | SurfaceTerm::MemoryLoad { pointer: inner, .. }
+        | SurfaceTerm::Negate(inner) => {
             validate_contract_expression_calls(inner, click_functions, context)
         }
-        ContractExpression::ResourceField(_)
-        | ContractExpression::AlgebraicVariable { .. }
-        | ContractExpression::Binding(_) => Ok(()),
-        ContractExpression::AlgebraicConstructor { arguments, .. } => {
+        SurfaceTerm::ResourceField(_)
+        | SurfaceTerm::AlgebraicVariable { .. }
+        | SurfaceTerm::Binding(_) => Ok(()),
+        SurfaceTerm::AlgebraicConstructor { arguments, .. } => {
             for argument in arguments {
                 validate_contract_expression_calls(argument, click_functions, context)?;
             }
             Ok(())
         }
-        ContractExpression::AlgebraicMatch { scrutinee, arms } => {
+        SurfaceTerm::AlgebraicMatch { scrutinee, arms } => {
             validate_contract_expression_calls(scrutinee, click_functions, context)?;
             for arm in arms {
                 validate_contract_expression_calls(&arm.body, click_functions, context)?;
             }
             Ok(())
         }
-        ContractExpression::SequenceLiteral(elements) => {
+        SurfaceTerm::SequenceLiteral(elements) => {
             for element in elements {
                 validate_contract_expression_calls(element, click_functions, context)?;
             }
             Ok(())
         }
-        ContractExpression::SequenceConcat(left, right) => {
+        SurfaceTerm::SequenceConcat(left, right) => {
             validate_contract_expression_calls(left, click_functions, context)?;
             validate_contract_expression_calls(right, click_functions, context)
         }
-        ContractExpression::QualifiedC { .. }
-        | ContractExpression::ProgramExpression(_)
-        | ContractExpression::ProgramBinding(_) => Ok(()),
-        ContractExpression::ResourceCount(resource) => match resource.as_ref() {
+        SurfaceTerm::QualifiedC { .. }
+        | SurfaceTerm::ProgramExpression(_)
+        | SurfaceTerm::ProgramBinding(_) => Ok(()),
+        SurfaceTerm::ResourceCount(resource) => match resource.as_ref() {
             ResourceClause::Declared { arguments, .. } => {
                 for argument in arguments {
-                    if !matches!(argument, ContractExpression::ResourceWildcard) {
+                    if !matches!(argument, SurfaceTerm::ResourceWildcard) {
                         validate_contract_expression_calls(argument, click_functions, context)?;
                     }
                 }
@@ -5582,30 +5555,30 @@ fn validate_contract_expression_calls(
             }
             _ => Err(ClickError::new("`count(...)` expects a declared resource")),
         },
-        ContractExpression::ResourceWildcard => Err(ClickError::new(
+        SurfaceTerm::ResourceWildcard => Err(ClickError::new(
             "`_` is only valid inside a `count(...)` resource pattern",
         )),
-        ContractExpression::Field { base, .. } => {
+        SurfaceTerm::Field { base, .. } => {
             validate_contract_expression_calls(base, click_functions, context)
         }
-        ContractExpression::ArrayIndex { base, .. } => {
+        SurfaceTerm::ArrayIndex { base, .. } => {
             validate_contract_expression_calls(base, click_functions, context)?;
             Ok(())
         }
-        ContractExpression::Old(body) | ContractExpression::Exact(body) => {
+        SurfaceTerm::Old(body) | SurfaceTerm::Exact(body) => {
             validate_contract_expression_calls(body, click_functions, context)
         }
-        ContractExpression::At { expression, .. } => {
+        SurfaceTerm::At { expression, .. } => {
             validate_contract_expression_calls(expression, click_functions, context)
         }
         crate::surface::binary_contract_expression!(left, right) => {
             validate_contract_expression_calls(left, click_functions, context)?;
             validate_contract_expression_calls(right, click_functions, context)
         }
-        ContractExpression::BitwiseNot(expression) => {
+        SurfaceTerm::BitwiseNot(expression) => {
             validate_contract_expression_calls(expression, click_functions, context)
         }
-        ContractExpression::If {
+        SurfaceTerm::If {
             condition,
             then_branch,
             else_branch,
@@ -5614,7 +5587,7 @@ fn validate_contract_expression_calls(
             validate_contract_expression_calls(then_branch, click_functions, context)?;
             validate_contract_expression_calls(else_branch, click_functions, context)
         }
-        ContractExpression::RangeFold {
+        SurfaceTerm::RangeFold {
             start,
             end,
             initial,
@@ -5626,14 +5599,14 @@ fn validate_contract_expression_calls(
             validate_contract_expression_calls(initial, click_functions, context)?;
             validate_contract_expression_calls(body, click_functions, context)
         }
-        ContractExpression::Let { value, body, .. } => {
+        SurfaceTerm::Let { value, body, .. } => {
             validate_contract_expression_calls(value, click_functions, context)?;
             validate_contract_expression_calls(body, click_functions, context)
         }
-        ContractExpression::MethodCall { method, .. } => Err(ClickError::new(format!(
+        SurfaceTerm::MethodCall { method, .. } => Err(ClickError::new(format!(
             "the method `{method}` was not resolved by its receiver's type"
         ))),
-        ContractExpression::Call { name, arguments } => {
+        SurfaceTerm::Call { name, arguments } => {
             let builtin_arity = if is_integer_truncation(name) {
                 Some(2)
             } else {
@@ -5696,7 +5669,7 @@ fn validate_resource_subject_calls(
 }
 
 fn validate_if_condition_proposition(
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     click_functions: &BTreeMap<String, usize>,
     context: &str,
 ) -> Result<(), ClickError> {
@@ -5704,73 +5677,73 @@ fn validate_if_condition_proposition(
 }
 
 fn validate_value_proposition_calls(
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     click_functions: &BTreeMap<String, usize>,
     context: &str,
     allow_predicates: bool,
 ) -> Result<(), ClickError> {
     match proposition {
-        ClickProposition::Value(expression) => {
+        SurfaceProposition::Value(expression) => {
             validate_contract_expression_calls(expression, click_functions, context)
         }
 
-        ClickProposition::Comparison { left, right, .. } => {
+        SurfaceProposition::Comparison { left, right, .. } => {
             validate_contract_expression_calls(left, click_functions, context)?;
             validate_contract_expression_calls(right, click_functions, context)
         }
-        ClickProposition::FloatClassification { expression, .. } => {
+        SurfaceProposition::FloatClassification { expression, .. } => {
             validate_contract_expression_calls(expression, click_functions, context)
         }
-        ClickProposition::Separate { left, right } => {
+        SurfaceProposition::Separate { left, right } => {
             validate_resource_subject_calls(left, click_functions, context)?;
             validate_resource_subject_calls(right, click_functions, context)
         }
-        ClickProposition::ResourceViewable { resource } => {
+        SurfaceProposition::ResourceViewable { resource } => {
             validate_resource_subject_calls(resource, click_functions, context)
         }
-        ClickProposition::Contains { parent, child } => {
+        SurfaceProposition::Contains { parent, child } => {
             validate_resource_subject_calls(parent, click_functions, context)?;
             validate_resource_subject_calls(child, click_functions, context)
         }
-        ClickProposition::Loadable { segment } => {
+        SurfaceProposition::Loadable { segment } => {
             validate_contract_segment_calls(segment, click_functions, context)
         }
-        ClickProposition::Defined { expression }
-        | ClickProposition::IsA {
+        SurfaceProposition::Defined { expression }
+        | SurfaceProposition::IsA {
             pointer: expression,
             ..
         } => validate_contract_expression_calls(expression, click_functions, context),
-        ClickProposition::And(left, right)
-        | ClickProposition::Or(left, right)
-        | ClickProposition::Implies(left, right) => {
+        SurfaceProposition::And(left, right)
+        | SurfaceProposition::Or(left, right)
+        | SurfaceProposition::Implies(left, right) => {
             validate_value_proposition_calls(left, click_functions, context, allow_predicates)?;
             validate_value_proposition_calls(right, click_functions, context, allow_predicates)
         }
-        ClickProposition::Not(body)
-        | ClickProposition::At {
+        SurfaceProposition::Not(body)
+        | SurfaceProposition::At {
             proposition: body, ..
         }
-        | ClickProposition::ForAll { body, .. }
-        | ClickProposition::Exists { body, .. } => {
+        | SurfaceProposition::ForAll { body, .. }
+        | SurfaceProposition::Exists { body, .. } => {
             validate_value_proposition_calls(body, click_functions, context, allow_predicates)
         }
-        ClickProposition::RangeAll {
+        SurfaceProposition::RangeAll {
             start, end, body, ..
         }
-        | ClickProposition::RangeAny {
+        | SurfaceProposition::RangeAny {
             start, end, body, ..
         } => {
             validate_contract_expression_calls(start, click_functions, context)?;
             validate_contract_expression_calls(end, click_functions, context)?;
             validate_value_proposition_calls(body, click_functions, context, allow_predicates)
         }
-        ClickProposition::PredicateCall { arguments, .. } if allow_predicates => {
+        SurfaceProposition::PredicateCall { arguments, .. } if allow_predicates => {
             for argument in arguments {
                 validate_contract_expression_calls(argument, click_functions, context)?;
             }
             Ok(())
         }
-        ClickProposition::PredicateCall { name, .. } => Err(ClickError::new(format!(
+        SurfaceProposition::PredicateCall { name, .. } => Err(ClickError::new(format!(
             "predicate call `{name}` is not supported in `if` expression condition in {context}"
         ))),
     }
@@ -5797,9 +5770,9 @@ pub(super) fn validate_declaration_lambda_bindings(
     {
         return Ok(());
     }
-    let mut expression = ContractExpression::IntegerLiteral("0".into());
+    let mut expression = SurfaceTerm::IntegerLiteral("0".into());
     for (name, click_type, value) in last.proof_bindings.iter().rev() {
-        expression = ContractExpression::Let {
+        expression = SurfaceTerm::Let {
             name: name.clone().into(),
             click_type: click_type.clone(),
             value: Box::new(value.clone()),
@@ -5823,7 +5796,7 @@ pub(super) fn validate_declaration_lambda_bindings(
 fn validate_lambda_value(
     parameters: &[(SurfaceBinder, ClickType)],
     result: &ClickType,
-    body: &ContractExpression,
+    body: &SurfaceTerm,
     variables: &BinderMap<InterfaceType>,
     integer_bindings: &BinderSet,
     functions: &BinderMap<ClickFunctionType>,

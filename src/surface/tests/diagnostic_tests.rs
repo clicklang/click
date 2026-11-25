@@ -2048,9 +2048,9 @@ fn unfolded_algebraic_field_keeps_its_captured_model() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_12")]
 fn unheld_field_without_a_checked_consumption_does_not_invent_one() {
-    let proposition = ClickProposition::Comparison {
+    let proposition = SurfaceProposition::Comparison {
         operator: ComparisonOperator::Equal,
-        left: ContractExpression::ResourceField(ResourceFieldAccess {
+        left: SurfaceTerm::ResourceField(ResourceFieldAccess {
             owner: "absent".into(),
             resource_name: "cell".into(),
             identity: InstanceId::from_variable(Variable(999)).into(),
@@ -2059,9 +2059,7 @@ fn unheld_field_without_a_checked_consumption_does_not_invent_one() {
             field_index: 0,
             click_type: Some(ClickType::Program(InterfaceType::Int32)),
         }),
-        right: ContractExpression::ProgramExpression(ProgramExpression::Value(
-            crate::kernel::int32(0),
-        )),
+        right: SurfaceTerm::ProgramExpression(ProgramExpression::Value(crate::kernel::int32(0))),
     };
     let message = crate::surface::diagnostics::describe_consumed_instance_field_read(
         &proposition,

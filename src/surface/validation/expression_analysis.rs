@@ -71,63 +71,59 @@ pub(in crate::surface) fn program_expression_uses_variable(
     }
 }
 
-pub(in crate::surface) fn contains_old_expression(expression: &ContractExpression) -> bool {
+pub(in crate::surface) fn contains_old_expression(expression: &SurfaceTerm) -> bool {
     match expression {
-        ContractExpression::IntegerContext(value) => contains_old_expression(value),
+        SurfaceTerm::IntegerContext(value) => contains_old_expression(value),
 
-        ContractExpression::Proposition(proposition) => {
-            proposition_contains_old_expression(proposition)
-        }
-        ContractExpression::Resource(subject) => resource_subject_contains_old_expression(subject),
-        ContractExpression::RegionResult(_)
-        | ContractExpression::RegionAllocation(_)
-        | ContractExpression::RegionParameter { .. } => false,
-        ContractExpression::Lambda { body, .. } => contains_old_expression(body),
-        ContractExpression::Apply {
+        SurfaceTerm::Proposition(proposition) => proposition_contains_old_expression(proposition),
+        SurfaceTerm::Resource(subject) => resource_subject_contains_old_expression(subject),
+        SurfaceTerm::RegionResult(_)
+        | SurfaceTerm::RegionAllocation(_)
+        | SurfaceTerm::RegionParameter { .. } => false,
+        SurfaceTerm::Lambda { body, .. } => contains_old_expression(body),
+        SurfaceTerm::Apply {
             function,
             arguments,
         } => contains_old_expression(function) || arguments.iter().any(contains_old_expression),
 
-        ContractExpression::IntegerLiteral(_) => false,
-        ContractExpression::CUnary { operand: inner, .. }
-        | ContractExpression::MemoryLoad { pointer: inner, .. }
-        | ContractExpression::Negate(inner) => contains_old_expression(inner),
-        ContractExpression::ResourceField(_)
-        | ContractExpression::AlgebraicVariable { .. }
-        | ContractExpression::Binding(_) => false,
-        ContractExpression::AlgebraicConstructor { arguments, .. } => {
+        SurfaceTerm::IntegerLiteral(_) => false,
+        SurfaceTerm::CUnary { operand: inner, .. }
+        | SurfaceTerm::MemoryLoad { pointer: inner, .. }
+        | SurfaceTerm::Negate(inner) => contains_old_expression(inner),
+        SurfaceTerm::ResourceField(_)
+        | SurfaceTerm::AlgebraicVariable { .. }
+        | SurfaceTerm::Binding(_) => false,
+        SurfaceTerm::AlgebraicConstructor { arguments, .. } => {
             arguments.iter().any(contains_old_expression)
         }
-        ContractExpression::AlgebraicMatch { scrutinee, arms } => {
+        SurfaceTerm::AlgebraicMatch { scrutinee, arms } => {
             contains_old_expression(scrutinee)
                 || arms.iter().any(|arm| contains_old_expression(&arm.body))
         }
-        ContractExpression::SequenceLiteral(elements) => {
-            elements.iter().any(contains_old_expression)
-        }
-        ContractExpression::SequenceConcat(left, right) => {
+        SurfaceTerm::SequenceLiteral(elements) => elements.iter().any(contains_old_expression),
+        SurfaceTerm::SequenceConcat(left, right) => {
             contains_old_expression(left) || contains_old_expression(right)
         }
-        ContractExpression::Old(_) => true,
-        ContractExpression::Exact(place) => contains_old_expression(place),
-        ContractExpression::QualifiedC { .. }
-        | ContractExpression::ProgramExpression(_)
-        | ContractExpression::ProgramBinding(_)
-        | ContractExpression::ResourceWildcard => false,
-        ContractExpression::ResourceCount(resource) => match resource.as_ref() {
+        SurfaceTerm::Old(_) => true,
+        SurfaceTerm::Exact(place) => contains_old_expression(place),
+        SurfaceTerm::QualifiedC { .. }
+        | SurfaceTerm::ProgramExpression(_)
+        | SurfaceTerm::ProgramBinding(_)
+        | SurfaceTerm::ResourceWildcard => false,
+        SurfaceTerm::ResourceCount(resource) => match resource.as_ref() {
             ResourceClause::Declared { arguments, .. } => {
                 arguments.iter().any(contains_old_expression)
             }
             _ => false,
         },
-        ContractExpression::Field { base, .. } => contains_old_expression(base),
-        ContractExpression::ArrayIndex { base, .. } => contains_old_expression(base),
-        ContractExpression::At { expression, .. } => contains_old_expression(expression),
+        SurfaceTerm::Field { base, .. } => contains_old_expression(base),
+        SurfaceTerm::ArrayIndex { base, .. } => contains_old_expression(base),
+        SurfaceTerm::At { expression, .. } => contains_old_expression(expression),
         crate::surface::binary_contract_expression!(left, right) => {
             contains_old_expression(left) || contains_old_expression(right)
         }
-        ContractExpression::BitwiseNot(expression) => contains_old_expression(expression),
-        ContractExpression::If {
+        SurfaceTerm::BitwiseNot(expression) => contains_old_expression(expression),
+        SurfaceTerm::If {
             condition,
             then_branch,
             else_branch,
@@ -136,7 +132,7 @@ pub(in crate::surface) fn contains_old_expression(expression: &ContractExpressio
                 || contains_old_expression(then_branch)
                 || contains_old_expression(else_branch)
         }
-        ContractExpression::RangeFold {
+        SurfaceTerm::RangeFold {
             start,
             end,
             initial,
@@ -148,72 +144,68 @@ pub(in crate::surface) fn contains_old_expression(expression: &ContractExpressio
                 || contains_old_expression(initial)
                 || contains_old_expression(body)
         }
-        ContractExpression::Let { value, body, .. } => {
+        SurfaceTerm::Let { value, body, .. } => {
             contains_old_expression(value) || contains_old_expression(body)
         }
-        ContractExpression::MethodCall {
+        SurfaceTerm::MethodCall {
             receiver,
             arguments,
             ..
         } => contains_old_expression(receiver) || arguments.iter().any(contains_old_expression),
-        ContractExpression::Call { arguments, .. } => arguments.iter().any(contains_old_expression),
+        SurfaceTerm::Call { arguments, .. } => arguments.iter().any(contains_old_expression),
     }
 }
 
-pub(in crate::surface) fn contains_resource_count(expression: &ContractExpression) -> bool {
+pub(in crate::surface) fn contains_resource_count(expression: &SurfaceTerm) -> bool {
     match expression {
-        ContractExpression::IntegerContext(value) => contains_resource_count(value),
+        SurfaceTerm::IntegerContext(value) => contains_resource_count(value),
 
-        ContractExpression::Proposition(proposition) => {
-            proposition_contains_resource_count(proposition)
-        }
-        ContractExpression::Resource(_) => false,
-        ContractExpression::RegionResult(_)
-        | ContractExpression::RegionAllocation(_)
-        | ContractExpression::RegionParameter { .. } => false,
-        ContractExpression::Lambda { body, .. } => contains_resource_count(body),
-        ContractExpression::Apply {
+        SurfaceTerm::Proposition(proposition) => proposition_contains_resource_count(proposition),
+        SurfaceTerm::Resource(_) => false,
+        SurfaceTerm::RegionResult(_)
+        | SurfaceTerm::RegionAllocation(_)
+        | SurfaceTerm::RegionParameter { .. } => false,
+        SurfaceTerm::Lambda { body, .. } => contains_resource_count(body),
+        SurfaceTerm::Apply {
             function,
             arguments,
         } => contains_resource_count(function) || arguments.iter().any(contains_resource_count),
 
-        ContractExpression::IntegerLiteral(_) => false,
-        ContractExpression::CUnary { operand: inner, .. }
-        | ContractExpression::MemoryLoad { pointer: inner, .. }
-        | ContractExpression::Negate(inner) => contains_resource_count(inner),
-        ContractExpression::ResourceField(_)
-        | ContractExpression::AlgebraicVariable { .. }
-        | ContractExpression::Binding(_) => false,
-        ContractExpression::AlgebraicConstructor { arguments, .. } => {
+        SurfaceTerm::IntegerLiteral(_) => false,
+        SurfaceTerm::CUnary { operand: inner, .. }
+        | SurfaceTerm::MemoryLoad { pointer: inner, .. }
+        | SurfaceTerm::Negate(inner) => contains_resource_count(inner),
+        SurfaceTerm::ResourceField(_)
+        | SurfaceTerm::AlgebraicVariable { .. }
+        | SurfaceTerm::Binding(_) => false,
+        SurfaceTerm::AlgebraicConstructor { arguments, .. } => {
             arguments.iter().any(contains_resource_count)
         }
-        ContractExpression::AlgebraicMatch { scrutinee, arms } => {
+        SurfaceTerm::AlgebraicMatch { scrutinee, arms } => {
             contains_resource_count(scrutinee)
                 || arms.iter().any(|arm| contains_resource_count(&arm.body))
         }
-        ContractExpression::SequenceLiteral(elements) => {
-            elements.iter().any(contains_resource_count)
-        }
-        ContractExpression::SequenceConcat(left, right) => {
+        SurfaceTerm::SequenceLiteral(elements) => elements.iter().any(contains_resource_count),
+        SurfaceTerm::SequenceConcat(left, right) => {
             contains_resource_count(left) || contains_resource_count(right)
         }
-        ContractExpression::ResourceCount(_) => true,
-        ContractExpression::QualifiedC { .. }
-        | ContractExpression::ProgramExpression(_)
-        | ContractExpression::ProgramBinding(_)
-        | ContractExpression::ResourceWildcard => false,
-        ContractExpression::Field { base, .. }
-        | ContractExpression::Old(base)
-        | ContractExpression::Exact(base)
-        | ContractExpression::At {
+        SurfaceTerm::ResourceCount(_) => true,
+        SurfaceTerm::QualifiedC { .. }
+        | SurfaceTerm::ProgramExpression(_)
+        | SurfaceTerm::ProgramBinding(_)
+        | SurfaceTerm::ResourceWildcard => false,
+        SurfaceTerm::Field { base, .. }
+        | SurfaceTerm::Old(base)
+        | SurfaceTerm::Exact(base)
+        | SurfaceTerm::At {
             expression: base, ..
         }
-        | ContractExpression::BitwiseNot(base) => contains_resource_count(base),
-        ContractExpression::ArrayIndex { base, .. } => contains_resource_count(base),
+        | SurfaceTerm::BitwiseNot(base) => contains_resource_count(base),
+        SurfaceTerm::ArrayIndex { base, .. } => contains_resource_count(base),
         crate::surface::binary_contract_expression!(left, right) => {
             contains_resource_count(left) || contains_resource_count(right)
         }
-        ContractExpression::If {
+        SurfaceTerm::If {
             condition,
             then_branch,
             else_branch,
@@ -222,7 +214,7 @@ pub(in crate::surface) fn contains_resource_count(expression: &ContractExpressio
                 || contains_resource_count(then_branch)
                 || contains_resource_count(else_branch)
         }
-        ContractExpression::RangeFold {
+        SurfaceTerm::RangeFold {
             start,
             end,
             initial,
@@ -234,87 +226,87 @@ pub(in crate::surface) fn contains_resource_count(expression: &ContractExpressio
                 || contains_resource_count(initial)
                 || contains_resource_count(body)
         }
-        ContractExpression::Let { value, body, .. } => {
+        SurfaceTerm::Let { value, body, .. } => {
             contains_resource_count(value) || contains_resource_count(body)
         }
-        ContractExpression::MethodCall {
+        SurfaceTerm::MethodCall {
             receiver,
             arguments,
             ..
         } => contains_resource_count(receiver) || arguments.iter().any(contains_resource_count),
-        ContractExpression::Call { arguments, .. } => arguments.iter().any(contains_resource_count),
+        SurfaceTerm::Call { arguments, .. } => arguments.iter().any(contains_resource_count),
     }
 }
 
 pub(in crate::surface) fn proposition_contains_resource_count(
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
 ) -> bool {
     match proposition {
-        ClickProposition::Value(expression) => contains_resource_count(expression),
-        ClickProposition::Comparison { left, right, .. } => {
+        SurfaceProposition::Value(expression) => contains_resource_count(expression),
+        SurfaceProposition::Comparison { left, right, .. } => {
             contains_resource_count(left) || contains_resource_count(right)
         }
-        ClickProposition::FloatClassification { expression, .. } => {
+        SurfaceProposition::FloatClassification { expression, .. } => {
             contains_resource_count(expression)
         }
-        ClickProposition::Defined { expression }
-        | ClickProposition::IsA {
+        SurfaceProposition::Defined { expression }
+        | SurfaceProposition::IsA {
             pointer: expression,
             ..
         } => contains_resource_count(expression),
-        ClickProposition::At { proposition, .. }
-        | ClickProposition::Not(proposition)
-        | ClickProposition::ForAll {
+        SurfaceProposition::At { proposition, .. }
+        | SurfaceProposition::Not(proposition)
+        | SurfaceProposition::ForAll {
             body: proposition, ..
         }
-        | ClickProposition::Exists {
+        | SurfaceProposition::Exists {
             body: proposition, ..
         } => proposition_contains_resource_count(proposition),
-        ClickProposition::And(left, right)
-        | ClickProposition::Or(left, right)
-        | ClickProposition::Implies(left, right) => {
+        SurfaceProposition::And(left, right)
+        | SurfaceProposition::Or(left, right)
+        | SurfaceProposition::Implies(left, right) => {
             proposition_contains_resource_count(left) || proposition_contains_resource_count(right)
         }
-        ClickProposition::RangeAll {
+        SurfaceProposition::RangeAll {
             start, end, body, ..
         }
-        | ClickProposition::RangeAny {
+        | SurfaceProposition::RangeAny {
             start, end, body, ..
         } => {
             contains_resource_count(start)
                 || contains_resource_count(end)
                 || proposition_contains_resource_count(body)
         }
-        ClickProposition::PredicateCall { arguments, .. } => {
+        SurfaceProposition::PredicateCall { arguments, .. } => {
             arguments.iter().any(contains_resource_count)
         }
-        ClickProposition::Separate { .. }
-        | ClickProposition::ResourceViewable { .. }
-        | ClickProposition::Contains { .. }
-        | ClickProposition::Loadable { .. } => false,
+        SurfaceProposition::Separate { .. }
+        | SurfaceProposition::ResourceViewable { .. }
+        | SurfaceProposition::Contains { .. }
+        | SurfaceProposition::Loadable { .. } => false,
     }
 }
 
 /// Whether a proposition claims allocation liveness (`loadable(...)`),
 /// directly or through a called predicate's body.
 pub(in crate::surface) fn proposition_contains_liveness_claim(
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     owned_bases: &[&ProgramExpression],
     predicate_environment: &PredicateEnvironment,
     visited_predicates: &mut BTreeSet<String>,
 ) -> bool {
     match proposition {
-        ClickProposition::Value(expression) => {
+        SurfaceProposition::Value(expression) => {
             let mut calls = Vec::new();
             contract_expression_reads_memory(expression, &mut calls)
         }
         // Liveness of storage the body itself owns is stable under a borrow:
         // a live borrow over any of those bytes forbids freeing the
         // allocation. Liveness of anything else is not.
-        ClickProposition::Loadable { segment } => {
+        SurfaceProposition::Loadable { segment } => {
             !owned_bases.iter().any(|base| **base == segment.base)
         }
-        ClickProposition::ResourceViewable { resource } => match resource {
+        SurfaceProposition::ResourceViewable { resource } => match resource {
             ResourceSubject::Memory(segment) => {
                 !owned_bases.iter().any(|base| **base == segment.base)
             }
@@ -322,7 +314,7 @@ pub(in crate::surface) fn proposition_contains_liveness_claim(
             // live while a composite is lent out.
             _ => true,
         },
-        ClickProposition::PredicateCall { name, .. } => {
+        SurfaceProposition::PredicateCall { name, .. } => {
             if !visited_predicates.insert(name.clone()) {
                 return false;
             }
@@ -335,12 +327,12 @@ pub(in crate::surface) fn proposition_contains_liveness_claim(
                 )
             })
         }
-        ClickProposition::At { proposition, .. }
-        | ClickProposition::Not(proposition)
-        | ClickProposition::ForAll {
+        SurfaceProposition::At { proposition, .. }
+        | SurfaceProposition::Not(proposition)
+        | SurfaceProposition::ForAll {
             body: proposition, ..
         }
-        | ClickProposition::Exists {
+        | SurfaceProposition::Exists {
             body: proposition, ..
         } => proposition_contains_liveness_claim(
             proposition,
@@ -348,9 +340,9 @@ pub(in crate::surface) fn proposition_contains_liveness_claim(
             predicate_environment,
             visited_predicates,
         ),
-        ClickProposition::And(left, right)
-        | ClickProposition::Or(left, right)
-        | ClickProposition::Implies(left, right) => {
+        SurfaceProposition::And(left, right)
+        | SurfaceProposition::Or(left, right)
+        | SurfaceProposition::Implies(left, right) => {
             proposition_contains_liveness_claim(
                 left,
                 owned_bases,
@@ -363,7 +355,7 @@ pub(in crate::surface) fn proposition_contains_liveness_claim(
                 visited_predicates,
             )
         }
-        ClickProposition::RangeAll { body, .. } | ClickProposition::RangeAny { body, .. } => {
+        SurfaceProposition::RangeAll { body, .. } | SurfaceProposition::RangeAny { body, .. } => {
             proposition_contains_liveness_claim(
                 body,
                 owned_bases,
@@ -371,32 +363,32 @@ pub(in crate::surface) fn proposition_contains_liveness_claim(
                 visited_predicates,
             )
         }
-        ClickProposition::Comparison { .. }
-        | ClickProposition::FloatClassification { .. }
-        | ClickProposition::Separate { .. }
-        | ClickProposition::Contains { .. }
-        | ClickProposition::Defined { .. }
-        | ClickProposition::IsA { .. } => false,
+        SurfaceProposition::Comparison { .. }
+        | SurfaceProposition::FloatClassification { .. }
+        | SurfaceProposition::Separate { .. }
+        | SurfaceProposition::Contains { .. }
+        | SurfaceProposition::Defined { .. }
+        | SurfaceProposition::IsA { .. } => false,
     }
 }
 
 pub(in crate::surface) fn collect_resource_count_families(
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     families: &mut BTreeSet<String>,
 ) {
-    fn collect_expression(expression: &ContractExpression, families: &mut BTreeSet<String>) {
+    fn collect_expression(expression: &SurfaceTerm, families: &mut BTreeSet<String>) {
         match expression {
-            ContractExpression::IntegerContext(value) => collect_expression(value, families),
+            SurfaceTerm::IntegerContext(value) => collect_expression(value, families),
 
-            ContractExpression::Proposition(proposition) => {
+            SurfaceTerm::Proposition(proposition) => {
                 collect_resource_count_families(proposition, families)
             }
-            ContractExpression::Resource(_) => {}
-            ContractExpression::RegionResult(_)
-            | ContractExpression::RegionAllocation(_)
-            | ContractExpression::RegionParameter { .. } => {}
-            ContractExpression::Lambda { body, .. } => collect_expression(body, families),
-            ContractExpression::Apply {
+            SurfaceTerm::Resource(_) => {}
+            SurfaceTerm::RegionResult(_)
+            | SurfaceTerm::RegionAllocation(_)
+            | SurfaceTerm::RegionParameter { .. } => {}
+            SurfaceTerm::Lambda { body, .. } => collect_expression(body, families),
+            SurfaceTerm::Apply {
                 function,
                 arguments,
             } => {
@@ -406,34 +398,34 @@ pub(in crate::surface) fn collect_resource_count_families(
                 }
             }
 
-            ContractExpression::IntegerLiteral(_) => {}
-            ContractExpression::CUnary { operand: inner, .. }
-            | ContractExpression::MemoryLoad { pointer: inner, .. }
-            | ContractExpression::Negate(inner) => collect_expression(inner, families),
-            ContractExpression::ResourceField(_)
-            | ContractExpression::AlgebraicVariable { .. }
-            | ContractExpression::Binding(_) => {}
-            ContractExpression::AlgebraicConstructor { arguments, .. } => {
+            SurfaceTerm::IntegerLiteral(_) => {}
+            SurfaceTerm::CUnary { operand: inner, .. }
+            | SurfaceTerm::MemoryLoad { pointer: inner, .. }
+            | SurfaceTerm::Negate(inner) => collect_expression(inner, families),
+            SurfaceTerm::ResourceField(_)
+            | SurfaceTerm::AlgebraicVariable { .. }
+            | SurfaceTerm::Binding(_) => {}
+            SurfaceTerm::AlgebraicConstructor { arguments, .. } => {
                 for argument in arguments {
                     collect_expression(argument, families);
                 }
             }
-            ContractExpression::AlgebraicMatch { scrutinee, arms } => {
+            SurfaceTerm::AlgebraicMatch { scrutinee, arms } => {
                 collect_expression(scrutinee, families);
                 for arm in arms {
                     collect_expression(&arm.body, families);
                 }
             }
-            ContractExpression::SequenceLiteral(elements) => {
+            SurfaceTerm::SequenceLiteral(elements) => {
                 for element in elements {
                     collect_expression(element, families);
                 }
             }
-            ContractExpression::SequenceConcat(left, right) => {
+            SurfaceTerm::SequenceConcat(left, right) => {
                 collect_expression(left, families);
                 collect_expression(right, families);
             }
-            ContractExpression::ResourceCount(resource) => {
+            SurfaceTerm::ResourceCount(resource) => {
                 if let ResourceClause::Declared {
                     name, arguments, ..
                 } = resource.as_ref()
@@ -444,19 +436,19 @@ pub(in crate::surface) fn collect_resource_count_families(
                     }
                 }
             }
-            ContractExpression::Field { base, .. }
-            | ContractExpression::Old(base)
-            | ContractExpression::Exact(base)
-            | ContractExpression::At {
+            SurfaceTerm::Field { base, .. }
+            | SurfaceTerm::Old(base)
+            | SurfaceTerm::Exact(base)
+            | SurfaceTerm::At {
                 expression: base, ..
             }
-            | ContractExpression::BitwiseNot(base) => collect_expression(base, families),
-            ContractExpression::ArrayIndex { base, .. } => collect_expression(base, families),
+            | SurfaceTerm::BitwiseNot(base) => collect_expression(base, families),
+            SurfaceTerm::ArrayIndex { base, .. } => collect_expression(base, families),
             crate::surface::binary_contract_expression!(left, right) => {
                 collect_expression(left, families);
                 collect_expression(right, families);
             }
-            ContractExpression::If {
+            SurfaceTerm::If {
                 condition,
                 then_branch,
                 else_branch,
@@ -465,7 +457,7 @@ pub(in crate::surface) fn collect_resource_count_families(
                 collect_expression(then_branch, families);
                 collect_expression(else_branch, families);
             }
-            ContractExpression::RangeFold {
+            SurfaceTerm::RangeFold {
                 start,
                 end,
                 initial,
@@ -477,11 +469,11 @@ pub(in crate::surface) fn collect_resource_count_families(
                 collect_expression(initial, families);
                 collect_expression(body, families);
             }
-            ContractExpression::Let { value, body, .. } => {
+            SurfaceTerm::Let { value, body, .. } => {
                 collect_expression(value, families);
                 collect_expression(body, families);
             }
-            ContractExpression::MethodCall {
+            SurfaceTerm::MethodCall {
                 receiver,
                 arguments,
                 ..
@@ -491,115 +483,115 @@ pub(in crate::surface) fn collect_resource_count_families(
                     collect_expression(argument, families);
                 }
             }
-            ContractExpression::Call { arguments, .. } => {
+            SurfaceTerm::Call { arguments, .. } => {
                 for argument in arguments {
                     collect_expression(argument, families);
                 }
             }
-            ContractExpression::QualifiedC { .. }
-            | ContractExpression::ProgramExpression(_)
-            | ContractExpression::ProgramBinding(_)
-            | ContractExpression::ResourceWildcard => {}
+            SurfaceTerm::QualifiedC { .. }
+            | SurfaceTerm::ProgramExpression(_)
+            | SurfaceTerm::ProgramBinding(_)
+            | SurfaceTerm::ResourceWildcard => {}
         }
     }
 
     match proposition {
-        ClickProposition::Value(expression) => collect_expression(expression, families),
-        ClickProposition::Comparison { left, right, .. } => {
+        SurfaceProposition::Value(expression) => collect_expression(expression, families),
+        SurfaceProposition::Comparison { left, right, .. } => {
             collect_expression(left, families);
             collect_expression(right, families);
         }
-        ClickProposition::FloatClassification { expression, .. } => {
+        SurfaceProposition::FloatClassification { expression, .. } => {
             collect_expression(expression, families);
         }
-        ClickProposition::Defined { expression }
-        | ClickProposition::IsA {
+        SurfaceProposition::Defined { expression }
+        | SurfaceProposition::IsA {
             pointer: expression,
             ..
         } => collect_expression(expression, families),
-        ClickProposition::At { proposition, .. }
-        | ClickProposition::Not(proposition)
-        | ClickProposition::ForAll {
+        SurfaceProposition::At { proposition, .. }
+        | SurfaceProposition::Not(proposition)
+        | SurfaceProposition::ForAll {
             body: proposition, ..
         }
-        | ClickProposition::Exists {
+        | SurfaceProposition::Exists {
             body: proposition, ..
         } => {
             collect_resource_count_families(proposition, families);
         }
-        ClickProposition::And(left, right)
-        | ClickProposition::Or(left, right)
-        | ClickProposition::Implies(left, right) => {
+        SurfaceProposition::And(left, right)
+        | SurfaceProposition::Or(left, right)
+        | SurfaceProposition::Implies(left, right) => {
             collect_resource_count_families(left, families);
             collect_resource_count_families(right, families);
         }
-        ClickProposition::RangeAll {
+        SurfaceProposition::RangeAll {
             start, end, body, ..
         }
-        | ClickProposition::RangeAny {
+        | SurfaceProposition::RangeAny {
             start, end, body, ..
         } => {
             collect_expression(start, families);
             collect_expression(end, families);
             collect_resource_count_families(body, families);
         }
-        ClickProposition::PredicateCall { arguments, .. } => {
+        SurfaceProposition::PredicateCall { arguments, .. } => {
             for argument in arguments {
                 collect_expression(argument, families);
             }
         }
-        ClickProposition::Separate { .. }
-        | ClickProposition::ResourceViewable { .. }
-        | ClickProposition::Contains { .. }
-        | ClickProposition::Loadable { .. } => {}
+        SurfaceProposition::Separate { .. }
+        | SurfaceProposition::ResourceViewable { .. }
+        | SurfaceProposition::Contains { .. }
+        | SurfaceProposition::Loadable { .. } => {}
     }
 }
 
 pub(in crate::surface) fn collect_called_predicates(
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     names: &mut BTreeSet<String>,
 ) {
     match proposition {
-        ClickProposition::Value(expression) => {
+        SurfaceProposition::Value(expression) => {
             crate::surface::proof::fixed_state_proofs::conversion_conditions::walk_written_expressions(
                 expression,
                 &mut |term| {
-                    if let ContractExpression::Proposition(body) = term {
+                    if let SurfaceTerm::Proposition(body) = term {
                         collect_called_predicates(body, names);
                     }
                 },
             );
         }
-        ClickProposition::PredicateCall { name, .. } => {
+        SurfaceProposition::PredicateCall { name, .. } => {
             names.insert(name.clone());
         }
-        ClickProposition::At { proposition, .. }
-        | ClickProposition::Not(proposition)
-        | ClickProposition::ForAll {
+        SurfaceProposition::At { proposition, .. }
+        | SurfaceProposition::Not(proposition)
+        | SurfaceProposition::ForAll {
             body: proposition, ..
         }
-        | ClickProposition::Exists {
+        | SurfaceProposition::Exists {
             body: proposition, ..
         } => {
             collect_called_predicates(proposition, names);
         }
-        ClickProposition::And(left, right)
-        | ClickProposition::Or(left, right)
-        | ClickProposition::Implies(left, right) => {
+        SurfaceProposition::And(left, right)
+        | SurfaceProposition::Or(left, right)
+        | SurfaceProposition::Implies(left, right) => {
             collect_called_predicates(left, names);
             collect_called_predicates(right, names);
         }
-        ClickProposition::RangeAll { body, .. } | ClickProposition::RangeAny { body, .. } => {
+        SurfaceProposition::RangeAll { body, .. } | SurfaceProposition::RangeAny { body, .. } => {
             collect_called_predicates(body, names);
         }
-        ClickProposition::Comparison { .. }
-        | ClickProposition::FloatClassification { .. }
-        | ClickProposition::Separate { .. }
-        | ClickProposition::ResourceViewable { .. }
-        | ClickProposition::Contains { .. }
-        | ClickProposition::Loadable { .. }
-        | ClickProposition::Defined { .. }
-        | ClickProposition::IsA { .. } => {}
+        SurfaceProposition::Comparison { .. }
+        | SurfaceProposition::FloatClassification { .. }
+        | SurfaceProposition::Separate { .. }
+        | SurfaceProposition::ResourceViewable { .. }
+        | SurfaceProposition::Contains { .. }
+        | SurfaceProposition::Loadable { .. }
+        | SurfaceProposition::Defined { .. }
+        | SurfaceProposition::IsA { .. } => {}
     }
 }
 
@@ -607,7 +599,7 @@ fn contract_segment_contains_old_expression(segment: &ContractSegment) -> bool {
     [&segment.base, &segment.start, &segment.end]
         .into_iter()
         .any(|expression| {
-            contains_old_expression(&ContractExpression::ProgramExpression(expression.clone()))
+            contains_old_expression(&SurfaceTerm::ProgramExpression(expression.clone()))
         })
 }
 
@@ -635,118 +627,116 @@ fn resource_subject_contains_old_expression(resource: &ResourceSubject) -> bool 
 }
 
 pub(in crate::surface) fn proposition_contains_old_expression(
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
 ) -> bool {
     match proposition {
-        ClickProposition::Value(expression) => contains_old_expression(expression),
+        SurfaceProposition::Value(expression) => contains_old_expression(expression),
 
-        ClickProposition::Comparison { left, right, .. } => {
+        SurfaceProposition::Comparison { left, right, .. } => {
             contains_old_expression(left) || contains_old_expression(right)
         }
-        ClickProposition::FloatClassification { expression, .. } => {
+        SurfaceProposition::FloatClassification { expression, .. } => {
             contains_old_expression(expression)
         }
-        ClickProposition::Separate { left, right } => {
+        SurfaceProposition::Separate { left, right } => {
             resource_subject_contains_old_expression(left)
                 || resource_subject_contains_old_expression(right)
         }
-        ClickProposition::ResourceViewable { resource } => {
+        SurfaceProposition::ResourceViewable { resource } => {
             resource_subject_contains_old_expression(resource)
         }
-        ClickProposition::Contains { parent, child } => {
+        SurfaceProposition::Contains { parent, child } => {
             resource_subject_contains_old_expression(parent)
                 || resource_subject_contains_old_expression(child)
         }
-        ClickProposition::Loadable { segment } => contract_segment_contains_old_expression(segment),
-        ClickProposition::Defined { expression }
-        | ClickProposition::IsA {
+        SurfaceProposition::Loadable { segment } => {
+            contract_segment_contains_old_expression(segment)
+        }
+        SurfaceProposition::Defined { expression }
+        | SurfaceProposition::IsA {
             pointer: expression,
             ..
         } => contains_old_expression(expression),
-        ClickProposition::At { proposition, .. } => {
+        SurfaceProposition::At { proposition, .. } => {
             proposition_contains_old_expression(proposition)
         }
-        ClickProposition::And(left, right)
-        | ClickProposition::Or(left, right)
-        | ClickProposition::Implies(left, right) => {
+        SurfaceProposition::And(left, right)
+        | SurfaceProposition::Or(left, right)
+        | SurfaceProposition::Implies(left, right) => {
             proposition_contains_old_expression(left) || proposition_contains_old_expression(right)
         }
-        ClickProposition::Not(body)
-        | ClickProposition::ForAll { body, .. }
-        | ClickProposition::Exists { body, .. } => proposition_contains_old_expression(body),
-        ClickProposition::RangeAll {
+        SurfaceProposition::Not(body)
+        | SurfaceProposition::ForAll { body, .. }
+        | SurfaceProposition::Exists { body, .. } => proposition_contains_old_expression(body),
+        SurfaceProposition::RangeAll {
             start, end, body, ..
         }
-        | ClickProposition::RangeAny {
+        | SurfaceProposition::RangeAny {
             start, end, body, ..
         } => {
             contains_old_expression(start)
                 || contains_old_expression(end)
                 || proposition_contains_old_expression(body)
         }
-        ClickProposition::PredicateCall { arguments, .. } => {
+        SurfaceProposition::PredicateCall { arguments, .. } => {
             arguments.iter().any(contains_old_expression)
         }
     }
 }
 
-pub(in crate::surface) fn contains_at_expression(expression: &ContractExpression) -> bool {
+pub(in crate::surface) fn contains_at_expression(expression: &SurfaceTerm) -> bool {
     match expression {
-        ContractExpression::IntegerContext(value) => contains_at_expression(value),
+        SurfaceTerm::IntegerContext(value) => contains_at_expression(value),
 
-        ContractExpression::Proposition(proposition) => {
-            proposition_contains_at_expression(proposition)
-        }
-        ContractExpression::Resource(subject) => resource_subject_contains_at_expression(subject),
-        ContractExpression::RegionResult(_)
-        | ContractExpression::RegionAllocation(_)
-        | ContractExpression::RegionParameter { .. } => true,
-        ContractExpression::Lambda { body, .. } => contains_at_expression(body),
-        ContractExpression::Apply {
+        SurfaceTerm::Proposition(proposition) => proposition_contains_at_expression(proposition),
+        SurfaceTerm::Resource(subject) => resource_subject_contains_at_expression(subject),
+        SurfaceTerm::RegionResult(_)
+        | SurfaceTerm::RegionAllocation(_)
+        | SurfaceTerm::RegionParameter { .. } => true,
+        SurfaceTerm::Lambda { body, .. } => contains_at_expression(body),
+        SurfaceTerm::Apply {
             function,
             arguments,
         } => contains_at_expression(function) || arguments.iter().any(contains_at_expression),
 
-        ContractExpression::IntegerLiteral(_) => false,
-        ContractExpression::CUnary { operand: inner, .. }
-        | ContractExpression::MemoryLoad { pointer: inner, .. }
-        | ContractExpression::Negate(inner) => contains_at_expression(inner),
-        ContractExpression::ResourceField(_)
-        | ContractExpression::AlgebraicVariable { .. }
-        | ContractExpression::Binding(_) => false,
-        ContractExpression::AlgebraicConstructor { arguments, .. } => {
+        SurfaceTerm::IntegerLiteral(_) => false,
+        SurfaceTerm::CUnary { operand: inner, .. }
+        | SurfaceTerm::MemoryLoad { pointer: inner, .. }
+        | SurfaceTerm::Negate(inner) => contains_at_expression(inner),
+        SurfaceTerm::ResourceField(_)
+        | SurfaceTerm::AlgebraicVariable { .. }
+        | SurfaceTerm::Binding(_) => false,
+        SurfaceTerm::AlgebraicConstructor { arguments, .. } => {
             arguments.iter().any(contains_at_expression)
         }
-        ContractExpression::AlgebraicMatch { scrutinee, arms } => {
+        SurfaceTerm::AlgebraicMatch { scrutinee, arms } => {
             contains_at_expression(scrutinee)
                 || arms.iter().any(|arm| contains_at_expression(&arm.body))
         }
-        ContractExpression::SequenceLiteral(elements) => {
-            elements.iter().any(contains_at_expression)
-        }
-        ContractExpression::SequenceConcat(left, right) => {
+        SurfaceTerm::SequenceLiteral(elements) => elements.iter().any(contains_at_expression),
+        SurfaceTerm::SequenceConcat(left, right) => {
             contains_at_expression(left) || contains_at_expression(right)
         }
-        ContractExpression::At { .. } => true,
-        ContractExpression::QualifiedC { .. }
-        | ContractExpression::ProgramExpression(_)
-        | ContractExpression::ProgramBinding(_)
-        | ContractExpression::ResourceWildcard => false,
-        ContractExpression::ResourceCount(resource) => match resource.as_ref() {
+        SurfaceTerm::At { .. } => true,
+        SurfaceTerm::QualifiedC { .. }
+        | SurfaceTerm::ProgramExpression(_)
+        | SurfaceTerm::ProgramBinding(_)
+        | SurfaceTerm::ResourceWildcard => false,
+        SurfaceTerm::ResourceCount(resource) => match resource.as_ref() {
             ResourceClause::Declared { arguments, .. } => {
                 arguments.iter().any(contains_at_expression)
             }
             _ => false,
         },
-        ContractExpression::Field { base, .. } => contains_at_expression(base),
-        ContractExpression::ArrayIndex { base, .. } => contains_at_expression(base),
-        ContractExpression::Old(expression)
-        | ContractExpression::Exact(expression)
-        | ContractExpression::BitwiseNot(expression) => contains_at_expression(expression),
+        SurfaceTerm::Field { base, .. } => contains_at_expression(base),
+        SurfaceTerm::ArrayIndex { base, .. } => contains_at_expression(base),
+        SurfaceTerm::Old(expression)
+        | SurfaceTerm::Exact(expression)
+        | SurfaceTerm::BitwiseNot(expression) => contains_at_expression(expression),
         crate::surface::binary_contract_expression!(left, right) => {
             contains_at_expression(left) || contains_at_expression(right)
         }
-        ContractExpression::If {
+        SurfaceTerm::If {
             condition,
             then_branch,
             else_branch,
@@ -755,7 +745,7 @@ pub(in crate::surface) fn contains_at_expression(expression: &ContractExpression
                 || contains_at_expression(then_branch)
                 || contains_at_expression(else_branch)
         }
-        ContractExpression::RangeFold {
+        SurfaceTerm::RangeFold {
             start,
             end,
             initial,
@@ -767,15 +757,15 @@ pub(in crate::surface) fn contains_at_expression(expression: &ContractExpression
                 || contains_at_expression(initial)
                 || contains_at_expression(body)
         }
-        ContractExpression::Let { value, body, .. } => {
+        SurfaceTerm::Let { value, body, .. } => {
             contains_at_expression(value) || contains_at_expression(body)
         }
-        ContractExpression::MethodCall {
+        SurfaceTerm::MethodCall {
             receiver,
             arguments,
             ..
         } => contains_at_expression(receiver) || arguments.iter().any(contains_at_expression),
-        ContractExpression::Call { arguments, .. } => arguments.iter().any(contains_at_expression),
+        SurfaceTerm::Call { arguments, .. } => arguments.iter().any(contains_at_expression),
     }
 }
 
@@ -783,7 +773,7 @@ fn contract_segment_contains_at_expression(segment: &ContractSegment) -> bool {
     [&segment.base, &segment.start, &segment.end]
         .into_iter()
         .any(|expression| {
-            contains_at_expression(&ContractExpression::ProgramExpression(expression.clone()))
+            contains_at_expression(&SurfaceTerm::ProgramExpression(expression.clone()))
         })
 }
 
@@ -809,66 +799,68 @@ fn resource_subject_contains_at_expression(resource: &ResourceSubject) -> bool {
 }
 
 pub(in crate::surface) fn proposition_contains_at_expression(
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
 ) -> bool {
     match proposition {
-        ClickProposition::Value(expression) => contains_at_expression(expression),
+        SurfaceProposition::Value(expression) => contains_at_expression(expression),
 
-        ClickProposition::Comparison { left, right, .. } => {
+        SurfaceProposition::Comparison { left, right, .. } => {
             contains_at_expression(left) || contains_at_expression(right)
         }
-        ClickProposition::FloatClassification { expression, .. } => {
+        SurfaceProposition::FloatClassification { expression, .. } => {
             contains_at_expression(expression)
         }
-        ClickProposition::Separate { left, right } => {
+        SurfaceProposition::Separate { left, right } => {
             resource_subject_contains_at_expression(left)
                 || resource_subject_contains_at_expression(right)
         }
-        ClickProposition::ResourceViewable { resource } => {
+        SurfaceProposition::ResourceViewable { resource } => {
             resource_subject_contains_at_expression(resource)
         }
-        ClickProposition::Contains { parent, child } => {
+        SurfaceProposition::Contains { parent, child } => {
             resource_subject_contains_at_expression(parent)
                 || resource_subject_contains_at_expression(child)
         }
-        ClickProposition::Loadable { segment } => contract_segment_contains_at_expression(segment),
-        ClickProposition::Defined { expression }
-        | ClickProposition::IsA {
+        SurfaceProposition::Loadable { segment } => {
+            contract_segment_contains_at_expression(segment)
+        }
+        SurfaceProposition::Defined { expression }
+        | SurfaceProposition::IsA {
             pointer: expression,
             ..
         } => contains_at_expression(expression),
-        ClickProposition::At { .. } => true,
-        ClickProposition::And(left, right)
-        | ClickProposition::Or(left, right)
-        | ClickProposition::Implies(left, right) => {
+        SurfaceProposition::At { .. } => true,
+        SurfaceProposition::And(left, right)
+        | SurfaceProposition::Or(left, right)
+        | SurfaceProposition::Implies(left, right) => {
             proposition_contains_at_expression(left) || proposition_contains_at_expression(right)
         }
-        ClickProposition::Not(body)
-        | ClickProposition::ForAll { body, .. }
-        | ClickProposition::Exists { body, .. } => proposition_contains_at_expression(body),
-        ClickProposition::RangeAll {
+        SurfaceProposition::Not(body)
+        | SurfaceProposition::ForAll { body, .. }
+        | SurfaceProposition::Exists { body, .. } => proposition_contains_at_expression(body),
+        SurfaceProposition::RangeAll {
             start, end, body, ..
         }
-        | ClickProposition::RangeAny {
+        | SurfaceProposition::RangeAny {
             start, end, body, ..
         } => {
             contains_at_expression(start)
                 || contains_at_expression(end)
                 || proposition_contains_at_expression(body)
         }
-        ClickProposition::PredicateCall { arguments, .. } => {
+        SurfaceProposition::PredicateCall { arguments, .. } => {
             arguments.iter().any(contains_at_expression)
         }
     }
 }
 
 pub(in crate::surface) fn collect_click_function_calls(
-    expression: &ContractExpression,
+    expression: &SurfaceTerm,
     calls: &mut BTreeSet<String>,
 ) {
     let mut depth = 0;
     let mut current = expression;
-    while let ContractExpression::Add(left, _) = current {
+    while let SurfaceTerm::Add(left, _) = current {
         depth += 1;
         current = left;
     }
@@ -880,9 +872,7 @@ pub(in crate::surface) fn collect_click_function_calls(
                     pending.push(right);
                     pending.push(left);
                 }
-                ContractExpression::Negate(inner) | ContractExpression::BitwiseNot(inner) => {
-                    pending.push(inner)
-                }
+                SurfaceTerm::Negate(inner) | SurfaceTerm::BitwiseNot(inner) => pending.push(inner),
                 expression => collect_click_function_calls_one(expression, calls),
             }
         }
@@ -891,25 +881,25 @@ pub(in crate::surface) fn collect_click_function_calls(
     collect_click_function_calls_one(expression, calls);
 }
 
-fn collect_click_function_calls_one(expression: &ContractExpression, calls: &mut BTreeSet<String>) {
+fn collect_click_function_calls_one(expression: &SurfaceTerm, calls: &mut BTreeSet<String>) {
     if let Ok(Some(reduced)) = lambdas::reduce_head(expression) {
         collect_click_function_calls(&reduced, calls);
         return;
     }
     match expression {
-        ContractExpression::IntegerContext(value) => collect_click_function_calls(value, calls),
+        SurfaceTerm::IntegerContext(value) => collect_click_function_calls(value, calls),
 
-        ContractExpression::Proposition(proposition) => {
+        SurfaceTerm::Proposition(proposition) => {
             collect_click_function_calls_in_proposition(proposition, calls)
         }
-        ContractExpression::Resource(subject) => {
+        SurfaceTerm::Resource(subject) => {
             collect_click_function_calls_in_resource_subject(subject, calls)
         }
-        ContractExpression::RegionResult(_)
-        | ContractExpression::RegionAllocation(_)
-        | ContractExpression::RegionParameter { .. } => {}
-        ContractExpression::Lambda { body, .. } => collect_click_function_calls(body, calls),
-        ContractExpression::Apply {
+        SurfaceTerm::RegionResult(_)
+        | SurfaceTerm::RegionAllocation(_)
+        | SurfaceTerm::RegionParameter { .. } => {}
+        SurfaceTerm::Lambda { body, .. } => collect_click_function_calls(body, calls),
+        SurfaceTerm::Apply {
             function,
             arguments,
         } => {
@@ -919,60 +909,56 @@ fn collect_click_function_calls_one(expression: &ContractExpression, calls: &mut
             }
         }
 
-        ContractExpression::IntegerLiteral(_) => {}
-        ContractExpression::CUnary { operand: inner, .. }
-        | ContractExpression::MemoryLoad { pointer: inner, .. }
-        | ContractExpression::Negate(inner) => collect_click_function_calls(inner, calls),
-        ContractExpression::ResourceField(_)
-        | ContractExpression::AlgebraicVariable { .. }
-        | ContractExpression::Binding(_) => {}
-        ContractExpression::AlgebraicConstructor { arguments, .. } => {
+        SurfaceTerm::IntegerLiteral(_) => {}
+        SurfaceTerm::CUnary { operand: inner, .. }
+        | SurfaceTerm::MemoryLoad { pointer: inner, .. }
+        | SurfaceTerm::Negate(inner) => collect_click_function_calls(inner, calls),
+        SurfaceTerm::ResourceField(_)
+        | SurfaceTerm::AlgebraicVariable { .. }
+        | SurfaceTerm::Binding(_) => {}
+        SurfaceTerm::AlgebraicConstructor { arguments, .. } => {
             for argument in arguments {
                 collect_click_function_calls(argument, calls);
             }
         }
-        ContractExpression::AlgebraicMatch { scrutinee, arms } => {
+        SurfaceTerm::AlgebraicMatch { scrutinee, arms } => {
             collect_click_function_calls(scrutinee, calls);
             for arm in arms {
                 collect_click_function_calls(&arm.body, calls);
             }
         }
-        ContractExpression::SequenceLiteral(elements) => {
+        SurfaceTerm::SequenceLiteral(elements) => {
             for element in elements {
                 collect_click_function_calls(element, calls);
             }
         }
-        ContractExpression::SequenceConcat(left, right) => {
+        SurfaceTerm::SequenceConcat(left, right) => {
             collect_click_function_calls(left, calls);
             collect_click_function_calls(right, calls);
         }
-        ContractExpression::QualifiedC { .. }
-        | ContractExpression::ProgramExpression(_)
-        | ContractExpression::ProgramBinding(_)
-        | ContractExpression::ResourceWildcard => {}
-        ContractExpression::ResourceCount(resource) => {
+        SurfaceTerm::QualifiedC { .. }
+        | SurfaceTerm::ProgramExpression(_)
+        | SurfaceTerm::ProgramBinding(_)
+        | SurfaceTerm::ResourceWildcard => {}
+        SurfaceTerm::ResourceCount(resource) => {
             if let ResourceClause::Declared { arguments, .. } = resource.as_ref() {
                 for argument in arguments {
                     collect_click_function_calls(argument, calls);
                 }
             }
         }
-        ContractExpression::Field { base, .. } => collect_click_function_calls(base, calls),
-        ContractExpression::ArrayIndex { base, .. } => collect_click_function_calls(base, calls),
-        ContractExpression::Old(body) | ContractExpression::Exact(body) => {
+        SurfaceTerm::Field { base, .. } => collect_click_function_calls(base, calls),
+        SurfaceTerm::ArrayIndex { base, .. } => collect_click_function_calls(base, calls),
+        SurfaceTerm::Old(body) | SurfaceTerm::Exact(body) => {
             collect_click_function_calls(body, calls)
         }
-        ContractExpression::At { expression, .. } => {
-            collect_click_function_calls(expression, calls)
-        }
+        SurfaceTerm::At { expression, .. } => collect_click_function_calls(expression, calls),
         crate::surface::binary_contract_expression!(left, right) => {
             collect_click_function_calls(left, calls);
             collect_click_function_calls(right, calls);
         }
-        ContractExpression::BitwiseNot(expression) => {
-            collect_click_function_calls(expression, calls)
-        }
-        ContractExpression::If {
+        SurfaceTerm::BitwiseNot(expression) => collect_click_function_calls(expression, calls),
+        SurfaceTerm::If {
             condition,
             then_branch,
             else_branch,
@@ -981,7 +967,7 @@ fn collect_click_function_calls_one(expression: &ContractExpression, calls: &mut
             collect_click_function_calls(then_branch, calls);
             collect_click_function_calls(else_branch, calls);
         }
-        ContractExpression::RangeFold {
+        SurfaceTerm::RangeFold {
             start,
             end,
             initial,
@@ -993,11 +979,11 @@ fn collect_click_function_calls_one(expression: &ContractExpression, calls: &mut
             collect_click_function_calls(initial, calls);
             collect_click_function_calls(body, calls);
         }
-        ContractExpression::Let { value, body, .. } => {
+        SurfaceTerm::Let { value, body, .. } => {
             collect_click_function_calls(value, calls);
             collect_click_function_calls(body, calls);
         }
-        ContractExpression::MethodCall {
+        SurfaceTerm::MethodCall {
             receiver,
             arguments,
             ..
@@ -1007,7 +993,7 @@ fn collect_click_function_calls_one(expression: &ContractExpression, calls: &mut
                 collect_click_function_calls(argument, calls);
             }
         }
-        ContractExpression::Call { name, arguments } => {
+        SurfaceTerm::Call { name, arguments } => {
             calls.insert(name.clone());
             for argument in arguments {
                 collect_click_function_calls(argument, calls);
@@ -1021,10 +1007,7 @@ fn collect_click_function_calls_in_segment(
     calls: &mut BTreeSet<String>,
 ) {
     for expression in [&segment.base, &segment.start, &segment.end] {
-        collect_click_function_calls(
-            &ContractExpression::ProgramExpression(expression.clone()),
-            calls,
-        );
+        collect_click_function_calls(&SurfaceTerm::ProgramExpression(expression.clone()), calls);
     }
 }
 
@@ -1060,15 +1043,15 @@ fn collect_click_function_calls_in_resource_subject(
 }
 
 pub(in crate::surface) fn collect_click_function_calls_in_proposition(
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     calls: &mut BTreeSet<String>,
 ) {
     let mut pending = vec![proposition];
     while let Some(proposition) = pending.pop() {
         match proposition {
-            ClickProposition::And(left, right)
-            | ClickProposition::Or(left, right)
-            | ClickProposition::Implies(left, right) => {
+            SurfaceProposition::And(left, right)
+            | SurfaceProposition::Or(left, right)
+            | SurfaceProposition::Implies(left, right) => {
                 pending.push(right);
                 pending.push(left);
             }
@@ -1078,65 +1061,65 @@ pub(in crate::surface) fn collect_click_function_calls_in_proposition(
 }
 
 fn collect_click_function_calls_in_proposition_one(
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     calls: &mut BTreeSet<String>,
 ) {
     match proposition {
-        ClickProposition::Value(expression) => collect_click_function_calls(expression, calls),
+        SurfaceProposition::Value(expression) => collect_click_function_calls(expression, calls),
 
-        ClickProposition::Comparison { left, right, .. } => {
+        SurfaceProposition::Comparison { left, right, .. } => {
             collect_click_function_calls(left, calls);
             collect_click_function_calls(right, calls);
         }
-        ClickProposition::FloatClassification { expression, .. } => {
+        SurfaceProposition::FloatClassification { expression, .. } => {
             collect_click_function_calls(expression, calls);
         }
-        ClickProposition::Separate { left, right } => {
+        SurfaceProposition::Separate { left, right } => {
             collect_click_function_calls_in_resource_subject(left, calls);
             collect_click_function_calls_in_resource_subject(right, calls);
         }
-        ClickProposition::ResourceViewable { resource } => {
+        SurfaceProposition::ResourceViewable { resource } => {
             collect_click_function_calls_in_resource_subject(resource, calls)
         }
-        ClickProposition::Contains { parent, child } => {
+        SurfaceProposition::Contains { parent, child } => {
             collect_click_function_calls_in_resource_subject(parent, calls);
             collect_click_function_calls_in_resource_subject(child, calls);
         }
-        ClickProposition::Loadable { segment } => {
+        SurfaceProposition::Loadable { segment } => {
             collect_click_function_calls_in_segment(segment, calls);
         }
-        ClickProposition::Defined { expression }
-        | ClickProposition::IsA {
+        SurfaceProposition::Defined { expression }
+        | SurfaceProposition::IsA {
             pointer: expression,
             ..
         } => {
             collect_click_function_calls(expression, calls);
         }
-        ClickProposition::At { proposition, .. } => {
+        SurfaceProposition::At { proposition, .. } => {
             collect_click_function_calls_in_proposition(proposition, calls);
         }
-        ClickProposition::And(left, right)
-        | ClickProposition::Or(left, right)
-        | ClickProposition::Implies(left, right) => {
+        SurfaceProposition::And(left, right)
+        | SurfaceProposition::Or(left, right)
+        | SurfaceProposition::Implies(left, right) => {
             collect_click_function_calls_in_proposition(left, calls);
             collect_click_function_calls_in_proposition(right, calls);
         }
-        ClickProposition::Not(body)
-        | ClickProposition::ForAll { body, .. }
-        | ClickProposition::Exists { body, .. } => {
+        SurfaceProposition::Not(body)
+        | SurfaceProposition::ForAll { body, .. }
+        | SurfaceProposition::Exists { body, .. } => {
             collect_click_function_calls_in_proposition(body, calls);
         }
-        ClickProposition::RangeAll {
+        SurfaceProposition::RangeAll {
             start, end, body, ..
         }
-        | ClickProposition::RangeAny {
+        | SurfaceProposition::RangeAny {
             start, end, body, ..
         } => {
             collect_click_function_calls(start, calls);
             collect_click_function_calls(end, calls);
             collect_click_function_calls_in_proposition(body, calls);
         }
-        ClickProposition::PredicateCall { arguments, .. } => {
+        SurfaceProposition::PredicateCall { arguments, .. } => {
             for argument in arguments {
                 collect_click_function_calls(argument, calls);
             }
@@ -1277,22 +1260,22 @@ fn click_function_decreases_parameter(
     }
 }
 
-fn contract_expression_variable(expression: &ContractExpression) -> Option<SurfaceBinder> {
+fn contract_expression_variable(expression: &SurfaceTerm) -> Option<SurfaceBinder> {
     match expression {
-        ContractExpression::Binding(name)
-        | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+        SurfaceTerm::Binding(name)
+        | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::Named(name),
         ))
-        | ContractExpression::ProgramBinding(name) => Some(name.into()),
-        ContractExpression::AlgebraicVariable { name, .. } => Some(name.clone()),
-        ContractExpression::ProgramExpression(ProgramExpression::Variable(
+        | SurfaceTerm::ProgramBinding(name) => Some(name.into()),
+        SurfaceTerm::AlgebraicVariable { name, .. } => Some(name.clone()),
+        SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::Generated(id),
         )) => Some((*id).into()),
         _ => None,
     }
 }
 
-fn contract_expression_int32_constant(expression: &ContractExpression) -> Option<i64> {
+fn contract_expression_int32_constant(expression: &SurfaceTerm) -> Option<i64> {
     let ProgramExpression::Value(ProgramValue::Int32(bits32_constant!(value))) =
         contract_expression_as_program_expression(expression)?
     else {
@@ -1312,7 +1295,7 @@ fn component_internal_call(
 fn validate_recursive_call_edge(
     caller: &str,
     callee: &str,
-    arguments: &[ContractExpression],
+    arguments: &[SurfaceTerm],
     lower_bounds: &BinderMap<i64>,
     structural_subterms: &BinderMap<ClickType>,
     definitions: &BTreeMap<&str, &ClickFunctionDefinition>,
@@ -1359,7 +1342,7 @@ fn validate_recursive_call_edge(
         ) => {
             let caller_lower = lower_bounds.get(caller_parameter).copied();
             match next {
-                ContractExpression::Subtract(left, right)
+                SurfaceTerm::Subtract(left, right)
                     if contract_expression_variable(left)
                         .is_some_and(|name| name == *caller_parameter) =>
                 {
@@ -1402,7 +1385,7 @@ fn validate_recursive_call_edge(
 
 fn validate_recursive_calls_in_expression(
     caller: &str,
-    expression: &ContractExpression,
+    expression: &SurfaceTerm,
     lower_bounds: &BinderMap<i64>,
     structural_subterms: &BinderMap<ClickType>,
     definitions: &BTreeMap<&str, &ClickFunctionDefinition>,
@@ -1410,26 +1393,23 @@ fn validate_recursive_calls_in_expression(
     measures: &BTreeMap<String, ClickRecursionMeasure>,
     algebraic_definitions: &BTreeMap<&str, &AlgebraicTypeDefinition>,
 ) -> Result<(), ClickError> {
-    let recurse = |expression: &ContractExpression,
-                   bounds: &BinderMap<i64>,
-                   subterms: &BinderMap<ClickType>| {
-        validate_recursive_calls_in_expression(
-            caller,
-            expression,
-            bounds,
-            subterms,
-            definitions,
-            function_calls,
-            measures,
-            algebraic_definitions,
-        )
-    };
+    let recurse =
+        |expression: &SurfaceTerm, bounds: &BinderMap<i64>, subterms: &BinderMap<ClickType>| {
+            validate_recursive_calls_in_expression(
+                caller,
+                expression,
+                bounds,
+                subterms,
+                definitions,
+                function_calls,
+                measures,
+                algebraic_definitions,
+            )
+        };
     match expression {
-        ContractExpression::IntegerContext(value) => {
-            recurse(value, lower_bounds, structural_subterms)
-        }
+        SurfaceTerm::IntegerContext(value) => recurse(value, lower_bounds, structural_subterms),
 
-        ContractExpression::Proposition(proposition) => validate_recursive_calls_in_proposition(
+        SurfaceTerm::Proposition(proposition) => validate_recursive_calls_in_proposition(
             caller,
             proposition,
             lower_bounds,
@@ -1439,12 +1419,12 @@ fn validate_recursive_calls_in_expression(
             measures,
             algebraic_definitions,
         ),
-        ContractExpression::Resource(_) => Ok(()),
-        ContractExpression::RegionResult(_)
-        | ContractExpression::RegionAllocation(_)
-        | ContractExpression::RegionParameter { .. } => Ok(()),
-        ContractExpression::Lambda { body, .. } => recurse(body, lower_bounds, structural_subterms),
-        ContractExpression::Apply {
+        SurfaceTerm::Resource(_) => Ok(()),
+        SurfaceTerm::RegionResult(_)
+        | SurfaceTerm::RegionAllocation(_)
+        | SurfaceTerm::RegionParameter { .. } => Ok(()),
+        SurfaceTerm::Lambda { body, .. } => recurse(body, lower_bounds, structural_subterms),
+        SurfaceTerm::Apply {
             function,
             arguments,
         } => {
@@ -1455,20 +1435,20 @@ fn validate_recursive_calls_in_expression(
             Ok(())
         }
 
-        ContractExpression::IntegerLiteral(_) => Ok(()),
-        ContractExpression::CUnary { operand: inner, .. }
-        | ContractExpression::MemoryLoad { pointer: inner, .. }
-        | ContractExpression::Negate(inner) => recurse(inner, lower_bounds, structural_subterms),
-        ContractExpression::ResourceField(_)
-        | ContractExpression::AlgebraicVariable { .. }
-        | ContractExpression::Binding(_) => Ok(()),
-        ContractExpression::AlgebraicConstructor { arguments, .. } => {
+        SurfaceTerm::IntegerLiteral(_) => Ok(()),
+        SurfaceTerm::CUnary { operand: inner, .. }
+        | SurfaceTerm::MemoryLoad { pointer: inner, .. }
+        | SurfaceTerm::Negate(inner) => recurse(inner, lower_bounds, structural_subterms),
+        SurfaceTerm::ResourceField(_)
+        | SurfaceTerm::AlgebraicVariable { .. }
+        | SurfaceTerm::Binding(_) => Ok(()),
+        SurfaceTerm::AlgebraicConstructor { arguments, .. } => {
             for argument in arguments {
                 recurse(argument, lower_bounds, structural_subterms)?;
             }
             Ok(())
         }
-        ContractExpression::AlgebraicMatch { scrutinee, arms } => {
+        SurfaceTerm::AlgebraicMatch { scrutinee, arms } => {
             recurse(scrutinee, lower_bounds, structural_subterms)?;
             // Parameter nodes retain their binder identity, whereas a match
             // or `let` binder that shadows the same spelling is a `Binding`.
@@ -1476,7 +1456,7 @@ fn validate_recursive_calls_in_expression(
             // an unrelated value into the root termination measure.
             let structural_scrutinee_type = match (scrutinee.as_ref(), measures.get(caller)) {
                 (
-                    ContractExpression::AlgebraicVariable {
+                    SurfaceTerm::AlgebraicVariable {
                         name,
                         algebraic_type: actual_type,
                         ..
@@ -1518,21 +1498,21 @@ fn validate_recursive_calls_in_expression(
             }
             Ok(())
         }
-        ContractExpression::SequenceLiteral(elements) => {
+        SurfaceTerm::SequenceLiteral(elements) => {
             for element in elements {
                 recurse(element, lower_bounds, structural_subterms)?;
             }
             Ok(())
         }
-        ContractExpression::SequenceConcat(left, right) => {
+        SurfaceTerm::SequenceConcat(left, right) => {
             recurse(left, lower_bounds, structural_subterms)?;
             recurse(right, lower_bounds, structural_subterms)
         }
-        ContractExpression::QualifiedC { .. }
-        | ContractExpression::ProgramExpression(_)
-        | ContractExpression::ProgramBinding(_)
-        | ContractExpression::ResourceWildcard => Ok(()),
-        ContractExpression::ResourceCount(resource) => {
+        SurfaceTerm::QualifiedC { .. }
+        | SurfaceTerm::ProgramExpression(_)
+        | SurfaceTerm::ProgramBinding(_)
+        | SurfaceTerm::ResourceWildcard => Ok(()),
+        SurfaceTerm::ResourceCount(resource) => {
             if let ResourceClause::Declared { arguments, .. } = resource.as_ref() {
                 for argument in arguments {
                     recurse(argument, lower_bounds, structural_subterms)?;
@@ -1540,18 +1520,18 @@ fn validate_recursive_calls_in_expression(
             }
             Ok(())
         }
-        ContractExpression::Field { base, .. } => recurse(base, lower_bounds, structural_subterms),
-        ContractExpression::Old(body)
-        | ContractExpression::Exact(body)
-        | ContractExpression::BitwiseNot(body) => recurse(body, lower_bounds, structural_subterms),
-        ContractExpression::At { expression, .. } => {
+        SurfaceTerm::Field { base, .. } => recurse(base, lower_bounds, structural_subterms),
+        SurfaceTerm::Old(body) | SurfaceTerm::Exact(body) | SurfaceTerm::BitwiseNot(body) => {
+            recurse(body, lower_bounds, structural_subterms)
+        }
+        SurfaceTerm::At { expression, .. } => {
             recurse(expression, lower_bounds, structural_subterms)
         }
         crate::surface::binary_contract_expression!(left, right) => {
             recurse(left, lower_bounds, structural_subterms)?;
             recurse(right, lower_bounds, structural_subterms)
         }
-        ContractExpression::If {
+        SurfaceTerm::If {
             condition,
             then_branch,
             else_branch,
@@ -1573,7 +1553,7 @@ fn validate_recursive_calls_in_expression(
             recurse(then_branch, &then_bounds, structural_subterms)?;
             recurse(else_branch, &else_bounds, structural_subterms)
         }
-        ContractExpression::RangeFold {
+        SurfaceTerm::RangeFold {
             start,
             end,
             initial,
@@ -1596,7 +1576,7 @@ fn validate_recursive_calls_in_expression(
             }
             recurse(body, &body_bounds, &body_subterms)
         }
-        ContractExpression::Let {
+        SurfaceTerm::Let {
             name, value, body, ..
         } => {
             recurse(value, lower_bounds, structural_subterms)?;
@@ -1610,10 +1590,8 @@ fn validate_recursive_calls_in_expression(
             }
             recurse(body, &body_bounds, &body_subterms)
         }
-        ContractExpression::ArrayIndex { base, .. } => {
-            recurse(base, lower_bounds, structural_subterms)
-        }
-        ContractExpression::MethodCall {
+        SurfaceTerm::ArrayIndex { base, .. } => recurse(base, lower_bounds, structural_subterms),
+        SurfaceTerm::MethodCall {
             receiver,
             arguments,
             ..
@@ -1624,7 +1602,7 @@ fn validate_recursive_calls_in_expression(
             }
             Ok(())
         }
-        ContractExpression::Call { name, arguments } => {
+        SurfaceTerm::Call { name, arguments } => {
             for argument in arguments {
                 recurse(argument, lower_bounds, structural_subterms)?;
             }
@@ -1644,7 +1622,7 @@ fn validate_recursive_calls_in_expression(
 
 fn validate_recursive_calls_in_proposition(
     caller: &str,
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     lower_bounds: &BinderMap<i64>,
     structural_subterms: &BinderMap<ClickType>,
     definitions: &BTreeMap<&str, &ClickFunctionDefinition>,
@@ -1652,7 +1630,7 @@ fn validate_recursive_calls_in_proposition(
     measures: &BTreeMap<String, ClickRecursionMeasure>,
     algebraic_definitions: &BTreeMap<&str, &AlgebraicTypeDefinition>,
 ) -> Result<(), ClickError> {
-    let expression = |expression: &ContractExpression| {
+    let expression = |expression: &SurfaceTerm| {
         validate_recursive_calls_in_expression(
             caller,
             expression,
@@ -1664,7 +1642,7 @@ fn validate_recursive_calls_in_proposition(
             algebraic_definitions,
         )
     };
-    let recurse_proposition = |proposition: &ClickProposition| {
+    let recurse_proposition = |proposition: &SurfaceProposition| {
         validate_recursive_calls_in_proposition(
             caller,
             proposition,
@@ -1677,7 +1655,7 @@ fn validate_recursive_calls_in_proposition(
         )
     };
     match proposition {
-        ClickProposition::Value(expression) => validate_recursive_calls_in_expression(
+        SurfaceProposition::Value(expression) => validate_recursive_calls_in_expression(
             caller,
             expression,
             lower_bounds,
@@ -1688,44 +1666,44 @@ fn validate_recursive_calls_in_proposition(
             algebraic_definitions,
         ),
 
-        ClickProposition::Comparison { left, right, .. } => {
+        SurfaceProposition::Comparison { left, right, .. } => {
             expression(left)?;
             expression(right)
         }
-        ClickProposition::FloatClassification {
+        SurfaceProposition::FloatClassification {
             expression: value, ..
         } => expression(value),
-        ClickProposition::And(left, right)
-        | ClickProposition::Or(left, right)
-        | ClickProposition::Implies(left, right) => {
+        SurfaceProposition::And(left, right)
+        | SurfaceProposition::Or(left, right)
+        | SurfaceProposition::Implies(left, right) => {
             recurse_proposition(left)?;
             recurse_proposition(right)
         }
-        ClickProposition::Not(body)
-        | ClickProposition::ForAll { body, .. }
-        | ClickProposition::Exists { body, .. }
-        | ClickProposition::At {
+        SurfaceProposition::Not(body)
+        | SurfaceProposition::ForAll { body, .. }
+        | SurfaceProposition::Exists { body, .. }
+        | SurfaceProposition::At {
             proposition: body, ..
         } => recurse_proposition(body),
-        ClickProposition::RangeAll {
+        SurfaceProposition::RangeAll {
             start, end, body, ..
         }
-        | ClickProposition::RangeAny {
+        | SurfaceProposition::RangeAny {
             start, end, body, ..
         } => {
             expression(start)?;
             expression(end)?;
             recurse_proposition(body)
         }
-        ClickProposition::PredicateCall { arguments, .. } => {
+        SurfaceProposition::PredicateCall { arguments, .. } => {
             for argument in arguments {
                 expression(argument)?;
             }
             Ok(())
         }
-        ClickProposition::Defined { expression: body }
-        | ClickProposition::IsA { pointer: body, .. } => expression(body),
-        ClickProposition::ResourceViewable { resource } => {
+        SurfaceProposition::Defined { expression: body }
+        | SurfaceProposition::IsA { pointer: body, .. } => expression(body),
+        SurfaceProposition::ResourceViewable { resource } => {
             validate_recursive_calls_in_resource_subject(
                 caller,
                 resource,
@@ -1737,8 +1715,8 @@ fn validate_recursive_calls_in_proposition(
                 algebraic_definitions,
             )
         }
-        ClickProposition::Separate { left, right }
-        | ClickProposition::Contains {
+        SurfaceProposition::Separate { left, right }
+        | SurfaceProposition::Contains {
             parent: left,
             child: right,
         } => {
@@ -1763,7 +1741,7 @@ fn validate_recursive_calls_in_proposition(
                 algebraic_definitions,
             )
         }
-        ClickProposition::Loadable { segment } => validate_recursive_calls_in_segment(
+        SurfaceProposition::Loadable { segment } => validate_recursive_calls_in_segment(
             caller,
             segment,
             lower_bounds,
@@ -1902,21 +1880,21 @@ fn validate_recursive_calls_in_segment(
 }
 
 fn add_condition_lower_bounds(
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     truth: bool,
     lower_bounds: &mut BinderMap<i64>,
 ) {
     match proposition {
-        ClickProposition::Not(body) => add_condition_lower_bounds(body, !truth, lower_bounds),
-        ClickProposition::And(left, right) if truth => {
+        SurfaceProposition::Not(body) => add_condition_lower_bounds(body, !truth, lower_bounds),
+        SurfaceProposition::And(left, right) if truth => {
             add_condition_lower_bounds(left, true, lower_bounds);
             add_condition_lower_bounds(right, true, lower_bounds);
         }
-        ClickProposition::Or(left, right) if !truth => {
+        SurfaceProposition::Or(left, right) if !truth => {
             add_condition_lower_bounds(left, false, lower_bounds);
             add_condition_lower_bounds(right, false, lower_bounds);
         }
-        ClickProposition::Comparison {
+        SurfaceProposition::Comparison {
             left,
             operator,
             right,

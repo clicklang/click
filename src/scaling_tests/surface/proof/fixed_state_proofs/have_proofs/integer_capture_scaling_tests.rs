@@ -6,7 +6,7 @@ use super::*;
 
 #[test]
 fn integer_argument_state_selection_scales_with_referenced_names() {
-    let expression = ContractExpression::Binding("used".into());
+    let expression = SurfaceTerm::Binding("used".into());
     for size in [16, 256, 4096] {
         let mut state = ExecutionState::new().with_local(
             "used",
@@ -43,13 +43,13 @@ fn integer_argument_state_selection_scales_with_referenced_names() {
 
 #[test]
 fn proposition_state_selection_scales_with_referenced_names() {
-    let proposition = ClickProposition::Comparison {
-        left: ContractExpression::At {
+    let proposition = SurfaceProposition::Comparison {
+        left: SurfaceTerm::At {
             selector: ProgramPointSelector::Mark("before".into()),
-            expression: Box::new(ContractExpression::Binding("used".into())),
+            expression: Box::new(SurfaceTerm::Binding("used".into())),
         },
         operator: ComparisonOperator::Equal,
-        right: ContractExpression::Old(Box::new(ContractExpression::Binding("used".into()))),
+        right: SurfaceTerm::Old(Box::new(SurfaceTerm::Binding("used".into()))),
     };
     for size in [16, 64, 256, 1024] {
         let mut state = ExecutionState::new().with_local("used", crate::kernel::int32(7));

@@ -99,7 +99,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
     /// simple operation and expansion retains the completed `have` body.
     pub(in crate::surface::proof) fn prove_cases_disjunction(
         &self,
-        disjunction: &ClickProposition,
+        disjunction: &SurfaceProposition,
     ) -> Result<Proof<'a>, ClickError> {
         let proof = self.proof;
         let kernel = proof.lower_surface_proposition(disjunction, "`cases` disjunction")?;
@@ -163,10 +163,10 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
     pub(in crate::surface::proof) fn apply_step_with_obligation_proofs(
         &self,
         step: ProofStep,
-        entries: Option<&[(Option<String>, ClickProposition)]>,
+        entries: Option<&[(Option<String>, SurfaceProposition)]>,
         prove: &mut dyn FnMut(
             &Proof<'a>,
-            ClickProposition,
+            SurfaceProposition,
             Option<usize>,
         ) -> Result<Proof<'a>, ClickError>,
     ) -> Result<Proof<'a>, ClickError> {
@@ -1131,7 +1131,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
     /// otherwise the ordinary implicit solver produces those same haves.
     pub(in crate::surface::proof) fn discharge_entry_requirements(
         &self,
-        surface_goal: &ClickProposition,
+        surface_goal: &SurfaceProposition,
         requirements: &super::super::execution_planning::OpenObligationProbe,
     ) -> Result<Proof<'a>, ClickError> {
         let driver_proof = self.proof;
@@ -1229,7 +1229,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         invariant_checks: &[LoopInvariantCheck],
         ranking_measures: &[crate::kernel::RankingComponent],
         structural_measure: Option<&str>,
-        invariant_surfaces: &[ClickProposition],
+        invariant_surfaces: &[SurfaceProposition],
         binders: &[crate::kernel::LoopBinder],
         composite_resource_definitions: &[CompositeResourceDefinition],
     ) -> Result<(Proof<'a>, LoopBoundary), ClickError> {
