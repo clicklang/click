@@ -41,8 +41,8 @@ fn deferred_integer_multiply_precharges_product_work_without_active_tactic() {
 fn from_machine_requires_program_overflow_path_fact() {
     let left = Variable(31);
     let right = Variable(32);
-    let left_bits = MachineTerm::Variable(left);
-    let right_bits = MachineTerm::Variable(right);
+    let left_bits = OldMachineTerm::Variable(left);
+    let right_bits = OldMachineTerm::Variable(right);
     let state = ExecutionState::new()
         .with_local("left", int32(left_bits.clone()))
         .with_local("right", int32(right_bits.clone()));
@@ -99,8 +99,8 @@ fn integer_existential_scopes_definedness_with_its_witness() {
     let left = Variable(701);
     let right = Variable(702);
     let witness = Variable(703);
-    let left_bits = MachineTerm::Variable(left);
-    let right_bits = MachineTerm::Variable(right);
+    let left_bits = OldMachineTerm::Variable(left);
+    let right_bits = OldMachineTerm::Variable(right);
     let state = ExecutionState::new()
         .with_local("left", int32(left_bits.clone()))
         .with_local("right", int32(right_bits.clone()));
@@ -154,15 +154,15 @@ fn integer_existential_scopes_definedness_with_its_witness() {
         contains(
             body,
             &Proposition::condition_is(
-                ConditionTerm::IntegerEqual(
+                OldConditionTerm::IntegerEqual(
                     IntegerTerm::var(**var).into(),
                     IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                         MachineIntegerType::Int32,
                         binary_node!(
                             Int32,
                             Add,
-                            Box::new(MachineTerm::Variable(left)),
-                            Box::new(MachineTerm::Variable(right)),
+                            Box::new(OldMachineTerm::Variable(left)),
+                            Box::new(OldMachineTerm::Variable(right)),
                         ),
                     ))
                     .into(),
@@ -177,10 +177,10 @@ fn integer_existential_scopes_definedness_with_its_witness() {
 #[test]
 fn from_machine_keeps_signed_and_unsigned_values_distinct() {
     let signed = SpecIntegerExpression::FromMachine(Box::new(SpecExpression::Value(
-        ProgramValue::Int32(MachineTerm::constant(u32::MAX)),
+        ProgramValue::Int32(OldMachineTerm::constant(u32::MAX)),
     )));
     let unsigned = SpecIntegerExpression::FromMachine(Box::new(SpecExpression::Value(
-        ProgramValue::UInt32(MachineTerm::constant(u32::MAX)),
+        ProgramValue::UInt32(OldMachineTerm::constant(u32::MAX)),
     )));
     let evaluate = |expression| {
         evaluate_spec_integer_expression_paths_in(
@@ -209,10 +209,10 @@ fn from_machine_keeps_signed_and_unsigned_values_distinct() {
 fn bitvector_substitution_reaches_machine_integer_proposition() {
     let variable = Variable(47);
     let proposition = Proposition::condition_is(
-        ConditionTerm::integer_equal(
+        OldConditionTerm::integer_equal(
             IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                 MachineIntegerType::Int32,
-                MachineTerm::Variable(variable),
+                OldMachineTerm::Variable(variable),
             )),
             IntegerTerm::constant_i64(7),
         ),
@@ -221,7 +221,7 @@ fn bitvector_substitution_reaches_machine_integer_proposition() {
     let substituted = crate::kernel::reasoning::substitute_bitvector_variable_in_proposition(
         &proposition,
         variable,
-        &MachineTerm::constant(7),
+        &OldMachineTerm::constant(7),
     );
     // Substitution reached inside the machine-backed Integer term. The
     // observation it left behind is decided -- `to_integer(7)` is the
@@ -230,11 +230,11 @@ fn bitvector_substitution_reaches_machine_integer_proposition() {
     // too, by the Integer equality's own smart constructor.
     assert_eq!(
         substituted,
-        Proposition::condition_is(ConditionTerm::Constant(true), true)
+        Proposition::condition_is(OldConditionTerm::Constant(true), true)
     );
 
     let expression = SpecIntegerExpression::FromMachine(Box::new(SpecExpression::Value(
-        ProgramValue::Int32(MachineTerm::constant(7)),
+        ProgramValue::Int32(OldMachineTerm::constant(7)),
     )));
     let paths = evaluate_spec_integer_expression_paths_in(
         SpecScope::unbound(&ExecutionState::default(), None),
@@ -253,11 +253,11 @@ fn bitvector_substitution_reaches_machine_integer_proposition() {
 fn integer_fold_loadable_obligation_keeps_carriers_separate() {
     let shared_id = Variable(71_100);
     let index: IntegerFoldIndexResult = IntegerRangeFoldIndex::Int32 {
-        start: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0)),
-        end: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(4)),
+        start: SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(0)),
+        end: SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(4)),
     }
     .into();
-    let integer_address = MachineTerm::IntegerToMachine {
+    let integer_address = OldMachineTerm::IntegerToMachine {
         value: IntegerTerm::var(shared_id).into(),
         destination: MachineIntegerType::Int32,
     };
@@ -265,9 +265,9 @@ fn integer_fold_loadable_obligation_keeps_carriers_separate() {
         memory: SymbolicMemory::new(),
         base: Address {
             base: AddressBase::Concrete("array".into()),
-            offset: AddressOffset::scaled_int32_node(integer_address, 4),
+            offset: OldAddressOffset::scaled_int32_node(integer_address, 4),
         },
-        bytes: (MachineTerm::constant(4)).into(),
+        bytes: (OldMachineTerm::constant(4)).into(),
         wide: false,
     };
     let wrapped = integer_range_fold_body_obligation(
@@ -300,9 +300,9 @@ fn integer_fold_loadable_obligation_keeps_carriers_separate() {
         memory: SymbolicMemory::new(),
         base: Address {
             base: AddressBase::Concrete("array".into()),
-            offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(shared_id), 4),
+            offset: OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(shared_id), 4),
         },
-        bytes: (MachineTerm::constant(4)).into(),
+        bytes: (OldMachineTerm::constant(4)).into(),
         wide: false,
     };
     let wrapped =
@@ -326,8 +326,8 @@ fn integer_fold_loadable_obligation_sees_integer_in_registered_pointer() {
     let memory = crate::kernel::intern_memory(SymbolicMemory::new().with_block("array", 16));
     let pointer = Address {
         base: AddressBase::Concrete("array".into()),
-        offset: AddressOffset::scaled_int32_node(
-            MachineTerm::IntegerToMachine {
+        offset: OldAddressOffset::scaled_int32_node(
+            OldMachineTerm::IntegerToMachine {
                 value: IntegerTerm::var(accumulator).into(),
                 destination: MachineIntegerType::Int32,
             },
@@ -343,14 +343,14 @@ fn integer_fold_loadable_obligation_sees_integer_in_registered_pointer() {
         memory: SymbolicMemory::new(),
         base: Address {
             base: AddressBase::Concrete("array".into()),
-            offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(load), 4),
+            offset: OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(load), 4),
         },
-        bytes: (MachineTerm::constant(4)).into(),
+        bytes: (OldMachineTerm::constant(4)).into(),
         wide: false,
     };
     let index: IntegerFoldIndexResult = IntegerRangeFoldIndex::Int32 {
-        start: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0)),
-        end: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(4)),
+        start: SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(0)),
+        end: SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(4)),
     }
     .into();
     let wrapped =
@@ -368,9 +368,9 @@ fn integer_fold_loadable_obligation_sees_integer_in_registered_pointer() {
         memory: SymbolicMemory::new(),
         base: Address {
             base: AddressBase::Concrete("array".into()),
-            offset: AddressOffset::Variable(load),
+            offset: OldAddressOffset::Variable(load),
         },
-        bytes: (MachineTerm::constant(4)).into(),
+        bytes: (OldMachineTerm::constant(4)).into(),
         wide: false,
     };
     let direct_wrapped =
@@ -394,8 +394,8 @@ fn integer_fold_loadable_obligation_keeps_accumulator_for_two_hop_direct_offset(
         &memory,
         &Address {
             base: AddressBase::Concrete("array".into()),
-            offset: AddressOffset::scaled_int32_node(
-                MachineTerm::IntegerToMachine {
+            offset: OldAddressOffset::scaled_int32_node(
+                OldMachineTerm::IntegerToMachine {
                     value: IntegerTerm::var(accumulator).into(),
                     destination: MachineIntegerType::Int32,
                 },
@@ -408,9 +408,9 @@ fn integer_fold_loadable_obligation_keeps_accumulator_for_two_hop_direct_offset(
         &memory,
         &Address {
             base: AddressBase::Concrete("array".into()),
-            offset: AddressOffset::Add(
-                Box::new(AddressOffset::Constant(0)),
-                Box::new(AddressOffset::Variable(inner)),
+            offset: OldAddressOffset::Add(
+                Box::new(OldAddressOffset::Constant(0)),
+                Box::new(OldAddressOffset::Variable(inner)),
             ),
         },
         crate::kernel::LoadKind::Int32,
@@ -419,14 +419,14 @@ fn integer_fold_loadable_obligation_keeps_accumulator_for_two_hop_direct_offset(
         memory: SymbolicMemory::new(),
         base: Address {
             base: AddressBase::Concrete("array".into()),
-            offset: AddressOffset::Variable(outer),
+            offset: OldAddressOffset::Variable(outer),
         },
-        bytes: (MachineTerm::constant(4)).into(),
+        bytes: (OldMachineTerm::constant(4)).into(),
         wide: false,
     };
     let index: IntegerFoldIndexResult = IntegerRangeFoldIndex::Int32 {
-        start: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0)),
-        end: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(4)),
+        start: SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(0)),
+        end: SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(4)),
     }
     .into();
     let wrapped =
@@ -446,7 +446,7 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
     let memory = crate::kernel::intern_memory(SymbolicMemory::new().with_block("array", 16));
     let pointer = Address {
         base: AddressBase::Concrete("array".into()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let load = crate::kernel::eval::load_variable_for_cell(
         &memory,
@@ -457,11 +457,11 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
         crate::kernel::eval::registered_load_for_variable(&load)
             .expect("the load variable must retain its exact descriptor");
     let defining = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::Variable(load)),
-            right: Box::new(MachineTerm::read_named(
+            left: Box::new(OldMachineTerm::Variable(load)),
+            right: Box::new(OldMachineTerm::read_named(
                 ProgramPoint::at(&registered_memory),
                 Box::new(registered_pointer.clone()),
                 crate::kernel::LoadKind::Int32,
@@ -472,7 +472,7 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
     let loadable = Proposition::MemoryLoadable {
         memory: registered_memory.as_ref().clone(),
         base: registered_pointer.clone(),
-        bytes: (MachineTerm::constant(4)).into(),
+        bytes: (OldMachineTerm::constant(4)).into(),
         wide: false,
     };
     let exact = drop_verified_load_definition_conjuncts(Proposition::And(
@@ -488,14 +488,14 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
     assert_eq!(retained_guard, guarded);
 
     let tampered_pointer = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::Variable(load)),
-            right: Box::new(MachineTerm::read_named(
+            left: Box::new(OldMachineTerm::Variable(load)),
+            right: Box::new(OldMachineTerm::read_named(
                 ProgramPoint::at(&registered_memory),
                 Box::new(Address {
-                    offset: AddressOffset::Constant(4),
+                    offset: OldAddressOffset::Constant(4),
                     ..registered_pointer.clone()
                 }),
                 crate::kernel::LoadKind::Int32,
@@ -513,11 +513,11 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
     let tampered_memory =
         crate::kernel::intern_memory(SymbolicMemory::new().with_block("other", 16));
     let tampered_state = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::Variable(load)),
-            right: Box::new(MachineTerm::read_named(
+            left: Box::new(OldMachineTerm::Variable(load)),
+            right: Box::new(OldMachineTerm::read_named(
                 ProgramPoint::at(&tampered_memory),
                 Box::new(registered_pointer.clone()),
                 crate::kernel::LoadKind::Int32,
@@ -530,7 +530,7 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
         Box::new(Proposition::MemoryLoadable {
             memory: registered_memory.as_ref().clone(),
             base: registered_pointer.clone(),
-            bytes: (MachineTerm::constant(4)).into(),
+            bytes: (OldMachineTerm::constant(4)).into(),
             wide: false,
         }),
     ))
@@ -539,11 +539,11 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
 
     let unknown = Variable((1u64 << 40) + 123_456_789);
     let unknown_definition = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::Variable(unknown)),
-            right: Box::new(MachineTerm::read_named(
+            left: Box::new(OldMachineTerm::Variable(unknown)),
+            right: Box::new(OldMachineTerm::read_named(
                 ProgramPoint::at(&registered_memory),
                 Box::new(registered_pointer),
                 crate::kernel::LoadKind::Int32,
@@ -556,7 +556,7 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
         Box::new(Proposition::MemoryLoadable {
             memory: memory.as_ref().clone(),
             base: pointer,
-            bytes: (MachineTerm::constant(4)).into(),
+            bytes: (OldMachineTerm::constant(4)).into(),
             wide: false,
         }),
     ))
@@ -568,7 +568,7 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
 fn defined_memory_load_retains_typed_validity_after_dropping_registry_metadata() {
     let pointer = Address {
         base: AddressBase::Concrete("array".into()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let proposition = SpecProposition::Defined(SpecExpression::MemoryLoad {
         point: SpecPoint::At(ProgramPoint::of_memory(&SymbolicMemory::new())),
@@ -596,19 +596,19 @@ fn defined_memory_load_retains_typed_validity_after_dropping_registry_metadata()
         }
     ));
     assert!(!matches!(
-        &paths[0].proposition, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Constant(true), _)))));
+        &paths[0].proposition, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::Constant(true), _)))));
 }
 
 #[test]
 fn defined_memory_load_retains_typed_validity_for_an_already_known_cell() {
     let pointer = Address {
         base: AddressBase::Concrete("array".into()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let proposition = SpecProposition::Defined(SpecExpression::MemoryLoad {
         point: SpecPoint::At(ProgramPoint::of_memory(&SymbolicMemory::new().store(
             pointer.clone(),
-            ProgramValue::Int32(MachineTerm::constant(7)),
+            ProgramValue::Int32(OldMachineTerm::constant(7)),
         ))),
         pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
             OldPointer::new(pointer, ProgramType::Int32Pointer),
@@ -634,7 +634,7 @@ fn defined_memory_load_retains_typed_validity_for_an_already_known_cell() {
         }
     ));
     assert!(!matches!(
-        &paths[0].proposition, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Constant(true), _)))));
+        &paths[0].proposition, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::Constant(true), _)))));
 }
 
 #[test]
@@ -659,7 +659,7 @@ fn integer_existential_branch_filters_exact_load_definitions_only() {
     let memory = crate::kernel::intern_memory(SymbolicMemory::new().with_block("array", 16));
     let pointer = Address {
         base: AddressBase::Concrete("array".into()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let load = crate::kernel::eval::load_variable_for_exact_cell(
         &memory,
@@ -672,11 +672,11 @@ fn integer_existential_branch_filters_exact_load_definitions_only() {
             .expect("the exact load must have a registry descriptor");
     let defining = |memory: SharedMemory, pointer: Address, variable: Variable| {
         Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::Variable(variable)),
-                right: Box::new(MachineTerm::read_named(
+                left: Box::new(OldMachineTerm::Variable(variable)),
+                right: Box::new(OldMachineTerm::read_named(
                     ProgramPoint::at(&memory),
                     Box::new(pointer),
                     crate::kernel::LoadKind::Int32,
@@ -689,10 +689,10 @@ fn integer_existential_branch_filters_exact_load_definitions_only() {
     let loadable = Proposition::MemoryLoadable {
         memory: registered_memory.as_ref().clone(),
         base: registered_pointer.clone(),
-        bytes: (MachineTerm::constant(4)).into(),
+        bytes: (OldMachineTerm::constant(4)).into(),
         wide: false,
     };
-    let marker = Proposition::condition_is(ConditionTerm::Constant(true), true);
+    let marker = Proposition::condition_is(OldConditionTerm::Constant(true), true);
     let exact_path = SpecPropositionPath {
         proposition: marker.clone(),
         facts: vec![ExecutionPureFact::certified(exact.clone())].into(),
@@ -708,7 +708,7 @@ fn integer_existential_branch_filters_exact_load_definitions_only() {
     assert!(contains(&exact_branch, &marker));
 
     let tampered_pointer = Address {
-        offset: AddressOffset::Constant(4),
+        offset: OldAddressOffset::Constant(4),
         ..registered_pointer.clone()
     };
     let tampered_pointer_definition = defining(registered_memory.clone(), tampered_pointer, load);
@@ -779,7 +779,7 @@ fn integer_existential_branch_filters_exact_load_definitions_only() {
 fn empty_integer_fold_preserves_shape_without_live_load_obligation() {
     let missing_pointer = Address {
         base: AddressBase::Concrete("missing".into()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let body = SpecIntegerExpression::FromMachine(Box::new(SpecExpression::MemoryLoad {
         point: SpecPoint::At(ProgramPoint::of_memory(&SymbolicMemory::new())),
@@ -792,10 +792,10 @@ fn empty_integer_fold_preserves_shape_without_live_load_obligation() {
     let expression = SpecIntegerExpression::RangeFold {
         index: SpecIntegerRangeFoldIndex::Int32 {
             start: Box::new(SpecExpression::Value(ProgramValue::Int32(
-                MachineTerm::constant(4),
+                OldMachineTerm::constant(4),
             ))),
             end: Box::new(SpecExpression::Value(ProgramValue::Int32(
-                MachineTerm::constant(4),
+                OldMachineTerm::constant(4),
             ))),
         },
         initial: Box::new(SpecIntegerExpression::Term(IntegerTerm::constant_i64(19))),
@@ -811,7 +811,7 @@ fn empty_integer_fold_preserves_shape_without_live_load_obligation() {
     )
     .expect("an empty range still typechecks its body");
     assert_eq!(paths.len(), 1);
-    let value = paths[0].value.native_compat();
+    let value = paths[0].value.old_form();
     let IntegerTerm::RangeFold { body, .. } = value.as_ref() else {
         panic!("empty fold capture lost the fold shape");
     };
@@ -819,8 +819,8 @@ fn empty_integer_fold_preserves_shape_without_live_load_obligation() {
         panic!("empty fold body lost its symbolic load")
     };
     let load_pointer = match machine.value() {
-        MachineTerm::MemoryLoad(_, pointer, _) => pointer.as_ref().clone(),
-        MachineTerm::Variable(load) => crate::kernel::eval::registered_load_for_variable(load)
+        OldMachineTerm::MemoryLoad(_, pointer, _) => pointer.as_ref().clone(),
+        OldMachineTerm::Variable(load) => crate::kernel::eval::registered_load_for_variable(load)
             .map(|(_, pointer)| pointer)
             .expect("registered symbolic load must retain its pointer"),
         _ => panic!("empty fold body lost its symbolic load"),
@@ -837,13 +837,13 @@ fn nonempty_integer_fold_is_logical_but_checked_reads_remain_scoped() {
             OldPointer::new(
                 Address {
                     base: AddressBase::Symbolic(Variable(71_104)),
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0),
                 },
                 ProgramType::Int32Pointer,
             ),
         ))),
         elements: Box::new(SpecExpression::Value(ProgramValue::Int32(
-            MachineTerm::Variable(item),
+            OldMachineTerm::Variable(item),
         ))),
         byte_width: 4,
     };
@@ -856,10 +856,10 @@ fn nonempty_integer_fold_is_logical_but_checked_reads_remain_scoped() {
     let expression = SpecIntegerExpression::RangeFold {
         index: SpecIntegerRangeFoldIndex::Int32 {
             start: Box::new(SpecExpression::Value(ProgramValue::Int32(
-                MachineTerm::constant(0),
+                OldMachineTerm::constant(0),
             ))),
             end: Box::new(SpecExpression::Value(ProgramValue::Int32(
-                MachineTerm::constant(4),
+                OldMachineTerm::constant(4),
             ))),
         },
         initial: Box::new(SpecIntegerExpression::Term(IntegerTerm::constant_i64(0))),
@@ -907,7 +907,7 @@ fn integer_to_machine_converts_exact_boundaries_without_wrapping() {
         (
             MachineIntegerType::Int32,
             BigInt::from(i32::MIN),
-            ProgramValue::Int32(MachineTerm::constant(i32::MIN as u32)),
+            ProgramValue::Int32(OldMachineTerm::constant(i32::MIN as u32)),
         ),
         (
             MachineIntegerType::UInt8,
@@ -922,17 +922,17 @@ fn integer_to_machine_converts_exact_boundaries_without_wrapping() {
         (
             MachineIntegerType::UInt32,
             BigInt::from(u32::MAX),
-            ProgramValue::UInt32(MachineTerm::uint32_constant(u32::MAX)),
+            ProgramValue::UInt32(OldMachineTerm::uint32_constant(u32::MAX)),
         ),
         (
             MachineIntegerType::Int64,
             BigInt::from(i64::MIN),
-            ProgramValue::Int64(MachineTerm::int64_constant(i64::MIN)),
+            ProgramValue::Int64(OldMachineTerm::int64_constant(i64::MIN)),
         ),
         (
             MachineIntegerType::UInt64,
             BigInt::from(u64::MAX),
-            ProgramValue::UInt64(MachineTerm::uint64_constant(u64::MAX)),
+            ProgramValue::UInt64(OldMachineTerm::uint64_constant(u64::MAX)),
         ),
     ];
     for (destination, integer, expected) in cases {
@@ -1058,13 +1058,13 @@ fn integer_to_machine_symbolic_values_keep_carrier_and_range_obligations() {
         assert!(paths[0].facts.is_empty());
         assert!(matches!(
             &paths[0].value.clone().into_native(),
-            ProgramValue::Int8(MachineTerm::IntegerToMachine { destination: d, .. }) | ProgramValue::Int16(MachineTerm::IntegerToMachine { destination: d, .. })
-                | ProgramValue::Int32(MachineTerm::IntegerToMachine { destination: d, .. })
-                | ProgramValue::UInt8(MachineTerm::IntegerToMachine { destination: d, .. })
-                | ProgramValue::UInt16(MachineTerm::IntegerToMachine { destination: d, .. })
-                | ProgramValue::UInt32(MachineTerm::IntegerToMachine { destination: d, .. })
-                | ProgramValue::Int64(MachineTerm::IntegerToMachine { destination: d, .. })
-                | ProgramValue::UInt64(MachineTerm::IntegerToMachine { destination: d, .. })
+            ProgramValue::Int8(OldMachineTerm::IntegerToMachine { destination: d, .. }) | ProgramValue::Int16(OldMachineTerm::IntegerToMachine { destination: d, .. })
+                | ProgramValue::Int32(OldMachineTerm::IntegerToMachine { destination: d, .. })
+                | ProgramValue::UInt8(OldMachineTerm::IntegerToMachine { destination: d, .. })
+                | ProgramValue::UInt16(OldMachineTerm::IntegerToMachine { destination: d, .. })
+                | ProgramValue::UInt32(OldMachineTerm::IntegerToMachine { destination: d, .. })
+                | ProgramValue::Int64(OldMachineTerm::IntegerToMachine { destination: d, .. })
+                | ProgramValue::UInt64(OldMachineTerm::IntegerToMachine { destination: d, .. })
                 if *d == destination
         ));
         assert_eq!(paths[0].obligations.len(), 2);
@@ -1079,14 +1079,14 @@ fn integer_to_machine_symbolic_values_keep_carrier_and_range_obligations() {
         assert!(paths[0].obligations.iter().any(|obligation| {
             *obligation.proposition()
                 == Proposition::condition_is(
-                    ConditionTerm::integer_greater_equal(value.clone(), lower.clone()),
+                    OldConditionTerm::integer_greater_equal(value.clone(), lower.clone()),
                     true,
                 )
         }));
         assert!(paths[0].obligations.iter().any(|obligation| {
             *obligation.proposition()
                 == Proposition::condition_is(
-                    ConditionTerm::integer_less_equal(value.clone(), upper.clone()),
+                    OldConditionTerm::integer_less_equal(value.clone(), upper.clone()),
                     true,
                 )
         }));
@@ -1095,8 +1095,8 @@ fn integer_to_machine_symbolic_values_keep_carrier_and_range_obligations() {
     let left = Variable(991);
     let right = Variable(992);
     let state = ExecutionState::new()
-        .with_local("left", int32(MachineTerm::Variable(left)))
-        .with_local("right", int32(MachineTerm::Variable(right)));
+        .with_local("left", int32(OldMachineTerm::Variable(left)))
+        .with_local("right", int32(OldMachineTerm::Variable(right)));
     let expression = SpecExpression::IntegerToMachine {
         value: Box::new(SpecIntegerExpression::FromMachine(Box::new(
             SpecExpression::ProgramExpression(crate::kernel::program_expression::add(
@@ -1119,8 +1119,8 @@ fn integer_to_machine_symbolic_values_keep_carrier_and_range_obligations() {
         Proposition::signed_arithmetic_domain(
             MachineIntegerType::Int32,
             MachineBinaryOp::Add,
-            &MachineTerm::Variable(left),
-            &MachineTerm::Variable(right),
+            &OldMachineTerm::Variable(left),
+            &OldMachineTerm::Variable(right),
         )
     )));
     assert_eq!(paths[0].obligations.len(), 3);
@@ -1138,8 +1138,8 @@ fn integer_to_machine_symbolic_values_keep_carrier_and_range_obligations() {
                 == &Proposition::signed_arithmetic_domain(
                     MachineIntegerType::Int32,
                     MachineBinaryOp::Add,
-                    &MachineTerm::Variable(left),
-                    &MachineTerm::Variable(right),
+                    &OldMachineTerm::Variable(left),
+                    &OldMachineTerm::Variable(right),
                 ))
     );
 }

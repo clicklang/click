@@ -179,7 +179,7 @@ fn instantiate_lowered_predicate_definition(
                 )),
                 Some(Term::Algebraic(value)) => {
                     Some(generics::click_type_from_algebraic_value_type(
-                        &value.native_compat().algebraic_type.value_type(),
+                        &value.old_form().algebraic_type.value_type(),
                     ))
                 }
                 _ => None,
@@ -320,7 +320,7 @@ pub(in crate::surface) fn decode_predicate_arguments(
                         parameter.name()
                     ));
                 };
-                values.insert(parameter.name().to_string(), value.native_compat().clone());
+                values.insert(parameter.name().to_string(), value.old_form().clone());
                 index += 1;
             }
         }

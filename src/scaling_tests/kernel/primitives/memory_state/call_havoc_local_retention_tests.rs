@@ -8,7 +8,7 @@ use super::*;
 fn local_initialization_havoc_checks_scale_with_changed_cells() {
     let target = Address {
         base: "local:target".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let range = MemoryRange::new_with_element_width(target.clone(), 0u32.into(), 4u32.into(), 1);
     let facts = PureFactContext::new();
@@ -18,12 +18,12 @@ fn local_initialization_havoc_checks_scale_with_changed_cells() {
             .with_block(target.base.clone(), 8)
             .store(
                 target.clone(),
-                ProgramValue::Int32(MachineTerm::constant(7)),
+                ProgramValue::Int32(OldMachineTerm::constant(7)),
             );
         for index in 0..count {
             let pointer = Address {
                 base: format!("local:ambient-{index}").into(),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             };
             std::sync::Arc::make_mut(&mut before.heap)
                 .initialized
@@ -65,13 +65,13 @@ fn one_byte_call_havoc_ignores_disjoint_cells_in_its_block() {
         });
         let at = |offset| Address {
             base: "local:byte-havoc".into(),
-            offset: AddressOffset::Constant(offset),
+            offset: OldAddressOffset::Constant(offset),
         };
         // The call writes byte 33. The cached word at byte 32 overlaps even
         // though its starting address lies before the write range.
         let range = MemoryRange::new_with_element_width(at(4), 29u32.into(), 30u32.into(), 1);
         let ranges = std::slice::from_ref(&range);
-        let value = ProgramValue::Int32(MachineTerm::constant(7));
+        let value = ProgramValue::Int32(OldMachineTerm::constant(7));
         let mut samples = Vec::new();
 
         for count in [4, 16, 64, 256] {
@@ -125,9 +125,9 @@ fn one_byte_call_havoc_ignores_disjoint_cells_in_its_block() {
 fn exact_call_havoc_ignores_disjoint_run_slots_and_holes() {
     let at = |offset: u32| Address {
         base: "local:call-run-havoc".into(),
-        offset: AddressOffset::Constant(i64::from(offset)),
+        offset: OldAddressOffset::Constant(i64::from(offset)),
     };
-    let value = ProgramValue::Int32(MachineTerm::constant(7));
+    let value = ProgramValue::Int32(OldMachineTerm::constant(7));
     let facts = PureFactContext::new();
     for bytes in [1u32, 5] {
         // Write inside the word starting at byte 4. Five bytes also reach

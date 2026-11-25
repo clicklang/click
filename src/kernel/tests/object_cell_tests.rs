@@ -34,13 +34,13 @@ fn a_value_of_an_abstract_type_lives_in_an_allocation_of_its_size() {
     // and at most `PTRDIFF_MAX`.
     let facts = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::uint64_greater_than(size.clone(), MachineTerm::uint64_constant(0)),
+            OldConditionTerm::uint64_greater_than(size.clone(), OldMachineTerm::uint64_constant(0)),
             true,
         )
         .assume_condition(
-            ConditionTerm::uint64_less_equal(
+            OldConditionTerm::uint64_less_equal(
                 size.clone(),
-                MachineTerm::uint64_constant(i64::MAX as u64),
+                OldMachineTerm::uint64_constant(i64::MAX as u64),
             ),
             true,
         );
@@ -64,7 +64,7 @@ fn a_value_of_an_abstract_type_lives_in_an_allocation_of_its_size() {
     let allocated = resolve_pending_heap_allocations(
         &allocated,
         &facts.clone().assume_proposition(Proposition::condition_is(
-            ConditionTerm::address_equal(pending.address().clone(), Address::null()),
+            OldConditionTerm::address_equal(pending.address().clone(), Address::null()),
             false,
         )),
     );

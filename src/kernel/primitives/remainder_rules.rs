@@ -1,7 +1,7 @@
 //! Local Euclidean remainder identities for machine integers. Every signed
 //! identity carries nonnegative, non-wrapping guards; uint64 divisors are
 //! checked at their full width.
-use super::{ConditionTerm as C, MachineTerm as B};
+use super::{OldConditionTerm as C, OldMachineTerm as B};
 use crate::kernel::MachineBinaryOp;
 #[cfg(test)]
 use crate::kernel::binary_node;
@@ -61,8 +61,8 @@ impl C {
         };
         let zero = B::constant(0);
         let mut guards = vec![
-            compare(CompareRelation::LessEqual, V::Legacy(&zero), n),
-            compare(CompareRelation::LessThan, V::Legacy(&zero), d),
+            compare(CompareRelation::LessEqual, V::Old(&zero), n),
+            compare(CompareRelation::LessThan, V::Old(&zero), d),
         ];
         if let Some(upper) = upper
             && !same_division_guard_operand(n, upper)
@@ -79,12 +79,12 @@ fn same_division_guard_operand(
 ) -> bool {
     use crate::kernel::{KernelTermImport, MachineOperandView as V};
     match (left, right) {
-        (V::Legacy(a), V::Legacy(b)) => a == b,
+        (V::Old(a), V::Old(b)) => a == b,
         (V::Shared(a), V::Shared(b)) => {
             a.with_machine_observation_type(MachineIntegerType::Int32)
                 == b.with_machine_observation_type(MachineIntegerType::Int32)
         }
-        (V::Shared(shared), V::Legacy(native)) | (V::Legacy(native), V::Shared(shared)) => {
+        (V::Shared(shared), V::Old(native)) | (V::Old(native), V::Shared(shared)) => {
             KernelTermImport::default()
                 .machine_arithmetic(MachineIntegerType::Int32, native)
                 .as_ref()
@@ -115,7 +115,7 @@ enum DivisionGuardOperand {
 impl DivisionGuardOperand {
     fn view(&self) -> crate::kernel::MachineOperandView<'_> {
         match self {
-            Self::Native(value) => crate::kernel::MachineOperandView::Legacy(value),
+            Self::Native(value) => crate::kernel::MachineOperandView::Old(value),
             Self::Shared(value) => value.operand_view(),
         }
     }
@@ -129,9 +129,7 @@ fn signed_division_guard_operand(
     use crate::kernel::MachineOperandView as V;
     use MachineIntegerType::{Int32, UInt32};
     match operand {
-        V::Legacy(value) => {
-            DivisionGuardOperand::Native(B::sign_cast32(UInt32, Int32, value.clone()))
-        }
+        V::Old(value) => DivisionGuardOperand::Native(B::sign_cast32(UInt32, Int32, value.clone())),
         V::Shared(_) => {
             DivisionGuardOperand::Shared(operand.retain(UInt32).checking_cast_operand(Int32))
         }

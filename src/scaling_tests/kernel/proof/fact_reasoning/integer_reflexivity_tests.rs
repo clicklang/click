@@ -44,13 +44,13 @@ fn listed_loaded_fold_matching_tracks_explicit_premises_not_memory_history() {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = Address {
             base: "listed-fold".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let mut memory = SymbolicMemory::new().with_block("listed-fold", size * 4);
         for index in 0..size {
             memory = memory.store(
                 pointer.offset_by_bytes(index * 4),
-                ProgramValue::Int32(MachineTerm::constant(index)),
+                ProgramValue::Int32(OldMachineTerm::constant(index)),
             );
         }
         let memory = crate::kernel::intern_memory(memory);

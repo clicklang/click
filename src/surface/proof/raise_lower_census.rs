@@ -15,7 +15,7 @@
 
 #[cfg(test)]
 use crate::kernel::{CompareRelation, MachineIntegerType};
-use crate::kernel::{ConditionTerm, Proposition, Term};
+use crate::kernel::{OldConditionTerm, Proposition, Term};
 
 #[cfg(test)]
 thread_local! {
@@ -66,7 +66,7 @@ pub(super) fn kind(proposition: &Proposition) -> String {
             }
         ),
         Proposition::ConditionIs(condition, _) => {
-            format!("condition:{}", condition_kind(condition.native_compat()))
+            format!("condition:{}", condition_kind(condition.old_form()))
         }
         Proposition::Predicate { name, .. } if name.starts_with("__click") => {
             "predicate:internal".into()
@@ -83,7 +83,7 @@ pub(super) fn kind(proposition: &Proposition) -> String {
     }
 }
 
-fn condition_kind(condition: &ConditionTerm) -> String {
+fn condition_kind(condition: &OldConditionTerm) -> String {
     // A machine comparison or overflow test names its format and relation.
     if let Some((op, _, _)) = condition.as_bitvector_comparison() {
         let kind = if op.is_overflow() {
@@ -144,7 +144,7 @@ pub(super) fn record(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::{MachineTerm, Sort, Variable};
+    use crate::kernel::{OldMachineTerm, Sort, Variable};
 
     #[test]
     #[cfg(not(feature = "fast-gate"))]
@@ -1335,11 +1335,11 @@ theorem add3_adds_four() {
     #[test]
     fn a_censused_fact_is_classified_by_the_atom_it_concludes() {
         let atom = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::Variable(Variable(1))),
-                right: Box::new(MachineTerm::constant(0)),
+                left: Box::new(OldMachineTerm::Variable(Variable(1))),
+                right: Box::new(OldMachineTerm::constant(0)),
             },
             true,
         );

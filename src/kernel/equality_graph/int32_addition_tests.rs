@@ -1,13 +1,13 @@
 use super::*;
 use crate::kernel::binary_node;
-fn var(id: u64) -> MachineTerm {
-    MachineTerm::Variable(Variable(id))
+fn var(id: u64) -> OldMachineTerm {
+    OldMachineTerm::Variable(Variable(id))
 }
-fn add(left: MachineTerm, right: MachineTerm) -> MachineTerm {
+fn add(left: OldMachineTerm, right: OldMachineTerm) -> OldMachineTerm {
     binary_node!(Int32, Add, Box::new(left), Box::new(right))
 }
-fn eq(left: MachineTerm, right: MachineTerm) -> ConditionTerm {
-    ConditionTerm::equal(left, right)
+fn eq(left: OldMachineTerm, right: OldMachineTerm) -> OldConditionTerm {
+    OldConditionTerm::equal(left, right)
 }
 
 #[test]
@@ -21,8 +21,8 @@ fn int32_addition_closes_both_operands_early_and_late_through_scaled_offsets() {
         let right = add(add(var(2), var(4)), var(5));
         graph.add_int32_equality(&left, &var(10));
         graph.add_int32_equality(&right, &var(11));
-        let offset = |v| AddressOffset::scale_int32(v, 4);
-        let alias = |i| AddressOffset::Variable(Variable(i));
+        let offset = |v| OldAddressOffset::scale_int32(v, 4);
+        let alias = |i| OldAddressOffset::Variable(Variable(i));
         graph.add_offset_equality(&offset(left), &alias(20));
         graph.add_offset_equality(&offset(right), &alias(21));
         let parent = graph.clone();
@@ -47,23 +47,23 @@ fn int32_addition_folds_literal_classes_using_bitvector_semantics() {
         for early in [false, true] {
             let mut graph = EqualityGraph::default();
             if early {
-                graph.add_int32_equality(&var(1), &MachineTerm::constant(a));
-                graph.add_int32_equality(&var(2), &MachineTerm::constant(b));
+                graph.add_int32_equality(&var(1), &OldMachineTerm::constant(a));
+                graph.add_int32_equality(&var(2), &OldMachineTerm::constant(b));
             }
             graph.add_int32_equality(&add(var(1), var(2)), &var(10));
             if !early {
-                graph.add_int32_equality(&MachineTerm::constant(a), &var(1));
-                graph.add_int32_equality(&MachineTerm::constant(b), &var(2));
+                graph.add_int32_equality(&OldMachineTerm::constant(a), &var(1));
+                graph.add_int32_equality(&OldMachineTerm::constant(b), &var(2));
             }
-            let result = MachineTerm::constant(a.wrapping_add(b));
+            let result = OldMachineTerm::constant(a.wrapping_add(b));
             assert!(graph.are_int32_equal(&var(10), &result));
             assert!(graph.are_int32_equal(
-                &add(MachineTerm::constant(a), MachineTerm::constant(b)),
+                &add(OldMachineTerm::constant(a), OldMachineTerm::constant(b)),
                 &result
             ));
             assert!(!graph.are_int32_equal(
                 &var(10),
-                &MachineTerm::constant(a.wrapping_add(b).wrapping_add(1))
+                &OldMachineTerm::constant(a.wrapping_add(b).wrapping_add(1))
             ));
         }
     }
@@ -76,7 +76,7 @@ fn int32_addition_does_not_cancel_commute_or_merge_other_sorts() {
     assert!(!graph.are_int32_equal(&var(1), &var(2)));
     assert!(!graph.are_int32_equal(&add(var(1), var(3)), &add(var(3), var(1))));
     graph.add_int32_equality(&var(1), &var(2));
-    let wide = |v| MachineTerm::Binary {
+    let wide = |v| OldMachineTerm::Binary {
         format: MachineIntegerType::Int64,
         op: MachineBinaryOp::Add,
         left: Box::new(v),
@@ -84,10 +84,10 @@ fn int32_addition_does_not_cancel_commute_or_merge_other_sorts() {
     };
     assert!(!graph.are_int32_equal(&wide(var(1)), &wide(var(2))));
     assert!(!graph.are_int32_equal(&add(var(1), var(3)), &wide(var(1))));
-    let scalar_offset = AddressOffset::scale_int32(add(var(1), var(3)), 4);
-    let offset_sum = AddressOffset::Add(
-        Box::new(AddressOffset::Variable(Variable(1))),
-        Box::new(AddressOffset::Variable(Variable(3))),
+    let scalar_offset = OldAddressOffset::scale_int32(add(var(1), var(3)), 4);
+    let offset_sum = OldAddressOffset::Add(
+        Box::new(OldAddressOffset::Variable(Variable(1))),
+        Box::new(OldAddressOffset::Variable(Variable(3))),
     );
     assert!(!graph.are_offsets_equal(&scalar_offset, &offset_sum));
 }

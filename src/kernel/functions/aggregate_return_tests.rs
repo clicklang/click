@@ -264,7 +264,7 @@ fn construction_binding_retains_the_full_destination_borrow_requirement() {
         &ledger.memory_access_requirement(&range).unwrap(),
     );
     assert!(!PureFactContext::new().proves_atomic_without_search(obligation.proposition()));
-    let arguments = [int32(MachineTerm::constant(37))];
+    let arguments = [int32(OldMachineTerm::constant(37))];
     let mut direct_obligations = Vec::new();
     assert!(
         bind_program_function_arguments_retained(
@@ -647,7 +647,7 @@ fn aggregate_copy_return_preserves_self_pointer_through_two_materializations() {
         .store(source.clone(), self_pointer.clone())
         .store(
             source.offset_by_bytes(8),
-            ProgramValue::Int32(MachineTerm::constant(37)),
+            ProgramValue::Int32(OldMachineTerm::constant(37)),
         );
     let mut state = ExecutionState::new()
         .with_population_creation_tracking()
@@ -672,7 +672,7 @@ fn aggregate_copy_return_preserves_self_pointer_through_two_materializations() {
         assert_ne!(pointer(&self_pointer), result.offset_by_bytes(8));
         assert_eq!(
             state.memory.known_value(&result.offset_by_bytes(8)),
-            Some(ProgramValue::Int32(MachineTerm::constant(37))),
+            Some(ProgramValue::Int32(OldMachineTerm::constant(37))),
         );
     }
 }
@@ -690,7 +690,7 @@ fn aggregate_copy_return_retirement_preserves_only_independently_live_backing() 
             .with_block(backing.base.clone(), 4)
             .store(
                 backing.clone(),
-                ProgramValue::Int32(MachineTerm::constant(23)),
+                ProgramValue::Int32(OldMachineTerm::constant(23)),
             );
         let referent = if points_to_self {
             source.offset_by_bytes(8)
@@ -704,7 +704,7 @@ fn aggregate_copy_return_retirement_preserves_only_independently_live_backing() 
             .store(source.clone(), field.clone())
             .store(
                 source.offset_by_bytes(8),
-                ProgramValue::Int32(MachineTerm::constant(23)),
+                ProgramValue::Int32(OldMachineTerm::constant(23)),
             );
         let mut state = ExecutionState::new()
             .with_population_creation_tracking()
@@ -733,7 +733,7 @@ fn aggregate_copy_return_retirement_preserves_only_independently_live_backing() 
         assert_eq!(memory.has_block(&referent.base), !points_to_self);
         assert_eq!(
             memory.known_value(&backing),
-            Some(ProgramValue::Int32(MachineTerm::constant(23))),
+            Some(ProgramValue::Int32(OldMachineTerm::constant(23))),
         );
     }
 }
@@ -776,7 +776,10 @@ fn a_modular_call_preserves_sparse_caller_reservations() {
     };
     let caller = ExecutionState::new()
         .with_population_creation_tracking()
-        .with_local("live", ProgramValue::Int32(MachineTerm::Variable(reserved)));
+        .with_local(
+            "live",
+            ProgramValue::Int32(OldMachineTerm::Variable(reserved)),
+        );
     let mut budget = ExecutionBudget::for_new_execution();
     let paths = execute_verified_function_applications_with_suspension(
         &caller,
@@ -798,7 +801,7 @@ fn a_modular_call_preserves_sparse_caller_reservations() {
     };
     assert_eq!(
         value.native().as_ref(),
-        &ProgramValue::Int32(MachineTerm::Variable(Variable(base + 2))),
+        &ProgramValue::Int32(OldMachineTerm::Variable(Variable(base + 2))),
     );
     assert_eq!(budget.next_kernel_variable(), 3);
 }
@@ -811,7 +814,7 @@ fn aggregate_copy_result_preserves_unrelated_entry_byte_history() {
     let input = SymbolicMemory::local_pointer("input-byte");
     let before = SymbolicMemory::new().with_block(input.base.clone(), 1);
     let read = |memory: &SymbolicMemory| {
-        MachineTerm::read_named(
+        OldMachineTerm::read_named(
             ProgramPoint::at(&(crate::kernel::intern_memory(memory.clone()))),
             Box::new(input.clone()),
             LoadKind::UInt8,
@@ -819,7 +822,7 @@ fn aggregate_copy_result_preserves_unrelated_entry_byte_history() {
     };
     let equality = |memory: &SymbolicMemory| {
         Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(read(memory)),
@@ -911,7 +914,7 @@ fn symbolic_construction_storage_requires_written_fields_before_copy_return() {
     );
     state.set_memory(state.memory.clone().store(
         source.offset_by_bytes(8),
-        ProgramValue::Int32(MachineTerm::constant(37)),
+        ProgramValue::Int32(OldMachineTerm::constant(37)),
     ));
     assert!(complete_aggregate_return(&mut state, &copy_function(), value).is_ok());
 }
@@ -936,7 +939,7 @@ fn symbolic_construction_storage_is_unreadable_until_written() {
             let memory = if written {
                 raw.clone().store(
                     source.clone(),
-                    ProgramValue::Int32(MachineTerm::constant(37)),
+                    ProgramValue::Int32(OldMachineTerm::constant(37)),
                 )
             } else {
                 raw.clone()
@@ -989,7 +992,7 @@ fn symbolic_construction_storage_respects_known_aliases() {
     let source = Address::symbolic(Variable(870_005));
     let alias = Address::symbolic(Variable(870_006));
     let assumptions = PureFactContext::new().assume_condition(
-        ConditionTerm::address_equal(source.clone(), alias.clone()),
+        OldConditionTerm::address_equal(source.clone(), alias.clone()),
         true,
     );
     for forgotten in [false, true] {
@@ -1138,7 +1141,7 @@ fn construction_object_offsets_participate_in_fresh_variable_collection() {
     let raw = SymbolicMemory::new().with_uninitialized_block(source.base.clone(), 4);
     let destination = Address {
         base: "local:variable-container".into(),
-        offset: AddressOffset::scale_int32(MachineTerm::Variable(offset_variable), 4),
+        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(offset_variable), 4),
     };
     let mapped = crate::kernel::reasoning::substitute_pointer_variable_in_memory(
         &raw,
@@ -1476,7 +1479,7 @@ fn value_only_constructor_preserves_descriptor_across_result_copy_chains() {
         );
         assert_eq!(
             state.memory.known_value(&result.offset_by_bytes(8)),
-            Some(ProgramValue::UInt64(MachineTerm::uint64_constant(37)))
+            Some(ProgramValue::UInt64(OldMachineTerm::uint64_constant(37)))
         );
         assert_eq!(state.memory.known_value(backing), Some(int32(24)));
         assert!(
@@ -1586,7 +1589,7 @@ fn aggregate_return_temporary_copy_requires_its_recorded_size() {
     ] {
         let pointer = Address {
             base: block.clone(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let source = OldPointer::new(pointer, ProgramType::UInt8Pointer);
         let state = ExecutionState::new().with_memory(SymbolicMemory::new().with_block(block, 16));

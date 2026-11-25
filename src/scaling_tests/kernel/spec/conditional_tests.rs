@@ -10,7 +10,7 @@ fn growing_conditional_joins_and_observations_keep_shared_prefixes() {
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for index in 0..size {
                 value = join(
-                    &ConditionTerm::Variable(Variable(998150 + index as u64)),
+                    &OldConditionTerm::Variable(Variable(998150 + index as u64)),
                     &value,
                     &zero,
                 );
@@ -32,14 +32,14 @@ fn selected_conditional_checks_retain_arms_at_every_machine_format() {
     ] {
         let samples = [16usize, 64, 256].map(|size| {
             let _session = VerificationSession::enter();
-            let guard = ConditionTerm::Variable(Variable(998190));
+            let guard = OldConditionTerm::Variable(Variable(998190));
             let facts = PureFactContext::new().assume_condition(guard.clone(), true);
             let mut value = word(format, 1);
             let zero = word(format, 0);
             for _ in 0..size {
                 value = join(&guard, &value, &zero);
             }
-            let condition = ConditionTerm::integer_equal(
+            let condition = OldConditionTerm::integer_equal(
                 value.observe().unwrap(),
                 IntegerTerm::constant(1.into()),
             );
@@ -64,7 +64,7 @@ fn identical_conditional_arms_normalize_without_revisiting_shared_suffixes() {
     let samples = [16usize, 64, 256].map(|size| {
         let _session = VerificationSession::enter();
         let format = MachineIntegerType::Int32;
-        let guard = ConditionTerm::Variable(Variable(998202));
+        let guard = OldConditionTerm::Variable(Variable(998202));
         let base =
             KernelTerm::variable(KernelType::Program(format.program_type()), Variable(998203));
         let mut value = SpecValue::Shared(base.clone());
@@ -83,7 +83,7 @@ fn identical_conditional_arms_normalize_without_revisiting_shared_suffixes() {
             "size={size}, work={lowering_work}"
         );
         assert_eq!(KernelTermExport::machine_export_count(), exports);
-        let condition = ConditionTerm::integer_equal(
+        let condition = OldConditionTerm::integer_equal(
             value.observe().unwrap(),
             SpecValue::Shared(base).observe().unwrap(),
         );
@@ -116,14 +116,14 @@ fn closed_comparison_conditionals_ignore_unrelated_facts() {
             let _session = VerificationSession::enter();
             let mut facts = PureFactContext::new();
             for index in 0..size {
-                facts =
-                    facts.assume_condition(ConditionTerm::Variable(Variable(999720 + index)), true);
+                facts = facts
+                    .assume_condition(OldConditionTerm::Variable(Variable(999720 + index)), true);
             }
             let expression = closed_comparison_if(
-                SpecExpression::Value(ProgramValue::UInt64(MachineTerm::Variable(Variable(
+                SpecExpression::Value(ProgramValue::UInt64(OldMachineTerm::Variable(Variable(
                     999710,
                 )))),
-                SpecExpression::Value(ProgramValue::UInt64(MachineTerm::uint64_constant(3))),
+                SpecExpression::Value(ProgramValue::UInt64(OldMachineTerm::uint64_constant(3))),
                 operator,
                 truth,
             );
@@ -159,7 +159,7 @@ fn nested_closed_comparison_conditionals_lower_with_linear_work() {
             // Grow explicit source while keeping nesting logarithmic.
             let mut layer = (1..=size)
                 .map(|n| {
-                    SpecExpression::Value(ProgramValue::UInt64(MachineTerm::uint64_constant(
+                    SpecExpression::Value(ProgramValue::UInt64(OldMachineTerm::uint64_constant(
                         n as u64,
                     )))
                 })
@@ -206,9 +206,9 @@ fn symbolic_comparisons_ignore_ambient_guard_facts() {
         for size in [0, 16, 64, 256] {
             let _session = VerificationSession::enter();
             let value =
-                |n| SpecExpression::Value(ProgramValue::UInt64(MachineTerm::uint64_constant(n)));
-            let guard_value = MachineTerm::Variable(Variable(999750));
-            let guard = ConditionTerm::Compare {
+                |n| SpecExpression::Value(ProgramValue::UInt64(OldMachineTerm::uint64_constant(n)));
+            let guard_value = OldMachineTerm::Variable(Variable(999750));
+            let guard = OldConditionTerm::Compare {
                 format: if relation == CompareRelation::Equal {
                     MachineIntegerType::Int64
                 } else {
@@ -216,7 +216,7 @@ fn symbolic_comparisons_ignore_ambient_guard_facts() {
                 },
                 relation,
                 left: Box::new(guard_value.clone()),
-                right: Box::new(MachineTerm::uint64_constant(8)),
+                right: Box::new(OldMachineTerm::uint64_constant(8)),
             };
             let proposition = SpecProposition::Comparison {
                 left: SpecExpression::If {
@@ -234,8 +234,8 @@ fn symbolic_comparisons_ignore_ambient_guard_facts() {
             let state = ExecutionState::new();
             let mut facts = PureFactContext::new();
             for index in 0..size {
-                facts =
-                    facts.assume_condition(ConditionTerm::Variable(Variable(999760 + index)), true);
+                facts = facts
+                    .assume_condition(OldConditionTerm::Variable(Variable(999760 + index)), true);
             }
             for truth in [None, Some(true), Some(false)] {
                 let mut branch_facts = facts.clone();
@@ -256,7 +256,7 @@ fn symbolic_comparisons_ignore_ambient_guard_facts() {
                 assert_eq!(paths.len(), 1);
                 let actual = &paths[0].proposition;
                 assert!(
-                    matches!(&actual, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare { left, .. }, _)) if (matches!(left.as_ref(), MachineTerm::If { .. }))))
+                    matches!(&actual, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::Compare { left, .. }, _)) if (matches!(left.as_ref(), OldMachineTerm::If { .. }))))
                 );
                 assert_eq!(actual, expected.get_or_insert_with(|| actual.clone()));
                 assert_eq!(KernelTermExport::machine_export_count(), exports);
@@ -276,17 +276,17 @@ fn boolean_guard_comparisons_ignore_ambient_flag_facts() {
     let mut expected = None;
     for size in [0, 16, 64, 256] {
         let _session = VerificationSession::enter();
-        let guard = ConditionTerm::Variable(Variable(999800));
+        let guard = OldConditionTerm::Variable(Variable(999800));
         let value =
-            |n| SpecExpression::Value(ProgramValue::UInt64(MachineTerm::uint64_constant(n)));
+            |n| SpecExpression::Value(ProgramValue::UInt64(OldMachineTerm::uint64_constant(n)));
         let proposition = SpecProposition::Comparison {
             left: SpecExpression::If {
                 condition: Box::new(SpecProposition::Comparison {
                     left: SpecExpression::Value(ProgramValue::of_bool(guard.clone())),
                     operator: ComparisonOperator::Equal,
-                    right: SpecExpression::Value(ProgramValue::of_bool(ConditionTerm::Constant(
-                        true,
-                    ))),
+                    right: SpecExpression::Value(ProgramValue::of_bool(
+                        OldConditionTerm::Constant(true),
+                    )),
                 }),
                 then_branch: Box::new(value(9)),
                 else_branch: Box::new(value(3)),
@@ -297,7 +297,8 @@ fn boolean_guard_comparisons_ignore_ambient_flag_facts() {
         let state = ExecutionState::new();
         let mut facts = PureFactContext::new();
         for index in 0..size {
-            facts = facts.assume_condition(ConditionTerm::Variable(Variable(999810 + index)), true);
+            facts =
+                facts.assume_condition(OldConditionTerm::Variable(Variable(999810 + index)), true);
         }
         for truth in [None, Some(true), Some(false)] {
             let mut branch_facts = facts.clone();
@@ -318,7 +319,7 @@ fn boolean_guard_comparisons_ignore_ambient_flag_facts() {
             assert_eq!(paths.len(), 1);
             let actual = &paths[0].proposition;
             assert!(
-                matches!(&actual, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare { left, .. }, _)) if (matches!(left.as_ref(), MachineTerm::If { condition, .. } if condition.as_ref() == &guard))))
+                matches!(&actual, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::Compare { left, .. }, _)) if (matches!(left.as_ref(), OldMachineTerm::If { condition, .. } if condition.as_ref() == &guard))))
             );
             assert_eq!(actual, expected.get_or_insert_with(|| actual.clone()));
             assert_eq!(KernelTermExport::machine_export_count(), exports);
@@ -338,10 +339,10 @@ fn reflexive_conditionals_ignore_unrelated_facts_and_value_aliases() {
         let mut expected = None;
         for size in [0, 16, 64, 256] {
             let _session = VerificationSession::enter();
-            let variable = MachineTerm::Variable(Variable(999900));
+            let variable = OldMachineTerm::Variable(Variable(999900));
             let value = || SpecExpression::Value(ProgramValue::UInt64(variable.clone()));
             let three =
-                || SpecExpression::Value(ProgramValue::UInt64(MachineTerm::uint64_constant(3)));
+                || SpecExpression::Value(ProgramValue::UInt64(OldMachineTerm::uint64_constant(3)));
             let proposition = SpecProposition::Comparison {
                 left: SpecExpression::If {
                     condition: Box::new(SpecProposition::Comparison {
@@ -353,24 +354,24 @@ fn reflexive_conditionals_ignore_unrelated_facts_and_value_aliases() {
                     else_branch: Box::new(three()),
                 },
                 operator: ComparisonOperator::LessEqual,
-                right: SpecExpression::Value(ProgramValue::UInt64(MachineTerm::uint64_constant(
-                    100,
-                ))),
+                right: SpecExpression::Value(ProgramValue::UInt64(
+                    OldMachineTerm::uint64_constant(100),
+                )),
             };
             let mut facts = PureFactContext::new();
             for index in 0..size {
-                facts =
-                    facts.assume_condition(ConditionTerm::Variable(Variable(999910 + index)), true);
+                facts = facts
+                    .assume_condition(OldConditionTerm::Variable(Variable(999910 + index)), true);
             }
             for alias in [false, true] {
                 let mut branch_facts = facts.clone();
                 if alias {
                     branch_facts = branch_facts.assume_condition(
-                        ConditionTerm::Compare {
+                        OldConditionTerm::Compare {
                             format: MachineIntegerType::Int64,
                             relation: CompareRelation::Equal,
                             left: Box::new(variable.clone()),
-                            right: Box::new(MachineTerm::uint64_constant(3)),
+                            right: Box::new(OldMachineTerm::uint64_constant(3)),
                         },
                         true,
                     );
@@ -390,7 +391,7 @@ fn reflexive_conditionals_ignore_unrelated_facts_and_value_aliases() {
                 assert_eq!(paths.len(), 1);
                 let actual = &paths[0].proposition;
                 assert!(
-                    matches!(&actual, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare { left, .. }, _)) if (matches!(left.as_ref(), MachineTerm::If { .. }))))
+                    matches!(&actual, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::Compare { left, .. }, _)) if (matches!(left.as_ref(), OldMachineTerm::If { .. }))))
                 );
                 assert_eq!(actual, expected.get_or_insert_with(|| actual.clone()));
                 assert_eq!(KernelTermExport::machine_export_count(), exports);
@@ -411,10 +412,10 @@ fn nested_reflexive_conditionals_lower_with_linear_work() {
         for size in [8, 32, 128, 512] {
             let _session = VerificationSession::enter();
             let value =
-                |n| SpecExpression::Value(ProgramValue::UInt64(MachineTerm::uint64_constant(n)));
-            let guard_value = SpecExpression::Value(ProgramValue::UInt64(MachineTerm::Variable(
-                Variable(999960),
-            )));
+                |n| SpecExpression::Value(ProgramValue::UInt64(OldMachineTerm::uint64_constant(n)));
+            let guard_value = SpecExpression::Value(ProgramValue::UInt64(
+                OldMachineTerm::Variable(Variable(999960)),
+            ));
             let mut layer = (1..=size).map(|n| value(n as u64)).collect::<Vec<_>>();
             // Grow the explicit source, keeping nesting logarithmic.
             while layer.len() > 1 {
@@ -463,7 +464,7 @@ fn bitwise_arm_comparison(
     let word = |n: u64| {
         value(crate::kernel::machine_integer::range::constant_word(format, &n.into()).unwrap())
     };
-    let left = Box::new(value(MachineTerm::Variable(Variable(1_010_000 + index))));
+    let left = Box::new(value(OldMachineTerm::Variable(Variable(1_010_000 + index))));
     let right = Box::new(word(7));
     let arm = match operator {
         MachineBinaryOp::BitwiseAnd => SpecExpression::BitwiseAnd(left, right),
@@ -474,11 +475,13 @@ fn bitwise_arm_comparison(
     SpecProposition::Comparison {
         left: SpecExpression::If {
             condition: Box::new(SpecProposition::Comparison {
-                left: SpecExpression::Value(ProgramValue::of_bool(ConditionTerm::Variable(
+                left: SpecExpression::Value(ProgramValue::of_bool(OldConditionTerm::Variable(
                     Variable(1_020_000 + index),
                 ))),
                 operator: ComparisonOperator::Equal,
-                right: SpecExpression::Value(ProgramValue::of_bool(ConditionTerm::Constant(true))),
+                right: SpecExpression::Value(ProgramValue::of_bool(OldConditionTerm::Constant(
+                    true,
+                ))),
             }),
             then_branch: Box::new(arm),
             else_branch: Box::new(word(3)),
@@ -510,7 +513,7 @@ fn bitwise_arm_comparisons_ignore_ambient_flag_and_operand_facts() {
                 let mut facts = PureFactContext::new();
                 for index in 0..size {
                     facts = facts.assume_condition(
-                        ConditionTerm::Variable(Variable(1_030_000 + index)),
+                        OldConditionTerm::Variable(Variable(1_030_000 + index)),
                         true,
                     );
                 }
@@ -519,20 +522,20 @@ fn bitwise_arm_comparisons_ignore_ambient_flag_and_operand_facts() {
                         let mut selected = facts.clone();
                         if let Some(truth) = truth {
                             selected = selected.assume_condition(
-                                ConditionTerm::Variable(Variable(1_020_000)),
+                                OldConditionTerm::Variable(Variable(1_020_000)),
                                 truth,
                             );
                         }
                         if alias {
                             selected = selected.assume_condition(
-                                ConditionTerm::Compare {
+                                OldConditionTerm::Compare {
                                     format: if format.format().bits() == 64 {
                                         MachineIntegerType::Int64
                                     } else {
                                         format
                                     },
                                     relation: CompareRelation::Equal,
-                                    left: Box::new(MachineTerm::Variable(Variable(1_010_000))),
+                                    left: Box::new(OldMachineTerm::Variable(Variable(1_010_000))),
                                     right: Box::new(
                                         crate::kernel::machine_integer::range::constant_word(
                                             format,
@@ -559,7 +562,7 @@ fn bitwise_arm_comparisons_ignore_ambient_flag_and_operand_facts() {
                         assert_eq!(paths.len(), 1);
                         let actual = &paths[0].proposition;
                         assert!(
-                            matches!(&actual, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare { left, .. }, _)) if (matches!(left.as_ref(), MachineTerm::If { then_term, .. } if matches!(then_term.as_ref(), MachineTerm::Binary { .. })))))
+                            matches!(&actual, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::Compare { left, .. }, _)) if (matches!(left.as_ref(), OldMachineTerm::If { then_term, .. } if matches!(then_term.as_ref(), OldMachineTerm::Binary { .. })))))
                         );
                         assert_eq!(actual, expected.get_or_insert_with(|| actual.clone()));
                         assert_eq!(KernelTermExport::machine_export_count(), exports);
@@ -603,7 +606,7 @@ fn bitwise_arm_comparison_work_scales_with_explicit_source() {
                 )
                 .unwrap();
                 assert!(matches!(
-                    &paths[0].proposition, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare { .. }, _)))));
+                    &paths[0].proposition, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::Compare { .. }, _)))));
             }
         });
         assert_eq!(KernelTermExport::machine_export_count(), exports);
@@ -638,7 +641,7 @@ fn bitwise_guard_comparison(
     };
     let bitwise = (**then_branch).clone();
     let variable = SpecExpression::Value(
-        format.value_from_term(MachineTerm::Variable(Variable(1_040_000 + index))),
+        format.value_from_term(OldMachineTerm::Variable(Variable(1_040_000 + index))),
     );
     **condition = SpecProposition::Comparison {
         left: bitwise,
@@ -678,19 +681,19 @@ fn bitwise_guard_comparisons_ignore_ambient_truth_and_operand_aliases() {
                     &mut SpecEvaluation::logical(&mut execution),
                 )
                 .unwrap();
-                let Some((ConditionTerm::Compare { left, .. }, true)) =
-                    original[0].proposition.condition_native()
+                let Some((OldConditionTerm::Compare { left, .. }, true)) =
+                    original[0].proposition.old_condition()
                 else {
                     panic!("native comparison");
                 };
-                let MachineTerm::If { condition, .. } = left.as_ref() else {
+                let OldMachineTerm::If { condition, .. } = left.as_ref() else {
                     panic!("retained conditional");
                 };
                 let guard = condition.as_ref().clone();
                 let mut facts = PureFactContext::new();
                 for index in 0..size {
                     facts = facts.assume_condition(
-                        ConditionTerm::Variable(Variable(1_050_000 + index)),
+                        OldConditionTerm::Variable(Variable(1_050_000 + index)),
                         true,
                     );
                 }
@@ -702,14 +705,14 @@ fn bitwise_guard_comparisons_ignore_ambient_truth_and_operand_aliases() {
                         }
                         if alias {
                             selected = selected.assume_condition(
-                                ConditionTerm::Compare {
+                                OldConditionTerm::Compare {
                                     format: if format.format().bits() == 64 {
                                         MachineIntegerType::Int64
                                     } else {
                                         format
                                     },
                                     relation: CompareRelation::Equal,
-                                    left: Box::new(MachineTerm::Variable(Variable(1_010_000))),
+                                    left: Box::new(OldMachineTerm::Variable(Variable(1_010_000))),
                                     right: Box::new(
                                         crate::kernel::machine_integer::range::constant_word(
                                             format,
@@ -736,7 +739,7 @@ fn bitwise_guard_comparisons_ignore_ambient_truth_and_operand_aliases() {
                         assert_eq!(paths.len(), 1);
                         let actual = &paths[0].proposition;
                         assert!(
-                            matches!(&actual, condition_source_0 @ Proposition::ConditionIs(_,true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare { left, .. }, _)) if (matches!(left.as_ref(),MachineTerm::If { condition, .. } if matches!(condition.as_ref(), ConditionTerm::Compare { .. })))))
+                            matches!(&actual, condition_source_0 @ Proposition::ConditionIs(_,true) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::Compare { left, .. }, _)) if (matches!(left.as_ref(),OldMachineTerm::If { condition, .. } if matches!(condition.as_ref(), OldConditionTerm::Compare { .. })))))
                         );
                         assert_eq!(actual, expected.get_or_insert_with(|| actual.clone()));
                         assert_eq!(KernelTermExport::machine_export_count(), exports);
@@ -782,7 +785,7 @@ fn bitwise_guard_comparison_work_scales_with_written_source() {
                 )
                 .unwrap();
                 assert!(matches!(
-                    &paths[0].proposition, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare { .. }, _)))));
+                    &paths[0].proposition, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::Compare { .. }, _)))));
             }
         });
         assert_eq!(KernelTermExport::machine_export_count(), exports);
@@ -813,14 +816,14 @@ fn closed_integer_conditional_lowering_ignores_ambient_bounds() {
         for index in 0..size {
             facts = facts
                 .assume_condition(
-                    ConditionTerm::IntegerLessThan(
+                    OldConditionTerm::IntegerLessThan(
                         arm.clone().into(),
                         IntegerTerm::constant_i64(index).into(),
                     ),
                     true,
                 )
                 .assume_condition(
-                    ConditionTerm::Variable(Variable(999800 + index as u64)),
+                    OldConditionTerm::Variable(Variable(999800 + index as u64)),
                     true,
                 );
         }

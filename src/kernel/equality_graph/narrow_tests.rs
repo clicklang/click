@@ -3,19 +3,19 @@
 use super::*;
 use crate::kernel::{CarrierWidth as W, MachineBinaryOp as Op, MachineIntegerType as Ty};
 
-fn var(id: u64) -> MachineTerm {
-    MachineTerm::Variable(Variable(id))
+fn var(id: u64) -> OldMachineTerm {
+    OldMachineTerm::Variable(Variable(id))
 }
 
-fn constant(format: Ty, bits: u128) -> MachineTerm {
-    MachineTerm::narrow_constant(format, bits)
+fn constant(format: Ty, bits: u128) -> OldMachineTerm {
+    OldMachineTerm::narrow_constant(format, bits)
 }
 
 #[test]
 fn narrow_constants_fold_modulo_their_width() {
     let _session = crate::kernel::VerificationSession::enter();
     let fold = |format, op, a, b| {
-        MachineTerm::machine_binary(format, op, constant(format, a), constant(format, b))
+        OldMachineTerm::machine_binary(format, op, constant(format, a), constant(format, b))
     };
     assert_eq!(fold(Ty::UInt8, Op::Add, 200, 100), constant(Ty::UInt8, 44));
     assert_eq!(fold(Ty::Int8, Op::Subtract, 0, 1), constant(Ty::Int8, 0xff));
@@ -34,10 +34,10 @@ fn narrow_constants_fold_modulo_their_width() {
     // A count at or past the width is not folded, as at 32 bits.
     assert!(matches!(
         fold(Ty::UInt8, Op::ShiftLeft, 1, 8),
-        MachineTerm::Binary { .. }
+        OldMachineTerm::Binary { .. }
     ));
     assert_eq!(
-        MachineTerm::machine_unary(
+        OldMachineTerm::machine_unary(
             Ty::UInt16,
             crate::kernel::MachineUnaryOp::BitwiseNot,
             constant(Ty::UInt16, 1)
@@ -57,22 +57,22 @@ fn a_narrow_operator_has_its_own_width() {
         (Ty::Int16, W::Bits16),
         (Ty::UInt16, W::Bits16),
     ] {
-        let sum = MachineTerm::machine_binary(format, Op::Add, var(1), constant(format, 1));
+        let sum = OldMachineTerm::machine_binary(format, Op::Add, var(1), constant(format, 1));
         assert_eq!(
             crate::kernel::term_width(&sum),
             Ok(Some(width)),
             "{format:?}"
         );
         // A 32-bit word is not a narrow operand.
-        let mixed = MachineTerm::Binary {
+        let mixed = OldMachineTerm::Binary {
             format,
             op: Op::Add,
-            left: Box::new(MachineTerm::constant(1)),
+            left: Box::new(OldMachineTerm::constant(1)),
             right: Box::new(var(1)),
         };
         assert!(crate::kernel::term_width(&mixed).is_err(), "{format:?}");
         // Division reads a sign and stays promoted.
-        let quotient = MachineTerm::Binary {
+        let quotient = OldMachineTerm::Binary {
             format,
             op: Op::Divide,
             left: Box::new(var(1)),
@@ -92,7 +92,8 @@ fn narrow_operators_are_congruent_by_their_bits() {
         let graph = EqualityGraph::default();
         let mut state = graph.state.lock().expect("equality graph");
         let terms = &mut state.terms;
-        let at = |format, a| MachineTerm::machine_binary(format, Op::Add, a, constant(format, 1));
+        let at =
+            |format, a| OldMachineTerm::machine_binary(format, Op::Add, a, constant(format, 1));
         assert!(!terms.are_typed_equal(width, &at(unsigned, var(1)), &at(unsigned, var(2))));
         terms.add_typed_equality(width, &var(1), &var(2));
         assert!(terms.are_typed_equal(width, &at(unsigned, var(1)), &at(unsigned, var(2))));
@@ -121,7 +122,7 @@ fn narrow_operator_chains_intern_with_constant_work_per_node() {
             crate::kernel::clear_machine_observation_memo();
             let mut sum = var(10_000);
             for index in 1..size {
-                sum = MachineTerm::machine_binary(format, Op::Add, sum, var(10_000 + index));
+                sum = OldMachineTerm::machine_binary(format, Op::Add, sum, var(10_000 + index));
             }
             let graph = EqualityGraph::default();
             let mut state = graph.state.lock().expect("equality graph");
@@ -163,11 +164,11 @@ fn narrow_stored_value(format: Ty, bits: u128) -> ProgramValue {
 fn narrow_equal(
     graph: &EqualityGraph,
     format: Ty,
-    left: &MachineTerm,
-    right: &MachineTerm,
+    left: &OldMachineTerm,
+    right: &OldMachineTerm,
 ) -> bool {
     graph.knows_condition(
-        &ConditionTerm::machine_compare(
+        &OldConditionTerm::machine_compare(
             format,
             CompareRelation::Equal,
             left.clone(),
@@ -195,7 +196,7 @@ fn check_narrow_store_equation(format: Ty) {
     for aliased in [false, true] {
         let pointer = Address {
             base: "narrow".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let query = if aliased {
             Address::symbolic(Variable(993201))
@@ -216,12 +217,12 @@ fn check_narrow_store_equation(format: Ty) {
                 .store(pointer.clone(), value.clone()),
         );
         let read =
-            MachineTerm::read_named(ProgramPoint::at(&memory), Box::new(query.clone()), kind);
+            OldMachineTerm::read_named(ProgramPoint::at(&memory), Box::new(query.clone()), kind);
         let shared = KernelTermImport::default()
             .machine_arithmetic(format, &read)
             .unwrap();
         let empty = PureFactContext::new().assume_condition(
-            ConditionTerm::address_equal(pointer.clone(), query.clone()),
+            OldConditionTerm::address_equal(pointer.clone(), query.clone()),
             true,
         );
         assert!(
@@ -229,7 +230,7 @@ fn check_narrow_store_equation(format: Ty) {
                 &empty.equality_graph,
                 format,
                 V::Shared(&shared),
-                V::Legacy(&stored)
+                V::Old(&stored)
             ),
             "shared {format:?}, alias={aliased}: a read must not import its cached value"
         );
@@ -249,7 +250,7 @@ fn check_narrow_store_equation(format: Ty) {
             &established.equality_graph,
             format,
             V::Shared(&shared),
-            V::Legacy(&stored)
+            V::Old(&stored)
         ));
         assert!(!narrow_equal(&empty.equality_graph, format, &read, &stored));
         assert_eq!(shared.machine_read_leaf(), Some(&read));
@@ -262,7 +263,7 @@ fn check_narrow_store_equation(format: Ty) {
                 &stored
             ));
             let after_alias = before_alias.assume_condition(
-                ConditionTerm::address_equal(pointer.clone(), query.clone()),
+                OldConditionTerm::address_equal(pointer.clone(), query.clone()),
                 true,
             );
             assert!(narrow_equal(
@@ -279,7 +280,7 @@ fn check_narrow_store_equation(format: Ty) {
                 .clone()
                 .store(pointer.clone(), new_value.clone()),
         );
-        let new_read = MachineTerm::read_named(ProgramPoint::at(&after), Box::new(query), kind);
+        let new_read = OldMachineTerm::read_named(ProgramPoint::at(&after), Box::new(query), kind);
         assert!(!narrow_equal(
             &established.equality_graph,
             format,

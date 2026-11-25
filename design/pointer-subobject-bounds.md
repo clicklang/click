@@ -65,7 +65,7 @@ enum PointerBounds {
     /// No narrowing: the complete object or allocation, as enforced today.
     Root,
     /// A selected subobject in the same block, in byte offsets: [start, end).
-    Subobject { start: AddressOffset, end: AddressOffset },
+    Subobject { start: OldAddressOffset, end: OldAddressOffset },
 }
 ```
 

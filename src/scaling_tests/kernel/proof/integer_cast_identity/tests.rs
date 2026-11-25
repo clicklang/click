@@ -3,7 +3,7 @@
 // tests" in `docs/internals/testing.md`.
 
 use super::*;
-use crate::kernel::MachineTerm;
+use crate::kernel::OldMachineTerm;
 
 /// A narrow value's 32-bit widening is identified with the value in work
 /// independent of the ambient premises, when the certificate cites bounds on
@@ -12,12 +12,12 @@ use crate::kernel::MachineTerm;
 /// refused.
 #[test]
 fn integer_cast_identity_identifies_only_the_widening_of_a_narrow_value() {
-    let word = MachineTerm::Variable(Variable(168_010));
+    let word = OldMachineTerm::Variable(Variable(168_010));
     let observation = |ty, value| IntegerTerm::from_machine(ty, value).unwrap();
     let equal =
-        |left, right| Proposition::condition_is(ConditionTerm::integer_equal(left, right), true);
+        |left, right| Proposition::condition_is(OldConditionTerm::integer_equal(left, right), true);
     for source in [Ty::UInt8, Ty::UInt16, Ty::Int8, Ty::Int16] {
-        let narrow = MachineTerm::machine_integer_cast(Ty::Int32, source, word.clone());
+        let narrow = OldMachineTerm::machine_integer_cast(Ty::Int32, source, word.clone());
         let original = observation(source, narrow.clone());
         let bounds = |lo: num_bigint::BigInt, hi: num_bigint::BigInt| {
             vec![
@@ -31,7 +31,7 @@ fn integer_cast_identity_identifies_only_the_widening_of_a_narrow_value() {
             if !destination.format().contains(source.format()) {
                 continue;
             }
-            let widened = MachineTerm::machine_integer_cast(source, destination, narrow.clone());
+            let widened = OldMachineTerm::machine_integer_cast(source, destination, narrow.clone());
             let goal = equal(observation(destination, widened), original.clone());
             let mut premises = bounds(lo.clone(), hi.clone());
             // Measure ambient premises separately from the selected operands'
@@ -40,7 +40,7 @@ fn integer_cast_identity_identifies_only_the_widening_of_a_narrow_value() {
             let mut costs = Vec::new();
             for ambient in [0, 16, 64, 256, 1024] {
                 premises.resize_with(ambient + 2, || {
-                    Proposition::condition_is(ConditionTerm::Variable(Variable(168_011)), true)
+                    Proposition::condition_is(OldConditionTerm::Variable(Variable(168_011)), true)
                 });
 
                 let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -62,12 +62,12 @@ fn integer_cast_identity_identifies_only_the_widening_of_a_narrow_value() {
             // value, whatever bounds are cited.
             for carrier in [
                 word.clone(),
-                MachineTerm::bitwise_and(word.clone(), MachineTerm::constant(mask)),
-                MachineTerm::bitwise_and(word.clone(), MachineTerm::constant(mask + 1)),
-                MachineTerm::add(word.clone(), MachineTerm::constant(1)),
-                MachineTerm::add(
-                    MachineTerm::bitwise_and(word.clone(), MachineTerm::constant(mask)),
-                    MachineTerm::constant(1),
+                OldMachineTerm::bitwise_and(word.clone(), OldMachineTerm::constant(mask)),
+                OldMachineTerm::bitwise_and(word.clone(), OldMachineTerm::constant(mask + 1)),
+                OldMachineTerm::add(word.clone(), OldMachineTerm::constant(1)),
+                OldMachineTerm::add(
+                    OldMachineTerm::bitwise_and(word.clone(), OldMachineTerm::constant(mask)),
+                    OldMachineTerm::constant(1),
                 ),
             ] {
                 let goal = equal(observation(destination, carrier), original.clone());
@@ -87,7 +87,7 @@ fn integer_cast_identity_identifies_only_the_widening_of_a_narrow_value() {
 #[test]
 fn integer_conversion_identity_ignores_unrelated_premises_and_operand_size() {
     let equal =
-        |left, right| Proposition::condition_is(ConditionTerm::integer_equal(left, right), true);
+        |left, right| Proposition::condition_is(OldConditionTerm::integer_equal(left, right), true);
     for destination in [Ty::Int8, Ty::UInt64, Ty::UInt128] {
         let (lo, hi) = destination.format().bounds();
         let mut costs = Vec::new();
@@ -98,7 +98,7 @@ fn integer_conversion_identity_ignores_unrelated_premises_and_operand_size() {
             }
             let converted = IntegerTerm::from_machine(
                 destination,
-                MachineTerm::IntegerToMachine {
+                OldMachineTerm::IntegerToMachine {
                     value: z.clone().into(),
                     destination,
                 },
@@ -110,7 +110,7 @@ fn integer_conversion_identity_ignores_unrelated_premises_and_operand_size() {
                 le(z.clone(), IntegerTerm::constant(hi.clone())),
             ];
             premises.resize_with(ambient + 2, || {
-                Proposition::condition_is(ConditionTerm::Variable(Variable(168_202)), true)
+                Proposition::condition_is(OldConditionTerm::Variable(Variable(168_202)), true)
             });
 
             let (result, work) = crate::instrumentation::measure_deterministic_work(|| {

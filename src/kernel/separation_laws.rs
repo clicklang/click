@@ -8,8 +8,8 @@ pub(crate) fn prove_separation_elements(
     base: OldPointer,
     width: u32,
     format: MachineIntegerType,
-    i: MachineTerm,
-    j: MachineTerm,
+    i: OldMachineTerm,
+    j: OldMachineTerm,
 ) -> Theorem {
     assert!(width > 0, "elements require a nonzero storage width");
     let (unsigned, wide) = match format {
@@ -19,7 +19,7 @@ pub(crate) fn prove_separation_elements(
         _ => panic!("elements indices require int32, int64, or uint64"),
     };
     crate::instrumentation::record_deterministic_work(1);
-    let element = |index: MachineTerm| {
+    let element = |index: OldMachineTerm| {
         let address = base
             .address()
             .offset_by_typed_elements(index, width, unsigned, wide);
@@ -33,9 +33,9 @@ pub(crate) fn prove_separation_elements(
     Theorem::new(Proposition::Implies(
         Box::new(Proposition::condition_is(
             if wide {
-                ConditionTerm::int64_equal(i.clone(), j.clone())
+                OldConditionTerm::int64_equal(i.clone(), j.clone())
             } else {
-                ConditionTerm::equal(i.clone(), j.clone())
+                OldConditionTerm::equal(i.clone(), j.clone())
             },
             false,
         )),
@@ -56,8 +56,8 @@ pub(crate) fn prove_separation_distinct_elements(
     base: OldPointer,
     width: u32,
     format: MachineIntegerType,
-    i: MachineTerm,
-    j: MachineTerm,
+    i: OldMachineTerm,
+    j: OldMachineTerm,
 ) -> Theorem {
     assert!(
         width > 0,
@@ -70,21 +70,21 @@ pub(crate) fn prove_separation_distinct_elements(
         _ => panic!("element addresses require int32, int64, or uint64 indices"),
     };
     crate::instrumentation::record_deterministic_work(1);
-    let address = |index: MachineTerm| {
+    let address = |index: OldMachineTerm| {
         base.address()
             .offset_by_typed_elements(index, width, unsigned, wide)
     };
     Theorem::new(Proposition::Implies(
         Box::new(Proposition::condition_is(
             if wide {
-                ConditionTerm::int64_equal(i.clone(), j.clone())
+                OldConditionTerm::int64_equal(i.clone(), j.clone())
             } else {
-                ConditionTerm::equal(i.clone(), j.clone())
+                OldConditionTerm::equal(i.clone(), j.clone())
             },
             false,
         )),
         Box::new(Proposition::condition_is(
-            ConditionTerm::address_equal(address(i), address(j)),
+            OldConditionTerm::address_equal(address(i), address(j)),
             false,
         )),
     ))
@@ -125,10 +125,10 @@ pub(crate) fn prove_separation_subrange(
     base: OldPointer,
     width: u32,
     format: MachineIntegerType,
-    lo: MachineTerm,
-    hi: MachineTerm,
-    inner_lo: MachineTerm,
-    inner_hi: MachineTerm,
+    lo: OldMachineTerm,
+    hi: OldMachineTerm,
+    inner_lo: OldMachineTerm,
+    inner_hi: OldMachineTerm,
 ) -> Theorem {
     assert!(matches!(
         format,
@@ -158,7 +158,7 @@ pub(crate) fn prove_separation_subrange(
             .fold(conclusion, |body, (left, right)| {
                 Proposition::Implies(
                     Box::new(Proposition::condition_is(
-                        ConditionTerm::machine_compare(
+                        OldConditionTerm::machine_compare(
                             format,
                             CompareRelation::LessEqual,
                             left,
@@ -178,9 +178,9 @@ pub(crate) fn prove_separation_adjacent_ranges(
     base: OldPointer,
     width: u32,
     format: MachineIntegerType,
-    lo: MachineTerm,
-    mid: MachineTerm,
-    hi: MachineTerm,
+    lo: OldMachineTerm,
+    mid: OldMachineTerm,
+    hi: OldMachineTerm,
     join: bool,
 ) -> Theorem {
     assert!(width > 0);
@@ -217,7 +217,7 @@ pub(crate) fn prove_separation_adjacent_ranges(
             .fold(conclusion, |body, (left, right)| {
                 Proposition::Implies(
                     Box::new(Proposition::condition_is(
-                        ConditionTerm::machine_compare(
+                        OldConditionTerm::machine_compare(
                             format,
                             CompareRelation::LessEqual,
                             left,
@@ -238,8 +238,8 @@ pub(crate) fn prove_separation_rebase(
     base: OldPointer,
     width: u32,
     format: MachineIntegerType,
-    lo: MachineTerm,
-    hi: MachineTerm,
+    lo: OldMachineTerm,
+    hi: OldMachineTerm,
 ) -> Theorem {
     assert!(width > 0);
     assert!(matches!(
@@ -249,14 +249,14 @@ pub(crate) fn prove_separation_rebase(
     crate::instrumentation::record_deterministic_work(1);
     let wide = format == MachineIntegerType::UInt64;
     let zero = if wide {
-        MachineTerm::uint64_constant(0)
+        OldMachineTerm::uint64_constant(0)
     } else {
-        MachineTerm::constant(0)
+        OldMachineTerm::constant(0)
     };
     let length = if wide {
-        MachineTerm::uint64_subtract(hi.clone(), lo.clone())
+        OldMachineTerm::uint64_subtract(hi.clone(), lo.clone())
     } else {
-        MachineTerm::subtract(hi.clone(), lo.clone())
+        OldMachineTerm::subtract(hi.clone(), lo.clone())
     };
     let shifted = base
         .clone()
@@ -277,13 +277,13 @@ pub(crate) fn prove_separation_rebase(
     };
     // Retain the declaration's exact observation premise even for unsigned
     // indices, where a native zero comparison would simplify to `true`.
-    let nonnegative = ConditionTerm::IntegerLessEqual(
+    let nonnegative = OldConditionTerm::IntegerLessEqual(
         IntegerTerm::constant_i64(0).into(),
         IntegerTerm::from_machine(format, lo.clone())
             .expect("rebase admits machine integer bounds")
             .into(),
     );
-    let ordered = ConditionTerm::machine_compare(format, CompareRelation::LessEqual, lo, hi);
+    let ordered = OldConditionTerm::machine_compare(format, CompareRelation::LessEqual, lo, hi);
     Theorem::new(
         [nonnegative, ordered]
             .into_iter()
@@ -303,9 +303,9 @@ pub(crate) fn prove_separation_contains_element(
     base: OldPointer,
     width: u32,
     format: MachineIntegerType,
-    lo: MachineTerm,
-    hi: MachineTerm,
-    index: MachineTerm,
+    lo: OldMachineTerm,
+    hi: OldMachineTerm,
+    index: OldMachineTerm,
 ) -> Theorem {
     assert!(width > 0);
     assert!(matches!(
@@ -342,7 +342,7 @@ pub(crate) fn prove_separation_contains_element(
         .fold(conclusion, |body, (relation, left, right)| {
             Proposition::Implies(
                 Box::new(Proposition::condition_is(
-                    ConditionTerm::machine_compare(format, relation, left, right),
+                    OldConditionTerm::machine_compare(format, relation, left, right),
                     true,
                 )),
                 Box::new(body),

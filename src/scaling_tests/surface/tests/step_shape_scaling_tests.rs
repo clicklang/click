@@ -110,7 +110,7 @@ fn branch_interface_reuses_saved_states_beside_growing_locals_and_marks() {
                 .unwrap()
                 .get(&1)
                 .unwrap()
-                .native_compat(),
+                .old_form(),
             &crate::kernel::int32(42)
         );
     }

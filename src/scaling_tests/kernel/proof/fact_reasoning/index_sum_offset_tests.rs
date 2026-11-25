@@ -14,7 +14,7 @@ fn an_index_sum_offset_reads_only_the_cited_premise_and_its_own_terms() {
         let mut premises = vec![cited.clone()];
         premises.extend((0..size).map(|id| {
             Proposition::condition_is(
-                ConditionTerm::integer_equal(
+                OldConditionTerm::integer_equal(
                     observed(993_000 + id),
                     IntegerTerm::add(observed(994_000 + id), observed(995_000 + id)),
                 ),
@@ -39,13 +39,13 @@ fn an_index_sum_offset_reads_only_the_cited_premise_and_its_own_terms() {
     // `normalize using` tries first on the same goal has its own curve.
     let mut selected = PureFactContext::new();
     if let Proposition::ConditionIs(condition, value) = &cited {
-        selected = selected.assume_condition((condition.clone()).native_compat().clone(), *value);
+        selected = selected.assume_condition((condition.clone()).old_form().clone(), *value);
     }
     let mut shared = Vec::new();
     for size in [4, 16, 64] {
         let condition_source = address_goal(size, 1);
-        let Some((ConditionTerm::AddressEqual(left, right), true)) =
-            condition_source.condition_native()
+        let Some((OldConditionTerm::AddressEqual(left, right), true)) =
+            condition_source.old_condition()
         else {
             unreachable!("the goal is a pointer equality");
         };
@@ -66,24 +66,24 @@ fn offset_equality_work_is_linear_in_shared_offset_terms() {
     let _session = VerificationSession::enter();
     let mut selected = PureFactContext::new();
     if let Proposition::ConditionIs(condition, value) = exact_sum() {
-        selected = selected.assume_condition(condition.native_compat().clone(), value);
+        selected = selected.assume_condition(condition.old_form().clone(), value);
     }
     // The pair the general check leaves open, and an unequal one: the same
     // sums with a constant byte added to one side.
     let pairs = |size: u64| {
         let condition_source = address_goal(size, 1);
-        let Some((ConditionTerm::AddressEqual(left, right), true)) =
-            condition_source.condition_native()
+        let Some((OldConditionTerm::AddressEqual(left, right), true)) =
+            condition_source.old_condition()
         else {
             unreachable!("the goal is a pointer equality");
         };
-        let unequal = AddressOffset::Add(
+        let unequal = OldAddressOffset::Add(
             Box::new(right.offset.clone()),
-            Box::new(AddressOffset::Constant(1)),
+            Box::new(OldAddressOffset::Constant(1)),
         );
-        let summed = AddressOffset::Add(
+        let summed = OldAddressOffset::Add(
             Box::new(left.offset.clone()),
-            Box::new(AddressOffset::Constant(0)),
+            Box::new(OldAddressOffset::Constant(0)),
         );
         [
             (left.offset.clone(), right.offset.clone()),

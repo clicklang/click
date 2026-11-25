@@ -56,17 +56,17 @@ fn ordinary_authority_wrapper_checks_only_its_delta() {
             resources = resources.unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
                 Address {
                     base: format!("block_{index}").into(),
-                    offset: crate::kernel::AddressOffset::Constant(0),
+                    offset: crate::kernel::OldAddressOffset::Constant(0),
                 },
                 0.into(),
                 1.into(),
             )));
             facts = facts.with_fact(Proposition::condition_is(
-                crate::kernel::ConditionTerm::Compare {
+                crate::kernel::OldConditionTerm::Compare {
                     format: crate::kernel::MachineIntegerType::Int32,
                     relation: crate::kernel::CompareRelation::Equal,
-                    left: Box::new(MachineTerm::Variable(Variable(index as u64 + 100))),
-                    right: Box::new(MachineTerm::constant(index as u32)),
+                    left: Box::new(OldMachineTerm::Variable(Variable(index as u64 + 100))),
+                    right: Box::new(OldMachineTerm::constant(index as u32)),
                 },
                 true,
             ));
@@ -132,7 +132,7 @@ fn ordinary_authority_wrapper_checks_only_its_delta() {
         let unrelated_memory = ResourceFact::own_memory(MemoryRange::new(
             Address {
                 base: "block_0".into(),
-                offset: crate::kernel::AddressOffset::Constant(0),
+                offset: crate::kernel::OldAddressOffset::Constant(0),
             },
             0.into(),
             1.into(),

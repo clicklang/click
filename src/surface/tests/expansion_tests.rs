@@ -9169,7 +9169,7 @@ fn marked_constant_store_transport_expands_to_known_fact_lookup() {
     assert!(
         error
             .message()
-            .contains("found no frame evidence carrying its source fact to the target's state")
+            .contains("found no checked proof from its source")
             && error.message().contains("owner->value == 11")
             && error
                 .message()
@@ -19168,7 +19168,7 @@ fn qualified_static_struct_startup_and_expansion() {
                 "state".into(),
             ))
         )),
-        ExpressionOutcome::Value(ProgramValue::UInt64(MachineTerm::uint64_constant(7)))
+        ExpressionOutcome::Value(ProgramValue::UInt64(OldMachineTerm::uint64_constant(7)))
     );
     let verified_for_expansion = verify_c_sources(source, &sources).unwrap();
     for (_, expanded) in expand_checked_grouped_claims(

@@ -160,10 +160,10 @@ pub(super) fn state_offset(root: &SharedAddressOffset) -> MemoryErasedAddressOff
     offsets(root, |node, children| {
         Some(Canonical::new(match node {
             O::Constant(value) => {
-                MemoryErasedAddressOffsetNode::Exact(AddressOffset::Constant(*value))
+                MemoryErasedAddressOffsetNode::Exact(OldAddressOffset::Constant(*value))
             }
             O::Variable(value) => {
-                MemoryErasedAddressOffsetNode::Exact(AddressOffset::Variable(*value))
+                MemoryErasedAddressOffsetNode::Exact(OldAddressOffset::Variable(*value))
             }
             O::Add(_) => {
                 let [a, b] = children.unwrap();
@@ -231,7 +231,7 @@ pub(super) fn alpha_offset<const ALLOW_LOADS: bool>(
                     O::Constant(value) => AlphaPointerOffsetNode::Constant(*value),
                     O::Variable(variable) => {
                         let key = alpha_pointer_offset_key_with_bindings::<ALLOW_LOADS>(
-                            &AddressOffset::Variable(*variable),
+                            &OldAddressOffset::Variable(*variable),
                             bindings,
                             next,
                         )?;
@@ -289,7 +289,7 @@ pub(super) fn state_address(pointer: &SharedAddress) -> MemoryErasedAddressKey {
     let read = match block {
         AddressBase::Load(_) if depth < 3 => Address {
             base: block.clone(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         }
         .as_loaded_value()
         .map(|read| read.defining_address),
@@ -374,7 +374,7 @@ mod tests {
         KernelTermExport, MachineBinaryOp, SharedMachineIntegerTerm, SubobjectBounds,
         VerificationSession,
     };
-    fn pointer(offset: AddressOffset) -> OldPointer {
+    fn pointer(offset: OldAddressOffset) -> OldPointer {
         let address = Address {
             base: AddressBase::Concrete("shared-key".into()),
             offset,
@@ -383,11 +383,11 @@ mod tests {
             .with_provenance(Arc::new(address.clone()))
             .with_bounds(Some(SubobjectBounds {
                 start: address,
-                width: MachineTerm::Binary {
+                width: OldMachineTerm::Binary {
                     format: MachineIntegerType::Int32,
                     op: MachineBinaryOp::Add,
-                    left: MachineTerm::Variable(Variable(1010002)).into(),
-                    right: MachineTerm::constant(4).into(),
+                    left: OldMachineTerm::Variable(Variable(1010002)).into(),
+                    right: OldMachineTerm::constant(4).into(),
                 },
             }))
             .with_bounds_owner(Some(Arc::new(Address::symbolic(Variable(1010001)))))
@@ -403,22 +403,22 @@ mod tests {
             MachineIntegerType::UInt64,
         ] {
             let scalar =
-                SharedMachineIntegerTerm::index(ty, MachineTerm::Variable(Variable(1010003)));
+                SharedMachineIntegerTerm::index(ty, OldMachineTerm::Variable(Variable(1010003)));
             let scaled = if matches!(ty, MachineIntegerType::Int32 | MachineIntegerType::UInt32) {
-                AddressOffset::Int32Scaled {
+                OldAddressOffset::Int32Scaled {
                     value: scalar,
                     byte_width: -4,
                 }
             } else {
-                AddressOffset::Int64Scaled {
+                OldAddressOffset::Int64Scaled {
                     value: scalar,
                     byte_width: 8,
                     unsigned: true,
                 }
             };
-            let source = pointer(AddressOffset::Add(
+            let source = pointer(OldAddressOffset::Add(
                 Box::new(scaled),
-                Box::new(AddressOffset::Constant(3)),
+                Box::new(OldAddressOffset::Constant(3)),
             ));
             let shared = SharedPointer::import(&source);
             let expected = memory_erased_pointer_key(&source);
@@ -443,13 +443,13 @@ mod tests {
         let before = crate::kernel::SymbolicMemory::new().with_block("shared-key-load", 16);
         let after = before.clone().store(
             address.clone(),
-            ProgramValue::Int32(MachineTerm::constant(7)),
+            ProgramValue::Int32(OldMachineTerm::constant(7)),
         );
         let make = |memory| {
-            SharedPointer::import(&pointer(AddressOffset::Int32Scaled {
+            SharedPointer::import(&pointer(OldAddressOffset::Int32Scaled {
                 value: SharedMachineIntegerTerm::index(
                     MachineIntegerType::Int32,
-                    MachineTerm::read_named(
+                    OldMachineTerm::read_named(
                         crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                         Box::new(address.clone()),
                         LoadKind::Int32,
@@ -495,7 +495,7 @@ mod tests {
                 base: AddressBase::PureFunctionApplication(
                     crate::kernel::SharedPureApplication::intern("pointer-key-call".into(), vec![]),
                 ),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             })
         };
         let a = make();
@@ -510,7 +510,7 @@ mod tests {
     #[test]
     fn compact_key_fingerprints_survive_dropping_all_handles() {
         let fingerprint = || {
-            let key = memory_erased_address_offset_key(&AddressOffset::Constant(1010301));
+            let key = memory_erased_address_offset_key(&OldAddressOffset::Constant(1010301));
             let mut hasher = std::collections::hash_map::DefaultHasher::new();
             key.hash(&mut hasher);
             hasher.finish()

@@ -7,20 +7,20 @@ fn store_equation_work(unrelated: usize, stores: usize) -> usize {
     let _session = crate::kernel::VerificationSession::enter();
     let cell = |index: u64| Address {
         base: "array".into(),
-        offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(index)), 4),
+        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(index)), 4),
     };
     let mut memory = SymbolicMemory::new().with_block("array", 1 << 20);
     for index in 0..unrelated as u64 {
         memory = memory.store(
             cell(989_900_000 + index),
-            ProgramValue::Int32(MachineTerm::Variable(Variable(989_800_000 + index))),
+            ProgramValue::Int32(OldMachineTerm::Variable(Variable(989_800_000 + index))),
         );
     }
     let mut operands = Vec::new();
     for index in 0..stores as u64 {
         let before = memory.clone();
         let pointer = cell(989_600_000 + index);
-        let value = ProgramValue::Int32(MachineTerm::Variable(Variable(989_700_000 + index)));
+        let value = ProgramValue::Int32(OldMachineTerm::Variable(Variable(989_700_000 + index)));
         memory = memory.store(pointer.clone(), value.clone());
         operands.push((before, memory.clone(), pointer, value));
     }

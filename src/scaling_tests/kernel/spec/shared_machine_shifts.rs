@@ -44,11 +44,13 @@ fn check_c_shift_prefix_scaling(
         let _session = VerificationSession::enter();
         let mut execution = ExecutionBudget::new();
         let budget = SpecEvaluation::logical(&mut execution);
-        let SpecValue::Shared(mut left) = input(a, &MachineTerm::Variable(Variable(995476)), true)
+        let SpecValue::Shared(mut left) =
+            input(a, &OldMachineTerm::Variable(Variable(995476)), true)
         else {
             panic!()
         };
-        let SpecValue::Shared(mut count) = input(b, &MachineTerm::Variable(Variable(995477)), true)
+        let SpecValue::Shared(mut count) =
+            input(b, &OldMachineTerm::Variable(Variable(995477)), true)
         else {
             panic!()
         };
@@ -86,9 +88,9 @@ fn retained_int64_order_uses_root_width_bounds_without_walking_prefixes() {
     for size in [16, 64, 256] {
         let _session = VerificationSession::enter();
         let format = MachineIntegerType::Int64;
-        let mut root =
-            KernelTermImport::default().machine(format, &MachineTerm::Variable(Variable(995478)));
-        let one = KernelTermImport::default().machine(format, &MachineTerm::int64_constant(1));
+        let mut root = KernelTermImport::default()
+            .machine(format, &OldMachineTerm::Variable(Variable(995478)));
+        let one = KernelTermImport::default().machine(format, &OldMachineTerm::int64_constant(1));
         for _ in 0..size {
             root = KernelTerm::machine_binary_shared(
                 format,
@@ -96,7 +98,7 @@ fn retained_int64_order_uses_root_width_bounds_without_walking_prefixes() {
                 [root, one.clone()],
             );
         }
-        let maximum = MachineTerm::int64_constant(i64::MAX);
+        let maximum = OldMachineTerm::int64_constant(i64::MAX);
         let exports = KernelTermExport::machine_export_count();
         let (condition, work) = crate::instrumentation::measure_deterministic_work(|| {
             crate::kernel::machine_integer::comparison::condition_for_operand_views(
@@ -104,11 +106,11 @@ fn retained_int64_order_uses_root_width_bounds_without_walking_prefixes() {
                 CompareRelation::LessEqual,
                 [
                     MachineOperandView::Shared(&root),
-                    MachineOperandView::Legacy(&maximum),
+                    MachineOperandView::Old(&maximum),
                 ],
             )
         });
-        assert_eq!(condition, ConditionTerm::Constant(true));
+        assert_eq!(condition, OldConditionTerm::Constant(true));
         assert_eq!(KernelTermExport::machine_export_count(), exports);
         if let Some(before) = previous {
             assert!(work <= before + 8, "{size}: {work} vs {before}");
@@ -124,10 +126,10 @@ fn rust_shift_chains_keep_original_formats_without_exports() {
             let mut previous = None;
             for size in [16, 64, 256] {
                 let _session = VerificationSession::enter();
-                let mut root = input(format, &MachineTerm::Variable(Variable(995493)), true);
+                let mut root = input(format, &OldMachineTerm::Variable(Variable(995493)), true);
                 let count = input(
                     MachineIntegerType::UInt64,
-                    &MachineTerm::Variable(Variable(995494)),
+                    &OldMachineTerm::Variable(Variable(995494)),
                     true,
                 );
                 let exports = KernelTermExport::machine_export_count();

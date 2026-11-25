@@ -290,13 +290,13 @@ mod tests {
         let point = ProgramPoint::at(&crate::kernel::intern_memory_ref(&memory));
         let word = Address::symbolic(Variable(999967));
         let wide = Address::symbolic(Variable(999968));
-        let offset = AddressOffset::Add(
-            Box::new(AddressOffset::scaled_int32_node(
-                MachineTerm::read_named(point.clone(), Box::new(word.clone()), LoadKind::Int32),
+        let offset = OldAddressOffset::Add(
+            Box::new(OldAddressOffset::scaled_int32_node(
+                OldMachineTerm::read_named(point.clone(), Box::new(word.clone()), LoadKind::Int32),
                 4,
             )),
-            Box::new(AddressOffset::scaled_int64_node(
-                MachineTerm::read_named(point, Box::new(wide.clone()), LoadKind::Bits64),
+            Box::new(OldAddressOffset::scaled_int64_node(
+                OldMachineTerm::read_named(point, Box::new(wide.clone()), LoadKind::Bits64),
                 8,
                 true,
             )),
@@ -338,9 +338,9 @@ mod tests {
                 "c_int32_to_float32",
             ),
         ] {
-            let native = MachineTerm::PureFunctionApplication {
+            let native = OldMachineTerm::PureFunctionApplication {
                 name: name.into(),
-                arguments: vec![MachineTerm::Variable(Variable(999973))],
+                arguments: vec![OldMachineTerm::Variable(Variable(999973))],
             };
             let operand = KernelTerm::variable(KernelType::Program(source), Variable(999973));
             let root = KernelTerm::numeric_float_convert(target, source, operand).unwrap();
@@ -383,15 +383,15 @@ mod tests {
                 accumulator: Variable(991512),
                 item: Variable(991513),
                 body: IntegerTerm::If {
-                    condition: Box::new(ConditionTerm::Compare {
+                    condition: Box::new(OldConditionTerm::Compare {
                         format,
                         relation: CompareRelation::LessThan,
-                        left: Box::new(MachineTerm::read_named(
+                        left: Box::new(OldMachineTerm::read_named(
                             ProgramPoint::at(&(crate::kernel::intern_memory_ref(&current))),
                             Box::new(pointer.clone()),
                             LoadKind::Int32,
                         )),
-                        right: Box::new(MachineTerm::constant(0)),
+                        right: Box::new(OldMachineTerm::constant(0)),
                     }),
                     then_term: IntegerTerm::constant_i64(1).into(),
                     else_term: IntegerTerm::constant_i64(2).into(),
@@ -423,7 +423,7 @@ mod tests {
         let current = SymbolicMemory::new();
         let memory = crate::kernel::intern_memory_ref(&current);
         let pointer = Address::symbolic(Variable(991501));
-        let read = MachineTerm::read_named(
+        let read = OldMachineTerm::read_named(
             ProgramPoint::at(&memory),
             Box::new(pointer),
             LoadKind::Bits64,
@@ -499,18 +499,18 @@ mod offset_condition_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let current = SymbolicMemory::new();
         let read = |id, kind| {
-            MachineTerm::read_named(
+            OldMachineTerm::read_named(
                 ProgramPoint::at(&(crate::kernel::intern_memory_ref(&current))),
                 Box::new(Address::symbolic(Variable(id))),
                 kind,
             )
         };
-        let source = ConditionTerm::AddressOffsetEqual(
-            Box::new(AddressOffset::scaled_int32_node(
+        let source = OldConditionTerm::AddressOffsetEqual(
+            Box::new(OldAddressOffset::scaled_int32_node(
                 read(998500, LoadKind::Int32),
                 4,
             )),
-            Box::new(AddressOffset::scaled_int64_node(
+            Box::new(OldAddressOffset::scaled_int64_node(
                 read(998501, LoadKind::Bits64),
                 8,
                 false,
@@ -546,8 +546,8 @@ mod boolean_read_tests {
         let memory = crate::kernel::intern_memory(current.clone());
         let address = Address {
             base: AddressBase::Symbolic(Variable(999360)),
-            offset: AddressOffset::scaled_int32_node(
-                MachineTerm::read_named(
+            offset: OldAddressOffset::scaled_int32_node(
+                OldMachineTerm::read_named(
                     ProgramPoint::at(&memory),
                     Box::new(SymbolicMemory::global_pointer("bool-index")),
                     LoadKind::Int32,
@@ -557,7 +557,7 @@ mod boolean_read_tests {
         };
         let byte =
             crate::kernel::eval::scalar_read_for_exact_cell(&memory, &address, LoadKind::UInt8, 1);
-        let source = ConditionTerm::nonzero_bool_word(&byte);
+        let source = OldConditionTerm::nonzero_bool_word(&byte);
         let root = crate::kernel::KernelTermImport::default().condition(&source);
         let mut expected = Vec::new();
         let mut actual = Vec::new();

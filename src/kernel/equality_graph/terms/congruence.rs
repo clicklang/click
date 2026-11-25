@@ -6,8 +6,8 @@ use crate::kernel::MachineBinaryOp;
 use crate::kernel::MachineIntegerType;
 use crate::kernel::machine_integer::representation;
 use crate::kernel::{
-    BitvectorUnaryOp as U, CarrierWidth as W, ConditionTerm as C, MachineTerm as T, ProgramType,
-    ProgramValue, PureFunctionArgument as A, SharedPureApplication,
+    BitvectorUnaryOp as U, CarrierWidth as W, OldConditionTerm as C, OldMachineTerm as T,
+    ProgramType, ProgramValue, PureFunctionArgument as A, SharedPureApplication,
 };
 use crate::kernel::{CompareRelation, OverflowOperation};
 use crate::kernel::{MachineCastSpelling, cast_op};
@@ -256,7 +256,7 @@ impl TermClasses {
                 crate::kernel::MachineOperandView::Shared(term) => {
                     self.intern_shared_machine(term, width)
                 }
-                crate::kernel::MachineOperandView::Legacy(term) => {
+                crate::kernel::MachineOperandView::Old(term) => {
                     self.intern_typed_machine(term, width)
                 }
             });
@@ -312,7 +312,7 @@ impl TermClasses {
                 *observed = true;
                 match machine.operand_view() {
                     V::Shared(term) => self.intern_shared_machine(term, W::Bits32),
-                    V::Legacy(term) => self.intern_int32(term),
+                    V::Old(term) => self.intern_int32(term),
                 }
             }
             I::Constant(value) => {
@@ -1432,7 +1432,7 @@ impl TermClasses {
     /// this adds at most five nodes and one merge whatever the operand's
     /// size, and a nested narrow cast is interned once. Its nodes are the
     /// ones the constructors' spelling of the word interns
-    /// (`MachineTerm::bitwise_and`, `bitwise_xor`, `subtract`), so the
+    /// (`OldMachineTerm::bitwise_and`, `bitwise_xor`, `subtract`), so the
     /// written `x & 255u32` meets the cast's class.
     pub(super) fn narrow_cast_node(
         &mut self,
@@ -1966,7 +1966,7 @@ impl TermClasses {
         if application.integer_address_bits().is_some() {
             return;
         }
-        if origin.offset != AddressOffset::Constant(0) {
+        if origin.offset != OldAddressOffset::Constant(0) {
             return;
         }
         let key = Node::PointerFunctionIdentity(application.clone());
@@ -2074,9 +2074,7 @@ impl TermClasses {
             crate::kernel::MachineOperandView::Shared(term) => {
                 self.intern_shared_machine(term, width)
             }
-            crate::kernel::MachineOperandView::Legacy(term) => {
-                self.intern_typed_machine(term, width)
-            }
+            crate::kernel::MachineOperandView::Old(term) => self.intern_typed_machine(term, width),
         };
         let (left, right) = (operand(left), operand(right));
         Some(self.intern_node(Node::Condition(kind, left, right)))
@@ -2098,8 +2096,8 @@ impl TermClasses {
                 *format,
                 *relation,
                 [
-                    crate::kernel::MachineOperandView::Legacy(left),
-                    crate::kernel::MachineOperandView::Legacy(right),
+                    crate::kernel::MachineOperandView::Old(left),
+                    crate::kernel::MachineOperandView::Old(right),
                 ],
             );
         }
@@ -2434,7 +2432,7 @@ impl TermClasses {
             return self.admit_machine_comparison(
                 *format,
                 *relation,
-                [V::Legacy(left), V::Legacy(right)],
+                [V::Old(left), V::Old(right)],
                 value,
             );
         }
@@ -2465,7 +2463,7 @@ impl TermClasses {
             Self::machine_comparison_width(
                 *format,
                 CompareRelation::Equal,
-                [V::Legacy(left), V::Legacy(right)]
+                [V::Old(left), V::Old(right)]
             ),
             W::Bits8 | W::Bits16
         )
@@ -2537,7 +2535,7 @@ impl TermClasses {
                 crate::kernel::MachineOperandView::Shared(term) => {
                     self.intern_shared_machine(term, width)
                 }
-                crate::kernel::MachineOperandView::Legacy(term) => {
+                crate::kernel::MachineOperandView::Old(term) => {
                     self.intern_typed_machine(term, width)
                 }
             });
@@ -2634,7 +2632,7 @@ impl TermClasses {
             crate::kernel::MachineOperandView::Shared(term) => {
                 self.intern_shared_machine(term, W::Bits32)
             }
-            crate::kernel::MachineOperandView::Legacy(term) => self.intern_int32(term),
+            crate::kernel::MachineOperandView::Old(term) => self.intern_int32(term),
         });
         let node = self.intern_node(Node::Condition(
             ConditionKind::Int32AddOverflow,
@@ -2664,7 +2662,7 @@ impl TermClasses {
             return self.knows_machine_comparison(
                 *format,
                 *relation,
-                [V::Legacy(left), V::Legacy(right)],
+                [V::Old(left), V::Old(right)],
                 value,
             );
         }

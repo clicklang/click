@@ -21,7 +21,7 @@
 //! Every operation touches the entries of the one block it names (O(log n)
 //! to position plus the entries it merges or visits), never unrelated blocks.
 
-use super::{Address, AddressBase, AddressOffset, AliasCandidates, HashedOrdMap, ProgramValue};
+use super::{Address, AddressBase, AliasCandidates, HashedOrdMap, OldAddressOffset, ProgramValue};
 
 /// See the module comment.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]
@@ -53,7 +53,7 @@ impl std::hash::Hash for InitializedBytes {
 fn constant_start(block: &AddressBase, offset: i64) -> Address {
     Address {
         base: block.clone(),
-        offset: AddressOffset::Constant(offset),
+        offset: OldAddressOffset::Constant(offset),
     }
 }
 

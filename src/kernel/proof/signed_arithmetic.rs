@@ -1,6 +1,6 @@
 //! Signed-machine affine and interval computations for arithmetic planning.
 //! Internal plans expand into ordinary bounds and observation identities.
-use super::super::{BitvectorBinaryOp, ConditionTerm, MachineTerm, Proposition, Variable};
+use super::super::{BitvectorBinaryOp, OldConditionTerm, OldMachineTerm, Proposition, Variable};
 use crate::kernel::CompareRelation;
 use crate::kernel::MachineBinaryOp;
 use crate::kernel::MachineIntegerType;
@@ -101,14 +101,14 @@ impl PartialOrd for SignedArithmeticAtom {
 }
 
 impl SignedArithmeticAtom {
-    pub(crate) fn from_term(term: &MachineTerm) -> Option<Self> {
+    pub(crate) fn from_term(term: &OldMachineTerm) -> Option<Self> {
         signed_arithmetic_atom_key(term)
     }
 
     #[cfg(test)]
     pub(crate) fn from_operand(value: crate::kernel::MachineOperandView<'_>) -> Option<Self> {
         match value {
-            crate::kernel::MachineOperandView::Legacy(value) => Self::from_term(value),
+            crate::kernel::MachineOperandView::Old(value) => Self::from_term(value),
             crate::kernel::MachineOperandView::Shared(value) => atom_keys::from_shared(value),
         }
     }
@@ -117,7 +117,7 @@ impl SignedArithmeticAtom {
         value: crate::kernel::MachineOperandView<'_>,
     ) -> Option<Self> {
         match value {
-            crate::kernel::MachineOperandView::Legacy(value) => {
+            crate::kernel::MachineOperandView::Old(value) => {
                 Self::from_term(&canonical_term_budgeted(value)?)
             }
             crate::kernel::MachineOperandView::Shared(value) => {
@@ -145,7 +145,7 @@ impl SignedArithmeticAtom {
     }
 }
 
-fn signed_arithmetic_atom_key(root: &MachineTerm) -> Option<SignedArithmeticAtom> {
+fn signed_arithmetic_atom_key(root: &OldMachineTerm) -> Option<SignedArithmeticAtom> {
     let mut tokens = Vec::new();
     let mut pending = vec![root];
     macro_rules! push_token {
@@ -166,8 +166,8 @@ fn signed_arithmetic_atom_key(root: &MachineTerm) -> Option<SignedArithmeticAtom
             bits32_constant!(value) => {
                 (u32::BITS - constant_u32(*value).leading_zeros()) as usize + 2
             }
-            MachineTerm::Variable(_) => 2,
-            MachineTerm::PureFunctionApplication { name, arguments } => {
+            OldMachineTerm::Variable(_) => 2,
+            OldMachineTerm::PureFunctionApplication { name, arguments } => {
                 name.len().saturating_add(arguments.len()).saturating_add(3)
             }
             unary_term!(Int32, BitwiseNot, _) => 2,
@@ -181,16 +181,16 @@ fn signed_arithmetic_atom_key(root: &MachineTerm) -> Option<SignedArithmeticAtom
             bits32_constant!(value) => {
                 push_token!(SignedArithmeticAtomToken::Constant(constant_u32(*value)));
             }
-            MachineTerm::Variable(variable) => {
+            OldMachineTerm::Variable(variable) => {
                 push_token!(SignedArithmeticAtomToken::Variable(*variable));
             }
-            MachineTerm::MemoryLoad(..) => {
+            OldMachineTerm::MemoryLoad(..) => {
                 let read = crate::kernel::KernelTermImport::default()
                     .machine_arithmetic(MachineIntegerType::Int32, term)?;
                 push_token!(SignedArithmeticAtomToken::Read(read));
             }
             cast_term!(UInt32From64, value) => {
-                if let MachineTerm::Variable(variable) = value.as_ref() {
+                if let OldMachineTerm::Variable(variable) = value.as_ref() {
                     push_token!(SignedArithmeticAtomToken::Narrow64Variable(*variable));
                     continue;
                 }
@@ -205,11 +205,11 @@ fn signed_arithmetic_atom_key(root: &MachineTerm) -> Option<SignedArithmeticAtom
                         return None;
                     }
                     let (operator, left, right) = match native {
-                        MachineTerm::Variable(variable) => {
+                        OldMachineTerm::Variable(variable) => {
                             push_token!(SignedArithmeticAtomToken::Variable(*variable));
                             continue;
                         }
-                        MachineTerm::MemoryLoad(..) => {
+                        OldMachineTerm::MemoryLoad(..) => {
                             let read = crate::kernel::KernelTermImport::default()
                                 .machine_arithmetic(MachineIntegerType::Int32, native)?;
                             push_token!(SignedArithmeticAtomToken::Read(read));
@@ -244,7 +244,7 @@ fn signed_arithmetic_atom_key(root: &MachineTerm) -> Option<SignedArithmeticAtom
                     native_pending.push(left);
                 }
             }
-            MachineTerm::PureFunctionApplication { name, arguments } => {
+            OldMachineTerm::PureFunctionApplication { name, arguments } => {
                 push_token!(SignedArithmeticAtomToken::PureFunction {
                     name: name.clone(),
                     arity: arguments.len(),
@@ -264,7 +264,7 @@ fn signed_arithmetic_atom_key(root: &MachineTerm) -> Option<SignedArithmeticAtom
             }
             // The `int32` widening of an 8- or 16-bit value is that value: an
             // opaque observation of its operand, as a 32-bit variable is.
-            MachineTerm::Cast {
+            OldMachineTerm::Cast {
                 spelling: MachineCastSpelling::Generic,
                 value,
                 from: source,
@@ -278,7 +278,7 @@ fn signed_arithmetic_atom_key(root: &MachineTerm) -> Option<SignedArithmeticAtom
             }
             // σ, the 32-bit sign cast, is a node of its own: `u as int32` is
             // an opaque observation of its operand, as a variable is.
-            MachineTerm::Cast {
+            OldMachineTerm::Cast {
                 spelling: MachineCastSpelling::Generic,
                 value,
                 from: source,
@@ -308,7 +308,9 @@ fn signed_arithmetic_atom_key(root: &MachineTerm) -> Option<SignedArithmeticAtom
 /// `int32` value, which a `uint32` one is only through σ (decision G7,
 /// `design/machine-integers.md`; such a certificate is refused, and its
 /// author writes the `int32` value).
-fn signed_binary(term: &MachineTerm) -> Option<(BitvectorBinaryOp, &MachineTerm, &MachineTerm)> {
+fn signed_binary(
+    term: &OldMachineTerm,
+) -> Option<(BitvectorBinaryOp, &OldMachineTerm, &OldMachineTerm)> {
     term.as_binary().filter(|(operator, _, _)| {
         matches!(
             operator,
@@ -367,13 +369,13 @@ pub(crate) enum SignedArithmeticComparison {
 /// observation is its widening, which every one- and two-byte value keeps.
 /// One match on the root.
 pub(crate) fn widened_narrowed_cast(
-    term: &MachineTerm,
+    term: &OldMachineTerm,
 ) -> Option<(
-    &MachineTerm,
+    &OldMachineTerm,
     crate::kernel::MachineIntegerType,
     crate::kernel::MachineIntegerType,
 )> {
-    let MachineTerm::Cast {
+    let OldMachineTerm::Cast {
         spelling: MachineCastSpelling::Generic,
         value: narrowed,
         from: widened_from,
@@ -382,7 +384,7 @@ pub(crate) fn widened_narrowed_cast(
     else {
         return None;
     };
-    let MachineTerm::Cast {
+    let OldMachineTerm::Cast {
         spelling: MachineCastSpelling::Generic,
         value,
         from: source,
@@ -407,7 +409,7 @@ pub(crate) fn narrowed_word_cast(
 ) -> bool {
     source.format().bits() <= 32
         && crate::kernel::assumptions::narrowed_cast_identity(
-            &MachineTerm::constant(0),
+            &OldMachineTerm::constant(0),
             source,
             destination,
         )
@@ -463,7 +465,7 @@ pub(crate) enum SignedArithmeticNode {
     /// Obtain an interval for an exact one-atom affine bound.
     IntervalFromAffine {
         source: usize,
-        term: MachineTerm,
+        term: OldMachineTerm,
         lower: i64,
         upper: i64,
     },
@@ -473,7 +475,7 @@ pub(crate) enum SignedArithmeticNode {
     /// that exact term identity.
     IntervalFromAffineDirect {
         source: usize,
-        term: MachineTerm,
+        term: OldMachineTerm,
         lower: i64,
         upper: i64,
     },
@@ -485,14 +487,14 @@ pub(crate) enum SignedArithmeticNode {
     /// An opaque atom has the complete signed-int32 interval.
     IntervalAtom {
         carrier: SignedArithmeticCarrier,
-        term: MachineTerm,
+        term: OldMachineTerm,
         lower: i64,
         upper: i64,
     },
     DefinedPremise {
         index: usize,
         carrier: SignedArithmeticCarrier,
-        term: MachineTerm,
+        term: OldMachineTerm,
     },
     IntervalAdd {
         left: usize,
@@ -641,15 +643,15 @@ fn charge_bigint_binary_work(left: &BigInt, right: &BigInt) -> bool {
     !crate::instrumentation::deadline_exceeded_with_work(units.max(1))
 }
 
-fn charge_term_work(root: &MachineTerm) -> bool {
+fn charge_term_work(root: &OldMachineTerm) -> bool {
     let mut pending = vec![root];
     while let Some(term) = pending.pop() {
         let units = match term {
             bits32_constant!(value) => {
                 (u32::BITS - constant_u32(*value).leading_zeros()) as usize + 2
             }
-            MachineTerm::Variable(_) => 2,
-            MachineTerm::PureFunctionApplication { name, arguments } => {
+            OldMachineTerm::Variable(_) => 2,
+            OldMachineTerm::PureFunctionApplication { name, arguments } => {
                 name.len().saturating_add(arguments.len()).saturating_add(2)
             }
             binary_term!(Int32, Add, left, right)
@@ -680,7 +682,7 @@ fn charge_term_work(root: &MachineTerm) -> bool {
     true
 }
 
-fn canonical_term_budgeted(term: &MachineTerm) -> Option<MachineTerm> {
+fn canonical_term_budgeted(term: &OldMachineTerm) -> Option<OldMachineTerm> {
     if !charge_term_work(term) {
         return None;
     }
@@ -696,7 +698,7 @@ fn signed_atom_work(atom: &SignedArithmeticAtom) -> usize {
 }
 
 #[cfg(test)]
-fn signed_term_work(root: &MachineTerm) -> usize {
+fn signed_term_work(root: &OldMachineTerm) -> usize {
     let mut units = 0usize;
     let mut pending = vec![root];
     while let Some(term) = pending.pop() {
@@ -707,7 +709,7 @@ fn signed_term_work(root: &MachineTerm) -> usize {
                     (u32::BITS - constant_u32(*value).leading_zeros()) as usize + 1,
                 );
             }
-            MachineTerm::Variable(_) => {}
+            OldMachineTerm::Variable(_) => {}
             binary_term!(Int32, Add, left, right)
             | binary_term!(Int32, Subtract, left, right)
             | binary_term!(Int32, Multiply, left, right)
@@ -723,7 +725,7 @@ fn signed_term_work(root: &MachineTerm) -> usize {
                 pending.push(right);
             }
             unary_term!(Int32, BitwiseNot, operand) => pending.push(operand),
-            MachineTerm::PureFunctionApplication { name, arguments } => {
+            OldMachineTerm::PureFunctionApplication { name, arguments } => {
                 // Function application identity compares the name and every
                 // argument. Arguments are restricted to this same safe
                 // machine-term fragment, so an iterative walk charges the
@@ -802,7 +804,7 @@ pub(crate) fn int32_range_bound(
 }
 
 #[cfg(test)]
-fn is_opaque_atom(term: &MachineTerm) -> bool {
+fn is_opaque_atom(term: &OldMachineTerm) -> bool {
     SignedArithmeticAtom::from_term(term).is_some_and(|atom| atom.is_opaque_root())
 }
 
@@ -874,10 +876,10 @@ fn affine_claim(proposition: &Proposition) -> Option<SignedArithmeticClaim> {
         },
         _ => return None,
     };
-    if !matches!(condition.native_compat(), ConditionTerm::Compare { .. })
+    if !matches!(condition.old_form(), OldConditionTerm::Compare { .. })
         && let Some(view) =
             crate::kernel::machine_integer::comparison::structural_native_comparison_view(
-                condition.native_compat(),
+                condition.old_form(),
                 value,
             )
     {
@@ -907,7 +909,7 @@ fn affine_claim(proposition: &Proposition) -> Option<SignedArithmeticClaim> {
                     crate::kernel::MachineOperandView::Shared(root) => {
                         atom_keys::from_observation(root, MachineIntegerType::Int32)?
                     }
-                    crate::kernel::MachineOperandView::Legacy(value) => {
+                    crate::kernel::MachineOperandView::Old(value) => {
                         SignedArithmeticAtom::from_term(&canonical_term_budgeted(value)?)?
                     }
                 };
@@ -944,12 +946,12 @@ fn affine_claim(proposition: &Proposition) -> Option<SignedArithmeticClaim> {
         });
     }
     let widened = crate::kernel::machine_integer::comparison::narrow_comparison_as_int32(
-        condition.native_compat(),
+        condition.old_form(),
     );
-    let condition = widened.as_ref().unwrap_or(condition.native_compat());
+    let condition = widened.as_ref().unwrap_or(condition.old_form());
     let (relation, left, right, strict) = match (condition, value) {
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left,
@@ -958,7 +960,7 @@ fn affine_claim(proposition: &Proposition) -> Option<SignedArithmeticClaim> {
             true,
         ) => (SignedArithmeticRelation::LessEqual, left, right, true),
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
                 left,
@@ -967,7 +969,7 @@ fn affine_claim(proposition: &Proposition) -> Option<SignedArithmeticClaim> {
             true,
         ) => (SignedArithmeticRelation::LessEqual, left, right, false),
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterThan,
                 left,
@@ -976,7 +978,7 @@ fn affine_claim(proposition: &Proposition) -> Option<SignedArithmeticClaim> {
             true,
         ) => (SignedArithmeticRelation::LessEqual, right, left, true),
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterEqual,
                 left,
@@ -985,7 +987,7 @@ fn affine_claim(proposition: &Proposition) -> Option<SignedArithmeticClaim> {
             true,
         ) => (SignedArithmeticRelation::LessEqual, right, left, false),
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left,
@@ -994,7 +996,7 @@ fn affine_claim(proposition: &Proposition) -> Option<SignedArithmeticClaim> {
             false,
         ) => (SignedArithmeticRelation::LessEqual, right, left, false),
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
                 left,
@@ -1003,7 +1005,7 @@ fn affine_claim(proposition: &Proposition) -> Option<SignedArithmeticClaim> {
             false,
         ) => (SignedArithmeticRelation::LessEqual, right, left, true),
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterThan,
                 left,
@@ -1012,7 +1014,7 @@ fn affine_claim(proposition: &Proposition) -> Option<SignedArithmeticClaim> {
             false,
         ) => (SignedArithmeticRelation::LessEqual, left, right, false),
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterEqual,
                 left,
@@ -1021,7 +1023,7 @@ fn affine_claim(proposition: &Proposition) -> Option<SignedArithmeticClaim> {
             false,
         ) => (SignedArithmeticRelation::LessEqual, left, right, true),
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left,
@@ -1038,7 +1040,7 @@ fn affine_claim(proposition: &Proposition) -> Option<SignedArithmeticClaim> {
             });
         }
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left,
@@ -1054,7 +1056,7 @@ fn affine_claim(proposition: &Proposition) -> Option<SignedArithmeticClaim> {
                 constant,
             });
         }
-        (ConditionTerm::Constant(constant), value) => {
+        (OldConditionTerm::Constant(constant), value) => {
             return Some(SignedArithmeticClaim {
                 carrier: SignedArithmeticCarrier::SignedInt32,
                 relation: SignedArithmeticRelation::Equal,
@@ -1088,8 +1090,8 @@ pub(crate) fn signed_arithmetic_claim(proposition: &Proposition) -> Option<Signe
 }
 
 fn affine_difference(
-    left: &MachineTerm,
-    right: &MachineTerm,
+    left: &OldMachineTerm,
+    right: &OldMachineTerm,
 ) -> Option<(BTreeMap<SignedArithmeticAtom, BigInt>, BigInt)> {
     let mut terms: BTreeMap<SignedArithmeticAtom, BigInt> = BTreeMap::new();
     let mut constant = BigInt::zero();
@@ -1175,24 +1177,24 @@ mod tests {
         let memory = crate::kernel::intern_memory(crate::kernel::SymbolicMemory::new());
         let address = Address::symbolic(Variable(997151));
         let read = |offset, kind| {
-            MachineTerm::read_named(
+            OldMachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(&memory),
                 Box::new(address.offset_by_bytes(offset)),
                 kind,
             )
         };
         let scalar = read(0, LoadKind::Int32);
-        let sum = MachineTerm::logical_machine_binary(
+        let sum = OldMachineTerm::logical_machine_binary(
             MachineIntegerType::Int32,
             MachineBinaryOp::Add,
             scalar.clone(),
-            MachineTerm::constant(1),
+            OldMachineTerm::constant(1),
         );
-        let low_word = MachineTerm::uint32_from_64(MachineTerm::logical_machine_binary(
+        let low_word = OldMachineTerm::uint32_from_64(OldMachineTerm::logical_machine_binary(
             MachineIntegerType::UInt64,
             MachineBinaryOp::Add,
             read(0, LoadKind::Bits64),
-            MachineTerm::uint64_constant(1),
+            OldMachineTerm::uint64_constant(1),
         ));
         for written in [scalar, sum, low_word] {
             let root = KernelTermImport::default()
@@ -1212,14 +1214,14 @@ mod tests {
         );
     }
 
-    fn x() -> MachineTerm {
-        MachineTerm::Variable(Variable(1))
+    fn x() -> OldMachineTerm {
+        OldMachineTerm::Variable(Variable(1))
     }
 
     #[test]
     fn narrowed_native_variable_is_an_opaque_distinct_signed_atom() {
-        let variable = MachineTerm::Variable(Variable(42));
-        let narrowed = MachineTerm::legacy_cast(
+        let variable = OldMachineTerm::Variable(Variable(42));
+        let narrowed = OldMachineTerm::legacy_cast(
             MachineCastSpelling::UInt32From64,
             Box::new(variable.clone()),
         );
@@ -1228,21 +1230,21 @@ mod tests {
             SignedArithmeticAtom::from_term(&narrowed),
             SignedArithmeticAtom::from_term(&variable)
         );
-        let changed = MachineTerm::legacy_cast(
+        let changed = OldMachineTerm::legacy_cast(
             MachineCastSpelling::UInt32From64,
-            Box::new(MachineTerm::Variable(Variable(43))),
+            Box::new(OldMachineTerm::Variable(Variable(43))),
         );
         assert_ne!(
             SignedArithmeticAtom::from_term(&narrowed),
             SignedArithmeticAtom::from_term(&changed)
         );
-        let computed = MachineTerm::legacy_cast(
+        let computed = OldMachineTerm::legacy_cast(
             MachineCastSpelling::UInt32From64,
-            Box::new(MachineTerm::Binary {
+            Box::new(OldMachineTerm::Binary {
                 format: MachineIntegerType::UInt64,
                 op: MachineBinaryOp::Add,
                 left: Box::new(variable),
-                right: Box::new(MachineTerm::uint64_constant(2)),
+                right: Box::new(OldMachineTerm::uint64_constant(2)),
             }),
         );
         assert!(is_opaque_atom(&computed));
@@ -1268,16 +1270,16 @@ mod narrowed_expression_tests {
 
     #[test]
     fn narrowed_native_expression_atom_preserves_structure_and_width() {
-        let n = MachineTerm::Variable(Variable(100));
-        let native = MachineTerm::uint64_subtract(
+        let n = OldMachineTerm::Variable(Variable(100));
+        let native = OldMachineTerm::uint64_subtract(
             n.clone(),
-            MachineTerm::uint64_remainder(n.clone(), MachineTerm::uint64_constant(4)),
+            OldMachineTerm::uint64_remainder(n.clone(), OldMachineTerm::uint64_constant(4)),
         );
-        let narrow = MachineTerm::uint32_from_64(native);
+        let narrow = OldMachineTerm::uint32_from_64(native);
         assert!(is_opaque_atom(&narrow));
-        let other = MachineTerm::uint32_from_64(MachineTerm::uint64_subtract(
+        let other = OldMachineTerm::uint32_from_64(OldMachineTerm::uint64_subtract(
             n.clone(),
-            MachineTerm::uint64_remainder(n.clone(), MachineTerm::uint64_constant(3)),
+            OldMachineTerm::uint64_remainder(n.clone(), OldMachineTerm::uint64_constant(3)),
         ));
         assert_ne!(
             SignedArithmeticAtom::from_term(&narrow),
@@ -1287,8 +1289,10 @@ mod narrowed_expression_tests {
             SignedArithmeticAtom::from_term(&narrow),
             SignedArithmeticAtom::from_term(&n)
         );
-        let unsupported =
-            MachineTerm::uint32_from_64(MachineTerm::int64_add(n, MachineTerm::int64_constant(1)));
+        let unsupported = OldMachineTerm::uint32_from_64(OldMachineTerm::int64_add(
+            n,
+            OldMachineTerm::int64_constant(1),
+        ));
         assert!(SignedArithmeticAtom::from_term(&unsupported).is_none());
     }
 
@@ -1308,7 +1312,7 @@ mod format_tests {
     /// would read as an `int32` one (decision G7).
     #[test]
     fn the_signed_fragment_refuses_a_uint32_sign_free_operator() {
-        let operand = || Box::new(MachineTerm::Variable(Variable(186_001)));
+        let operand = || Box::new(OldMachineTerm::Variable(Variable(186_001)));
         assert!(signed_binary(&binary_node!(Int32, Add, operand(), operand())).is_some());
         assert!(signed_binary(&binary_node!(Int32, Divide, operand(), operand())).is_some());
         assert!(signed_binary(&binary_node!(UInt32, ShiftRight, operand(), operand())).is_some());

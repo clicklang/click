@@ -90,7 +90,7 @@ fn common_call_import_keeps_growing_shared_arguments_without_exporting() {
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..size {
                 let argument = SharedMachineIntegerTerm::from_shared(format, root).unwrap();
-                let native = MachineTerm::ClickFunctionApplication {
+                let native = OldMachineTerm::ClickFunctionApplication {
                     name: "imported_call".into(),
                     arguments: vec![PureFunctionArgument::SharedMachine(argument)],
                 };
@@ -118,12 +118,12 @@ fn pthread_handle_leaf_lookup_is_independent_of_other_handles() {
             .map(|id| {
                 import.machine(
                     MachineIntegerType::UInt64,
-                    &MachineTerm::ThreadHandle(ThreadHandleId(id)),
+                    &OldMachineTerm::ThreadHandle(ThreadHandleId(id)),
                 )
             })
             .collect::<Vec<_>>();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-            let native = MachineTerm::ThreadHandle(ThreadHandleId(999001));
+            let native = OldMachineTerm::ThreadHandle(ThreadHandleId(999001));
             let root = import.machine(MachineIntegerType::UInt64, &native);
             assert!(root.children().is_empty());
             assert_eq!(KernelTermExport::machine(&root).unwrap(), native);
@@ -143,16 +143,16 @@ fn pthread_handle_leaf_lookup_is_independent_of_other_handles() {
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: growing pthread handle equality stars and chains"]
 fn forwarded_handle_lookup_ignores_equality_class_and_context_population() {
-    use crate::kernel::{ConditionTerm, Proposition, PureFactContext};
+    use crate::kernel::{OldConditionTerm, Proposition, PureFactContext};
     let mut samples = Vec::new();
     for chain in [false, true] {
         for size in [16, 64, 256] {
             let _session = crate::kernel::VerificationSession::enter();
             let handle = ThreadHandleId(998001);
-            let word = MachineTerm::ThreadHandle(handle);
-            let variable = |index| MachineTerm::Variable(Variable(1009000 + index));
+            let word = OldMachineTerm::ThreadHandle(handle);
+            let variable = |index| OldMachineTerm::Variable(Variable(1009000 + index));
             let equality = |left, right| {
-                Proposition::condition_is(ConditionTerm::uint64_equal(left, right), true)
+                Proposition::condition_is(OldConditionTerm::uint64_equal(left, right), true)
             };
             let mut facts =
                 PureFactContext::new().assume_proposition(equality(variable(0), word.clone()));
@@ -165,7 +165,7 @@ fn forwarded_handle_lookup_ignores_equality_class_and_context_population() {
                 facts = facts.assume_proposition(equality(variable(index), source));
                 facts = facts.assume_proposition(equality(
                     variable(size + index),
-                    MachineTerm::ThreadHandle(ThreadHandleId(index)),
+                    OldMachineTerm::ThreadHandle(ThreadHandleId(index)),
                 ));
             }
             let value = ProgramValue::UInt64(variable(size - 1));
@@ -201,10 +201,11 @@ fn opaque_call_slots_scale_with_argument_count() {
                     SharedPureApplication::intern(format!("unrelated_opaque_call_{i}"), vec![])
                 })
                 .collect::<Vec<_>>();
-            let argument = PureFunctionArgument::Value(ProgramValue::Bool(MachineTerm::Constant {
-                format: MachineIntegerType::UInt8,
-                bits: 2,
-            }));
+            let argument =
+                PureFunctionArgument::Value(ProgramValue::Bool(OldMachineTerm::Constant {
+                    format: MachineIntegerType::UInt8,
+                    bits: 2,
+                }));
             let application = SharedPureApplication::intern(
                 "many_opaque_arguments".into(),
                 vec![argument; count],

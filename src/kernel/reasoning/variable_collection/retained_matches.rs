@@ -93,7 +93,7 @@ mod tests {
                         },
                         initial: IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                             MachineIntegerType::Int32,
-                            MachineTerm::Variable(Variable(2)),
+                            OldMachineTerm::Variable(Variable(2)),
                         ))
                         .into(),
                         accumulator: Variable(4),
@@ -163,21 +163,21 @@ mod tests {
 
     #[test]
     fn retained_machine_match_readers_preserve_declaration_and_connection_rules() {
-        let native = MachineTerm::AlgebraicMatch {
+        let native = OldMachineTerm::AlgebraicMatch {
             scrutinee: Box::new(KernelMatch::test_scrutinee(vec![
                 AlgebraicValueType::Program(ProgramType::Int32),
             ])),
             arms: vec![AlgebraicBitvectorMatchArm {
                 variant: "Arm".into(),
                 bindings: vec![AlgebraicValue::Program(ProgramValue::Int32(
-                    MachineTerm::Variable(Variable(2)),
+                    OldMachineTerm::Variable(Variable(2)),
                 ))],
                 binding_names: Default::default(),
-                body: MachineTerm::Binary {
+                body: OldMachineTerm::Binary {
                     format: MachineIntegerType::Int32,
                     op: MachineBinaryOp::Add,
-                    left: Box::new(MachineTerm::Variable(Variable(2))),
-                    right: Box::new(MachineTerm::Variable(Variable(3))),
+                    left: Box::new(OldMachineTerm::Variable(Variable(2))),
+                    right: Box::new(OldMachineTerm::Variable(Variable(3))),
                 },
             }],
         };

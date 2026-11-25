@@ -14,7 +14,7 @@ fn truncation(remainder: bool, left: IntegerTerm, right: IntegerTerm) -> SpecInt
 fn integer_truncation_capture_requires_domain_even_when_result_cancels() {
     let left = IntegerTerm::Variable(Variable(150_091));
     let right = IntegerTerm::Variable(Variable(150_092));
-    let nonzero = ConditionTerm::integer_not_equal(right.clone(), IntegerTerm::constant_i64(0));
+    let nonzero = OldConditionTerm::integer_not_equal(right.clone(), IntegerTerm::constant_i64(0));
     let empty = PureFactContext::new();
     let guarded = PureFactContext::new().assume_condition(nonzero, true);
     for remainder in [false, true] {

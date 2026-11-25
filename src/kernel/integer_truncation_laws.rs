@@ -24,30 +24,30 @@ pub(crate) fn prove_integer_truncation_law(
     let one = IntegerTerm::constant_i64(1);
     let condition = |condition| Proposition::condition_is(condition, true);
     let nonzero = Proposition::condition_is(
-        ConditionTerm::IntegerNotEqual(d.clone().into(), zero.clone().into()),
+        OldConditionTerm::IntegerNotEqual(d.clone().into(), zero.clone().into()),
         true,
     );
-    let positive = condition(ConditionTerm::IntegerLessThan(
+    let positive = condition(OldConditionTerm::IntegerLessThan(
         zero.clone().into(),
         d.clone().into(),
     ));
     let remainder = IntegerTerm::truncating_remainder(n.clone(), d.clone());
     let negative = |term: IntegerTerm| IntegerTerm::Negate(term.into());
-    let negative_nonzero = condition(ConditionTerm::IntegerNotEqual(
+    let negative_nonzero = condition(OldConditionTerm::IntegerNotEqual(
         negative(d.clone()).into(),
         zero.clone().into(),
     ));
     let (premises, conclusion) = match name {
         "click::integer::quotient_negate_divisor" => (
             vec![nonzero, negative_nonzero],
-            condition(ConditionTerm::IntegerEqual(
+            condition(OldConditionTerm::IntegerEqual(
                 IntegerTerm::truncating_quotient(n.clone(), d.clone()).into(),
                 negative(IntegerTerm::truncating_quotient(n, negative(d))).into(),
             )),
         ),
         "click::integer::remainder_negate_divisor" => (
             vec![nonzero, negative_nonzero],
-            condition(ConditionTerm::IntegerEqual(
+            condition(OldConditionTerm::IntegerEqual(
                 remainder.into(),
                 IntegerTerm::truncating_remainder(n, negative(d)).into(),
             )),
@@ -57,19 +57,22 @@ pub(crate) fn prove_integer_truncation_law(
             let reconstructed = IntegerTerm::add(IntegerTerm::multiply(quotient, d), remainder);
             (
                 vec![nonzero],
-                condition(ConditionTerm::IntegerEqual(n.into(), reconstructed.into())),
+                condition(OldConditionTerm::IntegerEqual(
+                    n.into(),
+                    reconstructed.into(),
+                )),
             )
         }
         "click::integer::positive_divisor_remainder_lower" => (
             vec![nonzero, positive],
-            condition(ConditionTerm::IntegerLessEqual(
+            condition(OldConditionTerm::IntegerLessEqual(
                 IntegerTerm::subtract(one, d).into(),
                 remainder.into(),
             )),
         ),
         "click::integer::positive_divisor_remainder_upper" => (
             vec![nonzero, positive],
-            condition(ConditionTerm::IntegerLessEqual(
+            condition(OldConditionTerm::IntegerLessEqual(
                 remainder.into(),
                 IntegerTerm::subtract(d, one).into(),
             )),
@@ -77,12 +80,12 @@ pub(crate) fn prove_integer_truncation_law(
         "click::integer::nonnegative_dividend_remainder" => (
             vec![
                 nonzero,
-                condition(ConditionTerm::IntegerLessEqual(
+                condition(OldConditionTerm::IntegerLessEqual(
                     zero.clone().into(),
                     n.into(),
                 )),
             ],
-            condition(ConditionTerm::IntegerLessEqual(
+            condition(OldConditionTerm::IntegerLessEqual(
                 zero.into(),
                 remainder.into(),
             )),
@@ -90,12 +93,12 @@ pub(crate) fn prove_integer_truncation_law(
         "click::integer::nonpositive_dividend_remainder" => (
             vec![
                 nonzero,
-                condition(ConditionTerm::IntegerLessEqual(
+                condition(OldConditionTerm::IntegerLessEqual(
                     n.into(),
                     zero.clone().into(),
                 )),
             ],
-            condition(ConditionTerm::IntegerLessEqual(
+            condition(OldConditionTerm::IntegerLessEqual(
                 remainder.into(),
                 zero.into(),
             )),
@@ -163,11 +166,13 @@ mod tests {
         match p {
             Proposition::Implies(a, b) => !proposition(a, n, d) || proposition(b, n, d),
             Proposition::ConditionIs(c, truth) => {
-                let actual = match c.native_compat() {
-                    ConditionTerm::IntegerEqual(a, b) => integer(a, n, d) == integer(b, n, d),
-                    ConditionTerm::IntegerNotEqual(a, b) => integer(a, n, d) != integer(b, n, d),
-                    ConditionTerm::IntegerLessThan(a, b) => integer(a, n, d) < integer(b, n, d),
-                    ConditionTerm::IntegerLessEqual(a, b) => integer(a, n, d) <= integer(b, n, d),
+                let actual = match c.old_form() {
+                    OldConditionTerm::IntegerEqual(a, b) => integer(a, n, d) == integer(b, n, d),
+                    OldConditionTerm::IntegerNotEqual(a, b) => integer(a, n, d) != integer(b, n, d),
+                    OldConditionTerm::IntegerLessThan(a, b) => integer(a, n, d) < integer(b, n, d),
+                    OldConditionTerm::IntegerLessEqual(a, b) => {
+                        integer(a, n, d) <= integer(b, n, d)
+                    }
                     _ => panic!("unexpected condition in truncation law: {c:?}"),
                 };
                 actual == *truth

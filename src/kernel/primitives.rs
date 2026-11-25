@@ -1010,7 +1010,7 @@ impl Ord for AddressObjectClass {
 }
 
 #[derive(Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub enum MachineTerm {
+pub enum OldMachineTerm {
     /// A constant of `format`, its two's-complement bits in the low
     /// `format` bits of `bits` (`bits <= format`'s mask; every builder masks
     /// or checks). One node for every format (decision G9,
@@ -1018,11 +1018,11 @@ pub enum MachineTerm {
     /// kernel-internal constant (indices, counts, masks), and a C, C++ or
     /// Rust value keeps its own. A `uint32` constant's word is the `int32`
     /// constant of the same bits inside a 32-bit operator or comparison
-    /// ([`MachineTerm::into_word32`]). Build it with
-    /// [`MachineTerm::constant`], [`MachineTerm::uint32_constant`],
-    /// [`MachineTerm::int64_constant`],
-    /// [`MachineTerm::uint64_constant`] or
-    /// [`MachineTerm::machine_constant`]; match it with
+    /// ([`OldMachineTerm::into_word32`]). Build it with
+    /// [`OldMachineTerm::constant`], [`OldMachineTerm::uint32_constant`],
+    /// [`OldMachineTerm::int64_constant`],
+    /// [`OldMachineTerm::uint64_constant`] or
+    /// [`OldMachineTerm::machine_constant`]; match it with
     /// `int32_constant!`, `uint32_constant!`, `bits32_constant!`,
     /// `int64_constant!`, `uint64_constant!` or `constant_node!`. The derived
     /// order sorts constants by format, then bits.
@@ -1044,34 +1044,34 @@ pub enum MachineTerm {
     Binary {
         op: MachineBinaryOp,
         format: MachineIntegerType,
-        left: Box<MachineTerm>,
-        right: Box<MachineTerm>,
+        left: Box<OldMachineTerm>,
+        right: Box<OldMachineTerm>,
     },
     /// `op operand`, the operand read at `format`, under the same format
     /// restriction as [`Self::Binary`]: the 32-bit complement is at `int32`.
     Unary {
         format: MachineIntegerType,
         op: MachineUnaryOp,
-        operand: Box<MachineTerm>,
+        operand: Box<OldMachineTerm>,
     },
     If {
-        condition: Box<ConditionTerm>,
-        then_term: Box<MachineTerm>,
-        else_term: Box<MachineTerm>,
+        condition: Box<OldConditionTerm>,
+        then_term: Box<OldMachineTerm>,
+        else_term: Box<OldMachineTerm>,
     },
     RangeFold {
-        start: Box<MachineTerm>,
-        end: Box<MachineTerm>,
-        initial: Box<MachineTerm>,
+        start: Box<OldMachineTerm>,
+        end: Box<OldMachineTerm>,
+        initial: Box<OldMachineTerm>,
         accumulator: Variable,
         item: Variable,
-        body: Box<MachineTerm>,
+        body: Box<OldMachineTerm>,
     },
     /// An opaque application retained across one-step unfolding of a total
     /// pure Click function at symbolic arguments.
     PureFunctionApplication {
         name: String,
-        arguments: Vec<MachineTerm>,
+        arguments: Vec<OldMachineTerm>,
     },
     /// A Click function application remains a logical term until a checked
     /// function-unfold step exposes its definition. Unlike the legacy
@@ -1096,7 +1096,7 @@ pub enum MachineTerm {
     /// identity: two reads of one address that differ in width or, below
     /// four bytes, in signedness return different values, so they are
     /// different terms. See [`LoadKind`]. Built only by
-    /// [`MachineTerm::read_named`].
+    /// [`OldMachineTerm::read_named`].
     MemoryLoad(ReadPoint, LoadCell, LoadKind),
     /// The physical LP64 address bits of an object pointer. This numeric
     /// observation carries no provenance or selected bounds. Complete C
@@ -1117,7 +1117,7 @@ pub enum MachineTerm {
     /// spelling fixes its formats ([`MachineCastSpelling::legacy_formats`]):
     /// the low word ([`MachineCastSpelling::UInt32From64`]) reads its operand
     /// as the 64 bits of a `uint64`, whatever the operand's signedness.
-    /// Build it with [`MachineTerm::cast_node`] or the smart
+    /// Build it with [`OldMachineTerm::cast_node`] or the smart
     /// constructors (`machine_integer_cast`, `int64_from_32`,
     /// `uint32_from_64`, ...); match it with `cast_term!`. `spelling`
     /// precedes the formats so the derived order of the conversions is the
@@ -1125,21 +1125,21 @@ pub enum MachineTerm {
     /// "Stage 3").
     Cast {
         spelling: MachineCastSpelling,
-        value: Box<MachineTerm>,
+        value: Box<OldMachineTerm>,
         from: MachineIntegerType,
         to: MachineIntegerType,
     },
-    Float32Negate(Box<MachineTerm>),
+    Float32Negate(Box<OldMachineTerm>),
     Float32Binary {
         operator: FloatBinaryOperator,
-        left: Box<MachineTerm>,
-        right: Box<MachineTerm>,
+        left: Box<OldMachineTerm>,
+        right: Box<OldMachineTerm>,
     },
-    Float64Negate(Box<MachineTerm>),
+    Float64Negate(Box<OldMachineTerm>),
     Float64Binary {
         operator: FloatBinaryOperator,
-        left: Box<MachineTerm>,
-        right: Box<MachineTerm>,
+        left: Box<OldMachineTerm>,
+        right: Box<OldMachineTerm>,
     },
     /// Rule C1 (`design/machine-integers.md`, Stage 5): the integer value of
     /// the `Bool` `value` at the format `to`, `value as to`. It is 1 when
@@ -1147,12 +1147,12 @@ pub enum MachineTerm {
     /// nothing and its word is 1 or 0 at every width. A specification `Bool`
     /// travels in a `ProgramValue::Bool` as its cast to `uint8`, the byte a `bool`
     /// cell holds; its truth is `value`. Built by
-    /// [`MachineTerm::bool_cast`], which folds a constant. It follows
+    /// [`OldMachineTerm::bool_cast`], which folds a constant. It follows
     /// the preexisting variants, so the derived order of the terms before it is
     /// unchanged.
     BoolCast {
         to: MachineIntegerType,
-        value: Box<ConditionTerm>,
+        value: Box<OldConditionTerm>,
     },
     /// An opaque pthread word; never a symbolic variable or numeric literal.
     ThreadHandle(ThreadHandleId),
@@ -1163,7 +1163,7 @@ pub enum MachineTerm {
 /// (`Constant(7)`, `UInt32Constant(7)`, `Int64Constant(-1)`,
 /// `UInt64Constant(7)`, `MachineIntegerConstant(..)`): a diagnostic that
 /// prints a term with `{:?}` prints what it printed.
-impl std::fmt::Debug for MachineTerm {
+impl std::fmt::Debug for OldMachineTerm {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::ThreadHandle(id) => f.debug_tuple("ThreadHandle").field(id).finish(),
@@ -1317,10 +1317,10 @@ impl std::fmt::Debug for MachineTerm {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub enum AddressOffset {
+pub enum OldAddressOffset {
     Constant(i64),
     Variable(Variable),
-    Add(Box<AddressOffset>, Box<AddressOffset>),
+    Add(Box<OldAddressOffset>, Box<OldAddressOffset>),
     Int32Scaled {
         value: SharedMachineIntegerTerm,
         byte_width: i64,
@@ -1336,7 +1336,7 @@ pub enum AddressOffset {
     },
 }
 
-impl AddressOffset {
+impl OldAddressOffset {
     /// A small address index can carry arbitrarily deep *retained* operands.
     /// Its offset structure itself must stay bounded for source publication.
     pub(crate) fn is_shallow(&self) -> bool {
@@ -1350,14 +1350,18 @@ impl AddressOffset {
 
     /// Preserve the written index node, including a zero scale; the smart
     /// `scale_int32` constructor may separately fold literal displacements.
-    pub(crate) fn scaled_int32_node(value: MachineTerm, byte_width: i64) -> Self {
+    pub(crate) fn scaled_int32_node(value: OldMachineTerm, byte_width: i64) -> Self {
         Self::Int32Scaled {
             value: SharedMachineIntegerTerm::index(MachineIntegerType::Int32, value),
             byte_width,
         }
     }
 
-    pub(crate) fn scaled_int64_node(value: MachineTerm, byte_width: i64, unsigned: bool) -> Self {
+    pub(crate) fn scaled_int64_node(
+        value: OldMachineTerm,
+        byte_width: i64,
+        unsigned: bool,
+    ) -> Self {
         Self::Int64Scaled {
             value: SharedMachineIntegerTerm::index(MachineIntegerType::Int64, value),
             byte_width,
@@ -1371,7 +1375,7 @@ impl AddressOffset {
         mut map: impl FnMut(&SharedMachineIntegerTerm) -> SharedMachineIntegerTerm,
     ) -> Self {
         enum Task<'a> {
-            Visit(&'a AddressOffset),
+            Visit(&'a OldAddressOffset),
             Add,
         }
         let mut pending = vec![Task::Visit(self)];
@@ -1462,7 +1466,7 @@ impl AddressOffset {
 
     /// Native scalar payloads for legacy rendering and test output. This can
     /// expand shared arithmetic; checking uses `for_each_scaled_operand`.
-    pub(crate) fn native_scaled_values_for_output(&self) -> Vec<&MachineTerm> {
+    pub(crate) fn native_scaled_values_for_output(&self) -> Vec<&OldMachineTerm> {
         let mut values = Vec::new();
         let mut pending = vec![self];
         while let Some(offset) = pending.pop() {
@@ -1481,7 +1485,7 @@ impl AddressOffset {
     }
 }
 
-/// The operator of a machine binary term ([`MachineTerm::Binary`]).
+/// The operator of a machine binary term ([`OldMachineTerm::Binary`]).
 /// Signedness comes from the term's format: `Divide`, `Remainder` and
 /// `ShiftRight` are signed (arithmetic) at a signed format and unsigned
 /// (logical) at an unsigned one.
@@ -1499,13 +1503,13 @@ pub enum MachineBinaryOp {
     BitwiseXor,
 }
 
-/// The operator of a machine unary term ([`MachineTerm::Unary`]).
+/// The operator of a machine unary term ([`OldMachineTerm::Unary`]).
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum MachineUnaryOp {
     BitwiseNot,
 }
 
-/// The relation of a machine comparison ([`ConditionTerm::Compare`]).
+/// The relation of a machine comparison ([`OldConditionTerm::Compare`]).
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum CompareRelation {
     LessThan,
@@ -1515,7 +1519,7 @@ pub enum CompareRelation {
     Equal,
 }
 
-/// The operation a machine overflow test ([`ConditionTerm::Overflows`])
+/// The operation a machine overflow test ([`OldConditionTerm::Overflows`])
 /// guards.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum OverflowOperation {
@@ -1532,7 +1536,7 @@ pub enum OverflowOperation {
 /// `Compare { Int32, Equal }` over the same words are equal, hash alike and
 /// order as equal. The `uint32` format is kept for presentation.
 #[derive(Clone, Debug)]
-pub enum ConditionTerm {
+pub enum OldConditionTerm {
     Constant(bool),
     Variable(Variable),
     /// Logical equality of immutable algebraic values, not a C comparison.
@@ -1542,15 +1546,15 @@ pub enum ConditionTerm {
     /// words. Equality reads no sign, so an equality is filed at the signed
     /// format of its width, except that an equality of `uint32` values is
     /// filed at `uint32` for presentation; it is the same fact as at `int32`
-    /// (rule K6, [`ConditionTerm::fact_format`]). A narrow value's word is its canonical extension,
+    /// (rule K6, [`OldConditionTerm::fact_format`]). A narrow value's word is its canonical extension,
     /// which the `int32` order compares exactly, so a narrow comparison is
     /// filed at `int32` (`design/machine-integers.md`, "One condition
     /// family").
     Compare {
         format: MachineIntegerType,
         relation: CompareRelation,
-        left: Box<MachineTerm>,
-        right: Box<MachineTerm>,
+        left: Box<OldMachineTerm>,
+        right: Box<OldMachineTerm>,
     },
     /// Whether the exact result of `left op right`, the operands read at
     /// `format`, lies outside `format`: a signed overflow test is C's
@@ -1559,12 +1563,12 @@ pub enum ConditionTerm {
     Overflows {
         format: MachineIntegerType,
         op: OverflowOperation,
-        left: Box<MachineTerm>,
-        right: Box<MachineTerm>,
+        left: Box<OldMachineTerm>,
+        right: Box<OldMachineTerm>,
     },
     Float32(FloatCondition),
     Float64(FloatCondition),
-    AddressOffsetEqual(Box<AddressOffset>, Box<AddressOffset>),
+    AddressOffsetEqual(Box<OldAddressOffset>, Box<OldAddressOffset>),
     AddressEqual(Box<Address>, Box<Address>),
     /// Specification pointer equality includes the designated object and bounds.
     PointerEqual(Box<OldPointer>, Box<OldPointer>),
@@ -1581,26 +1585,26 @@ pub enum ConditionTerm {
     /// order of the conditions before them is unchanged.
     ///
     /// The application of a `-> Bool` pure function. Rule L-Unfold relates
-    /// it to the function's body ([`ConditionTerm::bool_unfold_equation`]).
+    /// it to the function's body ([`OldConditionTerm::bool_unfold_equation`]).
     BoolApplication(SharedPureApplication),
     /// `if condition { then } else { else }` over `Bool`. Rule L-If reads
-    /// it as the case split ([`ConditionTerm::open_bool_if`]), opened only
+    /// it as the case split ([`OldConditionTerm::open_bool_if`]), opened only
     /// on demand: by a decision of the conditional itself or by a proof
     /// step that asks for the split, never when it is assumed.
     BoolIf {
-        condition: Box<ConditionTerm>,
-        then_condition: Box<ConditionTerm>,
-        else_condition: Box<ConditionTerm>,
+        condition: Box<OldConditionTerm>,
+        then_condition: Box<OldConditionTerm>,
+        else_condition: Box<OldConditionTerm>,
     },
     /// Logical equality of two `Bool` values, `a == b` (iff). Rule L-Eq: a
     /// true one merges the two values' classes in the e-graph, where their
     /// truth is shared; a false one contradicts that merge.
-    BoolEqual(Box<ConditionTerm>, Box<ConditionTerm>),
+    BoolEqual(Box<OldConditionTerm>, Box<OldConditionTerm>),
 }
 
 /// A condition's identity: the condition itself, with a 32-bit equality's
 /// format read as `int32` (rule K6). Borrowed, so building it is one match
-/// on the root: no scan, no clone. The variants follow [`ConditionTerm`]'s
+/// on the root: no scan, no clone. The variants follow [`OldConditionTerm`]'s
 /// order, so hashes and the derived order are unchanged elsewhere.
 #[derive(PartialEq, Eq, Hash, PartialOrd, Ord)]
 enum ConditionIdentity<'a> {
@@ -1616,12 +1620,12 @@ enum ConditionIdentity<'a> {
     Overflows {
         format: MachineIntegerType,
         op: OverflowOperation,
-        left: &'a MachineTerm,
-        right: &'a MachineTerm,
+        left: &'a OldMachineTerm,
+        right: &'a OldMachineTerm,
     },
     Float32(&'a FloatCondition),
     Float64(&'a FloatCondition),
-    AddressOffsetEqual(&'a AddressOffset, &'a AddressOffset),
+    AddressOffsetEqual(&'a OldAddressOffset, &'a OldAddressOffset),
     AddressEqual(&'a Address, &'a Address),
     PointerEqual(&'a OldPointer, &'a OldPointer),
     IntegerLessThan(&'a SharedIntegerTerm, &'a SharedIntegerTerm),
@@ -1632,33 +1636,33 @@ enum ConditionIdentity<'a> {
     IntegerNotEqual(&'a SharedIntegerTerm, &'a SharedIntegerTerm),
     BoolApplication(&'a SharedPureApplication),
     BoolIf {
-        condition: &'a ConditionTerm,
-        then_condition: &'a ConditionTerm,
-        else_condition: &'a ConditionTerm,
+        condition: &'a OldConditionTerm,
+        then_condition: &'a OldConditionTerm,
+        else_condition: &'a OldConditionTerm,
     },
-    BoolEqual(&'a ConditionTerm, &'a ConditionTerm),
+    BoolEqual(&'a OldConditionTerm, &'a OldConditionTerm),
 }
 
 /// A comparison side as its fact identity reads it
-/// ([`ConditionTerm::comparison_fact`]): a term, or the value of a
+/// ([`OldConditionTerm::comparison_fact`]): a term, or the value of a
 /// constant of the comparison's identity format (an 8- or 16-bit format, or
 /// `int32` for a 32-bit equality's constant of either spelling).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub(crate) enum ComparisonSide<'a> {
-    Term(&'a MachineTerm),
+    Term(&'a OldMachineTerm),
     Value(i128),
 }
 
 impl<'a> ComparisonSide<'a> {
     /// The side as a term of its comparison's identity `format`: a term as
     /// itself, a value as that format's native constant.
-    pub(crate) fn term(self, format: MachineIntegerType) -> std::borrow::Cow<'a, MachineTerm> {
+    pub(crate) fn term(self, format: MachineIntegerType) -> std::borrow::Cow<'a, OldMachineTerm> {
         match self {
             Self::Term(term) => std::borrow::Cow::Borrowed(term),
             Self::Value(value) if format.format().bits() == 32 => {
-                std::borrow::Cow::Owned(MachineTerm::constant_at32(format, value as u32))
+                std::borrow::Cow::Owned(OldMachineTerm::constant_at32(format, value as u32))
             }
-            Self::Value(value) => std::borrow::Cow::Owned(MachineTerm::machine_constant(
+            Self::Value(value) => std::borrow::Cow::Owned(OldMachineTerm::machine_constant(
                 MachineIntegerConstant::from_signed(format.format(), value)
                     .expect("an identity value lies in its narrow format's range"),
             )),
@@ -1693,12 +1697,12 @@ thread_local! {
 fn comparison_identity<'a>(
     format: MachineIntegerType,
     relation: CompareRelation,
-    left: &'a MachineTerm,
-    right: &'a MachineTerm,
+    left: &'a OldMachineTerm,
+    right: &'a OldMachineTerm,
 ) -> (MachineIntegerType, ComparisonSide<'a>, ComparisonSide<'a>) {
     #[cfg(test)]
     COMPARISON_IDENTITY_VISITS.with(|visits| visits.set(visits.get() + 1));
-    let format = ConditionTerm::fact_format(format, relation);
+    let format = OldConditionTerm::fact_format(format, relation);
     let bits = format.format().bits();
     let (left, right) = if relation == CompareRelation::Equal && bits == 32 {
         (left.sign_cast32_bits(), right.sign_cast32_bits())
@@ -1706,14 +1710,14 @@ fn comparison_identity<'a>(
         (left, right)
     };
     // A 32-bit equality's constant side, of either spelling, as its bits.
-    let side = |term: &'a MachineTerm| match term.constant32() {
+    let side = |term: &'a OldMachineTerm| match term.constant32() {
         Some(bits) if relation == CompareRelation::Equal && format == MachineIntegerType::Int32 => {
             ComparisonSide::Value(i128::from(bits as i32))
         }
         _ => ComparisonSide::Term(term),
     };
     if bits < 32 {
-        let side = |term: &'a MachineTerm| match term {
+        let side = |term: &'a OldMachineTerm| match term {
             native_constant!(constant_format, bits) if *constant_format == format => {
                 MachineIntegerConstant::from_term_bits(format.format(), *bits)
                     .to_i128()
@@ -1738,7 +1742,7 @@ fn comparison_identity<'a>(
                     (0, (1i128 << bits) - 1)
                 }
             };
-            let side = |term: &'a MachineTerm| match term {
+            let side = |term: &'a OldMachineTerm| match term {
                 bits32_constant!(value) if relation == CompareRelation::Equal => {
                     let value = i128::from(constant_u32(*value) as i32);
                     (low <= value && value <= high).then_some(ComparisonSide::Value(value))
@@ -1762,7 +1766,7 @@ fn comparison_identity<'a>(
     (format, side(left), side(right))
 }
 
-impl ConditionTerm {
+impl OldConditionTerm {
     /// The format a comparison is identified at as a fact: a 32-bit
     /// equality at `int32` whichever signedness it is written at (rule K6,
     /// a lookup-level equivalence; [`comparison_identity`] also reads its
@@ -1853,7 +1857,7 @@ impl ConditionTerm {
     }
 }
 
-impl ConditionTerm {
+impl OldConditionTerm {
     /// A machine comparison as its fact identity reads it: its identity
     /// format, relation and sides ([`comparison_identity`]). A native 8- or
     /// 16-bit comparison and the `int32` comparison of its operands'
@@ -1880,7 +1884,7 @@ impl ConditionTerm {
         Some((format, *relation, left, right))
     }
 
-    /// [`ConditionTerm::as_bitvector_comparison`] at the condition's fact
+    /// [`OldConditionTerm::as_bitvector_comparison`] at the condition's fact
     /// identity: the comparison a structural fact key files. A promoted
     /// comparison of widenings from one narrow format reads as the native
     /// comparison of their operands (a constant as that format's native
@@ -1890,8 +1894,8 @@ impl ConditionTerm {
         &self,
     ) -> Option<(
         crate::kernel::primitives::BitvectorComparisonOp,
-        std::borrow::Cow<'_, MachineTerm>,
-        std::borrow::Cow<'_, MachineTerm>,
+        std::borrow::Cow<'_, OldMachineTerm>,
+        std::borrow::Cow<'_, OldMachineTerm>,
     )> {
         if let Some((format, relation, left, right)) = self.comparison_fact() {
             return Some((
@@ -1911,27 +1915,27 @@ impl ConditionTerm {
     }
 }
 
-impl PartialEq for ConditionTerm {
+impl PartialEq for OldConditionTerm {
     fn eq(&self, other: &Self) -> bool {
         self.identity() == other.identity()
     }
 }
 
-impl Eq for ConditionTerm {}
+impl Eq for OldConditionTerm {}
 
-impl std::hash::Hash for ConditionTerm {
+impl std::hash::Hash for OldConditionTerm {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.identity().hash(state)
     }
 }
 
-impl PartialOrd for ConditionTerm {
+impl PartialOrd for OldConditionTerm {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl Ord for ConditionTerm {
+impl Ord for OldConditionTerm {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.identity().cmp(&other.identity())
     }
@@ -1940,11 +1944,11 @@ impl Ord for ConditionTerm {
 /// Matches every machine comparison and overflow test, at any format.
 macro_rules! binary_bitvector_condition {
     ($left:pat, $right:pat) => {
-        $crate::kernel::ConditionTerm::Compare {
+        $crate::kernel::OldConditionTerm::Compare {
             left: $left,
             right: $right,
             ..
-        } | $crate::kernel::ConditionTerm::Overflows {
+        } | $crate::kernel::OldConditionTerm::Overflows {
             left: $left,
             right: $right,
             ..
@@ -1956,7 +1960,7 @@ pub(crate) use binary_bitvector_condition;
 /// Matches the machine operation `$left op $right` at one format, as
 /// `binary_term!(Int32, Add, left, right)`, or with `..` in place of the
 /// operands. The 32-bit sign-free operators are at `Int32`; see
-/// [`MachineTerm::Binary`].
+/// [`OldMachineTerm::Binary`].
 ///
 /// `Bits32` in place of the format matches the operation at either 32-bit
 /// format, for a rule that reads only the operation's bits; `Bits32 @ f`
@@ -1966,7 +1970,7 @@ pub(crate) use binary_bitvector_condition;
 /// format.
 macro_rules! binary_term {
     (Bits32, $op:ident, ..) => {
-        $crate::kernel::MachineTerm::Binary {
+        $crate::kernel::OldMachineTerm::Binary {
             op: $crate::kernel::MachineBinaryOp::$op,
             format: $crate::kernel::MachineIntegerType::Int32
                 | $crate::kernel::MachineIntegerType::UInt32,
@@ -1974,7 +1978,7 @@ macro_rules! binary_term {
         }
     };
     (Bits32, $op:ident, $left:pat, $right:pat) => {
-        $crate::kernel::MachineTerm::Binary {
+        $crate::kernel::OldMachineTerm::Binary {
             op: $crate::kernel::MachineBinaryOp::$op,
             format: $crate::kernel::MachineIntegerType::Int32
                 | $crate::kernel::MachineIntegerType::UInt32,
@@ -1983,7 +1987,7 @@ macro_rules! binary_term {
         }
     };
     (Bits32 @ $bound:ident, $op:ident, $left:pat, $right:pat) => {
-        $crate::kernel::MachineTerm::Binary {
+        $crate::kernel::OldMachineTerm::Binary {
             op: $crate::kernel::MachineBinaryOp::$op,
             format:
                 $bound @ ($crate::kernel::MachineIntegerType::Int32
@@ -1993,14 +1997,14 @@ macro_rules! binary_term {
         }
     };
     ($format:ident, $op:ident, ..) => {
-        $crate::kernel::MachineTerm::Binary {
+        $crate::kernel::OldMachineTerm::Binary {
             op: $crate::kernel::MachineBinaryOp::$op,
             format: $crate::kernel::MachineIntegerType::$format,
             ..
         }
     };
     ($format:ident, $op:ident, $left:pat, $right:pat) => {
-        $crate::kernel::MachineTerm::Binary {
+        $crate::kernel::OldMachineTerm::Binary {
             op: $crate::kernel::MachineBinaryOp::$op,
             format: $crate::kernel::MachineIntegerType::$format,
             left: $left,
@@ -2013,10 +2017,10 @@ pub(crate) use binary_term;
 /// Builds the bare machine node `$left op $right` at one format, unfolded,
 /// from boxed operands: `binary_node!(Int32, Add, left, right)`, or at a
 /// format value, `binary_node!(@ format, Add, left, right)`. The folding
-/// constructors (`MachineTerm::add`, `machine_binary`, ...) simplify.
+/// constructors (`OldMachineTerm::add`, `machine_binary`, ...) simplify.
 macro_rules! binary_node {
     (@ $format:expr, $op:ident, $left:expr, $right:expr $(,)?) => {
-        $crate::kernel::MachineTerm::Binary {
+        $crate::kernel::OldMachineTerm::Binary {
             op: $crate::kernel::MachineBinaryOp::$op,
             format: $format,
             left: $left,
@@ -2024,7 +2028,7 @@ macro_rules! binary_node {
         }
     };
     ($format:ident, $op:ident, $left:expr, $right:expr $(,)?) => {
-        $crate::kernel::MachineTerm::Binary {
+        $crate::kernel::OldMachineTerm::Binary {
             op: $crate::kernel::MachineBinaryOp::$op,
             format: $crate::kernel::MachineIntegerType::$format,
             left: $left,
@@ -2039,7 +2043,7 @@ pub(crate) use binary_node;
 /// as for [`binary_term`].
 macro_rules! unary_term {
     (Bits32, $op:ident, ..) => {
-        $crate::kernel::MachineTerm::Unary {
+        $crate::kernel::OldMachineTerm::Unary {
             format: $crate::kernel::MachineIntegerType::Int32
                 | $crate::kernel::MachineIntegerType::UInt32,
             op: $crate::kernel::MachineUnaryOp::$op,
@@ -2047,7 +2051,7 @@ macro_rules! unary_term {
         }
     };
     (Bits32, $op:ident, $operand:pat) => {
-        $crate::kernel::MachineTerm::Unary {
+        $crate::kernel::OldMachineTerm::Unary {
             format: $crate::kernel::MachineIntegerType::Int32
                 | $crate::kernel::MachineIntegerType::UInt32,
             op: $crate::kernel::MachineUnaryOp::$op,
@@ -2055,7 +2059,7 @@ macro_rules! unary_term {
         }
     };
     (Bits32 @ $bound:ident, $op:ident, $operand:pat) => {
-        $crate::kernel::MachineTerm::Unary {
+        $crate::kernel::OldMachineTerm::Unary {
             format:
                 $bound @ ($crate::kernel::MachineIntegerType::Int32
                 | $crate::kernel::MachineIntegerType::UInt32),
@@ -2064,14 +2068,14 @@ macro_rules! unary_term {
         }
     };
     ($format:ident, $op:ident, ..) => {
-        $crate::kernel::MachineTerm::Unary {
+        $crate::kernel::OldMachineTerm::Unary {
             format: $crate::kernel::MachineIntegerType::$format,
             op: $crate::kernel::MachineUnaryOp::$op,
             ..
         }
     };
     ($format:ident, $op:ident, $operand:pat) => {
-        $crate::kernel::MachineTerm::Unary {
+        $crate::kernel::OldMachineTerm::Unary {
             format: $crate::kernel::MachineIntegerType::$format,
             op: $crate::kernel::MachineUnaryOp::$op,
             operand: $operand,
@@ -2084,7 +2088,7 @@ pub(crate) use unary_term;
 /// operand: `unary_node!(Int32, BitwiseNot, operand)`.
 macro_rules! unary_node {
     ($format:ident, $op:ident, $operand:expr $(,)?) => {
-        $crate::kernel::MachineTerm::Unary {
+        $crate::kernel::OldMachineTerm::Unary {
             format: $crate::kernel::MachineIntegerType::$format,
             op: $crate::kernel::MachineUnaryOp::$op,
             operand: $operand,
@@ -2111,10 +2115,10 @@ pub(crate) const fn constant_u64(bits: u128) -> u64 {
 
 /// Matches the `int32` constant whose bits match `$bits` (a `u128`
 /// pattern), as `int32_constant!(0)` or `int32_constant!(bits)`; see
-/// [`MachineTerm::Constant`].
+/// [`OldMachineTerm::Constant`].
 macro_rules! int32_constant {
     ($bits:pat $(,)?) => {
-        $crate::kernel::MachineTerm::Constant {
+        $crate::kernel::OldMachineTerm::Constant {
             format: $crate::kernel::MachineIntegerType::Int32,
             bits: $bits,
         }
@@ -2125,7 +2129,7 @@ pub(crate) use int32_constant;
 /// Matches the `uint32` constant whose bits match `$bits`.
 macro_rules! uint32_constant {
     ($bits:pat $(,)?) => {
-        $crate::kernel::MachineTerm::Constant {
+        $crate::kernel::OldMachineTerm::Constant {
             format: $crate::kernel::MachineIntegerType::UInt32,
             bits: $bits,
         }
@@ -2137,7 +2141,7 @@ pub(crate) use uint32_constant;
 /// `bits32_constant!(f @ bits)` also binds the format to `f`.
 macro_rules! bits32_constant {
     ($format:ident @ $bits:pat $(,)?) => {
-        $crate::kernel::MachineTerm::Constant {
+        $crate::kernel::OldMachineTerm::Constant {
             format:
                 $format @ ($crate::kernel::MachineIntegerType::Int32
                 | $crate::kernel::MachineIntegerType::UInt32),
@@ -2145,7 +2149,7 @@ macro_rules! bits32_constant {
         }
     };
     ($bits:pat $(,)?) => {
-        $crate::kernel::MachineTerm::Constant {
+        $crate::kernel::OldMachineTerm::Constant {
             format: $crate::kernel::MachineIntegerType::Int32
                 | $crate::kernel::MachineIntegerType::UInt32,
             bits: $bits,
@@ -2158,7 +2162,7 @@ pub(crate) use bits32_constant;
 /// value's two's complement in 64 bits; read the value with `as u64 as i64`.
 macro_rules! int64_constant {
     ($bits:pat $(,)?) => {
-        $crate::kernel::MachineTerm::Constant {
+        $crate::kernel::OldMachineTerm::Constant {
             format: $crate::kernel::MachineIntegerType::Int64,
             bits: $bits,
         }
@@ -2169,7 +2173,7 @@ pub(crate) use int64_constant;
 /// Matches the `uint64` constant whose bits match `$bits`.
 macro_rules! uint64_constant {
     ($bits:pat $(,)?) => {
-        $crate::kernel::MachineTerm::Constant {
+        $crate::kernel::OldMachineTerm::Constant {
             format: $crate::kernel::MachineIntegerType::UInt64,
             bits: $bits,
         }
@@ -2182,7 +2186,7 @@ pub(crate) use uint64_constant;
 /// format and bits.
 macro_rules! native_constant {
     (_, $bits:pat $(,)?) => {
-        $crate::kernel::MachineTerm::Constant {
+        $crate::kernel::OldMachineTerm::Constant {
             format: $crate::kernel::MachineIntegerType::Int8
                 | $crate::kernel::MachineIntegerType::UInt8
                 | $crate::kernel::MachineIntegerType::Int16
@@ -2193,7 +2197,7 @@ macro_rules! native_constant {
         }
     };
     ($format:ident, $bits:pat $(,)?) => {
-        $crate::kernel::MachineTerm::Constant {
+        $crate::kernel::OldMachineTerm::Constant {
             format:
                 $format @ ($crate::kernel::MachineIntegerType::Int8
                 | $crate::kernel::MachineIntegerType::UInt8
@@ -2207,11 +2211,11 @@ macro_rules! native_constant {
 }
 pub(crate) use native_constant;
 
-/// Matches every two-operand 32-bit [`MachineTerm`] operation, binding the operands to `$left`
+/// Matches every two-operand 32-bit [`OldMachineTerm`] operation, binding the operands to `$left`
 /// and `$right`.
 macro_rules! binary_bitvector32_term {
     ($left:pat, $right:pat) => {
-        $crate::kernel::MachineTerm::Binary {
+        $crate::kernel::OldMachineTerm::Binary {
             format: $crate::kernel::MachineIntegerType::Int32
                 | $crate::kernel::MachineIntegerType::UInt32,
             left: $left,
@@ -2222,13 +2226,13 @@ macro_rules! binary_bitvector32_term {
 }
 pub(crate) use binary_bitvector32_term;
 
-/// Matches every two-operand [`MachineTerm`] operation that is not at a 32-bit format, binding
+/// Matches every two-operand [`OldMachineTerm`] operation that is not at a 32-bit format, binding
 /// the operands to `$left` and `$right`. Only the 64-bit formats, signed or unsigned, are built
-/// there (see [`MachineTerm::Binary`]); the others are listed so that this and
+/// there (see [`OldMachineTerm::Binary`]); the others are listed so that this and
 /// [`binary_bitvector32_term`] together match every `Binary` node.
 macro_rules! binary_wide_term {
     (..) => {
-        $crate::kernel::MachineTerm::Binary {
+        $crate::kernel::OldMachineTerm::Binary {
             format: $crate::kernel::MachineIntegerType::Int64
                 | $crate::kernel::MachineIntegerType::UInt64
                 | $crate::kernel::MachineIntegerType::Int8
@@ -2241,7 +2245,7 @@ macro_rules! binary_wide_term {
         }
     };
     ($left:pat, $right:pat) => {
-        $crate::kernel::MachineTerm::Binary {
+        $crate::kernel::OldMachineTerm::Binary {
             format: $crate::kernel::MachineIntegerType::Int64
                 | $crate::kernel::MachineIntegerType::UInt64
                 | $crate::kernel::MachineIntegerType::Int8
@@ -2258,12 +2262,12 @@ macro_rules! binary_wide_term {
 }
 pub(crate) use binary_wide_term;
 
-/// Matches every one-operand machine operator node ([`MachineTerm::Unary`]) that is not at a
+/// Matches every one-operand machine operator node ([`OldMachineTerm::Unary`]) that is not at a
 /// 32-bit format, binding its operand to `$operand`. Only the 64-bit complements are built there;
 /// with `unary_term!(Bits32, BitwiseNot, ..)` it matches every `Unary` node.
 macro_rules! unary_wide_term {
     (..) => {
-        $crate::kernel::MachineTerm::Unary {
+        $crate::kernel::OldMachineTerm::Unary {
             format: $crate::kernel::MachineIntegerType::Int64
                 | $crate::kernel::MachineIntegerType::UInt64
                 | $crate::kernel::MachineIntegerType::Int8
@@ -2276,7 +2280,7 @@ macro_rules! unary_wide_term {
         }
     };
     ($operand:pat) => {
-        $crate::kernel::MachineTerm::Unary {
+        $crate::kernel::OldMachineTerm::Unary {
             format: $crate::kernel::MachineIntegerType::Int64
                 | $crate::kernel::MachineIntegerType::UInt64
                 | $crate::kernel::MachineIntegerType::Int8
@@ -2292,14 +2296,14 @@ macro_rules! unary_wide_term {
 }
 pub(crate) use unary_wide_term;
 
-/// Matches every two-operand [`MachineTerm`] operation of any width, binding the operands to
+/// Matches every two-operand [`OldMachineTerm`] operation of any width, binding the operands to
 /// `$left` and `$right`.
 macro_rules! binary_machine_term {
     (..) => {
-        $crate::kernel::MachineTerm::Binary { .. }
+        $crate::kernel::OldMachineTerm::Binary { .. }
     };
     ($left:pat, $right:pat) => {
-        $crate::kernel::MachineTerm::Binary {
+        $crate::kernel::OldMachineTerm::Binary {
             left: $left,
             right: $right,
             ..
@@ -2308,16 +2312,16 @@ macro_rules! binary_machine_term {
 }
 pub(crate) use binary_machine_term;
 
-/// Matches every [`ConditionTerm`] comparison of two mathematical integers, binding the operands to
+/// Matches every [`OldConditionTerm`] comparison of two mathematical integers, binding the operands to
 /// `$left` and `$right`.
 macro_rules! integer_comparison_condition {
     ($left:pat, $right:pat) => {
-        $crate::kernel::ConditionTerm::IntegerLessThan($left, $right)
-            | $crate::kernel::ConditionTerm::IntegerLessEqual($left, $right)
-            | $crate::kernel::ConditionTerm::IntegerGreaterThan($left, $right)
-            | $crate::kernel::ConditionTerm::IntegerGreaterEqual($left, $right)
-            | $crate::kernel::ConditionTerm::IntegerEqual($left, $right)
-            | $crate::kernel::ConditionTerm::IntegerNotEqual($left, $right)
+        $crate::kernel::OldConditionTerm::IntegerLessThan($left, $right)
+            | $crate::kernel::OldConditionTerm::IntegerLessEqual($left, $right)
+            | $crate::kernel::OldConditionTerm::IntegerGreaterThan($left, $right)
+            | $crate::kernel::OldConditionTerm::IntegerGreaterEqual($left, $right)
+            | $crate::kernel::OldConditionTerm::IntegerEqual($left, $right)
+            | $crate::kernel::OldConditionTerm::IntegerNotEqual($left, $right)
     };
 }
 pub(crate) use integer_comparison_condition;
@@ -2484,7 +2488,7 @@ macro_rules! arithmetic_c_value {
 }
 pub(crate) use arithmetic_c_value;
 
-/// The constructor that spelled a [`MachineTerm::Cast`] (and a kernel
+/// The constructor that spelled a [`OldMachineTerm::Cast`] (and a kernel
 /// `MachineCast`): the generic conversion, or one of the six legacy
 /// per-pair conversions, each with fixed formats. Part of a conversion's
 /// identity, so the legacy and generic spellings of one pair of formats stay
@@ -2531,20 +2535,20 @@ impl MachineCastSpelling {
     }
 }
 
-/// Matches a legacy-spelled [`MachineTerm::Cast`], binding its boxed
+/// Matches a legacy-spelled [`OldMachineTerm::Cast`], binding its boxed
 /// operand: `cast_term!(Int64From32, value)`. A legacy spelling fixes its
 /// formats ([`MachineCastSpelling::legacy_formats`]); build one with
-/// [`MachineTerm::legacy_cast`]. A generic conversion is the struct
+/// [`OldMachineTerm::legacy_cast`]. A generic conversion is the struct
 /// `Cast { spelling: Generic, .. }`.
 macro_rules! cast_term {
     ($spelling:ident, _ $(,)?) => {
-        $crate::kernel::MachineTerm::Cast {
+        $crate::kernel::OldMachineTerm::Cast {
             spelling: $crate::kernel::MachineCastSpelling::$spelling,
             ..
         }
     };
     ($spelling:ident, $value:pat $(,)?) => {
-        $crate::kernel::MachineTerm::Cast {
+        $crate::kernel::OldMachineTerm::Cast {
             spelling: $crate::kernel::MachineCastSpelling::$spelling,
             value: $value,
             ..
@@ -2566,14 +2570,14 @@ macro_rules! cast_op {
 }
 pub(crate) use cast_op;
 
-/// Matches every one-operand [`MachineTerm`] operation and conversion, binding its operand to
+/// Matches every one-operand [`OldMachineTerm`] operation and conversion, binding its operand to
 /// `$term`.
 macro_rules! unary_machine_term {
     ($term:pat) => {
-        $crate::kernel::MachineTerm::Unary { operand: $term, .. }
-            | $crate::kernel::MachineTerm::Cast { value: $term, .. }
-            | $crate::kernel::MachineTerm::Float32Negate($term)
-            | $crate::kernel::MachineTerm::Float64Negate($term)
+        $crate::kernel::OldMachineTerm::Unary { operand: $term, .. }
+            | $crate::kernel::OldMachineTerm::Cast { value: $term, .. }
+            | $crate::kernel::OldMachineTerm::Float32Negate($term)
+            | $crate::kernel::OldMachineTerm::Float64Negate($term)
     };
 }
 pub(crate) use unary_machine_term;
@@ -2581,7 +2585,7 @@ pub(crate) use unary_machine_term;
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Address {
     pub base: AddressBase,
-    pub offset: AddressOffset,
+    pub offset: OldAddressOffset,
 }
 
 /// Which decodings of one pointer cell's bytes are one pointer value
@@ -2625,7 +2629,7 @@ pub(crate) struct LoadedPointerView {
     pub(crate) defining_memory: SharedMemory,
     pub(crate) point: ProgramPoint,
     pub(crate) defining_address: Address,
-    pub(crate) displacement: AddressOffset,
+    pub(crate) displacement: OldAddressOffset,
 }
 
 pub(crate) type ObjectTypeRequirements =
@@ -2822,7 +2826,7 @@ pub(in crate::kernel) struct RetainedPointerMetadata<'a> {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct SubobjectBounds {
     pub(crate) start: Address,
-    pub(crate) width: MachineTerm,
+    pub(crate) width: OldMachineTerm,
 }
 
 impl SubobjectBounds {
@@ -2861,7 +2865,9 @@ impl SubobjectBounds {
 
     /// The range a coverage fact names: its first element's address, its
     /// element count and its element width.
-    pub(crate) fn covered_range(proposition: &Proposition) -> Option<(Address, MachineTerm, u32)> {
+    pub(crate) fn covered_range(
+        proposition: &Proposition,
+    ) -> Option<(Address, OldMachineTerm, u32)> {
         let Proposition::Predicate { name, arguments } = proposition else {
             return None;
         };
@@ -2932,7 +2938,7 @@ impl SubobjectBounds {
     pub(crate) fn constant(start: Address, width: u32) -> Self {
         Self {
             start,
-            width: MachineTerm::constant(width),
+            width: OldMachineTerm::constant(width),
         }
     }
 
@@ -3060,8 +3066,8 @@ impl OldPointer {
         }
         let address_read = self.address.as_loaded_value()?;
         let origin = self.provenance().as_loaded_value()?;
-        if address_read.displacement != AddressOffset::Constant(0)
-            || origin.displacement != AddressOffset::Constant(0)
+        if address_read.displacement != OldAddressOffset::Constant(0)
+            || origin.displacement != OldAddressOffset::Constant(0)
             || address_read.defining_address != origin.defining_address
         {
             return None;
@@ -3104,7 +3110,7 @@ impl OldPointer {
         Some(
             SubobjectBounds {
                 start: origin.clone(),
-                width: MachineTerm::constant(0),
+                width: OldMachineTerm::constant(0),
             }
             .coverage_fact(range),
         )
@@ -3298,7 +3304,7 @@ impl OldPointer {
 
     pub(crate) fn is_null(&self) -> bool {
         self.address.base == AddressBase::Concrete("null".to_string())
-            && self.address.offset == AddressOffset::Constant(0)
+            && self.address.offset == OldAddressOffset::Constant(0)
     }
 }
 
@@ -3980,21 +3986,21 @@ pub enum ProgramValue {
     /// C `_Bool` values are represented by a 32-bit term whose value is
     /// always normalized to zero or one.  The storage width remains the
     /// ABI-defined one byte width exposed by `ProgramType::Bool`.
-    Bool(MachineTerm),
-    Int8(MachineTerm),
-    Int16(MachineTerm),
-    Int32(MachineTerm),
-    UInt8(MachineTerm),
-    UInt16(MachineTerm),
-    UInt32(MachineTerm),
-    Int64(MachineTerm),
-    UInt64(MachineTerm),
-    Int128(MachineTerm),
-    UInt128(MachineTerm),
+    Bool(OldMachineTerm),
+    Int8(OldMachineTerm),
+    Int16(OldMachineTerm),
+    Int32(OldMachineTerm),
+    UInt8(OldMachineTerm),
+    UInt16(OldMachineTerm),
+    UInt32(OldMachineTerm),
+    Int64(OldMachineTerm),
+    UInt64(OldMachineTerm),
+    Int128(OldMachineTerm),
+    UInt128(OldMachineTerm),
     /// IEEE-754 binary32 payload represented in the shared checked term arena.
-    Float32(MachineTerm),
+    Float32(OldMachineTerm),
     /// IEEE-754 binary64 payload represented in the shared checked term arena.
-    Float64(MachineTerm),
+    Float64(OldMachineTerm),
     Pointer(OldPointer),
     /// A value of an abstract type parameter: the spec value of that rigid
     /// type it is.
@@ -4525,17 +4531,17 @@ pub enum FloatClassification {
 pub enum FloatCondition {
     Comparison {
         operator: ComparisonOperator,
-        left: Box<MachineTerm>,
-        right: Box<MachineTerm>,
+        left: Box<OldMachineTerm>,
+        right: Box<OldMachineTerm>,
     },
     Classification {
         classification: FloatClassification,
-        value: Box<MachineTerm>,
+        value: Box<OldMachineTerm>,
     },
 }
 
 impl FloatCondition {
-    pub(crate) fn for_each_bitvector_term(&self, mut visit: impl FnMut(&MachineTerm)) {
+    pub(crate) fn for_each_bitvector_term(&self, mut visit: impl FnMut(&OldMachineTerm)) {
         match self {
             Self::Comparison { left, right, .. } => {
                 visit(left);
@@ -4547,7 +4553,7 @@ impl FloatCondition {
 
     pub(crate) fn map_bitvector_terms(
         &self,
-        mut map: impl FnMut(&MachineTerm) -> MachineTerm,
+        mut map: impl FnMut(&OldMachineTerm) -> OldMachineTerm,
     ) -> Self {
         match self {
             Self::Comparison {
@@ -4571,7 +4577,7 @@ impl FloatCondition {
 
     pub(crate) fn try_map_bitvector_terms(
         &self,
-        mut map: impl FnMut(&MachineTerm) -> Option<MachineTerm>,
+        mut map: impl FnMut(&OldMachineTerm) -> Option<OldMachineTerm>,
     ) -> Option<Self> {
         Some(match self {
             Self::Comparison {
@@ -5313,13 +5319,13 @@ pub enum AlgebraicTermNode {
     /// A conditional algebraic value, built by [`AlgebraicTerm::if_then_else`]
     /// so that a constant condition or equal branches never stand.
     If {
-        condition: Box<ConditionTerm>,
+        condition: Box<OldConditionTerm>,
         then_term: Box<AlgebraicTerm>,
         else_term: Box<AlgebraicTerm>,
     },
     /// The value of an abstract type parameter that memory `memory` holds at
     /// `pointer`, a generic struct's field: the algebraic counterpart of a
-    /// [`MachineTerm::MemoryLoad`].
+    /// [`OldMachineTerm::MemoryLoad`].
     MemoryLoad {
         point: ProgramPoint,
         pointer: Box<Address>,
@@ -5337,8 +5343,8 @@ impl AlgebraicTermNode {
         point: &ProgramPoint,
         pointer: &Address,
         algebraic_type: &AlgebraicType,
-    ) -> MachineTerm {
-        crate::kernel::MachineTerm::read_named(
+    ) -> OldMachineTerm {
+        crate::kernel::OldMachineTerm::read_named(
             point.clone(),
             pointer.clone(),
             LoadKind::of_algebraic(algebraic_type),
@@ -5351,7 +5357,7 @@ impl AlgebraicTermNode {
     /// replaced the load.
     pub(crate) fn memory_load_from_carrier(carrier: &ProgramValue) -> Option<Self> {
         match carrier {
-            ProgramValue::UInt64(MachineTerm::MemoryLoad(
+            ProgramValue::UInt64(OldMachineTerm::MemoryLoad(
                 point,
                 pointer,
                 LoadKind::Algebraic(_),
@@ -5460,24 +5466,26 @@ pub enum PureFunctionArgument {
 /// `if condition { 1 } else { 0 }`, so a rewrite that decides it leaves the
 /// constant it decided.
 pub(crate) fn rewrite_condition_through_bits(
-    condition: &ConditionTerm,
-    rewrite: impl FnOnce(&MachineTerm) -> MachineTerm,
-) -> ConditionTerm {
-    let carrier = MachineTerm::If {
+    condition: &OldConditionTerm,
+    rewrite: impl FnOnce(&OldMachineTerm) -> OldMachineTerm,
+) -> OldConditionTerm {
+    let carrier = OldMachineTerm::If {
         condition: Box::new(condition.clone()),
-        then_term: Box::new(MachineTerm::constant(1)),
-        else_term: Box::new(MachineTerm::constant(0)),
+        then_term: Box::new(OldMachineTerm::constant(1)),
+        else_term: Box::new(OldMachineTerm::constant(0)),
     };
     match rewrite(&carrier) {
-        MachineTerm::If {
+        OldMachineTerm::If {
             condition,
             then_term,
             else_term,
-        } if *then_term == MachineTerm::constant(1) && *else_term == MachineTerm::constant(0) => {
+        } if *then_term == OldMachineTerm::constant(1)
+            && *else_term == OldMachineTerm::constant(0) =>
+        {
             *condition
         }
-        bits32_constant!(1) => ConditionTerm::Constant(true),
-        bits32_constant!(0) => ConditionTerm::Constant(false),
+        bits32_constant!(1) => OldConditionTerm::Constant(true),
+        bits32_constant!(0) => OldConditionTerm::Constant(false),
         _ => condition.clone(),
     }
 }
@@ -5493,7 +5501,7 @@ pub enum AlgebraicValue {
 pub struct AlgebraicBitvectorMatchArm {
     pub variant: String,
     pub bindings: Vec<AlgebraicValue>,
-    pub body: MachineTerm,
+    pub body: OldMachineTerm,
     /// The written names of `bindings`, for printing only.
     pub binding_names: BindingNames,
 }
@@ -5514,7 +5522,7 @@ impl AlgebraicTerm {
         enum Node<'a> {
             Algebraic(&'a AlgebraicTerm),
             Value(&'a ProgramValue),
-            Offset(&'a AddressOffset),
+            Offset(&'a OldAddressOffset),
         }
         let mut pending = vec![Node::Algebraic(self)];
         while let Some(node) = pending.pop() {
@@ -5565,7 +5573,7 @@ impl AlgebraicTerm {
                         point: memory,
                         pointer,
                     } => {
-                        visit(MachineOperandView::Legacy(
+                        visit(MachineOperandView::Old(
                             &AlgebraicTermNode::memory_load_carrier(
                                 memory,
                                 pointer,
@@ -5581,10 +5589,10 @@ impl AlgebraicTerm {
                         // The condition's terms are visited as the scalar
                         // conditional that carries them, so a caller walks
                         // them as it walks any condition.
-                        visit(MachineOperandView::Legacy(&MachineTerm::If {
+                        visit(MachineOperandView::Old(&OldMachineTerm::If {
                             condition: condition.clone(),
-                            then_term: Box::new(MachineTerm::constant(0)),
-                            else_term: Box::new(MachineTerm::constant(0)),
+                            then_term: Box::new(OldMachineTerm::constant(0)),
+                            else_term: Box::new(OldMachineTerm::constant(0)),
                         }));
                         pending.push(Node::Algebraic(then_term));
                         pending.push(Node::Algebraic(else_term));
@@ -5594,9 +5602,9 @@ impl AlgebraicTerm {
                     ProgramValue::PointerInteger(_) => unreachable!("numeric projection"),
                     ProgramValue::Parameter(term) => pending.push(Node::Algebraic(term)),
                     ProgramValue::Void => {}
-                    ProgramValue::Bool(v) => visit(MachineOperandView::Legacy(v)),
+                    ProgramValue::Bool(v) => visit(MachineOperandView::Old(v)),
                     ProgramValue::Pointer(v) => pending.push(Node::Offset(&v.address().offset)),
-                    ProgramValue::Int8(v) => visit(MachineOperandView::Legacy(v)),
+                    ProgramValue::Int8(v) => visit(MachineOperandView::Old(v)),
                     ProgramValue::Int16(v)
                     | ProgramValue::UInt16(v)
                     | ProgramValue::UInt8(v)
@@ -5607,16 +5615,16 @@ impl AlgebraicTerm {
                     | ProgramValue::Int128(v)
                     | ProgramValue::UInt128(v)
                     | ProgramValue::Float32(v)
-                    | ProgramValue::Float64(v) => visit(MachineOperandView::Legacy(v)),
+                    | ProgramValue::Float64(v) => visit(MachineOperandView::Old(v)),
                 },
                 Node::Offset(offset) => match offset {
-                    AddressOffset::Constant(_) | AddressOffset::Variable(_) => {}
-                    AddressOffset::Add(a, b) => {
+                    OldAddressOffset::Constant(_) | OldAddressOffset::Variable(_) => {}
+                    OldAddressOffset::Add(a, b) => {
                         pending.push(Node::Offset(a));
                         pending.push(Node::Offset(b));
                     }
-                    AddressOffset::Int32Scaled { value, .. }
-                    | AddressOffset::Int64Scaled { value, .. } => visit(value.operand_view()),
+                    OldAddressOffset::Int32Scaled { value, .. }
+                    | OldAddressOffset::Int64Scaled { value, .. } => visit(value.operand_view()),
                 },
             }
         }
@@ -5625,13 +5633,13 @@ impl AlgebraicTerm {
     /// `if condition { then_term } else { else_term }`: one branch when the
     /// condition is a constant or both branches are the same term.
     pub(crate) fn if_then_else(
-        condition: ConditionTerm,
+        condition: OldConditionTerm,
         then_term: AlgebraicTerm,
         else_term: AlgebraicTerm,
     ) -> AlgebraicTerm {
         match condition {
-            ConditionTerm::Constant(true) => then_term,
-            ConditionTerm::Constant(false) => else_term,
+            OldConditionTerm::Constant(true) => then_term,
+            OldConditionTerm::Constant(false) => else_term,
             _ if then_term == else_term => then_term,
             condition => AlgebraicTerm {
                 algebraic_type: then_term.algebraic_type.clone(),
@@ -8232,17 +8240,17 @@ impl RankingComponent {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RankingMeasureValue {
     /// A machine int32 quantity, ranked by signed comparison.
-    Machine(MachineTerm),
+    Machine(OldMachineTerm),
     /// A machine uint32 quantity, ranked by unsigned comparison of the value
     /// C computes, wraparound included. Every such value is a natural number
     /// below 2^32, so it is nonnegative by construction.
-    Unsigned32(MachineTerm),
+    Unsigned32(OldMachineTerm),
     /// A machine uint64 quantity, ranked by unsigned 64-bit comparison of the
     /// value C computes, wraparound included; nonnegative by construction.
-    Unsigned64(MachineTerm),
+    Unsigned64(OldMachineTerm),
     /// A machine int64 quantity, ranked by signed 64-bit comparison. Like an
     /// int32 it owes `0 <= m`.
-    Signed64(MachineTerm),
+    Signed64(OldMachineTerm),
     /// A mathematical Integer quantity, ranked by Integer comparison.
     Integer(IntegerTerm),
 }
@@ -8580,7 +8588,7 @@ pub const RETURN_TYPE_MISMATCH: &str = "returned a value that does not match its
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct WideRangeNoWrap {
     pub range: ResourceFact,
-    pub count: MachineTerm,
+    pub count: OldMachineTerm,
     pub factor: u64,
 }
 
@@ -9866,7 +9874,7 @@ impl AllocationSize {
         })
     }
 
-    pub fn new(bytes: MachineTerm, kind: AllocationSizeKind) -> Self {
+    pub fn new(bytes: OldMachineTerm, kind: AllocationSizeKind) -> Self {
         Self {
             bytes: StoredMachineTerm::new(
                 match kind {
@@ -9880,12 +9888,12 @@ impl AllocationSize {
     }
 
     /// A 32-bit byte count in `0..=INT32_MAX`.
-    pub fn int32(bytes: impl Into<MachineTerm>) -> Self {
+    pub fn int32(bytes: impl Into<OldMachineTerm>) -> Self {
         Self::new(bytes.into(), AllocationSizeKind::Int32)
     }
 
-    pub fn bytes(&self) -> &MachineTerm {
-        self.bytes.native_compat()
+    pub fn bytes(&self) -> &OldMachineTerm {
+        self.bytes.old_form()
     }
 
     pub fn kind(&self) -> AllocationSizeKind {
@@ -9893,67 +9901,70 @@ impl AllocationSize {
     }
 
     /// The same kind of size over rewritten bytes.
-    pub(crate) fn map_bytes(&self, rewrite: impl FnOnce(&MachineTerm) -> MachineTerm) -> Self {
+    pub(crate) fn map_bytes(
+        &self,
+        rewrite: impl FnOnce(&OldMachineTerm) -> OldMachineTerm,
+    ) -> Self {
         // Equal observations may have different producer payloads. Keep the
         // native mapper's exact result at this compatibility boundary.
-        Self::new(rewrite(self.bytes.native_compat()), self.kind)
+        Self::new(rewrite(self.bytes.old_form()), self.kind)
     }
 
     /// The `allocation` token's byte-count argument: an `int32` or a `uint64`.
     pub(crate) fn token_value(&self) -> ProgramValue {
         match self.kind {
-            AllocationSizeKind::Int32 => ProgramValue::Int32(self.bytes.native_compat().clone()),
-            AllocationSizeKind::UInt64 => ProgramValue::UInt64(self.bytes.native_compat().clone()),
+            AllocationSizeKind::Int32 => ProgramValue::Int32(self.bytes.old_form().clone()),
+            AllocationSizeKind::UInt64 => ProgramValue::UInt64(self.bytes.old_form().clone()),
         }
     }
 
     /// The byte count as an unsigned 64-bit value: a 32-bit size zero
     /// extended (it is nonnegative), a 64-bit one as it is.
-    pub(crate) fn uint64_bytes(&self) -> MachineTerm {
+    pub(crate) fn uint64_bytes(&self) -> OldMachineTerm {
         match self.kind {
             AllocationSizeKind::Int32 => {
-                MachineTerm::uint64_from_32(self.bytes.native_compat().clone())
+                OldMachineTerm::uint64_from_32(self.bytes.old_form().clone())
             }
-            AllocationSizeKind::UInt64 => self.bytes.native_compat().clone(),
+            AllocationSizeKind::UInt64 => self.bytes.old_form().clone(),
         }
     }
 
     /// The byte count as a signed 64-bit value: a 32-bit size zero
     /// extended, a 64-bit one reinterpreted (it is at most `PTRDIFF_MAX`).
-    pub(crate) fn int64_bytes(&self) -> MachineTerm {
+    pub(crate) fn int64_bytes(&self) -> OldMachineTerm {
         match self.kind {
             AllocationSizeKind::Int32 => {
-                MachineTerm::int64_from_uint32(self.bytes.native_compat().clone())
+                OldMachineTerm::int64_from_uint32(self.bytes.old_form().clone())
             }
             AllocationSizeKind::UInt64 => {
-                MachineTerm::int64_from_uint64_bits(self.bytes.native_compat().clone())
+                OldMachineTerm::int64_from_uint64_bits(self.bytes.old_form().clone())
             }
         }
     }
 
     /// The byte count as a 32-bit word, for a 32-bit size only. A 32-bit
     /// comparison against a 64-bit size has no meaning.
-    pub(crate) fn int32_bytes(&self) -> Option<&MachineTerm> {
-        (self.kind == AllocationSizeKind::Int32).then(|| self.bytes.native_compat())
+    pub(crate) fn int32_bytes(&self) -> Option<&OldMachineTerm> {
+        (self.kind == AllocationSizeKind::Int32).then(|| self.bytes.old_form())
     }
 
     /// A constant byte count in this size's format.
-    pub(crate) fn constant(&self, bytes: u32) -> MachineTerm {
+    pub(crate) fn constant(&self, bytes: u32) -> OldMachineTerm {
         match self.kind {
-            AllocationSizeKind::Int32 => MachineTerm::constant(bytes),
-            AllocationSizeKind::UInt64 => MachineTerm::uint64_constant(u64::from(bytes)),
+            AllocationSizeKind::Int32 => OldMachineTerm::constant(bytes),
+            AllocationSizeKind::UInt64 => OldMachineTerm::uint64_constant(u64::from(bytes)),
         }
     }
 
     /// `left <= right` over unsigned values of this size's format.
     pub(crate) fn unsigned_less_equal(
         &self,
-        left: MachineTerm,
-        right: MachineTerm,
-    ) -> ConditionTerm {
+        left: OldMachineTerm,
+        right: OldMachineTerm,
+    ) -> OldConditionTerm {
         match self.kind {
-            AllocationSizeKind::Int32 => ConditionTerm::unsigned_less_equal(left, right),
-            AllocationSizeKind::UInt64 => ConditionTerm::uint64_less_equal(left, right),
+            AllocationSizeKind::Int32 => OldConditionTerm::unsigned_less_equal(left, right),
+            AllocationSizeKind::UInt64 => OldConditionTerm::uint64_less_equal(left, right),
         }
     }
 
@@ -9962,19 +9973,22 @@ impl AllocationSize {
     pub(crate) fn range(
         &self,
         base: Address,
-        count: MachineTerm,
+        count: OldMachineTerm,
         element_width: u32,
     ) -> MemoryRange {
         match self.kind {
             AllocationSizeKind::Int32 => MemoryRange::new_with_element_width(
                 base,
-                MachineTerm::constant(0),
+                OldMachineTerm::constant(0),
                 count,
                 element_width,
             ),
-            AllocationSizeKind::UInt64 => {
-                MemoryRange::new_wide(base, MachineTerm::uint64_constant(0), count, element_width)
-            }
+            AllocationSizeKind::UInt64 => MemoryRange::new_wide(
+                base,
+                OldMachineTerm::uint64_constant(0),
+                count,
+                element_width,
+            ),
         }
     }
 
@@ -9982,15 +9996,15 @@ impl AllocationSize {
     /// format, when its byte count spells it: an `int32` count through
     /// [`crate::kernel::reasoning::element_count_from_bytes`], a `uint64` one
     /// through [`crate::kernel::reasoning::uint64_element_count_from_bytes`].
-    pub(crate) fn element_count(&self, element_width: u32) -> Option<MachineTerm> {
+    pub(crate) fn element_count(&self, element_width: u32) -> Option<OldMachineTerm> {
         match self.kind {
             AllocationSizeKind::Int32 => crate::kernel::reasoning::element_count_from_bytes(
-                self.bytes.native_compat(),
+                self.bytes.old_form(),
                 element_width,
             ),
             AllocationSizeKind::UInt64 => {
                 crate::kernel::reasoning::uint64_element_count_from_bytes(
-                    self.bytes.native_compat(),
+                    self.bytes.old_form(),
                     element_width,
                 )
             }
@@ -9999,7 +10013,7 @@ impl AllocationSize {
 
     /// The block's complete byte range, `base[0..bytes]`.
     pub(crate) fn byte_range(&self, base: Address) -> MemoryRange {
-        self.range(base, self.bytes.native_compat().clone(), 1)
+        self.range(base, self.bytes.old_form().clone(), 1)
     }
 }
 
@@ -10012,8 +10026,8 @@ pub(super) struct PendingReallocation {
     /// Bytes at the start of the new block that retain calloc's guaranteed
     /// zero value. A prefix equal to the new allocation size means the whole
     /// block is zeroed; a shorter prefix leaves the grown tail uninitialized.
-    pub(super) zeroed_prefix: Option<MachineTerm>,
-    pub(super) copied_cells: Vec<(AddressOffset, ProgramValue)>,
+    pub(super) zeroed_prefix: Option<OldMachineTerm>,
+    pub(super) copied_cells: Vec<(OldAddressOffset, ProgramValue)>,
     /// The runs of constant byte offsets of the old block that were
     /// initialized and lie in the new allocation, cut at its size: a
     /// successful resize preserves them whether or not a cached cell still
@@ -10061,7 +10075,7 @@ pub(super) struct HeapMemory {
     pub(super) zeroed_allocations: HashedOrdSet<Address>,
     /// Successful reallocations of zeroed storage may preserve only a prefix
     /// of the old block. The remainder of a grown block is uninitialized.
-    pub(super) zeroed_prefix_allocations: HashedOrdMap<Address, MachineTerm>,
+    pub(super) zeroed_prefix_allocations: HashedOrdMap<Address, OldMachineTerm>,
     /// Pending calloc results whose null/success outcome has not yet been
     /// refined.
     pub(super) zeroed_pending_allocations: HashedOrdSet<Address>,
@@ -10709,7 +10723,7 @@ pub enum MemoryDerivation {
     HeapAllocated {
         base: SharedMemory,
         block: AddressBase,
-        bytes: MachineTerm,
+        bytes: OldMachineTerm,
     },
     /// `base` with one unresolved allocation result registered. Pending
     /// metadata changes no program-observable memory, so every existing load
@@ -10717,7 +10731,7 @@ pub enum MemoryDerivation {
     HeapAllocationPending {
         base: SharedMemory,
         allocation_base: Address,
-        bytes: MachineTerm,
+        bytes: OldMachineTerm,
     },
     /// `base` with a failed pending allocation removed. No storage was
     /// allocated or written; existing reads retain their validity and value.
@@ -10734,7 +10748,7 @@ pub enum MemoryDerivation {
     ContractAllocationRetired {
         base: SharedMemory,
         allocation_base: Address,
-        bytes: MachineTerm,
+        bytes: OldMachineTerm,
     },
     /// `base` with one complete heap allocation lifetime ended.
     ///
@@ -10745,7 +10759,7 @@ pub enum MemoryDerivation {
     HeapFreed {
         base: SharedMemory,
         allocation_base: Address,
-        bytes: MachineTerm,
+        bytes: OldMachineTerm,
     },
     /// `base` with only the initialized-byte record extended. The writes
     /// establishing those bytes have their own earlier edges; recording this
@@ -11067,7 +11081,7 @@ pub(in crate::kernel) enum StaticCellVersion {
 /// Keep the constant element geometry that the legacy call separator uses.
 /// Unknown blocks, offsets, bounds, or shapes leave an ordinary walk boundary.
 fn static_call_range(range: &MemoryRange) -> Option<(std::ops::Range<u32>, usize)> {
-    let AddressOffset::Constant(base) = range.base().offset else {
+    let OldAddressOffset::Constant(base) = range.base().offset else {
         return None;
     };
     let width = range.element_width();
@@ -11088,7 +11102,7 @@ fn static_call_range(range: &MemoryRange) -> Option<(std::ops::Range<u32>, usize
 }
 
 fn static_cell_byte_span(pointer: &Address, bytes: u32) -> Option<std::ops::Range<i64>> {
-    let AddressOffset::Constant(start) = pointer.offset else {
+    let OldAddressOffset::Constant(start) = pointer.offset else {
         return None;
     };
     let bytes = i64::from(bytes);
@@ -12447,7 +12461,7 @@ pub(super) struct ResourceContextIndex {
     /// offset (the range's anchor). Two distinct owned members of one block
     /// have different anchors, which a pointer comparison asks by key
     /// rather than through every pair of members.
-    pub(super) owned_memory_by_anchor: PersistentMap<AddressOffset, ResourceEntryIds>,
+    pub(super) owned_memory_by_anchor: PersistentMap<OldAddressOffset, ResourceEntryIds>,
 }
 
 /// A condition fact's kind and canonical sides; see
@@ -12455,15 +12469,15 @@ pub(super) struct ResourceContextIndex {
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(super) enum ConditionMatchKey {
     /// A 32-bit equality, sides in ascending order.
-    Equal(MachineTerm, MachineTerm),
+    Equal(OldMachineTerm, OldMachineTerm),
     /// An offset equality, sides in ascending order.
-    OffsetEqual(AddressOffset, AddressOffset),
+    OffsetEqual(OldAddressOffset, OldAddressOffset),
     /// A signed order: strict, then its lower and its upper side.
-    Order(bool, MachineTerm, MachineTerm),
+    Order(bool, OldMachineTerm, OldMachineTerm),
     /// An unsigned 32-bit order, separate from signed order facts.
-    UnsignedOrder(bool, MachineTerm, MachineTerm),
+    UnsignedOrder(bool, OldMachineTerm, OldMachineTerm),
     /// Signed addition overflow, with commutative operands ordered.
-    OverflowAdd(MachineTerm, MachineTerm),
+    OverflowAdd(OldMachineTerm, OldMachineTerm),
 }
 
 impl ConditionMatchKey {
@@ -12482,7 +12496,7 @@ impl ConditionMatchKey {
 
 /// The block and first symbolic atom (canonical) of a memory base; see
 /// `ResourceContextIndex::owned_memory_by_root`.
-pub(super) type MemoryBaseRoot = (AddressBase, Option<AddressOffset>);
+pub(super) type MemoryBaseRoot = (AddressBase, Option<OldAddressOffset>);
 
 /// A token or composite's shape and first-pointer root; see
 /// `ResourceContextIndex::exact_shapes_by_root`.
@@ -12864,9 +12878,7 @@ impl PublicationRight {
         }
     }
     pub(crate) fn observed(&self) -> Option<&ProgramValue> {
-        self.observed
-            .as_ref()
-            .map(StoredProgramValue::native_compat)
+        self.observed.as_ref().map(StoredProgramValue::old_form)
     }
     pub(crate) fn side(&self) -> PublicationSide {
         self.side
@@ -12906,8 +12918,8 @@ impl ConditionalMutexGuard {
     pub(crate) fn mutex(&self) -> &Address {
         self.guard.mutex()
     }
-    pub(crate) fn condition(&self) -> &ConditionTerm {
-        self.held.native_compat()
+    pub(crate) fn condition(&self) -> &OldConditionTerm {
+        self.held.old_form()
     }
 }
 
@@ -14651,7 +14663,7 @@ mod population_authority_spec_tests {
                 .try_compose_with_fact(
                     ResourceFact::Own(
                         Resource::PopulationAuthority(description.clone()),
-                        Box::new(MachineTerm::constant(2).into()),
+                        Box::new(OldMachineTerm::constant(2).into()),
                     ),
                     &assumptions,
                 )
@@ -14692,35 +14704,35 @@ impl Term {
 
     /// Selected native payload views. Storage and producers retain their own
     /// carriers; structural consumers name the compatibility reading explicitly.
-    pub(crate) fn condition_native(&self) -> Option<&ConditionTerm> {
+    pub(crate) fn old_condition(&self) -> Option<&OldConditionTerm> {
         match self {
-            Self::Condition(value) => Some(value.native_compat()),
+            Self::Condition(value) => Some(value.old_form()),
             _ => None,
         }
     }
     #[cfg(test)]
-    pub(crate) fn bitvector_native(&self) -> Option<&MachineTerm> {
+    pub(crate) fn bitvector_native(&self) -> Option<&OldMachineTerm> {
         match self {
-            Self::Bitvector32(value) => Some(value.native_compat()),
+            Self::Bitvector32(value) => Some(value.old_form()),
             _ => None,
         }
     }
     #[cfg(test)]
     pub(crate) fn integer_native(&self) -> Option<&IntegerTerm> {
         match self {
-            Self::Integer(value) => Some(value.native_compat()),
+            Self::Integer(value) => Some(value.old_form()),
             _ => None,
         }
     }
     pub(crate) fn program_value_native(&self) -> Option<&ProgramValue> {
         match self {
-            Self::ProgramValue(value) => Some(value.native_compat()),
+            Self::ProgramValue(value) => Some(value.old_form()),
             _ => None,
         }
     }
     pub(crate) fn algebraic_native(&self) -> Option<&AlgebraicTerm> {
         match self {
-            Self::Algebraic(value) => Some(value.native_compat()),
+            Self::Algebraic(value) => Some(value.old_form()),
             _ => None,
         }
     }
@@ -14733,11 +14745,11 @@ mod term_payload_view_tests {
     #[test]
     fn owned_program_value_extraction_moves_native_address_prefixes() {
         for size in [16, 64, 256] {
-            let mut offset = AddressOffset::Constant(0);
+            let mut offset = OldAddressOffset::Constant(0);
             for index in 0..size {
-                offset = AddressOffset::Add(
+                offset = OldAddressOffset::Add(
                     Box::new(offset),
-                    Box::new(AddressOffset::Variable(Variable(991300 + index))),
+                    Box::new(OldAddressOffset::Variable(Variable(991300 + index))),
                 );
             }
             let value = ProgramValue::pointer(Address {
@@ -14750,7 +14762,7 @@ mod term_payload_view_tests {
             let ProgramValue::Pointer(pointer) = &value else {
                 unreachable!()
             };
-            let AddressOffset::Add(left, right) = &pointer.address().offset else {
+            let OldAddressOffset::Add(left, right) = &pointer.address().offset else {
                 unreachable!()
             };
             let allocations = [
@@ -14763,7 +14775,7 @@ mod term_payload_view_tests {
                 unreachable!()
             };
             let address = pointer.into_pointer();
-            let AddressOffset::Add(left, right) = &address.offset else {
+            let OldAddressOffset::Add(left, right) = &address.offset else {
                 unreachable!()
             };
             assert_eq!(
@@ -15049,9 +15061,9 @@ impl KernelProposition {
 
     /// Selected native condition-payload inspection. This view borrows the
     /// original payload and truth marker without rebuilding a proposition.
-    pub(crate) fn condition_native(&self) -> Option<(&ConditionTerm, &bool)> {
+    pub(crate) fn old_condition(&self) -> Option<(&OldConditionTerm, &bool)> {
         match self {
-            Self::ConditionIs(condition, truth) => Some((condition.native_compat(), truth)),
+            Self::ConditionIs(condition, truth) => Some((condition.old_form(), truth)),
             _ => None,
         }
     }
@@ -15667,7 +15679,7 @@ pub struct Theorem {
 
 struct DeferredTheoremPremises {
     propositions: super::fact_collections::FactSet<Proposition>,
-    conditions: super::fact_collections::FactMap<ConditionTerm, bool>,
+    conditions: super::fact_collections::FactMap<OldConditionTerm, bool>,
     standalone: OnceLock<Proposition>,
 }
 
@@ -15947,7 +15959,7 @@ pub(crate) enum PropositionDerivationRule {
     /// Prove an existential by selecting a free witness term and checking the
     /// substituted body against the current context.
     ExistsFromWitness {
-        witness: MachineTerm,
+        witness: OldMachineTerm,
         body: Box<PropositionDerivation>,
     },
     /// Prove an in-range one-byte loadability universal from one exact wider
@@ -16017,7 +16029,7 @@ pub(crate) struct Int32LeAndNeqStrictEvidence {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ForallInt32InstantiationEvidence {
     pub(crate) quantified: Proposition,
-    pub(crate) argument: MachineTerm,
+    pub(crate) argument: OldMachineTerm,
     pub(crate) guard_premises: Vec<Proposition>,
 }
 
@@ -16139,13 +16151,13 @@ impl<T: Ord> Ord for SharedIndexFact<T> {
 
 /// Borrowed adjacency entries let selection deduplicate before cloning syntax.
 pub(crate) enum AtomicConnectedFact<'a> {
-    Condition(&'a ConditionTerm, bool),
+    Condition(&'a OldConditionTerm, bool),
     Proposition(&'a Proposition),
 }
 impl AtomicConnectedFact<'_> {
     pub(crate) fn identity(&self) -> (u8, usize) {
         match self {
-            Self::Condition(condition, _) => (0, *condition as *const ConditionTerm as usize),
+            Self::Condition(condition, _) => (0, *condition as *const OldConditionTerm as usize),
             Self::Proposition(proposition) => (1, *proposition as *const Proposition as usize),
         }
     }
@@ -16158,7 +16170,7 @@ impl AtomicConnectedFact<'_> {
     pub(crate) fn matches(&self, goal: &Proposition) -> bool {
         match self {
             Self::Condition(condition, value) => {
-                matches!(goal, Proposition::ConditionIs(c,v) if c.native_compat() == *condition && v == value)
+                matches!(goal, Proposition::ConditionIs(c,v) if c.old_form() == *condition && v == value)
             }
             Self::Proposition(proposition) => *proposition == goal,
         }
@@ -16248,28 +16260,28 @@ pub struct PureFactContext {
         crate::kernel::proof::PropositionIdentityKey,
         (std::sync::Arc<Proposition>, bool),
     >,
-    pub(super) condition_facts: super::fact_collections::FactMap<ConditionTerm, bool>,
+    pub(super) condition_facts: super::fact_collections::FactMap<OldConditionTerm, bool>,
     pub(super) signed_variable_chains: super::assumptions::variable_chains::VariableChains,
     /// Incremental adjacency for conditions whose variables can be read
     /// without inspecting a state.
     pub(super) shared_condition_variables: super::assumptions::shared_condition_variables::Index,
     pub(super) condition_facts_by_variable: crate::persistent::PersistentMap<
         Variable,
-        crate::persistent::PersistentMap<SharedIndexFact<ConditionTerm>, bool>,
+        crate::persistent::PersistentMap<SharedIndexFact<OldConditionTerm>, bool>,
     >,
     /// MemoryState-dependent conditions use the complete collector only when
     /// smart premise selection asks for them. Scalar updates share the cache.
     pub(super) state_condition_variable_base: crate::persistent::PersistentMap<
         Variable,
-        crate::persistent::PersistentMap<SharedIndexFact<ConditionTerm>, bool>,
+        crate::persistent::PersistentMap<SharedIndexFact<OldConditionTerm>, bool>,
     >,
     pub(super) state_condition_variable_changes:
-        crate::persistent::PersistentMap<ConditionTerm, bool>,
+        crate::persistent::PersistentMap<OldConditionTerm, bool>,
     pub(super) state_condition_variables: std::sync::Arc<
         std::sync::OnceLock<
             crate::persistent::PersistentMap<
                 Variable,
-                crate::persistent::PersistentMap<SharedIndexFact<ConditionTerm>, bool>,
+                crate::persistent::PersistentMap<SharedIndexFact<OldConditionTerm>, bool>,
             >,
         >,
     >,
@@ -16284,14 +16296,14 @@ pub struct PureFactContext {
     /// Derived incrementally from `condition_facts`.
     pub(super) condition_facts_by_sides: crate::persistent::PersistentMap<
         ConditionMatchKey,
-        crate::persistent::PersistentMap<ConditionTerm, bool>,
+        crate::persistent::PersistentMap<OldConditionTerm, bool>,
     >,
     /// Stage 5, rule L-Eq: each `Bool` equality fact `a == b` filed under
     /// both operands, with the fact's truth, so a decision of one operand
     /// reads its partners without visiting any other fact.
     pub(super) bool_equation_partners: crate::persistent::PersistentMap<
-        ConditionTerm,
-        crate::persistent::PersistentMap<ConditionTerm, bool>,
+        OldConditionTerm,
+        crate::persistent::PersistentMap<OldConditionTerm, bool>,
     >,
     /// The facts of `condition_facts_by_sides` with a side that is not an
     /// atom (a constant, or a variable that no load names): a load, a sum,
@@ -16302,14 +16314,16 @@ pub struct PureFactContext {
     /// key.
     /// Keyed by the family of kinds that can match one another
     /// ([`ConditionMatchKey::family`]).
-    pub(super) open_condition_facts:
-        crate::persistent::PersistentMap<u8, crate::persistent::PersistentMap<ConditionTerm, bool>>,
+    pub(super) open_condition_facts: crate::persistent::PersistentMap<
+        u8,
+        crate::persistent::PersistentMap<OldConditionTerm, bool>,
+    >,
     /// The signed-order condition facts (`<`, `<=`, `>`, `>=`, either
     /// value) of `condition_facts`, in its order: what
     /// `condition_order_facts` collects, so collecting reads only order
     /// facts instead of every condition fact. Derived incrementally with
     /// the condition-match indexes.
-    pub(super) order_condition_facts: super::fact_collections::FactMap<ConditionTerm, bool>,
+    pub(super) order_condition_facts: super::fact_collections::FactMap<OldConditionTerm, bool>,
     /// Difference logic over `condition_facts`
     /// (`docs/internals/verification-efficiency.md`), the fast path condition evaluation
     /// asks before the general decision.
@@ -16328,8 +16342,8 @@ pub struct PureFactContext {
     /// alone: if `B + left` is null and `B + right` is not, then `left` and
     /// `right` are different offsets whatever block the query came from.
     pub(super) null_pointer_offsets: crate::persistent::PersistentMap<
-        AddressOffset,
-        crate::persistent::PersistentMap<(AddressBase, bool), ConditionTerm>,
+        OldAddressOffset,
+        crate::persistent::PersistentMap<(AddressBase, bool), OldConditionTerm>,
     >,
     /// Trusted persistent equality closure for pointers, offsets, and int32
     /// terms. Appended on insertion; restriction rebuilds from exact equality
@@ -16343,7 +16357,7 @@ pub struct PureFactContext {
     /// statement about the offset terms alone, whatever block the comparison
     /// came from. Ownership alone does not trigger composition discovery.
     pub(super) separated_anchor_offsets: crate::persistent::PersistentMap<
-        (AddressOffset, AddressOffset),
+        (OldAddressOffset, OldAddressOffset),
         crate::persistent::PersistentSet<Proposition>,
     >,
     /// The same stated nonempty separation evidence for anchors whose
@@ -16368,7 +16382,7 @@ pub struct PureFactContext {
     /// (`offset_state_shape`), the candidates
     /// `has_pointer_offset_state_fact` checks.
     pub(super) address_offset_equalities_by_shape:
-        crate::persistent::PersistentMap<u64, crate::persistent::PersistentSet<ConditionTerm>>,
+        crate::persistent::PersistentMap<u64, crate::persistent::PersistentSet<OldConditionTerm>>,
     pub(super) observation_comparisons:
         super::assumptions::observation_comparisons::ObservationComparisons,
     pub(super) checked_scalar_facts: super::assumptions::checked_scalar_facts::CheckedScalarFacts,
@@ -16403,7 +16417,7 @@ pub struct PureFactContext {
     /// fork copies only the path to the keys it changes.
     pub(super) memory_load_condition_facts: crate::persistent::PersistentMap<
         (AddressBase, u64),
-        crate::persistent::PersistentSet<ConditionTerm>,
+        crate::persistent::PersistentSet<OldConditionTerm>,
     >,
     /// A persistent set: a context is cloned and extended by one fact at
     /// each lowering path and planning probe, so an extension must copy
@@ -16749,7 +16763,7 @@ pub(crate) enum GeneratedLoadBinding {
         variable: Variable,
         retained_state: MemoryStateIdentity,
         pointer: Address,
-        load: MachineTerm,
+        load: OldMachineTerm,
         /// The C value produced by a completed, nonvolatile pointer read.
         /// Scalar and volatile reads have no pointer bridge.
         typed_pointer_value: Option<Address>,
@@ -17561,8 +17575,8 @@ impl TypeParameterName {
     /// language states for every type, and an instance reads it as its own
     /// type's size.
     /// The type whose `sizeof(T)` `term` is, for a type of abstract size.
-    pub fn of_size_term(term: &MachineTerm) -> Option<Self> {
-        let MachineTerm::PureFunctionApplication { name, arguments } = term else {
+    pub fn of_size_term(term: &OldMachineTerm) -> Option<Self> {
+        let OldMachineTerm::PureFunctionApplication { name, arguments } = term else {
             return None;
         };
         let type_name = name.strip_prefix("sizeof<")?.strip_suffix('>')?;
@@ -17573,8 +17587,8 @@ impl TypeParameterName {
         (parameter.has_abstract_size() && parameter.size_term() == *term).then_some(parameter)
     }
 
-    pub fn size_term(self) -> MachineTerm {
-        MachineTerm::PureFunctionApplication {
+    pub fn size_term(self) -> OldMachineTerm {
+        OldMachineTerm::PureFunctionApplication {
             name: format!("sizeof<{}>", self.name()),
             arguments: Vec::new(),
         }

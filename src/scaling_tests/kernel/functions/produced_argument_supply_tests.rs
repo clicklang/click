@@ -8,11 +8,11 @@ fn check_returned_resource_construction(outputs: u32) {
         let entry = state(outputs);
         let pointer = Address {
             base: "produced-cells".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let facts = (0..count).fold(PureFactContext::new(), |facts, index| {
             facts.assume_condition(
-                ConditionTerm::address_equal(
+                OldConditionTerm::address_equal(
                     pointer.clone(),
                     Address::symbolic(Variable(9_700_000 + index)),
                 ),

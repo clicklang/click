@@ -421,7 +421,7 @@ fn range_struct_owners(
 /// pointer instead; a range on the struct pointer would count whole structs.
 fn synthesize_struct_loadable_segment(
     base: &Address,
-    bytes: &MachineTerm,
+    bytes: &OldMachineTerm,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
 ) -> Option<SyntaxProposition> {
@@ -711,9 +711,9 @@ impl Drop for SynthesisRecordedPointsScope {
 /// The recorded state whose structural read selection reproduces this read:
 /// the point recording its memory, or the projection's source memory.
 fn recorded_point_of_load(
-    read: &MachineTerm,
-) -> Option<(ProgramPointSelector, ExecutionState, MachineTerm)> {
-    let MachineTerm::MemoryLoad(memory, pointer, _) = read else {
+    read: &OldMachineTerm,
+) -> Option<(ProgramPointSelector, ExecutionState, OldMachineTerm)> {
+    let OldMachineTerm::MemoryLoad(memory, pointer, _) = read else {
         return None;
     };
     SYNTHESIS_RECORDED_POINTS.with(|slot| {
@@ -843,7 +843,7 @@ fn synthesize_load_at_recorded_point(
 }
 
 fn synthesize_read_at_recorded_point(
-    read: &MachineTerm,
+    read: &OldMachineTerm,
     parameter_binding: ParameterBinding<'_>,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<SyntaxTerm> {
@@ -859,7 +859,7 @@ fn synthesize_read_at_recorded_point(
 /// The `at(<selector>, name)` spelling of a term the state state's own
 /// scalar local holds exactly. Only a term the current state cannot name
 /// reaches this, so the state spelling never shadows a current name.
-fn synthesize_state_local(term: &MachineTerm) -> Option<SyntaxTerm> {
+fn synthesize_state_local(term: &OldMachineTerm) -> Option<SyntaxTerm> {
     SYNTHESIS_REFERENCE_STATE.with(|slot| {
         let slot = slot.borrow();
         let (state, selector) = slot.as_ref()?;
@@ -894,7 +894,7 @@ fn synthesize_state_local(term: &MachineTerm) -> Option<SyntaxTerm> {
 /// The `at(point, name)` spelling of a term a scalar local held at a
 /// recorded point: the point where the value was introduced, found in one
 /// index lookup. Only a term no nearer state names reaches this.
-fn synthesize_recorded_local(term: &MachineTerm) -> Option<SyntaxTerm> {
+fn synthesize_recorded_local(term: &OldMachineTerm) -> Option<SyntaxTerm> {
     SYNTHESIS_RECORDED_POINTS.with(|slot| {
         let slot = slot.borrow();
         let points = slot.as_ref()?;
@@ -925,7 +925,7 @@ fn synthesize_recorded_local(term: &MachineTerm) -> Option<SyntaxTerm> {
 /// The recorded points are cleared for the inner spelling, so it never
 /// nests.
 fn synthesize_recorded_cell_value(
-    term: &MachineTerm,
+    term: &OldMachineTerm,
     parameter_binding: ParameterBinding<'_>,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<SyntaxTerm> {
@@ -1114,27 +1114,27 @@ fn record_surface_synthesis_exhaustion(category: &'static str) {
     });
 }
 
-fn bitvector_term_exceeds_depth_limit(root: &MachineTerm) -> bool {
+fn bitvector_term_exceeds_depth_limit(root: &OldMachineTerm) -> bool {
     let mut pending = vec![(root, 0usize)];
     while let Some((term, depth)) = pending.pop() {
         if depth >= SURFACE_SYNTHESIS_DEPTH_LIMIT.saturating_sub(1) {
             return true;
         }
         match term {
-            MachineTerm::ThreadHandle(_) => {}
+            OldMachineTerm::ThreadHandle(_) => {}
             crate::kernel::binary_machine_term!(left, right) => {
                 pending.push((left, depth + 1));
                 pending.push((right, depth + 1));
             }
-            MachineTerm::Float32Binary { left, right, .. }
-            | MachineTerm::Float64Binary { left, right, .. } => {
+            OldMachineTerm::Float32Binary { left, right, .. }
+            | OldMachineTerm::Float64Binary { left, right, .. } => {
                 pending.push((left, depth + 1));
                 pending.push((right, depth + 1));
             }
             crate::kernel::unary_machine_term!(value) => {
                 pending.push((value, depth + 1));
             }
-            MachineTerm::If {
+            OldMachineTerm::If {
                 then_term,
                 else_term,
                 ..
@@ -1142,7 +1142,7 @@ fn bitvector_term_exceeds_depth_limit(root: &MachineTerm) -> bool {
                 pending.push((then_term, depth + 1));
                 pending.push((else_term, depth + 1));
             }
-            MachineTerm::RangeFold {
+            OldMachineTerm::RangeFold {
                 start,
                 end,
                 initial,
@@ -1154,28 +1154,28 @@ fn bitvector_term_exceeds_depth_limit(root: &MachineTerm) -> bool {
                 pending.push((initial, depth + 1));
                 pending.push((body, depth + 1));
             }
-            MachineTerm::PureFunctionApplication { arguments, .. } => {
+            OldMachineTerm::PureFunctionApplication { arguments, .. } => {
                 pending.extend(arguments.iter().map(|argument| (argument, depth + 1)));
             }
-            MachineTerm::ClickFunctionApplication { .. }
-            | MachineTerm::AlgebraicMatch { .. }
-            | MachineTerm::IntegerToMachine { .. }
-            | MachineTerm::BoolCast { .. } => {}
-            MachineTerm::MemoryLoad(_, pointer, _) => {
-                if let AddressOffset::Int32Scaled { value, .. }
-                | AddressOffset::Int64Scaled { value, .. } = &pointer.offset
+            OldMachineTerm::ClickFunctionApplication { .. }
+            | OldMachineTerm::AlgebraicMatch { .. }
+            | OldMachineTerm::IntegerToMachine { .. }
+            | OldMachineTerm::BoolCast { .. } => {}
+            OldMachineTerm::MemoryLoad(_, pointer, _) => {
+                if let OldAddressOffset::Int32Scaled { value, .. }
+                | OldAddressOffset::Int64Scaled { value, .. } = &pointer.offset
                 {
                     pending.push((value.structural_value(), depth + 1));
                 }
             }
-            MachineTerm::IntegerAddress(pointer, _) => {
-                if let AddressOffset::Int32Scaled { value, .. }
-                | AddressOffset::Int64Scaled { value, .. } = &pointer.offset
+            OldMachineTerm::IntegerAddress(pointer, _) => {
+                if let OldAddressOffset::Int32Scaled { value, .. }
+                | OldAddressOffset::Int64Scaled { value, .. } = &pointer.offset
                 {
                     pending.push((value.structural_value(), depth + 1));
                 }
             }
-            MachineTerm::Constant { .. } | MachineTerm::Variable(_) => {}
+            OldMachineTerm::Constant { .. } | OldMachineTerm::Variable(_) => {}
         }
     }
     false
@@ -1206,15 +1206,15 @@ pub(in crate::surface) fn synthesize_surface_proposition(
 /// it built from the same two words; the requirement's round trip checks the
 /// lowering.
 pub(in crate::surface) fn synthesize_store_index_disequality(
-    store_index: &MachineTerm,
-    cell_index: &MachineTerm,
+    store_index: &OldMachineTerm,
+    cell_index: &OldMachineTerm,
     format: MachineIntegerType,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<SyntaxProposition> {
     let _scope = SurfaceSynthesisScope::enter();
-    let word = |term: &MachineTerm| {
+    let word = |term: &OldMachineTerm| {
         let expression =
             synthesize_surface_bitvector(term, parameter_binding, state, bound_variables)?;
         let ctype = match format {
@@ -1251,7 +1251,7 @@ pub(in crate::surface) fn synthesize_store_index_disequality(
 /// `hi - 1` instead of `v2 - 1`. It is read-only: nothing here is offered to a
 /// proof step, so no candidate needs validating against a kernel form.
 pub(in crate::surface) fn synthesize_surface_machine_expression(
-    term: &MachineTerm,
+    term: &OldMachineTerm,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
 ) -> Option<SyntaxTerm> {
@@ -1435,7 +1435,7 @@ pub(in crate::surface::proof) fn synthesize_source_projection_proposition_with_b
     if let Proposition::MemoryLoadable { base, bytes, .. } = proposition {
         match synthesize_exact_external_zero_based_byte_range(
             base,
-            bytes.native_compat(),
+            bytes.old_form(),
             parameter_binding,
             state,
             bound_variables,
@@ -1793,7 +1793,7 @@ fn quantifier_name_is_free(
 /// zero, so the pointer's own offset is folded into the printed base.
 fn synthesize_zero_based_loadable_segment(
     base: &Address,
-    bytes: &MachineTerm,
+    bytes: &OldMachineTerm,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
@@ -1908,7 +1908,7 @@ fn synthesize_zero_based_loadable_segment(
 /// information to choose one spelling over another.
 fn synthesize_exact_external_zero_based_byte_range(
     base: &Address,
-    bytes: &MachineTerm,
+    bytes: &OldMachineTerm,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
@@ -1977,7 +1977,7 @@ fn synthesize_exact_external_zero_based_byte_range(
 /// is exactly what the caller's round-trip check rejects.
 fn synthesize_named_range_loadable_segment(
     base: &Address,
-    bytes: &MachineTerm,
+    bytes: &OldMachineTerm,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
@@ -2014,7 +2014,7 @@ fn synthesize_named_range_loadable_segment(
             named_range_bases(parameter_binding, named_pointer_state, state)
                 .into_iter()
                 .filter_map(|named| {
-                    if named.pointer.offset == AddressOffset::Constant(0)
+                    if named.pointer.offset == OldAddressOffset::Constant(0)
                         || byte_count % named.width != 0
                     {
                         return None;
@@ -2026,7 +2026,7 @@ fn synthesize_named_range_loadable_segment(
                 })
                 .find(|(_, _, start)| start.as_const().is_some_and(|start| start != 0))?;
         let element_count = byte_count / width;
-        let end = MachineTerm::add(start.clone(), MachineTerm::constant(element_count));
+        let end = OldMachineTerm::add(start.clone(), OldMachineTerm::constant(element_count));
         let start = contract_expression_to_program_expression(&synthesize_surface_bitvector(
             &start,
             parameter_binding,
@@ -2114,7 +2114,7 @@ fn synthesize_named_range_loadable_segment(
 /// `(index + 1) - index` form.
 fn synthesize_external_symbolic_element_range(
     base: &Address,
-    bytes: &MachineTerm,
+    bytes: &OldMachineTerm,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
@@ -2147,19 +2147,19 @@ fn synthesize_external_symbolic_element_range(
                 return None;
             }
             let index = match &base.offset {
-                AddressOffset::Add(left, right)
+                OldAddressOffset::Add(left, right)
                     if left.as_ref() == &named_base.address().offset =>
                 {
                     int32_scaled_value(right, 1)?
                 }
-                AddressOffset::Add(left, right)
+                OldAddressOffset::Add(left, right)
                     if right.as_ref() == &named_base.address().offset =>
                 {
                     int32_scaled_value(left, 1)?
                 }
                 // `bytes` itself can be at offset zero, in which case the
                 // canonical pointer offset drops the zero-valued add.
-                _ if named_base.address().offset == AddressOffset::Constant(0) => {
+                _ if named_base.address().offset == OldAddressOffset::Constant(0) => {
                     int32_scaled_value(&base.offset, 1)?
                 }
                 _ => return None,
@@ -2167,7 +2167,10 @@ fn synthesize_external_symbolic_element_range(
             let one_element = binary_node!(
                 Int32,
                 Subtract,
-                Box::new(MachineTerm::add(index.clone(), MachineTerm::constant(1),)),
+                Box::new(OldMachineTerm::add(
+                    index.clone(),
+                    OldMachineTerm::constant(1),
+                )),
                 Box::new(index.clone()),
             );
             if !matches!(bytes, bits32_constant!(1)) && bytes != &one_element {
@@ -2208,7 +2211,7 @@ fn synthesize_external_symbolic_element_range(
         state,
         bound_variables,
     )?)?;
-    let end_term = MachineTerm::add(index, MachineTerm::constant(1));
+    let end_term = OldMachineTerm::add(index, OldMachineTerm::constant(1));
     let end = contract_expression_to_program_expression(&synthesize_surface_bitvector(
         &end_term,
         parameter_binding,
@@ -2232,20 +2235,20 @@ fn synthesize_external_symbolic_element_range(
     })
 }
 
-fn is_reduced_one_element_byte_count(bytes: &MachineTerm) -> bool {
+fn is_reduced_one_element_byte_count(bytes: &OldMachineTerm) -> bool {
     let binary_term!(Int32, Subtract, end, start) = bytes else {
         return false;
     };
-    *end.as_ref() == MachineTerm::add(start.as_ref().clone(), MachineTerm::constant(1))
+    *end.as_ref() == OldMachineTerm::add(start.as_ref().clone(), OldMachineTerm::constant(1))
 }
 
-fn is_one_element_byte_count(bytes: &MachineTerm) -> bool {
+fn is_one_element_byte_count(bytes: &OldMachineTerm) -> bool {
     matches!(bytes, bits32_constant!(1)) || is_reduced_one_element_byte_count(bytes)
 }
 
-fn int32_scaled_value(offset: &AddressOffset, width: i64) -> Option<MachineTerm> {
+fn int32_scaled_value(offset: &OldAddressOffset, width: i64) -> Option<OldMachineTerm> {
     match offset {
-        AddressOffset::Int32Scaled { value, byte_width } if *byte_width == width => {
+        OldAddressOffset::Int32Scaled { value, byte_width } if *byte_width == width => {
             Some(value.structural_value().clone())
         }
         _ => None,
@@ -2321,7 +2324,7 @@ fn synthesize_load_defining_equation(
         // state-specific load above, so the selected source cannot drift
         // to another epoch while the defining equation is presented.
         let left = synthesize_surface_bitvector(
-            &MachineTerm::Variable(*variable),
+            &OldMachineTerm::Variable(*variable),
             parameter_binding,
             retained_state,
             bound_variables,
@@ -2392,7 +2395,7 @@ fn synthesize_boolean_cell_read(
         return None;
     }
     let read = left.read_source()?;
-    let MachineTerm::MemoryLoad(point, address, crate::kernel::LoadKind::UInt8) = read.as_ref()
+    let OldMachineTerm::MemoryLoad(point, address, crate::kernel::LoadKind::UInt8) = read.as_ref()
     else {
         return None;
     };
@@ -2453,7 +2456,7 @@ fn synthesize_boolean_cell_read(
 #[inline(never)]
 /// Spell a logical Bool by its structure, including Bool operands of calls.
 fn synthesize_surface_bool(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
@@ -2470,32 +2473,32 @@ fn synthesize_surface_bool(
     {
         return Some(read);
     }
-    let operand = |condition: &ConditionTerm| {
+    let operand = |condition: &OldConditionTerm| {
         synthesize_surface_bool(condition, parameter_binding, state, bound_variables)
     };
     match condition {
-        ConditionTerm::Constant(value) => Some(bool_literal(*value)),
-        ConditionTerm::Variable(variable) => {
+        OldConditionTerm::Constant(value) => Some(bool_literal(*value)),
+        OldConditionTerm::Variable(variable) => {
             if let Some(name) = folds::binder_name(false, *variable)
                 .or_else(|| bound_variables.get(variable).cloned())
             {
                 return Some(name.reference());
             }
             synthesize_surface_bitvector(
-                &MachineTerm::bool_cast(MachineIntegerType::UInt8, condition.clone()),
+                &OldMachineTerm::bool_cast(MachineIntegerType::UInt8, condition.clone()),
                 parameter_binding,
                 state,
                 bound_variables,
             )
         }
-        ConditionTerm::BoolApplication(application) => synthesize_surface_call(
+        OldConditionTerm::BoolApplication(application) => synthesize_surface_call(
             application.name(),
             application.arguments(),
             parameter_binding,
             state,
             bound_variables,
         ),
-        ConditionTerm::BoolIf {
+        OldConditionTerm::BoolIf {
             condition,
             then_condition,
             else_condition,
@@ -2504,13 +2507,13 @@ fn synthesize_surface_bool(
             then_branch: Box::new(operand(then_condition)?),
             else_branch: Box::new(operand(else_condition)?),
         }),
-        ConditionTerm::Float32(_) | ConditionTerm::Float64(_) => raise_kernel_term(
+        OldConditionTerm::Float32(_) | OldConditionTerm::Float64(_) => raise_kernel_term(
             &crate::kernel::KernelTermImport::default().condition(condition),
             parameter_binding,
             state,
             bound_variables,
         ),
-        ConditionTerm::BoolEqual(left, right) => {
+        OldConditionTerm::BoolEqual(left, right) => {
             proposition_bool_value(SyntaxProposition::Comparison {
                 left: operand(left)?,
                 operator: ComparisonOperator::Equal,
@@ -2629,14 +2632,14 @@ fn synthesize_surface_atomic_proposition(
     // the claim on the local, `w` or `not w`, which is what a claim on it
     // lowers to. Compared with an integer, as `w != 0`, it would not lower.
     if let Some((
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::UInt8,
             relation: CompareRelation::Equal,
             left,
             right,
         },
         value,
-    )) = (proposition).condition_native()
+    )) = (proposition).old_condition()
         && right.bool_constant_value() == Some(false)
         && let Some(word) =
             synthesize_surface_bitvector(left, parameter_binding, state, bound_variables)
@@ -2650,16 +2653,18 @@ fn synthesize_surface_atomic_proposition(
         });
     }
     if let Some((
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left,
             right,
         },
         true,
-    )) = (proposition).condition_native()
-        && let (MachineTerm::Variable(variable), MachineTerm::MemoryLoad(memory, pointer, kind)) =
-            (left.as_ref(), right.as_ref())
+    )) = (proposition).old_condition()
+        && let (
+            OldMachineTerm::Variable(variable),
+            OldMachineTerm::MemoryLoad(memory, pointer, kind),
+        ) = (left.as_ref(), right.as_ref())
         && crate::kernel::is_load_variable(variable)
         && crate::kernel::registered_load_kind_for_variable(variable) == Some(*kind)
     {
@@ -2676,7 +2681,7 @@ fn synthesize_surface_atomic_proposition(
         let raise = |value: &crate::kernel::StoredAlgebraicTerm| match value.root() {
             Some(root) => raise_kernel_term(root, parameter_binding, state, bound_variables),
             None => synthesize_surface_algebraic(
-                value.native_compat(),
+                value.old_form(),
                 parameter_binding,
                 state,
                 bound_variables,
@@ -2698,7 +2703,7 @@ fn synthesize_surface_atomic_proposition(
     if let Proposition::SequenceMembership { element, sequence } = proposition {
         return Some(SyntaxProposition::Comparison {
             left: synthesize_surface_sequence_element(
-                element.native_compat(),
+                element.old_form(),
                 parameter_binding,
                 state,
                 bound_variables,
@@ -2953,7 +2958,7 @@ fn synthesize_surface_atomic_proposition(
     {
         let loadable = synthesize_zero_based_loadable_segment(
             base,
-            bytes.native_compat(),
+            bytes.old_form(),
             parameter_binding,
             state,
             bound_variables,
@@ -2961,7 +2966,7 @@ fn synthesize_surface_atomic_proposition(
         .or_else(|| {
             synthesize_named_range_loadable_segment(
                 base,
-                bytes.native_compat(),
+                bytes.old_form(),
                 parameter_binding,
                 state,
                 bound_variables,
@@ -3053,7 +3058,7 @@ fn synthesize_surface_atomic_proposition(
             SyntaxProposition::Not(Box::new(predicate))
         });
     }
-    if let ConditionTerm::AlgebraicEqual(left, right) = condition.native_compat() {
+    if let OldConditionTerm::AlgebraicEqual(left, right) = condition.old_form() {
         return Some(SyntaxProposition::Comparison {
             left: synthesize_surface_algebraic(left, parameter_binding, state, bound_variables)?,
             operator: if *value {
@@ -3066,8 +3071,8 @@ fn synthesize_surface_atomic_proposition(
     }
     // A closed `bool` comparison is spelled as written: `true == false`
     // lowers back to exactly this retained comparison.
-    if let ConditionTerm::BoolEqual(left, right) = condition.native_compat()
-        && let (ConditionTerm::Constant(left), ConditionTerm::Constant(right)) =
+    if let OldConditionTerm::BoolEqual(left, right) = condition.old_form()
+        && let (OldConditionTerm::Constant(left), OldConditionTerm::Constant(right)) =
             (left.as_ref(), right.as_ref())
     {
         return Some(SyntaxProposition::Comparison {
@@ -3081,14 +3086,14 @@ fn synthesize_surface_atomic_proposition(
         });
     }
     if matches!(
-        condition.native_compat(),
-        ConditionTerm::Variable(_)
-            | ConditionTerm::BoolApplication(_)
-            | ConditionTerm::BoolIf { .. }
-            | ConditionTerm::BoolEqual(..)
+        condition.old_form(),
+        OldConditionTerm::Variable(_)
+            | OldConditionTerm::BoolApplication(_)
+            | OldConditionTerm::BoolIf { .. }
+            | OldConditionTerm::BoolEqual(..)
     ) {
         let claim = bool_truth(synthesize_surface_bool(
-            condition.native_compat(),
+            condition.old_form(),
             parameter_binding,
             state,
             bound_variables,
@@ -3099,13 +3104,13 @@ fn synthesize_surface_atomic_proposition(
             SyntaxProposition::Not(Box::new(claim))
         });
     }
-    if let ConditionTerm::Overflows {
+    if let OldConditionTerm::Overflows {
         format: MachineIntegerType::Int32 | MachineIntegerType::Int64,
         op:
             op @ (OverflowOperation::Add | OverflowOperation::Subtract | OverflowOperation::Multiply),
         left,
         right,
-    } = condition.native_compat()
+    } = condition.old_form()
     {
         // Definedness names this operation, not a local that already holds
         // its result. `defined(result)` would lose the operation's domain.
@@ -3134,7 +3139,7 @@ fn synthesize_surface_atomic_proposition(
             defined
         });
     }
-    if let ConditionTerm::Constant(condition) = condition.native_compat() {
+    if let OldConditionTerm::Constant(condition) = condition.old_form() {
         // The `bool` literal lowers to exactly this constant condition. A
         // closed comparison such as `0 == 1` does not: lowering retains it.
         let literal = SyntaxProposition::Value(crate::surface::bool_literal(*condition));
@@ -3144,7 +3149,7 @@ fn synthesize_surface_atomic_proposition(
             SyntaxProposition::Not(Box::new(literal))
         });
     }
-    if let ConditionTerm::AddressOffsetEqual(left, right) = condition.native_compat() {
+    if let OldConditionTerm::AddressOffsetEqual(left, right) = condition.old_form() {
         return Some(SyntaxProposition::Comparison {
             left: synthesize_surface_pointer_offset(
                 left,
@@ -3165,7 +3170,7 @@ fn synthesize_surface_atomic_proposition(
             )?,
         });
     }
-    if let ConditionTerm::PointerEqual(left, right) = condition.native_compat() {
+    if let OldConditionTerm::PointerEqual(left, right) = condition.old_form() {
         return Some(SyntaxProposition::Comparison {
             left: synthesize_pointer_equality_operand(
                 left,
@@ -3189,7 +3194,7 @@ fn synthesize_surface_atomic_proposition(
     // A pointer equality raises as contract `p == q`, which lowers to it; the
     // weaker `address(p) == address(q)` is the address-word equality a C
     // comparison states (`design/pointer-subobject-bounds.md`, Phase B).
-    if let ConditionTerm::AddressEqual(left, right) = condition.native_compat() {
+    if let OldConditionTerm::AddressEqual(left, right) = condition.old_form() {
         let pointer = synthesize_surface_pointer_expression;
         return Some(SyntaxProposition::Comparison {
             left: pointer(left, parameter_binding, state, bound_variables)?,
@@ -3202,11 +3207,9 @@ fn synthesize_surface_atomic_proposition(
         });
     }
     if let Some([left, right]) =
-        crate::kernel::machine_integer::comparison::native_int32_fold_equality(
-            condition.native_compat(),
-        )
+        crate::kernel::machine_integer::comparison::native_int32_fold_equality(condition.old_form())
     {
-        let observe = |term: &MachineTerm| -> Option<crate::kernel::SharedIntegerTerm> {
+        let observe = |term: &OldMachineTerm| -> Option<crate::kernel::SharedIntegerTerm> {
             crate::kernel::IntegerTerm::from_machine(MachineIntegerType::Int32, term.clone())
                 .map(Into::into)
         };
@@ -3224,12 +3227,12 @@ fn synthesize_surface_atomic_proposition(
             bound_variables,
         );
     }
-    if let ConditionTerm::Compare {
+    if let OldConditionTerm::Compare {
         format,
         relation,
         left,
         right,
-    } = condition.native_compat()
+    } = condition.old_form()
         && matches!(format.format().bits(), 32 | 64)
         && let Some(operator) = match relation {
             CompareRelation::LessThan => Some(ComparisonOperator::LessThan),
@@ -3238,9 +3241,9 @@ fn synthesize_surface_atomic_proposition(
             _ => None,
         }
     {
-        let converted = |term: &MachineTerm, observed| matches!(term, MachineTerm::IntegerToMachine { destination, .. } if *destination == observed);
-        let conditional = |term: &MachineTerm, observed| {
-            matches!(term, MachineTerm::If { then_term, else_term, .. }
+        let converted = |term: &OldMachineTerm, observed| matches!(term, OldMachineTerm::IntegerToMachine { destination, .. } if *destination == observed);
+        let conditional = |term: &OldMachineTerm, observed| {
+            matches!(term, OldMachineTerm::If { then_term, else_term, .. }
                 if converted(then_term, observed) || converted(else_term, observed))
         };
         let operands = [left.as_ref(), right.as_ref()];
@@ -3260,14 +3263,14 @@ fn synthesize_surface_atomic_proposition(
             && operands.iter().copied().all(|operand| {
                 conditional(operand, observed)
                     || converted(operand, observed)
-                    || matches!(operand, MachineTerm::Variable(_))
+                    || matches!(operand, OldMachineTerm::Variable(_))
                     || observed.constant_from_term(operand).is_some()
             })
         {
             // The Integer observation spelling produces this native comparison.
             // A direct word comparison over these conditional arms keeps an
             // Integer comparison instead.
-            let observe = |word: &MachineTerm| {
+            let observe = |word: &OldMachineTerm| {
                 crate::kernel::IntegerTerm::from_machine(observed, word.clone()).map(Into::into)
             };
             return integer_observation_comparison(
@@ -3282,7 +3285,7 @@ fn synthesize_surface_atomic_proposition(
         }
     }
     if let Some(comparison) = synthesize_unsigned_comparison(
-        condition.native_compat(),
+        condition.old_form(),
         parameter_binding,
         state,
         bound_variables,
@@ -3295,7 +3298,7 @@ fn synthesize_surface_atomic_proposition(
     }
     // Keep the narrow interpretation even when rewriting removed the last
     // symbolic operand. Observing a literal as Integer would discard its type.
-    if let ConditionTerm::Compare {
+    if let OldConditionTerm::Compare {
         format:
             format @ (MachineIntegerType::Int8
             | MachineIntegerType::UInt8
@@ -3304,21 +3307,21 @@ fn synthesize_surface_atomic_proposition(
         relation,
         left,
         right,
-    } = condition.native_compat()
+    } = condition.old_form()
     {
         // Symbolic observations retain their established Integer spelling.
         // A literal beside one such observation is recovered at that format.
         if format.constant_from_term(left).is_none() || format.constant_from_term(right).is_none() {
-            let observe = |term: &MachineTerm| -> Option<crate::kernel::SharedIntegerTerm> {
+            let observe = |term: &OldMachineTerm| -> Option<crate::kernel::SharedIntegerTerm> {
                 crate::kernel::IntegerTerm::from_machine(*format, term.clone()).map(Into::into)
             };
             let (l, r) = (observe(left)?, observe(right)?);
             let integer = match relation {
-                CompareRelation::LessThan => ConditionTerm::IntegerLessThan(l, r),
-                CompareRelation::LessEqual => ConditionTerm::IntegerLessEqual(l, r),
-                CompareRelation::GreaterThan => ConditionTerm::IntegerGreaterThan(l, r),
-                CompareRelation::GreaterEqual => ConditionTerm::IntegerGreaterEqual(l, r),
-                CompareRelation::Equal => ConditionTerm::IntegerEqual(l, r),
+                CompareRelation::LessThan => OldConditionTerm::IntegerLessThan(l, r),
+                CompareRelation::LessEqual => OldConditionTerm::IntegerLessEqual(l, r),
+                CompareRelation::GreaterThan => OldConditionTerm::IntegerGreaterThan(l, r),
+                CompareRelation::GreaterEqual => OldConditionTerm::IntegerGreaterEqual(l, r),
+                CompareRelation::Equal => OldConditionTerm::IntegerEqual(l, r),
             };
             return synthesize_surface_atomic_proposition(
                 &Proposition::condition_is(integer, *value),
@@ -3327,7 +3330,7 @@ fn synthesize_surface_atomic_proposition(
                 bound_variables,
             );
         }
-        let operand = |term: &MachineTerm| {
+        let operand = |term: &OldMachineTerm| {
             // Narrow suffixes such as `9u8` require a Rust sidecar. Every
             // narrow value fits an ordinary int32 literal under this cast.
             let value: i32 = format
@@ -3358,86 +3361,86 @@ fn synthesize_surface_atomic_proposition(
             SyntaxProposition::Not(Box::new(comparison))
         });
     }
-    let (left, operator, right) = match condition.native_compat() {
-        ConditionTerm::Compare {
+    let (left, operator, right) = match condition.old_form() {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
             left,
             right,
         }
-        | ConditionTerm::Compare {
+        | OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::LessThan,
             left,
             right,
         }
-        | ConditionTerm::Compare {
+        | OldConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessThan,
             left,
             right,
         } => (left, ComparisonOperator::LessThan, right),
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessEqual,
             left,
             right,
         }
-        | ConditionTerm::Compare {
+        | OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::LessEqual,
             left,
             right,
         }
-        | ConditionTerm::Compare {
+        | OldConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessEqual,
             left,
             right,
         } => (left, ComparisonOperator::LessEqual, right),
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterThan,
             left,
             right,
         }
-        | ConditionTerm::Compare {
+        | OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::GreaterThan,
             left,
             right,
         }
-        | ConditionTerm::Compare {
+        | OldConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::GreaterThan,
             left,
             right,
         } => (left, ComparisonOperator::GreaterThan, right),
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterEqual,
             left,
             right,
         }
-        | ConditionTerm::Compare {
+        | OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::GreaterEqual,
             left,
             right,
         }
-        | ConditionTerm::Compare {
+        | OldConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::GreaterEqual,
             left,
             right,
         } => (left, ComparisonOperator::GreaterEqual, right),
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left,
             right,
         }
-        | ConditionTerm::Compare {
+        | OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
             left,
@@ -3450,8 +3453,8 @@ fn synthesize_surface_atomic_proposition(
     // cast compared signed) would make the spelled comparison unsigned, a
     // different fact, so it is written converted, as `u as int32 < 0`.
     let signed_order = matches!(
-        condition.native_compat(),
-        ConditionTerm::Compare {
+        condition.old_form(),
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan
                 | CompareRelation::LessEqual
@@ -3461,15 +3464,15 @@ fn synthesize_surface_atomic_proposition(
         }
     );
     let signed_word = matches!(
-        condition.native_compat(),
-        ConditionTerm::Compare {
+        condition.old_form(),
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             ..
         }
     );
     let unsigned_word_equality = matches!(
-        condition.native_compat(),
-        ConditionTerm::Compare {
+        condition.old_form(),
+        OldConditionTerm::Compare {
             format: MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             ..
@@ -3482,7 +3485,7 @@ fn synthesize_surface_atomic_proposition(
     // lowering widens it again. Against a constant the cast stays: lowering
     // decides or narrows a widened word compared with a literal, so only the
     // one-format comparison keeps it.
-    fn widened(term: &MachineTerm) -> Option<(&MachineTerm, bool)> {
+    fn widened(term: &OldMachineTerm) -> Option<(&OldMachineTerm, bool)> {
         match term {
             cast_term!(Int64From32, value) | cast_term!(UInt64FromInt32, value) => {
                 Some((value.as_ref(), false))
@@ -3494,10 +3497,10 @@ fn synthesize_surface_atomic_proposition(
         }
     }
     let wide_constant =
-        |term: &MachineTerm| term.int64_as_const().is_some() || term.uint64_as_const().is_some();
+        |term: &OldMachineTerm| term.int64_as_const().is_some() || term.uint64_as_const().is_some();
     let narrow_operand = matches!(
-        condition.native_compat(),
-        ConditionTerm::Compare {
+        condition.old_form(),
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
             ..
@@ -3509,9 +3512,9 @@ fn synthesize_surface_atomic_proposition(
         _ => None,
     })
     .flatten();
-    let operand = |term: &MachineTerm| {
+    let operand = |term: &OldMachineTerm| {
         if let Some((widening, (narrow, unsigned))) = narrow_operand
-            && std::ptr::eq::<MachineTerm>(&**widening, term)
+            && std::ptr::eq::<OldMachineTerm>(&**widening, term)
         {
             let narrow =
                 synthesize_surface_bitvector(narrow, parameter_binding, state, bound_variables)?;
@@ -3536,11 +3539,11 @@ fn synthesize_surface_atomic_proposition(
         // Wide comparisons retain signedness at each read and operation.
         // Reconstruct their shared operands rather than defaulting a Bits64
         // read to int64 before an unsigned operation consumes it.
-        let expression = if let ConditionTerm::Compare {
+        let expression = if let OldConditionTerm::Compare {
             format: format @ (MachineIntegerType::Int64 | MachineIntegerType::UInt64),
             relation,
             ..
-        } = condition.native_compat()
+        } = condition.old_form()
         {
             let root = crate::kernel::KernelTermImport::default().machine(*format, term);
             match root.node() {
@@ -3583,7 +3586,7 @@ fn synthesize_surface_atomic_proposition(
         if unsigned_word_equality
             && matches!(
                 term,
-                MachineTerm::Binary {
+                OldMachineTerm::Binary {
                     format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     op: MachineBinaryOp::Add
                         | MachineBinaryOp::Subtract
@@ -3635,15 +3638,15 @@ fn synthesize_surface_atomic_proposition(
     }
 }
 
-fn is_signed_variable_arithmetic32(term: &MachineTerm, expression: &SyntaxTerm) -> bool {
+fn is_signed_variable_arithmetic32(term: &OldMachineTerm, expression: &SyntaxTerm) -> bool {
     matches!(
         term,
-        MachineTerm::Binary {
+        OldMachineTerm::Binary {
             format: MachineIntegerType::Int32,
             op: MachineBinaryOp::Add | MachineBinaryOp::Subtract | MachineBinaryOp::Multiply,
             left,
             right,
-        } if matches!((left.as_ref(), right.as_ref()), (MachineTerm::Variable(_), MachineTerm::Variable(_)))
+        } if matches!((left.as_ref(), right.as_ref()), (OldMachineTerm::Variable(_), OldMachineTerm::Variable(_)))
     ) && matches!(
         expression,
         SyntaxTerm::Add(..) | SyntaxTerm::Subtract(..) | SyntaxTerm::Multiply(..)
@@ -3652,8 +3655,8 @@ fn is_signed_variable_arithmetic32(term: &MachineTerm, expression: &SyntaxTerm) 
 
 /// The low-word node carries no destination signedness. Retarget its cast
 /// in a signed comparison or its immediate conditional arms.
-fn spell_signed_low_word_operand(term: &MachineTerm, expression: &mut SyntaxTerm) {
-    let low_word = |term: &MachineTerm, expression: &mut SyntaxTerm| {
+fn spell_signed_low_word_operand(term: &OldMachineTerm, expression: &mut SyntaxTerm) {
+    let low_word = |term: &OldMachineTerm, expression: &mut SyntaxTerm| {
         if matches!(term, cast_term!(UInt32From64, _))
             && let SyntaxTerm::CUnary {
                 lowered: ProgramExpression::Cast { target_type, .. },
@@ -3665,7 +3668,7 @@ fn spell_signed_low_word_operand(term: &MachineTerm, expression: &mut SyntaxTerm
         }
     };
     if let (
-        MachineTerm::If {
+        OldMachineTerm::If {
             then_term,
             else_term,
             ..
@@ -3778,7 +3781,7 @@ fn machine_spelling_lowers_to_integer(
     !comparison::retains_int32_match(format, operands)
         && !matches!(
             comparison::logical_condition_for_operand_views(format, relation, operands),
-            ConditionTerm::Compare { .. } | ConditionTerm::Constant(_)
+            OldConditionTerm::Compare { .. } | OldConditionTerm::Constant(_)
         )
 }
 
@@ -4423,8 +4426,8 @@ fn raise_constructor_field(
             ),
             Node::Variable(variable),
         ) => *variable,
-        _ => match term.boolean_native()? {
-            ProgramValue::Bool(MachineTerm::Variable(variable)) => *variable,
+        _ => match term.old_boolean_value()? {
+            ProgramValue::Bool(OldMachineTerm::Variable(variable)) => *variable,
             _ => return None,
         },
     };
@@ -4433,7 +4436,7 @@ fn raise_constructor_field(
         .map(|name| SyntaxTerm::ProgramExpression(ProgramExpression::Variable(name.clone().into())))
         .or_else(|| {
             synthesize_surface_bitvector(
-                &MachineTerm::Variable(variable),
+                &OldMachineTerm::Variable(variable),
                 parameter_binding,
                 state,
                 bound_variables,
@@ -4802,7 +4805,7 @@ fn raise_kernel_term_dispatch(
             raise_pointer_comparison(term, parameter_binding, state, bound_variables)?
         }
         Node::Variable(variable) if term.ty() == &KernelType::Bool => synthesize_surface_bool(
-            &ConditionTerm::Variable(*variable),
+            &OldConditionTerm::Variable(*variable),
             parameter_binding,
             state,
             bound_variables,
@@ -4886,7 +4889,7 @@ fn raise_kernel_term_dispatch(
         }
         Node::ImportedScalar(input) => match term.ty() {
             KernelType::Program(ProgramType::Bool) => synthesize_surface_bool(
-                &ConditionTerm::truth_of_bool_word(input.value()),
+                &OldConditionTerm::truth_of_bool_word(input.value()),
                 parameter_binding,
                 state,
                 bound_variables,
@@ -4990,7 +4993,7 @@ fn raise_kernel_term_dispatch(
                 KernelType::Program(value_type @ (ProgramType::Int64 | ProgramType::UInt64))
                     if matches!(
                         read,
-                        MachineTerm::MemoryLoad(_, _, crate::kernel::LoadKind::Bits64)
+                        OldMachineTerm::MemoryLoad(_, _, crate::kernel::LoadKind::Bits64)
                     ) =>
                 {
                     synthesize_typed_word_read(
@@ -5026,7 +5029,7 @@ fn raise_kernel_term_dispatch(
             }
         }
         Node::Variable(variable) => synthesize_surface_bitvector(
-            &MachineTerm::Variable(*variable),
+            &OldMachineTerm::Variable(*variable),
             parameter_binding,
             state,
             bound_variables,
@@ -5145,12 +5148,12 @@ fn synthesize_observation_operand(
 /// order. A comparison with a state-relative operand has no spelling
 /// here.
 fn synthesize_unsigned_comparison(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<SyntaxProposition> {
-    let ConditionTerm::Compare {
+    let OldConditionTerm::Compare {
         format: MachineIntegerType::UInt32,
         relation:
             relation @ (crate::kernel::CompareRelation::LessThan
@@ -5173,7 +5176,7 @@ fn synthesize_unsigned_comparison(
     let (left, right) = (left.as_ref(), right.as_ref());
     // The `uint32` local holding the operand, named directly: a signed local
     // can hold the same bits, and its name would make the comparison signed.
-    let operand = |term: &MachineTerm| match term.as_const() {
+    let operand = |term: &OldMachineTerm| match term.as_const() {
         Some(_) => Some(SyntaxTerm::ProgramExpression(ProgramExpression::Value(
             ProgramValue::UInt32(term.clone()),
         ))),
@@ -5449,9 +5452,9 @@ pub(super) fn synthesize_surface_resource_subject(
     // A wide range reads its bounds as uint64. A point-named word read
     // carries the bits, so the range supplies the interpretation.
     let wide = range.wide_bounds().is_some();
-    let raise_bound = |bound: &MachineTerm| {
+    let raise_bound = |bound: &OldMachineTerm| {
         if wide
-            && matches!(bound, MachineTerm::MemoryLoad(point, _, crate::kernel::LoadKind::Bits64)
+            && matches!(bound, OldMachineTerm::MemoryLoad(point, _, crate::kernel::LoadKind::Bits64)
                 if point.read_version_id().is_some())
         {
             return synthesize_typed_word_read(
@@ -5510,7 +5513,7 @@ fn parameter_names_its_argument(
 }
 
 pub(super) fn synthesize_surface_pointer_offset(
-    term: &AddressOffset,
+    term: &OldAddressOffset,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
@@ -5538,9 +5541,9 @@ pub(super) fn synthesize_surface_pointer_offset(
         return Some(field);
     }
     match term {
-        AddressOffset::Add(left, right) => {
-            let indexed_pointer = |base: &AddressOffset, byte_offset: &AddressOffset| {
-                let AddressOffset::Constant(byte_offset) = byte_offset else {
+        OldAddressOffset::Add(left, right) => {
+            let indexed_pointer = |base: &OldAddressOffset, byte_offset: &OldAddressOffset| {
+                let OldAddressOffset::Constant(byte_offset) = byte_offset else {
                     return None;
                 };
                 if byte_offset % 4 != 0 {
@@ -5558,43 +5561,45 @@ pub(super) fn synthesize_surface_pointer_offset(
                 Some(SyntaxTerm::ProgramExpression(ProgramExpression::Add(
                     Box::new(base),
                     Box::new(ProgramExpression::Value(ProgramValue::Int32(
-                        MachineTerm::constant((byte_offset / 4) as u32),
+                        OldMachineTerm::constant((byte_offset / 4) as u32),
                     ))),
                 )))
             };
-            let dynamically_indexed_pointer = |base: &AddressOffset, index: &AddressOffset| {
-                let AddressOffset::Int32Scaled {
-                    value: index,
-                    byte_width: 4,
-                } = index
-                else {
-                    return None;
+            let dynamically_indexed_pointer =
+                |base: &OldAddressOffset, index: &OldAddressOffset| {
+                    let OldAddressOffset::Int32Scaled {
+                        value: index,
+                        byte_width: 4,
+                    } = index
+                    else {
+                        return None;
+                    };
+                    let base = contract_expression_to_program_expression(
+                        &synthesize_surface_pointer_offset(
+                            base,
+                            parameter_binding,
+                            state,
+                            bound_variables,
+                        )?,
+                    )?;
+                    let index =
+                        contract_expression_to_program_expression(&synthesize_surface_bitvector(
+                            index.structural_value(),
+                            parameter_binding,
+                            state,
+                            bound_variables,
+                        )?)?;
+                    Some(SyntaxTerm::ProgramExpression(ProgramExpression::Add(
+                        Box::new(base),
+                        Box::new(index),
+                    )))
                 };
-                let base =
-                    contract_expression_to_program_expression(&synthesize_surface_pointer_offset(
-                        base,
-                        parameter_binding,
-                        state,
-                        bound_variables,
-                    )?)?;
-                let index =
-                    contract_expression_to_program_expression(&synthesize_surface_bitvector(
-                        index.structural_value(),
-                        parameter_binding,
-                        state,
-                        bound_variables,
-                    )?)?;
-                Some(SyntaxTerm::ProgramExpression(ProgramExpression::Add(
-                    Box::new(base),
-                    Box::new(index),
-                )))
-            };
             indexed_pointer(left, right)
                 .or_else(|| indexed_pointer(right, left))
                 .or_else(|| dynamically_indexed_pointer(left, right))
                 .or_else(|| dynamically_indexed_pointer(right, left))
         }
-        AddressOffset::Int32Scaled { value, byte_width } if matches!(*byte_width, 1 | 4) => {
+        OldAddressOffset::Int32Scaled { value, byte_width } if matches!(*byte_width, 1 | 4) => {
             synthesize_surface_bitvector(
                 value.structural_value(),
                 parameter_binding,
@@ -5602,10 +5607,10 @@ pub(super) fn synthesize_surface_pointer_offset(
                 bound_variables,
             )
         }
-        AddressOffset::Constant(_)
-        | AddressOffset::Variable(_)
-        | AddressOffset::Int32Scaled { .. }
-        | AddressOffset::Int64Scaled { .. } => None,
+        OldAddressOffset::Constant(_)
+        | OldAddressOffset::Variable(_)
+        | OldAddressOffset::Int32Scaled { .. }
+        | OldAddressOffset::Int64Scaled { .. } => None,
     }
 }
 
@@ -5614,7 +5619,7 @@ pub(super) fn synthesize_surface_pointer_offset(
 /// allocation offsets, not the memory-load syntax that produced them; this
 /// reverse lookup recovers stable source syntax at each recorded state.
 fn synthesize_parameter_field_pointer_value(
-    term: &AddressOffset,
+    term: &OldAddressOffset,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
 ) -> Option<SyntaxTerm> {
@@ -5638,10 +5643,12 @@ fn synthesize_parameter_field_pointer_value(
                 ExpressionOutcome::Value(ProgramValue::Pointer(value)) => value.offset.clone(),
                 // Struct pointer fields are represented in contract memory
                 // by their pointer-width scalar offset.
-                ExpressionOutcome::Value(ProgramValue::Int32(value)) => AddressOffset::scale_int32(
-                    value,
-                    i64::from(value_type.pointee_type()?.byte_width()),
-                ),
+                ExpressionOutcome::Value(ProgramValue::Int32(value)) => {
+                    OldAddressOffset::scale_int32(
+                        value,
+                        i64::from(value_type.pointee_type()?.byte_width()),
+                    )
+                }
                 _ => continue,
             };
             if !crate::kernel::offsets_have_same_canonical_form(&loaded_offset, term) {
@@ -5686,10 +5693,12 @@ fn synthesize_parameter_field_pointer_value(
             let field_pointer = owner.pointer.offset_by_bytes(field.offset_bytes());
             let loaded_offset = match state.memory().load(&field_pointer) {
                 ExpressionOutcome::Value(ProgramValue::Pointer(value)) => value.offset.clone(),
-                ExpressionOutcome::Value(ProgramValue::Int32(value)) => AddressOffset::scale_int32(
-                    value,
-                    i64::from(value_type.pointee_type()?.byte_width()),
-                ),
+                ExpressionOutcome::Value(ProgramValue::Int32(value)) => {
+                    OldAddressOffset::scale_int32(
+                        value,
+                        i64::from(value_type.pointee_type()?.byte_width()),
+                    )
+                }
                 _ => continue,
             };
             if !crate::kernel::offsets_have_same_canonical_form(&loaded_offset, term) {
@@ -5715,7 +5724,7 @@ fn synthesize_parameter_field_pointer_value(
 }
 
 /// Compatibility entry for pointer carriers still registered under a name.
-fn registered_load_in_state(variable: &Variable, state: &ExecutionState) -> Option<MachineTerm> {
+fn registered_load_in_state(variable: &Variable, state: &ExecutionState) -> Option<OldMachineTerm> {
     let read = crate::kernel::registered_load_term_for_variable(variable)?;
     scalar_read_in_state(&read, state)
 }
@@ -5987,14 +5996,14 @@ fn synthesize_spelled_point_read(
     })
 }
 
-fn scalar_read_in_state(read: &MachineTerm, state: &ExecutionState) -> Option<MachineTerm> {
-    let MachineTerm::MemoryLoad(_, pointer, kind) = read else {
+fn scalar_read_in_state(read: &OldMachineTerm, state: &ExecutionState) -> Option<OldMachineTerm> {
+    let OldMachineTerm::MemoryLoad(_, pointer, kind) = read else {
         return None;
     };
     let site = state.program_point();
     let selected = crate::kernel::canonical_form_of_load_at(&site, pointer.as_ref().clone(), *kind);
     (selected == *read).then(|| {
-        MachineTerm::read_named(
+        OldMachineTerm::read_named(
             crate::kernel::ProgramPoint::read_at(site.shared_memory(), &site),
             pointer.as_ref().clone(),
             *kind,
@@ -6020,7 +6029,7 @@ fn variable_spells_uint64(
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
 ) -> bool {
-    let term = MachineTerm::Variable(variable);
+    let term = OldMachineTerm::Variable(variable);
     if let Some(name) = state.locals().names_holding_integer(&term).next() {
         return state
             .locals()
@@ -6041,12 +6050,12 @@ fn variable_spells_uint64(
 /// It follows that function's choice of name, so it reads one local or
 /// parameter per name in the term.
 fn bitvector_spells_uint32(
-    term: &MachineTerm,
+    term: &OldMachineTerm,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> bool {
-    if let MachineTerm::Variable(variable) = term
+    if let OldMachineTerm::Variable(variable) = term
         && bound_variables.contains_key(variable)
     {
         return false;
@@ -6065,7 +6074,7 @@ fn bitvector_spells_uint32(
             parameter.name() == name && parameter.interface_type() == InterfaceType::UInt32
         });
     }
-    let either = |left: &MachineTerm, right: &MachineTerm| {
+    let either = |left: &OldMachineTerm, right: &OldMachineTerm| {
         bitvector_spells_uint32(left, parameter_binding, state, bound_variables)
             || bitvector_spells_uint32(right, parameter_binding, state, bound_variables)
     };
@@ -6077,7 +6086,7 @@ fn bitvector_spells_uint32(
         | binary_term!(Int32, Remainder, left, right) => either(left, right),
         binary_term!(UInt32, Divide, ..) | binary_term!(UInt32, Remainder, ..) => true,
         // A conversion to `uint32`, spelled `x as uint32`.
-        MachineTerm::Cast {
+        OldMachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             to: MachineIntegerType::UInt32,
             ..
@@ -6092,11 +6101,11 @@ fn bitvector_spells_uint32(
 /// kernel records about it, such as the bound a consumed member places on
 /// it, then has a source spelling and can be cited.
 fn synthesize_population_entry_count(
-    term: &MachineTerm,
+    term: &OldMachineTerm,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
 ) -> Option<SyntaxTerm> {
-    let MachineTerm::Variable(variable) = term else {
+    let OldMachineTerm::Variable(variable) = term else {
         return None;
     };
     let population = state.population_with_entry_count(*variable)?;
@@ -6192,13 +6201,13 @@ fn synthesize_named_integer_local<'a>(
 /// load, at the same selected state, instead of a signed load followed by
 /// an unsigned cast (which introduces a different observation node).
 fn synthesize_typed_word_read(
-    read: &MachineTerm,
+    read: &OldMachineTerm,
     value_type: ProgramType,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<SyntaxTerm> {
-    let MachineTerm::MemoryLoad(memory, pointer, kind) = read else {
+    let OldMachineTerm::MemoryLoad(memory, pointer, kind) = read else {
         return None;
     };
     if memory.read_version_id().is_some() {
@@ -6212,8 +6221,8 @@ fn synthesize_typed_word_read(
         );
     }
     let read = crate::kernel::canonical_form_of_load_at(memory, pointer.as_ref().clone(), *kind);
-    let at_state = |load: &MachineTerm, state: &ExecutionState| {
-        let MachineTerm::MemoryLoad(_, pointer, _) = load else {
+    let at_state = |load: &OldMachineTerm, state: &ExecutionState| {
+        let OldMachineTerm::MemoryLoad(_, pointer, _) = load else {
             return None;
         };
         let address = synthesize_surface_pointer_expression(
@@ -6303,7 +6312,7 @@ fn synthesize_surface_sequence(
 }
 
 fn synthesize_surface_bitvector(
-    term: &MachineTerm,
+    term: &OldMachineTerm,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
@@ -6314,7 +6323,7 @@ fn synthesize_surface_bitvector(
         record_surface_synthesis_exhaustion("bitvector");
         return None;
     }
-    if let MachineTerm::Variable(variable) = term
+    if let OldMachineTerm::Variable(variable) = term
         && let Some(name) =
             folds::binder_name(false, *variable).or_else(|| bound_variables.get(variable).cloned())
     {
@@ -6367,7 +6376,7 @@ fn synthesize_surface_bitvector(
             SyntaxTerm::ProgramExpression(ProgramExpression::Variable((name).into()))
         });
     }
-    if let MachineTerm::Variable(variable) = term
+    if let OldMachineTerm::Variable(variable) = term
         && let Some(name) = proof_binder_name(*variable)
     {
         return Some(SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
@@ -6409,7 +6418,7 @@ fn synthesize_surface_bitvector(
     if let Some(count) = synthesize_population_entry_count(term, parameter_binding, state) {
         return Some(count);
     }
-    let binary = |left: &MachineTerm, right: &MachineTerm| {
+    let binary = |left: &OldMachineTerm, right: &OldMachineTerm| {
         Some((
             Box::new(synthesize_surface_bitvector(
                 left,
@@ -6426,12 +6435,12 @@ fn synthesize_surface_bitvector(
         ))
     };
     match term {
-        MachineTerm::ThreadHandle(_) => {
+        OldMachineTerm::ThreadHandle(_) => {
             unreachable!("a pthread handle must have a source value name at its introduction")
         }
         // The 32-bit widening of a narrow value is written as the
         // conversion it is (`c as int32`, `c as uint32`).
-        MachineTerm::Cast {
+        OldMachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             value,
             from: source,
@@ -6445,7 +6454,7 @@ fn synthesize_surface_bitvector(
                 synthesize_int32_operand(operand)
             }
         }
-        MachineTerm::Cast {
+        OldMachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             value,
             to: destination,
@@ -6467,12 +6476,12 @@ fn synthesize_surface_bitvector(
                 },
             })
         }
-        MachineTerm::BoolCast { to, value } => {
+        OldMachineTerm::BoolCast { to, value } => {
             // synthesize_surface_bool uses the uint8 carrier to name an
             // unbound Bool variable. Naming above exhausted that route;
             // do not recurse back into the same unnamed variable.
             if *to == MachineIntegerType::UInt8
-                && matches!(value.as_ref(), ConditionTerm::Variable(variable) if !bound_variables.contains_key(variable))
+                && matches!(value.as_ref(), OldConditionTerm::Variable(variable) if !bound_variables.contains_key(variable))
             {
                 return None;
             }
@@ -6559,11 +6568,11 @@ fn synthesize_surface_bitvector(
         ))),
         // Floating-point operation terms are not integer surface fragments;
         // callers that need them retain the original C expression instead.
-        MachineTerm::Float32Negate(_)
-        | MachineTerm::Float32Binary { .. }
-        | MachineTerm::Float64Negate(_)
-        | MachineTerm::Float64Binary { .. } => None,
-        MachineTerm::IntegerAddress(pointer, _) => {
+        OldMachineTerm::Float32Negate(_)
+        | OldMachineTerm::Float32Binary { .. }
+        | OldMachineTerm::Float64Negate(_)
+        | OldMachineTerm::Float64Binary { .. } => None,
+        OldMachineTerm::IntegerAddress(pointer, _) => {
             let pointer =
                 synthesize_surface_pointer(pointer, parameter_binding, state, bound_variables)?;
             Some(SyntaxTerm::ProgramExpression(ProgramExpression::Cast {
@@ -6577,7 +6586,7 @@ fn synthesize_surface_bitvector(
                 explicit_qualification: false,
             }))
         }
-        MachineTerm::MemoryLoad(memory, kernel_pointer, kind) => {
+        OldMachineTerm::MemoryLoad(memory, kernel_pointer, kind) => {
             if memory.read_version_id().is_some() {
                 let value_type = load_kind_value_type(*kind)?;
                 return synthesize_point_read(
@@ -6890,7 +6899,7 @@ fn synthesize_surface_bitvector(
         // the source load of that cell from any state whose memory
         // lies in the same epoch; the kernel's own naming law decides that,
         // so the spelling lowers back to exactly this variable there.
-        MachineTerm::Variable(variable) => {
+        OldMachineTerm::Variable(variable) => {
             // A recorded load already supplies the address to inspect. Avoid
             // searching unrelated locals when ordinary certificates name it.
             if let Some((_, pointer)) = crate::kernel::registered_load_for_variable(variable)
@@ -6940,10 +6949,10 @@ fn synthesize_surface_bitvector(
                 })
         }
         int64_constant!(value) => Some(SyntaxTerm::ProgramExpression(ProgramExpression::Value(
-            ProgramValue::Int64(MachineTerm::int64_constant(constant_i64(*value))),
+            ProgramValue::Int64(OldMachineTerm::int64_constant(constant_i64(*value))),
         ))),
         uint64_constant!(value) => Some(SyntaxTerm::ProgramExpression(ProgramExpression::Value(
-            ProgramValue::UInt64(MachineTerm::uint64_constant(constant_u64(*value))),
+            ProgramValue::UInt64(OldMachineTerm::uint64_constant(constant_u64(*value))),
         ))),
         cast_term!(Int64From32, value)
         | cast_term!(Int64FromUInt32, value)
@@ -7005,7 +7014,7 @@ fn synthesize_surface_bitvector(
                 explicit_qualification: false,
             },
         }),
-        MachineTerm::Binary {
+        OldMachineTerm::Binary {
             op, left, right, ..
         } => {
             let (left, right) = binary(left, right)?;
@@ -7022,19 +7031,19 @@ fn synthesize_surface_bitvector(
                 MachineBinaryOp::BitwiseXor => SyntaxTerm::BitwiseXor(left, right),
             })
         }
-        MachineTerm::Unary {
+        OldMachineTerm::Unary {
             op: crate::kernel::MachineUnaryOp::BitwiseNot,
             operand,
             ..
         } => Some(SyntaxTerm::BitwiseNot(Box::new(
             synthesize_surface_bitvector(operand, parameter_binding, state, bound_variables)?,
         ))),
-        MachineTerm::If {
+        OldMachineTerm::If {
             condition,
             then_term,
             else_term,
         } => {
-            let arm = |term: &MachineTerm| {
+            let arm = |term: &OldMachineTerm| {
                 let expression =
                     synthesize_surface_bitvector(term, parameter_binding, state, bound_variables)?;
                 if is_signed_variable_arithmetic32(term, &expression) {
@@ -7054,19 +7063,19 @@ fn synthesize_surface_bitvector(
                 else_branch: Box::new(arm(else_term)?),
             })
         }
-        MachineTerm::RangeFold { .. } => {
+        OldMachineTerm::RangeFold { .. } => {
             folds::raise_machine_fold(term, parameter_binding, state, bound_variables)
         }
         // A size or offset term is the value `sizeof(T)` or `offsetof(L, f)`
         // lowers to, kept whole.
-        MachineTerm::PureFunctionApplication { name, arguments }
+        OldMachineTerm::PureFunctionApplication { name, arguments }
             if crate::kernel::layout_term_spelling(name, arguments.len()).is_some() =>
         {
             Some(SyntaxTerm::ProgramExpression(ProgramExpression::Value(
                 ProgramValue::UInt64(term.clone()),
             )))
         }
-        MachineTerm::PureFunctionApplication {
+        OldMachineTerm::PureFunctionApplication {
             name,
             arguments: values,
         } => Some(SyntaxTerm::Call {
@@ -7078,16 +7087,16 @@ fn synthesize_surface_bitvector(
                 })
                 .collect::<Option<Vec<_>>>()?,
         }),
-        MachineTerm::ClickFunctionApplication {
+        OldMachineTerm::ClickFunctionApplication {
             name,
             arguments: values,
         } => synthesize_surface_call(name, values, parameter_binding, state, bound_variables),
-        MachineTerm::IntegerToMachine { value, destination } => {
+        OldMachineTerm::IntegerToMachine { value, destination } => {
             let operand = crate::kernel::KernelTermImport::default().integer(value);
             let term = crate::kernel::KernelTerm::integer_to_machine(*destination, operand).ok()?;
             raise_kernel_term(&term, parameter_binding, state, bound_variables)
         }
-        MachineTerm::AlgebraicMatch { .. } => {
+        OldMachineTerm::AlgebraicMatch { .. } => {
             matches::raise_machine_match(term, parameter_binding, state, bound_variables)
         }
     }
@@ -7213,7 +7222,7 @@ fn synthesize_legacy_call_argument(
         }
         crate::kernel::PureFunctionArgument::Value(ProgramValue::Bool(word)) => {
             synthesize_surface_bool(
-                &ConditionTerm::truth_of_bool_word(word),
+                &OldConditionTerm::truth_of_bool_word(word),
                 parameter_binding,
                 state,
                 bound_variables,
@@ -7269,59 +7278,60 @@ fn synthesize_parameter_field_indexed_int32_load(
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<SyntaxTerm> {
     let _frame = SurfaceSynthesisFrame::enter("indexed-field")?;
-    let pointer_field_and_index =
-        |base: &AddressOffset, index: Option<&AddressOffset>| -> Option<(SyntaxTerm, SyntaxTerm)> {
-            let AddressOffset::Int32Scaled {
+    let pointer_field_and_index = |base: &OldAddressOffset,
+                                   index: Option<&OldAddressOffset>|
+     -> Option<(SyntaxTerm, SyntaxTerm)> {
+        let OldAddressOffset::Int32Scaled {
+            value,
+            byte_width: 4,
+        } = base
+        else {
+            return None;
+        };
+        // The field's value is its load, or the load variable naming that
+        // load at this state.
+        let named_load = match value.structural_value() {
+            OldMachineTerm::Variable(variable) => registered_load_in_state(variable, state),
+            _ => None,
+        };
+        let OldMachineTerm::MemoryLoad(_, field_pointer, _) =
+            named_load.as_ref().unwrap_or(value.structural_value())
+        else {
+            return None;
+        };
+        let field = synthesize_struct_field_load(
+            field_pointer,
+            ProgramType::Int32Pointer,
+            parameter_binding,
+            state,
+        )?;
+        let index = match index {
+            None => SyntaxTerm::ProgramExpression(ProgramExpression::Value(int32(0))),
+            Some(OldAddressOffset::Int32Scaled {
                 value,
                 byte_width: 4,
-            } = base
-            else {
-                return None;
-            };
-            // The field's value is its load, or the load variable naming that
-            // load at this state.
-            let named_load = match value.structural_value() {
-                MachineTerm::Variable(variable) => registered_load_in_state(variable, state),
-                _ => None,
-            };
-            let MachineTerm::MemoryLoad(_, field_pointer, _) =
-                named_load.as_ref().unwrap_or(value.structural_value())
-            else {
-                return None;
-            };
-            let field = synthesize_struct_field_load(
-                field_pointer,
-                ProgramType::Int32Pointer,
+            }) => synthesize_surface_bitvector(
+                value.structural_value(),
                 parameter_binding,
                 state,
-            )?;
-            let index = match index {
-                None => SyntaxTerm::ProgramExpression(ProgramExpression::Value(int32(0))),
-                Some(AddressOffset::Int32Scaled {
-                    value,
-                    byte_width: 4,
-                }) => synthesize_surface_bitvector(
-                    value.structural_value(),
-                    parameter_binding,
-                    state,
-                    bound_variables,
-                )?,
-                Some(AddressOffset::Constant(bytes)) if bytes % 4 == 0 => {
-                    SyntaxTerm::ProgramExpression(ProgramExpression::Value(int32(
-                        u32::try_from(bytes / 4).ok()?,
-                    )))
-                }
-                Some(_) => return None,
-            };
-            Some((field, index))
+                bound_variables,
+            )?,
+            Some(OldAddressOffset::Constant(bytes)) if bytes % 4 == 0 => {
+                SyntaxTerm::ProgramExpression(ProgramExpression::Value(int32(
+                    u32::try_from(bytes / 4).ok()?,
+                )))
+            }
+            Some(_) => return None,
         };
+        Some((field, index))
+    };
     let (field, index) = match &pointer.offset {
-        base @ (AddressOffset::Int32Scaled { .. } | AddressOffset::Int64Scaled { .. }) => {
+        base @ (OldAddressOffset::Int32Scaled { .. } | OldAddressOffset::Int64Scaled { .. }) => {
             pointer_field_and_index(base, None)?
         }
-        AddressOffset::Add(left, right) => pointer_field_and_index(left, Some(right))
+        OldAddressOffset::Add(left, right) => pointer_field_and_index(left, Some(right))
             .or_else(|| pointer_field_and_index(right, Some(left)))?,
-        AddressOffset::Constant(_) | AddressOffset::Variable(_) => return None,
+        OldAddressOffset::Constant(_) | OldAddressOffset::Variable(_) => return None,
     };
     // Preserve array indexing for a declared int32 pointer, including fields
     // reached through automatic struct-pointer locals. Their layout is already
@@ -7400,14 +7410,14 @@ fn synthesize_parameter_field_indexed_int32_load(
 /// `term`, spelled `owner->field`. The layouts come from the installed local
 /// layout scope; without one, no local is a candidate.
 fn synthesize_local_struct_pointer_field(
-    term: &MachineTerm,
+    term: &OldMachineTerm,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
 ) -> Option<SyntaxTerm> {
     // An abstract cell variable needs its parameter field as a name.
     // Preserve operation syntax for compound terms: naming an arithmetic
     // expression by the field currently holding it creates rewrite cycles.
-    let owners = if matches!(term, MachineTerm::Variable(_)) {
+    let owners = if matches!(term, OldMachineTerm::Variable(_)) {
         range_struct_owners(parameter_binding, state)
     } else {
         struct_owners(parameter_binding, state)
@@ -7466,7 +7476,7 @@ fn synthesize_local_struct_pointer_field(
 }
 
 fn synthesize_local_aggregate_field(
-    term: &MachineTerm,
+    term: &OldMachineTerm,
     state: &ExecutionState,
 ) -> Option<SyntaxTerm> {
     state
@@ -7490,9 +7500,11 @@ fn synthesize_local_aggregate_field(
                     } else {
                         Address {
                             base: slot.base.clone(),
-                            offset: crate::kernel::AddressOffset::add(
+                            offset: crate::kernel::OldAddressOffset::add(
                                 slot.offset.clone(),
-                                crate::kernel::AddressOffset::constant(i64::from(element_offset)),
+                                crate::kernel::OldAddressOffset::constant(i64::from(
+                                    element_offset,
+                                )),
                             ),
                         }
                     };
@@ -7588,8 +7600,8 @@ fn synthesize_local_aggregate_field(
 }
 
 #[cfg(test)]
-pub(super) fn bitvector_term_is_load_free(term: &MachineTerm) -> bool {
-    pointer_indices::load_free(crate::kernel::MachineOperandView::Legacy(term))
+pub(super) fn bitvector_term_is_load_free(term: &OldMachineTerm) -> bool {
+    pointer_indices::load_free(crate::kernel::MachineOperandView::Old(term))
 }
 
 fn synthesize_local_indexed_load(
@@ -7611,8 +7623,8 @@ fn synthesize_local_indexed_load(
         // a different C expression, one that reads the local as an `int32`
         // array and lowers to a different address term.
         if pointer.base != base.base
-            || !(base.offset == AddressOffset::Constant(0)
-                || matches!(&pointer.offset, AddressOffset::Add(left, right)
+            || !(base.offset == OldAddressOffset::Constant(0)
+                || matches!(&pointer.offset, OldAddressOffset::Add(left, right)
                     if left.as_ref() == &base.offset || right.as_ref() == &base.offset))
         {
             return None;
@@ -7877,7 +7889,7 @@ fn call_result_pointer_expression(
     }
     if !matches!(
         pointer.offset,
-        AddressOffset::Int32Scaled { .. } | AddressOffset::Int64Scaled { .. }
+        OldAddressOffset::Int32Scaled { .. } | OldAddressOffset::Int64Scaled { .. }
     ) {
         return None;
     }
@@ -7885,7 +7897,7 @@ fn call_result_pointer_expression(
     // width. An exact lookup suffices for a call that introduced this base.
     let base = Address {
         base: pointer.base.clone(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let (region, width) = SYNTHESIS_RECORDED_POINTS.with(|points| {
         let points = points.borrow();
@@ -8013,7 +8025,7 @@ fn synthesize_owned_field_at_address(
 /// itself, or a loaded pointer at displacement zero that `state`'s canonical
 /// read of its defining address reproduces.
 fn pointer_read_address_in_state(pointer: &Address, state: &ExecutionState) -> Option<Address> {
-    if pointer.offset != AddressOffset::Constant(0) {
+    if pointer.offset != OldAddressOffset::Constant(0) {
         return None;
     }
     let memory = crate::kernel::intern_memory_ref(state.memory());
@@ -8081,7 +8093,7 @@ fn synthesis_element_index(
     // Legacy-only offsets already have a native source reader. Retain that
     // result without importing temporary arithmetic. Any shared child selects
     // the shared path, so this compatibility read cannot export a shared DAG.
-    let native = |offset: &AddressOffset| {
+    let native = |offset: &OldAddressOffset| {
         !offset.any_scaled_operand(|index| index.shared_operand().is_some())
     };
     if native(&pointer.offset)
@@ -8097,13 +8109,13 @@ fn synthesis_element_index(
         return None;
     }
     let displacement = match &pointer.offset {
-        offset if base.offset == AddressOffset::Constant(0) => offset,
-        AddressOffset::Add(left, right) if left.as_ref() == &base.offset => right.as_ref(),
-        AddressOffset::Add(left, right) if right.as_ref() == &base.offset => left.as_ref(),
+        offset if base.offset == OldAddressOffset::Constant(0) => offset,
+        OldAddressOffset::Add(left, right) if left.as_ref() == &base.offset => right.as_ref(),
+        OldAddressOffset::Add(left, right) if right.as_ref() == &base.offset => left.as_ref(),
         _ => return None,
     };
     match displacement {
-        AddressOffset::Int64Scaled {
+        OldAddressOffset::Int64Scaled {
             value,
             byte_width,
             unsigned,
@@ -8146,13 +8158,13 @@ fn synthesize_surface_pointer(
         )));
     }
     // A function's address spells as the function's name.
-    if let (AddressBase::Function(function), AddressOffset::Constant(0)) =
+    if let (AddressBase::Function(function), OldAddressOffset::Constant(0)) =
         (&pointer.base, &pointer.offset)
     {
         return Some(ProgramExpression::FunctionAddress(function.clone()));
     }
     // A pointer a proof binder names, such as a match arm's payload.
-    if let (AddressBase::Symbolic(variable), AddressOffset::Constant(0)) =
+    if let (AddressBase::Symbolic(variable), OldAddressOffset::Constant(0)) =
         (&pointer.base, &pointer.offset)
         && let Some(name) =
             folds::binder_name(false, *variable).or_else(|| bound_variables.get(variable).cloned())
@@ -8224,7 +8236,7 @@ fn synthesize_surface_pointer(
                 });
             };
             let base = name;
-            if pointer_indices::literal(index.operand_view()) == Some(MachineTerm::constant(0)) {
+            if pointer_indices::literal(index.operand_view()) == Some(OldMachineTerm::constant(0)) {
                 return Some(base);
             }
             let index = contract_expression_to_program_expression(&pointer_indices::raise(
@@ -8277,7 +8289,7 @@ fn synthesize_surface_pointer(
                 });
             };
             let base = name;
-            if pointer_indices::literal(index.operand_view()) == Some(MachineTerm::constant(0)) {
+            if pointer_indices::literal(index.operand_view()) == Some(OldMachineTerm::constant(0)) {
                 return Some(base);
             }
             let index = contract_expression_to_program_expression(&pointer_indices::raise(
@@ -8295,11 +8307,11 @@ fn synthesize_surface_pointer(
     // Name a displaced address from that slot, without scanning objects or
     // pretending the aggregate itself is an array pointer.
     if pointer.base.is_static_storage_block()
-        && let AddressOffset::Constant(bytes) = pointer.offset
+        && let OldAddressOffset::Constant(bytes) = pointer.offset
         && let Ok(bytes) = u32::try_from(bytes)
         && let Some(name) = state.locals().name_for_slot(&Address {
             base: pointer.base.clone(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         })
         && (state.locals().aggregate_layout(name).is_some()
             || state.locals().scalar_object_type(name).is_some())
@@ -8325,7 +8337,7 @@ fn synthesize_surface_pointer(
             .into_iter()
             .find_map(|(name, _, slot)| {
                 crate::instrumentation::record_deterministic_work(1);
-                let (AddressOffset::Constant(at), AddressOffset::Constant(start)) =
+                let (OldAddressOffset::Constant(at), OldAddressOffset::Constant(start)) =
                     (&pointer.offset, &slot.offset)
                 else {
                     return None;
@@ -8344,7 +8356,7 @@ fn synthesize_surface_pointer(
     {
         return Some(expression);
     }
-    if let (AddressBase::Symbolic(variable), AddressOffset::Constant(0)) =
+    if let (AddressBase::Symbolic(variable), OldAddressOffset::Constant(0)) =
         (&pointer.base, &pointer.offset)
         && let Some(name) = proof_binder_name(*variable)
     {
@@ -8355,12 +8367,12 @@ fn synthesize_surface_pointer(
     }
     // A pointer read from a struct field spells as that field.
     if let Some(read) = pointer.as_loaded_value() {
-        if let AddressOffset::Constant(bytes) = read.displacement
+        if let OldAddressOffset::Constant(bytes) = read.displacement
             && bytes != 0
         {
             let base = Address {
                 base: pointer.base.clone(),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             };
             return Some(ProgramExpression::PointerOffsetBytes {
                 pointer: Box::new(synthesize_surface_pointer(
@@ -8372,7 +8384,7 @@ fn synthesize_surface_pointer(
                 bytes: u32::try_from(bytes).ok()?.into(),
             });
         }
-        if read.displacement != AddressOffset::Constant(0) {
+        if read.displacement != OldAddressOffset::Constant(0) {
             return None;
         }
         // A field spelling reads this state; historical reads need their
@@ -8507,7 +8519,7 @@ fn synthesize_pointer_equality_operand(
     let address_read = value
         .address()
         .as_loaded_value()
-        .filter(|read| read.displacement == AddressOffset::Constant(0));
+        .filter(|read| read.displacement == OldAddressOffset::Constant(0));
     // An address can survive a later store while the complete pointer's
     // provenance still names the earlier read. Spell that value at the
     // state that introduced its domain. A memory-named load whose address
@@ -8765,7 +8777,7 @@ fn synthesize_surface_pointer_expression_routes(
     if let Some(object) = prepared_parameter_object(pointer) {
         return Some(object);
     }
-    if pointer.offset == AddressOffset::Constant(0)
+    if pointer.offset == OldAddressOffset::Constant(0)
         && let Some((name, pointer_type)) =
             crate::surface::proof_diagnostics::render::c_library_pointer_name(pointer)
     {
@@ -8780,12 +8792,12 @@ fn synthesize_surface_pointer_expression_routes(
     if let Some(read) = pointer.as_loaded_value()
         && let Some((base, value_type)) = synthesize_copied_parameter_pointer(&read, state)
     {
-        if read.displacement == AddressOffset::Constant(0) {
+        if read.displacement == OldAddressOffset::Constant(0) {
             return Some(base);
         }
         let origin = Address {
             base: pointer.base.clone(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let width = value_type.pointee_type()?.byte_width();
         let index = synthesis_element_index(pointer, &origin, width)?;
@@ -8812,12 +8824,12 @@ fn synthesize_surface_pointer_expression_routes(
             state,
             bound_variables,
         )?;
-        if read.displacement == AddressOffset::Constant(0) {
+        if read.displacement == OldAddressOffset::Constant(0) {
             return Some(base);
         }
         let origin = Address {
             base: pointer.base.clone(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         // Element arithmetic at the declaration's pointee width.
         if let Some(width) = spelled_type
@@ -8832,12 +8844,12 @@ fn synthesize_surface_pointer_expression_routes(
         }
         // The address holds a byte displacement: a constant one is
         // `byte_offset`, and a scaled index steps a pointer of its stride.
-        if let AddressOffset::Constant(bytes) = read.displacement {
+        if let OldAddressOffset::Constant(bytes) = read.displacement {
             return synthesize_byte_offset(base, u32::try_from(bytes).ok()?);
         }
         let stride = match &read.displacement {
-            AddressOffset::Int32Scaled { byte_width, .. }
-            | AddressOffset::Int64Scaled { byte_width, .. } => *byte_width,
+            OldAddressOffset::Int32Scaled { byte_width, .. }
+            | OldAddressOffset::Int64Scaled { byte_width, .. } => *byte_width,
             _ => return None,
         };
         // `read.displacement` is the pointer's offset from its load base,
@@ -8859,8 +8871,8 @@ fn synthesize_surface_pointer_expression_routes(
     }
     if matches!(
         &pointer.offset,
-        AddressOffset::Int32Scaled { byte_width: 1, .. }
-            | AddressOffset::Int64Scaled { byte_width: 1, .. }
+        OldAddressOffset::Int32Scaled { byte_width: 1, .. }
+            | OldAddressOffset::Int64Scaled { byte_width: 1, .. }
     ) && let Some(read) = pointer.as_loaded_value()
         && !read.identity.is_point_named()
     {
@@ -8868,7 +8880,7 @@ fn synthesize_surface_pointer_expression_routes(
         // displacement is in bytes, so reproduce it with a byte pointer.
         let origin = Address {
             base: pointer.base.clone(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let cell = pointer_read_address_in_state(&origin, state)?;
         let cell = synthesize_surface_pointer_expression(
@@ -8890,7 +8902,7 @@ fn synthesize_surface_pointer_expression_routes(
     // A pointer a pure function returns is that call: its base retains the
     // function and the arguments it was applied to. A kernel-internal
     // function (`$...`) has no Surface spelling.
-    if let (AddressBase::PureFunctionApplication(application), AddressOffset::Constant(0)) =
+    if let (AddressBase::PureFunctionApplication(application), OldAddressOffset::Constant(0)) =
         (&pointer.base, &pointer.offset)
         && !application.name().starts_with('$')
     {
@@ -8969,13 +8981,13 @@ fn synthesize_surface_pointer_expression_routes(
             // A pointer a constant number of bytes past one that has a
             // spelling: that spelling, offset in bytes. Last, so no pointer
             // another route spells (a field, an element) changes.
-            let AddressOffset::Constant(bytes) = pointer.offset else {
+            let OldAddressOffset::Constant(bytes) = pointer.offset else {
                 return None;
             };
             let bytes = u32::try_from(bytes).ok().filter(|bytes| *bytes != 0)?;
             let origin = Address {
                 base: pointer.base.clone(),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             };
             let base = synthesize_surface_pointer_expression(
                 &origin,
@@ -9018,7 +9030,7 @@ fn synthesize_copied_parameter_pointer(
         let points = points.as_ref()?;
         let object = Address {
             base: read.defining_address.base.clone(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let name =
             crate::kernel::BindingName::from(object.base.prepared_argument_binding()?.clone());
@@ -9152,7 +9164,7 @@ fn recorded_point_of_pointer_read(
     pointer: &Address,
     state: &ExecutionState,
 ) -> Option<(ProgramPointSelector, ExecutionState)> {
-    if pointer.offset != AddressOffset::Constant(0) {
+    if pointer.offset != OldAddressOffset::Constant(0) {
         return None;
     }
     let memory = match &pointer.base {
@@ -9194,7 +9206,7 @@ fn synthesize_scalar_model_field(variable: Variable, state: &ExecutionState) -> 
         let instance = state.resource_instance_at_path(origin.identity, &[])?;
         matches!(
             instance.fields().get(origin.field_index),
-            Some(crate::kernel::ResourceFieldValue::Program(crate::kernel::integer_c_value!(MachineTerm::Variable(held)))) if *held == variable
+            Some(crate::kernel::ResourceFieldValue::Program(crate::kernel::integer_c_value!(OldMachineTerm::Variable(held)))) if *held == variable
         )
         .then_some(())?;
         // The field's declared C type, as the parser's elaboration records it.
@@ -9575,7 +9587,7 @@ fn surface_algebraic_type(
 /// A call's prepared parameter object, by its address: the call's
 /// `R.parameter(name)`, which lowers to the object as a local does.
 fn prepared_parameter_object(slot: &Address) -> Option<SyntaxTerm> {
-    if slot.offset != AddressOffset::Constant(0) {
+    if slot.offset != OldAddressOffset::Constant(0) {
         return None;
     }
     let binding = slot.base.prepared_argument_binding()?;

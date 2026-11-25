@@ -5,12 +5,12 @@ use crate::kernel::MachineOperandView;
 use crate::kernel::equality_graph::MachineAtom;
 use crate::persistent::{PersistentMap, PersistentSet};
 
-type Bound = (i64, ConditionTerm, bool);
+type Bound = (i64, OldConditionTerm, bool);
 
 #[derive(Clone, Debug, Default)]
 struct EndpointBounds {
-    symbolic_lower: PersistentSet<(ConditionTerm, bool)>,
-    symbolic_upper: PersistentSet<(ConditionTerm, bool)>,
+    symbolic_lower: PersistentSet<(OldConditionTerm, bool)>,
+    symbolic_upper: PersistentSet<(OldConditionTerm, bool)>,
     strict_lower: bool,
     strict_upper: bool,
     lower: PersistentSet<Bound>,
@@ -20,13 +20,13 @@ struct EndpointBounds {
 #[derive(Clone, Debug, Default)]
 pub(in crate::kernel) struct CheckedOrderBounds {
     signed_wide: PersistentMap<MachineAtom, EndpointBounds>,
-    unsigned_wide_upper: PersistentMap<MachineAtom, PersistentSet<(u64, ConditionTerm, bool)>>,
+    unsigned_wide_upper: PersistentMap<MachineAtom, PersistentSet<(u64, OldConditionTerm, bool)>>,
     endpoints: [PersistentMap<MachineAtom, EndpointBounds>; 2],
-    strict_upper: PersistentMap<MachineAtom, PersistentSet<(ConditionTerm, bool)>>,
+    strict_upper: PersistentMap<MachineAtom, PersistentSet<(OldConditionTerm, bool)>>,
 }
 
 impl CheckedOrderBounds {
-    pub(super) fn adjust(&mut self, condition: &ConditionTerm, value: bool) {
+    pub(super) fn adjust(&mut self, condition: &OldConditionTerm, value: bool) {
         if self.adjust_wide(condition, value) {
             return;
         }
@@ -63,7 +63,7 @@ impl CheckedOrderBounds {
         left: MachineOperandView<'_>,
         right: MachineOperandView<'_>,
         strict: bool,
-        condition: &ConditionTerm,
+        condition: &OldConditionTerm,
         value: bool,
     ) {
         if kind == 0 && strict {
@@ -96,10 +96,10 @@ impl CheckedOrderBounds {
             let key = Self::word_key(endpoint);
             let alias = match endpoint {
                 MachineOperandView::Shared(_) => None,
-                MachineOperandView::Legacy(term) => {
+                MachineOperandView::Old(term) => {
                     let canonical = crate::kernel::eval::canonical_term(term);
                     (canonical != *term)
-                        .then(|| Self::word_key(MachineOperandView::Legacy(&canonical)))
+                        .then(|| Self::word_key(MachineOperandView::Old(&canonical)))
                 }
             };
             for key in std::iter::once(key).chain(alias) {
@@ -145,7 +145,7 @@ impl CheckedOrderBounds {
         }
     }
 
-    fn adjust_wide(&mut self, condition: &ConditionTerm, value: bool) -> bool {
+    fn adjust_wide(&mut self, condition: &OldConditionTerm, value: bool) -> bool {
         use crate::kernel::machine_integer::{Relation, comparison::comparison_view};
         if let Some(view) = comparison_view(condition, value)
             && matches!(
@@ -193,7 +193,7 @@ impl CheckedOrderBounds {
                 self.adjust_wide_endpoint(key, number, upper, condition, value);
                 // Shared arithmetic has no atomic load/cast payload to
                 // canonicalize; legacy inputs retain their exact alias key.
-                if let crate::kernel::MachineOperandView::Legacy(term) = endpoint.operand_view() {
+                if let crate::kernel::MachineOperandView::Old(term) = endpoint.operand_view() {
                     let canonical = crate::kernel::eval::canonical_term(term);
                     if canonical != *term {
                         self.adjust_wide_endpoint(
@@ -226,7 +226,7 @@ impl CheckedOrderBounds {
         key: MachineAtom,
         number: i64,
         upper: bool,
-        condition: &ConditionTerm,
+        condition: &OldConditionTerm,
         value: bool,
     ) {
         crate::instrumentation::record_deterministic_work(1);
@@ -246,8 +246,8 @@ impl CheckedOrderBounds {
     }
 
     #[cfg(test)]
-    pub(super) fn signed_wide_interval(&self, term: &MachineTerm) -> Option<(i64, i64)> {
-        self.signed_wide_interval_view(crate::kernel::MachineOperandView::Legacy(term))
+    pub(super) fn signed_wide_interval(&self, term: &OldMachineTerm) -> Option<(i64, i64)> {
+        self.signed_wide_interval_view(crate::kernel::MachineOperandView::Old(term))
     }
 
     pub(super) fn signed_wide_interval_view(
@@ -282,8 +282,8 @@ impl CheckedOrderBounds {
             .map(|bound| bound.0)
     }
 
-    pub(super) fn interval(&self, term: &MachineTerm, unsigned: bool) -> Option<(i64, i64)> {
-        self.interval_view(MachineOperandView::Legacy(term), unsigned)
+    pub(super) fn interval(&self, term: &OldMachineTerm, unsigned: bool) -> Option<(i64, i64)> {
+        self.interval_view(MachineOperandView::Old(term), unsigned)
     }
 
     pub(super) fn interval_view(
@@ -348,7 +348,7 @@ impl CheckedOrderBounds {
     /// maintained extrema. No additional admission index or bucket scan.
     pub(super) fn exact_observation_source(
         &self,
-        condition: &ConditionTerm,
+        condition: &OldConditionTerm,
         truth: bool,
     ) -> Option<Proposition> {
         use crate::kernel::machine_integer::{
@@ -380,17 +380,20 @@ impl CheckedOrderBounds {
 
     /// At most one numeric extremum and one unambiguous symbolic source per
     /// direction. The fixed four slots are selected, never a bucket iterator.
-    pub(super) fn constant_evidence_sources(&self, term: &MachineTerm) -> [Option<Proposition>; 4] {
+    pub(super) fn constant_evidence_sources(
+        &self,
+        term: &OldMachineTerm,
+    ) -> [Option<Proposition>; 4] {
         let _checking =
             crate::instrumentation::CheckingWorkScope::new("select constant bound evidence", 1);
         crate::instrumentation::record_deterministic_work(1);
-        let Some(bounds) = self.endpoints[0].get(&Self::word_key(MachineOperandView::Legacy(term)))
+        let Some(bounds) = self.endpoints[0].get(&Self::word_key(MachineOperandView::Old(term)))
         else {
             return [None, None, None, None];
         };
         let proposition =
             |(_, condition, value): &Bound| Proposition::condition_is(condition.clone(), *value);
-        let singleton = |sources: &PersistentSet<(ConditionTerm, bool)>| {
+        let singleton = |sources: &PersistentSet<(OldConditionTerm, bool)>| {
             if sources.len() != 1 {
                 return None;
             }
@@ -406,8 +409,8 @@ impl CheckedOrderBounds {
     }
 
     /// Numeric extrema and carrier limits implied by a direct strict edge.
-    pub(super) fn interval_with_strict(&self, term: &MachineTerm) -> Option<(i64, i64)> {
-        self.interval_with_strict_view(MachineOperandView::Legacy(term))
+    pub(super) fn interval_with_strict(&self, term: &OldMachineTerm) -> Option<(i64, i64)> {
+        self.interval_with_strict_view(MachineOperandView::Old(term))
     }
 
     pub(super) fn interval_with_strict_view(
@@ -466,21 +469,21 @@ mod tests {
             MachineIntegerType::UInt32,
             MachineIntegerType::Int64,
         ] {
-            let x = MachineTerm::Variable(Variable(982003));
+            let x = OldMachineTerm::Variable(Variable(982003));
             let literal = |n| {
                 if format == MachineIntegerType::Int64 {
-                    MachineTerm::int64_constant(n)
+                    OldMachineTerm::int64_constant(n)
                 } else {
-                    MachineTerm::constant(n as u32)
+                    OldMachineTerm::constant(n as u32)
                 }
             };
-            let bound = MachineTerm::Binary {
+            let bound = OldMachineTerm::Binary {
                 format,
                 op: MachineBinaryOp::Add,
                 left: Box::new(literal(1)),
                 right: Box::new(literal(2)),
             };
-            let observe = |word: &MachineTerm| {
+            let observe = |word: &OldMachineTerm| {
                 SharedMachineIntegerTerm::from_shared(
                     format,
                     KernelTermImport::default().machine(format, word),
@@ -489,7 +492,7 @@ mod tests {
             };
             let left = observe(&x);
             let right = observe(&bound);
-            let condition = ConditionTerm::integer_less_equal(
+            let condition = OldConditionTerm::integer_less_equal(
                 IntegerTerm::Machine(left.clone()),
                 IntegerTerm::Machine(right.clone()),
             );
@@ -511,9 +514,10 @@ mod tests {
     #[test]
     fn signed_wide_extrema_keep_strictness_and_branches() {
         let _session = crate::kernel::VerificationSession::enter();
-        let x = MachineTerm::Variable(Variable(982000));
-        let less =
-            |n| ConditionTerm::int64_signed_less_than(x.clone(), MachineTerm::int64_constant(n));
+        let x = OldMachineTerm::Variable(Variable(982000));
+        let less = |n| {
+            OldConditionTerm::int64_signed_less_than(x.clone(), OldMachineTerm::int64_constant(n))
+        };
         let mut index = CheckedOrderBounds::default();
         index.adjust(&less(10), true);
         index.adjust(&less(0), false);

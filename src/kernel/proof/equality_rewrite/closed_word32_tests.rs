@@ -6,9 +6,9 @@ mod scaling_tests {
 
 fn rewrite_observation(
     format: MachineIntegerType,
-    expression: MachineTerm,
-    variable: &MachineTerm,
-    replacement: MachineTerm,
+    expression: OldMachineTerm,
+    variable: &OldMachineTerm,
+    replacement: OldMachineTerm,
     shared: bool,
 ) -> Proposition {
     let machine = if shared {
@@ -20,14 +20,14 @@ fn rewrite_observation(
         SharedMachineIntegerTerm::intern(format, expression)
     };
     let goal = Proposition::condition_is(
-        ConditionTerm::IntegerLessEqual(
+        OldConditionTerm::IntegerLessEqual(
             IntegerTerm::Machine(machine).into(),
             IntegerTerm::constant_i64(5).into(),
         ),
         true,
     );
     let equality = Proposition::condition_is(
-        ConditionTerm::machine_compare(
+        OldConditionTerm::machine_compare(
             format,
             CompareRelation::Equal,
             variable.clone(),
@@ -62,7 +62,7 @@ fn newly_closed_word32_arithmetic_has_the_same_value_for_native_and_shared_sourc
             [i64::from(u32::MAX), 0, i64::from(i32::MAX)],
         ),
     ] {
-        let variable = MachineTerm::Variable(Variable(992590));
+        let variable = OldMachineTerm::Variable(Variable(992590));
         let word = |n: i64| {
             crate::kernel::machine_integer::range::constant_word(format, &n.into()).unwrap()
         };
@@ -75,7 +75,7 @@ fn newly_closed_word32_arithmetic_has_the_same_value_for_native_and_shared_sourc
         .zip(expected)
         {
             for shared in [false, true] {
-                let expression = MachineTerm::Binary {
+                let expression = OldMachineTerm::Binary {
                     format,
                     op: operator,
                     left: Box::new(variable.clone()),
@@ -85,7 +85,7 @@ fn newly_closed_word32_arithmetic_has_the_same_value_for_native_and_shared_sourc
                 assert_eq!(
                     rewrite_observation(format, expression, &variable, word(value), shared),
                     Proposition::condition_is(
-                        ConditionTerm::IntegerLessEqual(
+                        OldConditionTerm::IntegerLessEqual(
                             IntegerTerm::constant_i64(expected).into(),
                             IntegerTerm::constant_i64(5).into()
                         ),
@@ -113,19 +113,19 @@ fn newly_closed_word32_arithmetic_keeps_undefined_values_opaque() {
         (T::Int32, O::ShiftRight, 9, 32),
         (T::UInt32, O::ShiftRight, 9, 32),
     ] {
-        let variable = MachineTerm::Variable(Variable(992591));
+        let variable = OldMachineTerm::Variable(Variable(992591));
         let word = |n: i64| {
             crate::kernel::machine_integer::range::constant_word(format, &n.into()).unwrap()
         };
         for shared in [false, true] {
-            let expression = MachineTerm::Binary {
+            let expression = OldMachineTerm::Binary {
                 format,
                 op: operator,
                 left: Box::new(variable.clone()),
                 right: Box::new(word(operand)),
             };
             let result = rewrite_observation(format, expression, &variable, word(value), shared);
-            let Some((ConditionTerm::IntegerLessEqual(left, _), true)) = result.condition_native()
+            let Some((OldConditionTerm::IntegerLessEqual(left, _), true)) = result.old_condition()
             else {
                 panic!("{result:?}");
             };
@@ -159,10 +159,10 @@ fn selected_literal_comparison_operands_keep_their_native_encoding() {
                 let literal =
                     crate::kernel::machine_integer::range::constant_word(format, &value.into())
                         .unwrap();
-                let flag = ConditionTerm::Variable(Variable(992597));
-                let choice = MachineTerm::If {
+                let flag = OldConditionTerm::Variable(Variable(992597));
+                let choice = OldMachineTerm::If {
                     condition: Box::new(flag.clone()),
-                    then_term: Box::new(MachineTerm::Variable(Variable(992598))),
+                    then_term: Box::new(OldMachineTerm::Variable(Variable(992598))),
                     else_term: Box::new(literal.clone()),
                 };
                 for reverse in [false, true] {
@@ -171,14 +171,14 @@ fn selected_literal_comparison_operands_keep_their_native_encoding() {
                     } else {
                         [choice.clone(), literal.clone()]
                     };
-                    let input = ConditionTerm::Compare {
+                    let input = OldConditionTerm::Compare {
                         format,
                         relation,
                         left: Box::new(left),
                         right: Box::new(right),
                     };
                     let result =
-                        TermRewrite::for_condition_exact(&flag, &ConditionTerm::Constant(false))
+                        TermRewrite::for_condition_exact(&flag, &OldConditionTerm::Constant(false))
                             .condition(&input);
                     let expected = if format.format().bits() == 32 {
                         literal.clone().into_word32()
@@ -187,7 +187,7 @@ fn selected_literal_comparison_operands_keep_their_native_encoding() {
                     };
                     assert_eq!(
                         result,
-                        ConditionTerm::Compare {
+                        OldConditionTerm::Compare {
                             format,
                             relation,
                             left: Box::new(expected.clone()),
@@ -202,16 +202,16 @@ fn selected_literal_comparison_operands_keep_their_native_encoding() {
 }
 
 fn selected_word32_literal_goal(format: MachineIntegerType, literal: u32) -> Proposition {
-    let variable = MachineTerm::Variable(Variable(992599));
+    let variable = OldMachineTerm::Variable(Variable(992599));
     let word = |n: u32| {
         crate::kernel::machine_integer::range::constant_word(format, &i64::from(n).into()).unwrap()
     };
     Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format,
             relation: CompareRelation::LessEqual,
-            left: Box::new(MachineTerm::If {
-                condition: Box::new(ConditionTerm::machine_compare(
+            left: Box::new(OldMachineTerm::If {
+                condition: Box::new(OldConditionTerm::machine_compare(
                     format,
                     CompareRelation::Equal,
                     variable.clone(),
@@ -220,7 +220,7 @@ fn selected_word32_literal_goal(format: MachineIntegerType, literal: u32) -> Pro
                 then_term: Box::new(variable),
                 else_term: Box::new(word(literal)),
             }),
-            right: Box::new(MachineTerm::constant(100)),
+            right: Box::new(OldMachineTerm::constant(100)),
         },
         true,
     )
@@ -228,11 +228,11 @@ fn selected_word32_literal_goal(format: MachineIntegerType, literal: u32) -> Pro
 
 fn selected_word32_literal_equality(format: MachineIntegerType) -> Proposition {
     Proposition::condition_is(
-        ConditionTerm::machine_compare(
+        OldConditionTerm::machine_compare(
             format,
             CompareRelation::Equal,
-            MachineTerm::Variable(Variable(992599)),
-            MachineTerm::constant(9),
+            OldMachineTerm::Variable(Variable(992599)),
+            OldMachineTerm::constant(9),
         ),
         true,
     )

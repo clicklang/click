@@ -20,7 +20,7 @@ fn automatic_storage_retirement_lookup_scales_with_neither_borrow_bucket() {
                     SymbolicMemory::local_lifetime_pointer(index, "unrelated")
                 };
                 let range =
-                    MemoryRange::new(base, 0u32.into(), MachineTerm::Variable(Variable(index)));
+                    MemoryRange::new(base, 0u32.into(), OldMachineTerm::Variable(Variable(index)));
                 let opening = lend_memory(&ledger, lender, borrower, range);
                 ledger = ledger.apply(&opening.transition).unwrap();
             }
@@ -110,7 +110,7 @@ fn local_borrow_admission_tracks_selected_backing_with_live_borrows_and_aliases(
                 let opening = lend_memory(&ledger, caller, callee, range);
                 ledger = ledger.apply(&opening.transition).unwrap();
                 assumptions = assumptions.assume_condition(
-                    crate::kernel::ConditionTerm::address_equal(
+                    crate::kernel::OldConditionTerm::address_equal(
                         unrelated,
                         Address::symbolic(Variable(99_000 + index)),
                     ),

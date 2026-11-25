@@ -31,9 +31,9 @@ fn memory_havoc_write_set_identity(mutable_ranges: &[MemoryRange]) -> String {
 enum HavocIdentityTask {
     Text(&'static str),
     Pointer(Address),
-    PointerOffset(AddressOffset),
-    Bitvector(MachineTerm),
-    Condition(ConditionTerm),
+    PointerOffset(OldAddressOffset),
+    Bitvector(OldMachineTerm),
+    Condition(OldConditionTerm),
     FloatCondition {
         condition: FloatCondition,
         is_float64: bool,
@@ -167,8 +167,8 @@ fn push_havoc_binary(
     identity: &mut String,
     tasks: &mut Vec<HavocIdentityTask>,
     tag: &'static str,
-    left: MachineTerm,
-    right: MachineTerm,
+    left: OldMachineTerm,
+    right: OldMachineTerm,
 ) {
     identity.push_str(tag);
     identity.push('(');
@@ -184,8 +184,8 @@ fn push_havoc_comparison(
     identity: &mut String,
     tasks: &mut Vec<HavocIdentityTask>,
     op: BitvectorComparisonOp,
-    left: MachineTerm,
-    right: MachineTerm,
+    left: OldMachineTerm,
+    right: OldMachineTerm,
 ) {
     use CompareRelation as R;
     use MachineIntegerType as Ty;
@@ -247,7 +247,7 @@ fn havoc_range_identity(range: &MemoryRange) -> String {
         }),
         vec![
             HavocIdentityTask::Text(")"),
-            HavocIdentityTask::Bitvector(MachineTerm::constant(range.element_width())),
+            HavocIdentityTask::Bitvector(OldMachineTerm::constant(range.element_width())),
             HavocIdentityTask::Text(","),
             HavocIdentityTask::Bitvector(end.clone()),
             HavocIdentityTask::Text(","),
@@ -260,7 +260,7 @@ fn havoc_range_identity(range: &MemoryRange) -> String {
 
 /// The structural key of one condition premise, in the havoc identity
 /// encoding.
-fn havoc_condition_identity(condition: &ConditionTerm, value: bool) -> String {
+fn havoc_condition_identity(condition: &OldConditionTerm, value: bool) -> String {
     write_havoc_identity(
         format!("condition{value}("),
         vec![
@@ -291,10 +291,10 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
             HavocIdentityTask::PointerOffset(offset) => {
                 crate::instrumentation::record_deterministic_work(1);
                 match offset {
-                    AddressOffset::Constant(value) => {
+                    OldAddressOffset::Constant(value) => {
                         let _ = write!(identity, "oc{value};");
                     }
-                    AddressOffset::Variable(variable) => {
+                    OldAddressOffset::Variable(variable) => {
                         if !push_registered_load(
                             &mut identity,
                             &mut tasks,
@@ -304,22 +304,22 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                             let _ = write!(identity, "ov{};", variable.0);
                         }
                     }
-                    AddressOffset::Add(left, right) => {
+                    OldAddressOffset::Add(left, right) => {
                         identity.push_str("oa(");
                         tasks.push(HavocIdentityTask::Text(")"));
                         tasks.push(HavocIdentityTask::PointerOffset(*right));
                         tasks.push(HavocIdentityTask::Text(","));
                         tasks.push(HavocIdentityTask::PointerOffset(*left));
                     }
-                    AddressOffset::Int32Scaled { value, byte_width }
-                    | AddressOffset::Int64Scaled {
+                    OldAddressOffset::Int32Scaled { value, byte_width }
+                    | OldAddressOffset::Int64Scaled {
                         value, byte_width, ..
                     } => {
                         identity.push_str("os(");
                         tasks.push(HavocIdentityTask::Text(")"));
-                        tasks.push(HavocIdentityTask::PointerOffset(AddressOffset::Constant(
-                            byte_width,
-                        )));
+                        tasks.push(HavocIdentityTask::PointerOffset(
+                            OldAddressOffset::Constant(byte_width),
+                        ));
                         tasks.push(HavocIdentityTask::Text(","));
                         tasks.push(HavocIdentityTask::Bitvector(
                             value.structural_value().clone(),
@@ -330,10 +330,10 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
             HavocIdentityTask::Bitvector(term) => {
                 crate::instrumentation::record_deterministic_work(1);
                 match term {
-                    MachineTerm::ThreadHandle(id) => {
+                    OldMachineTerm::ThreadHandle(id) => {
                         let _ = write!(identity, "thread-handle:{id:?};");
                     }
-                    MachineTerm::Cast {
+                    OldMachineTerm::Cast {
                         spelling: MachineCastSpelling::Generic,
                         value,
                         from: source,
@@ -360,7 +360,7 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                     uint64_constant!(value) => {
                         let _ = write!(identity, "tu64c{value};", value = constant_u64(value));
                     }
-                    MachineTerm::Variable(variable) => {
+                    OldMachineTerm::Variable(variable) => {
                         if !push_registered_load(
                             &mut identity,
                             &mut tasks,
@@ -414,17 +414,17 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                         tasks.push(HavocIdentityTask::Text(")"));
                         tasks.push(HavocIdentityTask::Bitvector(value.as_ref().clone()));
                     }
-                    MachineTerm::Float32Negate(value) => {
+                    OldMachineTerm::Float32Negate(value) => {
                         identity.push_str("tf32n(");
                         tasks.push(HavocIdentityTask::Text(")"));
                         tasks.push(HavocIdentityTask::Bitvector(value.as_ref().clone()));
                     }
-                    MachineTerm::Float64Negate(value) => {
+                    OldMachineTerm::Float64Negate(value) => {
                         identity.push_str("tf64n(");
                         tasks.push(HavocIdentityTask::Text(")"));
                         tasks.push(HavocIdentityTask::Bitvector(value.as_ref().clone()));
                     }
-                    MachineTerm::Float32Binary {
+                    OldMachineTerm::Float32Binary {
                         operator,
                         left,
                         right,
@@ -437,7 +437,7 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                         };
                         push_havoc_binary(&mut identity, &mut tasks, tag, *left, *right);
                     }
-                    MachineTerm::Float64Binary {
+                    OldMachineTerm::Float64Binary {
                         operator,
                         left,
                         right,
@@ -492,7 +492,7 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                         *value.clone(),
                         *value,
                     ),
-                    MachineTerm::Unary {
+                    OldMachineTerm::Unary {
                         format,
                         op: MachineUnaryOp::BitwiseNot,
                         operand,
@@ -504,7 +504,7 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                         tasks.push(HavocIdentityTask::Text(")"));
                         tasks.push(HavocIdentityTask::Bitvector(*operand));
                     }
-                    MachineTerm::Binary {
+                    OldMachineTerm::Binary {
                         format,
                         op,
                         left,
@@ -516,12 +516,12 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                         *left,
                         *right,
                     ),
-                    MachineTerm::BoolCast { to, value } => {
+                    OldMachineTerm::BoolCast { to, value } => {
                         let _ = write!(identity, "tbcast{to:?}(");
                         tasks.push(HavocIdentityTask::Text(")"));
                         tasks.push(HavocIdentityTask::Condition(*value));
                     }
-                    MachineTerm::If {
+                    OldMachineTerm::If {
                         condition,
                         then_term,
                         else_term,
@@ -534,7 +534,7 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                         tasks.push(HavocIdentityTask::Text(","));
                         tasks.push(HavocIdentityTask::Condition(*condition));
                     }
-                    MachineTerm::RangeFold {
+                    OldMachineTerm::RangeFold {
                         start,
                         end,
                         initial,
@@ -552,7 +552,7 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                         tasks.push(HavocIdentityTask::Text(","));
                         tasks.push(HavocIdentityTask::Bitvector(*start));
                     }
-                    MachineTerm::PureFunctionApplication { name, arguments } => {
+                    OldMachineTerm::PureFunctionApplication { name, arguments } => {
                         identity.push_str("tp(");
                         write_havoc_string(&mut identity, "n", &name);
                         tasks.push(HavocIdentityTask::Text(")"));
@@ -563,20 +563,20 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                             }
                         }
                     }
-                    MachineTerm::ClickFunctionApplication { .. }
-                    | MachineTerm::AlgebraicMatch { .. }
-                    | MachineTerm::IntegerToMachine { .. } => {
+                    OldMachineTerm::ClickFunctionApplication { .. }
+                    | OldMachineTerm::AlgebraicMatch { .. }
+                    | OldMachineTerm::IntegerToMachine { .. } => {
                         use std::hash::{Hash, Hasher};
                         let mut hasher = std::collections::hash_map::DefaultHasher::new();
                         term.hash(&mut hasher);
                         let _ = write!(identity, "click:{:x};", hasher.finish());
                     }
-                    MachineTerm::MemoryLoad(_, pointer, kind) => {
+                    OldMachineTerm::MemoryLoad(_, pointer, kind) => {
                         let _ = write!(identity, "load:{kind:?}(");
                         tasks.push(HavocIdentityTask::Text(")"));
                         tasks.push(HavocIdentityTask::Pointer(pointer.into()));
                     }
-                    MachineTerm::IntegerAddress(pointer, _) => {
+                    OldMachineTerm::IntegerAddress(pointer, _) => {
                         identity.push_str("address(");
                         tasks.push(HavocIdentityTask::Text(")"));
                         tasks.push(HavocIdentityTask::Pointer(*pointer));
@@ -614,20 +614,20 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
             HavocIdentityTask::Condition(condition) => {
                 crate::instrumentation::record_deterministic_work(1);
                 match condition {
-                    ConditionTerm::PointerEqual(left, right) => {
+                    OldConditionTerm::PointerEqual(left, right) => {
                         let _ = write!(identity, "pveq({left:?},{right:?});");
                     }
 
-                    ConditionTerm::AlgebraicEqual(left, right) => {
+                    OldConditionTerm::AlgebraicEqual(left, right) => {
                         let _ = write!(identity, "aeq({left:?},{right:?});");
                     }
-                    ConditionTerm::Constant(value) => {
+                    OldConditionTerm::Constant(value) => {
                         let _ = write!(identity, "cc{value};");
                     }
-                    ConditionTerm::Variable(variable) => {
+                    OldConditionTerm::Variable(variable) => {
                         let _ = write!(identity, "cv{};", variable.0);
                     }
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format,
                         relation,
                         left,
@@ -639,7 +639,7 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                         *left,
                         *right,
                     ),
-                    ConditionTerm::Overflows {
+                    OldConditionTerm::Overflows {
                         format,
                         op,
                         left,
@@ -654,26 +654,26 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                     crate::kernel::integer_comparison_condition!(_, _) => {
                         let _ = write!(identity, "icond{condition:?};");
                     }
-                    ConditionTerm::Float32(condition) => {
+                    OldConditionTerm::Float32(condition) => {
                         tasks.push(HavocIdentityTask::FloatCondition {
                             condition,
                             is_float64: false,
                         });
                     }
-                    ConditionTerm::Float64(condition) => {
+                    OldConditionTerm::Float64(condition) => {
                         tasks.push(HavocIdentityTask::FloatCondition {
                             condition,
                             is_float64: true,
                         });
                     }
-                    ConditionTerm::AddressOffsetEqual(left, right) => {
+                    OldConditionTerm::AddressOffsetEqual(left, right) => {
                         identity.push_str("coe(");
                         tasks.push(HavocIdentityTask::Text(")"));
                         tasks.push(HavocIdentityTask::PointerOffset(*right));
                         tasks.push(HavocIdentityTask::Text(","));
                         tasks.push(HavocIdentityTask::PointerOffset(*left));
                     }
-                    ConditionTerm::AddressEqual(left, right) => {
+                    OldConditionTerm::AddressEqual(left, right) => {
                         identity.push_str("cpe(");
                         tasks.push(HavocIdentityTask::Text(")"));
                         tasks.push(HavocIdentityTask::Pointer(*right));
@@ -681,13 +681,13 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                         tasks.push(HavocIdentityTask::Pointer(*left));
                     }
                     // As a word-valued Click application: by its hash.
-                    ConditionTerm::BoolApplication(application) => {
+                    OldConditionTerm::BoolApplication(application) => {
                         use std::hash::{Hash, Hasher};
                         let mut hasher = std::collections::hash_map::DefaultHasher::new();
                         application.hash(&mut hasher);
                         let _ = write!(identity, "bclick:{:x};", hasher.finish());
                     }
-                    ConditionTerm::BoolIf {
+                    OldConditionTerm::BoolIf {
                         condition,
                         then_condition,
                         else_condition,
@@ -700,7 +700,7 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                         tasks.push(HavocIdentityTask::Text(","));
                         tasks.push(HavocIdentityTask::Condition(*condition));
                     }
-                    ConditionTerm::BoolEqual(left, right) => {
+                    OldConditionTerm::BoolEqual(left, right) => {
                         identity.push_str("beq(");
                         tasks.push(HavocIdentityTask::Text(")"));
                         tasks.push(HavocIdentityTask::Condition(*right));
@@ -723,13 +723,13 @@ mod call_havoc_local_retention_tests {
         let block: AddressBase = "local:borrowed-guard".into();
         let at = |offset| Address {
             base: block.clone(),
-            offset: AddressOffset::Constant(offset),
+            offset: OldAddressOffset::Constant(offset),
         };
         let before = SymbolicMemory::new()
             .with_block(block.clone(), 16)
-            .store(at(0), ProgramValue::Int32(MachineTerm::constant(7)))
-            .store(at(8), ProgramValue::Int32(MachineTerm::constant(1)))
-            .store(at(12), ProgramValue::Int32(MachineTerm::constant(9)));
+            .store(at(0), ProgramValue::Int32(OldMachineTerm::constant(7)))
+            .store(at(8), ProgramValue::Int32(OldMachineTerm::constant(1)))
+            .store(at(12), ProgramValue::Int32(OldMachineTerm::constant(9)));
         let range = MemoryRange::new_with_element_width(at(8), 0u32.into(), 4u32.into(), 1);
         let facts = PureFactContext::new();
         let after = before.clone().with_call_memory_havoc(
@@ -753,7 +753,7 @@ mod call_havoc_local_retention_tests {
         ));
         let stale = after
             .clone()
-            .store(at(8), ProgramValue::Int32(MachineTerm::constant(1)));
+            .store(at(8), ProgramValue::Int32(OldMachineTerm::constant(1)));
         assert!(!stale.matches_call_memory_havoc_result(
             &before,
             std::slice::from_ref(&range),
@@ -766,11 +766,11 @@ mod call_havoc_local_retention_tests {
     fn call_havoc_preserves_only_existing_local_initialization() {
         let at = |offset| Address {
             base: "local:initialization".into(),
-            offset: AddressOffset::Constant(offset),
+            offset: OldAddressOffset::Constant(offset),
         };
         let before = SymbolicMemory::new()
             .with_block(at(0).base.clone(), 16)
-            .store(at(0), ProgramValue::Int32(MachineTerm::constant(7)));
+            .store(at(0), ProgramValue::Int32(OldMachineTerm::constant(7)));
         let range = MemoryRange::new_with_element_width(at(0), 0u32.into(), 16u32.into(), 1);
         let facts = PureFactContext::new();
         let after = before.clone().with_call_memory_havoc(
@@ -784,7 +784,7 @@ mod call_havoc_local_retention_tests {
         assert!(!after.has_initialized_bytes_at(&at(8), 4));
         let named = after.clone().materialize_named_cell(
             at(0),
-            ProgramValue::Int32(MachineTerm::Variable(Variable(944_016))),
+            ProgramValue::Int32(OldMachineTerm::Variable(Variable(944_016))),
         );
         assert!(
             named.known_value(&at(0)).is_none(),
@@ -793,7 +793,7 @@ mod call_havoc_local_retention_tests {
         assert!(named.has_initialized_bytes_at(&at(0), 4));
         let fresh = after
             .clone()
-            .materialize_named_cell(at(8), ProgramValue::Int32(MachineTerm::constant(1)));
+            .materialize_named_cell(at(8), ProgramValue::Int32(OldMachineTerm::constant(1)));
         assert!(fresh.known_value(&at(8)).is_none());
         let mut forged = after.clone();
         std::sync::Arc::make_mut(&mut forged.heap)
@@ -824,7 +824,7 @@ mod call_havoc_local_retention_tests {
     fn call_havoc_drops_explicitly_written_local_union_views() {
         let pointer = Address {
             base: "local:borrowed-union".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let before = SymbolicMemory::new()
             .with_block(pointer.base.clone(), 8)
@@ -834,7 +834,7 @@ mod call_havoc_local_retention_tests {
                 vec![(
                     pointer.clone(),
                     ProgramType::Int32,
-                    ProgramValue::Int32(MachineTerm::constant(1)),
+                    ProgramValue::Int32(OldMachineTerm::constant(1)),
                 )],
             );
         let range =
@@ -859,17 +859,17 @@ mod call_havoc_local_retention_tests {
     fn call_havoc_drops_a_local_cell_written_through_an_interior_alias() {
         let pointer = Address {
             base: "local:interior-field".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let alias = Address::symbolic(Variable(944_021));
         let before = SymbolicMemory::new()
             .with_block(pointer.base.clone(), 4)
             .store(
                 pointer.clone(),
-                ProgramValue::Int32(MachineTerm::constant(7)),
+                ProgramValue::Int32(OldMachineTerm::constant(7)),
             );
         let facts = PureFactContext::new().assume_condition(
-            ConditionTerm::address_equal(alias.clone(), pointer.offset_by_bytes(1)),
+            OldConditionTerm::address_equal(alias.clone(), pointer.offset_by_bytes(1)),
             true,
         );
         let range = MemoryRange::new_with_element_width(alias, 0u32.into(), 1u32.into(), 1);
@@ -889,7 +889,7 @@ mod call_havoc_local_retention_tests {
         ));
         assert!(
             !after
-                .store(pointer, ProgramValue::Int32(MachineTerm::constant(7)))
+                .store(pointer, ProgramValue::Int32(OldMachineTerm::constant(7)))
                 .matches_call_memory_havoc_result(
                     &before,
                     std::slice::from_ref(&range),
@@ -903,30 +903,30 @@ mod call_havoc_local_retention_tests {
     fn call_havoc_drops_local_cell_when_write_range_is_assumed_equal_to_it() {
         let local = Address {
             base: AddressBase::Concrete("local:t".to_string()),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let symbolic = Address {
             base: AddressBase::Symbolic(Variable(944_001)),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let assumed_alias_range = MemoryRange::new(
             symbolic.clone(),
-            MachineTerm::constant(0),
-            MachineTerm::constant(1),
+            OldMachineTerm::constant(0),
+            OldMachineTerm::constant(1),
         );
         let assumptions = PureFactContext::new().assume_proposition(Proposition::condition_is(
-            ConditionTerm::address_equal(symbolic, local.clone()),
+            OldConditionTerm::address_equal(symbolic, local.clone()),
             true,
         ));
         let unrelated_range = MemoryRange::new(
             Address {
                 base: AddressBase::ExternalArgument,
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
-            MachineTerm::constant(0),
-            MachineTerm::constant(1),
+            OldMachineTerm::constant(0),
+            OldMachineTerm::constant(1),
         );
-        let value = ProgramValue::Int32(MachineTerm::constant(41));
+        let value = ProgramValue::Int32(OldMachineTerm::constant(41));
         let before = SymbolicMemory::new()
             .with_block(local.base.clone(), 4)
             .store(local.clone(), value.clone());
@@ -978,17 +978,17 @@ mod call_havoc_union_view_tests {
         let block: AddressBase = "global:union-havoc".into();
         let written = Address {
             base: block.clone(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let sibling = Address {
             base: block.clone(),
-            offset: AddressOffset::Constant(8),
+            offset: OldAddressOffset::Constant(8),
         };
         let view = |pointer: &Address, value: u32| {
             (
                 pointer.clone(),
                 ProgramType::Int32,
-                ProgramValue::Int32(MachineTerm::constant(value)),
+                ProgramValue::Int32(OldMachineTerm::constant(value)),
             )
         };
         let before = SymbolicMemory::new()
@@ -997,8 +997,8 @@ mod call_havoc_union_view_tests {
             .store_union_views(sibling.clone(), 8, vec![view(&sibling, 5)]);
         let range = MemoryRange::new_with_element_width(
             written.clone(),
-            MachineTerm::constant(0),
-            MachineTerm::constant(4),
+            OldMachineTerm::constant(0),
+            OldMachineTerm::constant(4),
             1,
         );
         let assumptions = PureFactContext::new();
@@ -1011,7 +1011,7 @@ mod call_havoc_union_view_tests {
         assert_eq!(after.known_union_value(&written, ProgramType::Int32), None);
         assert_eq!(
             after.known_union_value(&sibling, ProgramType::Int32),
-            Some(ProgramValue::Int32(MachineTerm::constant(5)))
+            Some(ProgramValue::Int32(OldMachineTerm::constant(5)))
         );
         assert!(after.matches_call_memory_havoc_result(
             &before,
@@ -1023,7 +1023,7 @@ mod call_havoc_union_view_tests {
         let mut stale = after.clone();
         std::sync::Arc::make_mut(&mut stale.union_cells).insert(
             (written.clone(), ProgramType::Int32),
-            ProgramValue::Int32(MachineTerm::constant(3)).into(),
+            ProgramValue::Int32(OldMachineTerm::constant(3)).into(),
         );
         assert!(!stale.matches_call_memory_havoc_result(
             &before,
@@ -1042,14 +1042,14 @@ mod forget_cached_values_tests {
         (
             pointer.clone(),
             ProgramType::Int32,
-            ProgramValue::Int32(MachineTerm::constant(value)),
+            ProgramValue::Int32(OldMachineTerm::constant(value)),
         )
     }
 
     fn zeroed_heap_with_cell() -> (SymbolicMemory, Address) {
         let base = Address {
             base: AddressBase::Heap(944_100),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let mut memory = SymbolicMemory::new().with_block(base.base.clone(), 8);
         let heap = std::sync::Arc::make_mut(&mut memory.heap);
@@ -1066,11 +1066,11 @@ mod forget_cached_values_tests {
     fn loop_havoc_drops_union_views_outside_preserved_blocks() {
         let written = Address {
             base: "global:loop-union".into(),
-            offset: AddressOffset::Constant(4),
+            offset: OldAddressOffset::Constant(4),
         };
         let preserved = Address {
             base: "local:loop-union-kept".into(),
-            offset: AddressOffset::Constant(4),
+            offset: OldAddressOffset::Constant(4),
         };
         let before = SymbolicMemory::new()
             .with_block(written.base.clone(), 12)
@@ -1086,7 +1086,7 @@ mod forget_cached_values_tests {
         assert_eq!(after.known_union_value(&written, ProgramType::Int32), None);
         assert_eq!(
             after.known_union_value(&preserved, ProgramType::Int32),
-            Some(ProgramValue::Int32(MachineTerm::constant(5)))
+            Some(ProgramValue::Int32(OldMachineTerm::constant(5)))
         );
     }
 
@@ -1136,7 +1136,7 @@ mod forget_cached_values_tests {
         let (before, base) = zeroed_heap_with_cell();
         let beside = Address {
             base: base.base.clone(),
-            offset: AddressOffset::Constant(4),
+            offset: OldAddressOffset::Constant(4),
         };
         // The cell covers the first four bytes, so only the bytes beside it
         // read as zero.
@@ -1159,11 +1159,11 @@ mod forget_cached_values_tests {
     fn a_zero_reading_is_refused_for_bytes_a_cell_covers() {
         let base = Address {
             base: AddressBase::Heap(944_104),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let at = |offset: i64| Address {
             base: base.base.clone(),
-            offset: AddressOffset::Constant(offset),
+            offset: OldAddressOffset::Constant(offset),
         };
         let mut memory = SymbolicMemory::new().with_block(base.base.clone(), 16);
         let heap = std::sync::Arc::make_mut(&mut memory.heap);
@@ -1180,7 +1180,7 @@ mod forget_cached_values_tests {
         // Eight bytes at 0 contain the four at 4, and miss the four at 8.
         let wide = memory.clone().store(
             at(0),
-            ProgramValue::Int64(MachineTerm::int64_constant(1 << 40)),
+            ProgramValue::Int64(OldMachineTerm::int64_constant(1 << 40)),
         );
         assert!(!wide.is_zeroed_heap_address(&at(4), 4, &facts));
         assert!(wide.is_zeroed_heap_address(&at(8), 4, &facts));
@@ -1188,7 +1188,10 @@ mod forget_cached_values_tests {
         // from it by any constant.
         let symbolic = Address {
             base: base.base.clone(),
-            offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(944_105)), 4),
+            offset: OldAddressOffset::scaled_int32_node(
+                OldMachineTerm::Variable(Variable(944_105)),
+                4,
+            ),
         };
         assert!(memory.is_zeroed_heap_address(&symbolic, 4, &facts));
         assert!(!narrow.is_zeroed_heap_address(&symbolic, 4, &facts));
@@ -1216,7 +1219,7 @@ mod forget_cached_values_tests {
             .expect("joinable arms");
         let beside = Address {
             base: base.base.clone(),
-            offset: AddressOffset::Constant(4),
+            offset: OldAddressOffset::Constant(4),
         };
         assert!(!from_wrote.is_zeroed_heap_address(&beside, 4, &PureFactContext::new()));
         assert_eq!(from_wrote.heap, from_untouched.heap);
@@ -1227,12 +1230,12 @@ mod forget_cached_values_tests {
 mod havoc_identity_tests {
     use super::*;
 
-    fn nested_term(depth: usize, tail: u32) -> MachineTerm {
-        (0..depth).fold(MachineTerm::constant(tail), |term, _| {
+    fn nested_term(depth: usize, tail: u32) -> OldMachineTerm {
+        (0..depth).fold(OldMachineTerm::constant(tail), |term, _| {
             binary_node!(
                 Int32,
                 Add,
-                Box::new(MachineTerm::constant(0)),
+                Box::new(OldMachineTerm::constant(0)),
                 Box::new(term)
             )
         })
@@ -1242,10 +1245,10 @@ mod havoc_identity_tests {
         MemoryRange::new(
             Address {
                 base: "deep-havoc-range".into(),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
             nested_term(depth, tail),
-            MachineTerm::constant(1_024),
+            OldMachineTerm::constant(1_024),
         )
     }
 
@@ -1263,10 +1266,10 @@ mod havoc_identity_tests {
             let range = MemoryRange::new(
                 Address {
                     base: block,
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0),
                 },
-                MachineTerm::constant(0),
-                MachineTerm::constant(1),
+                OldMachineTerm::constant(0),
+                OldMachineTerm::constant(1),
             );
             memory_havoc_write_set_identity(&[range])
         });
@@ -1356,7 +1359,7 @@ fn memory_havoc_write_set_fingerprint(mutable_ranges: &[MemoryRange]) -> u32 {
 pub(crate) fn resource_context_has_symbolic_range_read(
     resources: &ResourceContext,
     base: &Address,
-    bytes: &MachineTerm,
+    bytes: &OldMachineTerm,
     assumptions: &PureFactContext,
 ) -> bool {
     let footprint =
@@ -2031,7 +2034,7 @@ impl LocalEnvironment {
     pub(in crate::kernel) fn has_slot_in_block(&self, block: &AddressBase) -> bool {
         let first = Address {
             base: block.clone(),
-            offset: AddressOffset::Constant(i64::MIN),
+            offset: OldAddressOffset::Constant(i64::MIN),
         };
         self.slots.contains_key(&first)
             || self
@@ -2080,7 +2083,7 @@ impl LocalEnvironment {
         let mut names = Vec::new();
         let mut at = Address {
             base: block.clone(),
-            offset: AddressOffset::Constant(i64::MIN),
+            offset: OldAddressOffset::Constant(i64::MIN),
         };
         if let Some(name) = self.slots.get(&at) {
             names.push(name);
@@ -2169,7 +2172,7 @@ fn held_address_base(binding: &LocalBinding) -> Option<&AddressBase> {
 }
 
 /// The numeric value of a scalar of integer or truth type.
-fn held_integer_term(binding: &LocalBinding) -> Option<&MachineTerm> {
+fn held_integer_term(binding: &LocalBinding) -> Option<&OldMachineTerm> {
     let LocalBinding::Object { value, .. } = binding else {
         return None;
     };
@@ -2227,24 +2230,24 @@ fn held_fingerprint(binding: &LocalBinding) -> Option<u64> {
         .or_else(|| held_algebraic_value(binding).and_then(held_algebraic_fingerprint))
 }
 
-fn held_term_atom(term: &MachineTerm, hasher: &mut impl std::hash::Hasher) {
+fn held_term_atom(term: &OldMachineTerm, hasher: &mut impl std::hash::Hasher) {
     use std::hash::Hash;
     std::mem::discriminant(term).hash(hasher);
     // One variant spells every constant, so its format is part of the
     // fingerprint, as the operators' is.
-    if let MachineTerm::Constant { format, .. } = term {
+    if let OldMachineTerm::Constant { format, .. } = term {
         format.hash(hasher);
     }
     // So is a conversion's spelling: one variant spells every conversion.
-    if let MachineTerm::Cast { spelling, .. } = term {
+    if let OldMachineTerm::Cast { spelling, .. } = term {
         spelling.hash(hasher);
     }
     match term {
-        MachineTerm::ThreadHandle(id) => id.hash(hasher),
-        MachineTerm::Variable(variable) => variable.hash(hasher),
+        OldMachineTerm::ThreadHandle(id) => id.hash(hasher),
+        OldMachineTerm::Variable(variable) => variable.hash(hasher),
         bits32_constant!(value) => constant_u32(*value).hash(hasher),
-        MachineTerm::Binary { format, op, .. } => (format, op).hash(hasher),
-        MachineTerm::Unary { format, op, .. } => (format, op).hash(hasher),
+        OldMachineTerm::Binary { format, op, .. } => (format, op).hash(hasher),
+        OldMachineTerm::Unary { format, op, .. } => (format, op).hash(hasher),
         _ => {}
     }
 }
@@ -2254,7 +2257,7 @@ fn held_term_atom(term: &MachineTerm, hasher: &mut impl std::hash::Hasher) {
 /// format and operator, and the same of a binary node's two
 /// operands. Equal terms share a fingerprint; a lookup compares the terms
 /// it finds, so a shared fingerprint costs only a comparison.
-pub(crate) fn held_term_fingerprint(term: &MachineTerm) -> u64 {
+pub(crate) fn held_term_fingerprint(term: &OldMachineTerm) -> u64 {
     use std::hash::Hasher;
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     held_term_atom(term, &mut hasher);
@@ -2280,14 +2283,14 @@ fn held_kernel_term_fingerprint(term: &KernelTerm) -> Option<u64> {
     }
     fn atom(term: &KernelTerm, hash: &mut impl Hasher) -> Option<()> {
         use KernelTermNode as N;
-        let zero = || Box::new(MachineTerm::constant(0));
+        let zero = || Box::new(OldMachineTerm::constant(0));
         let shape = match term.node() {
-            N::ThreadHandle(id) => MachineTerm::ThreadHandle(*id),
-            N::MachineLiteral(value) => value.legacy_term(),
-            N::Variable(value) => MachineTerm::Variable(*value),
+            N::ThreadHandle(id) => OldMachineTerm::ThreadHandle(*id),
+            N::MachineLiteral(value) => value.old_term(),
+            N::Variable(value) => OldMachineTerm::Variable(*value),
             N::MachineBinary {
                 format, operator, ..
-            } => MachineTerm::Binary {
+            } => OldMachineTerm::Binary {
                 format: *format,
                 op: *operator,
                 left: zero(),
@@ -2295,7 +2298,7 @@ fn held_kernel_term_fingerprint(term: &KernelTerm) -> Option<u64> {
             },
             N::MachineUnary {
                 format, operator, ..
-            } => MachineTerm::Unary {
+            } => OldMachineTerm::Unary {
                 format: *format,
                 op: *operator,
                 operand: zero(),
@@ -2305,21 +2308,21 @@ fn held_kernel_term_fingerprint(term: &KernelTerm) -> Option<u64> {
                 source,
                 destination,
                 ..
-            } => MachineTerm::cast_node(*encoding, *source, *destination, *zero()),
-            N::BoolCast { destination, .. } => MachineTerm::BoolCast {
+            } => OldMachineTerm::cast_node(*encoding, *source, *destination, *zero()),
+            N::BoolCast { destination, .. } => OldMachineTerm::BoolCast {
                 to: *destination,
-                value: Box::new(ConditionTerm::Constant(false)),
+                value: Box::new(OldConditionTerm::Constant(false)),
             },
-            N::IntegerToMachine { destination, .. } => MachineTerm::IntegerToMachine {
+            N::IntegerToMachine { destination, .. } => OldMachineTerm::IntegerToMachine {
                 destination: *destination,
                 value: IntegerTerm::constant_i64(0).into(),
             },
-            N::Call { .. } => MachineTerm::ClickFunctionApplication {
+            N::Call { .. } => OldMachineTerm::ClickFunctionApplication {
                 name: String::new(),
                 arguments: Vec::new(),
             },
-            N::MachineIf { .. } => MachineTerm::If {
-                condition: Box::new(ConditionTerm::Constant(false)),
+            N::MachineIf { .. } => OldMachineTerm::If {
+                condition: Box::new(OldConditionTerm::Constant(false)),
                 then_term: zero(),
                 else_term: zero(),
             },
@@ -2489,7 +2492,7 @@ impl LocalEnvironment {
     /// fingerprint, and each is compared with `term`.
     pub(crate) fn names_holding_integer<'a, 't>(
         &'a self,
-        term: &'t MachineTerm,
+        term: &'t OldMachineTerm,
     ) -> impl Iterator<Item = &'a BindingName> + use<'a, 't> {
         self.names_holding_integer_matching(Some(held_term_fingerprint(term)), move |held| {
             if let Some(root) = held.shared() {
@@ -2623,7 +2626,7 @@ impl LocalEnvironment {
     pub(crate) fn changed_integer_holdings<'a>(
         &'a self,
         earlier: Option<&'a Self>,
-    ) -> Vec<(&'a BindingName, &'a MachineTerm)> {
+    ) -> Vec<(&'a BindingName, &'a OldMachineTerm)> {
         let changed = |name: &'a BindingName,
                        now: Option<&'a LocalBinding>,
                        before: Option<&LocalBinding>| {
@@ -2684,7 +2687,11 @@ impl LocalEnvironment {
     }
 
     /// Whether the scalar object `name` holds exactly `term`.
-    pub(crate) fn holds_integer(&self, name: impl Into<BindingName>, term: &MachineTerm) -> bool {
+    pub(crate) fn holds_integer(
+        &self,
+        name: impl Into<BindingName>,
+        term: &OldMachineTerm,
+    ) -> bool {
         let name = self.resolve_binding(&name.into());
         self.bindings.get(&name).and_then(held_integer_term) == Some(term)
     }
@@ -2800,7 +2807,7 @@ impl MemoryBlock {
 
     /// The block's byte count. A comparison whose width matters reads it
     /// through [`Self::allocation_size`].
-    pub fn size(&self) -> &MachineTerm {
+    pub fn size(&self) -> &OldMachineTerm {
         self.size.bytes()
     }
 
@@ -2841,7 +2848,7 @@ fn call_havoc_exact_byte_write(mutable_ranges: &[MemoryRange]) -> Option<(Addres
     if !base.base.is_local_block() || range.element_width() != 1 {
         return None;
     }
-    let AddressOffset::Constant(base_offset) = &base.offset else {
+    let OldAddressOffset::Constant(base_offset) = &base.offset else {
         return None;
     };
     let exact = -CONSTANT_LIMIT..=CONSTANT_LIMIT;
@@ -2855,7 +2862,7 @@ fn call_havoc_exact_byte_write(mutable_ranges: &[MemoryRange]) -> Option<(Addres
     }
     let start_pointer = Address {
         base: base.base.clone(),
-        offset: AddressOffset::Constant(start),
+        offset: OldAddressOffset::Constant(start),
     };
     Some((start_pointer, (end - start) as u32))
 }
@@ -2870,7 +2877,7 @@ fn call_havoc_run_window(write: Option<&(Address, u32)>, run: &CellRun) -> Optio
     use crate::kernel::reasoning::store_gap::CONSTANT_LIMIT;
 
     let (pointer, bytes) = write?;
-    let (AddressOffset::Constant(start), AddressOffset::Constant(run_start)) =
+    let (OldAddressOffset::Constant(start), OldAddressOffset::Constant(run_start)) =
         (&pointer.offset, &run.base().offset)
     else {
         return None;
@@ -2931,7 +2938,7 @@ pub struct CallKeptRanges {
     ranges: ResourceContext,
     residual: Option<ResourceContext>,
     identity: std::sync::Arc<KeptRangeSet>,
-    premises: Vec<(ConditionTerm, bool)>,
+    premises: Vec<(OldConditionTerm, bool)>,
     /// Shared definitions, sorted by name. A query first selects a residual
     /// composite by address, then looks up its definition to open an
     /// argument-direct body ([`Self::range_holding`]).
@@ -3087,7 +3094,7 @@ impl CallKeptRanges {
 
     pub(in crate::kernel) fn new(
         ranges: ResourceContext,
-        premises: Vec<(ConditionTerm, bool)>,
+        premises: Vec<(OldConditionTerm, bool)>,
         direct: Option<std::sync::Arc<[CompositeResourceDefinition]>>,
     ) -> Self {
         let identity = intern_kept_range_set(
@@ -3198,7 +3205,7 @@ impl CallKeptRanges {
     }
 
     /// Recorded placement premises, for state diagnostics.
-    pub(crate) fn diagnostic_premises(&self) -> &[(ConditionTerm, bool)] {
+    pub(crate) fn diagnostic_premises(&self) -> &[(OldConditionTerm, bool)] {
         &self.premises
     }
 
@@ -3603,8 +3610,8 @@ fn borrow_preserving_havoc_keeps_cell(
             byte_width != 0
                 && ledger.has_indexed_memory_overlap(&MemoryRange::new_with_element_width(
                     pointer.clone(),
-                    MachineTerm::constant(0),
-                    MachineTerm::constant(byte_width),
+                    OldMachineTerm::constant(0),
+                    OldMachineTerm::constant(byte_width),
                     1,
                 ))
         })
@@ -3630,8 +3637,8 @@ fn borrow_preserving_havoc_keeps_run(
     };
     let whole = MemoryRange::new_with_element_width(
         run.base().clone(),
-        MachineTerm::constant(0),
-        MachineTerm::constant(
+        OldMachineTerm::constant(0),
+        OldMachineTerm::constant(
             (run.count().saturating_sub(1))
                 .saturating_mul(run.element_width())
                 .saturating_add(run.value_width()),
@@ -3759,18 +3766,18 @@ fn external_argument_offset_derives_from(base: &Address, pointer: &Address) -> b
         return true;
     }
 
-    fn contains_base_offset(term: &AddressOffset, base: &AddressOffset) -> bool {
+    fn contains_base_offset(term: &OldAddressOffset, base: &OldAddressOffset) -> bool {
         match term {
-            AddressOffset::Add(left, right) => {
+            OldAddressOffset::Add(left, right) => {
                 left.as_ref() == base
                     || right.as_ref() == base
                     || contains_base_offset(left, base)
                     || contains_base_offset(right, base)
             }
-            AddressOffset::Constant(_)
-            | AddressOffset::Variable(_)
-            | AddressOffset::Int32Scaled { .. }
-            | AddressOffset::Int64Scaled { .. } => false,
+            OldAddressOffset::Constant(_)
+            | OldAddressOffset::Variable(_)
+            | OldAddressOffset::Int32Scaled { .. }
+            | OldAddressOffset::Int64Scaled { .. } => false,
         }
     }
 
@@ -3822,7 +3829,7 @@ impl SymbolicMemory {
                 vec![diagnostic_base],
                 vec![ProgramValue::pointer(Address {
                     base: block,
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0),
                 })],
             );
             return self;
@@ -4021,7 +4028,7 @@ impl SymbolicMemory {
             vec![
                 ProgramValue::pointer(Address {
                     base: block.clone(),
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0),
                 }),
                 ProgramValue::Int32(size.into()),
             ],
@@ -4029,7 +4036,7 @@ impl SymbolicMemory {
         self.with_uninitialized_object(
             Address {
                 base: block,
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
             size,
         )
@@ -4056,7 +4063,7 @@ impl SymbolicMemory {
         self.with_uninitialized_object(
             Address {
                 base: block,
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
             Self::UNBOUNDED_UNWRITTEN_SPAN,
         )
@@ -4175,7 +4182,7 @@ impl SymbolicMemory {
             vec![
                 ProgramValue::pointer(Address {
                     base: block.clone(),
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0),
                 }),
                 match size {
                     crate::kernel::LayoutSize::Bytes(bytes) => ProgramValue::Int32(bytes.into()),
@@ -4515,7 +4522,7 @@ impl SymbolicMemory {
             None => {
                 let at = |offset: i64| Address {
                     base: pointer.base.clone(),
-                    offset: AddressOffset::Constant(offset),
+                    offset: OldAddressOffset::Constant(offset),
                 };
                 let low = start.saturating_sub(WIDEST_CELL_BYTES - 1);
                 let cell_overlaps =
@@ -4690,7 +4697,7 @@ impl SymbolicMemory {
     pub(in crate::kernel) fn retire_contract_heap_allocation_claim(
         mut self,
         base: &Address,
-        bytes: &MachineTerm,
+        bytes: &OldMachineTerm,
         assumptions: &PureFactContext,
     ) -> Self {
         let prior = intern_derivation_base(&mut self);
@@ -4856,7 +4863,7 @@ impl SymbolicMemory {
             AddressBase::Symbolic(variable) if self.heap.pending_allocations.contains_key(base) => {
                 let resolved = Address {
                     base: AddressBase::Heap(variable.0),
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0),
                 };
                 Some(crate::kernel::eval::rebase_resolved_allocation(
                     result, base, &resolved,
@@ -4887,7 +4894,7 @@ impl SymbolicMemory {
     pub(in crate::kernel) fn heap_identity_allocated(&self, identity: u64) -> bool {
         let base = |block| Address {
             base: block,
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         self.blocks.contains_key(&AddressBase::Heap(identity))
             // An `allocates(result, n)` call's block, claimed by its contract.
@@ -4910,7 +4917,7 @@ impl SymbolicMemory {
     pub(in crate::kernel) fn allocated_heap_identities(&self) -> Vec<u64> {
         let heap_base = |identity| Address {
             base: AddressBase::Heap(identity),
-            offset: AddressOffset::Constant(i64::MIN),
+            offset: OldAddressOffset::Constant(i64::MIN),
         };
         let mut identities = self
             .blocks
@@ -4970,7 +4977,7 @@ impl SymbolicMemory {
             };
             Address {
                 base: AddressBase::Heap(variable.0),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             }
         } else {
             Address::null()
@@ -5075,7 +5082,7 @@ impl SymbolicMemory {
                 memory = memory.with_initialized_object(
                     &Address {
                         base: resolved_base.base.clone(),
-                        offset: AddressOffset::Constant(*start),
+                        offset: OldAddressOffset::Constant(*start),
                     },
                     *length,
                 );
@@ -5495,7 +5502,7 @@ impl SymbolicMemory {
             };
             let Some(prefixes) = prefixes
                 .into_iter()
-                .map(MachineTerm::as_const)
+                .map(OldMachineTerm::as_const)
                 .collect::<Option<Vec<_>>>()
             else {
                 continue;
@@ -5507,7 +5514,7 @@ impl SymbolicMemory {
                 zeroed_allocations.remove(base);
                 zeroed_prefix_allocations.insert(
                     base.clone(),
-                    MachineTerm::constant(
+                    OldMachineTerm::constant(
                         prefixes.into_iter().min().expect("nonempty interface arms"),
                     ),
                 );
@@ -5801,7 +5808,7 @@ impl SymbolicMemory {
             .expect("exact destination");
         let at = |offset| Address {
             base: copy.source.base.clone(),
-            offset: AddressOffset::Constant(offset),
+            offset: OldAddressOffset::Constant(offset),
         };
         let mut initialized = self.heap.initialized.clone();
         initialized
@@ -5816,7 +5823,7 @@ impl SymbolicMemory {
         let mut record = |start: i64, bytes| {
             let address = Address {
                 base: copy.destination.base.clone(),
-                offset: AddressOffset::Constant(destination_start + (start - source_start)),
+                offset: OldAddressOffset::Constant(destination_start + (start - source_start)),
             };
             initialized.record(&address, bytes);
         };
@@ -6468,7 +6475,7 @@ impl SymbolicMemory {
                         && offset % i64::from(element_type.byte_width()) == 0
                         && self
                             .block_size(&pointer.base)
-                            .and_then(MachineTerm::as_const)
+                            .and_then(OldMachineTerm::as_const)
                             .is_some_and(|size| {
                                 offset
                                     .checked_add(i64::from(bytes))
@@ -6480,8 +6487,11 @@ impl SymbolicMemory {
             || !valid_region(base)
             || !self.run_can_stand_for_cells_at(base)
             || (fresh
-                && (base.offset != AddressOffset::Constant(0)
-                    || self.block_size(&base.base).and_then(MachineTerm::as_const) != Some(bytes)
+                && (base.offset != OldAddressOffset::Constant(0)
+                    || self
+                        .block_size(&base.base)
+                        .and_then(OldMachineTerm::as_const)
+                        != Some(bytes)
                     || AliasCandidates::only_block(&base.base)
                         .entries(self.cells.concrete())
                         .next()
@@ -6506,10 +6516,10 @@ impl SymbolicMemory {
                 || !self.run_can_stand_for_cells_at(pointer)
                 || (bytes != 0 && !self.has_initialized_bytes_under(pointer, bytes, assumptions))
                 || (fresh
-                    && (pointer.offset != AddressOffset::Constant(0)
+                    && (pointer.offset != OldAddressOffset::Constant(0)
                         || self
                             .block_size(&pointer.base)
-                            .and_then(MachineTerm::as_const)
+                            .and_then(OldMachineTerm::as_const)
                             != Some(bytes)))
             {
                 return Err(RuntimeError::FunctionContract(
@@ -6565,7 +6575,7 @@ impl SymbolicMemory {
             }
             let at = |offset| Address {
                 base: pointer.base.clone(),
-                offset: AddressOffset::Constant(offset),
+                offset: OldAddressOffset::Constant(offset),
             };
             // Reject symbolic-address caches with one indexed lookup. Concrete
             // cells are visited only inside the selected byte region, plus the
@@ -6639,7 +6649,7 @@ impl SymbolicMemory {
         }
         let target_at = |index| Address {
             base: base.base.clone(),
-            offset: AddressOffset::Constant(
+            offset: OldAddressOffset::Constant(
                 base.offset.as_const().unwrap()
                     + i64::from(index) * i64::from(element_type.byte_width()),
             ),
@@ -6730,7 +6740,9 @@ impl SymbolicMemory {
             let aligned = constant % width == 0
                 && match stem {
                     None => true,
-                    Some(AddressOffset::Int32Scaled { byte_width, .. }) => byte_width % width == 0,
+                    Some(OldAddressOffset::Int32Scaled { byte_width, .. }) => {
+                        byte_width % width == 0
+                    }
                     _ => false,
                 };
             pointer != &Address::null()
@@ -6749,8 +6761,11 @@ impl SymbolicMemory {
         if !valid(base)
             || (fresh
                 && (!base.base.is_local_block()
-                    || base.offset != AddressOffset::Constant(0)
-                    || self.block_size(&base.base).and_then(MachineTerm::as_const) != Some(bytes)
+                    || base.offset != OldAddressOffset::Constant(0)
+                    || self
+                        .block_size(&base.base)
+                        .and_then(OldMachineTerm::as_const)
+                        != Some(bytes)
                     || self.cells.runs_in_block(&base.base).next().is_some()
                     || AliasCandidates::only_block(&base.base)
                         .entries(self.cells.concrete())
@@ -7071,7 +7086,7 @@ impl SymbolicMemory {
         if matches!(pointer.base, AddressBase::Heap(_)) {
             let base = Address {
                 base: pointer.base.clone(),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             };
             if (self.heap.uninitialized_allocations.contains(&base)
                 || self.heap.zeroed_allocations.contains(&base)
@@ -7389,7 +7404,7 @@ impl SymbolicMemory {
     pub(in crate::kernel) fn is_live_declared_local_uint32(&self, pointer: &Address) -> bool {
         crate::instrumentation::record_deterministic_work(1);
         pointer.base.is_local_block()
-            && pointer.offset == AddressOffset::Constant(0)
+            && pointer.offset == OldAddressOffset::Constant(0)
             && !self.is_ended_local_address(pointer)
             && self.blocks.get(&pointer.base).is_some_and(|block| {
                 block.declared_scalar_type == Some(ProgramType::UInt32)
@@ -7404,7 +7419,7 @@ impl SymbolicMemory {
     pub(crate) fn changed_cell_integers<'a>(
         &'a self,
         earlier: Option<&'a Self>,
-    ) -> Vec<&'a MachineTerm> {
+    ) -> Vec<&'a OldMachineTerm> {
         self.cells
             .changed_concrete_cells(earlier.map(|earlier| earlier.cells.as_ref()))
             .into_iter()
@@ -7489,7 +7504,7 @@ impl SymbolicMemory {
     fn written_interval(&self, block: &AddressBase, start: i64, end: i64) -> bool {
         let at = |offset: i64| Address {
             base: block.clone(),
-            offset: AddressOffset::Constant(offset),
+            offset: OldAddressOffset::Constant(offset),
         };
         let concrete = self.cells.concrete();
         let mut cursor = start;
@@ -7558,7 +7573,7 @@ impl SymbolicMemory {
         let (atoms, shift) =
             crate::kernel::reasoning::memory_resolution::offset_atoms_and_constant(&pointer.offset);
         let [
-            AddressOffset::Int32Scaled {
+            OldAddressOffset::Int32Scaled {
                 value,
                 byte_width: scale,
             },
@@ -7769,7 +7784,7 @@ impl SymbolicMemory {
         memory.forget_initialized_bytes(
             &Address {
                 base: base.base.clone(),
-                offset: AddressOffset::Constant(field_start),
+                offset: OldAddressOffset::Constant(field_start),
             },
             program_type.byte_width(),
         );
@@ -8544,7 +8559,7 @@ impl SymbolicMemory {
         };
         Address {
             base: block,
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         }
     }
 
@@ -8571,7 +8586,7 @@ impl SymbolicMemory {
         };
         Address {
             base: block,
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         }
     }
 
@@ -8603,7 +8618,7 @@ impl SymbolicMemory {
         };
         Address {
             base: block,
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         }
     }
 
@@ -8622,7 +8637,7 @@ impl SymbolicMemory {
         };
         Address {
             base: block,
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         }
     }
 
@@ -8632,7 +8647,7 @@ impl SymbolicMemory {
                 identity: identity.clone(),
                 bytes: bytes.to_vec(),
             },
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         }
     }
 
@@ -8651,7 +8666,7 @@ impl SymbolicMemory {
         };
         Address {
             base: block,
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         }
     }
 
@@ -8659,7 +8674,7 @@ impl SymbolicMemory {
     pub(in crate::kernel) fn aggregate_return_pointer(frame: u64) -> Address {
         Address {
             base: AddressBase::AggregateReturn { frame },
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         }
     }
 
@@ -8673,25 +8688,25 @@ impl SymbolicMemory {
                     slice: length,
                     instance: LocalStorageInstance::Frame(frame),
                 },
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
             BindingName::ReferenceCarrier(referent) => Address {
                 base: AddressBase::ReferenceCarrier {
                     referent,
                     instance: LocalStorageInstance::Frame(frame),
                 },
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
             BindingName::Local(binding) => Address {
                 base: AddressBase::AutomaticLocal {
                     binding,
                     instance: LocalStorageInstance::Frame(frame),
                 },
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
             BindingName::Static(binding) => Address {
                 base: AddressBase::StaticObject { binding },
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
             BindingName::ContractResult
             | BindingName::ContractException
@@ -8700,7 +8715,7 @@ impl SymbolicMemory {
             }
             BindingName::Named(name) => Address {
                 base: format!("local:frame:{frame}:{name}").into(),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
         }
     }
@@ -8795,7 +8810,7 @@ impl SymbolicMemory {
             .is_some_and(MemoryBlock::is_read_only)
     }
 
-    pub(in crate::kernel) fn block_size(&self, block: &AddressBase) -> Option<&MachineTerm> {
+    pub(in crate::kernel) fn block_size(&self, block: &AddressBase) -> Option<&OldMachineTerm> {
         self.blocks.get(block).map(MemoryBlock::size)
     }
 
@@ -8901,7 +8916,7 @@ impl SymbolicMemory {
         site: &ProgramPoint,
         pointer: &Address,
     ) -> ProgramValue {
-        int32(crate::kernel::MachineTerm::read_named(
+        int32(crate::kernel::OldMachineTerm::read_named(
             self.legacy_read_point(site),
             pointer.clone(),
             LoadKind::Int32,
@@ -8909,14 +8924,14 @@ impl SymbolicMemory {
     }
 
     /// A signed byte read: the two's-complement conversion of the byte's
-    /// one unsigned read ([`MachineTerm::memory_read`]).
+    /// one unsigned read ([`OldMachineTerm::memory_read`]).
     #[cfg_attr(test, track_caller)]
     pub(in crate::kernel) fn symbolic_int8_load(
         &self,
         site: &ProgramPoint,
         pointer: &Address,
     ) -> ProgramValue {
-        int8(MachineTerm::read_named(
+        int8(OldMachineTerm::read_named(
             self.legacy_read_point(site),
             pointer.clone(),
             LoadKind::Int8,
@@ -8929,7 +8944,7 @@ impl SymbolicMemory {
         site: &ProgramPoint,
         pointer: &Address,
     ) -> ProgramValue {
-        int16(crate::kernel::MachineTerm::read_named(
+        int16(crate::kernel::OldMachineTerm::read_named(
             self.legacy_read_point(site),
             pointer.clone(),
             LoadKind::Int16,
@@ -8942,7 +8957,7 @@ impl SymbolicMemory {
         site: &ProgramPoint,
         pointer: &Address,
     ) -> ProgramValue {
-        uint8(crate::kernel::MachineTerm::read_named(
+        uint8(crate::kernel::OldMachineTerm::read_named(
             self.legacy_read_point(site),
             pointer.clone(),
             LoadKind::UInt8,
@@ -8955,7 +8970,7 @@ impl SymbolicMemory {
         site: &ProgramPoint,
         pointer: &Address,
     ) -> ProgramValue {
-        uint16(crate::kernel::MachineTerm::read_named(
+        uint16(crate::kernel::OldMachineTerm::read_named(
             self.legacy_read_point(site),
             pointer.clone(),
             LoadKind::UInt16,
@@ -8968,7 +8983,7 @@ impl SymbolicMemory {
         site: &ProgramPoint,
         pointer: &Address,
     ) -> ProgramValue {
-        uint32(crate::kernel::MachineTerm::read_named(
+        uint32(crate::kernel::OldMachineTerm::read_named(
             self.legacy_read_point(site),
             pointer.clone(),
             LoadKind::UInt32,
@@ -8981,7 +8996,7 @@ impl SymbolicMemory {
         site: &ProgramPoint,
         pointer: &Address,
     ) -> ProgramValue {
-        ProgramValue::Int64(crate::kernel::MachineTerm::read_named(
+        ProgramValue::Int64(crate::kernel::OldMachineTerm::read_named(
             self.legacy_read_point(site),
             pointer.clone(),
             LoadKind::Bits64,
@@ -9010,7 +9025,7 @@ impl SymbolicMemory {
         site: &ProgramPoint,
         pointer: &Address,
     ) -> ProgramValue {
-        ProgramValue::UInt64(crate::kernel::MachineTerm::read_named(
+        ProgramValue::UInt64(crate::kernel::OldMachineTerm::read_named(
             self.legacy_read_point(site),
             pointer.clone(),
             LoadKind::Bits64,
@@ -9026,7 +9041,7 @@ impl SymbolicMemory {
         if ty.format().bits() != 128 {
             return None;
         }
-        let load = crate::kernel::MachineTerm::read_named(
+        let load = crate::kernel::OldMachineTerm::read_named(
             ProgramPoint::unplaced(&(crate::kernel::intern_memory(self.clone()))),
             pointer.clone(),
             LoadKind::of_type(ty.program_type())?,
@@ -9039,7 +9054,7 @@ impl SymbolicMemory {
     }
 
     pub(in crate::kernel) fn symbolic_float32_load(&self, pointer: &Address) -> ProgramValue {
-        ProgramValue::Float32(crate::kernel::MachineTerm::read_named(
+        ProgramValue::Float32(crate::kernel::OldMachineTerm::read_named(
             ProgramPoint::unplaced(&(crate::kernel::intern_memory(self.clone()))),
             pointer.clone(),
             LoadKind::Float32,
@@ -9047,7 +9062,7 @@ impl SymbolicMemory {
     }
 
     pub(in crate::kernel) fn symbolic_float64_load(&self, pointer: &Address) -> ProgramValue {
-        ProgramValue::Float64(crate::kernel::MachineTerm::read_named(
+        ProgramValue::Float64(crate::kernel::OldMachineTerm::read_named(
             ProgramPoint::unplaced(&(crate::kernel::intern_memory(self.clone()))),
             pointer.clone(),
             LoadKind::Float64,
@@ -9086,7 +9101,7 @@ impl SymbolicMemory {
         value_type: ProgramType,
     ) -> ProgramValue {
         let retained_state = crate::kernel::intern_memory(self.clone());
-        let value = Address::loaded(&crate::kernel::MachineTerm::read_named(
+        let value = Address::loaded(&crate::kernel::OldMachineTerm::read_named(
             ProgramPoint::read_at_optional(&retained_state, site),
             pointer.clone(),
             LoadKind::Int32,
@@ -9706,7 +9721,7 @@ impl ExecutionState {
                 .ok_or("batch import requires the creation ledger")?
                 .import_observable_contract_population_quantity(
                     description,
-                    &MachineTerm::constant(total),
+                    &OldMachineTerm::constant(total),
                 )
                 .map_err(|refusal| format!("batch population import refused: {refusal}"))?;
             let mut next = self.clone();
@@ -9750,7 +9765,7 @@ impl ExecutionState {
             .creation
             .as_ref()
             .ok_or("batch import requires the creation ledger")?
-            .import_observable_contract_population_quantity(description, quantity.native_compat())
+            .import_observable_contract_population_quantity(description, quantity.old_form())
             .map_err(|refusal| format!("batch population import refused: {refusal}"))?;
         let mut next = self.clone();
         Arc::make_mut(&mut next.population_effects).creation = Some(events);
@@ -9879,7 +9894,7 @@ impl ExecutionState {
         selected: &ResourceFact,
         definition: &super::super::CompositeResourceDefinition,
         assumptions: &PureFactContext,
-    ) -> Result<(ResourceContext, Vec<MachineTerm>), String> {
+    ) -> Result<(ResourceContext, Vec<OldMachineTerm>), String> {
         self.authority_wrapper_fact_projection(selected, definition, assumptions, true)
     }
 
@@ -9890,7 +9905,7 @@ impl ExecutionState {
         selected: &ResourceFact,
         definition: &super::super::CompositeResourceDefinition,
         assumptions: &PureFactContext,
-    ) -> Result<(ResourceContext, Vec<MachineTerm>), String> {
+    ) -> Result<(ResourceContext, Vec<OldMachineTerm>), String> {
         self.authority_wrapper_fact_projection(selected, definition, assumptions, false)
     }
 
@@ -9900,7 +9915,7 @@ impl ExecutionState {
         definition: &super::super::CompositeResourceDefinition,
         assumptions: &PureFactContext,
         require_folded: bool,
-    ) -> Result<(ResourceContext, Vec<MachineTerm>), String> {
+    ) -> Result<(ResourceContext, Vec<OldMachineTerm>), String> {
         let (children, count) =
             self.authority_wrapper_body(selected, definition, assumptions, require_folded)?;
         // Retire the head before composing its body. Its ownership observations
@@ -9929,7 +9944,7 @@ impl ExecutionState {
         selected: &ResourceFact,
         definition: &super::super::CompositeResourceDefinition,
         assumptions: &PureFactContext,
-    ) -> Result<(Vec<ResourceFact>, Vec<MachineTerm>), String> {
+    ) -> Result<(Vec<ResourceFact>, Vec<OldMachineTerm>), String> {
         self.authority_wrapper_body(selected, definition, assumptions, true)
     }
 
@@ -9953,7 +9968,7 @@ impl ExecutionState {
         selected: &ResourceFact,
         definition: &super::super::CompositeResourceDefinition,
         assumptions: &PureFactContext,
-    ) -> Result<Vec<MachineTerm>, String> {
+    ) -> Result<Vec<OldMachineTerm>, String> {
         let (_, count) = self.authority_wrapper_body(selected, definition, assumptions, false)?;
         Ok(count)
     }
@@ -9964,7 +9979,7 @@ impl ExecutionState {
         definition: &super::super::CompositeResourceDefinition,
         assumptions: &PureFactContext,
         require_folded: bool,
-    ) -> Result<(Vec<ResourceFact>, Vec<MachineTerm>), String> {
+    ) -> Result<(Vec<ResourceFact>, Vec<OldMachineTerm>), String> {
         let (children, descriptions) =
             self.authority_wrapper_candidates(selected, definition, assumptions, require_folded)?;
         let counts = self.authority_counts_for_descriptions(descriptions)?;
@@ -9976,7 +9991,7 @@ impl ExecutionState {
     pub(in crate::kernel) fn returned_authority_counts(
         &self,
         authorities: &[ResourceFact],
-    ) -> Result<Vec<MachineTerm>, String> {
+    ) -> Result<Vec<OldMachineTerm>, String> {
         let descriptions = authorities
             .iter()
             .map(|fact| match fact.resource() {
@@ -9990,7 +10005,7 @@ impl ExecutionState {
     fn authority_counts_for_descriptions(
         &self,
         descriptions: Vec<ResourceDescription>,
-    ) -> Result<Vec<MachineTerm>, String> {
+    ) -> Result<Vec<OldMachineTerm>, String> {
         let mut counts = Vec::with_capacity(descriptions.len());
         for description in descriptions {
             let Some([crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(pointer))]) =
@@ -10008,7 +10023,7 @@ impl ExecutionState {
                 return Err("Requires owns authority(R(p))".into());
             }
             let external = is_external_population_anchor(anchor);
-            let count = if !external && anchor.offset == AddressOffset::Constant(0) {
+            let count = if !external && anchor.offset == OldAddressOffset::Constant(0) {
                 events
                     .observe_term(&anchor.base, description.family())
                     .map_err(|_| "Requires a current authority count")?
@@ -10018,20 +10033,20 @@ impl ExecutionState {
                     .ok_or("Requires a current authority count")?;
                 if let Some((produce, quantity)) = imported.combined_delta() {
                     if produce {
-                        MachineTerm::add(imported.entry_count, quantity)
+                        OldMachineTerm::add(imported.entry_count, quantity)
                     } else {
-                        MachineTerm::subtract(imported.entry_count, quantity)
+                        OldMachineTerm::subtract(imported.entry_count, quantity)
                     }
                 } else {
                     match imported.delta.cmp(&0) {
                         std::cmp::Ordering::Equal => imported.entry_count,
-                        std::cmp::Ordering::Greater => MachineTerm::add(
+                        std::cmp::Ordering::Greater => OldMachineTerm::add(
                             imported.entry_count,
-                            MachineTerm::constant(imported.delta.unsigned_abs()),
+                            OldMachineTerm::constant(imported.delta.unsigned_abs()),
                         ),
-                        std::cmp::Ordering::Less => MachineTerm::subtract(
+                        std::cmp::Ordering::Less => OldMachineTerm::subtract(
                             imported.entry_count,
-                            MachineTerm::constant(imported.delta.unsigned_abs()),
+                            OldMachineTerm::constant(imported.delta.unsigned_abs()),
                         ),
                     }
                 }
@@ -10156,7 +10171,7 @@ impl ExecutionState {
         selected: &ResourceFact,
         definition: &super::super::CompositeResourceDefinition,
         assumptions: &PureFactContext,
-    ) -> Result<Vec<(ResourceDescription, Option<MachineTerm>)>, String> {
+    ) -> Result<Vec<(ResourceDescription, Option<OldMachineTerm>)>, String> {
         if !self.resources.contains_exact_representation(selected) {
             return Err("Requires the declared owned control resource".into());
         }
@@ -10250,7 +10265,7 @@ impl ExecutionState {
             }
             components.push((
                 description.clone(),
-                Some(crate::kernel::MachineTerm::read_named(
+                Some(crate::kernel::OldMachineTerm::read_named(
                     ProgramPoint::unplaced(&(intern_memory_ref(&self.memory))),
                     anchor.clone(),
                     LoadKind::Int32,
@@ -10425,7 +10440,7 @@ impl ExecutionState {
 
     #[cfg(test)]
     pub(in crate::kernel) fn population_storage_created_here(&self, pointer: &Address) -> bool {
-        pointer.offset == AddressOffset::Constant(0)
+        pointer.offset == OldAddressOffset::Constant(0)
             && (matches!(&pointer.base, AddressBase::Heap(_))
                 && self.memory.live_heap_block_size(pointer).is_some()
                 || pointer.base.is_local_block() && self.memory.has_block(&pointer.base))
@@ -10484,7 +10499,7 @@ impl ExecutionState {
                 .map_err(|_| format!("Requires count({}(...)) == 0 and no outstanding member custody before authority retirement", description.family()))?;
         }
         if !imported_retirement
-            && (anchor.offset != AddressOffset::Constant(0)
+            && (anchor.offset != OldAddressOffset::Constant(0)
                 || !(matches!(&anchor.base, AddressBase::Heap(_))
                     && self.memory.live_heap_block_size(anchor).is_some()
                     || anchor.base.is_local_block() && self.memory.has_block(&anchor.base)))
@@ -10616,7 +10631,7 @@ impl ExecutionState {
             return Err(format!("Requires owns {name}(p)"));
         }
         if !imported_member_exchange
-            && (anchor.offset != AddressOffset::Constant(0)
+            && (anchor.offset != OldAddressOffset::Constant(0)
                 || !(matches!(&anchor.base, AddressBase::Heap(_))
                     && self.memory.live_heap_block_size(anchor).is_some()
                     || anchor.base.is_local_block() && self.memory.has_block(&anchor.base)))
@@ -10703,7 +10718,7 @@ impl ExecutionState {
                 && !assumptions.proves_memory_loadable_for_memory_resolution(
                     &self.memory,
                     &base,
-                    &MachineTerm::constant(bytes),
+                    &OldMachineTerm::constant(bytes),
                 )
             {
                 return Err("member private memory exceeds live storage".into());
@@ -10755,7 +10770,7 @@ impl ExecutionState {
                 &anchor.base,
                 &description,
                 produce,
-                quantity.native_compat(),
+                quantity.old_form(),
                 assumptions,
             )
         } else {
@@ -10763,7 +10778,7 @@ impl ExecutionState {
                 &anchor.base,
                 &description,
                 produce,
-                quantity.native_compat(),
+                quantity.old_form(),
                 assumptions,
             )
         };
@@ -11520,7 +11535,7 @@ impl ExecutionState {
         let run_slots = self.memory.cells.runs().filter_map(|run| {
             let pointer = Address {
                 base: run.base().base.clone(),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             };
             let index = run.live_slot_index(&pointer)?;
             Some((pointer, run.value(index)))
@@ -11530,7 +11545,7 @@ impl ExecutionState {
             .cells
             .concrete()
             .iter()
-            .filter(|(pointer, _)| pointer.offset == AddressOffset::Constant(0))
+            .filter(|(pointer, _)| pointer.offset == OldAddressOffset::Constant(0))
             .map(|(pointer, value)| (pointer.clone(), value.native().clone()))
             .chain(run_slots)
             .filter_map(|(pointer, value)| {
@@ -11553,7 +11568,7 @@ impl ExecutionState {
         // The candidates are the scalar locals bound to the variable, found
         // through the held-term index; each must still hold it in current
         // memory at its slot's start. The first such slot answers.
-        let term = MachineTerm::Variable(variable);
+        let term = OldMachineTerm::Variable(variable);
         let mut held = None;
         for name in self.locals.names_holding_integer(&term) {
             if crate::instrumentation::deadline_exceeded() {
@@ -11562,7 +11577,7 @@ impl ExecutionState {
             let Some(pointer) = self.locals.slot(name) else {
                 continue;
             };
-            if pointer.offset == AddressOffset::Constant(0)
+            if pointer.offset == OldAddressOffset::Constant(0)
                 && self.memory.cells.bitvector_variable_at(pointer) == Some(variable)
                 && held.is_none_or(|(first, _): (&Address, &BindingName)| pointer < first)
             {
@@ -11981,25 +11996,25 @@ mod contract_retirement_tests {
     fn retirement_drops_zeroed_status_under_each_equal_base_spelling() {
         let base = Address {
             base: AddressBase::Heap(922_200),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let aliases = [
             Address {
                 base: AddressBase::Symbolic(Variable(922_201)),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
             Address {
                 base: AddressBase::Symbolic(Variable(922_202)),
-                offset: AddressOffset::Constant(4),
+                offset: OldAddressOffset::Constant(4),
             },
         ];
         let unrelated = Address {
             base: AddressBase::Heap(922_203),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let assumptions = aliases.iter().fold(PureFactContext::new(), |facts, alias| {
             facts.assume_proposition(Proposition::condition_is(
-                ConditionTerm::address_equal(alias.clone(), base.clone()),
+                OldConditionTerm::address_equal(alias.clone(), base.clone()),
                 true,
             ))
         });
@@ -12014,7 +12029,7 @@ mod contract_retirement_tests {
         assert!(memory.has_initialized_bytes_at(&aliases[0], 4));
         let retired = memory.retire_contract_heap_allocation_claim(
             &base,
-            &MachineTerm::constant(4),
+            &OldMachineTerm::constant(4),
             &assumptions,
         );
         for alias in &aliases {
@@ -12039,14 +12054,14 @@ mod union_store_tests {
     fn union_store_invalidates_the_other_members_stale_overlay() {
         let base = Address {
             base: AddressBase::Concrete("local:u".to_string()),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let memory = SymbolicMemory::new()
             .store_union(base.clone(), ProgramType::UInt8, crate::kernel::uint8(0xAA))
             .store_union(
                 base.clone(),
                 ProgramType::Int32,
-                ProgramValue::Int32(MachineTerm::constant(0x51)),
+                ProgramValue::Int32(OldMachineTerm::constant(0x51)),
             );
         assert_eq!(
             memory.known_union_value(&base, ProgramType::UInt8),
@@ -12055,7 +12070,7 @@ mod union_store_tests {
         );
         assert_eq!(
             memory.known_union_value(&base, ProgramType::Int32),
-            Some(ProgramValue::Int32(MachineTerm::constant(0x51))),
+            Some(ProgramValue::Int32(OldMachineTerm::constant(0x51))),
         );
     }
 }
@@ -12072,7 +12087,7 @@ mod interface_join_tombstone_tests {
     fn interface_join_keeps_one_arm_deallocation() {
         let base = Address {
             base: AddressBase::Heap(923_001),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         // Arm B kept it live.
         let alive = SymbolicMemory::new()
@@ -12116,7 +12131,7 @@ mod join_allocation_spelling_tests {
     fn heap_base(identity: u64) -> Address {
         Address {
             base: AddressBase::Heap(identity),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         }
     }
 
@@ -12156,10 +12171,10 @@ mod join_allocation_spelling_tests {
         let p = heap_base(924_001);
         let q = Address {
             base: AddressBase::Symbolic(Variable(924_005)),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let assumptions = PureFactContext::new().assume_proposition(Proposition::condition_is(
-            ConditionTerm::address_equal(p.clone(), q.clone()),
+            OldConditionTerm::address_equal(p.clone(), q.clone()),
             true,
         ));
         assert!(!assumptions.is_inconsistent());
@@ -12182,11 +12197,11 @@ mod join_allocation_spelling_tests {
         let p = heap_base(924_021);
         let q = heap_base(924_025);
         assert_eq!(
-            ConditionTerm::address_equal(p.clone(), q.clone()),
-            ConditionTerm::Constant(false)
+            OldConditionTerm::address_equal(p.clone(), q.clone()),
+            OldConditionTerm::Constant(false)
         );
         let assumptions = PureFactContext::new().assume_proposition(Proposition::condition_is(
-            ConditionTerm::address_equal(p, q),
+            OldConditionTerm::address_equal(p, q),
             true,
         ));
         assert!(assumptions.is_inconsistent());
@@ -12322,7 +12337,10 @@ mod initialization_record_tests {
             Address::symbolic(Variable(924_041)),
             Address {
                 base: AddressBase::ExternalArgument,
-                offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(924_042)), 4),
+                offset: OldAddressOffset::scale_int32(
+                    OldMachineTerm::Variable(Variable(924_042)),
+                    4,
+                ),
             },
         ] {
             for seeded in [false, true] {
@@ -12380,14 +12398,14 @@ mod initialization_record_tests {
     fn element(block: &str, index: i64) -> Address {
         Address {
             base: AddressBase::from(block),
-            offset: AddressOffset::Constant(4 * index),
+            offset: OldAddressOffset::Constant(4 * index),
         }
     }
 
     fn unplaced(block: &str) -> Address {
         Address {
             base: AddressBase::from(block),
-            offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(924_001)), 4),
+            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(924_001)), 4),
         }
     }
 
@@ -12396,11 +12414,11 @@ mod initialization_record_tests {
             .with_block(block, 8)
             .store(
                 element(block, 0),
-                ProgramValue::Int32(MachineTerm::constant(5)),
+                ProgramValue::Int32(OldMachineTerm::constant(5)),
             )
             .store(
                 element(block, 1),
-                ProgramValue::Int32(MachineTerm::constant(5)),
+                ProgramValue::Int32(OldMachineTerm::constant(5)),
             )
     }
 
@@ -12423,7 +12441,7 @@ mod initialization_record_tests {
         // The store the forgetting precedes only initializes more.
         let stored = forgotten.store(
             unplaced(block),
-            ProgramValue::Int32(MachineTerm::constant(7)),
+            ProgramValue::Int32(OldMachineTerm::constant(7)),
         );
         assert!(stored.has_initialized_bytes_at(&element(block, 0), 8));
     }
@@ -12449,7 +12467,7 @@ mod initialization_record_tests {
         let forgotten = forgotten_pair(block);
         let first_only = SymbolicMemory::new().with_block(block, 8).store(
             element(block, 0),
-            ProgramValue::Int32(MachineTerm::constant(5)),
+            ProgramValue::Int32(OldMachineTerm::constant(5)),
         );
         let arms = [&forgotten, &first_only];
         let joined = forgotten
@@ -12469,7 +12487,7 @@ mod initialization_record_tests {
     /// `count` int32s (`stride` 4), its zero contents seeded as constant runs
     /// with no initialization recorded, so only the runs say it was written.
     fn zero_runs(block: &str, count: u32, stride: u32) -> SymbolicMemory {
-        let zero = ProgramValue::Int32(MachineTerm::constant(0));
+        let zero = ProgramValue::Int32(OldMachineTerm::constant(0));
         let runs = (0..stride / 4)
             .map(|field| ConstantRun {
                 offset: 4 * field,
@@ -12518,19 +12536,22 @@ mod initialization_record_tests {
     fn an_element_index_the_facts_bound_reads_a_covering_run() {
         let block = "local:record-index";
         let forgotten = forgotten_pair(block);
-        let index = MachineTerm::Variable(Variable(924_004));
+        let index = OldMachineTerm::Variable(Variable(924_004));
         let read = Address {
             base: AddressBase::from(block),
-            offset: AddressOffset::scale_int32(index.clone(), 4),
+            offset: OldAddressOffset::scale_int32(index.clone(), 4),
         };
         let bounded = |high: u32| {
             PureFactContext::new()
                 .assume_condition(
-                    ConditionTerm::signed_less_equal(MachineTerm::constant(0), index.clone()),
+                    OldConditionTerm::signed_less_equal(OldMachineTerm::constant(0), index.clone()),
                     true,
                 )
                 .assume_condition(
-                    ConditionTerm::signed_less_equal(index.clone(), MachineTerm::constant(high)),
+                    OldConditionTerm::signed_less_equal(
+                        index.clone(),
+                        OldMachineTerm::constant(high),
+                    ),
                     true,
                 )
         };
@@ -12539,14 +12560,14 @@ mod initialization_record_tests {
         assert!(!forgotten.has_initialized_bytes_under(&read, 4, &PureFactContext::new()));
     }
 
-    fn index_between(index: &MachineTerm, low: u32, high: u32) -> PureFactContext {
+    fn index_between(index: &OldMachineTerm, low: u32, high: u32) -> PureFactContext {
         PureFactContext::new()
             .assume_condition(
-                ConditionTerm::signed_less_equal(MachineTerm::constant(low), index.clone()),
+                OldConditionTerm::signed_less_equal(OldMachineTerm::constant(low), index.clone()),
                 true,
             )
             .assume_condition(
-                ConditionTerm::signed_less_equal(index.clone(), MachineTerm::constant(high)),
+                OldConditionTerm::signed_less_equal(index.clone(), OldMachineTerm::constant(high)),
                 true,
             )
     }
@@ -12559,10 +12580,10 @@ mod initialization_record_tests {
         let block = "local:record-cells";
         let written = written_pair(block);
         assert!(!written.has_initialized_bytes_at(&element(block, 0), 8));
-        let index = MachineTerm::Variable(Variable(924_007));
+        let index = OldMachineTerm::Variable(Variable(924_007));
         let read = Address {
             base: AddressBase::from(block),
-            offset: AddressOffset::scale_int32(index.clone(), 4),
+            offset: OldAddressOffset::scale_int32(index.clone(), 4),
         };
         assert!(written.has_initialized_bytes_under(&read, 4, &index_between(&index, 0, 1)));
         assert!(!written.has_initialized_bytes_under(&read, 4, &index_between(&index, 0, 2)));
@@ -12570,11 +12591,11 @@ mod initialization_record_tests {
             .with_block(block, 12)
             .store(
                 element(block, 0),
-                ProgramValue::Int32(MachineTerm::constant(5)),
+                ProgramValue::Int32(OldMachineTerm::constant(5)),
             )
             .store(
                 element(block, 2),
-                ProgramValue::Int32(MachineTerm::constant(5)),
+                ProgramValue::Int32(OldMachineTerm::constant(5)),
             );
         assert!(!gap.has_initialized_bytes_under(&read, 4, &index_between(&index, 0, 2)));
         assert!(gap.has_initialized_bytes_under(&read, 4, &index_between(&index, 2, 2)));
@@ -12618,7 +12639,7 @@ mod local_variable_spelling_tests {
                     &name,
                     ProgramValue::pointer(Address {
                         base: blocks[step % 2].clone(),
-                        offset: AddressOffset::Constant(step as i64),
+                        offset: OldAddressOffset::Constant(step as i64),
                     }),
                 );
             }
@@ -12655,11 +12676,11 @@ mod local_variable_spelling_tests {
 
     #[test]
     fn held_term_index_agrees_with_a_scan_of_the_bindings() {
-        let x = MachineTerm::Variable(Variable(971_020));
-        let y = MachineTerm::Variable(Variable(971_021));
+        let x = OldMachineTerm::Variable(Variable(971_020));
+        let y = OldMachineTerm::Variable(Variable(971_021));
         // Terms that share a fingerprint (same root and operand roots) but
         // differ deeper, beside equal terms held by several locals.
-        let deep = |term: MachineTerm| {
+        let deep = |term: OldMachineTerm| {
             binary_node!(
                 Int32,
                 Add,
@@ -12669,7 +12690,7 @@ mod local_variable_spelling_tests {
                     Box::new(term),
                     Box::new(x.clone())
                 )),
-                Box::new(MachineTerm::constant(1)),
+                Box::new(OldMachineTerm::constant(1)),
             )
         };
         let terms = [
@@ -12677,7 +12698,7 @@ mod local_variable_spelling_tests {
             y.clone(),
             deep(x.clone()),
             deep(y.clone()),
-            MachineTerm::constant(7),
+            OldMachineTerm::constant(7),
         ];
         let mut state = ExecutionState::new();
         for step in 0..60usize {
@@ -12708,7 +12729,7 @@ mod local_variable_spelling_tests {
         }
     }
 
-    fn held_integer_term_of(value: &StoredExecutionValue) -> Option<&MachineTerm> {
+    fn held_integer_term_of(value: &StoredExecutionValue) -> Option<&OldMachineTerm> {
         match value.native_payload()?.numeric_value() {
             crate::kernel::integer_c_value!(term) | ProgramValue::Bool(term) => Some(term),
             _ => None,
@@ -12718,7 +12739,7 @@ mod local_variable_spelling_tests {
     #[test]
     fn local_variable_spelling_uses_current_memory_and_stable_slot_order() {
         let variable = Variable(971_010);
-        let value = ProgramValue::UInt64(MachineTerm::Variable(variable));
+        let value = ProgramValue::UInt64(OldMachineTerm::Variable(variable));
         let state = scalar(
             scalar(ExecutionState::new(), "z", value.clone()),
             "a",
@@ -12739,7 +12760,7 @@ mod local_variable_spelling_tests {
         );
         let state = state.clone().with_memory(state.memory().clone().store(
             SymbolicMemory::local_pointer("a"),
-            ProgramValue::UInt64(MachineTerm::uint64_constant(0)),
+            ProgramValue::UInt64(OldMachineTerm::uint64_constant(0)),
         ));
         assert_eq!(
             state
@@ -12756,7 +12777,7 @@ mod local_variable_spelling_tests {
         );
         let state = state.clone().with_memory(state.memory().clone().store(
             SymbolicMemory::local_pointer("z"),
-            ProgramValue::UInt64(MachineTerm::uint64_constant(0)),
+            ProgramValue::UInt64(OldMachineTerm::uint64_constant(0)),
         ));
         assert_eq!(
             state

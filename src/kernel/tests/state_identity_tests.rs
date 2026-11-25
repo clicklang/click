@@ -344,11 +344,11 @@ fn loop_backedge_rejects_divergent_holders_on_one_ledger_root() {
 fn arms_beside_known_cells(known: u32) -> (SymbolicMemory, [ExecutionState; 2]) {
     let known_cell = |index: u32| Address {
         base: "global:known".into(),
-        offset: AddressOffset::Constant(4 * i64::from(index)),
+        offset: OldAddressOffset::Constant(4 * i64::from(index)),
     };
     let written = Address {
         base: "global:written".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let mut memory = SymbolicMemory::new()
         .with_block("global:known", 4 * known)
@@ -453,7 +453,7 @@ fn interface_join_history_uses_checked_arms_before_marker_union() {
     let _session = crate::kernel::VerificationSession::enter();
     let pointer = Address {
         base: "global:branch-value".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let base = SymbolicMemory::new().with_block(pointer.base.clone(), 4);
     let then_state = ExecutionState::new().with_memory(
@@ -490,12 +490,12 @@ fn binding_a_local_copies_a_search_path_not_the_frame() {
         for index in 0..size {
             state = state.with_local(
                 format!("p{index}"),
-                ProgramValue::Int32(MachineTerm::constant(0)),
+                ProgramValue::Int32(OldMachineTerm::constant(0)),
             );
         }
         let shared = state.clone();
         let before = crate::persistent::persistent_node_allocations();
-        let bound = state.with_local("next", ProgramValue::Int32(MachineTerm::constant(1)));
+        let bound = state.with_local("next", ProgramValue::Int32(OldMachineTerm::constant(1)));
         copied.push(crate::persistent::persistent_node_allocations() - before);
         assert!(shared.locals.get_native("next").as_deref().is_none());
         assert!(bound.locals.get_native("next").as_deref().is_some());

@@ -106,17 +106,23 @@ fn conditional_universal_certification_ignores_unrelated_facts() {
 
 #[test]
 fn reassociated_signed_add_domain_requires_each_guard_and_scales() {
-    let a = MachineTerm::Variable(Variable(960_170));
-    let b = MachineTerm::Variable(Variable(960_171));
-    let c = MachineTerm::Variable(Variable(960_172));
+    let a = OldMachineTerm::Variable(Variable(960_170));
+    let b = OldMachineTerm::Variable(Variable(960_171));
+    let c = OldMachineTerm::Variable(Variable(960_172));
     let goal = Proposition::condition_is(
-        ConditionTerm::signed_add_overflows(a.clone(), MachineTerm::add(b.clone(), c.clone())),
+        OldConditionTerm::signed_add_overflows(
+            a.clone(),
+            OldMachineTerm::add(b.clone(), c.clone()),
+        ),
         false,
     );
     let guards = [
-        ConditionTerm::signed_add_overflows(a.clone(), b.clone()),
-        ConditionTerm::signed_add_overflows(MachineTerm::add(a.clone(), b.clone()), c.clone()),
-        ConditionTerm::signed_add_overflows(b.clone(), c.clone()),
+        OldConditionTerm::signed_add_overflows(a.clone(), b.clone()),
+        OldConditionTerm::signed_add_overflows(
+            OldMachineTerm::add(a.clone(), b.clone()),
+            c.clone(),
+        ),
+        OldConditionTerm::signed_add_overflows(b.clone(), c.clone()),
     ];
     for missing in 0..3 {
         let mut facts = PureFactContext::new();
@@ -134,9 +140,9 @@ fn reassociated_signed_add_domain_requires_each_guard_and_scales() {
         let mut facts = PureFactContext::new();
         for index in 0..size {
             facts = facts.assume_condition(
-                ConditionTerm::equal(
-                    MachineTerm::Variable(Variable(961_000 + index)),
-                    MachineTerm::constant(index as u32),
+                OldConditionTerm::equal(
+                    OldMachineTerm::Variable(Variable(961_000 + index)),
+                    OldMachineTerm::constant(index as u32),
                 ),
                 true,
             );
@@ -157,11 +163,11 @@ fn reassociated_signed_add_domain_requires_each_guard_and_scales() {
     );
     // The sequential total can be in range while the regrouped inner sum
     // overflows: MIN + MAX + 1 == 0 is not a license to evaluate MAX + 1.
-    let a = MachineTerm::constant(i32::MIN as u32);
-    let b = MachineTerm::constant(i32::MAX as u32);
-    let c = MachineTerm::constant(1);
+    let a = OldMachineTerm::constant(i32::MIN as u32);
+    let b = OldMachineTerm::constant(i32::MAX as u32);
+    let c = OldMachineTerm::constant(1);
     let goal = Proposition::condition_is(
-        ConditionTerm::signed_add_overflows(a, MachineTerm::add(b, c)),
+        OldConditionTerm::signed_add_overflows(a, OldMachineTerm::add(b, c)),
         false,
     );
     assert!(!crate::kernel::api::checked_int32_reassociated_add_domain(
@@ -203,9 +209,9 @@ fn shared_reassociated_add_domains_keep_operands_and_required_guards() {
         let mut base = PureFactContext::new();
         for index in 0..size {
             base = base.assume_condition(
-                ConditionTerm::equal(
-                    MachineTerm::Variable(Variable(973_000 + index)),
-                    MachineTerm::constant(index as u32),
+                OldConditionTerm::equal(
+                    OldMachineTerm::Variable(Variable(973_000 + index)),
+                    OldMachineTerm::constant(index as u32),
                 ),
                 true,
             );
@@ -248,7 +254,7 @@ fn automatic_scalar_ownership_work_is_independent_of_unrelated_storage() {
         for index in 0..count {
             let pointer = Address {
                 base: format!("global:unrelated:{index}").into(),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             };
             memory = memory
                 .with_block(pointer.base.clone(), 4)
@@ -278,7 +284,7 @@ fn automatic_scalar_ownership_work_is_independent_of_unrelated_storage() {
             .unwrap()
         });
         assert!(
-            matches!(&paths[0].outcome, StatementOutcome::Return { value, .. } if *value.native() == ProgramValue::UInt32(MachineTerm::uint32_constant(7)))
+            matches!(&paths[0].outcome, StatementOutcome::Return { value, .. } if *value.native() == ProgramValue::UInt32(OldMachineTerm::uint32_constant(7)))
         );
         measurements.push(work);
     }

@@ -158,10 +158,10 @@ impl<'p, 'a> Algebra<'p, 'a> {
         let mut retained = Vec::new();
         for step in body {
             if let ProofStep::Rewrite(identity) = &step
-                && let Some((ConditionTerm::IntegerEqual(x, y), true)) = (self
+                && let Some((OldConditionTerm::IntegerEqual(x, y), true)) = (self
                     .proof
                     .lower_cited_surface_proposition(identity, "algebra rewrite")?)
-                .condition_native()
+                .old_condition()
                 && x == y
             {
                 continue;
@@ -874,7 +874,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         while let Proposition::Not(body) = goal {
             goal = body;
         }
-        if !matches!(&goal, condition_source_0 @ Proposition::ConditionIs(_, _) if matches!(condition_source_0.condition_native(), Some((crate::kernel::integer_comparison_condition!(_, _), _))))
+        if !matches!(&goal, condition_source_0 @ Proposition::ConditionIs(_, _) if matches!(condition_source_0.old_condition(), Some((crate::kernel::integer_comparison_condition!(_, _), _))))
         {
             return Ok(None);
         }
@@ -887,7 +887,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // Only inspect the written mathematical arithmetic spine; opaque values
         // keep their meaning and domain. Exact additive leaves need no planner;
         // value-preserving widenings first need their explicit known equations.
-        let Some((crate::kernel::integer_comparison_condition!(a, b), _)) = goal.condition_native()
+        let Some((crate::kernel::integer_comparison_condition!(a, b), _)) = goal.old_condition()
         else {
             return Ok(None);
         };
@@ -1010,8 +1010,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         }
         for (source, target) in [(left, &a.expression), (right, &b.expression)] {
             let p = eq(source.clone(), target.clone());
-            if let Some((ConditionTerm::IntegerEqual(x, y), true)) =
-                (input.lower_cited_surface_proposition(&p, "algebra result")?).condition_native()
+            if let Some((OldConditionTerm::IntegerEqual(x, y), true)) =
+                (input.lower_cited_surface_proposition(&p, "algebra result")?).old_condition()
                 && x != y
             {
                 algebra.steps.push(ProofStep::Rewrite(p));

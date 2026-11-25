@@ -236,12 +236,12 @@ fn direct_call_map_is_checked_in_kernel_like_named_proof_arguments() {
 fn resource_transition_retains_borrow_role_for_owned_entry_fact() {
     let pointer = Address {
         base: AddressBase::Concrete("local:borrow-role:data".to_string()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let range = MemoryRange::new(
         pointer.clone(),
-        MachineTerm::constant(0),
-        MachineTerm::constant(1),
+        OldMachineTerm::constant(0),
+        OldMachineTerm::constant(1),
     );
     let requirement = ResourceSpec::owned_memory(MemorySegment::new(
         ProgramExpression::Variable("p".into()),
@@ -291,14 +291,14 @@ fn resource_transition_retains_borrow_role_for_owned_entry_fact() {
 fn call_site_and_function_boundary_transitions_agree_on_the_callee_entry() {
     let block = |name: &str| Address {
         base: AddressBase::Concrete(format!("local:purpose:{name}")),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let (owned, viewed) = (block("owned"), block("viewed"));
     let range = |pointer: &Address| {
         MemoryRange::new(
             pointer.clone(),
-            MachineTerm::constant(0),
-            MachineTerm::constant(1),
+            OldMachineTerm::constant(0),
+            OldMachineTerm::constant(1),
         )
     };
     let segment = |name: &str| {
@@ -428,7 +428,7 @@ fn call_site_and_function_boundary_transitions_agree_on_the_callee_entry() {
 fn stable_view_refinement_uses_checked_variance_for_subranges() {
     let base = Address {
         base: AddressBase::Concrete("refinement:stable-view".to_string()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let state = ExecutionState::new()
         .with_local(
@@ -497,7 +497,7 @@ fn stable_view_refinement_uses_checked_variance_for_subranges() {
 fn stable_view_refinement_does_not_confuse_disjoint_same_mode_inputs() {
     let base = Address {
         base: AddressBase::Concrete("refinement:mixed".to_string()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let state = ExecutionState::new()
         .with_local(
@@ -564,7 +564,7 @@ fn named_contract_application_discards_template_body_and_storage() {
         ProgramExpression::Variable("p".into()),
     )));
     let body_with_variable = ProgramStatement::Return(ProgramExpression::Value(
-        ProgramValue::Int32(MachineTerm::Variable(body_variable)),
+        ProgramValue::Int32(OldMachineTerm::Variable(body_variable)),
     ));
     let with_body_and_storage = program_function(
         ProgramType::Void,
@@ -599,7 +599,7 @@ fn named_contract_application_discards_template_body_and_storage() {
     let argument = ProgramExpression::Value(ProgramValue::typed_pointer(
         Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         },
         ProgramType::UInt8Pointer,
     ));
@@ -737,7 +737,7 @@ fn direct_and_callback_resource_transition(
 fn direct_and_named_callback_resource_interfaces_agree_across_families() {
     let memory_pointer = Address {
         base: "parity-memory".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let memory_spec = ResourceSpec::owned_memory(MemorySegment::new(
         crate::kernel::program_expression::pointer_value(memory_pointer.clone()),
@@ -757,8 +757,8 @@ fn direct_and_named_callback_resource_interfaces_agree_across_families() {
         .with_resource_context(ResourceContext::new().unchecked_with_fact(
             ResourceFact::own_memory(MemoryRange::new(
                 memory_pointer,
-                MachineTerm::constant(0),
-                MachineTerm::constant(1),
+                OldMachineTerm::constant(0),
+                OldMachineTerm::constant(1),
             )),
         ));
     let memory_contract = FunctionContract::new("ParityMemory", memory_function.clone()).unwrap();
@@ -957,7 +957,7 @@ fn check_executed_refinement_shape(return_type: ProgramType, alter_result: bool)
                 (ProgramValue::Pointer(OldPointer::new(
                     Address {
                         base: AddressBase::FunctionSymbolic(Variable(0)),
-                        offset: AddressOffset::Constant(0),
+                        offset: OldAddressOffset::Constant(0),
                     },
                     pointer_type,
                 )))
@@ -1106,7 +1106,7 @@ fn pure_callback_preparation_does_not_enumerate_the_resource_frame() {
 fn resource_derived_refinement_compares_checked_ranges() {
     let pointer = Address {
         base: AddressBase::Concrete("local:resource-refinement:data".to_string()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let state = ExecutionState::new()
         .with_local("p", ProgramValue::pointer(pointer.clone()))
@@ -1153,7 +1153,7 @@ fn resource_derived_refinement_compares_checked_ranges() {
 fn resource_derived_frame_rejects_mixed_explicit_effect_metadata() {
     let pointer = Address {
         base: AddressBase::Concrete("local:mixed-resource-frame:data".to_string()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let state = ExecutionState::new()
         .with_local("p", ProgramValue::pointer(pointer.clone()))
@@ -1206,7 +1206,7 @@ fn resource_derived_frame_rejects_mixed_explicit_effect_metadata() {
 fn declared_loop_frame_is_installed_from_the_loop_specs_not_from_segments() {
     let pointer = Address {
         base: AddressBase::Concrete("local:loop-declared:data".to_string()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let definition = CompositeResourceDefinition::new(
         "LoopWrapper",
@@ -1274,8 +1274,8 @@ fn declared_loop_frame_is_installed_from_the_loop_specs_not_from_segments() {
         .expect("a declared frame is installed at loop entry");
     assert_eq!(ranges.len(), 1);
     assert_eq!(ranges[0].base(), &pointer);
-    assert_eq!(ranges[0].start(), &MachineTerm::constant(0));
-    assert_eq!(ranges[0].end(), &MachineTerm::constant(1));
+    assert_eq!(ranges[0].start(), &OldMachineTerm::constant(0));
+    assert_eq!(ranges[0].end(), &OldMachineTerm::constant(1));
 
     // When the kernel cannot read the spec (no definition to expand it
     // through), the frame stays uninstalled and the back edge refuses it;
@@ -1304,7 +1304,7 @@ fn declared_loop_frame_is_installed_from_the_loop_specs_not_from_segments() {
 fn resource_derived_loop_setup_does_not_fallback_to_surface_metadata() {
     let pointer = Address {
         base: AddressBase::Concrete("local:loop-fallback:data".to_string()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let source_segment = MemorySegment::new(
         ProgramExpression::Variable("p".into()),
@@ -1775,7 +1775,7 @@ fn empty_requirement_lowering_retains_selected_call_source() {
 
 #[test]
 fn source_load_state_collection_is_iterative_and_bounded() {
-    let leaf = Proposition::condition_is(ConditionTerm::Constant(true), true);
+    let leaf = Proposition::condition_is(OldConditionTerm::Constant(true), true);
     // The condition node is visited in addition to the proposition nodes.
     let within_limit = (0..4094).fold(leaf.clone(), |body, _| Proposition::Not(Box::new(body)));
     assert!(

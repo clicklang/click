@@ -6,7 +6,7 @@ fn individual_order_steps_keep_growing_shared_endpoints() {
         let ty = MachineIntegerType::Int32;
         let mut root =
             KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(995211));
-        let upper = MachineTerm::constant(100);
+        let upper = OldMachineTerm::constant(100);
         let mut facts = PureFactContext::new();
         let exports = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -17,7 +17,7 @@ fn individual_order_steps_keep_growing_shared_endpoints() {
                     [root.clone(), root.clone()],
                 );
                 let source = Proposition::condition_is(
-                    ConditionTerm::integer_less_than(
+                    OldConditionTerm::integer_less_than(
                         observed(root.clone()),
                         IntegerTerm::constant_i64(100),
                     ),
@@ -25,9 +25,9 @@ fn individual_order_steps_keep_growing_shared_endpoints() {
                 );
                 facts = facts
                     .assume_condition(
-                        ConditionTerm::signed_less_equal(
+                        OldConditionTerm::signed_less_equal(
                             0u32.into(),
-                            MachineTerm::Variable(Variable(996000 + index)),
+                            OldMachineTerm::Variable(Variable(996000 + index)),
                         ),
                         true,
                     )
@@ -35,7 +35,7 @@ fn individual_order_steps_keep_growing_shared_endpoints() {
                 let step = facts
                     .exact_direct_operand_order_step(
                         MachineOperandView::Shared(&root),
-                        MachineOperandView::Legacy(&upper),
+                        MachineOperandView::Old(&upper),
                         true,
                     )
                     .unwrap();

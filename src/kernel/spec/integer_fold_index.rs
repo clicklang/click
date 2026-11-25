@@ -15,7 +15,7 @@ impl IntegerFoldIndexResult {
         let [start, end] = &self.bounds;
         match self.kind {
             KernelFoldIndex::Integer => {
-                // ConditionTerm is still an explicit native proposition-output
+                // OldConditionTerm is still an explicit native proposition-output
                 // boundary (10q); the retained endpoints themselves stay common.
                 let mut output = KernelTermExport::default();
                 let start = output.integer(start).expect("Integer fold start");
@@ -25,14 +25,14 @@ impl IntegerFoldIndexResult {
                     Sort::Integer,
                     Proposition::And(
                         Box::new(Proposition::condition_is(
-                            ConditionTerm::integer_greater_equal(
+                            OldConditionTerm::integer_greater_equal(
                                 item.clone(),
                                 start.as_ref().clone(),
                             ),
                             true,
                         )),
                         Box::new(Proposition::condition_is(
-                            ConditionTerm::integer_less_than(item, end.as_ref().clone()),
+                            OldConditionTerm::integer_less_than(item, end.as_ref().clone()),
                             true,
                         )),
                     ),
@@ -44,24 +44,24 @@ impl IntegerFoldIndexResult {
                 } else {
                     MachineIntegerType::UInt64
                 };
-                let item = MachineTerm::Variable(item);
+                let item = OldMachineTerm::Variable(item);
                 let lower = if kind == KernelFoldIndex::Int32 {
                     condition_for_operand_views(
                         format,
                         R::GreaterEqual,
-                        [V::Legacy(&item), V::Shared(start)],
+                        [V::Old(&item), V::Shared(start)],
                     )
                 } else {
                     condition_for_operand_views(
                         format,
                         R::LessEqual,
-                        [V::Shared(start), V::Legacy(&item)],
+                        [V::Shared(start), V::Old(&item)],
                     )
                 };
                 let upper = condition_for_operand_views(
                     format,
                     R::LessThan,
-                    [V::Legacy(&item), V::Shared(end)],
+                    [V::Old(&item), V::Shared(end)],
                 );
                 (
                     if kind == KernelFoldIndex::Int32 {

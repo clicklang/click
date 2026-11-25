@@ -281,7 +281,7 @@ pub(super) fn construct_const(
     if declared
         .memory
         .block_size(&slot.base)
-        .and_then(MachineTerm::as_const)
+        .and_then(OldMachineTerm::as_const)
         != Some(bytes)
         || element_type.byte_width() != fill.stride
         || cell.offset != 0

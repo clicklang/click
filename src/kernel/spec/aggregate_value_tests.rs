@@ -5,7 +5,7 @@ fn unindexed_boolean_loads_use_their_certified_observation_point() {
     let _session = crate::kernel::VerificationSession::enter();
     let address = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let pointer = ProgramValue::typed_pointer(address.clone(), ProgramType::UInt8Pointer);
     let first = ExecutionState::new()
@@ -32,7 +32,7 @@ fn unindexed_boolean_loads_use_their_certified_observation_point() {
     };
     let assumptions = PureFactContext::new();
     for state in [&first, &second] {
-        let expected = ProgramValue::of_bool(ConditionTerm::boolean_cell_read(
+        let expected = ProgramValue::of_bool(OldConditionTerm::boolean_cell_read(
             state.program_point().for_exact_read(),
             address.clone(),
         ));
@@ -74,7 +74,7 @@ fn caller_callback_reads_keep_the_entry_point() {
     let _session = crate::kernel::VerificationSession::enter();
     let address = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let ty = ProgramType::FunctionPointer(ProgramType::function_pointer_signature(
         ProgramType::Int32,
@@ -182,7 +182,7 @@ fn assert_caller_integer_reads_keep_the_entry_point(value_types: &[ProgramType])
     let _session = crate::kernel::VerificationSession::enter();
     let address = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let local = crate::kernel::SymbolicMemory::local_pointer("unrelated");
     for &ty in value_types {
@@ -199,7 +199,7 @@ fn assert_caller_integer_reads_keep_the_entry_point(value_types: &[ProgramType])
         let pointer = ProgramValue::typed_pointer(address.clone(), pointer_type);
         let kind = LoadKind::of_type(ty).unwrap();
         let check = |read: &ProgramValue| {
-            let Some(MachineTerm::MemoryLoad(point, cell, load_kind)) =
+            let Some(OldMachineTerm::MemoryLoad(point, cell, load_kind)) =
                 program_value_bitvector_term(read)
             else {
                 panic!("expected a symbolic {ty:?} read");
@@ -254,11 +254,11 @@ fn logical_pointer_field_uses_current_pointee_memory() {
     use crate::kernel::{AggregateField, AggregateLayout};
     let slot = Address {
         base: "local:frame:0:input".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let pointee = Address {
         base: "local:pointee".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let mut entry = ExecutionState::new().with_memory(
         SymbolicMemory::new()
@@ -336,7 +336,7 @@ fn held_abstract_loads_keep_their_store_point_in_equality() {
     let _session = crate::kernel::VerificationSession::enter();
     let slot = Address {
         base: "local:abstract-slot".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let parameter = TypeParameterName::intern("PointNamedLocal");
     let value_type = ProgramType::Parameter(parameter);
@@ -382,7 +382,7 @@ fn held_abstract_loads_keep_their_store_point_in_equality() {
     let disjoint = left.clone().with_memory(left.memory().clone().store(
         Address {
             base: "local:unrelated".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         },
         int32(7),
     ));

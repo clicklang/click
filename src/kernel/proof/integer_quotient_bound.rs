@@ -68,7 +68,7 @@ pub(super) fn check(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::ConditionTerm;
+    use crate::kernel::OldConditionTerm;
     use crate::kernel::Variable;
     use num_bigint::BigInt;
     use num_traits::Signed;
@@ -79,7 +79,7 @@ mod tests {
         IntegerTerm::var(Variable(n))
     }
     fn le(a: IntegerTerm, b: IntegerTerm) -> Proposition {
-        Proposition::condition_is(ConditionTerm::IntegerLessEqual(a.into(), b.into()), true)
+        Proposition::condition_is(OldConditionTerm::IntegerLessEqual(a.into(), b.into()), true)
     }
     fn case(bound: IntegerTerm, d: IntegerTerm, lower: bool) -> (Vec<Proposition>, Proposition) {
         let n = v(198001);

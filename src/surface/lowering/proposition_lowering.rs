@@ -48,7 +48,7 @@ pub(in crate::surface) fn comparison_proposition(
             }
         };
         return Ok(Proposition::condition_is(
-            ConditionTerm::address_equal(left, right),
+            OldConditionTerm::address_equal(left, right),
             value,
         ));
     }
@@ -70,12 +70,12 @@ pub(in crate::surface) fn comparison_proposition(
         };
         if !left.is_null() && !right.is_null() {
             return Ok(Proposition::condition_is(
-                ConditionTerm::pointer_equal(left.clone(), right.clone()),
+                OldConditionTerm::pointer_equal(left.clone(), right.clone()),
                 value,
             ));
         }
         return Ok(Proposition::condition_is(
-            ConditionTerm::address_equal(left.address().clone(), right.address().clone()),
+            OldConditionTerm::address_equal(left.address().clone(), right.address().clone()),
             value,
         ));
     }
@@ -86,12 +86,12 @@ pub(in crate::surface) fn comparison_proposition(
         };
         let condition = match operator {
             ComparisonOperator::Equal | ComparisonOperator::NotEqual => {
-                ConditionTerm::uint64_equal(left, right)
+                OldConditionTerm::uint64_equal(left, right)
             }
-            ComparisonOperator::LessThan => ConditionTerm::uint64_less_than(left, right),
-            ComparisonOperator::LessEqual => ConditionTerm::uint64_less_equal(left, right),
-            ComparisonOperator::GreaterThan => ConditionTerm::uint64_greater_than(left, right),
-            ComparisonOperator::GreaterEqual => ConditionTerm::uint64_greater_equal(left, right),
+            ComparisonOperator::LessThan => OldConditionTerm::uint64_less_than(left, right),
+            ComparisonOperator::LessEqual => OldConditionTerm::uint64_less_equal(left, right),
+            ComparisonOperator::GreaterThan => OldConditionTerm::uint64_greater_than(left, right),
+            ComparisonOperator::GreaterEqual => OldConditionTerm::uint64_greater_equal(left, right),
             ComparisonOperator::In => {
                 return Err(ClickError::new("membership is not a scalar comparison"));
             }
@@ -108,15 +108,15 @@ pub(in crate::surface) fn comparison_proposition(
         };
         let condition = match operator {
             ComparisonOperator::Equal | ComparisonOperator::NotEqual => {
-                ConditionTerm::int64_equal(left, right)
+                OldConditionTerm::int64_equal(left, right)
             }
-            ComparisonOperator::LessThan => ConditionTerm::int64_signed_less_than(left, right),
-            ComparisonOperator::LessEqual => ConditionTerm::int64_signed_less_equal(left, right),
+            ComparisonOperator::LessThan => OldConditionTerm::int64_signed_less_than(left, right),
+            ComparisonOperator::LessEqual => OldConditionTerm::int64_signed_less_equal(left, right),
             ComparisonOperator::GreaterThan => {
-                ConditionTerm::int64_signed_greater_than(left, right)
+                OldConditionTerm::int64_signed_greater_than(left, right)
             }
             ComparisonOperator::GreaterEqual => {
-                ConditionTerm::int64_signed_greater_equal(left, right)
+                OldConditionTerm::int64_signed_greater_equal(left, right)
             }
             ComparisonOperator::In => {
                 return Err(ClickError::new("membership is not a scalar comparison"));
@@ -173,17 +173,17 @@ pub(in crate::surface) fn spec_range_membership_proposition(
     )
 }
 
-fn promoted_int64_term(value: &ProgramValue) -> Option<MachineTerm> {
+fn promoted_int64_term(value: &ProgramValue) -> Option<OldMachineTerm> {
     match value.numeric_value() {
         ProgramValue::PointerInteger(_) => unreachable!("numeric projection"),
         ProgramValue::Int64(bits) => Some(bits.clone()),
-        ProgramValue::Bool(bits) => Some(MachineTerm::int64_from_32(bits.clone())),
-        ProgramValue::Int8(bits) => Some(MachineTerm::int64_from_32(bits.clone())),
+        ProgramValue::Bool(bits) => Some(OldMachineTerm::int64_from_32(bits.clone())),
+        ProgramValue::Int8(bits) => Some(OldMachineTerm::int64_from_32(bits.clone())),
         ProgramValue::Int16(bits)
         | ProgramValue::Int32(bits)
         | ProgramValue::UInt8(bits)
-        | ProgramValue::UInt16(bits) => Some(MachineTerm::int64_from_32(bits.clone())),
-        ProgramValue::UInt32(bits) => Some(MachineTerm::int64_from_uint32(bits.clone())),
+        | ProgramValue::UInt16(bits) => Some(OldMachineTerm::int64_from_32(bits.clone())),
+        ProgramValue::UInt32(bits) => Some(OldMachineTerm::int64_from_uint32(bits.clone())),
         ProgramValue::Int128(_)
         | ProgramValue::UInt128(_)
         | ProgramValue::Void
@@ -195,18 +195,18 @@ fn promoted_int64_term(value: &ProgramValue) -> Option<MachineTerm> {
     }
 }
 
-fn promoted_uint64_term(value: &ProgramValue) -> Option<MachineTerm> {
+fn promoted_uint64_term(value: &ProgramValue) -> Option<OldMachineTerm> {
     match value.numeric_value() {
         ProgramValue::PointerInteger(_) => unreachable!("numeric projection"),
         ProgramValue::UInt64(bits) => Some(bits.clone()),
-        ProgramValue::Bool(bits) => Some(MachineTerm::uint64_from_32(bits.clone())),
-        ProgramValue::Int64(bits) => Some(MachineTerm::uint64_from_int64(bits.clone())),
-        ProgramValue::Int8(bits) => Some(MachineTerm::uint64_from_int32(bits.clone())),
+        ProgramValue::Bool(bits) => Some(OldMachineTerm::uint64_from_32(bits.clone())),
+        ProgramValue::Int64(bits) => Some(OldMachineTerm::uint64_from_int64(bits.clone())),
+        ProgramValue::Int8(bits) => Some(OldMachineTerm::uint64_from_int32(bits.clone())),
         ProgramValue::Int16(bits)
         | ProgramValue::Int32(bits)
         | ProgramValue::UInt8(bits)
-        | ProgramValue::UInt16(bits) => Some(MachineTerm::uint64_from_int32(bits.clone())),
-        ProgramValue::UInt32(bits) => Some(MachineTerm::uint64_from_32(bits.clone())),
+        | ProgramValue::UInt16(bits) => Some(OldMachineTerm::uint64_from_int32(bits.clone())),
+        ProgramValue::UInt32(bits) => Some(OldMachineTerm::uint64_from_32(bits.clone())),
         ProgramValue::Int128(_)
         | ProgramValue::UInt128(_)
         | ProgramValue::Void
@@ -217,43 +217,46 @@ fn promoted_uint64_term(value: &ProgramValue) -> Option<MachineTerm> {
     }
 }
 
-pub(in crate::surface) fn bitvector32_add(left: MachineTerm, right: MachineTerm) -> MachineTerm {
+pub(in crate::surface) fn bitvector32_add(
+    left: OldMachineTerm,
+    right: OldMachineTerm,
+) -> OldMachineTerm {
     match (&left, &right) {
         (bits32_constant!(left), bits32_constant!(right)) => {
-            MachineTerm::constant(constant_u32(*left).wrapping_add(constant_u32(*right)))
+            OldMachineTerm::constant(constant_u32(*left).wrapping_add(constant_u32(*right)))
         }
         (int32_constant!(constant), binary_term!(Int32, Subtract, base, subtrahend))
-            if subtrahend.as_ref() == &MachineTerm::constant(constant_u32(*constant)) =>
+            if subtrahend.as_ref() == &OldMachineTerm::constant(constant_u32(*constant)) =>
         {
             base.as_ref().clone()
         }
         (binary_term!(Int32, Subtract, base, subtrahend), bits32_constant!(constant))
-            if subtrahend.as_ref() == &MachineTerm::constant(constant_u32(*constant)) =>
+            if subtrahend.as_ref() == &OldMachineTerm::constant(constant_u32(*constant)) =>
         {
             base.as_ref().clone()
         }
         (
             binary_term!(Int32, Subtract, zero, subtrahend),
             binary_term!(Int32, Add, base, addend),
-        ) if zero.as_ref() == &MachineTerm::constant(0) && subtrahend == base => {
+        ) if zero.as_ref() == &OldMachineTerm::constant(0) && subtrahend == base => {
             addend.as_ref().clone()
         }
         (
             binary_term!(Int32, Subtract, zero, subtrahend),
             binary_term!(Int32, Add, addend, base),
-        ) if zero.as_ref() == &MachineTerm::constant(0) && subtrahend == base => {
+        ) if zero.as_ref() == &OldMachineTerm::constant(0) && subtrahend == base => {
             addend.as_ref().clone()
         }
         (
             binary_term!(Int32, Add, base, addend),
             binary_term!(Int32, Subtract, zero, subtrahend),
-        ) if zero.as_ref() == &MachineTerm::constant(0) && base == subtrahend => {
+        ) if zero.as_ref() == &OldMachineTerm::constant(0) && base == subtrahend => {
             addend.as_ref().clone()
         }
         (
             binary_term!(Int32, Add, addend, base),
             binary_term!(Int32, Subtract, zero, subtrahend),
-        ) if zero.as_ref() == &MachineTerm::constant(0) && base == subtrahend => {
+        ) if zero.as_ref() == &OldMachineTerm::constant(0) && base == subtrahend => {
             addend.as_ref().clone()
         }
         (_, bits32_constant!(0)) => left,
@@ -263,15 +266,15 @@ pub(in crate::surface) fn bitvector32_add(left: MachineTerm, right: MachineTerm)
 }
 
 pub(in crate::surface) fn bitvector32_subtract(
-    left: MachineTerm,
-    right: MachineTerm,
-) -> MachineTerm {
+    left: OldMachineTerm,
+    right: OldMachineTerm,
+) -> OldMachineTerm {
     match (&left, &right) {
         (bits32_constant!(left), bits32_constant!(right)) => {
-            MachineTerm::constant(constant_u32(*left).wrapping_sub(constant_u32(*right)))
+            OldMachineTerm::constant(constant_u32(*left).wrapping_sub(constant_u32(*right)))
         }
         (_, bits32_constant!(0)) => left,
-        _ if left == right => MachineTerm::constant(0),
+        _ if left == right => OldMachineTerm::constant(0),
         (
             binary_term!(Int32, Add, left_base, left_addend),
             binary_term!(Int32, Add, right_base, right_addend),
@@ -303,36 +306,36 @@ pub(in crate::surface) fn bitvector32_subtract(
             left_base.as_ref().clone()
         }
         (_, binary_term!(Int32, Add, right_base, right_addend)) if &left == right_base.as_ref() => {
-            bitvector32_subtract(MachineTerm::constant(0), right_addend.as_ref().clone())
+            bitvector32_subtract(OldMachineTerm::constant(0), right_addend.as_ref().clone())
         }
         (_, binary_term!(Int32, Add, right_base, right_addend))
             if &left == right_addend.as_ref() =>
         {
-            bitvector32_subtract(MachineTerm::constant(0), right_base.as_ref().clone())
+            bitvector32_subtract(OldMachineTerm::constant(0), right_base.as_ref().clone())
         }
         _ => binary_node!(Int32, Subtract, Box::new(left), Box::new(right)),
     }
 }
 
 pub(in crate::surface) fn bitvector32_multiply(
-    left: MachineTerm,
-    right: MachineTerm,
-) -> MachineTerm {
+    left: OldMachineTerm,
+    right: OldMachineTerm,
+) -> OldMachineTerm {
     match (&left, &right) {
         (bits32_constant!(left), bits32_constant!(right)) => {
-            MachineTerm::constant(constant_u32(*left).wrapping_mul(constant_u32(*right)))
+            OldMachineTerm::constant(constant_u32(*left).wrapping_mul(constant_u32(*right)))
         }
         (_, bits32_constant!(1)) => left,
         (int32_constant!(1), _) => right,
-        (_, bits32_constant!(0)) | (int32_constant!(0), _) => MachineTerm::constant(0),
+        (_, bits32_constant!(0)) | (int32_constant!(0), _) => OldMachineTerm::constant(0),
         _ => binary_node!(Int32, Multiply, Box::new(left), Box::new(right)),
     }
 }
 
 pub(in crate::surface) fn bitvector32_divide(
-    left: MachineTerm,
-    right: MachineTerm,
-) -> Result<MachineTerm, String> {
+    left: OldMachineTerm,
+    right: OldMachineTerm,
+) -> Result<OldMachineTerm, String> {
     match (&left, &right) {
         (_, bits32_constant!(0)) => Err("division by zero in proposition".to_string()),
         (bits32_constant!(left), bits32_constant!(right))
@@ -340,7 +343,7 @@ pub(in crate::surface) fn bitvector32_divide(
         {
             Err("signed division overflow in proposition".to_string())
         }
-        (bits32_constant!(left), bits32_constant!(right)) => Ok(MachineTerm::constant(
+        (bits32_constant!(left), bits32_constant!(right)) => Ok(OldMachineTerm::constant(
             ((constant_u32(*left) as i32) / (constant_u32(*right) as i32)) as u32,
         )),
         (_, bits32_constant!(1)) => Ok(left),
@@ -349,9 +352,9 @@ pub(in crate::surface) fn bitvector32_divide(
 }
 
 pub(in crate::surface) fn bitvector32_remainder(
-    left: MachineTerm,
-    right: MachineTerm,
-) -> Result<MachineTerm, String> {
+    left: OldMachineTerm,
+    right: OldMachineTerm,
+) -> Result<OldMachineTerm, String> {
     match (&left, &right) {
         (_, bits32_constant!(0)) => Err("division by zero in proposition".to_string()),
         (bits32_constant!(left), bits32_constant!(right))
@@ -359,10 +362,10 @@ pub(in crate::surface) fn bitvector32_remainder(
         {
             Err("signed division overflow in proposition".to_string())
         }
-        (bits32_constant!(left), bits32_constant!(right)) => Ok(MachineTerm::constant(
+        (bits32_constant!(left), bits32_constant!(right)) => Ok(OldMachineTerm::constant(
             ((constant_u32(*left) as i32) % (constant_u32(*right) as i32)) as u32,
         )),
-        (_, bits32_constant!(1)) => Ok(MachineTerm::constant(0)),
+        (_, bits32_constant!(1)) => Ok(OldMachineTerm::constant(0)),
         _ => Ok(binary_node!(
             Int32,
             Remainder,
@@ -378,9 +381,9 @@ pub(in crate::surface) fn bitvector32_shift_count(right: u32) -> Option<u32> {
 }
 
 pub(in crate::surface) fn bitvector32_shift_left(
-    left: MachineTerm,
-    right: MachineTerm,
-) -> Result<MachineTerm, String> {
+    left: OldMachineTerm,
+    right: OldMachineTerm,
+) -> Result<OldMachineTerm, String> {
     match (&left, &right) {
         (_, bits32_constant!(right)) if bitvector32_shift_count(constant_u32(*right)).is_none() => {
             Err("invalid shift count in proposition".to_string())
@@ -395,7 +398,7 @@ pub(in crate::surface) fn bitvector32_shift_left(
             if shifted > i64::from(i32::MAX) {
                 Err("signed left shift overflow in proposition".to_string())
             } else {
-                Ok(MachineTerm::constant((shifted as i32) as u32))
+                Ok(OldMachineTerm::constant((shifted as i32) as u32))
             }
         }
         _ => Ok(binary_node!(
@@ -408,9 +411,9 @@ pub(in crate::surface) fn bitvector32_shift_left(
 }
 
 pub(in crate::surface) fn bitvector32_shift_right(
-    left: MachineTerm,
-    right: MachineTerm,
-) -> Result<MachineTerm, String> {
+    left: OldMachineTerm,
+    right: OldMachineTerm,
+) -> Result<OldMachineTerm, String> {
     match (&left, &right) {
         (_, bits32_constant!(right)) if bitvector32_shift_count(constant_u32(*right)).is_none() => {
             Err("invalid shift count in proposition".to_string())
@@ -418,7 +421,7 @@ pub(in crate::surface) fn bitvector32_shift_right(
         (bits32_constant!(left), bits32_constant!(right)) => {
             let count = bitvector32_shift_count(constant_u32(*right))
                 .expect("constant shift count was checked above");
-            Ok(MachineTerm::constant(
+            Ok(OldMachineTerm::constant(
                 ((constant_u32(*left) as i32) >> count) as u32,
             ))
         }
@@ -432,60 +435,72 @@ pub(in crate::surface) fn bitvector32_shift_right(
     }
 }
 
-pub(in crate::surface) fn bitvector32_and(left: MachineTerm, right: MachineTerm) -> MachineTerm {
+pub(in crate::surface) fn bitvector32_and(
+    left: OldMachineTerm,
+    right: OldMachineTerm,
+) -> OldMachineTerm {
     match (&left, &right) {
         (bits32_constant!(left), bits32_constant!(right)) => {
-            MachineTerm::constant(constant_u32(*left) & constant_u32(*right))
+            OldMachineTerm::constant(constant_u32(*left) & constant_u32(*right))
         }
         (_, bits32_constant!(0xFFFF_FFFF)) => left,
         (int32_constant!(0xFFFF_FFFF), _) => right,
-        (_, bits32_constant!(0)) | (int32_constant!(0), _) => MachineTerm::constant(0),
+        (_, bits32_constant!(0)) | (int32_constant!(0), _) => OldMachineTerm::constant(0),
         _ if left == right => left,
         _ => binary_node!(Int32, BitwiseAnd, Box::new(left), Box::new(right)),
     }
 }
 
-pub(in crate::surface) fn bitvector32_or(left: MachineTerm, right: MachineTerm) -> MachineTerm {
+pub(in crate::surface) fn bitvector32_or(
+    left: OldMachineTerm,
+    right: OldMachineTerm,
+) -> OldMachineTerm {
     match (&left, &right) {
         (bits32_constant!(left), bits32_constant!(right)) => {
-            MachineTerm::constant(constant_u32(*left) | constant_u32(*right))
+            OldMachineTerm::constant(constant_u32(*left) | constant_u32(*right))
         }
         (_, bits32_constant!(0)) => left,
         (int32_constant!(0), _) => right,
         (_, bits32_constant!(0xFFFF_FFFF)) | (int32_constant!(0xFFFF_FFFF), _) => {
-            MachineTerm::constant(u32::MAX)
+            OldMachineTerm::constant(u32::MAX)
         }
         _ if left == right => left,
         _ => binary_node!(Int32, BitwiseOr, Box::new(left), Box::new(right)),
     }
 }
 
-pub(in crate::surface) fn bitvector32_xor(left: MachineTerm, right: MachineTerm) -> MachineTerm {
+pub(in crate::surface) fn bitvector32_xor(
+    left: OldMachineTerm,
+    right: OldMachineTerm,
+) -> OldMachineTerm {
     match (&left, &right) {
         (bits32_constant!(left), bits32_constant!(right)) => {
-            MachineTerm::constant(constant_u32(*left) ^ constant_u32(*right))
+            OldMachineTerm::constant(constant_u32(*left) ^ constant_u32(*right))
         }
         (_, bits32_constant!(0)) => left,
         (int32_constant!(0), _) => right,
-        _ if left == right => MachineTerm::constant(0),
+        _ if left == right => OldMachineTerm::constant(0),
         _ => binary_node!(Int32, BitwiseXor, Box::new(left), Box::new(right)),
     }
 }
 
-pub(in crate::surface) fn bitvector32_not(value: MachineTerm) -> MachineTerm {
+pub(in crate::surface) fn bitvector32_not(value: OldMachineTerm) -> OldMachineTerm {
     match value {
-        bits32_constant!(value) => MachineTerm::constant(!constant_u32(value)),
+        bits32_constant!(value) => OldMachineTerm::constant(!constant_u32(value)),
         unary_term!(Int32, BitwiseNot, inner) => *inner,
         value => unary_node!(Int32, BitwiseNot, Box::new(value)),
     }
 }
 
-pub(in crate::surface) fn signed_less_than(left: MachineTerm, right: MachineTerm) -> ConditionTerm {
+pub(in crate::surface) fn signed_less_than(
+    left: OldMachineTerm,
+    right: OldMachineTerm,
+) -> OldConditionTerm {
     match (&left, &right) {
         (bits32_constant!(left), bits32_constant!(right)) => {
-            ConditionTerm::Constant((constant_u32(*left) as i32) < (constant_u32(*right) as i32))
+            OldConditionTerm::Constant((constant_u32(*left) as i32) < (constant_u32(*right) as i32))
         }
-        _ => ConditionTerm::Compare {
+        _ => OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
             left: Box::new(left),
@@ -495,14 +510,14 @@ pub(in crate::surface) fn signed_less_than(left: MachineTerm, right: MachineTerm
 }
 
 pub(in crate::surface) fn signed_less_equal(
-    left: MachineTerm,
-    right: MachineTerm,
-) -> ConditionTerm {
+    left: OldMachineTerm,
+    right: OldMachineTerm,
+) -> OldConditionTerm {
     match (&left, &right) {
-        (bits32_constant!(left), bits32_constant!(right)) => {
-            ConditionTerm::Constant((constant_u32(*left) as i32) <= (constant_u32(*right) as i32))
-        }
-        _ => ConditionTerm::Compare {
+        (bits32_constant!(left), bits32_constant!(right)) => OldConditionTerm::Constant(
+            (constant_u32(*left) as i32) <= (constant_u32(*right) as i32),
+        ),
+        _ => OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessEqual,
             left: Box::new(left),
@@ -512,14 +527,14 @@ pub(in crate::surface) fn signed_less_equal(
 }
 
 pub(in crate::surface) fn signed_greater_than(
-    left: MachineTerm,
-    right: MachineTerm,
-) -> ConditionTerm {
+    left: OldMachineTerm,
+    right: OldMachineTerm,
+) -> OldConditionTerm {
     match (&left, &right) {
         (bits32_constant!(left), bits32_constant!(right)) => {
-            ConditionTerm::Constant((constant_u32(*left) as i32) > (constant_u32(*right) as i32))
+            OldConditionTerm::Constant((constant_u32(*left) as i32) > (constant_u32(*right) as i32))
         }
-        _ => ConditionTerm::Compare {
+        _ => OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterThan,
             left: Box::new(left),
@@ -529,14 +544,14 @@ pub(in crate::surface) fn signed_greater_than(
 }
 
 pub(in crate::surface) fn signed_greater_equal(
-    left: MachineTerm,
-    right: MachineTerm,
-) -> ConditionTerm {
+    left: OldMachineTerm,
+    right: OldMachineTerm,
+) -> OldConditionTerm {
     match (&left, &right) {
-        (bits32_constant!(left), bits32_constant!(right)) => {
-            ConditionTerm::Constant((constant_u32(*left) as i32) >= (constant_u32(*right) as i32))
-        }
-        _ => ConditionTerm::Compare {
+        (bits32_constant!(left), bits32_constant!(right)) => OldConditionTerm::Constant(
+            (constant_u32(*left) as i32) >= (constant_u32(*right) as i32),
+        ),
+        _ => OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterEqual,
             left: Box::new(left),
@@ -546,14 +561,14 @@ pub(in crate::surface) fn signed_greater_equal(
 }
 
 pub(in crate::surface) fn bitvector32_equal(
-    left: MachineTerm,
-    right: MachineTerm,
-) -> ConditionTerm {
+    left: OldMachineTerm,
+    right: OldMachineTerm,
+) -> OldConditionTerm {
     match (&left, &right) {
         (bits32_constant!(left), bits32_constant!(right)) => {
-            ConditionTerm::Constant(constant_u32(*left) == constant_u32(*right))
+            OldConditionTerm::Constant(constant_u32(*left) == constant_u32(*right))
         }
-        _ => ConditionTerm::Compare {
+        _ => OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(left),

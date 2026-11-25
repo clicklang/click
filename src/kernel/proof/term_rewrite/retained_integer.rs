@@ -528,10 +528,10 @@ mod tests {
         let before = intern_memory(SymbolicMemory::new());
         let after = intern_memory(SymbolicMemory::new().store(
             address.clone(),
-            ProgramValue::Int32(MachineTerm::constant(7)),
+            ProgramValue::Int32(OldMachineTerm::constant(7)),
         ));
         let observe = |point| {
-            let read = MachineTerm::read_named(point, address.clone(), LoadKind::Int32);
+            let read = OldMachineTerm::read_named(point, address.clone(), LoadKind::Int32);
             let operand = KernelTermImport::default().machine(format, &read);
             let value: SharedIntegerTerm = IntegerTerm::Machine(
                 SharedMachineIntegerTerm::from_shared(format, operand).unwrap(),
@@ -622,8 +622,8 @@ mod tests {
             4,
         );
         let replacements = [
-            MachineTerm::Variable(load),
-            MachineTerm::read_named(
+            OldMachineTerm::Variable(load),
+            OldMachineTerm::read_named(
                 ProgramPoint::at(&memory),
                 Box::new(address),
                 LoadKind::Int32,
@@ -689,7 +689,7 @@ mod tests {
         assert!(exact.shared_integer_operand(&root).is_none());
         assert!(exact.refusal_status().is_none());
         assert!(!root.has_cached_native_argument());
-        let guard = KernelTermImport::default().condition(&ConditionTerm::bool_application(
+        let guard = KernelTermImport::default().condition(&OldConditionTerm::bool_application(
             "unsupported_integer_rewrite_guard",
             Vec::new(),
         ));
@@ -708,10 +708,10 @@ mod tests {
         let from = Variable(991970);
         let address = Address {
             base: AddressBase::Symbolic(Variable(991971)),
-            offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(from), 4),
+            offset: OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(from), 4),
         };
         let memory = intern_memory(SymbolicMemory::new());
-        let read = MachineTerm::read_named(
+        let read = OldMachineTerm::read_named(
             ProgramPoint::at(&memory),
             Box::new(address),
             LoadKind::Int32,
@@ -736,16 +736,16 @@ mod tests {
                 (1u128 << bits) - 1
             };
             cases.extend([
-                (format, MachineTerm::Variable(from)),
-                (format, MachineTerm::Constant { format, bits: 0 }),
-                (format, MachineTerm::Constant { format, bits: mask }),
+                (format, OldMachineTerm::Variable(from)),
+                (format, OldMachineTerm::Constant { format, bits: 0 }),
+                (format, OldMachineTerm::Constant { format, bits: mask }),
             ]);
         }
         // The observation may reject a numeric literal reading and retain its
         // original typed handle. Do not introduce a new signedness policy.
         cases.push((
             MachineIntegerType::Int64,
-            MachineTerm::uint64_constant(u64::MAX),
+            OldMachineTerm::uint64_constant(u64::MAX),
         ));
         cases.push((MachineIntegerType::Int32, read));
         for (format, machine) in cases {
@@ -756,12 +756,12 @@ mod tests {
                 KernelTermNode::MachineObservation { .. }
             ));
             for replacement in [
-                MachineTerm::constant(7),
-                MachineTerm::Variable(Variable(991972)),
+                OldMachineTerm::constant(7),
+                OldMachineTerm::Variable(Variable(991972)),
             ] {
                 for source in [
-                    MachineTerm::Variable(from),
-                    MachineTerm::Variable(Variable(991973)),
+                    OldMachineTerm::Variable(from),
+                    OldMachineTerm::Variable(Variable(991973)),
                 ] {
                     let mut baseline = TermRewrite::for_bits_checked(&source, &replacement);
                     let expected = baseline.integer(&input);
@@ -807,12 +807,12 @@ mod conditional_tests {
         let other = Variable(995101);
         let guard = Variable(995102);
         for condition in [
-            ConditionTerm::Constant(false),
-            ConditionTerm::Constant(true),
-            ConditionTerm::Variable(guard),
-            ConditionTerm::BoolEqual(
-                Box::new(ConditionTerm::Variable(guard)),
-                Box::new(ConditionTerm::Variable(guard)),
+            OldConditionTerm::Constant(false),
+            OldConditionTerm::Constant(true),
+            OldConditionTerm::Variable(guard),
+            OldConditionTerm::BoolEqual(
+                Box::new(OldConditionTerm::Variable(guard)),
+                Box::new(OldConditionTerm::Variable(guard)),
             ),
         ] {
             for no in [IntegerTerm::Variable(other), IntegerTerm::constant_i64(3)] {
@@ -823,13 +823,13 @@ mod conditional_tests {
                 };
                 let root = KernelTermImport::default().integer(&input.clone().into());
                 for truth in [
-                    ConditionTerm::Constant(false),
-                    ConditionTerm::Constant(true),
-                    ConditionTerm::Variable(Variable(995103)),
+                    OldConditionTerm::Constant(false),
+                    OldConditionTerm::Constant(true),
+                    OldConditionTerm::Variable(Variable(995103)),
                 ] {
                     let program = BTreeMap::from([(
                         guard,
-                        TypedProgramValueReplacement::Bitvector(MachineTerm::bool_cast(
+                        TypedProgramValueReplacement::Bitvector(OldMachineTerm::bool_cast(
                             MachineIntegerType::UInt8,
                             truth,
                         )),
@@ -929,7 +929,7 @@ mod conditional_tests {
         let from = Variable(995121);
         let to = Variable(995122);
         let input = IntegerTerm::If {
-            condition: Box::new(ConditionTerm::Variable(Variable(995123))),
+            condition: Box::new(OldConditionTerm::Variable(Variable(995123))),
             then_term: IntegerTerm::Variable(from).into(),
             else_term: IntegerTerm::Variable(to).into(),
         };
@@ -970,16 +970,16 @@ mod conditional_tests {
                     [IntegerTerm::constant_i64(3), large.clone()]
                 };
                 let input = IntegerTerm::If {
-                    condition: Box::new(ConditionTerm::Variable(guard)),
+                    condition: Box::new(OldConditionTerm::Variable(guard)),
                     then_term: arms[0].clone().into(),
                     else_term: arms[1].clone().into(),
                 };
                 let root = KernelTermImport::default().integer(&input.clone().into());
                 let program = BTreeMap::from([(
                     guard,
-                    TypedProgramValueReplacement::Bitvector(MachineTerm::bool_cast(
+                    TypedProgramValueReplacement::Bitvector(OldMachineTerm::bool_cast(
                         MachineIntegerType::UInt8,
-                        ConditionTerm::Constant(truth),
+                        OldConditionTerm::Constant(truth),
                     )),
                 )]);
                 let integer = BTreeMap::new();

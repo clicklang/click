@@ -9,7 +9,7 @@ fn mixed_composition_restores_symbolic_borrows_and_keeps_emitted_occurrence_orde
     let facts = PureFactContext::new();
     let pointer = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Variable(Variable(8_810_000)),
+        offset: OldAddressOffset::Variable(Variable(8_810_000)),
     };
     let borrow = owner(pointer.clone(), 0, 1);
     let produced = owner(Address::symbolic(Variable(8_810_001)), 0, 1);
@@ -416,7 +416,7 @@ fn consumed_scalar_transfer_preserves_output_spelling_and_partial_residual() {
             original.clone()
         };
         let facts = PureFactContext::new().assume_condition(
-            ConditionTerm::address_equal(original.clone(), returned.clone()),
+            OldConditionTerm::address_equal(original.clone(), returned.clone()),
             true,
         );
         let caller =
@@ -953,8 +953,8 @@ fn fixed_range_transfers_preserve_typed_widths_and_partial_frames() {
         let owner = |from, to| {
             ResourceFact::own_memory(MemoryRange::new_with_element_width(
                 pointer.clone(),
-                MachineTerm::constant(from),
-                MachineTerm::constant(to),
+                OldMachineTerm::constant(from),
+                OldMachineTerm::constant(to),
                 width,
             ))
         };
@@ -1120,8 +1120,8 @@ fn fixed_wide_range_returns_keep_their_original_index_kind() {
     let range = |start, end| {
         ResourceFact::own_memory(MemoryRange::new_wide(
             pointer.clone(),
-            MachineTerm::uint64_constant(start),
-            MachineTerm::uint64_constant(end),
+            OldMachineTerm::uint64_constant(start),
+            OldMachineTerm::uint64_constant(end),
             8,
         ))
     };
@@ -1330,7 +1330,7 @@ fn nonunit_memory_returns_refuse_but_token_counts_keep_their_constructed_body() 
                 name: "many".into(),
                 arguments: vec![].into(),
             },
-            Box::new(MachineTerm::constant(2).into()),
+            Box::new(OldMachineTerm::constant(2).into()),
         );
         let evaluated = EvaluatedReturnResources::new(&facts)
             .admit(head.clone(), ReturnOwnershipOrigin::Description, &facts)
@@ -1555,7 +1555,7 @@ fn flat_body_admission_keeps_selected_alias_diagnostics_and_branch_isolation() {
     let pointer = Address::symbolic(Variable(8_819_100));
     let alias = Address::symbolic(Variable(8_819_101));
     let facts = PureFactContext::new().assume_condition(
-        ConditionTerm::address_equal(pointer.clone(), alias.clone()),
+        OldConditionTerm::address_equal(pointer.clone(), alias.clone()),
         true,
     );
     let (evaluated, bodies) = constructed_flat_return(&pointer, 2, &facts);
@@ -1616,7 +1616,7 @@ fn flat_body_admission_uses_cold_coordinates_but_refuses_general_geometry() {
     let symbolic = ResourceFact::own_memory(MemoryRange::new(
         pointer,
         0u32.into(),
-        MachineTerm::Variable(Variable(8_819_103)),
+        OldMachineTerm::Variable(Variable(8_819_103)),
     ));
     let general = ResourceContext::new_with_equalities(&facts).unchecked_with_fact(symbolic);
     general.synchronize_memory_equalities(&facts);
@@ -1797,10 +1797,10 @@ fn decided_conditional_bodies_and_opaque_guards_are_constructed_once() {
         right: SpecExpression::ProgramExpression(int32_literal(0)),
     });
     for (flag, count) in [
-        (ProgramValue::Int32(MachineTerm::constant(0)), 2),
-        (ProgramValue::Int32(MachineTerm::constant(1)), 0),
+        (ProgramValue::Int32(OldMachineTerm::constant(0)), 2),
+        (ProgramValue::Int32(OldMachineTerm::constant(1)), 0),
         (
-            ProgramValue::Int32(MachineTerm::Variable(Variable(8_819_203))),
+            ProgramValue::Int32(OldMachineTerm::Variable(Variable(8_819_203))),
             1,
         ),
     ] {
@@ -2354,7 +2354,7 @@ fn escrow_boundary_checks_live_new_outputs_but_not_removed_occurrences() {
     let facts = PureFactContext::new();
     let pointer = Address {
         base: "escrow-boundary".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let escrow = owner(pointer.clone(), 0, 8);
     let protected = ResourceContext::new_with_equalities(&facts).unchecked_with_fact(escrow);
@@ -2381,7 +2381,7 @@ fn escrow_boundary_checks_body_frontiers_against_released_inherited_holds() {
     let facts = PureFactContext::new();
     let pointer = Address {
         base: "inherited-escrow-boundary".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let inherited = ResourceContext::new_with_equalities(&facts).unchecked_with_fact(owner(
         pointer.clone(),
@@ -2408,7 +2408,7 @@ fn escrow_recovery_uses_the_lend_time_frontier_of_a_folded_owner() {
     let facts = PureFactContext::new();
     let pointer = Address {
         base: "folded-escrow".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let piece = owner(pointer.clone(), 0, 8);
     let head = ResourceFact::own_composite("protected".into(), vec![]);
@@ -2551,9 +2551,9 @@ fn fact_only_view_expansion_keeps_ambient_child_identity_and_binding() {
 fn cached_composite_expansion_reuses_symbolic_endpoint_fragments() {
     let _session = crate::kernel::VerificationSession::enter();
     let pointer = Address::symbolic(Variable(9_831_200));
-    let end = MachineTerm::Variable(Variable(9_831_201));
+    let end = OldMachineTerm::Variable(Variable(9_831_201));
     let facts = PureFactContext::new().assume_condition(
-        ConditionTerm::signed_less_than(2u32.into(), end.clone()),
+        OldConditionTerm::signed_less_than(2u32.into(), end.clone()),
         true,
     );
     let owned = |start, end| {

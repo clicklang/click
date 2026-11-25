@@ -41,7 +41,7 @@ fn prepared_pure_application_ignores_unrelated_facts() {
     for size in [4usize, 16, 64, 256] {
         let mut values = ProgramValueBindings::from([(
             "x".into(),
-            ProgramValue::Int32(crate::kernel::MachineTerm::Variable(
+            ProgramValue::Int32(crate::kernel::OldMachineTerm::Variable(
                 crate::kernel::Variable(90_000),
             )),
         )]);
@@ -60,7 +60,7 @@ fn prepared_pure_application_ignores_unrelated_facts() {
         forms.record_lowering(&guard, &lowered).unwrap();
         for index in 0..size {
             let name = format!("unused_{index}");
-            let value = ProgramValue::Int32(crate::kernel::MachineTerm::Variable(
+            let value = ProgramValue::Int32(crate::kernel::OldMachineTerm::Variable(
                 crate::kernel::Variable(100_000 + index as u64),
             ));
             values.insert(name.clone(), value);
@@ -93,7 +93,7 @@ fn prepared_pure_application_ignores_unrelated_facts() {
         let root = Proof::for_pure_goal(
             "argument guard scaling",
             &requires,
-            Proposition::condition_is(crate::kernel::ConditionTerm::Constant(false), true),
+            Proposition::condition_is(crate::kernel::OldConditionTerm::Constant(false), true),
             &context,
             definitions,
             &theorems,

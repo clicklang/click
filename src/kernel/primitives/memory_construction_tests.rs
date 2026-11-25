@@ -29,7 +29,7 @@ fn memory_constructions_cover_non_transition_producers() {
     let _session = crate::kernel::VerificationSession::enter();
     let pointer = Address {
         base: "local:construction".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let memory = SymbolicMemory::new()
         .with_block("local:construction", 16)
@@ -115,7 +115,7 @@ fn unrecorded_mutation_cannot_inherit_an_incorrect_origin() {
 fn construction_pins_detect_mutation_of_an_uninterned_state() {
     let pointer = Address {
         base: "local:unpinned".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let mut memory = SymbolicMemory::new().with_uninitialized_object(pointer.clone(), 4);
     assert!(memory.diagnostic_construction().is_some());
@@ -133,7 +133,7 @@ fn allocation_lifetimes_up_to_ended_admit_only_new_tombstones() {
     let _session = crate::kernel::VerificationSession::enter();
     let freed = Address::symbolic(Variable(990_901));
     let live = Address::symbolic(Variable(990_902));
-    let size = MachineTerm::constant(8);
+    let size = OldMachineTerm::constant(8);
     let mut head = HeapMemory::default();
     head.live_allocations
         .insert(live.clone(), AllocationSize::int32(size.clone()));

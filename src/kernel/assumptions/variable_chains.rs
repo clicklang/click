@@ -124,7 +124,7 @@ impl ChainGraph {
 }
 
 impl VariableChains {
-    pub(super) fn adjust(&mut self, condition: &ConditionTerm, value: bool) {
+    pub(super) fn adjust(&mut self, condition: &OldConditionTerm, value: bool) {
         let Some(view) = retained_order_bounds::order_view(condition, value) else {
             return;
         };
@@ -188,7 +188,7 @@ impl VariableChains {
 }
 
 impl PureFactContext {
-    pub(super) fn decide_from_variable_chain(&self, condition: &ConditionTerm) -> Option<bool> {
+    pub(super) fn decide_from_variable_chain(&self, condition: &OldConditionTerm) -> Option<bool> {
         if implicit_consulted_premises_capturing() {
             return None;
         }
@@ -237,15 +237,14 @@ impl PureFactContext {
                 })
         };
         if let Some(span) = upper_span {
-            let first = MachineTerm::Variable(*span.members.front()?);
-            if upper.variable() != V::Legacy(&first).variable() && direct(lower, V::Legacy(&first))
-            {
+            let first = OldMachineTerm::Variable(*span.members.front()?);
+            if upper.variable() != V::Old(&first).variable() && direct(lower, V::Old(&first)) {
                 return Some(true);
             }
         }
         if let Some(span) = lower_span {
-            let last = MachineTerm::Variable(*span.members.back()?);
-            if lower.variable() != V::Legacy(&last).variable() && direct(V::Legacy(&last), upper) {
+            let last = OldMachineTerm::Variable(*span.members.back()?);
+            if lower.variable() != V::Old(&last).variable() && direct(V::Old(&last), upper) {
                 return Some(true);
             }
         }
@@ -256,14 +255,14 @@ impl PureFactContext {
 /// An exact symbolic array index. The base is returned separately so only
 /// cells spelling that same base participate in the indexed path.
 pub(in crate::kernel) fn array_index(
-    offset: &AddressOffset,
-) -> Option<(&AddressOffset, Variable, i64)> {
-    static ZERO: AddressOffset = AddressOffset::Constant(0);
+    offset: &OldAddressOffset,
+) -> Option<(&OldAddressOffset, Variable, i64)> {
+    static ZERO: OldAddressOffset = OldAddressOffset::Constant(0);
     let (base, index) = match offset {
-        AddressOffset::Add(base, index) => (base.as_ref(), index.as_ref()),
+        OldAddressOffset::Add(base, index) => (base.as_ref(), index.as_ref()),
         index => (&ZERO, index),
     };
-    let AddressOffset::Int32Scaled { value, byte_width } = index else {
+    let OldAddressOffset::Int32Scaled { value, byte_width } = index else {
         return None;
     };
     let variable = value.operand_view().variable()?;
@@ -295,9 +294,9 @@ mod tests {
                 edges.reverse();
             }
             for pair in edges {
-                let edge = ConditionTerm::signed_less_than(
-                    MachineTerm::Variable(pair[0]),
-                    MachineTerm::Variable(pair[1]),
+                let edge = OldConditionTerm::signed_less_than(
+                    OldMachineTerm::Variable(pair[0]),
+                    OldMachineTerm::Variable(pair[1]),
                 );
                 context = context.assume_condition(edge.clone(), true);
                 if pair[0] != variables[1] {
@@ -311,9 +310,9 @@ mod tests {
                 assert_eq!(span.root, first.root);
                 assert_eq!(span.rank, position);
             }
-            let query = ConditionTerm::signed_less_than(
-                MachineTerm::Variable(variables[0]),
-                MachineTerm::Variable(variables[4]),
+            let query = OldConditionTerm::signed_less_than(
+                OldMachineTerm::Variable(variables[0]),
+                OldMachineTerm::Variable(variables[4]),
             );
             assert_eq!(context.decide_from_variable_chain(&query), Some(true));
             assert_eq!(broken.decide_from_variable_chain(&query), None);
@@ -322,25 +321,25 @@ mod tests {
 
     #[test]
     fn branching_orders_do_not_order_siblings() {
-        let variable = |id| MachineTerm::Variable(Variable(id));
+        let variable = |id| OldMachineTerm::Variable(Variable(id));
         let context = PureFactContext::new()
             .assume_condition(
-                ConditionTerm::signed_less_than(variable(1), variable(3)),
+                OldConditionTerm::signed_less_than(variable(1), variable(3)),
                 true,
             )
             .assume_condition(
-                ConditionTerm::signed_less_than(variable(2), variable(3)),
+                OldConditionTerm::signed_less_than(variable(2), variable(3)),
                 true,
             );
         assert_eq!(
-            context.decide_from_variable_chain(&ConditionTerm::signed_less_than(
+            context.decide_from_variable_chain(&OldConditionTerm::signed_less_than(
                 variable(1),
                 variable(2)
             )),
             None
         );
         assert_eq!(
-            context.decide_from_variable_chain(&ConditionTerm::signed_less_than(
+            context.decide_from_variable_chain(&OldConditionTerm::signed_less_than(
                 variable(2),
                 variable(1)
             )),
@@ -369,25 +368,25 @@ mod memory_tests {
         let mut context = PureFactContext::new();
         for pair in variables.windows(2) {
             context = context.assume_condition(
-                ConditionTerm::signed_less_than(
-                    MachineTerm::Variable(pair[0]),
-                    MachineTerm::Variable(pair[1]),
+                OldConditionTerm::signed_less_than(
+                    OldMachineTerm::Variable(pair[0]),
+                    OldMachineTerm::Variable(pair[1]),
                 ),
                 true,
             );
         }
         for (index, variable) in variables.iter().enumerate() {
             context = context.assume_condition(
-                ConditionTerm::equal(
-                    MachineTerm::Variable(*variable),
-                    MachineTerm::constant(index as u32 + 1),
+                OldConditionTerm::equal(
+                    OldMachineTerm::Variable(*variable),
+                    OldMachineTerm::constant(index as u32 + 1),
                 ),
                 true,
             );
         }
         let pointer = |variable, stride| Address {
             base: AddressBase::from("ordered"),
-            offset: AddressOffset::scale_int32(MachineTerm::Variable(variable), stride),
+            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(variable), stride),
         };
         let mut memory = SymbolicMemory::new().with_block("ordered", 4096);
         for (index, variable) in variables.iter().enumerate() {
@@ -421,7 +420,7 @@ mod memory_tests {
             .without_possible_aliasing_cells(&near, 8, &context)
             .store(
                 near.clone(),
-                ProgramValue::UInt64(MachineTerm::uint64_constant(7)),
+                ProgramValue::UInt64(OldMachineTerm::uint64_constant(7)),
             );
         let after = wide.without_possible_aliasing_cells(&pointer(variables[4], 4), 4, &context);
         assert!(

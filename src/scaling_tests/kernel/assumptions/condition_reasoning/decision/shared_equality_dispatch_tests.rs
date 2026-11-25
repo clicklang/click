@@ -12,7 +12,7 @@ fn growing_prefixes(unresolved: bool, cancel: bool) {
             base.clone()
         };
         let zero =
-            crate::kernel::KernelTermImport::default().machine(ty, &MachineTerm::constant(0));
+            crate::kernel::KernelTermImport::default().machine(ty, &OldMachineTerm::constant(0));
         let observe =
             |root| IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(ty, root).unwrap());
         let mut root = base.clone();
@@ -27,14 +27,14 @@ fn growing_prefixes(unresolved: bool, cancel: bool) {
                     KernelTerm::machine_binary_shared(ty, Op::Add, [root, zero.clone()])
                 };
                 context = context.assume_condition(
-                    ConditionTerm::equal(
-                        MachineTerm::Variable(Variable(982010 + n as u64)),
-                        MachineTerm::constant(n as u32),
+                    OldConditionTerm::equal(
+                        OldMachineTerm::Variable(Variable(982010 + n as u64)),
+                        OldMachineTerm::constant(n as u32),
                     ),
                     true,
                 );
                 let goal =
-                    ConditionTerm::integer_equal(observe(root.clone()), observe(other.clone()));
+                    OldConditionTerm::integer_equal(observe(root.clone()), observe(other.clone()));
                 assert_eq!(
                     context.decide(&goal),
                     if unresolved { None } else { Some(true) }
@@ -83,7 +83,7 @@ fn wide_mask_queries_retain_growing_shared_operands() {
         let ty = MachineIntegerType::UInt64;
         let literal = |n| {
             crate::kernel::KernelTermImport::default()
-                .machine_arithmetic(ty, &MachineTerm::uint64_constant(n))
+                .machine_arithmetic(ty, &OldMachineTerm::uint64_constant(n))
                 .unwrap()
         };
         let mut root =
@@ -91,7 +91,7 @@ fn wide_mask_queries_retain_growing_shared_operands() {
         let one = literal(1);
         let mask = literal(8);
         let zero = literal(0);
-        let bound = MachineTerm::uint64_constant(8);
+        let bound = OldMachineTerm::uint64_constant(8);
         let mut context = PureFactContext::new();
         let exports = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -100,7 +100,7 @@ fn wide_mask_queries_retain_growing_shared_operands() {
                 let guard = condition_for_operand_views(
                     ty,
                     CompareRelation::LessThan,
-                    [V::Shared(&root), V::Legacy(&bound)],
+                    [V::Shared(&root), V::Old(&bound)],
                 );
                 context = context.assume_condition(guard, true);
                 let masked = KernelTerm::machine_binary_shared(

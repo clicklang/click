@@ -1,6 +1,6 @@
 //! Exclude one constant from one explicit non-strict Integer bound.
 use super::arithmetic_special::ArithmeticRuleError as Error;
-use crate::kernel::{ConditionTerm, Proposition};
+use crate::kernel::{OldConditionTerm, Proposition};
 
 pub(super) fn check(
     node: usize,
@@ -18,9 +18,9 @@ pub(super) fn check(
     let (a, b) = match result {
         condition_source @ Proposition::ConditionIs(_, _)
             if let Some(
-                (ConditionTerm::IntegerNotEqual(a, b), true)
-                | (ConditionTerm::IntegerEqual(a, b), false),
-            ) = condition_source.condition_native() =>
+                (OldConditionTerm::IntegerNotEqual(a, b), true)
+                | (OldConditionTerm::IntegerEqual(a, b), false),
+            ) = condition_source.old_condition() =>
         {
             (a, b)
         }
@@ -33,10 +33,10 @@ pub(super) fn check(
     } else {
         return Err(invalid());
     };
-    let Some((ConditionTerm::IntegerLessEqual(lo, hi), true)) = (premises
+    let Some((OldConditionTerm::IntegerLessEqual(lo, hi), true)) = (premises
         .get(bounds[0])
         .ok_or(Error::InvalidPremise(bounds[0]))?)
-    .condition_native() else {
+    .old_condition() else {
         return Err(invalid());
     };
     let (endpoint, lower) = if hi == term {

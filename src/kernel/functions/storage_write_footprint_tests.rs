@@ -4,12 +4,12 @@ use super::*;
 fn write_span_must_fit_inside_owned_byte_footprint() {
     let base = Address {
         base: "global:owned".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let owned = MemoryRange::new_with_element_width(
         base.clone(),
-        MachineTerm::constant(0),
-        MachineTerm::constant(4),
+        OldMachineTerm::constant(0),
+        OldMachineTerm::constant(4),
         1,
     );
     let assumptions = PureFactContext::new();
@@ -38,14 +38,14 @@ fn write_span_must_fit_inside_owned_byte_footprint() {
 fn a_symbolic_index_write_is_placed_by_its_element_bounds() {
     let base = Address {
         base: "global:owned".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
-    let j = MachineTerm::Variable(Variable(99_001));
-    let n = MachineTerm::Variable(Variable(99_002));
-    let owned = |end: MachineTerm| {
+    let j = OldMachineTerm::Variable(Variable(99_001));
+    let n = OldMachineTerm::Variable(Variable(99_002));
+    let owned = |end: OldMachineTerm| {
         vec![MemoryRange::new_with_element_width(
             base.clone(),
-            MachineTerm::constant(0),
+            OldMachineTerm::constant(0),
             end,
             4,
         )]
@@ -53,11 +53,14 @@ fn a_symbolic_index_write_is_placed_by_its_element_bounds() {
     let bounded = |upper: i32| {
         PureFactContext::new()
             .assume_condition(
-                ConditionTerm::signed_less_equal(MachineTerm::constant(0), j.clone()),
+                OldConditionTerm::signed_less_equal(OldMachineTerm::constant(0), j.clone()),
                 true,
             )
             .assume_condition(
-                ConditionTerm::signed_less_than(j.clone(), MachineTerm::constant(upper as u32)),
+                OldConditionTerm::signed_less_than(
+                    j.clone(),
+                    OldMachineTerm::constant(upper as u32),
+                ),
                 true,
             )
     };
@@ -65,7 +68,7 @@ fn a_symbolic_index_write_is_placed_by_its_element_bounds() {
     let within = |pointer: &Address, bytes: u32, owned: &[MemoryRange], facts: &PureFactContext| {
         storage_write_within_owned_footprint(pointer, bytes, owned, facts)
     };
-    let thousand = owned(MachineTerm::constant(1000));
+    let thousand = owned(OldMachineTerm::constant(1000));
     assert!(within(&at_j, 4, &thousand, &bounded(1000)));
     assert!(!within(&at_j, 4, &thousand, &bounded(1001)));
     // Two elements from `j`: the last is `j + 1`.
@@ -81,15 +84,18 @@ fn a_symbolic_index_write_is_placed_by_its_element_bounds() {
     // A symbolic end.
     let up_to_n = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::signed_less_equal(MachineTerm::constant(0), j.clone()),
+            OldConditionTerm::signed_less_equal(OldMachineTerm::constant(0), j.clone()),
             true,
         )
-        .assume_condition(ConditionTerm::signed_less_than(j.clone(), n.clone()), true);
+        .assume_condition(
+            OldConditionTerm::signed_less_than(j.clone(), n.clone()),
+            true,
+        );
     assert!(within(&at_j, 4, &owned(n.clone()), &up_to_n));
     assert!(!within(&at_j, 4, &owned(n.clone()), &bounded(1000)));
     // The lower edge: nothing bounds `j` below.
     let upper_only = PureFactContext::new().assume_condition(
-        ConditionTerm::signed_less_than(j.clone(), MachineTerm::constant(10)),
+        OldConditionTerm::signed_less_than(j.clone(), OldMachineTerm::constant(10)),
         true,
     );
     assert!(!within(&at_j, 4, &thousand, &upper_only));
@@ -99,7 +105,7 @@ fn a_symbolic_index_write_is_placed_by_its_element_bounds() {
 fn memory_effect_write_collection_preserves_each_access_width() {
     let pointer = Address {
         base: "global:owned".into(),
-        offset: AddressOffset::Constant(3),
+        offset: OldAddressOffset::Constant(3),
     };
     let fact = ExecutionPureFact::new(Proposition::MemoryMutatesOnly {
         before: SymbolicMemory::new(),

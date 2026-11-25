@@ -120,20 +120,20 @@ mod tests {
     use super::super::*;
     use crate::kernel::{KernelTermImport, VerificationSession};
 
-    fn variable(n: u64) -> MachineTerm {
-        MachineTerm::Variable(crate::kernel::Variable(998100 + n))
+    fn variable(n: u64) -> OldMachineTerm {
+        OldMachineTerm::Variable(crate::kernel::Variable(998100 + n))
     }
-    fn range(graph: &mut DifferenceGraph, value: &MachineTerm, lo: u32, hi: u32) {
+    fn range(graph: &mut DifferenceGraph, value: &OldMachineTerm, lo: u32, hi: u32) {
         graph.assume_condition(
-            &ConditionTerm::signed_less_equal(lo.into(), value.clone()),
+            &OldConditionTerm::signed_less_equal(lo.into(), value.clone()),
             true,
         );
         graph.assume_condition(
-            &ConditionTerm::signed_less_equal(value.clone(), hi.into()),
+            &OldConditionTerm::signed_less_equal(value.clone(), hi.into()),
             true,
         );
     }
-    fn interval(graph: &DifferenceGraph, term: &MachineTerm) -> (i128, i128) {
+    fn interval(graph: &DifferenceGraph, term: &OldMachineTerm) -> (i128, i128) {
         let root = KernelTermImport::default()
             .machine_arithmetic(MachineIntegerType::Int32, term)
             .unwrap();
@@ -145,7 +145,7 @@ mod tests {
     fn cached_missing_nodes_and_tightened_bounds_follow_only_the_changed_branch() {
         let _session = VerificationSession::enter();
         let x = variable(0);
-        let sum = MachineTerm::add(x.clone(), 1u32.into());
+        let sum = OldMachineTerm::add(x.clone(), 1u32.into());
         let empty = DifferenceGraph::new();
         assert_eq!(interval(&empty, &sum), Domain::Int32.range());
         let mut parent = empty.clone();
@@ -156,25 +156,25 @@ mod tests {
         range(&mut child, &x, 0, 4);
         assert_eq!(interval(&child, &sum), (1, 5));
         assert_eq!(interval(&parent, &sum), (1, 11));
-        child.assume_condition(&ConditionTerm::equal(x, 2u32.into()), true);
+        child.assume_condition(&OldConditionTerm::equal(x, 2u32.into()), true);
         assert_eq!(interval(&child, &sum), (3, 3));
     }
     #[test]
     fn cached_subtraction_tracks_new_and_tightened_edges() {
         let _session = VerificationSession::enter();
         let (x, y) = (variable(1), variable(2));
-        let difference = MachineTerm::subtract(x.clone(), y.clone());
+        let difference = OldMachineTerm::subtract(x.clone(), y.clone());
         let mut parent = DifferenceGraph::new();
         range(&mut parent, &x, 0, 100);
         range(&mut parent, &y, 0, 100);
         assert_eq!(interval(&parent, &difference), (-100, 100));
         let mut child = parent.clone();
         child.assume_condition(
-            &ConditionTerm::signed_less_equal(x.clone(), y.clone()),
+            &OldConditionTerm::signed_less_equal(x.clone(), y.clone()),
             true,
         );
         assert_eq!(interval(&child, &difference), (-100, 0));
-        child.assume_condition(&ConditionTerm::signed_less_than(x, y), true);
+        child.assume_condition(&OldConditionTerm::signed_less_than(x, y), true);
         assert_eq!(interval(&child, &difference), (-100, -1));
         assert_eq!(interval(&parent, &difference), (-100, 100));
     }
@@ -182,13 +182,13 @@ mod tests {
     fn cached_structural_range_notices_an_explicit_compound_node() {
         let _session = VerificationSession::enter();
         let (x, y) = (variable(3), variable(4));
-        let product = MachineTerm::multiply(x.clone(), y.clone());
+        let product = OldMachineTerm::multiply(x.clone(), y.clone());
         let mut graph = DifferenceGraph::new();
         range(&mut graph, &x, 0, 10);
         range(&mut graph, &y, 0, 10);
         assert_eq!(interval(&graph, &product), (0, 100));
         graph.assume_condition(
-            &ConditionTerm::signed_less_equal(product.clone(), 7u32.into()),
+            &OldConditionTerm::signed_less_equal(product.clone(), 7u32.into()),
             true,
         );
         assert_eq!(interval(&graph, &product), (0, 7));
@@ -205,11 +205,11 @@ mod tests {
         for leaf in &leaves {
             range(&mut parent, leaf, 0, 100);
             parent.assume_condition(
-                &ConditionTerm::signed_less_equal(leaf.clone(), source.clone()),
+                &OldConditionTerm::signed_less_equal(leaf.clone(), source.clone()),
                 true,
             );
         }
-        let term = MachineTerm::add(leaves.last().unwrap().clone(), 1u32.into());
+        let term = OldMachineTerm::add(leaves.last().unwrap().clone(), 1u32.into());
         assert_eq!(interval(&parent, &term), (1, 101));
         let mut child = parent.clone();
         range(&mut child, &source, 0, 3);
@@ -234,17 +234,26 @@ mod tests {
         let mut parent = DifferenceGraph::new();
         assert_eq!(read(&parent), Domain::UInt64.range());
         parent.assume_condition(
-            &ConditionTerm::int64_signed_less_equal(MachineTerm::int64_constant(0), x.clone()),
+            &OldConditionTerm::int64_signed_less_equal(
+                OldMachineTerm::int64_constant(0),
+                x.clone(),
+            ),
             true,
         );
         parent.assume_condition(
-            &ConditionTerm::int64_signed_less_equal(x.clone(), MachineTerm::int64_constant(10)),
+            &OldConditionTerm::int64_signed_less_equal(
+                x.clone(),
+                OldMachineTerm::int64_constant(10),
+            ),
             true,
         );
         assert_eq!(read(&parent), (0, 10));
         let mut child = parent.clone();
         child.assume_condition(
-            &ConditionTerm::int64_signed_less_equal(x.clone(), MachineTerm::int64_constant(4)),
+            &OldConditionTerm::int64_signed_less_equal(
+                x.clone(),
+                OldMachineTerm::int64_constant(4),
+            ),
             true,
         );
         assert_eq!(read(&child), (0, 4));

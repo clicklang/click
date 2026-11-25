@@ -11,9 +11,9 @@ fn conditional_atom_reads_fixed_roots_without_exporting_arithmetic() {
                 KernelTerm::retained_native_machine_operand(
                     format,
                     &if format == MachineIntegerType::UInt32 {
-                        MachineTerm::uint32_constant(n as u32)
+                        OldMachineTerm::uint32_constant(n as u32)
                     } else {
-                        MachineTerm::uint64_constant(n)
+                        OldMachineTerm::uint64_constant(n)
                     },
                 )
             };
@@ -173,15 +173,15 @@ fn reflexive_variable_comparisons_do_not_walk_arithmetic_operands() {
                     [V::Shared(&variable), V::Shared(&variable)],
                 );
                 assert!(
-                    matches!(retained, ConditionTerm::Compare { relation: R::Equal, left, right, .. }
-                    if matches!((left.as_ref(), right.as_ref()), (MachineTerm::Variable(a), MachineTerm::Variable(b)) if a == b))
+                    matches!(retained, OldConditionTerm::Compare { relation: R::Equal, left, right, .. }
+                    if matches!((left.as_ref(), right.as_ref()), (OldMachineTerm::Variable(a), OldMachineTerm::Variable(b)) if a == b))
                 );
                 let other = logical_condition_for_operand_views(
                     format,
                     R::Equal,
                     [V::Shared(&arithmetic), V::Shared(&arithmetic)],
                 );
-                assert!(!matches!(other, ConditionTerm::Compare { .. }));
+                assert!(!matches!(other, OldConditionTerm::Compare { .. }));
             });
             assert_eq!(KernelTermExport::machine_export_count(), exports);
             assert_eq!(
@@ -235,12 +235,12 @@ fn bitwise_conditional_arms_read_only_fixed_roots() {
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 for (left, right, left_miss, right_miss) in &cases {
                     assert!(
-                        matches!(conditional_atom(left), Some(MachineTerm::If { then_term, .. })
-                        if matches!(then_term.as_ref(), MachineTerm::Binary { .. }))
+                        matches!(conditional_atom(left), Some(OldMachineTerm::If { then_term, .. })
+                        if matches!(then_term.as_ref(), OldMachineTerm::Binary { .. }))
                     );
                     assert!(
-                        matches!(conditional_atom(right), Some(MachineTerm::If { else_term, .. })
-                        if matches!(else_term.as_ref(), MachineTerm::Binary { .. }))
+                        matches!(conditional_atom(right), Some(OldMachineTerm::If { else_term, .. })
+                        if matches!(else_term.as_ref(), OldMachineTerm::Binary { .. }))
                     );
                     assert!(conditional_atom(left_miss).is_none());
                     assert!(conditional_atom(right_miss).is_none());

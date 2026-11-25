@@ -5,8 +5,8 @@ fn symbolic_byte_initialization_publication_ignores_unrelated_locals() {
     let (mut state, _, _, original) = fixture();
     let range = MemoryRange::new_wide(
         original.base().clone(),
-        MachineTerm::uint64_constant(0),
-        MachineTerm::Variable(Variable(918_001)),
+        OldMachineTerm::uint64_constant(0),
+        OldMachineTerm::Variable(Variable(918_001)),
         1,
     );
     let mut expected_work = None;

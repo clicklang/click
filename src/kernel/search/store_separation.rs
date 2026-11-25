@@ -102,8 +102,8 @@ pub(crate) fn element_address_disequality_indices(
     SharedMachineIntegerTerm,
     MachineIntegerType,
 )> {
-    let Some((crate::kernel::ConditionTerm::AddressEqual(left, right), false)) =
-        goal.condition_native()
+    let Some((crate::kernel::OldConditionTerm::AddressEqual(left, right), false)) =
+        goal.old_condition()
     else {
         return None;
     };

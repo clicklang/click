@@ -139,11 +139,11 @@ mod tests {
 
     fn equality(variable: Variable, value: u32) -> Proposition {
         Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::Variable(variable)),
-                right: Box::new(MachineTerm::constant(value)),
+                left: Box::new(OldMachineTerm::Variable(variable)),
+                right: Box::new(OldMachineTerm::constant(value)),
             },
             true,
         )
@@ -220,7 +220,7 @@ mod tests {
             let instantiated = substitute_int32_variable_in_proposition(
                 &body,
                 *var,
-                MachineTerm::constant(witness),
+                OldMachineTerm::constant(witness),
             );
             assert!(PureFactContext::new().proves_exact(&Proposition::Not(Box::new(instantiated))));
         }

@@ -35,7 +35,7 @@ reuse the original address comparison without reconstructing a cancelled
 base from an arbitrary class representative.
 
 A consumer that accepts an offset equality reads a same-block pointer
-equality through `ConditionTerm::pointer_offset_sides`, not by matching
+equality through `OldConditionTerm::pointer_offset_sides`, not by matching
 `AddressOffsetEqual` alone. In particular, a `have` at an execution frontier
 whose goal compares two loads of one pointer-valued field takes the
 load-equality bridge in either form
@@ -942,7 +942,7 @@ the execution value is a separate proposal that would require a coherent
 review of materialization, substitution, provenance, and rendering. Merely
 swapping the constructor breaks existing verification and expansion fixtures.
 
-An integer or float read, `MachineTerm::MemoryLoad`, has the same `Load` as
+An integer or float read, `OldMachineTerm::MemoryLoad`, has the same `Load` as
 its identity, beside its kind and the producer's selected point
 (`design/loads.md`, step 3a; [resource tracker](resource-tracker.md#a-load-term-carries-its-reads-kind)):
 comparing two reads compares one id and a kind, not their addresses.

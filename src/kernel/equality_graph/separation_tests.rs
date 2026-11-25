@@ -14,17 +14,17 @@ fn separate(a: &Address, b: &Address) -> Proposition {
     }
 }
 
-fn numeric(a: &Address, b: &Address) -> ConditionTerm {
-    ConditionTerm::uint64_equal(
-        MachineTerm::integer_address(a.clone()),
-        MachineTerm::integer_address(b.clone()),
+fn numeric(a: &Address, b: &Address) -> OldConditionTerm {
+    OldConditionTerm::uint64_equal(
+        OldMachineTerm::integer_address(a.clone()),
+        OldMachineTerm::integer_address(b.clone()),
     )
 }
 fn different(a: &Address, b: &Address) -> Proposition {
     Proposition::condition_is(numeric(a, b), false)
 }
 fn alias(a: &Address, b: &Address) -> Proposition {
-    Proposition::condition_is(ConditionTerm::address_equal(a.clone(), b.clone()), true)
+    Proposition::condition_is(OldConditionTerm::address_equal(a.clone(), b.clone()), true)
 }
 
 #[test]
@@ -113,7 +113,7 @@ fn empty_unknown_ranges_views_and_pointer_value_inequality_supply_no_address_sep
         left: Box::new(Resource::Memory(MemoryRange::new(
             a.clone(),
             0u32.into(),
-            MachineTerm::Variable(Variable(990_050)),
+            OldMachineTerm::Variable(Variable(990_050)),
         ))),
         right: Box::new(Resource::Memory(range(&b, 0, 1))),
     };
@@ -123,7 +123,7 @@ fn empty_unknown_ranges_views_and_pointer_value_inequality_supply_no_address_sep
             .unchecked_with_fact(ResourceFact::view_memory(range(&b, 0, 1))),
     );
     let unequal = Proposition::condition_is(
-        ConditionTerm::PointerEqual(
+        OldConditionTerm::PointerEqual(
             Box::new(OldPointer::new(a.clone(), ProgramType::Int32Pointer)),
             Box::new(OldPointer::new(b.clone(), ProgramType::Int32Pointer)),
         ),

@@ -1,7 +1,7 @@
 use super::*;
 use crate::kernel::binary_node;
 use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
-use crate::kernel::{MachineCastSpelling, MachineTerm};
+use crate::kernel::{MachineCastSpelling, OldMachineTerm};
 
 #[test]
 fn separation_names_loaded_pointer_fields_at_their_declared_type() {
@@ -31,8 +31,8 @@ fn separation_names_loaded_pointer_fields_at_their_declared_type() {
         let range = |pointer| {
             Resource::Memory(MemoryRange::from_pointer_value(
                 &OldPointer::new(pointer, ProgramType::UInt8Pointer),
-                MachineTerm::constant(0),
-                MachineTerm::constant(4),
+                OldMachineTerm::constant(0),
+                OldMachineTerm::constant(4),
                 1,
             ))
         };
@@ -63,11 +63,11 @@ fn separate_round_trips_without_generating_span_obligations() {
             Address::symbolic(Variable(997001)),
             ProgramType::Int32Pointer,
         );
-        let end = MachineTerm::Variable(Variable(997002));
+        let end = OldMachineTerm::Variable(Variable(997002));
         let zero = if wide {
-            MachineTerm::uint64_constant(0)
+            OldMachineTerm::uint64_constant(0)
         } else {
-            MachineTerm::constant(0)
+            OldMachineTerm::constant(0)
         };
         let range = if wide {
             MemoryRange::from_pointer_value_wide(&pointer, zero.clone(), end.clone(), 4)
@@ -222,11 +222,11 @@ fn a_wide_equality_with_a_narrow_operand_round_trips() {
     let state = ExecutionState::new()
         .with_local(
             "wide",
-            ProgramValue::UInt64(MachineTerm::Variable(Variable(910_101))),
+            ProgramValue::UInt64(OldMachineTerm::Variable(Variable(910_101))),
         )
         .with_local(
             "narrow",
-            ProgramValue::Int32(MachineTerm::Variable(Variable(910_102))),
+            ProgramValue::Int32(OldMachineTerm::Variable(Variable(910_102))),
         );
     let original = relower_written_proposition(&written, &state).unwrap();
     let raised = synthesize_surface_proposition(&original, ParameterBinding::default(), &state)
@@ -245,7 +245,7 @@ fn a_wide_equality_with_a_narrow_operand_round_trips() {
 /// address, so this checks the spelling.)
 #[test]
 fn an_integer_converted_pointer_is_spelled_as_its_conversion() {
-    let word = MachineTerm::Variable(Variable(910_201));
+    let word = OldMachineTerm::Variable(Variable(910_201));
     let other = Address::symbolic(Variable(910_202));
     let state = ExecutionState::new()
         .with_local("word", ProgramValue::UInt64(word.clone()))
@@ -253,13 +253,13 @@ fn an_integer_converted_pointer_is_spelled_as_its_conversion() {
             "other",
             ProgramValue::typed_pointer(other.clone(), ProgramType::Int32Pointer),
         );
-    let masked = MachineTerm::bitwise_and_at(
+    let masked = OldMachineTerm::bitwise_and_at(
         MachineIntegerType::UInt64,
         word,
-        MachineTerm::uint64_constant(!3),
+        OldMachineTerm::uint64_constant(!3),
     );
     let fact = Proposition::condition_is(
-        ConditionTerm::pointer_equal(
+        OldConditionTerm::pointer_equal(
             crate::kernel::OldPointer::new(
                 Address::from_integer_address(masked),
                 ProgramType::Int32Pointer,
@@ -345,13 +345,13 @@ fn recorded_qualified_cells(
     block: &str,
     name: &str,
     cells: i32,
-) -> (ExecutionState, SurfacePropositionMap, Vec<MachineTerm>) {
+) -> (ExecutionState, SurfacePropositionMap, Vec<OldMachineTerm>) {
     let state = ExecutionState::new()
         .with_memory(SymbolicMemory::new().with_block(block, 4 * u32::try_from(cells).unwrap()));
     let base = ProgramValue::typed_pointer(
         Address {
             base: AddressBase::Concrete(block.into()),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         },
         ProgramType::Int32Pointer,
     );
@@ -371,14 +371,14 @@ fn recorded_qualified_cells(
             // The load term as lowering produced it: a registered load
             // variable, one of the two forms an emitted requirement carries.
             let Some((
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
                     left: load,
                     right: _,
                 },
                 _,
-            )) = lowered.condition_native()
+            )) = lowered.old_condition()
             else {
                 panic!("a qualified cell comparison lowers to one load equality");
             };
@@ -392,24 +392,24 @@ fn recorded_qualified_cells(
 /// `file_scope_static_arrays` call carries: each cell of the callee's own
 /// static array is strictly inside `(-1000, 1000)`, left-nested exactly as
 /// the contract's `and` chain lowers.
-fn cells_within_bounds(loads: &[MachineTerm]) -> Proposition {
+fn cells_within_bounds(loads: &[OldMachineTerm]) -> Proposition {
     let clauses = loads.iter().flat_map(|load| {
         [
             Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::GreaterThan,
                     left: Box::new(load.clone()),
-                    right: Box::new(MachineTerm::constant((-1000i32) as u32)),
+                    right: Box::new(OldMachineTerm::constant((-1000i32) as u32)),
                 },
                 true,
             ),
             Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
                     left: Box::new(load.clone()),
-                    right: Box::new(MachineTerm::constant(1000)),
+                    right: Box::new(OldMachineTerm::constant(1000)),
                 },
                 true,
             ),
@@ -482,7 +482,7 @@ fn qualified_names_in(proposition: &SyntaxProposition) -> BTreeSet<String> {
 fn spelling_validation_cannot_defer_its_debts_to_a_statement_probe() {
     let state = ExecutionState::new().with_local(
         "x",
-        ProgramValue::Int32(MachineTerm::Variable(Variable(894321))),
+        ProgramValue::Int32(OldMachineTerm::Variable(Variable(894321))),
     );
     let candidate = SyntaxProposition::Comparison {
         left: SyntaxTerm::Call {
@@ -609,7 +609,7 @@ fn ordinary_entry_cell_read_round_trips_after_overwrite() {
     let _session = crate::kernel::VerificationSession::enter();
     let pointer = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(981_302)), 4),
+        offset: OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(981_302)), 4),
     };
     let entry = ExecutionState::new()
         .with_local(
@@ -619,7 +619,7 @@ fn ordinary_entry_cell_read_round_trips_after_overwrite() {
         .begin_function_entry_memory();
     let post = entry.clone().with_memory(entry.memory().clone().store(
         pointer.clone(),
-        ProgramValue::Int32(MachineTerm::constant(7)),
+        ProgramValue::Int32(OldMachineTerm::constant(7)),
     ));
     let parsed =
         crate::surface::parse("theorem probe(p: int32*) { requires old(*p) < 6; ensures true; }")
@@ -630,7 +630,7 @@ fn ordinary_entry_cell_read_round_trips_after_overwrite() {
     let points = RecordedStates::new();
     let original = relower_written_proposition_with_states(written, &entry, &post, &points)
         .expect("the historical read lowers");
-    let read = MachineTerm::read_named(
+    let read = OldMachineTerm::read_named(
         entry
             .program_point()
             .ordinary_typed_version(&pointer, ProgramType::Int32)
@@ -642,7 +642,7 @@ fn ordinary_entry_cell_read_round_trips_after_overwrite() {
         panic!("expected the read comparison");
     };
     let view = crate::kernel::machine_integer::comparison::structural_comparison_view(
-        condition.native_compat(),
+        condition.old_form(),
     )
     .unwrap();
     assert_eq!(
@@ -652,7 +652,7 @@ fn ordinary_entry_cell_read_round_trips_after_overwrite() {
         ),
         crate::kernel::KernelTerm::retained_machine_operand(
             view.format,
-            crate::kernel::MachineOperandView::Legacy(&read),
+            crate::kernel::MachineOperandView::Old(&read),
         ),
     );
     let raised = synthesize_surface_proposition_at_entry_and_post(
@@ -694,7 +694,7 @@ fn qualified_static_read_spellings_retain_entry_and_current_epochs() {
         recorded_qualified_cells("file-static:alpha.c:calls", "alpha::calls", 1);
     let address = Address {
         base: AddressBase::Concrete("file-static:alpha.c:calls".into()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let post = entry
         .clone()
@@ -705,7 +705,7 @@ fn qualified_static_read_spellings_retain_entry_and_current_epochs() {
         crate::kernel::LoadKind::Int32,
     );
     let named = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(current.clone()),
@@ -715,7 +715,7 @@ fn qualified_static_read_spellings_retain_entry_and_current_epochs() {
     );
     let resolve = crate::kernel::resolve_load_variables_from_registry;
     let shared = Proposition::condition_is(
-        ConditionTerm::integer_equal(
+        OldConditionTerm::integer_equal(
             crate::kernel::IntegerTerm::from_machine(MachineIntegerType::Int32, current).unwrap(),
             crate::kernel::IntegerTerm::add(
                 crate::kernel::IntegerTerm::from_machine(
@@ -799,7 +799,7 @@ fn qualified_multidimensional_cell_recovery_preserves_its_source_rank() {
     let base = ProgramValue::typed_pointer(
         Address {
             base: AddressBase::Concrete(block.into()),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         },
         ProgramType::Int32Pointer,
     );
@@ -885,10 +885,10 @@ fn external_byte_range_caller() -> (
 ) {
     let pointer = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(100_000)), 1),
+        offset: OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(100_000)), 1),
     };
     let pointer = ProgramValue::typed_pointer(pointer, ProgramType::UInt8Pointer);
-    let length = ProgramValue::Int32(MachineTerm::Variable(Variable(1)));
+    let length = ProgramValue::Int32(OldMachineTerm::Variable(Variable(1)));
     let parameters = vec![
         crate::languages::interface::ImportedParameter::new(
             InterfaceType::UInt8Pointer,
@@ -920,8 +920,11 @@ fn exact_external_zero_based_byte_range_round_trips_symbolic_end() {
             ProgramExpression::Value(ProgramValue::Pointer(pointer)) => pointer.address().clone(),
             _ => unreachable!(),
         },
-        bytes: (MachineTerm::add(MachineTerm::Variable(Variable(1)), MachineTerm::constant(1)))
-            .into(),
+        bytes: (OldMachineTerm::add(
+            OldMachineTerm::Variable(Variable(1)),
+            OldMachineTerm::constant(1),
+        ))
+        .into(),
         wide: false,
     };
     let synthesized = synthesize_source_projection_proposition_with_bound_variable_names(
@@ -960,8 +963,11 @@ fn exact_external_zero_based_byte_range_resolves_direct_variable_argument() {
     let requirement = Proposition::MemoryLoadable {
         memory: state.memory().clone(),
         base,
-        bytes: (MachineTerm::add(MachineTerm::Variable(Variable(1)), MachineTerm::constant(1)))
-            .into(),
+        bytes: (OldMachineTerm::add(
+            OldMachineTerm::Variable(Variable(1)),
+            OldMachineTerm::constant(1),
+        ))
+        .into(),
         wide: false,
     };
     let synthesized = synthesize_source_projection_proposition_with_bound_variable_names(
@@ -992,7 +998,7 @@ fn exact_external_zero_based_byte_range_rejects_ambiguous_alias() {
             ProgramExpression::Value(ProgramValue::Pointer(pointer)) => pointer.address().clone(),
             _ => unreachable!(),
         },
-        bytes: (MachineTerm::constant(4)).into(),
+        bytes: (OldMachineTerm::constant(4)).into(),
         wide: false,
     };
     assert!(
@@ -1010,8 +1016,8 @@ fn exact_external_zero_based_byte_range_rejects_ambiguous_alias() {
 /// The `forall_loadable_range` call requirement as the kernel emits it:
 /// every in-range byte of an external-argument pointer is loadable, its byte
 /// count left as the written `(k + 1) - k`.
-fn external_byte_range_requirement(binder: Variable, length: &MachineTerm) -> Proposition {
-    let index = MachineTerm::Variable(binder);
+fn external_byte_range_requirement(binder: Variable, length: &OldMachineTerm) -> Proposition {
+    let index = OldMachineTerm::Variable(binder);
     crate::kernel::quantifiers::test_forall(
         Default::default(),
         binder,
@@ -1019,16 +1025,16 @@ fn external_byte_range_requirement(binder: Variable, length: &MachineTerm) -> Pr
         Proposition::Implies(
             Box::new(Proposition::And(
                 Box::new(Proposition::condition_is(
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessEqual,
-                        left: Box::new(MachineTerm::constant(0)),
+                        left: Box::new(OldMachineTerm::constant(0)),
                         right: Box::new(index.clone()),
                     },
                     true,
                 )),
                 Box::new(Proposition::condition_is(
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessThan,
                         left: Box::new(index.clone()),
@@ -1041,12 +1047,12 @@ fn external_byte_range_requirement(binder: Variable, length: &MachineTerm) -> Pr
                 memory: SymbolicMemory::new(),
                 base: Address {
                     base: AddressBase::ExternalArgument,
-                    offset: AddressOffset::Add(
-                        Box::new(AddressOffset::scaled_int32_node(
-                            MachineTerm::Variable(Variable(100_000)),
+                    offset: OldAddressOffset::Add(
+                        Box::new(OldAddressOffset::scaled_int32_node(
+                            OldMachineTerm::Variable(Variable(100_000)),
                             1,
                         )),
-                        Box::new(AddressOffset::scaled_int32_node(index.clone(), 1)),
+                        Box::new(OldAddressOffset::scaled_int32_node(index.clone(), 1)),
                     ),
                 },
                 bytes: (binary_node!(
@@ -1056,7 +1062,7 @@ fn external_byte_range_requirement(binder: Variable, length: &MachineTerm) -> Pr
                         Int32,
                         Add,
                         Box::new(index.clone()),
-                        Box::new(MachineTerm::constant(1)),
+                        Box::new(OldMachineTerm::constant(1)),
                     )),
                     Box::new(index),
                 ))
@@ -1076,10 +1082,10 @@ fn external_symbolic_element_context(
 ) {
     let pointer = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(100_000)), 1),
+        offset: OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(100_000)), 1),
     };
     let pointer = ProgramValue::typed_pointer(pointer, ProgramType::UInt8Pointer);
-    let index = ProgramValue::Int32(MachineTerm::Variable(Variable(100_001)));
+    let index = ProgramValue::Int32(OldMachineTerm::Variable(Variable(100_001)));
     let parameters = vec![
         crate::languages::interface::ImportedParameter::new(
             InterfaceType::UInt8Pointer,
@@ -1104,23 +1110,23 @@ fn external_symbolic_element_context(
 }
 
 fn external_symbolic_element_requirement(memory: SymbolicMemory, index: Variable) -> Proposition {
-    external_symbolic_element_requirement_term(memory, MachineTerm::Variable(index))
+    external_symbolic_element_requirement_term(memory, OldMachineTerm::Variable(index))
 }
 
 fn external_symbolic_element_requirement_term(
     memory: SymbolicMemory,
-    index: MachineTerm,
+    index: OldMachineTerm,
 ) -> Proposition {
     Proposition::MemoryLoadable {
         memory,
         base: Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Add(
-                Box::new(AddressOffset::scaled_int32_node(
-                    MachineTerm::Variable(Variable(100_000)),
+            offset: OldAddressOffset::Add(
+                Box::new(OldAddressOffset::scaled_int32_node(
+                    OldMachineTerm::Variable(Variable(100_000)),
                     1,
                 )),
-                Box::new(AddressOffset::scaled_int32_node(index.clone(), 1)),
+                Box::new(OldAddressOffset::scaled_int32_node(index.clone(), 1)),
             ),
         },
         bytes: (binary_node!(
@@ -1130,7 +1136,7 @@ fn external_symbolic_element_requirement_term(
                 Int32,
                 Add,
                 Box::new(index.clone()),
-                Box::new(MachineTerm::constant(1)),
+                Box::new(OldMachineTerm::constant(1)),
             )),
             Box::new(index),
         ))
@@ -1147,7 +1153,7 @@ fn external_symbolic_element_constant_byte_requirement(
     let Proposition::MemoryLoadable { bytes, .. } = &mut requirement else {
         unreachable!();
     };
-    *bytes = MachineTerm::constant(1).into();
+    *bytes = OldMachineTerm::constant(1).into();
     requirement
 }
 
@@ -1220,7 +1226,7 @@ fn replace_full_external_cstr_range_with_constant_byte_count(requirement: &mut P
     fn replace(proposition: &mut Proposition, inside_forall: bool) -> bool {
         match proposition {
             Proposition::MemoryLoadable { bytes, .. } if inside_forall => {
-                *bytes = MachineTerm::constant(1).into();
+                *bytes = OldMachineTerm::constant(1).into();
                 true
             }
             Proposition::And(left, right)
@@ -1407,13 +1413,13 @@ fn strlen_symbolic_element_range_rejects_wrong_identity() {
         memory: memory.clone(),
         base: Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Add(
-                Box::new(AddressOffset::scaled_int32_node(
-                    MachineTerm::Variable(Variable(100_002)),
+            offset: OldAddressOffset::Add(
+                Box::new(OldAddressOffset::scaled_int32_node(
+                    OldMachineTerm::Variable(Variable(100_002)),
                     1,
                 )),
-                Box::new(AddressOffset::scaled_int32_node(
-                    MachineTerm::Variable(Variable(100_001)),
+                Box::new(OldAddressOffset::scaled_int32_node(
+                    OldMachineTerm::Variable(Variable(100_001)),
                     1,
                 )),
             ),
@@ -1424,10 +1430,10 @@ fn strlen_symbolic_element_range_rejects_wrong_identity() {
             Box::new(binary_node!(
                 Int32,
                 Add,
-                Box::new(MachineTerm::Variable(Variable(100_001))),
-                Box::new(MachineTerm::constant(1)),
+                Box::new(OldMachineTerm::Variable(Variable(100_001))),
+                Box::new(OldMachineTerm::constant(1)),
             )),
-            Box::new(MachineTerm::Variable(Variable(100_001))),
+            Box::new(OldMachineTerm::Variable(Variable(100_001))),
         ))
         .into(),
         wide: false,
@@ -1458,13 +1464,13 @@ fn strlen_symbolic_element_range_rejects_wrong_identity() {
         let Proposition::MemoryLoadable { base, .. } = &mut requirement else {
             unreachable!();
         };
-        base.offset = AddressOffset::Add(
-            Box::new(AddressOffset::scaled_int32_node(
-                MachineTerm::Variable(Variable(100_000)),
+        base.offset = OldAddressOffset::Add(
+            Box::new(OldAddressOffset::scaled_int32_node(
+                OldMachineTerm::Variable(Variable(100_000)),
                 2,
             )),
-            Box::new(AddressOffset::scaled_int32_node(
-                MachineTerm::Variable(Variable(100_001)),
+            Box::new(OldAddressOffset::scaled_int32_node(
+                OldMachineTerm::Variable(Variable(100_001)),
                 2,
             )),
         );
@@ -1492,7 +1498,8 @@ fn strlen_symbolic_element_range_rejects_wrong_identity() {
 fn strlen_constant_element_range_falls_back_to_general_synthesis() {
     let memory = SymbolicMemory::new().with_block("strlen:constant-bytes", 16);
     let (parameters, arguments, state) = external_symbolic_element_context(memory.clone());
-    let requirement = external_symbolic_element_requirement_term(memory, MachineTerm::constant(3));
+    let requirement =
+        external_symbolic_element_requirement_term(memory, OldMachineTerm::constant(3));
     let synthesized = synthesize_surface_proposition(
         &requirement,
         ParameterBinding::new(&parameters, &arguments),
@@ -1510,15 +1517,15 @@ fn strlen_constant_element_range_falls_back_to_general_synthesis() {
     let Proposition::MemoryLoadable { base, bytes, .. } = lowered else {
         panic!("the lowered fallback must remain one viewability");
     };
-    assert_eq!(bytes.native_compat(), &MachineTerm::constant(1));
+    assert_eq!(bytes.old_form(), &OldMachineTerm::constant(1));
     assert_eq!(
         base.offset,
-        AddressOffset::Add(
-            Box::new(AddressOffset::scaled_int32_node(
-                MachineTerm::Variable(Variable(100_000)),
+        OldAddressOffset::Add(
+            Box::new(OldAddressOffset::scaled_int32_node(
+                OldMachineTerm::Variable(Variable(100_000)),
                 1
             )),
-            Box::new(AddressOffset::Constant(3)),
+            Box::new(OldAddressOffset::Constant(3)),
         )
     );
 }
@@ -1530,7 +1537,7 @@ fn strlen_zero_based_element_range_round_trips_exactly() {
     let pointer = ProgramValue::typed_pointer(
         Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         },
         ProgramType::UInt8Pointer,
     );
@@ -1540,7 +1547,8 @@ fn strlen_zero_based_element_range_round_trips_exactly() {
     let Proposition::MemoryLoadable { base, .. } = &mut requirement else {
         unreachable!();
     };
-    base.offset = AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(100_001)), 1);
+    base.offset =
+        OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(100_001)), 1);
     let synthesized = synthesize_surface_proposition(
         &requirement,
         ParameterBinding::new(&parameters, &arguments),
@@ -1571,11 +1579,11 @@ fn non_external_named_range_still_uses_general_synthesis() {
     let pointer = ProgramValue::typed_pointer(
         Address {
             base: AddressBase::Concrete("local:elements".into()),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         },
         ProgramType::UInt8Pointer,
     );
-    let start = ProgramValue::Int32(MachineTerm::Variable(Variable(100_001)));
+    let start = ProgramValue::Int32(OldMachineTerm::Variable(Variable(100_001)));
     let state = ExecutionState::new()
         .with_memory(memory.clone())
         .with_local("elements", pointer)
@@ -1584,7 +1592,10 @@ fn non_external_named_range_still_uses_general_synthesis() {
         memory,
         base: Address {
             base: AddressBase::Concrete("local:elements".into()),
-            offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(100_001)), 1),
+            offset: OldAddressOffset::scaled_int32_node(
+                OldMachineTerm::Variable(Variable(100_001)),
+                1,
+            ),
         },
         bytes: (binary_node!(
             Int32,
@@ -1592,10 +1603,10 @@ fn non_external_named_range_still_uses_general_synthesis() {
             Box::new(binary_node!(
                 Int32,
                 Add,
-                Box::new(MachineTerm::Variable(Variable(100_001))),
-                Box::new(MachineTerm::constant(1)),
+                Box::new(OldMachineTerm::Variable(Variable(100_001))),
+                Box::new(OldMachineTerm::constant(1)),
             )),
-            Box::new(MachineTerm::Variable(Variable(100_001))),
+            Box::new(OldMachineTerm::Variable(Variable(100_001))),
         ))
         .into(),
         wide: false,
@@ -1632,20 +1643,20 @@ fn strlen_quantified_element_range_requirement_round_trips() {
         Proposition::Implies(
             Box::new(Proposition::And(
                 Box::new(Proposition::condition_is(
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterEqual,
-                        left: Box::new(MachineTerm::Variable(binder)),
-                        right: Box::new(MachineTerm::constant(0)),
+                        left: Box::new(OldMachineTerm::Variable(binder)),
+                        right: Box::new(OldMachineTerm::constant(0)),
                     },
                     true,
                 )),
                 Box::new(Proposition::condition_is(
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessThan,
-                        left: Box::new(MachineTerm::Variable(binder)),
-                        right: Box::new(MachineTerm::Variable(Variable(100_001))),
+                        left: Box::new(OldMachineTerm::Variable(binder)),
+                        right: Box::new(OldMachineTerm::Variable(Variable(100_001))),
                     },
                     true,
                 )),
@@ -1681,8 +1692,8 @@ fn external_element_range_context(
 ) {
     let pointer = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scaled_int32_node(
-            MachineTerm::Variable(Variable(100_000)),
+        offset: OldAddressOffset::scaled_int32_node(
+            OldMachineTerm::Variable(Variable(100_000)),
             i64::from(width),
         ),
     };
@@ -1708,10 +1719,10 @@ fn external_element_range_context(
     .collect();
     let arguments = vec![
         ProgramExpression::Value(pointer.clone()),
-        ProgramExpression::Value(ProgramValue::Int32(MachineTerm::Variable(Variable(
+        ProgramExpression::Value(ProgramValue::Int32(OldMachineTerm::Variable(Variable(
             100_001,
         )))),
-        ProgramExpression::Value(ProgramValue::Int32(MachineTerm::Variable(Variable(
+        ProgramExpression::Value(ProgramValue::Int32(OldMachineTerm::Variable(Variable(
             100_002,
         )))),
     ];
@@ -1719,30 +1730,30 @@ fn external_element_range_context(
         .with_local("elements", pointer)
         .with_local(
             "start",
-            ProgramValue::Int32(MachineTerm::Variable(Variable(100_001))),
+            ProgramValue::Int32(OldMachineTerm::Variable(Variable(100_001))),
         )
         .with_local(
             "end",
-            ProgramValue::Int32(MachineTerm::Variable(Variable(100_002))),
+            ProgramValue::Int32(OldMachineTerm::Variable(Variable(100_002))),
         );
     (parameters, arguments, state)
 }
 
 fn external_element_range_requirement(
     width: u32,
-    start: MachineTerm,
-    end: MachineTerm,
+    start: OldMachineTerm,
+    end: OldMachineTerm,
 ) -> Proposition {
     Proposition::MemoryLoadable {
         memory: SymbolicMemory::new(),
         base: Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Add(
-                Box::new(AddressOffset::scaled_int32_node(
-                    MachineTerm::Variable(Variable(100_000)),
+            offset: OldAddressOffset::Add(
+                Box::new(OldAddressOffset::scaled_int32_node(
+                    OldMachineTerm::Variable(Variable(100_000)),
                     i64::from(width),
                 )),
-                Box::new(AddressOffset::scaled_int32_node(
+                Box::new(OldAddressOffset::scaled_int32_node(
                     start.clone(),
                     i64::from(width),
                 )),
@@ -1757,7 +1768,7 @@ fn external_element_range_requirement(
                 Box::new(end),
                 Box::new(start)
             )),
-            Box::new(MachineTerm::constant(width)),
+            Box::new(OldMachineTerm::constant(width)),
         ))
         .into(),
         wide: false,
@@ -1779,7 +1790,7 @@ fn external_element_range_requirement(
 #[test]
 fn external_argument_range_loadability_round_trips_through_the_range_form() {
     let (parameters, arguments, state) = external_byte_range_caller();
-    let length = MachineTerm::Variable(Variable(1));
+    let length = OldMachineTerm::Variable(Variable(1));
     let requirement = external_byte_range_requirement(Variable(3_100_000), &length);
     let spelled = {
         let _budget = SurfaceSynthesisScope::enter();
@@ -1816,7 +1827,7 @@ fn external_argument_range_loadability_round_trips_through_the_range_form() {
 #[test]
 fn quantified_loadability_uses_saved_state() {
     let (parameters, arguments, retained_state) = external_byte_range_caller();
-    let length = MachineTerm::Variable(Variable(1));
+    let length = OldMachineTerm::Variable(Variable(1));
     let requirement = external_byte_range_requirement(Variable(3_100_000), &length);
     let post = retained_state.clone().with_memory(
         retained_state
@@ -1882,8 +1893,8 @@ fn named_element_ranges_preserve_nonzero_starts_and_folded_byte_counts() {
             external_element_range_context(parameter_type, pointer_type, width);
         let requirement = external_element_range_requirement(
             width,
-            MachineTerm::Variable(Variable(100_001)),
-            MachineTerm::Variable(Variable(100_002)),
+            OldMachineTerm::Variable(Variable(100_001)),
+            OldMachineTerm::Variable(Variable(100_002)),
         );
         let synthesized = {
             let _budget = SurfaceSynthesisScope::enter();
@@ -1922,8 +1933,11 @@ fn named_element_ranges_preserve_nonzero_starts_and_folded_byte_counts() {
 
     let (parameters, arguments, state) =
         external_element_range_context(InterfaceType::Int32Pointer, ProgramType::Int32Pointer, 4);
-    let requirement =
-        external_element_range_requirement(4, MachineTerm::constant(3), MachineTerm::constant(8));
+    let requirement = external_element_range_requirement(
+        4,
+        OldMachineTerm::constant(3),
+        OldMachineTerm::constant(8),
+    );
     let synthesized = {
         let _budget = SurfaceSynthesisScope::enter();
         synthesize_surface_proposition(
@@ -1945,15 +1959,15 @@ fn named_element_ranges_preserve_nonzero_starts_and_folded_byte_counts() {
     else {
         panic!("the folded range must remain a memory-viewability requirement");
     };
-    assert_eq!(bytes.native_compat(), &MachineTerm::constant(20));
+    assert_eq!(bytes.old_form(), &OldMachineTerm::constant(20));
     assert_eq!(
         base.offset,
-        AddressOffset::Add(
-            Box::new(AddressOffset::scaled_int32_node(
-                MachineTerm::Variable(Variable(100_000)),
+        OldAddressOffset::Add(
+            Box::new(OldAddressOffset::scaled_int32_node(
+                OldMachineTerm::Variable(Variable(100_000)),
                 4
             )),
-            Box::new(AddressOffset::Constant(12)),
+            Box::new(OldAddressOffset::Constant(12)),
         )
     );
 }
@@ -1967,19 +1981,19 @@ fn named_element_range_does_not_infer_start_from_an_unrelated_index() {
     );
     let mut requirement = external_element_range_requirement(
         4,
-        MachineTerm::Variable(Variable(100_001)),
-        MachineTerm::Variable(Variable(100_002)),
+        OldMachineTerm::Variable(Variable(100_001)),
+        OldMachineTerm::Variable(Variable(100_002)),
     );
     let Proposition::MemoryLoadable { base, .. } = &mut requirement else {
         unreachable!();
     };
-    base.offset = AddressOffset::Add(
-        Box::new(AddressOffset::scaled_int32_node(
-            MachineTerm::Variable(Variable(100_000)),
+    base.offset = OldAddressOffset::Add(
+        Box::new(OldAddressOffset::scaled_int32_node(
+            OldMachineTerm::Variable(Variable(100_000)),
             4,
         )),
-        Box::new(AddressOffset::scaled_int32_node(
-            MachineTerm::Variable(Variable(100_003)),
+        Box::new(OldAddressOffset::scaled_int32_node(
+            OldMachineTerm::Variable(Variable(100_003)),
             4,
         )),
     );
@@ -2000,7 +2014,7 @@ fn named_element_range_does_not_infer_start_from_an_unrelated_index() {
 #[test]
 fn forall_loadable_range_call_requirement_is_spellable() {
     let (parameters, arguments, state) = external_byte_range_caller();
-    let length = MachineTerm::Variable(Variable(1));
+    let length = OldMachineTerm::Variable(Variable(1));
     let requirement = external_byte_range_requirement(Variable(3_100_000), &length);
     let _budget = SurfaceSynthesisScope::enter();
     assert!(
@@ -2027,7 +2041,7 @@ fn exists_loadable_range_call_requirement_is_spellable() {
         "len".to_string(),
         witness,
         Sort::ProgramInt32,
-        external_byte_range_requirement(Variable(3_100_001), &MachineTerm::Variable(witness)),
+        external_byte_range_requirement(Variable(3_100_001), &OldMachineTerm::Variable(witness)),
     );
     let _budget = SurfaceSynthesisScope::enter();
     let spelled = synthesize_surface_proposition(
@@ -2073,7 +2087,7 @@ fn function_call_synthesis_scales_with_named_arguments() {
 fn function_array_synthesis_requires_the_exact_named_state() {
     let pointer = ProgramValue::pointer(Address {
         base: AddressBase::Concrete("array".into()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     });
     let entry = ExecutionState::new().with_local("p", pointer.clone());
     let post = entry
@@ -2188,11 +2202,11 @@ fn nested_propositions_synthesize_with_small_frames_and_linear_work() {
             let state = ExecutionState::new();
             let atom = || {
                 Proposition::condition_is(
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
-                        left: Box::new(MachineTerm::constant(7)),
-                        right: Box::new(MachineTerm::constant(7)),
+                        left: Box::new(OldMachineTerm::constant(7)),
+                        right: Box::new(OldMachineTerm::constant(7)),
                     },
                     true,
                 )
@@ -2257,19 +2271,19 @@ fn nested_propositions_synthesize_with_small_frames_and_linear_work() {
 fn load_defining_equation_round_trips() {
     let pointer = Address {
         base: AddressBase::Concrete("load-definition".into()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let memory = SymbolicMemory::new().with_block("load-definition", 4);
     let state = ExecutionState::new().with_memory(memory).with_local(
         "p",
         ProgramValue::typed_pointer(pointer.clone(), ProgramType::Int32Pointer),
     );
-    let load = MachineTerm::read_named(
+    let load = OldMachineTerm::read_named(
         crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory_ref(state.memory()))),
         Box::new(pointer),
         crate::kernel::LoadKind::Int32,
     );
-    let MachineTerm::MemoryLoad(memory, address, kind) = load else {
+    let OldMachineTerm::MemoryLoad(memory, address, kind) = load else {
         unreachable!()
     };
     let defining_load = crate::kernel::canonical_form_of_load(
@@ -2278,7 +2292,7 @@ fn load_defining_equation_round_trips() {
         kind,
     );
     let requirement = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(defining_load.clone()),
@@ -2299,7 +2313,7 @@ fn load_defining_equation_round_trips() {
 fn load_defining_equation_uses_entry_state() {
     let pointer = Address {
         base: AddressBase::Concrete("load-definition-entry".into()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let entry = ExecutionState::new()
         .with_memory(SymbolicMemory::new().with_block("load-definition-entry", 4))
@@ -2312,7 +2326,7 @@ fn load_defining_equation_uses_entry_state() {
             .with_block("load-definition-entry", 4)
             .store(pointer.clone(), int32(7)),
     );
-    let load = MachineTerm::read_named(
+    let load = OldMachineTerm::read_named(
         crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory_ref(entry.memory()))),
         Box::new(pointer),
         crate::kernel::LoadKind::Int32,
@@ -2320,13 +2334,13 @@ fn load_defining_equation_uses_entry_state() {
     let (variable, defining_load) = crate::kernel::load_variable_for_term(&load).unwrap();
     let entry = entry.with_local(
         "result",
-        ProgramValue::Int32(MachineTerm::Variable(variable)),
+        ProgramValue::Int32(OldMachineTerm::Variable(variable)),
     );
     let requirement = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::Variable(variable)),
+            left: Box::new(OldMachineTerm::Variable(variable)),
             right: Box::new(defining_load),
         },
         true,
@@ -2362,7 +2376,7 @@ fn load_defining_equation_uses_entry_state() {
 fn load_defining_equation_uses_saved_state() {
     let pointer = Address {
         base: AddressBase::Concrete("load-definition-saved".into()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let base = ExecutionState::new()
         .with_memory(SymbolicMemory::new().with_block("load-definition-saved", 4))
@@ -2370,7 +2384,7 @@ fn load_defining_equation_uses_saved_state() {
             "p",
             ProgramValue::typed_pointer(pointer.clone(), ProgramType::Int32Pointer),
         );
-    let load = MachineTerm::read_named(
+    let load = OldMachineTerm::read_named(
         crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory_ref(base.memory()))),
         Box::new(pointer.clone()),
         crate::kernel::LoadKind::Int32,
@@ -2378,7 +2392,7 @@ fn load_defining_equation_uses_saved_state() {
     let (variable, defining_load) = crate::kernel::load_variable_for_term(&load).unwrap();
     let retained_state = base.with_local(
         "result",
-        ProgramValue::Int32(MachineTerm::Variable(variable)),
+        ProgramValue::Int32(OldMachineTerm::Variable(variable)),
     );
     let entry = retained_state.clone().with_memory(
         SymbolicMemory::new()
@@ -2391,10 +2405,10 @@ fn load_defining_equation_uses_saved_state() {
             .store(pointer, int32(2)),
     );
     let requirement = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::Variable(variable)),
+            left: Box::new(OldMachineTerm::Variable(variable)),
             right: Box::new(defining_load),
         },
         true,
@@ -2441,7 +2455,7 @@ fn example_load_defining_requirement(
 ) -> (ExecutionState, Proposition, Variable) {
     let pointer = Address {
         base: AddressBase::Concrete(block.into()),
-        offset: AddressOffset::Constant(offset),
+        offset: OldAddressOffset::Constant(offset),
     };
     let state = ExecutionState::new()
         .with_memory(SymbolicMemory::new().with_block(block, 16))
@@ -2450,12 +2464,12 @@ fn example_load_defining_requirement(
             ProgramValue::typed_pointer(
                 Address {
                     base: AddressBase::Concrete(block.into()),
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0),
                 },
                 ProgramType::Int32Pointer,
             ),
         );
-    let load = MachineTerm::read_named(
+    let load = OldMachineTerm::read_named(
         crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory_ref(state.memory()))),
         Box::new(pointer),
         crate::kernel::LoadKind::Int32,
@@ -2464,10 +2478,10 @@ fn example_load_defining_requirement(
     (
         state,
         Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::Variable(variable)),
+                left: Box::new(OldMachineTerm::Variable(variable)),
                 right: Box::new(defining_load),
             },
             true,
@@ -2482,7 +2496,7 @@ fn bounded_pool_load_equation_round_trips_without_internal_names() {
         example_load_defining_requirement("bounded-pool:pool", "pool", 4);
     let state = state.with_local(
         "result",
-        ProgramValue::Int32(MachineTerm::Variable(variable)),
+        ProgramValue::Int32(OldMachineTerm::Variable(variable)),
     );
     let spelled = synthesize_surface_proposition(&requirement, ParameterBinding::default(), &state)
         .expect("bounded-pool call load equation must be spellable");
@@ -2504,7 +2518,7 @@ fn owned_string_load_equation_round_trips_without_internal_names() {
         example_load_defining_requirement("owned-string:owner", "owner", 0);
     let state = state.with_local(
         "result",
-        ProgramValue::Int32(MachineTerm::Variable(variable)),
+        ProgramValue::Int32(OldMachineTerm::Variable(variable)),
     );
     let spelled = synthesize_surface_proposition(&requirement, ParameterBinding::default(), &state)
         .expect("owned-string call load equation must be spellable");
@@ -2527,26 +2541,26 @@ fn load_equation_rejects_wrong_state_and_unresolvable_variable() {
     let wrong_memory = SymbolicMemory::new().with_block("owned-string:other-epoch", 16);
     let wrong_pointer = Address {
         base: AddressBase::Concrete("owned-string:wrong-retained_state".into()),
-        offset: AddressOffset::Constant(4),
+        offset: OldAddressOffset::Constant(4),
     };
     let Some((
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left,
             right: _,
         },
         true,
-    )) = requirement.condition_native()
+    )) = requirement.old_condition()
     else {
         unreachable!()
     };
     let wrong_pointer_requirement = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: left.clone(),
-            right: Box::new(MachineTerm::read_named(
+            right: Box::new(OldMachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(
                     &(crate::kernel::intern_memory_ref(state.memory())),
                 ),
@@ -2566,15 +2580,15 @@ fn load_equation_rejects_wrong_state_and_unresolvable_variable() {
     );
 
     let wrong_epoch = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: left.clone(),
-            right: Box::new(MachineTerm::read_named(
+            right: Box::new(OldMachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory_ref(&wrong_memory))),
                 Box::new(Address {
                     base: AddressBase::Concrete("owned-string:wrong-retained_state".into()),
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0),
                 }),
                 crate::kernel::LoadKind::Int32,
             )),
@@ -2586,10 +2600,10 @@ fn load_equation_rejects_wrong_state_and_unresolvable_variable() {
     );
 
     let unresolvable = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::Variable(Variable(variable.0 + 1))),
+            left: Box::new(OldMachineTerm::Variable(Variable(variable.0 + 1))),
             right: left.clone(),
         },
         true,
@@ -2614,21 +2628,21 @@ fn actual_struct_field_load_equation(
         .clone();
     let base = Address {
         base: AddressBase::Concrete(block.into()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let pointer = base.offset_by_bytes(field_offset as u32);
     let memory = SymbolicMemory::new().with_block(block, 16);
-    let load = MachineTerm::read_named(
+    let load = OldMachineTerm::read_named(
         crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
         Box::new(pointer.clone()),
         crate::kernel::LoadKind::Int32,
     );
     let (variable, defining_load) = crate::kernel::load_variable_for_term(&load).unwrap();
     let requirement = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::Variable(variable)),
+            left: Box::new(OldMachineTerm::Variable(variable)),
             right: Box::new(defining_load),
         },
         true,
@@ -2641,7 +2655,7 @@ fn actual_struct_field_load_equation(
         )
         .with_local(
             "result",
-            ProgramValue::Int32(MachineTerm::Variable(variable)),
+            ProgramValue::Int32(OldMachineTerm::Variable(variable)),
         );
     let parameters = [parameter];
     let arguments = [ProgramExpression::Value(ProgramValue::typed_pointer(
@@ -2691,8 +2705,8 @@ fn owned_string_actual_len_load_equation_round_trips() {
 #[test]
 fn signed_division_domain_propositions_round_trip_at_both_widths() {
     for format in [MachineIntegerType::Int32, MachineIntegerType::Int64] {
-        let left = MachineTerm::Variable(Variable(972_001));
-        let right = MachineTerm::Variable(Variable(972_002));
+        let left = OldMachineTerm::Variable(Variable(972_001));
+        let right = OldMachineTerm::Variable(Variable(972_002));
         let wrap = |word| {
             if format == MachineIntegerType::Int32 {
                 ProgramValue::Int32(word)
@@ -2721,8 +2735,8 @@ fn arithmetic_definedness_requirements_round_trip_at_both_machine_widths() {
             OverflowOperation::Subtract,
             OverflowOperation::Multiply,
         ] {
-            let left = MachineTerm::Variable(Variable(1));
-            let right = MachineTerm::Variable(Variable(2));
+            let left = OldMachineTerm::Variable(Variable(1));
+            let right = OldMachineTerm::Variable(Variable(2));
             let value = |term| match format {
                 MachineIntegerType::Int32 => ProgramValue::Int32(term),
                 MachineIntegerType::Int64 => ProgramValue::Int64(term),
@@ -2733,7 +2747,7 @@ fn arithmetic_definedness_requirements_round_trip_at_both_machine_widths() {
                 .with_local("right", value(right.clone()))
                 .with_local(
                     "result",
-                    value(MachineTerm::machine_binary(
+                    value(OldMachineTerm::machine_binary(
                         format,
                         match op {
                             OverflowOperation::Add => MachineBinaryOp::Add,
@@ -2781,7 +2795,7 @@ fn arithmetic_definedness_requirements_round_trip_at_both_machine_widths() {
 #[test]
 fn constant_integer_domain_requirements_round_trip() {
     for (condition, truth) in [(false, false), (false, true), (true, false), (true, true)] {
-        let requirement = Proposition::condition_is(ConditionTerm::Constant(condition), truth);
+        let requirement = Proposition::condition_is(OldConditionTerm::Constant(condition), truth);
         let state = ExecutionState::new();
         let surface =
             synthesize_surface_proposition(&requirement, ParameterBinding::default(), &state)
@@ -2799,8 +2813,8 @@ fn strlen_existential_guard_round_trips_without_duplicate_guard() {
     let increment = binary_node!(
         Int32,
         Add,
-        Box::new(MachineTerm::Variable(variable)),
-        Box::new(MachineTerm::constant(1)),
+        Box::new(OldMachineTerm::Variable(variable)),
+        Box::new(OldMachineTerm::constant(1)),
     );
     let requirement = crate::kernel::quantifiers::test_exists(
         "len".to_string(),
@@ -2810,14 +2824,14 @@ fn strlen_existential_guard_round_trips_without_duplicate_guard() {
             Box::new(Proposition::signed_arithmetic_domain(
                 MachineIntegerType::Int32,
                 crate::kernel::MachineBinaryOp::Add,
-                &MachineTerm::Variable(variable),
-                &MachineTerm::constant(1),
+                &OldMachineTerm::Variable(variable),
+                &OldMachineTerm::constant(1),
             )),
             Box::new(Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
-                    left: Box::new(MachineTerm::constant(0)),
+                    left: Box::new(OldMachineTerm::constant(0)),
                     right: Box::new(increment),
                 },
                 true,
@@ -2853,15 +2867,15 @@ fn strlen_guard_is_retained_when_the_sibling_does_not_regenerate_it() {
             Box::new(Proposition::signed_arithmetic_domain(
                 MachineIntegerType::Int32,
                 crate::kernel::MachineBinaryOp::Add,
-                &MachineTerm::Variable(variable),
-                &MachineTerm::constant(1),
+                &OldMachineTerm::Variable(variable),
+                &OldMachineTerm::constant(1),
             )),
             Box::new(Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::GreaterEqual,
-                    left: Box::new(MachineTerm::Variable(variable)),
-                    right: Box::new(MachineTerm::constant(0)),
+                    left: Box::new(OldMachineTerm::Variable(variable)),
+                    right: Box::new(OldMachineTerm::constant(0)),
                 },
                 true,
             )),
@@ -2890,24 +2904,24 @@ fn strlen_guard_prefix_synthesis_scales_linearly_and_fails_closed() {
     fn requirement(guard_count: usize) -> Proposition {
         let variable = Variable(1);
         let guard = Proposition::condition_is(
-            ConditionTerm::Overflows {
+            OldConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::Add,
-                left: Box::new(MachineTerm::Variable(variable)),
-                right: Box::new(MachineTerm::constant(1)),
+                left: Box::new(OldMachineTerm::Variable(variable)),
+                right: Box::new(OldMachineTerm::constant(1)),
             },
             false,
         );
         let comparison = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
-                left: Box::new(MachineTerm::constant(0)),
+                left: Box::new(OldMachineTerm::constant(0)),
                 right: Box::new(binary_node!(
                     Int32,
                     Add,
-                    Box::new(MachineTerm::Variable(variable)),
-                    Box::new(MachineTerm::constant(1)),
+                    Box::new(OldMachineTerm::Variable(variable)),
+                    Box::new(OldMachineTerm::constant(1)),
                 )),
             },
             true,
@@ -2969,12 +2983,12 @@ fn pointer_field_synthesis_through_cast_and_local_selects_current_value() {
     let layout = function.structs().get("job").unwrap().clone();
     let base = Address {
         base: AddressBase::Concrete("job".into()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let owner = ProgramValue::typed_pointer(base.clone(), ProgramType::VoidPointer);
     let field_pointer = base.offset_by_bytes(layout.fields()["selected"].offset_bytes());
-    let selected = AddressOffset::scale_int32(MachineTerm::Variable(Variable(711)), 4);
-    let decoy = AddressOffset::scale_int32(MachineTerm::Variable(Variable(712)), 4);
+    let selected = OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(711)), 4);
+    let decoy = OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(712)), 4);
     let value = |offset| {
         ProgramValue::typed_pointer(
             Address {
@@ -3051,9 +3065,9 @@ fn pointer_field_synthesis_through_cast_and_local_selects_current_value() {
 #[test]
 fn a_local_indexes_only_addresses_formed_from_it() {
     let scaled = |variable: u64| {
-        AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(variable)), 4)
+        OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(variable)), 4)
     };
-    let external = |offset: AddressOffset| Address {
+    let external = |offset: OldAddressOffset| Address {
         base: AddressBase::ExternalArgument,
         offset,
     };
@@ -3062,7 +3076,7 @@ fn a_local_indexes_only_addresses_formed_from_it() {
         "arena",
         ProgramValue::typed_pointer(external(scaled(arena)), ProgramType::Int32Pointer),
     );
-    let unrelated_cell = external(AddressOffset::Add(
+    let unrelated_cell = external(OldAddressOffset::Add(
         Box::new(scaled(occupied)),
         Box::new(scaled(index)),
     ));
@@ -3077,7 +3091,7 @@ fn a_local_indexes_only_addresses_formed_from_it() {
         None,
         "a cell addressed from another pointer is not an index of the local"
     );
-    let own_cell = external(AddressOffset::Add(
+    let own_cell = external(OldAddressOffset::Add(
         Box::new(scaled(arena)),
         Box::new(scaled(index)),
     ));
@@ -3106,15 +3120,15 @@ fn a_local_indexes_only_addresses_formed_from_it() {
 /// interpretation.
 #[test]
 fn unsigned_comparison_is_spelled_over_uint32_operands() {
-    let x = MachineTerm::Variable(Variable(300_000));
+    let x = OldMachineTerm::Variable(Variable(300_000));
     let state = ExecutionState::new().with_local("x", ProgramValue::UInt32(x.clone()));
     for (condition, spelling) in [
         (
-            ConditionTerm::unsigned_less_than(x.clone(), MachineTerm::constant(4)),
+            OldConditionTerm::unsigned_less_than(x.clone(), OldMachineTerm::constant(4)),
             "x < 4",
         ),
         (
-            ConditionTerm::unsigned_greater_equal(x.clone(), MachineTerm::constant(4)),
+            OldConditionTerm::unsigned_greater_equal(x.clone(), OldMachineTerm::constant(4)),
             "x >= 4",
         ),
     ] {
@@ -3138,9 +3152,9 @@ fn unsigned_comparison_is_spelled_over_uint32_operands() {
     let signed = ExecutionState::new().with_local("y", ProgramValue::Int32(x.clone()));
     // The signed local's unsigned reading is σ, a node of its own.
     let fact = Proposition::condition_is(
-        ConditionTerm::unsigned_less_than(
-            MachineTerm::sign_cast32(MachineIntegerType::Int32, MachineIntegerType::UInt32, x),
-            MachineTerm::constant(4),
+        OldConditionTerm::unsigned_less_than(
+            OldMachineTerm::sign_cast32(MachineIntegerType::Int32, MachineIntegerType::UInt32, x),
+            OldMachineTerm::constant(4),
         ),
         true,
     );
@@ -3156,19 +3170,19 @@ fn unsigned_comparison_is_spelled_over_uint32_operands() {
 #[test]
 fn synthesized_unsigned_operations_and_computed_orders_relower_exactly() {
     let [x, divisor, result] =
-        [300_010, 300_011, 300_012].map(|id| MachineTerm::Variable(Variable(id)));
+        [300_010, 300_011, 300_012].map(|id| OldMachineTerm::Variable(Variable(id)));
     let state = ExecutionState::new()
         .with_local("x", ProgramValue::Int32(x.clone()))
         .with_local("divisor", ProgramValue::Int32(divisor.clone()))
         .with_local("result", ProgramValue::Int32(result.clone()));
     // The signed locals' unsigned readings are σ, a node of its own.
     let unsigned = |value| {
-        MachineTerm::sign_cast32(MachineIntegerType::Int32, MachineIntegerType::UInt32, value)
+        OldMachineTerm::sign_cast32(MachineIntegerType::Int32, MachineIntegerType::UInt32, value)
     };
     let quotient = binary_node!(
         UInt32,
         Divide,
-        Box::new(MachineTerm::uint32_constant(u32::MAX)),
+        Box::new(OldMachineTerm::uint32_constant(u32::MAX)),
         Box::new(unsigned(divisor.clone())),
     );
     let remainder = binary_node!(
@@ -3178,19 +3192,19 @@ fn synthesized_unsigned_operations_and_computed_orders_relower_exactly() {
         Box::new(unsigned(divisor))
     );
     for condition in [
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left: Box::new(quotient.clone()),
             right: Box::new(unsigned(result.clone())),
         },
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left: Box::new(remainder),
             right: Box::new(unsigned(result)),
         },
-        ConditionTerm::unsigned_less_equal(unsigned(x), quotient),
+        OldConditionTerm::unsigned_less_equal(unsigned(x), quotient),
     ] {
         for polarity in [true, false] {
             let fact = Proposition::condition_is(condition.clone(), polarity);
@@ -3204,7 +3218,7 @@ fn synthesized_unsigned_operations_and_computed_orders_relower_exactly() {
                 crate::kernel::machine_integer::comparison::comparison_view(&condition, polarity)
                     .unwrap();
             let actual = crate::kernel::machine_integer::comparison::comparison_view(
-                lowered.native_compat(),
+                lowered.old_form(),
                 lowered_truth,
             )
             .unwrap();
@@ -3310,7 +3324,7 @@ fn synthesized_uint32_cast_preserves_its_state() {
         left: expression,
         operator: ComparisonOperator::Equal,
         right: SyntaxTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::UInt32(
-            MachineTerm::constant(u32::MAX),
+            OldMachineTerm::constant(u32::MAX),
         ))),
     };
     let before = ExecutionState::new().with_local("x", int32(u32::MAX));
@@ -3330,19 +3344,19 @@ fn wide_memory_selectors_preserve_width_and_signedness() {
             "int64",
             ProgramType::Int64,
             ProgramType::Int64Pointer,
-            ProgramValue::Int64(MachineTerm::int64_constant(8589934592)),
+            ProgramValue::Int64(OldMachineTerm::int64_constant(8589934592)),
         ),
         (
             "uint64",
             ProgramType::UInt64,
             ProgramType::UInt64Pointer,
-            ProgramValue::UInt64(MachineTerm::uint64_constant(8589934592)),
+            ProgramValue::UInt64(OldMachineTerm::uint64_constant(8589934592)),
         ),
     ] {
         let function = syntax::parse_function(&format!("void read({spelling} *p) {{ }}")).unwrap();
         let base = Address {
             base: AddressBase::Concrete("wide".into()),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let argument = ProgramValue::typed_pointer(base.clone(), pointer_type);
         let state = ExecutionState::new()
@@ -3395,14 +3409,14 @@ fn struct_loadable_spans_relower_without_widening_over_padding() {
     let parameter = function.parameters()[0].clone();
     let pointer = Address {
         base: AddressBase::Concrete("item".into()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let value = ProgramValue::typed_pointer(pointer.clone(), ProgramType::Int32Pointer);
     let state = ExecutionState::new().with_local("p", value.clone());
     let arguments = [ProgramExpression::Value(value)];
     let plain = synthesize_struct_loadable_segment(
         &pointer.offset_by_bytes(4),
-        &MachineTerm::constant(4),
+        &OldMachineTerm::constant(4),
         ParameterBinding::new(&[parameter], &arguments),
         &state,
     )
@@ -3429,7 +3443,7 @@ fn struct_loadable_spans_relower_without_widening_over_padding() {
     .with_pointee_struct_layout("item".into(), padded);
     let clipped = synthesize_struct_loadable_segment(
         &pointer.offset_by_bytes(4),
-        &MachineTerm::constant(4),
+        &OldMachineTerm::constant(4),
         ParameterBinding::new(&[parameter], &arguments),
         &state,
     )
@@ -3463,11 +3477,11 @@ fn a_pointer_a_local_no_longer_holds_is_spelled_where_it_was_introduced() {
     // contract gave about it.
     let returned = Address {
         base: AddressBase::Symbolic(Variable(910_001)),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let other = Address {
         base: AddressBase::Concrete("pointer-introduced-other".into()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let memory = SymbolicMemory::new().with_block("pointer-introduced-other", 4);
     let entry = ExecutionState::new()
@@ -3505,7 +3519,7 @@ fn a_pointer_a_local_no_longer_holds_is_spelled_where_it_was_introduced() {
         now.clone(),
     );
     let fact = Proposition::condition_is(
-        ConditionTerm::AddressEqual(Box::new(returned), Box::new(Address::null())),
+        OldConditionTerm::AddressEqual(Box::new(returned), Box::new(Address::null())),
         false,
     );
     let spelled = {
@@ -3565,7 +3579,7 @@ fn entry_model_raising_uses_the_binder_that_minted_the_field() {
         schema,
         vec![
             AlgebraicValue::Algebraic(model.clone()),
-            AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(size))),
+            AlgebraicValue::Program(ProgramValue::Int32(OldMachineTerm::Variable(size))),
         ]
         .into(),
     )
@@ -3633,7 +3647,7 @@ fn a_model_field_value_its_instance_no_longer_holds_is_spelled_where_it_was_intr
             vec![].into(),
             schema.clone(),
             vec![AlgebraicValue::Program(ProgramValue::Int32(
-                MachineTerm::Variable(value),
+                OldMachineTerm::Variable(value),
             ))]
             .into(),
         )
@@ -3666,11 +3680,11 @@ fn a_model_field_value_its_instance_no_longer_holds_is_spelled_where_it_was_intr
     recorded_states.insert(point(0), holding(earlier));
     recorded_states.insert(point(1), now.clone());
     let fact = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::Variable(earlier)),
-            right: Box::new(MachineTerm::constant(5)),
+            left: Box::new(OldMachineTerm::Variable(earlier)),
+            right: Box::new(OldMachineTerm::constant(5)),
         },
         true,
     );
@@ -3708,9 +3722,9 @@ fn recorded_cells_offer_the_points_that_held_a_value_newest_first() {
     // a value no cell held is offered nowhere.
     let cell = Address {
         base: AddressBase::Concrete("cell-introduced".into()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
-    let value = MachineTerm::Variable(Variable(940_001));
+    let value = OldMachineTerm::Variable(Variable(940_001));
     let point = |index| {
         ProgramPointSelector::from(ProgramPointRef {
             region: CodeRegionRef::Region(index),
@@ -3731,14 +3745,14 @@ fn recorded_cells_offer_the_points_that_held_a_value_newest_first() {
     for (index, memory) in [entry, first, overwritten, again].into_iter().enumerate() {
         recorded_states.insert(point(index), ExecutionState::new().with_memory(memory));
     }
-    let offered = |term: &MachineTerm| {
+    let offered = |term: &OldMachineTerm| {
         recorded_states
             .points_holding_cell_integer(term)
             .map(|(selector, _)| selector.clone())
             .collect::<Vec<_>>()
     };
     assert_eq!(offered(&value), vec![point(3), point(1)]);
-    assert!(offered(&MachineTerm::Variable(Variable(940_002))).is_empty());
+    assert!(offered(&OldMachineTerm::Variable(Variable(940_002))).is_empty());
 }
 
 #[test]
@@ -3756,11 +3770,11 @@ fn allocation_result_names_survive_reassignment_and_follow_state_scope() {
     };
     let first = Address {
         base: AddressBase::Heap(989_030),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let second = Address {
         base: AddressBase::Heap(989_031),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let state = |pointer: &Address| {
         ExecutionState::new().with_local(
@@ -3814,7 +3828,7 @@ fn allocation_result_names_survive_reassignment_and_follow_state_scope() {
     assert_eq!(
         lowered,
         Proposition::condition_is(
-            ConditionTerm::AddressEqual(Box::new(first.clone()), Box::new(first.clone())),
+            OldConditionTerm::AddressEqual(Box::new(first.clone()), Box::new(first.clone())),
             true
         )
     );
@@ -3862,7 +3876,7 @@ fn global_array_entry_value_keeps_its_exact_spelling_after_a_write() {
         MachineIntegerType::Int32,
         crate::kernel::MachineBinaryOp::Add,
         &term,
-        &MachineTerm::constant(1),
+        &OldMachineTerm::constant(1),
     );
     let mut owners = SynthesisStructOwners::default();
     owners
@@ -3903,7 +3917,7 @@ fn global_array_entry_value_keeps_its_exact_spelling_after_a_write() {
 #[test]
 fn array_index_spelling_keeps_the_source_index_at_each_integer_width() {
     let _session = crate::kernel::VerificationSession::enter();
-    let i = MachineTerm::Variable(Variable(989_971));
+    let i = OldMachineTerm::Variable(Variable(989_971));
     for (format, source_type) in [
         (MachineIntegerType::Int32, "int32"),
         (MachineIntegerType::UInt32, "uint32"),
@@ -3915,14 +3929,14 @@ fn array_index_spelling_keeps_the_source_index_at_each_integer_width() {
                 MachineIntegerType::Int32,
                 4,
                 crate::kernel::LoadKind::Int32,
-                MachineTerm::constant(0),
+                OldMachineTerm::constant(0),
             ),
             (
                 ProgramType::Int64Pointer,
                 MachineIntegerType::Int64,
                 8,
                 crate::kernel::LoadKind::Bits64,
-                MachineTerm::int64_constant(0),
+                OldMachineTerm::int64_constant(0),
             ),
         ] {
             for increment in [false, true] {
@@ -3934,7 +3948,7 @@ fn array_index_spelling_keeps_the_source_index_at_each_integer_width() {
                 };
                 let base = Address {
                     base: AddressBase::Concrete("indexed-array".into()),
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0),
                 };
                 let state = ExecutionState::new()
                     .with_memory(SymbolicMemory::new().with_block("indexed-array", 128))
@@ -3942,11 +3956,11 @@ fn array_index_spelling_keeps_the_source_index_at_each_integer_width() {
                     .with_local("i", value);
                 let index = if increment {
                     let one = match format {
-                        MachineIntegerType::Int32 => MachineTerm::constant(1),
-                        MachineIntegerType::UInt32 => MachineTerm::uint32_constant(1),
-                        _ => MachineTerm::uint64_constant(1),
+                        MachineIntegerType::Int32 => OldMachineTerm::constant(1),
+                        MachineIntegerType::UInt32 => OldMachineTerm::uint32_constant(1),
+                        _ => OldMachineTerm::uint64_constant(1),
                     };
-                    MachineTerm::Binary {
+                    OldMachineTerm::Binary {
                         format,
                         op: crate::kernel::MachineBinaryOp::Add,
                         left: Box::new(i.clone()),
@@ -3956,18 +3970,18 @@ fn array_index_spelling_keeps_the_source_index_at_each_integer_width() {
                     i.clone()
                 };
                 let offset = match format {
-                    MachineIntegerType::Int32 => AddressOffset::scaled_int32_node(index, width),
-                    MachineIntegerType::UInt32 => AddressOffset::scaled_int64_node(
-                        MachineTerm::legacy_cast(
+                    MachineIntegerType::Int32 => OldAddressOffset::scaled_int32_node(index, width),
+                    MachineIntegerType::UInt32 => OldAddressOffset::scaled_int64_node(
+                        OldMachineTerm::legacy_cast(
                             MachineCastSpelling::UInt64From32,
                             Box::new(index),
                         ),
                         width,
                         true,
                     ),
-                    _ => AddressOffset::scaled_int64_node(index, width, true),
+                    _ => OldAddressOffset::scaled_int64_node(index, width, true),
                 };
-                let load = MachineTerm::read_named(
+                let load = OldMachineTerm::read_named(
                     crate::kernel::ProgramPoint::at(
                         &(crate::kernel::intern_memory_ref(state.memory())),
                     ),
@@ -4007,7 +4021,7 @@ fn array_index_spelling_keeps_the_source_index_at_each_integer_width() {
                     right: right.clone(),
                 };
                 let expected = Proposition::condition_is(
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: element_format,
                         relation: CompareRelation::Equal,
                         left: Box::new(load),
@@ -4061,18 +4075,18 @@ fn array_index_spelling_keeps_the_source_index_at_each_integer_width() {
 #[test]
 fn boolean_calls_conditionals_and_equalities_round_trip_in_both_polarities() {
     let file = parser::parse("function positive(x: int32) -> Bool { x > 0 } function choose(flag: Bool, x: int32) -> Bool { if flag { positive(x) } else { false } }").unwrap();
-    let flag = ConditionTerm::Variable(Variable(9001));
-    let x = MachineTerm::Variable(Variable(9002));
+    let flag = OldConditionTerm::Variable(Variable(9001));
+    let x = OldMachineTerm::Variable(Variable(9002));
     let state = ExecutionState::new()
         .with_local("flag", ProgramValue::of_bool(flag.clone()))
         .with_local("x", ProgramValue::Int32(x.clone()));
-    let positive = ConditionTerm::bool_application(
+    let positive = OldConditionTerm::bool_application(
         "positive",
         vec![crate::kernel::PureFunctionArgument::Value(
             ProgramValue::Int32(x.clone()),
         )],
     );
-    let chosen = ConditionTerm::bool_application(
+    let chosen = OldConditionTerm::bool_application(
         "choose",
         vec![
             crate::kernel::PureFunctionArgument::Value(ProgramValue::of_bool(flag.clone())),
@@ -4083,11 +4097,11 @@ fn boolean_calls_conditionals_and_equalities_round_trip_in_both_polarities() {
         flag.clone(),
         positive.clone(),
         chosen,
-        ConditionTerm::bool_if(flag, positive.clone(), ConditionTerm::Constant(false)),
-        ConditionTerm::bool_equal(positive.clone(), ConditionTerm::bool_not(positive)),
-        ConditionTerm::BoolEqual(
-            Box::new(ConditionTerm::Constant(true)),
-            Box::new(ConditionTerm::Constant(false)),
+        OldConditionTerm::bool_if(flag, positive.clone(), OldConditionTerm::Constant(false)),
+        OldConditionTerm::bool_equal(positive.clone(), OldConditionTerm::bool_not(positive)),
+        OldConditionTerm::BoolEqual(
+            Box::new(OldConditionTerm::Constant(true)),
+            Box::new(OldConditionTerm::Constant(false)),
         ),
     ] {
         for truth in [false, true] {
@@ -4125,11 +4139,11 @@ fn generic_call_spelling_reparses_to_the_same_concrete_and_nested_instance() {
         let file = parser::parse(&source).unwrap();
         let state = ExecutionState::new().with_local(
             "x",
-            ProgramValue::Int32(MachineTerm::Variable(Variable(99001))),
+            ProgramValue::Int32(OldMachineTerm::Variable(Variable(99001))),
         );
         let values = ProgramValueBindings::from([(
             "x".to_string(),
-            ProgramValue::Int32(MachineTerm::Variable(Variable(99001))),
+            ProgramValue::Int32(OldMachineTerm::Variable(Variable(99001))),
         )]);
         let lower = |proposition: &SyntaxProposition| {
             crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
@@ -4188,7 +4202,7 @@ fn pointee_layout_spells_a_field_load_at_its_byte_offset() {
     assert!(parameter.struct_layout().is_none());
     let pointer = Address {
         base: AddressBase::Concrete("square".into()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let value = ProgramValue::typed_pointer(pointer.clone(), ProgramType::UInt8Pointer);
     let state = ExecutionState::new().with_local("p", value.clone());
@@ -4257,12 +4271,12 @@ fn mathematical_constant_goals_keep_structure_and_type() {
     ];
     for (left, right) in pairs {
         for constructor in [
-            ConditionTerm::IntegerEqual,
-            ConditionTerm::IntegerNotEqual,
-            ConditionTerm::IntegerLessThan,
-            ConditionTerm::IntegerLessEqual,
-            ConditionTerm::IntegerGreaterThan,
-            ConditionTerm::IntegerGreaterEqual,
+            OldConditionTerm::IntegerEqual,
+            OldConditionTerm::IntegerNotEqual,
+            OldConditionTerm::IntegerLessThan,
+            OldConditionTerm::IntegerLessEqual,
+            OldConditionTerm::IntegerGreaterThan,
+            OldConditionTerm::IntegerGreaterEqual,
         ] {
             for truth in [false, true] {
                 let goal = Proposition::condition_is(
@@ -4352,7 +4366,7 @@ fn unified_terms_round_trip_nested_calls_and_mixed_integer_arguments() {
             "{declarations} theorem probe(x: int32) {{ requires {expression} == 0; ensures true; }}"
         );
         let file = parser::parse(&source).unwrap();
-        let value = ProgramValue::Int32(MachineTerm::Variable(Variable(99002)));
+        let value = ProgramValue::Int32(OldMachineTerm::Variable(Variable(99002)));
         let state = ExecutionState::new().with_local("x", value.clone());
         let values = ProgramValueBindings::from([("x".to_string(), value)]);
         let lower = |proposition: &SyntaxProposition| {
@@ -4428,14 +4442,14 @@ fn unified_certificate_terms_raise_and_lower_by_identity() {
 fn local_read_test_address(name: &str) -> Address {
     Address {
         base: AddressBase::Concrete(format!("local:{name}")),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     }
 }
 
-fn local_test_read_operand(claim: &Proposition, value_type: ProgramType) -> &MachineTerm {
-    let term = match claim.condition_native() {
-        Some((ConditionTerm::Compare { left, .. }, true)) => left,
-        Some((ConditionTerm::IntegerLessEqual(left, _), true)) => {
+fn local_test_read_operand(claim: &Proposition, value_type: ProgramType) -> &OldMachineTerm {
+    let term = match claim.old_condition() {
+        Some((OldConditionTerm::Compare { left, .. }, true)) => left,
+        Some((OldConditionTerm::IntegerLessEqual(left, _), true)) => {
             let crate::kernel::IntegerTerm::Machine(observation) = &**left else {
                 panic!("expected an exact Integer observation: {left:?}");
             };
@@ -4459,26 +4473,28 @@ fn local_read_test_store(
     bits: u32,
 ) -> ExecutionState {
     let value = match value_type {
-        ProgramType::Int8 => ProgramValue::Int8(MachineTerm::narrow_constant(
+        ProgramType::Int8 => ProgramValue::Int8(OldMachineTerm::narrow_constant(
             MachineIntegerType::Int8,
             u128::from(bits & 0xff),
         )),
-        ProgramType::UInt8 => ProgramValue::UInt8(MachineTerm::narrow_constant(
+        ProgramType::UInt8 => ProgramValue::UInt8(OldMachineTerm::narrow_constant(
             MachineIntegerType::UInt8,
             u128::from(bits & 0xff),
         )),
-        ProgramType::Int16 => ProgramValue::Int16(MachineTerm::narrow_constant(
+        ProgramType::Int16 => ProgramValue::Int16(OldMachineTerm::narrow_constant(
             MachineIntegerType::Int16,
             u128::from(bits & 0xffff),
         )),
-        ProgramType::UInt16 => ProgramValue::UInt16(MachineTerm::narrow_constant(
+        ProgramType::UInt16 => ProgramValue::UInt16(OldMachineTerm::narrow_constant(
             MachineIntegerType::UInt16,
             u128::from(bits & 0xffff),
         )),
-        ProgramType::Int32 => ProgramValue::Int32(MachineTerm::constant(bits)),
-        ProgramType::UInt32 => ProgramValue::UInt32(MachineTerm::uint32_constant(bits)),
-        ProgramType::Int64 => ProgramValue::Int64(MachineTerm::int64_constant(i64::from(bits))),
-        ProgramType::UInt64 => ProgramValue::UInt64(MachineTerm::uint64_constant(u64::from(bits))),
+        ProgramType::Int32 => ProgramValue::Int32(OldMachineTerm::constant(bits)),
+        ProgramType::UInt32 => ProgramValue::UInt32(OldMachineTerm::uint32_constant(bits)),
+        ProgramType::Int64 => ProgramValue::Int64(OldMachineTerm::int64_constant(i64::from(bits))),
+        ProgramType::UInt64 => {
+            ProgramValue::UInt64(OldMachineTerm::uint64_constant(u64::from(bits)))
+        }
         ProgramType::Int128 | ProgramType::UInt128 => {
             let format = MachineIntegerType::from_program_type(value_type).unwrap();
             format
@@ -4500,9 +4516,9 @@ fn local_read_test_store(
 
 fn local_read_test_claim(value_type: ProgramType) -> SyntaxProposition {
     let limit = match value_type {
-        ProgramType::UInt32 => ProgramValue::UInt32(MachineTerm::uint32_constant(20)),
-        ProgramType::Int64 => ProgramValue::Int64(MachineTerm::int64_constant(20)),
-        ProgramType::UInt64 => ProgramValue::UInt64(MachineTerm::uint64_constant(20)),
+        ProgramType::UInt32 => ProgramValue::UInt32(OldMachineTerm::uint32_constant(20)),
+        ProgramType::Int64 => ProgramValue::Int64(OldMachineTerm::int64_constant(20)),
+        ProgramType::UInt64 => ProgramValue::UInt64(OldMachineTerm::uint64_constant(20)),
         _ => int32(20),
     };
     SyntaxProposition::Comparison {
@@ -4545,7 +4561,7 @@ fn exact_read_raises_at_its_own_point_when_another_point_has_equal_memory() {
     *left = SyntaxTerm::Exact(Box::new(left.clone()));
     let exact = relower_written_proposition(&claim, &first).unwrap();
     let read = local_test_read_operand(&exact, ProgramType::Int32);
-    let MachineTerm::MemoryLoad(point, ..) = read else {
+    let OldMachineTerm::MemoryLoad(point, ..) = read else {
         panic!("expected exact read: {read:?}");
     };
     assert!(point.is_exact_read());
@@ -4649,7 +4665,7 @@ fn check_local_read_versions(value_type: ProgramType, disjoint_type: ProgramType
     ] {
         let lowered = relower_written_proposition(&claim, reader).unwrap();
         let read = local_test_read_operand(&lowered, value_type);
-        let MachineTerm::MemoryLoad(point, _, kind) = read else {
+        let OldMachineTerm::MemoryLoad(point, _, kind) = read else {
             panic!("ordinary {value_type:?} read: {read:?}");
         };
         assert_eq!(*kind, load_kind);
@@ -4750,7 +4766,7 @@ fn whole_static_read_selects_and_replays_its_recorded_store() {
     let claim = local_read_test_claim(ty);
     let expected = relower_written_proposition(&claim, &written).unwrap();
     let read = local_test_read_operand(&expected, ty);
-    let MachineTerm::MemoryLoad(point, _, crate::kernel::LoadKind::Int32) = read else {
+    let OldMachineTerm::MemoryLoad(point, _, crate::kernel::LoadKind::Int32) = read else {
         panic!("whole static read: {read:?}");
     };
     assert_eq!(point.read_version_id(), written.program_point_id());
@@ -4807,7 +4823,7 @@ fn whole_static_read_selects_and_replays_its_recorded_store() {
 
     let alias = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let may_alias = local_read_test_store(&written, &alias, ty, 9);
     assert!(
@@ -4823,7 +4839,7 @@ fn ordinary_fixed_offset_read_keeps_its_version_across_sibling_stores() {
     let _session = crate::kernel::VerificationSession::enter();
     let left = local_read_test_address("pair");
     let right = Address {
-        offset: AddressOffset::Constant(4),
+        offset: OldAddressOffset::Constant(4),
         ..left.clone()
     };
     let ty = ProgramType::Int32;
@@ -4853,7 +4869,8 @@ fn ordinary_fixed_offset_read_keeps_its_version_across_sibling_stores() {
                 })
             });
         let read = local_test_read_operand(&lowered, ty);
-        let MachineTerm::MemoryLoad(point, address, crate::kernel::LoadKind::Int32) = read else {
+        let OldMachineTerm::MemoryLoad(point, address, crate::kernel::LoadKind::Int32) = read
+        else {
             panic!("expected a typed read: {read:?}");
         };
         assert_eq!(address.as_ref(), &right);
@@ -4929,7 +4946,7 @@ fn check_local_read_work(value_type: ProgramType, disjoint_type: ProgramType) {
                 })
             });
         assert!(
-            matches!(local_test_read_operand(&lowered, value_type), MachineTerm::MemoryLoad(point, _, _)
+            matches!(local_test_read_operand(&lowered, value_type), OldMachineTerm::MemoryLoad(point, _, _)
             if point.id() == write.program_point_id())
         );
         work.push((proof_work, map_work));
@@ -4949,7 +4966,7 @@ fn shared_scalar_load_raises_and_relowers_to_the_same_read_node() {
     let _session = crate::kernel::VerificationSession::enter();
     let pointer = Address {
         base: AddressBase::Concrete("shared-read-round-trip".into()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let state = ExecutionState::new()
         .with_memory(SymbolicMemory::new().with_block("shared-read-round-trip", 4))
@@ -4957,7 +4974,7 @@ fn shared_scalar_load_raises_and_relowers_to_the_same_read_node() {
             "p",
             ProgramValue::typed_pointer(pointer.clone(), ProgramType::Int32Pointer),
         );
-    let raw = MachineTerm::read_named(
+    let raw = OldMachineTerm::read_named(
         crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory_ref(state.memory()))),
         Box::new(pointer),
         crate::kernel::LoadKind::Int32,
@@ -4977,7 +4994,7 @@ fn shared_scalar_load_raises_and_relowers_to_the_same_read_node() {
         right: SyntaxTerm::IntegerLiteral("20".into()),
     };
     let lowered = relower_written_proposition(&claim, &state).unwrap();
-    let Some((ConditionTerm::Compare { left, .. }, true)) = lowered.condition_native() else {
+    let Some((OldConditionTerm::Compare { left, .. }, true)) = lowered.old_condition() else {
         panic!("read comparison")
     };
     // Both native lowering and checker observations enter the same structural
@@ -4998,7 +5015,7 @@ fn volatile_read_event_results_raise_and_lower_exactly() {
     let _session = crate::kernel::VerificationSession::enter();
     let state = ExecutionState::new();
     let values = [
-        ProgramValue::Int32(MachineTerm::Variable(Variable(762001))),
+        ProgramValue::Int32(OldMachineTerm::Variable(Variable(762001))),
         ProgramValue::typed_pointer(
             Address::symbolic(Variable(762002)),
             ProgramType::Int32Pointer,
@@ -5045,7 +5062,7 @@ fn volatile_read_event_results_raise_and_lower_exactly() {
         );
         let expected = match value {
             ProgramValue::Int32(term) => Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: crate::kernel::MachineIntegerType::Int32,
                     relation: crate::kernel::CompareRelation::Equal,
                     left: Box::new(term.clone()),
@@ -5054,7 +5071,7 @@ fn volatile_read_event_results_raise_and_lower_exactly() {
                 true,
             ),
             ProgramValue::Pointer(pointer) => Proposition::condition_is(
-                ConditionTerm::AddressEqual(
+                OldConditionTerm::AddressEqual(
                     Box::new(pointer.address().clone()),
                     Box::new(pointer.address().clone()),
                 ),
@@ -5072,8 +5089,8 @@ fn volatile_read_event_results_follow_state_branches() {
         region: CodeRegionRef::Region(3),
         kind: ProgramPointKind::Exit,
     };
-    let old = ProgramValue::Int32(MachineTerm::Variable(Variable(762010)));
-    let next = ProgramValue::Int32(MachineTerm::Variable(Variable(762011)));
+    let old = ProgramValue::Int32(OldMachineTerm::Variable(Variable(762010)));
+    let next = ProgramValue::Int32(OldMachineTerm::Variable(Variable(762011)));
     let mut ancestor = RecordedStates::new();
     ancestor.insert(point.clone(), ExecutionState::new());
     ancestor.record_read_event_values(3, std::iter::once(&old));
@@ -5128,15 +5145,15 @@ fn shared_arithmetic_raising_does_not_export_operand_trees() {
     use crate::kernel::{KernelTermExport, KernelTermImport};
     let _session = crate::kernel::VerificationSession::enter();
     let variable = Variable(993401);
-    let native = MachineTerm::logical_machine_binary(
+    let native = OldMachineTerm::logical_machine_binary(
         MachineIntegerType::Int32,
         MachineBinaryOp::Add,
-        MachineTerm::Variable(variable),
-        MachineTerm::constant(1),
+        OldMachineTerm::Variable(variable),
+        OldMachineTerm::constant(1),
     );
     let root = KernelTermImport::default().machine(MachineIntegerType::Int32, &native);
-    let state =
-        ExecutionState::new().with_local("x", ProgramValue::Int32(MachineTerm::Variable(variable)));
+    let state = ExecutionState::new()
+        .with_local("x", ProgramValue::Int32(OldMachineTerm::Variable(variable)));
     let named_state = state
         .clone()
         .with_local("current", ProgramValue::Int32(native.clone()));
@@ -5156,11 +5173,11 @@ fn shared_arithmetic_raising_does_not_export_operand_trees() {
     // Both roots and immediate child tags collide in the local-name index.
     // Exact matching must reject the earlier name before using the true holder.
     let outer = |value| {
-        MachineTerm::logical_machine_binary(
+        OldMachineTerm::logical_machine_binary(
             MachineIntegerType::Int32,
             MachineBinaryOp::Add,
             value,
-            MachineTerm::constant(1),
+            OldMachineTerm::constant(1),
         )
     };
     let nested = outer(native.clone());
@@ -5168,7 +5185,7 @@ fn shared_arithmetic_raising_does_not_export_operand_trees() {
     let collision_state = named_state
         .with_local(
             "a_collision",
-            ProgramValue::Int32(outer(outer(MachineTerm::Variable(Variable(993499))))),
+            ProgramValue::Int32(outer(outer(OldMachineTerm::Variable(Variable(993499))))),
         )
         .with_local("current_nested", ProgramValue::Int32(nested));
     assert_eq!(
@@ -5196,7 +5213,7 @@ fn shared_arithmetic_raising_does_not_export_operand_trees() {
         panic!("comparison")
     };
     let view = crate::kernel::machine_integer::comparison::structural_comparison_view(
-        condition.native_compat(),
+        condition.old_form(),
     )
     .unwrap();
     assert_eq!(view.format, MachineIntegerType::Int32);
@@ -5249,7 +5266,7 @@ fn check_common_machine_call_formats(formats: &[(MachineIntegerType, &str)]) {
             "function inner(x: int32) -> int32 {{ x }} function outer(x: int32) -> {spelling} {{ x as {spelling} }}"
         );
         let file = parser::parse(&declarations).unwrap();
-        let variable = ProgramValue::Int32(MachineTerm::Variable(Variable(995900)));
+        let variable = ProgramValue::Int32(OldMachineTerm::Variable(Variable(995900)));
         let state = ExecutionState::new().with_local("x", variable.clone());
         let values = ProgramValueBindings::from([("x".to_string(), variable)]);
         let parse_expression = |text: &str, result_type: &str| {
@@ -5348,11 +5365,11 @@ fn range_fold_surface_preserves_scope_and_alpha_identity() {
     let state = ExecutionState::new()
         .with_local(
             "n",
-            ProgramValue::Int32(MachineTerm::Variable(Variable(710003))),
+            ProgramValue::Int32(OldMachineTerm::Variable(Variable(710003))),
         )
         .with_local(
             "__click_binder_0",
-            ProgramValue::Int32(MachineTerm::Variable(Variable(710004))),
+            ProgramValue::Int32(OldMachineTerm::Variable(Variable(710004))),
         );
     for expression in [
         "(0..n).fold(0, |acc, item| { acc })",
@@ -5402,11 +5419,11 @@ fn range_fold_surface_separates_integer_and_machine_binder_ids() {
     use crate::kernel::{IntegerRangeFoldIndex, IntegerTerm, SharedIntegerRangeEndpoint};
     let _session = crate::kernel::VerificationSession::enter();
     let id = Variable(710005);
-    let n = MachineTerm::Variable(Variable(710006));
+    let n = OldMachineTerm::Variable(Variable(710006));
     let state = ExecutionState::new().with_local("n", ProgramValue::Int32(n.clone()));
     let fold = IntegerTerm::RangeFold {
         index: IntegerRangeFoldIndex::Int32 {
-            start: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0)),
+            start: SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(0)),
             end: SharedIntegerRangeEndpoint::intern(n),
         },
         initial: IntegerTerm::constant_i64(0).into(),
@@ -5414,14 +5431,14 @@ fn range_fold_surface_separates_integer_and_machine_binder_ids() {
         item: id,
         body: IntegerTerm::Add(
             IntegerTerm::Variable(id).into(),
-            IntegerTerm::from_machine(MachineIntegerType::Int32, MachineTerm::Variable(id))
+            IntegerTerm::from_machine(MachineIntegerType::Int32, OldMachineTerm::Variable(id))
                 .unwrap()
                 .into(),
         )
         .into(),
     };
     let proposition = Proposition::condition_is(
-        ConditionTerm::integer_equal(fold, IntegerTerm::constant_i64(0)),
+        OldConditionTerm::integer_equal(fold, IntegerTerm::constant_i64(0)),
         true,
     );
     let spelled =
@@ -5459,14 +5476,14 @@ fn common_match_surface_preserves_typed_binders_and_relowers_nested_results() {
         ),
         (
             "n".to_string(),
-            ProgramValue::Int32(MachineTerm::Variable(Variable(991951))),
+            ProgramValue::Int32(OldMachineTerm::Variable(Variable(991951))),
         ),
     ]);
     let state = ExecutionState::new()
         .with_local("payload", ProgramValue::Parameter(Box::new(scrutinee)))
         .with_local(
             "n",
-            ProgramValue::Int32(MachineTerm::Variable(Variable(991951))),
+            ProgramValue::Int32(OldMachineTerm::Variable(Variable(991951))),
         );
     let declarations = "spec enum MatchScope { Arm(int32) }
         function wrapped(x: int32) -> int32 { x }
@@ -5667,7 +5684,7 @@ fn typed_word_reads_round_trip_their_observation_without_a_sign_cast() {
         );
         let value = IntegerTerm::from_machine(format, read).unwrap();
         let goal = Proposition::condition_is(
-            ConditionTerm::IntegerLessThan(value.into(), IntegerTerm::constant_i64(1).into()),
+            OldConditionTerm::IntegerLessThan(value.into(), IntegerTerm::constant_i64(1).into()),
             true,
         );
         let spelled =
@@ -5692,7 +5709,7 @@ fn float_bit_literals_round_trip_exact_native_values() {
         0, 0x80000000, 0x3f800000, 1, 0x007fffff, 0x7f800000, 0xff800000, 0x7fc00001, 0x7f800123,
         0xffc12345,
     ] {
-        values.push(ProgramValue::Float32(MachineTerm::constant(bits)));
+        values.push(ProgramValue::Float32(OldMachineTerm::constant(bits)));
     }
     for bits in [
         0,
@@ -5706,7 +5723,7 @@ fn float_bit_literals_round_trip_exact_native_values() {
         0x7ff0000000000123,
         0xfff8123456789abc,
     ] {
-        values.push(ProgramValue::Float64(MachineTerm::uint64_constant(bits)));
+        values.push(ProgramValue::Float64(OldMachineTerm::uint64_constant(bits)));
     }
     for value in values {
         let state = ExecutionState::new();
@@ -5797,18 +5814,18 @@ fn float_bit_literals_refuse_wrong_widths_expressions_and_arity() {
 fn common_float_atoms_round_trip_printed_surface_bits() {
     let _session = crate::kernel::VerificationSession::enter();
     let values = [
-        ProgramValue::Float32(MachineTerm::Variable(Variable(999804))),
-        ProgramValue::Float64(MachineTerm::Variable(Variable(999805))),
-        ProgramValue::Float32(MachineTerm::constant(0x80000000)),
-        ProgramValue::Float32(MachineTerm::constant(0x7f800123)),
-        ProgramValue::Float64(MachineTerm::uint64_constant(0x8000000000000000)),
-        ProgramValue::Float64(MachineTerm::uint64_constant(0x7ff8000000000123)),
+        ProgramValue::Float32(OldMachineTerm::Variable(Variable(999804))),
+        ProgramValue::Float64(OldMachineTerm::Variable(Variable(999805))),
+        ProgramValue::Float32(OldMachineTerm::constant(0x80000000)),
+        ProgramValue::Float32(OldMachineTerm::constant(0x7f800123)),
+        ProgramValue::Float64(OldMachineTerm::uint64_constant(0x8000000000000000)),
+        ProgramValue::Float64(OldMachineTerm::uint64_constant(0x7ff8000000000123)),
     ];
     for value in values {
         let named = matches!(
             &value,
-            ProgramValue::Float32(MachineTerm::Variable(_))
-                | ProgramValue::Float64(MachineTerm::Variable(_))
+            ProgramValue::Float32(OldMachineTerm::Variable(_))
+                | ProgramValue::Float64(OldMachineTerm::Variable(_))
         );
         let values = if named {
             BTreeMap::from([("value".to_string(), value.clone())])
@@ -5819,8 +5836,8 @@ fn common_float_atoms_round_trip_printed_surface_bits() {
         // Scoped float binders already have their source names. Execution-local
         // name/storage handoffs are the later 8aa boundary.
         let bindings = (match &value {
-            ProgramValue::Float32(MachineTerm::Variable(variable))
-            | ProgramValue::Float64(MachineTerm::Variable(variable)) => {
+            ProgramValue::Float32(OldMachineTerm::Variable(variable))
+            | ProgramValue::Float64(OldMachineTerm::Variable(variable)) => {
                 BTreeMap::from([(*variable, "value".to_string())])
             }
             _ => BTreeMap::new(),
@@ -5905,7 +5922,7 @@ fn float_pointer_casts_round_trip_native_load_spelling() {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = Address {
             base: AddressBase::Concrete("float-cast-read".into()),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let state = ExecutionState::new()
             .with_memory(SymbolicMemory::new().with_block("float-cast-read", 8))
@@ -5969,7 +5986,7 @@ fn float_pointer_casts_round_trip_native_load_spelling() {
             let (ProgramValue::Float32(read) | ProgramValue::Float64(read)) = value else {
                 panic!("{text}: expected a float value");
             };
-            let MachineTerm::MemoryLoad(point, address, actual_kind) = read else {
+            let OldMachineTerm::MemoryLoad(point, address, actual_kind) = read else {
                 panic!("{text}: expected a float load");
             };
             assert_eq!(actual_kind, kind, "{text}");
@@ -5994,7 +6011,7 @@ fn a_boolean_cell_read_round_trips_as_a_typed_load() {
     let _session = crate::kernel::VerificationSession::enter();
     let pointer = Address {
         base: AddressBase::Concrete("boolean-source-read".into()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let state = ExecutionState::new()
         .with_memory(SymbolicMemory::new().with_classed_block(
@@ -6006,7 +6023,7 @@ fn a_boolean_cell_read_round_trips_as_a_typed_load() {
             "p",
             ProgramValue::typed_pointer(pointer.clone(), ProgramType::UInt8Pointer),
         );
-    let detached = ConditionTerm::boolean_cell_read(
+    let detached = OldConditionTerm::boolean_cell_read(
         crate::kernel::ProgramPoint::of_memory(state.memory()),
         pointer.clone(),
     );
@@ -6039,7 +6056,7 @@ fn a_boolean_cell_read_round_trips_as_a_typed_load() {
     let ProgramValue::Bool(word) = value else {
         panic!("the typed source read is a Boolean");
     };
-    let condition = ConditionTerm::truth_of_bool_word(&word);
+    let condition = OldConditionTerm::truth_of_bool_word(&word);
     let root = crate::kernel::KernelTermImport::default().condition(&condition);
     let surface = raise_kernel_term(&root, ParameterBinding::default(), &state, &BTreeMap::new())
         .expect("name of the Boolean cell read");
@@ -6111,7 +6128,7 @@ fn a_boolean_cell_read_round_trips_as_a_typed_load() {
         1,
     ));
     let byte_test =
-        ConditionTerm::boolean_cell_read(crate::kernel::ProgramPoint::at(&byte_memory), pointer);
+        OldConditionTerm::boolean_cell_read(crate::kernel::ProgramPoint::at(&byte_memory), pointer);
     assert!(
         synthesize_boolean_cell_read(
             crate::kernel::BooleanOperandView::Native(byte_test.bool_negation_operand().unwrap()),
@@ -6128,7 +6145,7 @@ fn evaluate_float_cell_read(
     pointer: &Address,
     format: crate::kernel::KernelFloatType,
     exact: bool,
-) -> MachineTerm {
+) -> OldMachineTerm {
     use crate::kernel::{SpecExpression, SpecPoint};
     let ty = format.program_type();
     let expression = SpecExpression::MemoryLoad {
@@ -6152,7 +6169,7 @@ fn evaluate_float_cell_read(
     let (ProgramValue::Float32(read) | ProgramValue::Float64(read)) = value else {
         panic!("expected a float value");
     };
-    let MachineTerm::MemoryLoad(point, address, kind) = &read else {
+    let OldMachineTerm::MemoryLoad(point, address, kind) = &read else {
         panic!("expected a float load");
     };
     assert_eq!(point.read_version_id(), state.observation_point_id());
@@ -6170,7 +6187,7 @@ fn common_float_reads_round_trip_existing_cast_dereference_syntax() {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = Address {
             base: AddressBase::Concrete("float-source-read".into()),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let state = ExecutionState::new()
             .with_memory(SymbolicMemory::new().with_block("float-source-read", 8))
@@ -6240,7 +6257,7 @@ fn check_float_reads_at_old_and_recorded_states(exact: bool) {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = Address {
             base: AddressBase::Concrete("float-retained_state".into()),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let selected = ExecutionState::new()
             .with_memory(SymbolicMemory::new().with_block("float-retained_state", 8))
@@ -6259,7 +6276,7 @@ fn check_float_reads_at_old_and_recorded_states(exact: bool) {
             let now = selected
                 .clone()
                 .with_memory(selected.memory().clone().with_block("later-block", 8));
-            let read = MachineTerm::read_named(
+            let read = OldMachineTerm::read_named(
                 crate::kernel::ProgramPoint::of_memory(selected.memory()),
                 Box::new(pointer),
                 format.load_kind(),
@@ -6279,8 +6296,8 @@ fn check_float_reads_at_old_and_recorded_states(exact: bool) {
             operator: ComparisonOperator::Equal,
             right: SyntaxTerm::ProgramExpression(ProgramExpression::Value(format.value(
                 match format {
-                    crate::kernel::KernelFloatType::Float32 => MachineTerm::constant(0),
-                    crate::kernel::KernelFloatType::Float64 => MachineTerm::uint64_constant(0),
+                    crate::kernel::KernelFloatType::Float32 => OldMachineTerm::constant(0),
+                    crate::kernel::KernelFloatType::Float64 => OldMachineTerm::uint64_constant(0),
                 },
             ))),
         };
@@ -6370,8 +6387,8 @@ fn click_float_unary_negation_preserves_positive_zero_sign() {
     assert_eq!(
         actual,
         vec![
-            ProgramValue::Float32(MachineTerm::constant(0x80000000)),
-            ProgramValue::Float64(MachineTerm::uint64_constant(0x8000000000000000))
+            ProgramValue::Float32(OldMachineTerm::constant(0x80000000)),
+            ProgramValue::Float64(OldMachineTerm::uint64_constant(0x8000000000000000))
         ]
     );
 }
@@ -6404,22 +6421,22 @@ fn click_float_unary_negation_preserves_bits_and_symbolic_operands() {
             .iter()
             .map(|&bits| {
                 if wide {
-                    MachineTerm::uint64_constant(bits)
+                    OldMachineTerm::uint64_constant(bits)
                 } else {
-                    MachineTerm::constant(bits as u32)
+                    OldMachineTerm::constant(bits as u32)
                 }
             })
-            .chain(std::iter::once(MachineTerm::Variable(Variable(981001))))
+            .chain(std::iter::once(OldMachineTerm::Variable(Variable(981001))))
         {
             let (value, expected) = if wide {
                 (
                     ProgramValue::Float64(term.clone()),
-                    ProgramValue::Float64(MachineTerm::float64_negate(term)),
+                    ProgramValue::Float64(OldMachineTerm::float64_negate(term)),
                 )
             } else {
                 (
                     ProgramValue::Float32(term.clone()),
-                    ProgramValue::Float32(MachineTerm::float32_negate(term)),
+                    ProgramValue::Float32(OldMachineTerm::float32_negate(term)),
                 )
             };
             let state = ExecutionState::new().with_local("x", value);
@@ -6456,16 +6473,16 @@ fn click_integer_unary_negation_keeps_subtraction_semantics() {
     let _session = crate::kernel::VerificationSession::enter();
     let state = ExecutionState::new();
     for value in [
-        ProgramValue::Int32(MachineTerm::constant(0)),
-        ProgramValue::Int32(MachineTerm::constant(0x80000000)),
-        ProgramValue::Int32(MachineTerm::Variable(Variable(981002))),
-        ProgramValue::UInt32(MachineTerm::constant(1)),
-        ProgramValue::UInt32(MachineTerm::Variable(Variable(981003))),
-        ProgramValue::UInt64(MachineTerm::Variable(Variable(981004))),
-        ProgramValue::Int64(MachineTerm::int64_constant(i64::MIN)),
-        ProgramValue::UInt64(MachineTerm::uint64_constant(1)),
+        ProgramValue::Int32(OldMachineTerm::constant(0)),
+        ProgramValue::Int32(OldMachineTerm::constant(0x80000000)),
+        ProgramValue::Int32(OldMachineTerm::Variable(Variable(981002))),
+        ProgramValue::UInt32(OldMachineTerm::constant(1)),
+        ProgramValue::UInt32(OldMachineTerm::Variable(Variable(981003))),
+        ProgramValue::UInt64(OldMachineTerm::Variable(Variable(981004))),
+        ProgramValue::Int64(OldMachineTerm::int64_constant(i64::MIN)),
+        ProgramValue::UInt64(OldMachineTerm::uint64_constant(1)),
     ] {
-        let zero = SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(0)));
+        let zero = SpecExpression::Value(ProgramValue::Int32(OldMachineTerm::constant(0)));
         let operand = SpecExpression::Value(value.clone());
         let expressions = [
             SpecExpression::Negate(Box::new(operand.clone())),
@@ -6477,7 +6494,7 @@ fn click_integer_unary_negation_keeps_subtraction_semantics() {
             SpecExpression::Subtract(Box::new(zero), Box::new(operand)),
             SpecExpression::ProgramExpression(ProgramExpression::Subtract(
                 Box::new(ProgramExpression::Value(ProgramValue::Int32(
-                    MachineTerm::constant(0),
+                    OldMachineTerm::constant(0),
                 ))),
                 Box::new(ProgramExpression::Value(value)),
             )),
@@ -6504,19 +6521,19 @@ fn common_float_arithmetic_round_trips_existing_operators() {
         (KernelFloatType::Float32, "float"),
         (KernelFloatType::Float64, "double"),
     ] {
-        let variable = MachineTerm::Variable(Variable(999936));
+        let variable = OldMachineTerm::Variable(Variable(999936));
         let state = ExecutionState::new().with_local("x", format.value(variable.clone()));
         let names = (BTreeMap::<_, String>::from([(Variable(999936), "x".to_string())]))
             .into_iter()
             .map(|(var, name)| (var, SurfaceBinder::from(name)))
             .collect::<BTreeMap<_, _>>();
         let literal = match format {
-            KernelFloatType::Float32 => MachineTerm::constant(0x80000000),
-            KernelFloatType::Float64 => MachineTerm::uint64_constant(0x8000000000000000),
+            KernelFloatType::Float32 => OldMachineTerm::constant(0x80000000),
+            KernelFloatType::Float64 => OldMachineTerm::uint64_constant(0x8000000000000000),
         };
         let mut sources = vec![match format {
-            KernelFloatType::Float32 => MachineTerm::float32_negate(variable.clone()),
-            KernelFloatType::Float64 => MachineTerm::float64_negate(variable.clone()),
+            KernelFloatType::Float32 => OldMachineTerm::float32_negate(variable.clone()),
+            KernelFloatType::Float64 => OldMachineTerm::float64_negate(variable.clone()),
         }];
         for operator in [
             FloatBinaryOperator::Add,
@@ -6526,10 +6543,10 @@ fn common_float_arithmetic_round_trips_existing_operators() {
         ] {
             sources.push(match format {
                 KernelFloatType::Float32 => {
-                    MachineTerm::float32_binary(variable.clone(), literal.clone(), operator)
+                    OldMachineTerm::float32_binary(variable.clone(), literal.clone(), operator)
                 }
                 KernelFloatType::Float64 => {
-                    MachineTerm::float64_binary(variable.clone(), literal.clone(), operator)
+                    OldMachineTerm::float64_binary(variable.clone(), literal.clone(), operator)
                 }
             });
         }
@@ -6581,55 +6598,55 @@ fn numeric_float_cast_spellings_match_native_conversions_and_round_trip() {
         ),
         (
             "int128",
-            ProgramValue::Int128(MachineTerm::Variable(Variable(999943))),
+            ProgramValue::Int128(OldMachineTerm::Variable(Variable(999943))),
         ),
         (
             "int32",
-            ProgramValue::Int32(MachineTerm::constant(16_777_217)),
+            ProgramValue::Int32(OldMachineTerm::constant(16_777_217)),
         ),
         (
             "int32",
-            ProgramValue::Int32(MachineTerm::Variable(Variable(999940))),
+            ProgramValue::Int32(OldMachineTerm::Variable(Variable(999940))),
         ),
         (
             "uint32",
-            ProgramValue::UInt32(MachineTerm::uint32_constant(u32::MAX)),
+            ProgramValue::UInt32(OldMachineTerm::uint32_constant(u32::MAX)),
         ),
         (
             "int64",
-            ProgramValue::Int64(MachineTerm::int64_constant(i64::MIN)),
+            ProgramValue::Int64(OldMachineTerm::int64_constant(i64::MIN)),
         ),
         (
             "uint64",
-            ProgramValue::UInt64(MachineTerm::uint64_constant(u64::MAX)),
+            ProgramValue::UInt64(OldMachineTerm::uint64_constant(u64::MAX)),
         ),
         (
             "float",
-            ProgramValue::Float32(MachineTerm::constant(0x80000000)),
+            ProgramValue::Float32(OldMachineTerm::constant(0x80000000)),
         ),
         (
             "float",
-            ProgramValue::Float32(MachineTerm::constant(0x7f800123)),
+            ProgramValue::Float32(OldMachineTerm::constant(0x7f800123)),
         ),
         (
             "float",
-            ProgramValue::Float32(MachineTerm::Variable(Variable(999941))),
+            ProgramValue::Float32(OldMachineTerm::Variable(Variable(999941))),
         ),
         (
             "double",
-            ProgramValue::Float64(MachineTerm::uint64_constant(0x8000000000000000)),
+            ProgramValue::Float64(OldMachineTerm::uint64_constant(0x8000000000000000)),
         ),
         (
             "double",
-            ProgramValue::Float64(MachineTerm::uint64_constant(0xfff8000000000123)),
+            ProgramValue::Float64(OldMachineTerm::uint64_constant(0xfff8000000000123)),
         ),
         (
             "double",
-            ProgramValue::Float64(MachineTerm::uint64_constant(0x3ff0000010000000)),
+            ProgramValue::Float64(OldMachineTerm::uint64_constant(0x3ff0000010000000)),
         ),
         (
             "double",
-            ProgramValue::Float64(MachineTerm::Variable(Variable(999942))),
+            ProgramValue::Float64(OldMachineTerm::Variable(Variable(999942))),
         ),
     ];
     for (source_name, value) in sources {
@@ -6711,8 +6728,8 @@ fn numeric_float_casts_read_historical_and_current_operands() {
     else {
         panic!("cast postcondition")
     };
-    let entry = ProgramValue::Int32(MachineTerm::constant(1));
-    let current = ProgramValue::Int32(MachineTerm::constant(3));
+    let entry = ProgramValue::Int32(OldMachineTerm::constant(1));
+    let current = ProgramValue::Int32(OldMachineTerm::constant(3));
     let state = ExecutionState::new().with_local("x", entry.clone());
     let spec = crate::surface::lowering::elaborate_fixed_state_expression(
         expression,
@@ -6740,7 +6757,7 @@ fn numeric_float_casts_read_historical_and_current_operands() {
         .unwrap();
     assert_eq!(
         value,
-        ProgramValue::Float64(MachineTerm::uint64_constant(0x4010000000000000))
+        ProgramValue::Float64(OldMachineTerm::uint64_constant(0x4010000000000000))
     );
     assert!(obligations.is_empty());
 }
@@ -6763,7 +6780,7 @@ fn numeric_float_cast_syntax_keeps_pointer_targets_and_c_style_refusals() {
 fn common_float_conversions_round_trip_existing_casts() {
     use crate::kernel::KernelFloatType;
     let _session = crate::kernel::VerificationSession::enter();
-    let variable = MachineTerm::Variable(Variable(999963));
+    let variable = OldMachineTerm::Variable(Variable(999963));
     let names = (BTreeMap::<_, String>::from([(Variable(999963), "x".to_string())]))
         .into_iter()
         .map(|(var, name)| (var, SurfaceBinder::from(name)))
@@ -6795,7 +6812,7 @@ fn common_float_conversions_round_trip_existing_casts() {
             if source_type == format.program_type() {
                 continue;
             }
-            let source = MachineTerm::opaque_conversion(
+            let source = OldMachineTerm::opaque_conversion(
                 format!(
                     "c_{}_to_{}",
                     crate::kernel::program_type_spelling(source_type),
@@ -6808,9 +6825,9 @@ fn common_float_conversions_round_trip_existing_casts() {
             } else {
                 ("c_float64_to_float32", "c_float32_to_float64")
             };
-            let nested = MachineTerm::opaque_conversion(
+            let nested = OldMachineTerm::opaque_conversion(
                 narrow,
-                MachineTerm::opaque_conversion(widen, source.clone()),
+                OldMachineTerm::opaque_conversion(widen, source.clone()),
             );
             for source in [source, nested] {
                 let expected = format.value(source.clone());
@@ -6855,7 +6872,7 @@ fn common_float_conversions_round_trip_existing_casts() {
 #[test]
 fn common_float_to_integer_conversions_round_trip_with_definedness() {
     let _session = crate::kernel::VerificationSession::enter();
-    let variable = MachineTerm::Variable(Variable(999963));
+    let variable = OldMachineTerm::Variable(Variable(999963));
     let names = (BTreeMap::<_, String>::from([(Variable(999963), "x".to_string())]))
         .into_iter()
         .map(|(var, name)| (var, SurfaceBinder::from(name)))
@@ -6885,7 +6902,7 @@ fn common_float_to_integer_conversions_round_trip_with_definedness() {
             if source_type == format.program_type() {
                 continue;
             }
-            let source = MachineTerm::opaque_conversion(
+            let source = OldMachineTerm::opaque_conversion(
                 format!(
                     "c_{}_to_{}",
                     crate::kernel::program_type_spelling(source_type),
@@ -6940,7 +6957,7 @@ fn common_float_to_integer_conversions_round_trip_with_definedness() {
 #[test]
 fn common_float_predicates_round_trip_existing_spelling() {
     let _session = crate::kernel::VerificationSession::enter();
-    let variable = MachineTerm::Variable(Variable(999977));
+    let variable = OldMachineTerm::Variable(Variable(999977));
     let names = (BTreeMap::<_, String>::from([(Variable(999977), "x".to_string())]))
         .into_iter()
         .map(|(var, name)| (var, SurfaceBinder::from(name)))
@@ -6979,9 +6996,9 @@ fn common_float_predicates_round_trip_existing_spelling() {
         }
         for condition in conditions {
             let condition = if spelling == "float" {
-                ConditionTerm::Float32(condition)
+                OldConditionTerm::Float32(condition)
             } else {
-                ConditionTerm::Float64(condition)
+                OldConditionTerm::Float64(condition)
             };
             let root = crate::kernel::KernelTermImport::default().condition(&condition);
             let surface =
@@ -7028,16 +7045,16 @@ fn common_float_calls_round_trip_existing_function_syntax() {
         (crate::kernel::KernelFloatType::Float32, "float"),
         (crate::kernel::KernelFloatType::Float64, "double"),
     ] {
-        let variable = MachineTerm::Variable(Variable(1008204));
+        let variable = OldMachineTerm::Variable(Variable(1008204));
         let names = (BTreeMap::<_, String>::from([(Variable(1008204), "x".to_string())]))
             .into_iter()
             .map(|(var, name)| (var, SurfaceBinder::from(name)))
             .collect::<BTreeMap<_, _>>();
         let state = ExecutionState::new().with_local("x", format.value(variable.clone()));
-        let source = MachineTerm::ClickFunctionApplication {
+        let source = OldMachineTerm::ClickFunctionApplication {
             name: "step".into(),
             arguments: vec![crate::kernel::PureFunctionArgument::Value(format.value(
-                MachineTerm::ClickFunctionApplication {
+                OldMachineTerm::ClickFunctionApplication {
                     name: "step".into(),
                     arguments: vec![crate::kernel::PureFunctionArgument::Value(
                         format.value(variable),
@@ -7087,27 +7104,26 @@ fn common_float_calls_round_trip_existing_function_syntax() {
 #[test]
 fn mixed_float_boolean_calls_round_trip_existing_surface_syntax() {
     let _session = crate::kernel::VerificationSession::enter();
-    let variable = MachineTerm::Variable(Variable(1008516));
+    let variable = OldMachineTerm::Variable(Variable(1008516));
     let names = (BTreeMap::<_, String>::from([(Variable(1008516), "x".to_string())]))
         .into_iter()
         .map(|(var, name)| (var, SurfaceBinder::from(name)))
         .collect::<BTreeMap<_, _>>();
     let state = ExecutionState::new().with_local("x", ProgramValue::Float32(variable.clone()));
     let condition =
-        crate::kernel::ConditionTerm::Float32(crate::kernel::FloatCondition::Comparison {
+        crate::kernel::OldConditionTerm::Float32(crate::kernel::FloatCondition::Comparison {
             operator: crate::kernel::ComparisonOperator::LessThan,
             left: Box::new(variable.clone()),
-            right: Box::new(MachineTerm::constant(0)),
+            right: Box::new(OldMachineTerm::constant(0)),
         });
-    let source = MachineTerm::ClickFunctionApplication {
+    let source = OldMachineTerm::ClickFunctionApplication {
         name: "mixed_sink".into(),
         arguments: vec![
-            crate::kernel::PureFunctionArgument::Value(ProgramValue::Bool(MachineTerm::bool_cast(
-                crate::kernel::MachineIntegerType::UInt8,
-                condition,
-            ))),
+            crate::kernel::PureFunctionArgument::Value(ProgramValue::Bool(
+                OldMachineTerm::bool_cast(crate::kernel::MachineIntegerType::UInt8, condition),
+            )),
             crate::kernel::PureFunctionArgument::Value(ProgramValue::Float32(
-                MachineTerm::ClickFunctionApplication {
+                OldMachineTerm::ClickFunctionApplication {
                     name: "mixed_seed".into(),
                     arguments: vec![crate::kernel::PureFunctionArgument::Value(
                         ProgramValue::Float32(variable),
@@ -7205,7 +7221,7 @@ fn comparison_over_named_word_round_trip(
     local_type: MachineIntegerType,
     comparison_type: MachineIntegerType,
 ) {
-    let word = MachineTerm::Variable(Variable(730_001));
+    let word = OldMachineTerm::Variable(Variable(730_001));
     let state = ExecutionState::new().with_local(
         "x",
         match local_type {
@@ -7215,10 +7231,10 @@ fn comparison_over_named_word_round_trip(
         },
     );
     let original = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: comparison_type,
             relation: CompareRelation::LessEqual,
-            left: Box::new(MachineTerm::constant(0)),
+            left: Box::new(OldMachineTerm::constant(0)),
             right: Box::new(word),
         },
         true,
@@ -7240,12 +7256,12 @@ fn unsigned_comparison_over_an_unsigned_local_round_trips() {
     comparison_over_named_word_round_trip(MachineIntegerType::UInt32, MachineIntegerType::UInt32);
 }
 
-fn raw_signed_nonnegative(word: MachineTerm) -> Proposition {
+fn raw_signed_nonnegative(word: OldMachineTerm) -> Proposition {
     Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessEqual,
-            left: Box::new(MachineTerm::constant(0)),
+            left: Box::new(OldMachineTerm::constant(0)),
             right: Box::new(word),
         },
         true,
@@ -7254,9 +7270,9 @@ fn raw_signed_nonnegative(word: MachineTerm) -> Proposition {
 
 #[test]
 fn unsigned_small_bound_produces_round_tripping_signed_facts() {
-    let word = MachineTerm::Variable(Variable(730_002));
+    let word = OldMachineTerm::Variable(Variable(730_002));
     let raw_signed_bound = raw_signed_nonnegative(word.clone());
-    let converted_signed_bound = raw_signed_nonnegative(MachineTerm::sign_cast32(
+    let converted_signed_bound = raw_signed_nonnegative(OldMachineTerm::sign_cast32(
         MachineIntegerType::UInt32,
         MachineIntegerType::Int32,
         word.clone(),
@@ -7264,22 +7280,22 @@ fn unsigned_small_bound_produces_round_tripping_signed_facts() {
     let parent = PureFactContext::new();
     assert!(!parent.contains_assumed_exact(&raw_signed_bound));
     let small = parent.clone().assume_condition(
-        ConditionTerm::unsigned_less_equal(word.clone(), MachineTerm::constant(256)),
+        OldConditionTerm::unsigned_less_equal(word.clone(), OldMachineTerm::constant(256)),
         true,
     );
     assert!(!small.contains_assumed_exact(&raw_signed_bound));
     let state = ExecutionState::new().with_local("x", ProgramValue::UInt32(word.clone()));
-    let signed_word = MachineTerm::sign_cast32(
+    let signed_word = OldMachineTerm::sign_cast32(
         MachineIntegerType::UInt32,
         MachineIntegerType::Int32,
         word.clone(),
     );
     let upper = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessEqual,
             left: Box::new(signed_word),
-            right: Box::new(MachineTerm::constant(256)),
+            right: Box::new(OldMachineTerm::constant(256)),
         },
         true,
     );
@@ -7295,7 +7311,7 @@ fn unsigned_small_bound_produces_round_tripping_signed_facts() {
         );
     }
     let beyond_sign_bit = parent.assume_condition(
-        ConditionTerm::unsigned_less_equal(word, MachineTerm::constant(0x8000_0000)),
+        OldConditionTerm::unsigned_less_equal(word, OldMachineTerm::constant(0x8000_0000)),
         true,
     );
     assert!(!beyond_sign_bit.contains_assumed_exact(&raw_signed_bound));
@@ -7304,14 +7320,14 @@ fn unsigned_small_bound_produces_round_tripping_signed_facts() {
 
 #[test]
 fn unsigned_small_bound_recovers_an_already_converted_signed_source() {
-    let signed = MachineTerm::Variable(Variable(730_003));
-    let unsigned = MachineTerm::sign_cast32(
+    let signed = OldMachineTerm::Variable(Variable(730_003));
+    let unsigned = OldMachineTerm::sign_cast32(
         MachineIntegerType::Int32,
         MachineIntegerType::UInt32,
         signed.clone(),
     );
     let facts = PureFactContext::new().assume_condition(
-        ConditionTerm::unsigned_less_equal(unsigned, MachineTerm::constant(256)),
+        OldConditionTerm::unsigned_less_equal(unsigned, OldMachineTerm::constant(256)),
         true,
     );
     assert!(facts.contains_assumed_exact(&raw_signed_nonnegative(signed)));
@@ -7329,7 +7345,7 @@ fn shared_constructor_fields_preserve_native_spelling_and_refusals() {
         .map(|(var, name)| (var, SurfaceBinder::from(name)))
         .collect::<BTreeMap<_, _>>();
     let state = ExecutionState::new();
-    let word = MachineTerm::Variable(variable);
+    let word = OldMachineTerm::Variable(variable);
     for value in [
         ProgramValue::Int32(word.clone()),
         ProgramValue::UInt32(word.clone()),
@@ -7341,11 +7357,11 @@ fn shared_constructor_fields_preserve_native_spelling_and_refusals() {
         ProgramValue::UInt16(word.clone()),
         ProgramValue::Bool(word),
         int32(7),
-        ProgramValue::UInt32(MachineTerm::uint32_constant(7)),
-        ProgramValue::UInt64(MachineTerm::uint64_constant(0)),
-        ProgramValue::of_bool(ConditionTerm::Constant(true)),
-        ProgramValue::of_bool(ConditionTerm::Constant(false)),
-        ProgramValue::of_bool(ConditionTerm::Variable(variable)),
+        ProgramValue::UInt32(OldMachineTerm::uint32_constant(7)),
+        ProgramValue::UInt64(OldMachineTerm::uint64_constant(0)),
+        ProgramValue::of_bool(OldConditionTerm::Constant(true)),
+        ProgramValue::of_bool(OldConditionTerm::Constant(false)),
+        ProgramValue::of_bool(OldConditionTerm::Variable(variable)),
     ] {
         let mut native =
             KernelMatch::test_scrutinee(vec![crate::kernel::AlgebraicValueType::Program(
@@ -7438,11 +7454,11 @@ fn shared_boolean_raising_preserves_overflow_and_algebraic_spelling() {
             OverflowOperation::Subtract,
             OverflowOperation::Multiply,
         ] {
-            conditions.push(ConditionTerm::Overflows {
+            conditions.push(OldConditionTerm::Overflows {
                 format,
                 op,
-                left: Box::new(MachineTerm::Variable(variable)),
-                right: Box::new(MachineTerm::Variable(variable)),
+                left: Box::new(OldMachineTerm::Variable(variable)),
+                right: Box::new(OldMachineTerm::Variable(variable)),
             });
         }
     }
@@ -7452,7 +7468,7 @@ fn shared_boolean_raising_preserves_overflow_and_algebraic_spelling() {
         variant: "Arm".into(),
         fields: vec![AlgebraicValue::Program(int32(7))],
     };
-    conditions.push(ConditionTerm::AlgebraicEqual(
+    conditions.push(OldConditionTerm::AlgebraicEqual(
         Box::new(constructor.clone()),
         Box::new(constructor),
     ));
@@ -7504,12 +7520,12 @@ fn shared_pointer_comparisons_preserve_native_spelling() {
     let state = ExecutionState::new();
     let names = BTreeMap::<Variable, SurfaceBinder>::new();
     for native in [
-        ConditionTerm::PointerEqual(Box::new(left.clone()), Box::new(right.clone())),
-        ConditionTerm::AddressEqual(
+        OldConditionTerm::PointerEqual(Box::new(left.clone()), Box::new(right.clone())),
+        OldConditionTerm::AddressEqual(
             Box::new(left.address().clone()),
             Box::new(right.address().clone()),
         ),
-        ConditionTerm::AddressEqual(Box::new(left.address().clone()), Box::new(Address::null())),
+        OldConditionTerm::AddressEqual(Box::new(left.address().clone()), Box::new(Address::null())),
     ] {
         let expected = synthesize_surface_bool(&native, binding, &state, &names).unwrap();
         let root = KernelTermImport::default().condition(&native);
@@ -7527,17 +7543,17 @@ fn closed_machine_orders_round_trip_after_checked_rewrite() {
         (
             "uint32",
             "u32",
-            ProgramValue::UInt32(MachineTerm::Variable(Variable(999701))),
+            ProgramValue::UInt32(OldMachineTerm::Variable(Variable(999701))),
         ),
         (
             "int64",
             "i64",
-            ProgramValue::Int64(MachineTerm::Variable(Variable(999701))),
+            ProgramValue::Int64(OldMachineTerm::Variable(Variable(999701))),
         ),
         (
             "uint64",
             "u64",
-            ProgramValue::UInt64(MachineTerm::Variable(Variable(999701))),
+            ProgramValue::UInt64(OldMachineTerm::Variable(Variable(999701))),
         ),
     ] {
         for bound in [5, 100] {
@@ -7567,8 +7583,8 @@ fn closed_machine_orders_round_trip_after_checked_rewrite() {
                 .unwrap()
                 .proposition()
                 .clone();
-            let Some((condition @ ConditionTerm::Compare { .. }, true)) =
-                produced.condition_native()
+            let Some((condition @ OldConditionTerm::Compare { .. }, true)) =
+                produced.old_condition()
             else {
                 panic!("retained native comparison: {produced:?}")
             };
@@ -7621,7 +7637,7 @@ fn closed_machine_order_short_circuits_undefined_right_operand() {
         matches!(&lowered, condition_source_0 @ Proposition::ConditionIs(
             _,
             true
-        ) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare {
+        ) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::Compare {
                 format: crate::kernel::MachineIntegerType::UInt64,
                 relation: CompareRelation::GreaterEqual,
                 ..
@@ -7652,13 +7668,13 @@ fn closed_machine_order_lowering_preserves_relations_and_truth_checking() {
             };
             let lowered = relower_written_proposition(written, &state).unwrap();
             let Some((
-                condition @ ConditionTerm::Compare {
+                condition @ OldConditionTerm::Compare {
                     format: actual,
                     relation: actual_relation,
                     ..
                 },
                 true,
-            )) = lowered.condition_native()
+            )) = lowered.old_condition()
             else {
                 panic!("{spelling} {operator}: {lowered:?}")
             };
@@ -7702,7 +7718,7 @@ fn machine_arithmetic_round_trips_after_checked_rewrite() {
                 Some(">>"),
             ] {
                 let _session = crate::kernel::VerificationSession::enter();
-                let value = MachineTerm::Variable(Variable(999701));
+                let value = OldMachineTerm::Variable(Variable(999701));
                 let value = match format {
                     T::Int32 => ProgramValue::Int32(value),
                     T::UInt32 => ProgramValue::UInt32(value),
@@ -7757,7 +7773,7 @@ fn machine_arithmetic_round_trips_after_checked_rewrite() {
                 };
                 assert_eq!(
                     PureFactContext::new()
-                        .decide(condition.native_compat())
+                        .decide(condition.old_form())
                         .map(|value| value == *truth),
                     Some(value <= bound)
                 );
@@ -7803,7 +7819,7 @@ fn assert_narrow_comparison_round_trip(
     state: &ExecutionState,
     lower: impl Fn(&SyntaxProposition) -> Proposition,
 ) {
-    let Some((ConditionTerm::Compare { format: actual, .. }, _)) = proposition.condition_native()
+    let Some((OldConditionTerm::Compare { format: actual, .. }, _)) = proposition.old_condition()
     else {
         panic!("expected a retained {format:?} comparison: {proposition:?}")
     };
@@ -7842,7 +7858,7 @@ fn narrow_comparisons_round_trip_after_checked_rewrite() {
             for operator in ["<", "<=", ">", ">="] {
                 for bound in [5, 100] {
                     let _session = crate::kernel::VerificationSession::enter();
-                    let x = source.value_from_term(MachineTerm::Variable(Variable(999702)));
+                    let x = source.value_from_term(OldMachineTerm::Variable(Variable(999702)));
                     let state = ExecutionState::new().with_local("x", x.clone());
                     let values = ProgramValueBindings::from([("x".to_string(), x)]);
                     let empty = BTreeMap::new();
@@ -7925,11 +7941,11 @@ fn narrow_symbolic_comparisons_keep_their_existing_normal_forms() {
         let state = ExecutionState::new()
             .with_local(
                 "a",
-                format.value_from_term(MachineTerm::Variable(Variable(999703))),
+                format.value_from_term(OldMachineTerm::Variable(Variable(999703))),
             )
             .with_local(
                 "b",
-                format.value_from_term(MachineTerm::Variable(Variable(999704))),
+                format.value_from_term(OldMachineTerm::Variable(Variable(999704))),
             );
         for operator in ["<", "<=", ">", ">=", "=="] {
             // Symbolic Integer observations keep their existing canonical
@@ -7961,12 +7977,13 @@ fn narrow_symbolic_comparisons_keep_their_existing_normal_forms() {
 fn pthread_handle_words_use_c_names_and_retained_states() {
     use crate::kernel::{KernelTermImport, ThreadHandleId};
     let _session = crate::kernel::VerificationSession::enter();
-    let native = MachineTerm::ThreadHandle(ThreadHandleId(1008820));
+    let native = OldMachineTerm::ThreadHandle(ThreadHandleId(1008820));
     let root = KernelTermImport::default().machine(MachineIntegerType::UInt64, &native);
     let saved = ExecutionState::new().with_local("h", ProgramValue::UInt64(native));
-    let now = saved
-        .clone()
-        .with_local("h", ProgramValue::UInt64(MachineTerm::uint64_constant(0)));
+    let now = saved.clone().with_local(
+        "h",
+        ProgramValue::UInt64(OldMachineTerm::uint64_constant(0)),
+    );
     let current =
         raise_kernel_term(&root, ParameterBinding::default(), &saved, &BTreeMap::new()).unwrap();
     assert_eq!(diagnostics::describe_contract_expression(&current), "h");
@@ -7991,7 +8008,7 @@ fn pthread_handle_words_use_c_names_and_retained_states() {
         panic!("comparison")
     };
     let view = crate::kernel::machine_integer::comparison::structural_comparison_view(
-        condition.native_compat(),
+        condition.old_form(),
     )
     .unwrap();
     assert_eq!(view.format, MachineIntegerType::Int64);
@@ -8012,7 +8029,7 @@ fn check_int64_literal_comparison_round_trips(values: &[i64]) {
                 let _session = crate::kernel::VerificationSession::enter();
                 let state = ExecutionState::new().with_local(
                     "x",
-                    ProgramValue::Int64(MachineTerm::Variable(Variable(999707))),
+                    ProgramValue::Int64(OldMachineTerm::Variable(Variable(999707))),
                 );
                 let parse = |text: &str| {
                     let file = parser::parse(&format!(
@@ -8087,7 +8104,7 @@ fn negative_int64_comparisons_round_trip_under_point_selectors() {
     let state = ExecutionState::new();
     let word = |n| {
         SyntaxTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Int64(
-            MachineTerm::int64_constant(n),
+            OldMachineTerm::int64_constant(n),
         )))
     };
     for left in [
@@ -8188,19 +8205,19 @@ impl<'a> ConditionalRoundTrip<'a> {
         let state = ExecutionState::new()
             .with_local(
                 "x",
-                format.value_from_term(MachineTerm::Variable(Variable(999708))),
+                format.value_from_term(OldMachineTerm::Variable(Variable(999708))),
             )
             .with_local(
                 "y",
-                format.value_from_term(MachineTerm::Variable(Variable(999709))),
+                format.value_from_term(OldMachineTerm::Variable(Variable(999709))),
             )
             .with_local(
                 "z",
-                format.value_from_term(MachineTerm::Variable(Variable(999710))),
+                format.value_from_term(OldMachineTerm::Variable(Variable(999710))),
             )
             .with_local(
                 "flag",
-                ProgramValue::of_bool(ConditionTerm::Variable(Variable(999711))),
+                ProgramValue::of_bool(OldConditionTerm::Variable(Variable(999711))),
             );
         Self {
             spelling,
@@ -8409,7 +8426,7 @@ fn boolean_equality_guards_round_trip_after_rewrite() {
         for (name, id) in [("a", 999712), ("b", 999713)] {
             fixture.state = fixture.state.with_local(
                 name,
-                ProgramValue::of_bool(ConditionTerm::Variable(Variable(id))),
+                ProgramValue::of_bool(OldConditionTerm::Variable(Variable(id))),
             );
         }
         for replacement in [
@@ -8504,13 +8521,13 @@ fn closed_machine_equality_lowering_retains_its_comparison() {
             };
             let lowered = relower_written_proposition(written, &state).unwrap();
             let Some((
-                condition @ ConditionTerm::Compare {
+                condition @ OldConditionTerm::Compare {
                     format: actual,
                     relation: CompareRelation::Equal,
                     ..
                 },
                 actual_held,
-            )) = lowered.condition_native()
+            )) = lowered.old_condition()
             else {
                 panic!("{source}: {lowered:?}")
             };
@@ -8544,7 +8561,7 @@ fn a_constant_condition_raises_as_a_bool_literal_that_lowers_back() {
     let state = ExecutionState::new();
     for constant in [false, true] {
         for held in [false, true] {
-            let kernel = Proposition::condition_is(ConditionTerm::Constant(constant), held);
+            let kernel = Proposition::condition_is(OldConditionTerm::Constant(constant), held);
             let raised =
                 synthesize_surface_proposition(&kernel, ParameterBinding::default(), &state)
                     .unwrap();
@@ -8594,8 +8611,8 @@ fn closed_bool_literal_comparison_lowering_retains_its_comparison() {
             panic!("requirement")
         };
         let lowered = relower_written_proposition(written, &state).unwrap();
-        let Some((condition @ ConditionTerm::BoolEqual(..), actual_held)) =
-            lowered.condition_native()
+        let Some((condition @ OldConditionTerm::BoolEqual(..), actual_held)) =
+            lowered.old_condition()
         else {
             panic!("{source}: {lowered:?}")
         };
@@ -8645,7 +8662,7 @@ fn nested_machine_conditionals_round_trip_after_rewrite() {
         let mut fixture = ConditionalRoundTrip::new(format, spelling);
         fixture.state = fixture.state.with_local(
             "inner",
-            ProgramValue::of_bool(ConditionTerm::Variable(Variable(999712))),
+            ProgramValue::of_bool(OldConditionTerm::Variable(Variable(999712))),
         );
         for replacement in [
             "y".into(),
@@ -8733,11 +8750,11 @@ fn intrinsically_decided_bitwise_guards_retain_their_conditionals() {
         let state = ExecutionState::new()
             .with_local(
                 "z",
-                format.value_from_term(MachineTerm::Variable(Variable(999710))),
+                format.value_from_term(OldMachineTerm::Variable(Variable(999710))),
             )
             .with_local(
                 "y",
-                format.value_from_term(MachineTerm::Variable(Variable(999709))),
+                format.value_from_term(OldMachineTerm::Variable(Variable(999709))),
             );
         for guard in [
             format!("(z & (7 as {spelling})) < (100 as {spelling})"),
@@ -8759,7 +8776,7 @@ fn intrinsically_decided_bitwise_guards_retain_their_conditionals() {
             };
             let original = relower_written_proposition(written, &state).unwrap();
             assert!(
-                matches!(&original, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare { left, .. }, _)) if (matches!(left.as_ref(), MachineTerm::If { .. })))),
+                matches!(&original, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::Compare { left, .. }, _)) if (matches!(left.as_ref(), OldMachineTerm::If { .. })))),
                 "{text}: {original:?}"
             );
             let raised =
@@ -8803,11 +8820,11 @@ fn mixed_format_integer_comparisons_of_bitwise_values_round_trip() {
         let state = ExecutionState::new()
             .with_local(
                 "z",
-                format.value_from_term(MachineTerm::Variable(Variable(999710))),
+                format.value_from_term(OldMachineTerm::Variable(Variable(999710))),
             )
             .with_local(
                 "y",
-                format.value_from_term(MachineTerm::Variable(Variable(999709))),
+                format.value_from_term(OldMachineTerm::Variable(Variable(999709))),
             );
         for op in ["&", "|", "^"] {
             let text = format!("(z {op} (7 as {spelling})) < y");
@@ -8820,8 +8837,8 @@ fn mixed_format_integer_comparisons_of_bitwise_values_round_trip() {
                 panic!()
             };
             let native = relower_written_proposition(written, &state).unwrap();
-            let Some((ConditionTerm::Compare { left, right, .. }, true)) =
-                native.condition_native()
+            let Some((OldConditionTerm::Compare { left, right, .. }, true)) =
+                native.old_condition()
             else {
                 panic!("native bitwise comparison");
             };
@@ -8839,11 +8856,11 @@ fn mixed_format_integer_comparisons_of_bitwise_values_round_trip() {
                     .unwrap();
             let state = state.clone().with_local(
                 "y",
-                other_format.value_from_term(MachineTerm::Variable(Variable(999709))),
+                other_format.value_from_term(OldMachineTerm::Variable(Variable(999709))),
             );
             for condition in [
-                ConditionTerm::integer_less_than(left.clone(), right.clone()),
-                ConditionTerm::integer_equal(left, right),
+                OldConditionTerm::integer_less_than(left.clone(), right.clone()),
+                OldConditionTerm::integer_equal(left, right),
             ] {
                 for truth in [true, false] {
                     let original = Proposition::condition_is(condition.clone(), truth);
@@ -8964,7 +8981,7 @@ fn variable_shift_counts_in_conditionals_round_trip_after_rewrite() {
         let mut fixture = ConditionalRoundTrip::new(format, spelling);
         fixture.state = fixture.state.with_local(
             "w",
-            format.value_from_term(MachineTerm::Variable(Variable(999712))),
+            format.value_from_term(OldMachineTerm::Variable(Variable(999712))),
         );
         for count in ["w", "3"] {
             let equality = fixture.lower(&format!("x == (z {operator} {count})"));
@@ -8992,7 +9009,7 @@ fn signed_variable_arithmetic_in_conditionals_round_trips_after_rewrite() {
         let mut fixture = ConditionalRoundTrip::new(format, spelling);
         fixture.state = fixture.state.with_local(
             "w",
-            format.value_from_term(MachineTerm::Variable(Variable(999712))),
+            format.value_from_term(OldMachineTerm::Variable(Variable(999712))),
         );
         for operator in ["+", "-", "*", "&"] {
             let equality = fixture.lower(&format!("x == ((z {operator} w) as {spelling})"));
@@ -9050,7 +9067,7 @@ fn two_variable_unsigned_arithmetic_in_conditionals_round_trips_after_rewrite() 
         let mut fixture = ConditionalRoundTrip::new(format, spelling);
         fixture.state = fixture.state.clone().with_local(
             "w",
-            format.value_from_term(MachineTerm::Variable(Variable(999712))),
+            format.value_from_term(OldMachineTerm::Variable(Variable(999712))),
         );
         for operator in ["+", "-", "*"] {
             let equality = fixture.lower(&format!("x == ((z {operator} w) as {spelling})"));
@@ -9078,7 +9095,7 @@ fn variable_divisors_in_conditionals_round_trip_after_rewrite() {
         let mut fixture = ConditionalRoundTrip::new(format, spelling);
         fixture.state = fixture.state.with_local(
             "w",
-            format.value_from_term(MachineTerm::Variable(Variable(999712))),
+            format.value_from_term(OldMachineTerm::Variable(Variable(999712))),
         );
         for operator in ["/", "%"] {
             let literal = format!("(3 as {spelling})");
@@ -9211,7 +9228,7 @@ fn a_reflexive_pointer_equality_raises_as_contract_equality_that_lowers_back() {
     // address-word equality, and lowering keeps its node.
     for (held, expected) in [(true, "node == node"), (false, "node != node")] {
         let equality = Proposition::condition_is(
-            ConditionTerm::AddressEqual(
+            OldConditionTerm::AddressEqual(
                 Box::new(node.address().clone()),
                 Box::new(node.address().clone()),
             ),
@@ -9247,7 +9264,7 @@ fn call_capture_names_the_selected_result_at_its_declared_type() {
             crate::kernel::program_seq(call, crate::kernel::program_assign(&capture, result)),
         ));
     let layout = crate::surface::lowering::SourceExecutionLayout::for_function(&function).unwrap();
-    let term = MachineTerm::Variable(Variable(977_921));
+    let term = OldMachineTerm::Variable(Variable(977_921));
     let value = ProgramValue::Int32(term.clone());
     let state = ExecutionState::new().with_local(&capture, value.clone());
     let mut points = RecordedStates::new().with_source_layout(layout);
@@ -9256,7 +9273,7 @@ fn call_capture_names_the_selected_result_at_its_declared_type() {
         0,
     )]));
 
-    let raise = |points: &RecordedStates, sought: &MachineTerm, state: &ExecutionState| {
+    let raise = |points: &RecordedStates, sought: &OldMachineTerm, state: &ExecutionState| {
         let _scope = SynthesisRecordedPointsScope::enter(points);
         synthesize_surface_bitvector(sought, ParameterBinding::default(), state, &BTreeMap::new())
     };
@@ -9269,7 +9286,7 @@ fn call_capture_names_the_selected_result_at_its_declared_type() {
 
     // The same static call runs again and its capture is assigned a new
     // symbolic value. The earlier value is still named at the proof mark.
-    let newer = MachineTerm::Variable(Variable(977_922));
+    let newer = OldMachineTerm::Variable(Variable(977_922));
     let newer_value = ProgramValue::Int32(newer.clone());
     let current = state.clone().with_local(&capture, newer_value.clone());
     points.record_call_result(0, Some(newer_value.clone()));
@@ -9322,7 +9339,7 @@ fn widening_casts_in_conditionals_round_trip_after_rewrite() {
             let mut fixture = ConditionalRoundTrip::new(destination, spelling);
             fixture.state = fixture.state.with_local(
                 "w",
-                source.value_from_term(MachineTerm::Variable(Variable(999712))),
+                source.value_from_term(OldMachineTerm::Variable(Variable(999712))),
             );
             let equality = fixture.lower(&format!("x == (w as {spelling})"));
             for reverse in [false, true] {
@@ -9360,7 +9377,7 @@ fn signedness_casts_in_conditionals_round_trip_after_rewrite() {
         let mut fixture = ConditionalRoundTrip::new(destination, spelling);
         fixture.state = fixture.state.with_local(
             "w",
-            source.value_from_term(MachineTerm::Variable(Variable(999712))),
+            source.value_from_term(OldMachineTerm::Variable(Variable(999712))),
         );
         let equality = fixture.lower(&format!("x == (w as {spelling})"));
         for reverse in [false, true] {
@@ -9393,7 +9410,7 @@ fn low_word_casts_in_conditionals_round_trip_after_rewrite() {
             let mut fixture = ConditionalRoundTrip::new(destination, spelling);
             fixture.state = fixture.state.with_local(
                 "w",
-                source.value_from_term(MachineTerm::Variable(Variable(999712))),
+                source.value_from_term(OldMachineTerm::Variable(Variable(999712))),
             );
             let equality = fixture.lower(&format!("x == (w as {spelling})"));
             for reverse in [false, true] {
@@ -9452,7 +9469,7 @@ fn identical_word_comparisons_keep_their_comparison_through_lowering() {
         .with_local("p", ProgramValue::Pointer(pointer))
         .with_local(
             "w",
-            ProgramValue::UInt64(MachineTerm::Variable(Variable(999_961))),
+            ProgramValue::UInt64(OldMachineTerm::Variable(Variable(999_961))),
         );
     let lower = |text: &str| {
         let file = parser::parse(&format!(
@@ -9469,15 +9486,15 @@ fn identical_word_comparisons_keep_their_comparison_through_lowering() {
         panic!("a held comparison")
     };
     assert!(
-        matches!(condition.native_compat(), ConditionTerm::Compare { .. }),
+        matches!(condition.old_form(), OldConditionTerm::Compare { .. }),
         "{condition:?}"
     );
-    assert_eq!(condition.native_compat().reflexive_value(), Some(true));
+    assert_eq!(condition.old_form().reflexive_value(), Some(true));
     let Proposition::ConditionIs(range, true) = lower("0u64 <= w") else {
         panic!("a held comparison")
     };
     assert!(
-        matches!(range.native_compat(), ConditionTerm::Constant(true)),
+        matches!(range.old_form(), OldConditionTerm::Constant(true)),
         "{range:?}"
     );
 }
@@ -9496,7 +9513,7 @@ fn pure_machine_conditional_operands_round_trip_after_rewrite() {
         let mut fixture = ConditionalRoundTrip::new(format, spelling);
         fixture.state = fixture.state.with_local(
             "inner",
-            ProgramValue::of_bool(ConditionTerm::Variable(Variable(999712))),
+            ProgramValue::of_bool(OldConditionTerm::Variable(Variable(999712))),
         );
         for replacement in [
             "y",
@@ -9578,8 +9595,8 @@ fn comparisons_of_conditionals_with_integer_conversions_round_trip_after_rewrite
             let original = fixture.lower(&written);
             assert!(
                 matches!(
-                    original.condition_native(),
-                    Some((ConditionTerm::Compare { .. }, true))
+                    original.old_condition(),
+                    Some((OldConditionTerm::Compare { .. }, true))
                 ),
                 "{written}: {original:?}"
             );
@@ -9600,8 +9617,8 @@ fn reflexive_boolean_comparisons_round_trip_after_exact_rewrite() {
         let original = fixture.lower(&format!("{left} {operator} {right}"));
         let proof = facts.check_equality_rewrite(&original, &equality).unwrap();
         let expected = proof.proposition();
-        let Some((condition @ ConditionTerm::BoolEqual(left, right), polarity)) =
-            expected.condition_native()
+        let Some((condition @ OldConditionTerm::BoolEqual(left, right), polarity)) =
+            expected.old_condition()
         else {
             panic!("expected a Boolean comparison, got {expected:?}");
         };
@@ -9610,8 +9627,8 @@ fn reflexive_boolean_comparisons_round_trip_after_exact_rewrite() {
         assert_eq!(PureFactContext::new().decide(condition), Some(true));
         let direct = fixture.lower(&format!("flag {operator} flag"));
         assert!(matches!(
-            direct.condition_native(),
-            Some((ConditionTerm::BoolEqual(left, right), polarity))
+            direct.old_condition(),
+            Some((OldConditionTerm::BoolEqual(left, right), polarity))
                 if left == right && *polarity == truth
         ));
         let raised =
@@ -9673,7 +9690,7 @@ fn literal_float_comparisons_preserve_ieee_truth_and_round_trip() {
                 "{written}"
             );
             assert_eq!(
-                PureFactContext::new().decide(condition.native_compat()),
+                PureFactContext::new().decide(condition.old_form()),
                 Some(truth),
                 "{written}"
             );
@@ -9731,8 +9748,8 @@ fn integer_match_on_written_constructor_round_trips() {
     };
     let original = lower(proposition);
     assert!(matches!(
-        original.condition_native(),
-        Some((ConditionTerm::IntegerEqual(left, _), true))
+        original.old_condition(),
+        Some((OldConditionTerm::IntegerEqual(left, _), true))
             if matches!(left.as_ref(), crate::kernel::IntegerTerm::AlgebraicMatch { .. })
     ));
     let raised =
@@ -9858,7 +9875,7 @@ fn declared_predicate_array_raises_and_lowers_its_entry_point() {
     let _session = crate::kernel::VerificationSession::enter();
     let address = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let entry = ExecutionState::new()
         .with_local(
@@ -9868,7 +9885,7 @@ fn declared_predicate_array_raises_and_lowers_its_entry_point() {
         .begin_function_entry_memory();
     let post = entry.clone().with_memory(entry.memory().clone().store(
         address.clone(),
-        ProgramValue::Int32(MachineTerm::constant(9)),
+        ProgramValue::Int32(OldMachineTerm::constant(9)),
     ));
     let entry_view = entry.clone().with_materialized_memory_at_current_point(
         entry.memory().clone().materialize_cell_at(
@@ -9935,7 +9952,7 @@ fn declared_predicate_array_raises_at_its_write_point() {
     let _session = crate::kernel::VerificationSession::enter();
     let address = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let entry = ExecutionState::new()
         .with_local(
@@ -9946,7 +9963,7 @@ fn declared_predicate_array_raises_at_its_write_point() {
     let write = |state: &ExecutionState| {
         state.clone().with_memory(state.memory().clone().store(
             address.clone(),
-            ProgramValue::Int32(MachineTerm::constant(7)),
+            ProgramValue::Int32(OldMachineTerm::constant(7)),
         ))
     };
     let first = write(&entry);
@@ -10121,7 +10138,7 @@ fn generic_parameter_cell_raises_and_lowers_its_entry_version() {
     let ty = TypeParameterName::intern("GenericEntryRead");
     let address = |id| Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Variable(Variable(id)),
+        offset: OldAddressOffset::Variable(Variable(id)),
     };
     let left = address(1008401);
     let right = address(1008402);
@@ -10144,7 +10161,7 @@ fn generic_parameter_cell_raises_and_lowers_its_entry_version() {
         entry
             .memory()
             .clone()
-            .store(left, ProgramValue::Int32(MachineTerm::constant(9))),
+            .store(left, ProgramValue::Int32(OldMachineTerm::constant(9))),
     );
     let file = crate::surface::parse(
         "theorem probe<GenericEntryRead>(p: GenericEntryRead*, q: GenericEntryRead*) {
@@ -10171,7 +10188,7 @@ fn generic_parameter_cell_raises_and_lowers_its_entry_version() {
         .map(|(proposition, _, _, _)| proposition)
     };
     let original = lower(written).unwrap();
-    let Some((ConditionTerm::AlgebraicEqual(left, right), true)) = original.condition_native()
+    let Some((OldConditionTerm::AlgebraicEqual(left, right), true)) = original.old_condition()
     else {
         panic!("generic value equality: {original:?}");
     };
@@ -10200,26 +10217,26 @@ fn generic_parameter_cell_raises_and_lowers_its_entry_version() {
 #[test]
 fn nested_operand_definedness_round_trips() {
     let format = MachineIntegerType::Int32;
-    let a = MachineTerm::Variable(Variable(973_001));
-    let b = MachineTerm::Variable(Variable(973_002));
-    let c = MachineTerm::Variable(Variable(973_003));
+    let a = OldMachineTerm::Variable(Variable(973_001));
+    let b = OldMachineTerm::Variable(Variable(973_002));
+    let c = OldMachineTerm::Variable(Variable(973_003));
     let state = ExecutionState::new()
         .with_local("a", ProgramValue::Int32(a.clone()))
         .with_local("b", ProgramValue::Int32(b.clone()))
         .with_local("c", ProgramValue::Int32(c.clone()));
-    let inner = MachineTerm::machine_binary(format, MachineBinaryOp::Add, a, b);
+    let inner = OldMachineTerm::machine_binary(format, MachineBinaryOp::Add, a, b);
     let range = Proposition::signed_arithmetic_domain(format, MachineBinaryOp::Add, &inner, &c);
     let flat_atom = Proposition::condition_is(
-        ConditionTerm::Overflows {
+        OldConditionTerm::Overflows {
             format,
             op: OverflowOperation::Add,
-            left: Box::new(MachineTerm::Variable(Variable(973_001))),
-            right: Box::new(MachineTerm::Variable(Variable(973_002))),
+            left: Box::new(OldMachineTerm::Variable(Variable(973_001))),
+            right: Box::new(OldMachineTerm::Variable(Variable(973_002))),
         },
         false,
     );
     let atom = Proposition::condition_is(
-        ConditionTerm::Overflows {
+        OldConditionTerm::Overflows {
             format,
             op: OverflowOperation::Add,
             left: Box::new(inner),
@@ -10239,11 +10256,11 @@ fn nested_operand_definedness_round_trips() {
     };
     let ab = spelled(&flat_atom);
     let ac = spelled(&Proposition::condition_is(
-        ConditionTerm::Overflows {
+        OldConditionTerm::Overflows {
             format,
             op: OverflowOperation::Add,
-            left: Box::new(MachineTerm::Variable(Variable(973_001))),
-            right: Box::new(MachineTerm::Variable(Variable(973_003))),
+            left: Box::new(OldMachineTerm::Variable(Variable(973_001))),
+            right: Box::new(OldMachineTerm::Variable(Variable(973_003))),
         },
         false,
     ));
@@ -10264,8 +10281,8 @@ fn nested_operand_definedness_round_trips() {
     let flat_range = Proposition::signed_arithmetic_domain(
         format,
         MachineBinaryOp::Add,
-        &MachineTerm::Variable(Variable(973_001)),
-        &MachineTerm::Variable(Variable(973_002)),
+        &OldMachineTerm::Variable(Variable(973_001)),
+        &OldMachineTerm::Variable(Variable(973_002)),
     );
     let mut failures = Vec::new();
     for (name, fact, expected) in [

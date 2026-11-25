@@ -8,11 +8,11 @@ use crate::kernel::binary_node;
 #[test]
 fn retained_contract_offset_rewrite_visits_shared_displacements_once() {
     let _session = VerificationSession::enter();
-    let from = MachineTerm::Variable(Variable(970_008));
-    let to = MachineTerm::Variable(Variable(970_009));
-    let repeated = |index: &MachineTerm, depth| {
+    let from = OldMachineTerm::Variable(Variable(970_008));
+    let to = OldMachineTerm::Variable(Variable(970_009));
+    let repeated = |index: &OldMachineTerm, depth| {
         let mut root =
-            KernelAddressOffset::import(&AddressOffset::scaled_int32_node(index.clone(), 4));
+            KernelAddressOffset::import(&OldAddressOffset::scaled_int32_node(index.clone(), 4));
         for _ in 0..depth {
             root = KernelAddressOffset::Add([root.clone(), root])
                 .into_shared()
@@ -96,7 +96,7 @@ fn full_pointer_alias_keeps_typed_constructor_fields_in_linear_work() {
             panic!("constructor expected")
         };
         let fields = actual
-            .native_compat()
+            .old_form()
             .checked_constructor_fields()
             .expect("rewriting preserves the typed constructor");
         for field in fields {
@@ -163,13 +163,13 @@ fn nested_c_folds_and_adt_matches_reserve_actual_nodes_linearly() {
             let binding = Variable(10_000 + index as u64);
             let accumulator = Variable(11_000 + index as u64);
             let item = Variable(12_000 + index as u64);
-            let fold = MachineTerm::RangeFold {
-                start: Box::new(MachineTerm::constant(0)),
-                end: Box::new(MachineTerm::constant(2)),
-                initial: Box::new(MachineTerm::constant(0)),
+            let fold = OldMachineTerm::RangeFold {
+                start: Box::new(OldMachineTerm::constant(0)),
+                end: Box::new(OldMachineTerm::constant(2)),
+                initial: Box::new(OldMachineTerm::constant(0)),
                 accumulator,
                 item,
-                body: Box::new(MachineTerm::Variable(accumulator)),
+                body: Box::new(OldMachineTerm::Variable(accumulator)),
             };
             let observed = IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
                 "observe_fold".into(),
@@ -185,15 +185,15 @@ fn nested_c_folds_and_adt_matches_reserve_actual_nodes_linearly() {
                     binding_names: Default::default(),
                     variant: "Case".into(),
                     bindings: vec![AlgebraicValue::Program(ProgramValue::Int32(
-                        MachineTerm::Variable(binding),
+                        OldMachineTerm::Variable(binding),
                     ))],
                     body: body.into(),
                 }],
             };
         }
         let (visits, measured) = crate::instrumentation::measure_deterministic_work(|| {
-            let from = MachineTerm::Variable(Variable(90_000));
-            let to = MachineTerm::constant(0);
+            let from = OldMachineTerm::Variable(Variable(90_000));
+            let to = OldMachineTerm::constant(0);
             let mut rewrite = TermRewrite::for_bits(&from, &to);
             let _ = rewrite.term(&Term::Integer(expression.clone().into()));
             rewrite.visits
@@ -212,8 +212,8 @@ fn nested_c_folds_and_adt_matches_reserve_actual_nodes_linearly() {
 #[test]
 fn registered_load_rewrite_keeps_branching_pointer_dag_compact() {
     let source = Variable(3_104_000);
-    let source_term = MachineTerm::Variable(source);
-    let replacement = MachineTerm::constant(9);
+    let source_term = OldMachineTerm::Variable(source);
+    let replacement = OldMachineTerm::constant(9);
     let mut work = Vec::new();
     let mut last_load = None;
     for depth in [8usize, 16, 32, 64] {
@@ -225,7 +225,7 @@ fn registered_load_rewrite_keeps_branching_pointer_dag_compact() {
             &memory,
             &Address {
                 base: AddressBase::Concrete(block.clone()),
-                offset: AddressOffset::scaled_int32_node(source_term.clone(), 4),
+                offset: OldAddressOffset::scaled_int32_node(source_term.clone(), 4),
             },
             crate::kernel::LoadKind::Int32,
             4,
@@ -235,13 +235,13 @@ fn registered_load_rewrite_keeps_branching_pointer_dag_compact() {
                 &memory,
                 &Address {
                     base: AddressBase::Concrete(block.clone()),
-                    offset: AddressOffset::Add(
-                        Box::new(AddressOffset::scaled_int32_node(
-                            MachineTerm::Variable(load),
+                    offset: OldAddressOffset::Add(
+                        Box::new(OldAddressOffset::scaled_int32_node(
+                            OldMachineTerm::Variable(load),
                             4,
                         )),
-                        Box::new(AddressOffset::scaled_int32_node(
-                            MachineTerm::Variable(load),
+                        Box::new(OldAddressOffset::scaled_int32_node(
+                            OldMachineTerm::Variable(load),
                             4,
                         )),
                     ),
@@ -252,7 +252,7 @@ fn registered_load_rewrite_keeps_branching_pointer_dag_compact() {
         }
         let body = IntegerTerm::Machine(crate::kernel::SharedMachineIntegerTerm::intern(
             crate::kernel::MachineIntegerType::Int32,
-            MachineTerm::Variable(load),
+            OldMachineTerm::Variable(load),
         ));
         let (output, measured) = crate::instrumentation::measure_deterministic_work(|| {
             let mut rewrite = TermRewrite::for_bits_checked(&source_term, &replacement);
@@ -280,7 +280,7 @@ fn registered_load_rewrite_keeps_branching_pointer_dag_compact() {
         );
         assert_eq!(retained_state, &memory);
         assert!(pointer.offset.native_scaled_values_for_output().iter().all(
-            |value| matches!(value, MachineTerm::MemoryLoad(retained_state, _, _) if retained_state.shared_memory() == &memory)
+            |value| matches!(value, OldMachineTerm::MemoryLoad(retained_state, _, _) if retained_state.shared_memory() == &memory)
         ));
         last_load = Some(load);
         work.push(measured);
@@ -296,7 +296,7 @@ fn registered_load_rewrite_keeps_branching_pointer_dag_compact() {
     let mut cycle_rewrite = TermRewrite::for_bits_checked(&source_term, &replacement);
     cycle_rewrite.enable_registered_load_resolution();
     cycle_rewrite.registered_load_pointer_active.insert(load);
-    let _ = cycle_rewrite.bits(&MachineTerm::Variable(load));
+    let _ = cycle_rewrite.bits(&OldMachineTerm::Variable(load));
     assert_eq!(
         cycle_rewrite.refusal(),
         Some(RewriteRefusal::UnsupportedScope)
@@ -463,8 +463,10 @@ fn integer_fold_nested_capture_and_nocapture_work_scales_linearly() {
     fn int32_index_fold(body: IntegerTerm, accumulator: Variable, item: Variable) -> IntegerTerm {
         IntegerTerm::range_fold(
             crate::kernel::IntegerRangeFoldIndex::Int32 {
-                start: crate::kernel::SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0)),
-                end: crate::kernel::SharedIntegerRangeEndpoint::intern(MachineTerm::constant(1)),
+                start: crate::kernel::SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(
+                    0,
+                )),
+                end: crate::kernel::SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(1)),
             },
             IntegerTerm::constant_i64(0),
             accumulator,
@@ -504,7 +506,7 @@ fn integer_fold_nested_capture_and_nocapture_work_scales_linearly() {
             unreachable!()
         };
         let mut free = std::collections::BTreeSet::new();
-        crate::kernel::prelude::collect_integer_free_variables(result.native_compat(), &mut free);
+        crate::kernel::prelude::collect_integer_free_variables(result.old_form(), &mut free);
         assert!(!free.contains(&source));
         nocapture_work.push(work);
     }
@@ -528,7 +530,7 @@ fn integer_fold_nested_capture_and_nocapture_work_scales_linearly() {
                 integer_to_c_replacement,
                 IntegerTerm::Machine(crate::kernel::SharedMachineIntegerTerm::intern(
                     crate::kernel::MachineIntegerType::Int32,
-                    MachineTerm::Variable(program_item),
+                    OldMachineTerm::Variable(program_item),
                 )),
             );
         }
@@ -555,7 +557,7 @@ fn integer_fold_nested_capture_and_nocapture_work_scales_linearly() {
             accumulator: fresh_accumulator,
             item: fresh_item,
             ..
-        } = result.native_compat()
+        } = result.old_form()
         else {
             unreachable!()
         };
@@ -563,13 +565,13 @@ fn integer_fold_nested_capture_and_nocapture_work_scales_linearly() {
         assert_ne!(*fresh_item, program_item);
         let mut free_integer = std::collections::BTreeSet::new();
         crate::kernel::prelude::collect_integer_free_variables(
-            result.native_compat(),
+            result.old_form(),
             &mut free_integer,
         );
         assert!(free_integer.contains(&integer_accumulator));
         let mut free_c = std::collections::BTreeSet::new();
         crate::kernel::prelude::collect_integer_capture_bitvector_variables(
-            result.native_compat(),
+            result.old_form(),
             &mut free_c,
         );
         assert!(free_c.contains(&program_item));
@@ -583,7 +585,7 @@ fn integer_fold_nested_capture_and_nocapture_work_scales_linearly() {
     for depth in depths {
         let mut nested = IntegerTerm::Machine(crate::kernel::SharedMachineIntegerTerm::intern(
             crate::kernel::MachineIntegerType::Int32,
-            MachineTerm::Variable(c_source),
+            OldMachineTerm::Variable(c_source),
         ));
         for _ in 0..depth {
             nested = integer_index_fold(
@@ -596,12 +598,12 @@ fn integer_fold_nested_capture_and_nocapture_work_scales_linearly() {
         for _ in 0..depth {
             replacement_value = IntegerTerm::add(replacement_value, IntegerTerm::constant_i64(1));
         }
-        let c_to_integer_replacement = MachineTerm::IntegerToMachine {
+        let c_to_integer_replacement = OldMachineTerm::IntegerToMachine {
             value: SharedIntegerTerm::from(replacement_value),
             destination: crate::kernel::MachineIntegerType::Int32,
         };
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-            let source_term = MachineTerm::Variable(c_source);
+            let source_term = OldMachineTerm::Variable(c_source);
             let mut rewrite = TermRewrite::for_bits(&source_term, &c_to_integer_replacement);
             let result = rewrite.term(&Term::Integer(nested.into()));
             (
@@ -617,14 +619,14 @@ fn integer_fold_nested_capture_and_nocapture_work_scales_linearly() {
         let IntegerTerm::RangeFold {
             accumulator: fresh_accumulator,
             ..
-        } = result.native_compat()
+        } = result.old_form()
         else {
             unreachable!()
         };
         assert_ne!(*fresh_accumulator, c_accumulator);
         let mut free_integer = std::collections::BTreeSet::new();
         crate::kernel::prelude::collect_integer_free_variables(
-            result.native_compat(),
+            result.old_form(),
             &mut free_integer,
         );
         assert!(free_integer.contains(&c_accumulator));
@@ -659,8 +661,10 @@ fn checked_fold_collectors_bound_mixed_carrier_payloads_and_opaque_states() {
     fn int32_index_fold(body: IntegerTerm, accumulator: Variable, item: Variable) -> IntegerTerm {
         IntegerTerm::range_fold(
             crate::kernel::IntegerRangeFoldIndex::Int32 {
-                start: crate::kernel::SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0)),
-                end: crate::kernel::SharedIntegerRangeEndpoint::intern(MachineTerm::constant(1)),
+                start: crate::kernel::SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(
+                    0,
+                )),
+                end: crate::kernel::SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(1)),
             },
             IntegerTerm::constant_i64(0),
             accumulator,
@@ -676,9 +680,9 @@ fn checked_fold_collectors_bound_mixed_carrier_payloads_and_opaque_states() {
             memory = memory.store(
                 Address {
                     base: block.clone(),
-                    offset: AddressOffset::Constant(offset as i64),
+                    offset: OldAddressOffset::Constant(offset as i64),
                 },
-                ProgramValue::Int32(MachineTerm::constant(offset as u32)),
+                ProgramValue::Int32(OldMachineTerm::constant(offset as u32)),
             );
         }
         crate::kernel::intern_memory(memory)
@@ -717,9 +721,9 @@ fn checked_fold_collectors_bound_mixed_carrier_payloads_and_opaque_states() {
         let memory = memory_state_identity(state_size);
         let pointer = Address {
             base: AddressBase::Concrete("checked-fold-opaque".into()),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
-        let replacement_payload = MachineTerm::read_named(
+        let replacement_payload = OldMachineTerm::read_named(
             ProgramPoint::at(&memory),
             Box::new(pointer),
             crate::kernel::LoadKind::Int32,
@@ -746,7 +750,7 @@ fn checked_fold_collectors_bound_mixed_carrier_payloads_and_opaque_states() {
         let memory = memory_state_identity(depth);
         let pointer = Address {
             base: AddressBase::Concrete("checked-fold-opaque".into()),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let integer_source = Variable(3_000_000 + depth as u64);
         let mut int32_body = IntegerTerm::var(integer_source);
@@ -765,7 +769,7 @@ fn checked_fold_collectors_bound_mixed_carrier_payloads_and_opaque_states() {
         }
         let integer_capture = *integer_accumulators.last().unwrap();
         let c_capture = *c_items.last().unwrap();
-        let mut mixed_c_payload = MachineTerm::read_named(
+        let mut mixed_c_payload = OldMachineTerm::read_named(
             ProgramPoint::at(&memory),
             Box::new(pointer.clone()),
             crate::kernel::LoadKind::Int32,
@@ -775,7 +779,7 @@ fn checked_fold_collectors_bound_mixed_carrier_payloads_and_opaque_states() {
                 Int32,
                 Add,
                 Box::new(mixed_c_payload),
-                Box::new(MachineTerm::IntegerToMachine {
+                Box::new(OldMachineTerm::IntegerToMachine {
                     value: SharedIntegerTerm::from(IntegerTerm::var(integer_capture)),
                     destination: crate::kernel::MachineIntegerType::Int32,
                 }),
@@ -784,7 +788,7 @@ fn checked_fold_collectors_bound_mixed_carrier_payloads_and_opaque_states() {
                 Int32,
                 Add,
                 Box::new(mixed_c_payload),
-                Box::new(MachineTerm::Variable(c_capture)),
+                Box::new(OldMachineTerm::Variable(c_capture)),
             );
         }
         let integer_to_c_replacement =
@@ -843,7 +847,7 @@ fn checked_fold_collectors_bound_mixed_carrier_payloads_and_opaque_states() {
         };
         let mut free_c = std::collections::BTreeSet::new();
         crate::kernel::prelude::collect_integer_capture_bitvector_variables(
-            output.native_compat(),
+            output.old_form(),
             &mut free_c,
         );
         assert!(!free_c.contains(&integer_source));
@@ -853,7 +857,7 @@ fn checked_fold_collectors_bound_mixed_carrier_payloads_and_opaque_states() {
         let mut c_to_integer_body =
             IntegerTerm::Machine(crate::kernel::SharedMachineIntegerTerm::intern(
                 crate::kernel::MachineIntegerType::Int32,
-                MachineTerm::Variable(c_source),
+                OldMachineTerm::Variable(c_source),
             ));
         let mut math_accumulators = Vec::new();
         let mut mixed_c_items = Vec::new();
@@ -872,7 +876,7 @@ fn checked_fold_collectors_bound_mixed_carrier_payloads_and_opaque_states() {
         }
         let math_capture = *math_accumulators.last().unwrap();
         let c_item_capture = *mixed_c_items.last().unwrap();
-        let mut c_replacement = MachineTerm::read_named(
+        let mut c_replacement = OldMachineTerm::read_named(
             ProgramPoint::at(&memory),
             Box::new(pointer),
             crate::kernel::LoadKind::Int32,
@@ -882,7 +886,7 @@ fn checked_fold_collectors_bound_mixed_carrier_payloads_and_opaque_states() {
                 Int32,
                 Add,
                 Box::new(c_replacement),
-                Box::new(MachineTerm::IntegerToMachine {
+                Box::new(OldMachineTerm::IntegerToMachine {
                     value: SharedIntegerTerm::from(IntegerTerm::var(math_capture)),
                     destination: crate::kernel::MachineIntegerType::Int32,
                 }),
@@ -891,12 +895,12 @@ fn checked_fold_collectors_bound_mixed_carrier_payloads_and_opaque_states() {
                 Int32,
                 Add,
                 Box::new(c_replacement),
-                Box::new(MachineTerm::Variable(c_item_capture)),
+                Box::new(OldMachineTerm::Variable(c_item_capture)),
             );
         }
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
             with_checked_simple_budget(1_000_000, || {
-                let source = MachineTerm::Variable(c_source);
+                let source = OldMachineTerm::Variable(c_source);
                 let mut rewrite = TermRewrite::for_bits_checked(&source, &c_replacement);
                 let output = rewrite.term(&Term::Integer(c_to_integer_body.clone().into()));
                 (
@@ -912,7 +916,7 @@ fn checked_fold_collectors_bound_mixed_carrier_payloads_and_opaque_states() {
         };
         let mut free_c = std::collections::BTreeSet::new();
         crate::kernel::prelude::collect_integer_capture_bitvector_variables(
-            output.native_compat(),
+            output.old_form(),
             &mut free_c,
         );
         assert!(!free_c.contains(&c_source));
@@ -936,8 +940,8 @@ fn checked_substitution_collector_reuses_registered_load_dag() {
         let memory = crate::kernel::intern_memory(SymbolicMemory::new().with_block("array", 16));
         let leaf_pointer = Address {
             base: AddressBase::Concrete("array".into()),
-            offset: AddressOffset::scaled_int32_node(
-                MachineTerm::IntegerToMachine {
+            offset: OldAddressOffset::scaled_int32_node(
+                OldMachineTerm::IntegerToMachine {
                     value: IntegerTerm::var(source).into(),
                     destination: MachineIntegerType::Int32,
                 },
@@ -955,7 +959,7 @@ fn checked_substitution_collector_reuses_registered_load_dag() {
                 &memory,
                 &Address {
                     base: AddressBase::Concrete("array".into()),
-                    offset: AddressOffset::Variable(load),
+                    offset: OldAddressOffset::Variable(load),
                 },
                 crate::kernel::LoadKind::Int32,
                 4,
@@ -965,9 +969,9 @@ fn checked_substitution_collector_reuses_registered_load_dag() {
             memory: memory.as_ref().clone(),
             base: Address {
                 base: AddressBase::Concrete("array".into()),
-                offset: AddressOffset::Variable(load),
+                offset: OldAddressOffset::Variable(load),
             },
-            bytes: (MachineTerm::constant(4)).into(),
+            bytes: (OldMachineTerm::constant(4)).into(),
             wide: false,
         };
         let mut proposition = atom.clone();
@@ -1002,12 +1006,13 @@ fn checked_substitution_collector_reuses_registered_load_dag() {
 
 #[test]
 fn native_unsigned_offset_projection_checks_full_width_bounds_and_scopes() {
-    let index = MachineTerm::Variable(Variable(989_100));
-    let native = AddressOffset::scaled_int64_node(index.clone(), 4, true);
-    let narrow = AddressOffset::scaled_int32_node(MachineTerm::uint32_from_64(index.clone()), 4);
-    let bound = ConditionTerm::uint64_less_equal(
+    let index = OldMachineTerm::Variable(Variable(989_100));
+    let native = OldAddressOffset::scaled_int64_node(index.clone(), 4, true);
+    let narrow =
+        OldAddressOffset::scaled_int32_node(OldMachineTerm::uint32_from_64(index.clone()), 4);
+    let bound = OldConditionTerm::uint64_less_equal(
         index.clone(),
-        MachineTerm::uint64_constant(1_073_741_823),
+        OldMachineTerm::uint64_constant(1_073_741_823),
     );
     let projection = |condition, truth| {
         let conditions = HashMap::from([(condition, truth)]);
@@ -1019,30 +1024,30 @@ fn native_unsigned_offset_projection_checks_full_width_bounds_and_scopes() {
     for (condition, truth) in [
         (bound.clone(), true),
         (
-            ConditionTerm::uint64_less_than(
+            OldConditionTerm::uint64_less_than(
                 index.clone(),
-                MachineTerm::uint64_constant(1_073_741_824),
+                OldMachineTerm::uint64_constant(1_073_741_824),
             ),
             true,
         ),
         (
-            ConditionTerm::uint64_greater_equal(
-                MachineTerm::uint64_constant(1_073_741_823),
+            OldConditionTerm::uint64_greater_equal(
+                OldMachineTerm::uint64_constant(1_073_741_823),
                 index.clone(),
             ),
             true,
         ),
         (
-            ConditionTerm::uint64_greater_than(
+            OldConditionTerm::uint64_greater_than(
                 index.clone(),
-                MachineTerm::uint64_constant(1_073_741_823),
+                OldMachineTerm::uint64_constant(1_073_741_823),
             ),
             false,
         ),
         (
-            ConditionTerm::uint64_greater_equal(
+            OldConditionTerm::uint64_greater_equal(
                 index.clone(),
-                MachineTerm::uint64_constant(1_073_741_824),
+                OldMachineTerm::uint64_constant(1_073_741_824),
             ),
             false,
         ),
@@ -1052,39 +1057,42 @@ fn native_unsigned_offset_projection_checks_full_width_bounds_and_scopes() {
     for (condition, truth) in [
         (bound.clone(), false),
         (
-            ConditionTerm::signed_less_equal(
-                MachineTerm::uint32_from_64(index.clone()),
-                MachineTerm::constant(1_073_741_823),
+            OldConditionTerm::signed_less_equal(
+                OldMachineTerm::uint32_from_64(index.clone()),
+                OldMachineTerm::constant(1_073_741_823),
             ),
             true,
         ),
         (
-            ConditionTerm::int64_signed_less_equal(
+            OldConditionTerm::int64_signed_less_equal(
                 index.clone(),
-                MachineTerm::int64_constant(1_073_741_823),
+                OldMachineTerm::int64_constant(1_073_741_823),
             ),
             true,
         ),
         (
-            ConditionTerm::uint64_less_equal(
+            OldConditionTerm::uint64_less_equal(
                 index.clone(),
-                MachineTerm::uint64_constant(1u64 << 32),
+                OldMachineTerm::uint64_constant(1u64 << 32),
             ),
             true,
         ),
         (
-            ConditionTerm::uint64_less_than(index.clone(), MachineTerm::uint64_constant(0)),
+            OldConditionTerm::uint64_less_than(index.clone(), OldMachineTerm::uint64_constant(0)),
             true,
         ),
         (
-            ConditionTerm::uint64_equal(index.clone(), MachineTerm::uint64_constant(1u64 << 32)),
+            OldConditionTerm::uint64_equal(
+                index.clone(),
+                OldMachineTerm::uint64_constant(1u64 << 32),
+            ),
             true,
         ),
     ] {
         assert_eq!(projection(condition, truth), native);
     }
     let conditions = HashMap::from([(bound.clone(), true)]);
-    let signed = AddressOffset::scaled_int64_node(index.clone(), 4, false);
+    let signed = OldAddressOffset::scaled_int64_node(index.clone(), 4, false);
     let mut rewrite = TermRewrite::for_conditions(&conditions);
     assert_eq!(rewrite.offset(&signed), signed);
     let binder = crate::kernel::quantifiers::test_forall(
@@ -1092,14 +1100,14 @@ fn native_unsigned_offset_projection_checks_full_width_bounds_and_scopes() {
         Variable(989_100),
         Sort::ProgramInteger(MachineIntegerType::UInt64),
         Proposition::condition_is(
-            ConditionTerm::address_offset_equal(native.clone(), narrow.clone()),
+            OldConditionTerm::address_offset_equal(native.clone(), narrow.clone()),
             true,
         ),
     );
     assert_eq!(rewrite.proposition(&binder), binder);
     assert!(rewrite.refusal().is_none());
     let goal = Proposition::condition_is(
-        ConditionTerm::address_offset_equal(native.clone(), narrow),
+        OldConditionTerm::address_offset_equal(native.clone(), narrow),
         true,
     );
     let premise = Proposition::condition_is(bound, true);
@@ -1126,9 +1134,9 @@ fn native_unsigned_offset_projection_checks_full_width_bounds_and_scopes() {
         let mut explicit = conditions.clone();
         for offset in 0..size {
             explicit.insert(
-                ConditionTerm::uint64_less_equal(
-                    MachineTerm::Variable(Variable(990_000 + offset)),
-                    MachineTerm::uint64_constant(123),
+                OldConditionTerm::uint64_less_equal(
+                    OldMachineTerm::Variable(Variable(990_000 + offset)),
+                    OldMachineTerm::uint64_constant(123),
                 ),
                 true,
             );
@@ -1171,7 +1179,7 @@ fn generic_read_alias_rewrite_work(count: u64, unrelated: u64, warm: bool) -> us
         memory = memory.store(
             Address {
                 base: AddressBase::Heap(996_100 + index),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
             stored.clone(),
         );
@@ -1180,7 +1188,7 @@ fn generic_read_alias_rewrite_work(count: u64, unrelated: u64, warm: bool) -> us
     let from = OldPointer::new(
         Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         },
         ProgramType::Int32Pointer,
     );
@@ -1319,11 +1327,11 @@ fn numeric_pointer_read_rewrite_work(
     separate: bool,
 ) -> usize {
     let _session = crate::kernel::VerificationSession::enter();
-    let from = MachineTerm::Variable(Variable(997_020));
-    let to = MachineTerm::Variable(Variable(997_021));
+    let from = OldMachineTerm::Variable(Variable(997_020));
+    let to = OldMachineTerm::Variable(Variable(997_021));
     let address = |index| Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int32(index, 8),
+        offset: OldAddressOffset::scale_int32(index, 8),
     };
     let mut memory = SymbolicMemory::new();
     for index in 0..unrelated {
@@ -1334,7 +1342,7 @@ fn numeric_pointer_read_rewrite_work(
                 } else {
                     AddressBase::Symbolic(Variable(998_020 + index))
                 },
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
             ProgramValue::Int32(7u32.into()),
         );
@@ -1411,17 +1419,17 @@ fn numeric_pointer_read_rewrites_ignore_separate_storage() {
 fn arithmetic_comparison_memos_are_bounded_and_session_local() {
     let mut cold_work = Vec::new();
     for size in [4usize, 16, 64] {
-        let variable = MachineTerm::Variable(Variable(978_445));
+        let variable = OldMachineTerm::Variable(Variable(978_445));
         let mut expression = variable.clone();
         for _ in 0..size {
-            expression = MachineTerm::logical_machine_binary(
+            expression = OldMachineTerm::logical_machine_binary(
                 MachineIntegerType::Int32,
                 MachineBinaryOp::Add,
                 expression,
-                MachineTerm::constant(0),
+                OldMachineTerm::constant(0),
             );
         }
-        let goal = Proposition::condition_is(ConditionTerm::equal(expression, variable), true);
+        let goal = Proposition::condition_is(OldConditionTerm::equal(expression, variable), true);
         let measure = || {
             crate::instrumentation::measure_deterministic_work(|| {
                 crate::kernel::arithmetic_comparison_form(&goal)
@@ -1472,7 +1480,7 @@ fn shared_carrier_collection_reuses_growing_prefixes_without_exporting() {
                 );
                 let machine = SharedMachineIntegerTerm::from_shared(format, root.clone()).unwrap();
                 let proposition = Proposition::condition_is(
-                    ConditionTerm::IntegerEqual(
+                    OldConditionTerm::IntegerEqual(
                         IntegerTerm::Machine(machine.clone()).into(),
                         IntegerTerm::constant_i64(0).into(),
                     ),
@@ -1505,8 +1513,8 @@ fn shared_machine_fold_endpoints_rewrite_in_linear_dag_work() {
     let mut work = Vec::new();
     for size in [16usize, 64, 256] {
         let _session = VerificationSession::enter();
-        let source = MachineTerm::Variable(Variable(989911));
-        let replacement = MachineTerm::Variable(Variable(989912));
+        let source = OldMachineTerm::Variable(Variable(989911));
+        let replacement = OldMachineTerm::Variable(Variable(989912));
         let format = MachineIntegerType::Int32;
         let mut root =
             KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(989911));
@@ -1517,7 +1525,7 @@ fn shared_machine_fold_endpoints_rewrite_in_linear_dag_work() {
                 [root.clone(), root],
             );
         }
-        let endpoint = SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0))
+        let endpoint = SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(0))
             .with_shared_operand(root)
             .unwrap();
         let fold = Term::Integer(
@@ -1542,9 +1550,9 @@ fn shared_machine_fold_endpoints_rewrite_in_linear_dag_work() {
                 panic!("Integer folds");
             };
             let mut graph = crate::kernel::equality_graph::EqualityGraph::default();
-            assert!(!graph.are_integer_equal(original.native_compat(), rewritten.native_compat()));
+            assert!(!graph.are_integer_equal(original.old_form(), rewritten.old_form()));
             graph.add_int32_equality(&source, &replacement);
-            assert!(graph.are_integer_equal(original.native_compat(), rewritten.native_compat()));
+            assert!(graph.are_integer_equal(original.old_form(), rewritten.old_form()));
             output
         });
         assert!(matches!(&(
@@ -1565,7 +1573,7 @@ fn retained_rewrite_sources_do_not_expand_growing_dags() {
         let format = MachineIntegerType::Int32;
         let mut source =
             KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(992550));
-        let replacement = MachineTerm::Variable(Variable(992551));
+        let replacement = OldMachineTerm::Variable(Variable(992551));
         let expected = IntegerTerm::from_machine(format, replacement.clone()).unwrap();
         let exports = KernelTermExport::machine_export_count();
         let (_, measured) = crate::instrumentation::measure_deterministic_work(|| {
@@ -1580,7 +1588,7 @@ fn retained_rewrite_sources_do_not_expand_growing_dags() {
                 );
                 let mut rewrite = TermRewrite::for_machine_operands_checked(
                     MachineOperandView::Shared(&source),
-                    MachineOperandView::Legacy(&replacement),
+                    MachineOperandView::Old(&replacement),
                 );
                 assert_eq!(rewrite.integer(&goal), expected);
                 assert!(rewrite.changed);
@@ -1655,7 +1663,7 @@ fn resource_read_collection_scales_with_selected_arguments() {
         let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let arguments = (0..size)
             .map(|index| {
-                AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::read_named(
+                AlgebraicValue::Program(ProgramValue::Int32(OldMachineTerm::read_named(
                     ProgramPoint::at(&memory),
                     Box::new(Address::symbolic(Variable(3_219_100 + index as u64))),
                     LoadKind::Int32,
@@ -1697,7 +1705,7 @@ fn one_proposition_read_comparison_batch_scales_with_selected_reads() {
         let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let reads: Vec<_> = (0..size)
             .map(|index| {
-                MachineTerm::read_named(
+                OldMachineTerm::read_named(
                     ProgramPoint::at(&memory),
                     Box::new(Address::symbolic(Variable(4_021_000 + index as u64))),
                     LoadKind::Int32,
@@ -1731,7 +1739,7 @@ fn one_proposition_read_comparison_batch_scales_with_selected_reads() {
                 reads
                     .iter()
                     .enumerate()
-                    .map(|(index, read)| (read.clone(), MachineTerm::constant(index as u32))),
+                    .map(|(index, read)| (read.clone(), OldMachineTerm::constant(index as u32))),
             )
             .expect("selected comparison")
         });
@@ -1760,15 +1768,15 @@ fn pointer_index_reconstruction_keeps_cold_dags_shared() {
     for depth in [16, 64, 256] {
         let _session = VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
-        let source = MachineTerm::Variable(Variable(1007320));
-        let target = MachineTerm::Variable(Variable(1007321));
+        let source = OldMachineTerm::Variable(Variable(1007320));
+        let target = OldMachineTerm::Variable(Variable(1007321));
         let mut root =
             KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(1007320));
         for _ in 0..depth {
             root =
                 KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [root.clone(), root]);
         }
-        let offset = AddressOffset::Int32Scaled {
+        let offset = OldAddressOffset::Int32Scaled {
             value: SharedMachineIntegerTerm::from_shared(ty, root).unwrap(),
             byte_width: 4,
         };
@@ -1789,8 +1797,8 @@ fn pointer_index_reconstruction_keeps_cold_dags_shared() {
 fn compound_exact_replacement_ignores_only_call_argument_carrier() {
     let _session = VerificationSession::enter();
     let format = MachineIntegerType::Int32;
-    let argument = MachineTerm::Variable(Variable(998_930));
-    let call = |argument| MachineTerm::ClickFunctionApplication {
+    let argument = OldMachineTerm::Variable(Variable(998_930));
+    let call = |argument| OldMachineTerm::ClickFunctionApplication {
         name: "compound_exact_call".into(),
         arguments: vec![argument],
     };
@@ -1801,7 +1809,7 @@ fn compound_exact_replacement_ignores_only_call_argument_carrier() {
         SharedMachineIntegerTerm::intern(format, argument),
     ));
     let compound = |operation, value| {
-        MachineTerm::machine_binary(format, operation, value, MachineTerm::constant(1))
+        OldMachineTerm::machine_binary(format, operation, value, OldMachineTerm::constant(1))
     };
     for depth in [4, 16, 64] {
         let mut source = native_call.clone();
@@ -1810,7 +1818,7 @@ fn compound_exact_replacement_ignores_only_call_argument_carrier() {
             source = compound(MachineBinaryOp::Add, source);
             target = compound(MachineBinaryOp::Add, target);
         }
-        let replacement = MachineTerm::constant(13);
+        let replacement = OldMachineTerm::constant(13);
         let exports = KernelTermExport::machine_export_count();
         let (actual, work) = crate::instrumentation::measure_deterministic_work(|| {
             TermRewrite::for_bits(&source, &replacement).bits(&target)
@@ -1821,7 +1829,7 @@ fn compound_exact_replacement_ignores_only_call_argument_carrier() {
     }
     let source = compound(MachineBinaryOp::Add, native_call);
     let distinct = compound(MachineBinaryOp::Subtract, shared_call);
-    let replacement = MachineTerm::constant(13);
+    let replacement = OldMachineTerm::constant(13);
     assert_eq!(
         TermRewrite::for_bits(&source, &replacement).bits(&distinct),
         distinct
@@ -1830,15 +1838,15 @@ fn compound_exact_replacement_ignores_only_call_argument_carrier() {
 
 #[test]
 fn narrowing_rewrite_visits_scale_with_selected_expression() {
-    let from = MachineTerm::Variable(Variable(91));
-    let to = MachineTerm::Variable(Variable(92));
-    let make = |value: &MachineTerm, size| {
+    let from = OldMachineTerm::Variable(Variable(91));
+    let to = OldMachineTerm::Variable(Variable(92));
+    let make = |value: &OldMachineTerm, size| {
         Term::Bitvector32(
-            MachineTerm::ClickFunctionApplication {
+            OldMachineTerm::ClickFunctionApplication {
                 name: "many".into(),
                 arguments: vec![
                     PureFunctionArgument::Value(ProgramValue::UInt32(
-                        MachineTerm::legacy_cast(
+                        OldMachineTerm::legacy_cast(
                             MachineCastSpelling::UInt32From64,
                             Box::new(value.clone())
                         )
@@ -1859,29 +1867,31 @@ fn narrowing_rewrite_visits_scale_with_selected_expression() {
 
 #[test]
 fn conditional_reduction_work_scales_with_selected_expression() {
-    let condition = ConditionTerm::Variable(Variable(51));
+    let condition = OldConditionTerm::Variable(Variable(51));
     let conditions = HashMap::from([(condition.clone(), true)]);
     for size in [16, 64, 256] {
         let input = Term::Bitvector32(
-            MachineTerm::ClickFunctionApplication {
+            OldMachineTerm::ClickFunctionApplication {
                 name: "many".into(),
                 arguments: vec![
-                    PureFunctionArgument::Value(ProgramValue::Int32(MachineTerm::If {
-                        condition: Box::new(condition.clone()),
-                        then_term: Box::new(MachineTerm::constant(7)),
-                        else_term: Box::new(MachineTerm::constant(0)),
-                    },));
+                    PureFunctionArgument::Value(ProgramValue::Int32(
+                        OldMachineTerm::If {
+                            condition: Box::new(condition.clone()),
+                            then_term: Box::new(OldMachineTerm::constant(7)),
+                            else_term: Box::new(OldMachineTerm::constant(0)),
+                        },
+                    ));
                     size
                 ],
             }
             .into(),
         );
         let expected = Term::Bitvector32(
-            MachineTerm::ClickFunctionApplication {
+            OldMachineTerm::ClickFunctionApplication {
                 name: "many".into(),
                 arguments: vec![
                     PureFunctionArgument::Value(ProgramValue::Int32(
-                        MachineTerm::constant(7),
+                        OldMachineTerm::constant(7),
                     ));
                     size
                 ],

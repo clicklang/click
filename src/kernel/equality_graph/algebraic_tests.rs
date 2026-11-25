@@ -49,12 +49,12 @@ fn eq(a: &AlgebraicTerm, b: &AlgebraicTerm) -> Proposition {
 }
 fn condition(a: &AlgebraicTerm, b: &AlgebraicTerm, truth: bool) -> Proposition {
     Proposition::condition_is(
-        ConditionTerm::AlgebraicEqual(Box::new(a.clone()), Box::new(b.clone())),
+        OldConditionTerm::AlgebraicEqual(Box::new(a.clone()), Box::new(b.clone())),
         truth,
     )
 }
 fn scalar(id: u64) -> AlgebraicValue {
-    AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(Variable(id))))
+    AlgebraicValue::Program(ProgramValue::Int32(OldMachineTerm::Variable(Variable(id))))
 }
 
 #[test]
@@ -129,7 +129,7 @@ fn algebraic_closure_preserves_types_constructors_payloads_and_argument_order() 
 fn algebraic_closure_propagates_late_model_and_scalar_merges_through_calls() {
     let ty = model_type("Model", AlgebraicValueType::Program(ProgramType::Int32));
     let (a, b) = (variable(&ty, 20), variable(&ty, 21));
-    let call = |v| MachineTerm::ClickFunctionApplication {
+    let call = |v| OldMachineTerm::ClickFunctionApplication {
         name: "model_size".into(),
         arguments: vec![PureFunctionArgument::Algebraic(v)],
     };
@@ -141,8 +141,8 @@ fn algebraic_closure_propagates_late_model_and_scalar_merges_through_calls() {
     let rhs = constructor(&ty, "Node", vec![scalar(23)]);
     assert!(!graph.are_algebraic_equal(&lhs, &rhs));
     graph.add_int32_equality(
-        &MachineTerm::Variable(Variable(22)),
-        &MachineTerm::Variable(Variable(23)),
+        &OldMachineTerm::Variable(Variable(22)),
+        &OldMachineTerm::Variable(Variable(23)),
     );
     assert!(graph.are_algebraic_equal(&lhs, &rhs));
 }
@@ -213,7 +213,7 @@ fn algebraic_closure_pointer_payloads_require_full_value_equality() {
     );
     let pointer = |name: &str| Address {
         base: name.into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let node = |p: Address| {
         constructor(
@@ -259,13 +259,13 @@ fn scalar_conflicts_follow_model_congruence() {
         AlgebraicValueType::Program(ProgramType::Int32),
     );
     let (a, b) = (variable(&ty, 900), variable(&ty, 901));
-    let getter = |v| MachineTerm::ClickFunctionApplication {
+    let getter = |v| OldMachineTerm::ClickFunctionApplication {
         name: "pending".into(),
         arguments: vec![PureFunctionArgument::Algebraic(v)],
     };
     let value = |v, n| {
         Proposition::condition_is(
-            ConditionTerm::equal(getter(v), MachineTerm::constant(n)),
+            OldConditionTerm::equal(getter(v), OldMachineTerm::constant(n)),
             true,
         )
     };
@@ -282,7 +282,7 @@ fn scalar_conflicts_follow_model_congruence() {
     assert!(child.equality_graph.has_scalar_constant_conflict());
     assert!(child.is_inconsistent());
     assert!(child.contains_known(&Proposition::condition_is(
-        ConditionTerm::Constant(false),
+        OldConditionTerm::Constant(false),
         true
     )));
     assert!(!base.equality_graph.has_scalar_constant_conflict());
@@ -301,14 +301,14 @@ fn scalar_conflicts_follow_model_congruence() {
 fn scalar_constant_conflicts_preserve_machine_widths() {
     let _session = crate::kernel::VerificationSession::enter();
     let mut graph = EqualityGraph::default();
-    let x = MachineTerm::Variable(Variable(700));
-    graph.add_int32_equality(&x, &MachineTerm::constant(0));
-    graph.add_uint64_equality(&x, &MachineTerm::uint64_constant(1));
+    let x = OldMachineTerm::Variable(Variable(700));
+    graph.add_int32_equality(&x, &OldMachineTerm::constant(0));
+    graph.add_uint64_equality(&x, &OldMachineTerm::uint64_constant(1));
     assert!(!graph.has_scalar_constant_conflict());
-    graph.add_uint64_equality(&x, &MachineTerm::uint64_constant(0));
+    graph.add_uint64_equality(&x, &OldMachineTerm::uint64_constant(0));
     assert!(graph.has_scalar_constant_conflict());
     let mut graph = EqualityGraph::default();
-    graph.add_int32_equality(&MachineTerm::constant(0), &MachineTerm::constant(1));
+    graph.add_int32_equality(&OldMachineTerm::constant(0), &OldMachineTerm::constant(1));
     assert!(graph.has_scalar_constant_conflict());
 }
 
@@ -317,20 +317,20 @@ fn scalar_read_conflicts_require_the_same_state() {
     let _session = crate::kernel::VerificationSession::enter();
     let p = Address {
         base: "cell".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let before = SymbolicMemory::new().with_block("cell", 4).store(
         p.clone(),
-        ProgramValue::Int32(MachineTerm::Variable(Variable(500))),
+        ProgramValue::Int32(OldMachineTerm::Variable(Variable(500))),
     );
     let after = before.clone().store(
         p.clone(),
-        ProgramValue::Int32(MachineTerm::Variable(Variable(501))),
+        ProgramValue::Int32(OldMachineTerm::Variable(Variable(501))),
     );
     let memory = crate::kernel::intern_memory(before);
     let changed = crate::kernel::intern_memory(after);
     let read = |memory: crate::kernel::SharedMemory| {
-        MachineTerm::Variable(crate::kernel::load_variable_for_cell_with_origin(
+        OldMachineTerm::Variable(crate::kernel::load_variable_for_cell_with_origin(
             &memory,
             &p,
             crate::kernel::LoadKind::Int32,
@@ -339,7 +339,10 @@ fn scalar_read_conflicts_require_the_same_state() {
         ))
     };
     let value = |term, n| {
-        Proposition::condition_is(ConditionTerm::equal(term, MachineTerm::constant(n)), true)
+        Proposition::condition_is(
+            OldConditionTerm::equal(term, OldMachineTerm::constant(n)),
+            true,
+        )
     };
     for (right_memory, conflict) in [(memory.clone(), true), (changed, false)] {
         let context = PureFactContext::new()
@@ -433,9 +436,9 @@ fn constructor_classes_join_fields_and_refute_distinct_variants() {
     let first = eq(&model, &constructor(&ty, "Node", vec![scalar(92)]));
     let second = eq(&constructor(&ty, "Node", vec![scalar(93)]), &alias);
     let fields = Proposition::condition_is(
-        ConditionTerm::equal(
-            MachineTerm::Variable(Variable(92)),
-            MachineTerm::Variable(Variable(93)),
+        OldConditionTerm::equal(
+            OldMachineTerm::Variable(Variable(92)),
+            OldMachineTerm::Variable(Variable(93)),
         ),
         true,
     );

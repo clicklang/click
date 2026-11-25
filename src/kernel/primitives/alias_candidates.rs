@@ -54,7 +54,7 @@
 //! entry a search over the whole collection would.
 
 use super::{
-    Address, AddressBase, AddressOffset, HashedOrdMap, HashedOrdSet, ProgramType, Variable,
+    Address, AddressBase, HashedOrdMap, HashedOrdSet, OldAddressOffset, ProgramType, Variable,
 };
 use std::hash::Hash;
 use std::ops::Bound;
@@ -82,11 +82,11 @@ impl BlockKeyed for Address {
     }
 
     fn first_key_of(block: &AddressBase) -> Self {
-        // `Constant` is `AddressOffset`'s first variant, so this offset
+        // `Constant` is `OldAddressOffset`'s first variant, so this offset
         // orders below every offset term.
         Address {
             base: block.clone(),
-            offset: AddressOffset::Constant(i64::MIN),
+            offset: OldAddressOffset::Constant(i64::MIN),
         }
     }
 }
@@ -732,7 +732,7 @@ mod tests {
                 map.insert(
                     Address {
                         base: block.clone(),
-                        offset: AddressOffset::Constant(offset),
+                        offset: OldAddressOffset::Constant(offset),
                     },
                     index as u32,
                 );
@@ -740,7 +740,7 @@ mod tests {
             map.insert(
                 Address {
                     base: block.clone(),
-                    offset: AddressOffset::Variable(Variable(1)),
+                    offset: OldAddressOffset::Variable(Variable(1)),
                 },
                 index as u32,
             );

@@ -14,7 +14,7 @@ fn local_variable_spelling_work_does_not_grow_with_declared_slots() {
             scalar(
                 state,
                 &format!("noise_{index:04}"),
-                ProgramValue::Int32(MachineTerm::constant(0)),
+                ProgramValue::Int32(OldMachineTerm::constant(0)),
             )
         });
         let (name, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -32,18 +32,18 @@ fn local_variable_spelling_work_does_not_grow_with_declared_slots() {
 fn local_variable_spelling_does_not_traverse_unrelated_symbolic_values_or_heap_runs() {
     let variable = Variable(971_012);
     for depth in [4usize, 16, 64, 256, 1024] {
-        let nested = (0..depth).fold(MachineTerm::Variable(variable), |term, _| {
+        let nested = (0..depth).fold(OldMachineTerm::Variable(variable), |term, _| {
             binary_node!(
                 Int32,
                 Add,
-                Box::new(MachineTerm::constant(0)),
+                Box::new(OldMachineTerm::constant(0)),
                 Box::new(term)
             )
         });
         let state = scalar(ExecutionState::new(), "noise", ProgramValue::Int32(nested));
         let base = Address {
             base: "unrelated-heap".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let memory = state.memory().clone().with_seeded_cells(
             base,

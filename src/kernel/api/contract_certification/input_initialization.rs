@@ -75,7 +75,7 @@ pub(in crate::kernel) fn initialized_scalar_range_fact(
     crate::instrumentation::record_deterministic_work(1);
     // The body holds no quantifier, so use the innermost binder directly.
     let binder = crate::kernel::quantifiers::innermost_binder();
-    let index = MachineTerm::Variable(*binder);
+    let index = OldMachineTerm::Variable(*binder);
     let (format, sort, lo, hi) = match range.wide_bounds() {
         Some((lo, hi)) => (
             MachineIntegerType::UInt64,
@@ -92,7 +92,7 @@ pub(in crate::kernel) fn initialized_scalar_range_fact(
     };
     let condition = |relation, left, right| {
         Proposition::condition_is(
-            ConditionTerm::machine_compare(format, relation, left, right),
+            OldConditionTerm::machine_compare(format, relation, left, right),
             true,
         )
     };
@@ -132,7 +132,7 @@ mod tests {
     fn fixture() -> (ExecutionState, ProgramFunction, MemorySegment, MemoryRange) {
         let base = Address {
             base: AddressBase::Concrete("initialized-input".into()),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let state = ExecutionState::new().with_local(
             "p",

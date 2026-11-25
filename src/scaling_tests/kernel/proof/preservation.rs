@@ -8,8 +8,8 @@ fn viewability_preservation_checks_only_the_selected_transition_and_facts() {
             let pointer = Address::symbolic(Variable(8_530_000));
             let range = MemoryRange::new_wide(
                 pointer.clone(),
-                MachineTerm::uint64_constant(0),
-                MachineTerm::Variable(Variable(8_530_001)),
+                OldMachineTerm::uint64_constant(0),
+                OldMachineTerm::Variable(Variable(8_530_001)),
                 1,
             );
             let mut memory = SymbolicMemory::new();
@@ -135,7 +135,7 @@ fn preservation_scalar_names_do_not_walk_prior_memory_history() {
             let read = |point: &ProgramPoint| {
                 let bits = integer_bits(tests::observe_point(point, &address, value_type)).unwrap();
                 Box::new(if value_type == ProgramType::UInt8 {
-                    MachineTerm::machine_integer_cast(
+                    OldMachineTerm::machine_integer_cast(
                         MachineIntegerType::UInt8,
                         MachineIntegerType::Int32,
                         bits,
@@ -145,7 +145,7 @@ fn preservation_scalar_names_do_not_walk_prior_memory_history() {
                 })
             };
             let goal = Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
                     left: read(&after),
@@ -161,7 +161,7 @@ fn preservation_scalar_names_do_not_walk_prior_memory_history() {
                 // A one-byte separation must not preserve a four-byte read,
                 // even when both read types are present at the same address.
                 let wider = Proposition::condition_is(
-                    ConditionTerm::equal(
+                    OldConditionTerm::equal(
                         integer_bits(tests::observe_point(&after, &address, ProgramType::Int32))
                             .unwrap(),
                         integer_bits(tests::observe_point(&before, &address, ProgramType::Int32))
@@ -350,7 +350,7 @@ fn selected_footprint_separations_are_linear_with_one_shared_address_bucket() {
             MemoryRange::new_with_element_width(
                 Address {
                     base: AddressBase::ExternalArgument,
-                    offset: AddressOffset::Variable(Variable(8_391_000 + index)),
+                    offset: OldAddressOffset::Variable(Variable(8_391_000 + index)),
                 },
                 0u32.into(),
                 4u32.into(),
@@ -603,7 +603,7 @@ fn wide_resource_field_preservation_scales_with_explicit_steps_not_ambient_insta
         let mut baseline = None;
         for instances in [4, 16, 64, 256] {
             let _session = crate::kernel::VerificationSession::enter();
-            let value = MachineTerm::Variable(Variable(8_390_901));
+            let value = OldMachineTerm::Variable(Variable(8_390_901));
             let (preservation, goal) =
                 tests::resource_fixture_with_values(instances, format, value.clone(), value);
             for steps in [1, 4, 16, 64] {

@@ -4,10 +4,10 @@ fn range(block: &str) -> MemoryRange {
     MemoryRange::new_with_element_width(
         Address {
             base: AddressBase::Concrete(block.to_string()),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         },
-        MachineTerm::constant(0),
-        MachineTerm::constant(1),
+        OldMachineTerm::constant(0),
+        OldMachineTerm::constant(1),
         4,
     )
 }
@@ -26,7 +26,7 @@ fn token(quantity: u32) -> ResourceFact {
             name: "ticket".to_string(),
             arguments: Vec::new().into(),
         },
-        Box::new(MachineTerm::constant(quantity).into()),
+        Box::new(OldMachineTerm::constant(quantity).into()),
     )
 }
 

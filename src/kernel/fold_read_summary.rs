@@ -36,7 +36,7 @@
 //! initial values, and each iteration sees the same accumulator, index and
 //! cell). Framing guarantees those cells hold the same bytes at both
 //! states. Pointer offsets are exact `i64` sums of sign-extended scaled
-//! `int32` terms (`AddressOffset::Int32Scaled`), so the cells occupy the
+//! `int32` terms (`OldAddressOffset::Int32Scaled`), so the cells occupy the
 //! contiguous bytes `[p + 4*start, p + 4*end)` with no wraparound, and a write
 //! misses them exactly when it ends at or below the first byte or starts at or
 //! above the last one. Emptiness is used only when a fact or the syntax proves
@@ -339,7 +339,7 @@ impl CheckedFoldReadSummary {
         let endpoint = |template: FoldEndpointTemplate| match template {
             FoldEndpointTemplate::Literal(value) => Some(SharedMachineIntegerTerm::index(
                 MachineIntegerType::Int32,
-                MachineTerm::constant(value),
+                OldMachineTerm::constant(value),
             )),
             FoldEndpointTemplate::Parameter(position) => match &arguments[position] {
                 PureFunctionArgument::SharedMachine(value)
@@ -478,10 +478,12 @@ impl BodyChecker<'_> {
         }
     }
 
-    fn bitvector(&self, term: &MachineTerm, scope: Scope) -> Result<(), FoldReadDecline> {
+    fn bitvector(&self, term: &OldMachineTerm, scope: Scope) -> Result<(), FoldReadDecline> {
         match term {
             bits32_constant!(_) => Ok(()),
-            MachineTerm::Variable(variable) if scope == Scope::Body && *variable == self.item => {
+            OldMachineTerm::Variable(variable)
+                if scope == Scope::Body && *variable == self.item =>
+            {
                 Ok(())
             }
             _ => Err(Self::unsupported("an evaluated machine term")),
@@ -507,7 +509,7 @@ impl BodyChecker<'_> {
             )
             && matches!(
                 elements.as_ref(),
-                SpecExpression::Value(ProgramValue::Int32(MachineTerm::Variable(variable)))
+                SpecExpression::Value(ProgramValue::Int32(OldMachineTerm::Variable(variable)))
                     if *variable == self.item
             )
     }
@@ -807,12 +809,9 @@ fn zip_proposition(
         (
             Proposition::ConditionIs(left, left_value),
             Proposition::ConditionIs(right, right_value),
-        ) if left_value == right_value => zip_condition(
-            left.native_compat(),
-            right.native_compat(),
-            assumptions,
-            checked,
-        ),
+        ) if left_value == right_value => {
+            zip_condition(left.old_form(), right.old_form(), assumptions, checked)
+        }
         (Proposition::And(a, b), Proposition::And(c, d))
         | (Proposition::Or(a, b), Proposition::Or(c, d))
         | (Proposition::Implies(a, b), Proposition::Implies(c, d)) => {
@@ -826,12 +825,12 @@ fn zip_proposition(
 }
 
 fn zip_condition(
-    source: &ConditionTerm,
-    target: &ConditionTerm,
+    source: &OldConditionTerm,
+    target: &OldConditionTerm,
     assumptions: &PureFactContext,
     checked: &mut CheckedFoldFrameTransport,
 ) -> Result<(), FoldFrameRefusal> {
-    use ConditionTerm as C;
+    use OldConditionTerm as C;
     crate::instrumentation::record_deterministic_work(1);
     match (source, target) {
         (C::IntegerLessThan(a, b), C::IntegerLessThan(c, d))
@@ -1085,21 +1084,21 @@ enum OffsetAtom {
 }
 
 impl LinearOffset {
-    fn of(offset: &AddressOffset) -> Self {
+    fn of(offset: &OldAddressOffset) -> Self {
         let mut linear = Self::default();
         let mut pending = vec![(offset, 1i128)];
         while let Some((offset, sign)) = pending.pop() {
             crate::instrumentation::record_deterministic_work(1);
             match offset {
-                AddressOffset::Constant(value) => linear.constant += sign * i128::from(*value),
-                AddressOffset::Variable(variable) => {
+                OldAddressOffset::Constant(value) => linear.constant += sign * i128::from(*value),
+                OldAddressOffset::Variable(variable) => {
                     linear.add_atom(OffsetAtom::Variable(*variable), sign)
                 }
-                AddressOffset::Add(left, right) => {
+                OldAddressOffset::Add(left, right) => {
                     pending.push((left, sign));
                     pending.push((right, sign));
                 }
-                AddressOffset::Int32Scaled { value, byte_width } => {
+                OldAddressOffset::Int32Scaled { value, byte_width } => {
                     match value.operand_view().word32_constant() {
                         Some(value) => {
                             linear.constant +=
@@ -1111,7 +1110,7 @@ impl LinearOffset {
                         ),
                     }
                 }
-                AddressOffset::Int64Scaled {
+                OldAddressOffset::Int64Scaled {
                     value,
                     byte_width,
                     unsigned,
@@ -1156,7 +1155,7 @@ impl LinearOffset {
                 Some((
                     SharedMachineIntegerTerm::intern(
                         MachineIntegerType::Int32,
-                        MachineTerm::constant(index as u32),
+                        OldMachineTerm::constant(index as u32),
                     ),
                     self.constant - i128::from(index) * width,
                 ))
@@ -1193,13 +1192,13 @@ fn scaled_index_from(
 /// `left <= right` as signed `int32`, from syntax, constants, or one exact
 /// fact. Only indexed lookups: nothing scans the context.
 fn proven_signed_le(
-    left: &MachineTerm,
-    right: &MachineTerm,
+    left: &OldMachineTerm,
+    right: &OldMachineTerm,
     assumptions: &PureFactContext,
 ) -> bool {
     proven_signed_le_views(
-        MachineOperandView::Legacy(left),
-        MachineOperandView::Legacy(right),
+        MachineOperandView::Old(left),
+        MachineOperandView::Old(right),
         assumptions,
     )
 }
@@ -1328,12 +1327,12 @@ fn range_misses_interval(
         // because nothing here decides what bytes such a write set covers.
         if proven_signed_le(written.start(), written.end(), assumptions)
             && (proven_signed_le_views(
-                MachineOperandView::Legacy(written.end()),
+                MachineOperandView::Old(written.end()),
                 interval.start.operand_view(),
                 assumptions,
             ) || proven_signed_le_views(
                 interval.end.operand_view(),
-                MachineOperandView::Legacy(written.start()),
+                MachineOperandView::Old(written.start()),
                 assumptions,
             ))
         {
@@ -1389,13 +1388,13 @@ fn range_contains_interval(
             |(index, rest)| rest == 0 && index.operand_view().word32_constant() == Some(0),
         )
         && proven_signed_le_views(
-            MachineOperandView::Legacy(range.start()),
+            MachineOperandView::Old(range.start()),
             interval.start.operand_view(),
             assumptions,
         )
         && proven_signed_le_views(
             interval.end.operand_view(),
-            MachineOperandView::Legacy(range.end()),
+            MachineOperandView::Old(range.end()),
             assumptions,
         )
 }
@@ -1418,13 +1417,13 @@ fn range_contains_access(
     constant >= 0
         && constant + i128::from(bytes) <= i128::from(width)
         && proven_signed_le_views(
-            MachineOperandView::Legacy(range.start()),
+            MachineOperandView::Old(range.start()),
             index.operand_view(),
             assumptions,
         )
         && proven_signed_lt_views(
             index.operand_view(),
-            MachineOperandView::Legacy(range.end()),
+            MachineOperandView::Old(range.end()),
             assumptions,
         )
 }

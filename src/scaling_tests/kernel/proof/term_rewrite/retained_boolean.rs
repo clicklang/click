@@ -20,9 +20,9 @@ fn retained_boolean_connective_rewriting_keeps_growing_dags_shared() {
         for source in [from, Variable(994200)] {
             let program = BTreeMap::from([(
                 source,
-                TypedProgramValueReplacement::Bitvector(MachineTerm::bool_cast(
+                TypedProgramValueReplacement::Bitvector(OldMachineTerm::bool_cast(
                     MachineIntegerType::UInt8,
-                    ConditionTerm::Variable(Variable(994201)),
+                    OldConditionTerm::Variable(Variable(994201)),
                 )),
             )]);
             let integer = BTreeMap::new();

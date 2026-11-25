@@ -32,7 +32,7 @@ fn typed_access_does_not_search_unrelated_address_equalities_or_ranges() {
     let mut samples = Vec::new();
     for size in [4u64, 16, 64, 256] {
         let mut context = PureFactContext::new().assume_condition(
-            ConditionTerm::address_equal(a.address().clone(), b.address().clone()),
+            OldConditionTerm::address_equal(a.address().clone(), b.address().clone()),
             true,
         );
         let mut resources = ResourceContext::new().unchecked_with_fact(ResourceFact::view_memory(
@@ -41,7 +41,7 @@ fn typed_access_does_not_search_unrelated_address_equalities_or_ranges() {
         for index in 0..size {
             let unrelated = value(880_000 + index * 2);
             context = context.assume_condition(
-                ConditionTerm::address_equal(
+                OldConditionTerm::address_equal(
                     unrelated.address().clone(),
                     value(880_001 + index * 2).address().clone(),
                 ),
@@ -95,9 +95,9 @@ fn pointer_integer_round_trips_ignore_unrelated_facts() {
         let mut context = PureFactContext::new();
         for index in 0..size {
             context = context.assume_condition(
-                ConditionTerm::uint64_equal(
-                    MachineTerm::Variable(Variable(993_000 + index)),
-                    MachineTerm::uint64_constant(index),
+                OldConditionTerm::uint64_equal(
+                    OldMachineTerm::Variable(Variable(993_000 + index)),
+                    OldMachineTerm::uint64_constant(index),
                 ),
                 true,
             );
@@ -139,12 +139,12 @@ fn packed_word_contract_lookup_and_scope_ignore_unrelated_words() {
     let value = |id| OldPointer::new(Address::symbolic(Variable(id)), ProgramType::Int32Pointer);
     let equality = |a: &OldPointer, b: &OldPointer| {
         Proposition::condition_is(
-            ConditionTerm::PointerEqual(Box::new(a.clone()), Box::new(b.clone())),
+            OldConditionTerm::PointerEqual(Box::new(a.clone()), Box::new(b.clone())),
             true,
         )
     };
     let reconstructed = |id| {
-        let word = ProgramValue::UInt64(MachineTerm::Variable(Variable(id)))
+        let word = ProgramValue::UInt64(OldMachineTerm::Variable(Variable(id)))
             .complete_word(Address::symbolic(Variable(id + 1)));
         let value = crate::kernel::eval::cast_program_value_to_type(
             word,
@@ -198,7 +198,7 @@ fn recent_pointer_read_origin_avoids_older_alias_histories() {
         let _session = VerificationSession::enter();
         let cell = |name: String| Address {
             base: name.into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let selected = cell("zz-recent-pointer-origin".into());
         let mut memory = SymbolicMemory::new().with_block(selected.base.clone(), 8);
@@ -223,7 +223,7 @@ fn recent_pointer_read_origin_avoids_older_alias_histories() {
         );
         let fact = |pointer: &Address| {
             Proposition::condition_is(
-                ConditionTerm::PointerEqual(
+                OldConditionTerm::PointerEqual(
                     Box::new(read(&before, pointer)),
                     Box::new(value.clone()),
                 ),

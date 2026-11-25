@@ -14,7 +14,7 @@ pub(super) struct Origins<'a, A, W> {
     pub(super) bounds: Option<(&'a A, &'a W)>,
     pub(super) known: bool,
 }
-impl<'a> Origins<'a, Address, MachineTerm> {
+impl<'a> Origins<'a, Address, OldMachineTerm> {
     pub(super) fn native(value: &'a OldPointer) -> Self {
         Self {
             provenance: value.provenance(),
@@ -43,7 +43,7 @@ pub(super) trait OriginChecks<A, W> {
     fn width(&self, a: &W, b: &W) -> bool;
     fn opaque_is_root(&self, a: &A) -> bool;
 }
-impl OriginChecks<Address, MachineTerm> for PureFactContext {
+impl OriginChecks<Address, OldMachineTerm> for PureFactContext {
     fn provenance(&self, a: &Address, b: &Address) -> bool {
         self.provenance_equal(a, b)
     }
@@ -53,7 +53,7 @@ impl OriginChecks<Address, MachineTerm> for PureFactContext {
     fn address(&self, a: &Address, b: &Address) -> bool {
         self.equality_graph.are_equal(a, b)
     }
-    fn width(&self, a: &MachineTerm, b: &MachineTerm) -> bool {
+    fn width(&self, a: &OldMachineTerm, b: &OldMachineTerm) -> bool {
         a == b
     }
     fn opaque_is_root(&self, a: &Address) -> bool {
@@ -216,7 +216,7 @@ mod tests {
     struct Selected<'a> {
         facts: &'a PureFactContext,
         addresses: HashMap<SharedAddress, Address>,
-        widths: HashMap<KernelTerm, MachineTerm>,
+        widths: HashMap<KernelTerm, OldMachineTerm>,
     }
     impl<'a> Selected<'a> {
         fn new(facts: &'a PureFactContext, values: &[(&OldPointer, &SharedPointer)]) -> Self {
@@ -268,9 +268,10 @@ mod tests {
         let _session = VerificationSession::enter();
         let cell = SymbolicMemory::global_pointer("shared-check-index");
         let before = SymbolicMemory::new().with_block("shared-check-index", 16);
-        let after = before
-            .clone()
-            .store(cell.clone(), ProgramValue::Int32(MachineTerm::constant(9)));
+        let after = before.clone().store(
+            cell.clone(),
+            ProgramValue::Int32(OldMachineTerm::constant(9)),
+        );
         for format in [
             MachineIntegerType::Int32,
             MachineIntegerType::UInt32,
@@ -280,7 +281,7 @@ mod tests {
             let make = |memory| {
                 let value = SharedMachineIntegerTerm::index(
                     format,
-                    MachineTerm::read_named(
+                    OldMachineTerm::read_named(
                         ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                         Box::new(cell.clone()),
                         if matches!(
@@ -299,12 +300,12 @@ mod tests {
                         format,
                         MachineIntegerType::Int32 | MachineIntegerType::UInt32
                     ) {
-                        AddressOffset::Int32Scaled {
+                        OldAddressOffset::Int32Scaled {
                             value,
                             byte_width: 4,
                         }
                     } else {
-                        AddressOffset::Int64Scaled {
+                        OldAddressOffset::Int64Scaled {
                             value,
                             byte_width: 8,
                             unsigned: true,
@@ -318,7 +319,7 @@ mod tests {
                 let sa = SharedAddress::import(&a);
                 let sb = SharedAddress::import(right);
                 for allowed in [false, true] {
-                    let loads = |_: &MachineTerm, _: &MachineTerm| allowed;
+                    let loads = |_: &OldMachineTerm, _: &OldMachineTerm| allowed;
                     let expected = pointers_equal_with_load_atoms(&a, right, &loads);
                     let exports = KernelTermExport::machine_export_count();
                     assert_eq!(
@@ -358,7 +359,7 @@ mod tests {
                 .with_provenance(provenance.clone())
                 .with_bounds(Some(SubobjectBounds {
                     start,
-                    width: MachineTerm::constant(width),
+                    width: OldMachineTerm::constant(width),
                 }))
         };
         let left = make(a.clone(), 4);
@@ -370,7 +371,7 @@ mod tests {
         let before = PureFactContext::new();
         let after = before
             .clone()
-            .assume_condition(ConditionTerm::address_equal(a, b), true);
+            .assume_condition(OldConditionTerm::address_equal(a, b), true);
         for (facts, expected) in [(&before, false), (&after, true)] {
             let selected =
                 Selected::new(facts, &[(&left, &sl), (&right, &sr), (&wrong_width, &sw)]);
@@ -401,24 +402,24 @@ mod tests {
         );
         let base = Address {
             base: AddressBase::Heap(1012101),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let stored = OldPointer::new(base.clone(), ProgramType::Int32Pointer);
         let bounded = stored.clone().with_bounds(Some(SubobjectBounds {
             start: base.clone(),
-            width: MachineTerm::constant(4),
+            width: OldMachineTerm::constant(4),
         }));
         let held = MemoryRange::new(base.clone(), 0u32.into(), 8u32.into());
         let before = PureFactContext::new().assume_condition(
-            ConditionTerm::address_equal(read.address().clone(), base),
+            OldConditionTerm::address_equal(read.address().clone(), base),
             true,
         );
         let after = before.clone().assume_condition(
-            ConditionTerm::pointer_equal(read.clone(), stored.clone()),
+            OldConditionTerm::pointer_equal(read.clone(), stored.clone()),
             true,
         );
         let bounded_facts = before.clone().assume_condition(
-            ConditionTerm::pointer_equal(read.clone(), bounded.clone()),
+            OldConditionTerm::pointer_equal(read.clone(), bounded.clone()),
             true,
         );
         let sr = SharedPointer::import(&read);
@@ -469,7 +470,7 @@ mod value_equality_tests {
         let block = OldPointer::new(
             Address {
                 base: AddressBase::Heap(4_211_001),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
             ProgramType::Int32Pointer,
         );
@@ -482,7 +483,10 @@ mod value_equality_tests {
                 &parameter, &block,
             ))
             .assume_proposition(Proposition::condition_is(
-                ConditionTerm::address_equal(parameter.address().clone(), block.address().clone()),
+                OldConditionTerm::address_equal(
+                    parameter.address().clone(),
+                    block.address().clone(),
+                ),
                 true,
             ));
         assert!(context.provenance_equal(parameter.provenance(), block.provenance()));
@@ -501,7 +505,7 @@ mod value_equality_tests {
             ProgramType::Int32Pointer,
         );
         let view = parameter.clone().with_root_bounds();
-        let condition = ConditionTerm::pointer_equal(parameter.clone(), view.clone());
+        let condition = OldConditionTerm::pointer_equal(parameter.clone(), view.clone());
         let context = PureFactContext::new();
         assert_ne!(context.decide(&condition), Some(true));
         assert!(!context.contains_known(&equal(&parameter, &view)));
@@ -517,13 +521,13 @@ mod value_equality_tests {
         );
         let view = parameter.clone().with_root_bounds();
         let context = PureFactContext::new().assume_proposition(Proposition::condition_is(
-            ConditionTerm::pointer_equal(parameter.clone(), view.clone()),
+            OldConditionTerm::pointer_equal(parameter.clone(), view.clone()),
             false,
         ));
-        let unrelated = ConditionTerm::Variable(Variable(4_211_022));
+        let unrelated = OldConditionTerm::Variable(Variable(4_211_022));
         assert_eq!(context.decide(&unrelated), None);
         assert_eq!(
-            context.decide(&ConditionTerm::address_equal(
+            context.decide(&OldConditionTerm::address_equal(
                 parameter.address().clone(),
                 view.address().clone()
             )),

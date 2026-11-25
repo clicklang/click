@@ -2,7 +2,7 @@ use super::*;
 
 fn pointer_fact(left: &Address, right: &Address, equal: bool) -> Proposition {
     Proposition::condition_is(
-        ConditionTerm::AddressEqual(Box::new(left.clone()), Box::new(right.clone())),
+        OldConditionTerm::AddressEqual(Box::new(left.clone()), Box::new(right.clone())),
         equal,
     )
 }

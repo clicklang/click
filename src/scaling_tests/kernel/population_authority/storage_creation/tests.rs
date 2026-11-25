@@ -51,9 +51,9 @@ fn opaque_numeric_batch_work_does_not_grow_with_quantity() {
         .import_observable_contract_population(&description, 0)
         .unwrap();
     let facts = PureFactContext::new().assume_condition(
-        crate::kernel::ConditionTerm::equal(
+        crate::kernel::OldConditionTerm::equal(
             entry.observe_symbolic(&description).unwrap().entry_count,
-            MachineTerm::constant(0),
+            OldMachineTerm::constant(0),
         ),
         true,
     );
@@ -64,7 +64,7 @@ fn opaque_numeric_batch_work_does_not_grow_with_quantity() {
                     &AddressBase::ExternalArgument,
                     &description,
                     true,
-                    &MachineTerm::constant(amount),
+                    &OldMachineTerm::constant(amount),
                     &facts,
                 )
                 .unwrap()
@@ -87,14 +87,14 @@ fn opaque_numeric_batch_work_does_not_grow_with_quantity() {
 fn opaque_symbolic_birth_composes_numeric_custody_and_scales() {
     let block = AddressBase::ExternalArgument;
     let description = member_description(block.clone());
-    let quantity = MachineTerm::Variable(Variable(940_150));
+    let quantity = OldMachineTerm::Variable(Variable(940_150));
     let assumptions = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::signed_greater_equal(quantity.clone(), MachineTerm::constant(0)),
+            OldConditionTerm::signed_greater_equal(quantity.clone(), OldMachineTerm::constant(0)),
             true,
         )
         .assume_condition(
-            ConditionTerm::signed_add_overflows(quantity.clone(), MachineTerm::constant(3)),
+            OldConditionTerm::signed_add_overflows(quantity.clone(), OldMachineTerm::constant(3)),
             false,
         );
     let work = [16, 64, 256].map(|size| {
@@ -109,7 +109,7 @@ fn opaque_symbolic_birth_composes_numeric_custody_and_scales() {
                 .import_opaque_contract_population_inner(
                     &unrelated,
                     0,
-                    Some(MachineTerm::constant(0)),
+                    Some(OldMachineTerm::constant(0)),
                     None,
                     None,
                 )
@@ -119,7 +119,7 @@ fn opaque_symbolic_birth_composes_numeric_custody_and_scales() {
             .import_opaque_contract_population_inner(
                 &description,
                 0,
-                Some(MachineTerm::constant(0)),
+                Some(OldMachineTerm::constant(0)),
                 None,
                 None,
             )
@@ -133,7 +133,7 @@ fn opaque_symbolic_birth_composes_numeric_custody_and_scales() {
                 &block,
                 &description,
                 true,
-                &MachineTerm::constant(3),
+                &OldMachineTerm::constant(3),
                 &PureFactContext::new()
             ),
             Err(CreationRefusal::InvalidQuantity)
@@ -144,7 +144,7 @@ fn opaque_symbolic_birth_composes_numeric_custody_and_scales() {
                     &block,
                     &description,
                     true,
-                    &MachineTerm::constant(3),
+                    &OldMachineTerm::constant(3),
                     &assumptions,
                 )
                 .unwrap()
@@ -155,7 +155,7 @@ fn opaque_symbolic_birth_composes_numeric_custody_and_scales() {
                 observed.combined_delta(),
                 Some((
                     true,
-                    MachineTerm::add(quantity.clone(), MachineTerm::constant(3))
+                    OldMachineTerm::add(quantity.clone(), OldMachineTerm::constant(3))
                 ))
             );
             assert_eq!(
@@ -197,7 +197,7 @@ fn opaque_symbolic_birth_composes_numeric_custody_and_scales() {
                     &block,
                     &description,
                     false,
-                    &MachineTerm::constant(1),
+                    &OldMachineTerm::constant(1),
                     &assumptions,
                 )
                 .unwrap()
@@ -213,7 +213,7 @@ fn opaque_symbolic_birth_composes_numeric_custody_and_scales() {
                     &block,
                     &description,
                     false,
-                    &MachineTerm::constant(2),
+                    &OldMachineTerm::constant(2),
                     &assumptions,
                 )
                 .unwrap()
@@ -231,12 +231,12 @@ fn opaque_symbolic_birth_composes_numeric_custody_and_scales() {
                     &block,
                     &description,
                     false,
-                    &MachineTerm::constant(1),
+                    &OldMachineTerm::constant(1),
                     &assumptions
                 ),
                 Err(CreationRefusal::MissingMembers)
             ));
-            let wrong = MachineTerm::add(quantity.clone(), MachineTerm::constant(1));
+            let wrong = OldMachineTerm::add(quantity.clone(), OldMachineTerm::constant(1));
             assert!(
                 restored
                     .transfer_call_fact_quantity(
@@ -257,7 +257,7 @@ fn opaque_symbolic_birth_composes_numeric_custody_and_scales() {
                     &block,
                     &description,
                     true,
-                    &MachineTerm::constant(1),
+                    &OldMachineTerm::constant(1),
                     &assumptions
                 ),
                 Err(CreationRefusal::MissingAuthority)
@@ -274,10 +274,10 @@ fn opaque_symbolic_birth_composes_numeric_custody_and_scales() {
 
 #[test]
 fn opaque_symbolic_batch_transfer_work_ignores_unrelated_populations() {
-    let quantity = MachineTerm::Variable(Variable(940_131));
+    let quantity = OldMachineTerm::Variable(Variable(940_131));
     let description = member_description(AddressBase::ExternalArgument);
     let assumptions = PureFactContext::new().assume_condition(
-        ConditionTerm::signed_greater_equal(quantity.clone(), MachineTerm::constant(0)),
+        OldConditionTerm::signed_greater_equal(quantity.clone(), OldMachineTerm::constant(0)),
         true,
     );
     for born_batch in [false, true] {
@@ -294,7 +294,7 @@ fn opaque_symbolic_batch_transfer_work_ignores_unrelated_populations() {
                     .import_opaque_contract_population_inner(
                         &unrelated,
                         0,
-                        Some(MachineTerm::constant(0)),
+                        Some(OldMachineTerm::constant(0)),
                         None,
                         None,
                     )
@@ -305,7 +305,7 @@ fn opaque_symbolic_batch_transfer_work_ignores_unrelated_populations() {
                     &description,
                     0,
                     Some(if born_batch {
-                        MachineTerm::constant(0)
+                        OldMachineTerm::constant(0)
                     } else {
                         quantity.clone()
                     }),
@@ -372,7 +372,7 @@ fn opaque_population_lookup_and_exchange_ignore_unrelated_imports() {
                 vec![
                     ProgramValue::pointer(Address {
                         base: AddressBase::ExternalArgument,
-                        offset: AddressOffset::Variable(Variable(950_000 + id)),
+                        offset: OldAddressOffset::Variable(Variable(950_000 + id)),
                     })
                     .into(),
                 ]
@@ -386,7 +386,7 @@ fn opaque_population_lookup_and_exchange_ignore_unrelated_imports() {
                 .import_opaque_contract_population_inner(
                     &description_at(id),
                     1,
-                    Some(MachineTerm::constant(3)),
+                    Some(OldMachineTerm::constant(3)),
                     None,
                     None,
                 )
@@ -427,7 +427,7 @@ fn opaque_transfer_and_finish_index_scale_with_selected_population() {
                 vec![
                     ProgramValue::pointer(Address {
                         base: AddressBase::ExternalArgument,
-                        offset: AddressOffset::Variable(Variable(970_000 + id)),
+                        offset: OldAddressOffset::Variable(Variable(970_000 + id)),
                     })
                     .into(),
                 ]
@@ -510,7 +510,7 @@ fn count_lookup_does_not_scan_unrelated_authority_heads() {
             .import_opaque_contract_population_inner(
                 &description,
                 2,
-                Some(MachineTerm::constant(7)),
+                Some(OldMachineTerm::constant(7)),
                 None,
                 None,
             )
@@ -540,7 +540,7 @@ fn count_lookup_does_not_scan_unrelated_authority_heads() {
         });
         assert_eq!(
             paths[0].value.clone().into_native(),
-            ProgramValue::Int32(MachineTerm::constant(7))
+            ProgramValue::Int32(OldMachineTerm::constant(7))
         );
         work
     });
@@ -555,7 +555,7 @@ fn count_lookup_does_not_scan_unrelated_authority_heads() {
 fn exact_symbolic_births_use_numeric_custody_and_scale() {
     let block = AddressBase::ExternalArgument;
     let description = member_description(block.clone());
-    let quantity = MachineTerm::Variable(Variable(990_001));
+    let quantity = OldMachineTerm::Variable(Variable(990_001));
     let samples = [16, 64, 256].map(|size| {
         let mut entry = CreationEvents::new();
         let mut facts = PureFactContext::new();
@@ -569,15 +569,15 @@ fn exact_symbolic_births_use_numeric_custody_and_scale() {
                 .import_opaque_contract_population_inner(
                     &unrelated,
                     0,
-                    Some(MachineTerm::constant(0)),
+                    Some(OldMachineTerm::constant(0)),
                     None,
                     None,
                 )
                 .unwrap();
             facts = facts.assume_condition(
-                ConditionTerm::equal(
-                    MachineTerm::Variable(Variable(991_000 + index)),
-                    MachineTerm::constant(index as u32),
+                OldConditionTerm::equal(
+                    OldMachineTerm::Variable(Variable(991_000 + index)),
+                    OldMachineTerm::constant(index as u32),
                 ),
                 true,
             );
@@ -586,13 +586,13 @@ fn exact_symbolic_births_use_numeric_custody_and_scale() {
             .import_opaque_contract_population_inner(
                 &description,
                 0,
-                Some(MachineTerm::constant(0)),
+                Some(OldMachineTerm::constant(0)),
                 None,
                 None,
             )
             .unwrap();
         facts = facts.assume_condition(
-            ConditionTerm::equal(quantity.clone(), MachineTerm::constant(1_000_000_000)),
+            OldConditionTerm::equal(quantity.clone(), OldMachineTerm::constant(1_000_000_000)),
             true,
         );
         PureFactContext::reset_exact_constant_fact_visits();
@@ -657,9 +657,9 @@ fn exact_symbolic_births_use_numeric_custody_and_scale() {
 fn opaque_repeated_symbolic_births_compose_and_return_without_scanning_unrelated_state() {
     let block = AddressBase::ExternalArgument;
     let description = member_description(block.clone());
-    let first_quantity = MachineTerm::Variable(Variable(992_001));
-    let second_quantity = MachineTerm::Variable(Variable(992_002));
-    let total = MachineTerm::add(first_quantity.clone(), second_quantity.clone());
+    let first_quantity = OldMachineTerm::Variable(Variable(992_001));
+    let second_quantity = OldMachineTerm::Variable(Variable(992_002));
+    let total = OldMachineTerm::add(first_quantity.clone(), second_quantity.clone());
     let samples = [16, 64, 256].map(|size| {
         // Keep term-bridge imports and canonical forms cold at every sample
         // size: a sign-bit equivalent names σ, whose canonical form is
@@ -681,15 +681,15 @@ fn opaque_repeated_symbolic_births_compose_and_return_without_scanning_unrelated
                 .import_opaque_contract_population_inner(
                     &unrelated,
                     0,
-                    Some(MachineTerm::constant(0)),
+                    Some(OldMachineTerm::constant(0)),
                     None,
                     None,
                 )
                 .unwrap();
             facts = facts.assume_condition(
-                ConditionTerm::equal(
-                    MachineTerm::Variable(Variable(993_000 + index)),
-                    MachineTerm::constant(index as u32),
+                OldConditionTerm::equal(
+                    OldMachineTerm::Variable(Variable(993_000 + index)),
+                    OldMachineTerm::constant(index as u32),
                 ),
                 true,
             );
@@ -698,14 +698,17 @@ fn opaque_repeated_symbolic_births_compose_and_return_without_scanning_unrelated
             .import_opaque_contract_population_inner(
                 &description,
                 0,
-                Some(MachineTerm::constant(0)),
+                Some(OldMachineTerm::constant(0)),
                 None,
                 None,
             )
             .unwrap();
         for quantity in [&first_quantity, &second_quantity] {
             facts = facts.assume_condition(
-                ConditionTerm::signed_greater_equal(quantity.clone(), MachineTerm::constant(0)),
+                OldConditionTerm::signed_greater_equal(
+                    quantity.clone(),
+                    OldMachineTerm::constant(0),
+                ),
                 true,
             );
         }
@@ -730,9 +733,9 @@ fn opaque_repeated_symbolic_births_compose_and_return_without_scanning_unrelated
             CreationRefusal::InvalidQuantity,
             "nonnegative quantities alone do not establish a non-wrapping total"
         );
-        let current = MachineTerm::add(MachineTerm::constant(0), first_quantity.clone());
+        let current = OldMachineTerm::add(OldMachineTerm::constant(0), first_quantity.clone());
         facts = facts.assume_condition(
-            ConditionTerm::signed_add_overflows(current, second_quantity.clone()),
+            OldConditionTerm::signed_add_overflows(current, second_quantity.clone()),
             false,
         );
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -809,7 +812,7 @@ fn opaque_repeated_symbolic_births_compose_and_return_without_scanning_unrelated
                 Some((true, total.clone()))
             );
             facts = facts.assume_condition(
-                ConditionTerm::signed_greater_equal(total.clone(), MachineTerm::constant(0)),
+                OldConditionTerm::signed_greater_equal(total.clone(), OldMachineTerm::constant(0)),
                 true,
             );
             assert!(
@@ -882,7 +885,7 @@ fn opaque_repeated_symbolic_births_compose_and_return_without_scanning_unrelated
 fn imported_named_consumption_counts_identities_and_ignores_unrelated_state() {
     let anchor = ProgramValue::pointer(Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     });
     let schema = ResourceFieldSchema::new(vec![(
         "serial".into(),
@@ -936,7 +939,7 @@ fn imported_named_consumption_counts_identities_and_ignores_unrelated_state() {
             );
             assert_eq!(
                 one.observe_symbolic(&description).unwrap().symbolic_delta,
-                Some((false, MachineTerm::constant(1)))
+                Some((false, OldMachineTerm::constant(1)))
             );
             assert_eq!(
                 one.checked_imported_instance_consumption(&left)
@@ -958,7 +961,7 @@ fn imported_named_consumption_counts_identities_and_ignores_unrelated_state() {
             );
             assert_eq!(
                 observed.symbolic_delta,
-                Some((false, MachineTerm::constant(2)))
+                Some((false, OldMachineTerm::constant(2)))
             );
             assert!(
                 !two.owns_population_member(&description),
@@ -982,7 +985,7 @@ fn imported_named_lifecycle_keeps_entry_bounds_and_scales_with_unrelated_imports
     for wildcard in [false, true] {
         let anchor = ProgramValue::pointer(Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         });
         let schema = ResourceFieldSchema::new(vec![(
             "serial".into(),
@@ -1028,7 +1031,7 @@ fn imported_named_lifecycle_keeps_entry_bounds_and_scales_with_unrelated_imports
             let entry = entry.import_observable_named_authority(&scope).unwrap();
             let count = entry.observe_symbolic(&scope).unwrap().entry_count;
             let assumptions = PureFactContext::new().assume_proposition(Proposition::condition_is(
-                ConditionTerm::signed_add_overflows(count.clone(), MachineTerm::constant(1)),
+                OldConditionTerm::signed_add_overflows(count.clone(), OldMachineTerm::constant(1)),
                 false,
             ));
             let (_, work) = crate::persistent::measure_persistent_work(|| {
@@ -1082,7 +1085,7 @@ fn imported_named_lifecycle_keeps_entry_bounds_and_scales_with_unrelated_imports
                 assert_eq!(observed.entry_owned_members, 2);
                 assert_eq!(
                     observed.combined_delta(),
-                    Some((false, MachineTerm::constant(2)))
+                    Some((false, OldMachineTerm::constant(2)))
                 );
                 if wildcard {
                     let exact_count = spent.observe_exact_member(&exact).unwrap();
@@ -1116,7 +1119,7 @@ fn imported_named_lifecycle_keeps_entry_bounds_and_scales_with_unrelated_imports
 fn imported_named_death_receipts_are_indexed_beside_growing_related_members() {
     let anchor = ProgramValue::pointer(Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     });
     let schema = ResourceFieldSchema::new(vec![(
         "serial".into(),

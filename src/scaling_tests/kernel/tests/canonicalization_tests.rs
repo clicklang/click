@@ -42,21 +42,21 @@ fn variable_collection_after_a_store_costs_the_store() {
     let block = AddressBase::Concrete("counted-history".to_string());
     let at = |offset: i64| Address {
         base: block.clone(),
-        offset: AddressOffset::Constant(offset),
+        offset: OldAddressOffset::Constant(offset),
     };
     let samples = [16usize, 64, 256, 1024].map(|cells| {
         let mut memory = SymbolicMemory::new().with_block("counted-history", 4 * cells as u32 + 8);
         for index in 0..cells {
             memory = memory.store(
                 at(4 * index as i64),
-                ProgramValue::Int32(MachineTerm::Variable(Variable(7_000_000 + index as u64))),
+                ProgramValue::Int32(OldMachineTerm::Variable(Variable(7_000_000 + index as u64))),
             );
         }
         let before = crate::kernel::intern_memory(memory.clone());
         crate::kernel::reasoning::variable_collection::clear_shared_memory_variables();
         let mut variables = BTreeSet::new();
         crate::kernel::reasoning::collect_bitvector_variables(
-            &MachineTerm::read_named(
+            &OldMachineTerm::read_named(
                 ProgramPoint::at(&before),
                 Box::new(at(0)),
                 crate::kernel::LoadKind::Int32,
@@ -66,9 +66,9 @@ fn variable_collection_after_a_store_costs_the_store() {
         assert_eq!(variables.len(), cells);
         let after = memory.store(
             at(0),
-            ProgramValue::Int32(MachineTerm::Variable(Variable(7_900_000))),
+            ProgramValue::Int32(OldMachineTerm::Variable(Variable(7_900_000))),
         );
-        let load = MachineTerm::read_named(
+        let load = OldMachineTerm::read_named(
             ProgramPoint::at(&(crate::kernel::intern_memory(after))),
             Box::new(at(4)),
             crate::kernel::LoadKind::Int32,

@@ -1,10 +1,10 @@
 use super::*;
 use crate::kernel::{KernelTermExport, KernelType, MachineBinaryOp};
 
-fn retained(ty: MachineIntegerType, term: &MachineTerm) -> SharedMachineIntegerTerm {
+fn retained(ty: MachineIntegerType, term: &OldMachineTerm) -> SharedMachineIntegerTerm {
     MachineOperandView::Shared(&KernelTerm::retained_machine_operand(
         ty,
-        MachineOperandView::Legacy(term),
+        MachineOperandView::Old(term),
     ))
     .retain(ty)
 }
@@ -13,15 +13,15 @@ fn retained(ty: MachineIntegerType, term: &MachineTerm) -> SharedMachineIntegerT
 fn exact_coordinate_reconstruction_preserves_native_signed_shapes() {
     let _session = crate::kernel::VerificationSession::enter();
     use MachineIntegerType as T;
-    let variable = MachineTerm::Variable(Variable(993100));
+    let variable = OldMachineTerm::Variable(Variable(993100));
     for ty in [T::Int32, T::Int64, T::UInt64] {
         let constant = |n| match ty {
-            T::Int32 => MachineTerm::constant(n as u32),
-            T::Int64 => MachineTerm::int64_constant(n),
-            T::UInt64 => MachineTerm::uint64_constant(n as u64),
+            T::Int32 => OldMachineTerm::constant(n as u32),
+            T::Int64 => OldMachineTerm::int64_constant(n),
+            T::UInt64 => OldMachineTerm::uint64_constant(n as u64),
             _ => unreachable!(),
         };
-        let raw = |a, b| MachineTerm::Binary {
+        let raw = |a, b| OldMachineTerm::Binary {
             format: ty,
             op: MachineBinaryOp::Add,
             left: Box::new(a),
@@ -35,16 +35,16 @@ fn exact_coordinate_reconstruction_preserves_native_signed_shapes() {
             raw(constant(2), constant(3)),
             raw(variable.clone(), constant(0)),
             raw(
-                MachineTerm::If {
-                    condition: Box::new(ConditionTerm::Constant(true)),
+                OldMachineTerm::If {
+                    condition: Box::new(OldConditionTerm::Constant(true)),
                     then_term: Box::new(constant(2)),
                     else_term: Box::new(constant(3)),
                 },
                 constant(5),
             ),
             raw(
-                MachineTerm::If {
-                    condition: Box::new(ConditionTerm::Variable(Variable(993102))),
+                OldMachineTerm::If {
+                    condition: Box::new(OldConditionTerm::Variable(Variable(993102))),
                     then_term: Box::new(constant(2)),
                     else_term: Box::new(constant(3)),
                 },
@@ -53,12 +53,12 @@ fn exact_coordinate_reconstruction_preserves_native_signed_shapes() {
         ] {
             for stride in [-4, 0, 1, 4] {
                 let offset = if ty == T::Int32 {
-                    AddressOffset::Int32Scaled {
+                    OldAddressOffset::Int32Scaled {
                         value: retained(ty, &value),
                         byte_width: stride,
                     }
                 } else {
-                    AddressOffset::Int64Scaled {
+                    OldAddressOffset::Int64Scaled {
                         value: retained(ty, &value),
                         byte_width: stride,
                         unsigned: ty == T::UInt64,
@@ -73,15 +73,15 @@ fn exact_coordinate_reconstruction_preserves_native_signed_shapes() {
                     continue;
                 }
                 let expected = if ty != T::Int32 && stride == 0 {
-                    MachineTerm::int64_constant(0)
+                    OldMachineTerm::int64_constant(0)
                 } else {
-                    MachineTerm::int64_multiply(
+                    OldMachineTerm::int64_multiply(
                         if ty == T::Int32 {
-                            MachineTerm::int64_from_32(value.clone())
+                            OldMachineTerm::int64_from_32(value.clone())
                         } else {
                             value.clone()
                         },
-                        MachineTerm::int64_constant(stride),
+                        OldMachineTerm::int64_constant(stride),
                     )
                 };
                 assert_eq!(
@@ -90,16 +90,17 @@ fn exact_coordinate_reconstruction_preserves_native_signed_shapes() {
                     "{ty:?} {value:?} * {stride}"
                 );
                 assert!(
-                    guards
-                        .iter()
-                        .all(|guard| !matches!(guard.condition, ConditionTerm::Overflows { .. }))
+                    guards.iter().all(|guard| !matches!(
+                        guard.condition,
+                        OldConditionTerm::Overflows { .. }
+                    ))
                 );
             }
         }
     }
     assert!(
         exact_pointer_offset_i64_with_guards(
-            &AddressOffset::Variable(Variable(993101)),
+            &OldAddressOffset::Variable(Variable(993101)),
             &mut vec![],
         )
         .is_none()
@@ -117,8 +118,8 @@ fn exact_coordinate_guards_keep_full_width_and_overflow_refusals() {
         (1 << 63, 1, false),
         (i64::MAX as u64, 2, false),
     ] {
-        let offset = AddressOffset::Int64Scaled {
-            value: retained(T::UInt64, &MachineTerm::uint64_constant(value)),
+        let offset = OldAddressOffset::Int64Scaled {
+            value: retained(T::UInt64, &OldMachineTerm::uint64_constant(value)),
             byte_width: stride,
             unsigned: true,
         };
@@ -137,9 +138,9 @@ fn exact_coordinate_guards_keep_full_width_and_overflow_refusals() {
         );
     }
     for (left, right, accepted) in [(i64::MAX, 1, false), (i64::MIN, -1, false), (17, 4, true)] {
-        let offset = AddressOffset::Add(
-            Box::new(AddressOffset::Constant(left)),
-            Box::new(AddressOffset::Constant(right)),
+        let offset = OldAddressOffset::Add(
+            Box::new(OldAddressOffset::Constant(left)),
+            Box::new(OldAddressOffset::Constant(right)),
         );
         let mut guards = vec![];
         let _ = exact_pointer_offset_i64_with_guards(&offset, &mut guards).unwrap();
@@ -164,14 +165,14 @@ fn retained_block_bounds_require_the_full_index_and_preserve_missing_bounds() {
     for ty in [T::Int64, T::UInt64] {
         let base = Address {
             base: AddressBase::Concrete("retained-formation".into()),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let state = ExecutionState::new()
             .with_memory(SymbolicMemory::new().with_block(base.base.clone(), 64));
-        let variable = MachineTerm::Variable(Variable(993200));
+        let variable = OldMachineTerm::Variable(Variable(993200));
         let pointer = Address {
             base: base.base.clone(),
-            offset: AddressOffset::Int64Scaled {
+            offset: OldAddressOffset::Int64Scaled {
                 value: retained(ty, &variable),
                 byte_width: 4,
                 unsigned: ty == T::UInt64,
@@ -184,12 +185,12 @@ fn retained_block_bounds_require_the_full_index_and_preserve_missing_bounds() {
         assert!(guards.iter().any(|g| root.decide(&g.condition).is_none()));
         for n in [-1, 0, 16, 17, 1 << 32] {
             let literal = if ty == T::UInt64 {
-                MachineTerm::uint64_constant(n as u64)
+                OldMachineTerm::uint64_constant(n as u64)
             } else {
-                MachineTerm::int64_constant(n)
+                OldMachineTerm::int64_constant(n)
             };
             let context = root.clone().assume_condition(
-                ConditionTerm::machine_compare(
+                OldConditionTerm::machine_compare(
                     ty,
                     CompareRelation::Equal,
                     variable.clone(),
@@ -217,27 +218,27 @@ fn coordinate_reconstruction_keeps_the_selected_read_state() {
     let _session = crate::kernel::VerificationSession::enter();
     let pointer = Address {
         base: AddressBase::Concrete("coordinate-retained_state".into()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let before = SymbolicMemory::new()
         .with_block(pointer.base.clone(), 8)
         .store(
             pointer.clone(),
-            ProgramValue::Int64(MachineTerm::int64_constant(2)),
+            ProgramValue::Int64(OldMachineTerm::int64_constant(2)),
         );
     let after = before.clone().store(
         pointer.clone(),
-        ProgramValue::Int64(MachineTerm::int64_constant(3)),
+        ProgramValue::Int64(OldMachineTerm::int64_constant(3)),
     );
     let mut results = vec![];
     for memory in [before, after] {
         let memory = crate::kernel::intern_memory(memory);
-        let read = MachineTerm::read_named(
+        let read = OldMachineTerm::read_named(
             ProgramPoint::at(&memory),
             Box::new(pointer.clone()),
             LoadKind::Bits64,
         );
-        let offset = AddressOffset::Int64Scaled {
+        let offset = OldAddressOffset::Int64Scaled {
             value: retained(MachineIntegerType::Int64, &read),
             byte_width: 4,
             unsigned: false,
@@ -256,9 +257,12 @@ fn coordinate_reconstruction_keeps_the_selected_read_state() {
 fn wide_block_bounds_keep_signed_extension_and_opaque_offset_refusals() {
     let _session = crate::kernel::VerificationSession::enter();
     let ty = MachineIntegerType::Int32;
-    let size = AllocationSize::new(MachineTerm::uint64_constant(64), AllocationSizeKind::UInt64);
-    let index = MachineTerm::Variable(Variable(993400));
-    let offset = AddressOffset::Int32Scaled {
+    let size = AllocationSize::new(
+        OldMachineTerm::uint64_constant(64),
+        AllocationSizeKind::UInt64,
+    );
+    let index = OldMachineTerm::Variable(Variable(993400));
+    let offset = OldAddressOffset::Int32Scaled {
         value: retained(ty, &index),
         byte_width: 4,
     };
@@ -267,7 +271,7 @@ fn wide_block_bounds_keep_signed_extension_and_opaque_offset_refusals() {
     assert_eq!(KernelTermExport::machine_export_count(), exports);
     for n in [-1, 0, 16, 17] {
         let context = PureFactContext::new().assume_condition(
-            ConditionTerm::equal(index.clone(), MachineTerm::constant(n as u32)),
+            OldConditionTerm::equal(index.clone(), OldMachineTerm::constant(n as u32)),
             true,
         );
         assert_eq!(
@@ -278,7 +282,7 @@ fn wide_block_bounds_keep_signed_extension_and_opaque_offset_refusals() {
         );
     }
     assert!(
-        wide_block_bounds_of_32_bit_offset(&AddressOffset::Variable(Variable(993401)), &size,)
+        wide_block_bounds_of_32_bit_offset(&OldAddressOffset::Variable(Variable(993401)), &size,)
             .is_none()
     );
 }
@@ -296,13 +300,13 @@ fn extension_constant_readings_keep_native_literal_requirements() {
         (E::UInt64FromInt64, T::Int64, T::UInt64),
     ] {
         let constant = |n| match source {
-            T::Int64 => MachineTerm::int64_constant(n),
-            T::UInt32 => MachineTerm::uint32_constant(n as u32),
-            _ => MachineTerm::constant(n as u32),
+            T::Int64 => OldMachineTerm::int64_constant(n),
+            T::UInt32 => OldMachineTerm::uint32_constant(n as u32),
+            _ => OldMachineTerm::constant(n as u32),
         };
         for operand in [
             constant(3),
-            MachineTerm::Binary {
+            OldMachineTerm::Binary {
                 format: source,
                 op: MachineBinaryOp::Add,
                 left: Box::new(constant(1)),
@@ -330,32 +334,34 @@ fn widened_index_order_keeps_its_common_format_with_separate_bounds() {
     let _session = crate::kernel::VerificationSession::enter();
     use crate::kernel::machine_integer::comparison::comparison_view;
     use MachineIntegerType as T;
-    let i = MachineTerm::Variable(Variable(993120));
-    let n = MachineTerm::Variable(Variable(993121));
+    let i = OldMachineTerm::Variable(Variable(993120));
+    let n = OldMachineTerm::Variable(Variable(993121));
     let wide_i = retained(T::Int32, &i).checking_cast_operand(T::Int64);
     let query = formation_comparison(
         T::Int64,
         CompareRelation::LessEqual,
         wide_i.operand_view(),
-        MachineOperandView::Legacy(&n),
+        MachineOperandView::Old(&n),
     );
     assert_eq!(comparison_view(&query, true).unwrap().format, T::Int64);
-    let native =
-        ConditionTerm::int64_signed_less_equal(MachineTerm::int64_from_32(i.clone()), n.clone());
+    let native = OldConditionTerm::int64_signed_less_equal(
+        OldMachineTerm::int64_from_32(i.clone()),
+        n.clone(),
+    );
     let bounds = [
-        ConditionTerm::signed_less_equal(MachineTerm::constant(0), i.clone()),
-        ConditionTerm::signed_less_than(i, MachineTerm::constant(10)),
-        ConditionTerm::machine_compare(
+        OldConditionTerm::signed_less_equal(OldMachineTerm::constant(0), i.clone()),
+        OldConditionTerm::signed_less_than(i, OldMachineTerm::constant(10)),
+        OldConditionTerm::machine_compare(
             T::UInt64,
             CompareRelation::LessEqual,
-            MachineTerm::uint64_constant(10),
+            OldMachineTerm::uint64_constant(10),
             n.clone(),
         ),
-        ConditionTerm::machine_compare(
+        OldConditionTerm::machine_compare(
             T::UInt64,
             CompareRelation::LessEqual,
             n,
-            MachineTerm::uint64_constant(100),
+            OldMachineTerm::uint64_constant(100),
         ),
     ];
     let mut context = PureFactContext::new();

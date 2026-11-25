@@ -11,11 +11,11 @@ fn wide_borrow_alignment_retains_both_index_widths_without_alias_scans() {
         let mut graph = EqualityGraph::default();
         let bytes = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(index(999_200), 1),
+            offset: OldAddressOffset::scale_int32(index(999_200), 1),
         };
         let base = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(index(999_201), 1),
+            offset: OldAddressOffset::scale_int32(index(999_201), 1),
         };
         let computed = base.offset_by_elements(index(999_202), 1);
         let wide = bytes.offset_by_typed_elements(index(999_203), 1, true, true);
@@ -66,10 +66,10 @@ fn repeated_address_queries_reuse_registered_addresses() {
         // query reaches address registration, whose normal form of each
         // offset is a fresh flattened term.
         let offset = |first: u64| {
-            (0..size).fold(AddressOffset::Constant(0), |sum, item| {
-                AddressOffset::Add(
+            (0..size).fold(OldAddressOffset::Constant(0), |sum, item| {
+                OldAddressOffset::Add(
                     Box::new(sum),
-                    Box::new(AddressOffset::scaled_int32_node(index(first + item), 4)),
+                    Box::new(OldAddressOffset::scaled_int32_node(index(first + item), 4)),
                 )
             })
         };
@@ -157,7 +157,7 @@ fn reading_one_class_merge_does_not_walk_the_shared_history() {
 fn same_block_pointer_premise_chains_have_indexed_work() {
     for size in [16u64, 64, 256, 1024] {
         let block = symbolic(11_030);
-        let offset = |i| AddressOffset::Variable(Variable(20_000 + i));
+        let offset = |i| OldAddressOffset::Variable(Variable(20_000 + i));
         let mut graph = EqualityGraph::default();
         let (_, insertion_work) = crate::instrumentation::measure_deterministic_work(|| {
             for i in 0..size {
@@ -182,8 +182,8 @@ fn same_block_pointer_premise_chains_have_indexed_work() {
 #[test]
 fn equal_base_offset_queries_ignore_unrelated_class_members() {
     for size in [16u64, 64, 256, 1024] {
-        let x = AddressOffset::Variable(Variable(11_050));
-        let y = AddressOffset::Variable(Variable(11_051));
+        let x = OldAddressOffset::Variable(Variable(11_050));
+        let y = OldAddressOffset::Variable(Variable(11_051));
         let mut graph = EqualityGraph::default();
         for i in 0..size {
             graph.add_equality(&at(symbolic(30_000 + i), 0), &at(symbolic(30_001 + i), 0));
@@ -207,7 +207,7 @@ fn equal_base_offset_queries_ignore_unrelated_class_members() {
 
 #[test]
 fn pointer_transitivity_recovers_same_block_offsets() {
-    let offset = |id| AddressOffset::scaled_int32_node(index(id), 4);
+    let offset = |id| OldAddressOffset::scaled_int32_node(index(id), 4);
     for reverse in [false, true] {
         let mut samples = Vec::new();
         for size in [8u64, 32, 128, 512] {
@@ -219,7 +219,7 @@ fn pointer_transitivity_recovers_same_block_offsets() {
                 graph.add_equality(
                     &at_offset(
                         symbolic(961_000 + id),
-                        AddressOffset::Variable(Variable(963_000 + id)),
+                        OldAddressOffset::Variable(Variable(963_000 + id)),
                     ),
                     &z,
                 );
@@ -257,13 +257,16 @@ fn pointer_transitivity_recovers_same_block_offsets() {
     // Equal addresses from different blocks do not equate their offsets.
     let mut graph = EqualityGraph::default();
     graph.add_equality(&at(symbolic(962_000), 4), &at(symbolic(962_001), 8));
-    assert!(!graph.are_offsets_equal(&AddressOffset::Constant(4), &AddressOffset::Constant(8)));
+    assert!(!graph.are_offsets_equal(
+        &OldAddressOffset::Constant(4),
+        &OldAddressOffset::Constant(8)
+    ));
 }
 
 #[test]
 fn mixed_pointer_queries_do_not_walk_growing_offset_classes() {
     for size in [8u64, 32, 128, 512] {
-        let offset = |i| AddressOffset::Variable(Variable(940_000 + i));
+        let offset = |i| OldAddressOffset::Variable(Variable(940_000 + i));
         let x = at_offset(AddressBase::ExternalArgument, offset(0));
         let y = at_offset(AddressBase::ExternalArgument, offset(size));
         let z = at(symbolic(950_000), 0);
@@ -298,15 +301,15 @@ fn constant_displacement_queries_ignore_unrelated_class_members() {
     for size in [16u64, 64, 256, 1024] {
         let a = symbolic(40_000);
         let b = symbolic(40_001);
-        let x = AddressOffset::Variable(Variable(11_070));
-        let y = AddressOffset::Variable(Variable(11_071));
+        let x = OldAddressOffset::Variable(Variable(11_070));
+        let y = OldAddressOffset::Variable(Variable(11_071));
         let mut graph = EqualityGraph::default();
         graph.add_equality(&at(a.clone(), 0), &at(b.clone(), 8));
         for i in 1..size {
             graph.add_equality(&at(symbolic(40_000 + i), 0), &at(symbolic(40_001 + i), 0));
         }
         graph.add_offset_equality(
-            &AddressOffset::add(x.clone(), AddressOffset::Constant(8)),
+            &OldAddressOffset::add(x.clone(), OldAddressOffset::Constant(8)),
             &y,
         );
         let left = at_offset(a, x);
@@ -333,10 +336,10 @@ fn same_block_pointer_queries_scale_with_registered_offset_classes() {
         for id in 0..size {
             graph.add_int32_equality(&index(id), &index(id + 1));
         }
-        let first = at_offset(base.clone(), AddressOffset::scale_int32(index(0), 4));
+        let first = at_offset(base.clone(), OldAddressOffset::scale_int32(index(0), 4));
         let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
             for id in 1..=size {
-                let other = at_offset(base.clone(), AddressOffset::scale_int32(index(id), 4));
+                let other = at_offset(base.clone(), OldAddressOffset::scale_int32(index(id), 4));
                 assert!(graph.are_equal(&first, &other));
             }
         });
@@ -396,15 +399,15 @@ fn offset_queries_retain_typed_read_definitions_and_keep_blocks_distinct() {
     };
     let xv = variable(&p);
     let yv = variable(&q);
-    let x = Address::loaded(&MachineTerm::Variable(xv)).unwrap();
-    let y = Address::loaded(&MachineTerm::Variable(yv)).unwrap();
+    let x = Address::loaded(&OldMachineTerm::Variable(xv)).unwrap();
+    let y = Address::loaded(&OldMachineTerm::Variable(yv)).unwrap();
     // A typed read is named by its defining state and address, not by
     // its storage block or a scaled offset.
     for (value, address) in [(&x, &p), (&y, &q)] {
         let read = value.as_loaded_value().expect("a typed pointer read");
         assert_eq!(&read.defining_address, address);
         assert_eq!(read.defining_memory.arena_id(), memory.arena_id());
-        assert_eq!(read.displacement, AddressOffset::Constant(0));
+        assert_eq!(read.displacement, OldAddressOffset::Constant(0));
     }
     let mut graph = EqualityGraph::default();
     let sibling = graph.clone();
@@ -425,7 +428,7 @@ fn offset_queries_retain_typed_read_definitions_and_keep_blocks_distinct() {
         &x,
         &Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(MachineTerm::Variable(yv), 4),
+            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(yv), 4),
         }
     ));
     // New unrelated definitions must not make rediscovery visit more than
@@ -478,7 +481,7 @@ fn load_congruence_work_ignores_classed_loads_of_other_states() {
                     .with_block(symbolic(70_000 + index), 16)
                     .store(
                         at(symbolic(70_000 + index), 0),
-                        ProgramValue::Int32(MachineTerm::constant(index as u32)),
+                        ProgramValue::Int32(OldMachineTerm::constant(index as u32)),
                     ),
             );
             let loaded = name(&memory, at(symbolic(70_000 + index), 0));
@@ -570,7 +573,7 @@ fn late_typed_load_merges_scale_with_existing_storage_relative_bridges() {
                 let p = at(symbolic(810_000 + i), 0);
                 let q = at(symbolic(820_000 + i), 0);
                 let old_value = |address: &Address| {
-                    Address::loaded(&MachineTerm::Variable(
+                    Address::loaded(&OldMachineTerm::Variable(
                         crate::kernel::load_variable_for_cell_with_origin(
                             &memory,
                             address,
@@ -629,11 +632,11 @@ fn branch_merges_do_not_reindex_the_large_shared_prefix() {
 #[test]
 fn separation_equality_query_uses_offset_classes_without_walking_aliases() {
     for size in [16u64, 64, 256, 1024] {
-        let offset = |i| AddressOffset::Variable(Variable(500_000 + i));
+        let offset = |i| OldAddressOffset::Variable(Variable(500_000 + i));
         let mut context = PureFactContext::new();
         for i in 0..size {
             context = context.assume_condition(
-                ConditionTerm::address_offset_equal(offset(i), offset(i + 1)),
+                OldConditionTerm::address_offset_equal(offset(i), offset(i + 1)),
                 true,
             );
         }
@@ -650,11 +653,11 @@ fn separation_equality_query_uses_offset_classes_without_walking_aliases() {
 #[test]
 fn affine_input_normalization_is_linear_in_its_explicit_syntax() {
     for size in [16u64, 64, 256, 1024] {
-        let mut input = AddressOffset::Constant(0);
+        let mut input = OldAddressOffset::Constant(0);
         for i in 0..size {
-            input = AddressOffset::Add(
+            input = OldAddressOffset::Add(
                 Box::new(input),
-                Box::new(AddressOffset::Variable(Variable(900_000 + i))),
+                Box::new(OldAddressOffset::Variable(Variable(900_000 + i))),
             );
         }
         let (form, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -726,7 +729,7 @@ fn shifted_raw_read_dependency_lookup_ignores_unrelated_definitions() {
         };
         graph.add_equality(&Address::loaded_value(&memory, &address), &model);
         let read = |pointer: &Address| {
-            MachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
+            OldMachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
                 &memory,
                 pointer,
                 crate::kernel::LoadKind::Int32,
@@ -735,7 +738,7 @@ fn shifted_raw_read_dependency_lookup_ignores_unrelated_definitions() {
         };
         let source = read(&raw.address().offset_by_bytes(24));
         let target = read(&model.offset_by_bytes(24));
-        let expected = MachineTerm::constant(7);
+        let expected = OldMachineTerm::constant(7);
         let (equal, work) = crate::instrumentation::measure_deterministic_work(|| {
             graph.add_int32_equality(&source, &expected);
             graph.are_int32_equal(&target, &expected)
@@ -764,8 +767,8 @@ fn pointer_fact_source_order_queries_ignore_unrelated_admissions() {
                 domain
                     .opaque_coverage_fact(&crate::kernel::MemoryRange::new(
                         at(symbolic(987_100 + id), 0),
-                        MachineTerm::constant(0),
-                        MachineTerm::constant(1),
+                        OldMachineTerm::constant(0),
+                        OldMachineTerm::constant(1),
                     ))
                     .expect("coverage names the opaque domain"),
             ));
@@ -816,7 +819,7 @@ fn wide_read_metadata_does_not_publish_a_value_without_an_equation() {
                     8,
                     &named,
                 );
-                let value = MachineTerm::Variable(variable);
+                let value = OldMachineTerm::Variable(variable);
                 let observed = intern_memory(
                     named
                         .memory()
@@ -839,11 +842,11 @@ fn wide_read_metadata_does_not_publish_a_value_without_an_equation() {
                         &observed,
                     )
                 );
-                assert!(!graph.are_uint64_equal(&value, &MachineTerm::uint64_constant(0)));
+                assert!(!graph.are_uint64_equal(&value, &OldMachineTerm::uint64_constant(0)));
                 // Changing cached metadata does not publish a value equality.
                 let resolved = intern_memory(named.memory().clone().materialize_named_cell(
                     address.clone(),
-                    ProgramValue::UInt64(MachineTerm::uint64_constant(17)),
+                    ProgramValue::UInt64(OldMachineTerm::uint64_constant(17)),
                 ));
                 crate::kernel::eval::begin_load_origin_epoch();
                 assert_eq!(
@@ -856,16 +859,16 @@ fn wide_read_metadata_does_not_publish_a_value_without_an_equation() {
                         &resolved,
                     )
                 );
-                assert!(!graph.are_uint64_equal(&value, &MachineTerm::uint64_constant(17)));
-                graph.add_uint64_equality(&value, &MachineTerm::uint64_constant(17));
-                assert!(graph.are_uint64_equal(&value, &MachineTerm::uint64_constant(17)));
-                assert!(!graph.are_uint64_equal(&value, &MachineTerm::uint64_constant(0)));
+                assert!(!graph.are_uint64_equal(&value, &OldMachineTerm::uint64_constant(17)));
+                graph.add_uint64_equality(&value, &OldMachineTerm::uint64_constant(17));
+                assert!(graph.are_uint64_equal(&value, &OldMachineTerm::uint64_constant(17)));
+                assert!(!graph.are_uint64_equal(&value, &OldMachineTerm::uint64_constant(0)));
                 reads.push(value);
             }
         });
         let ((), queries) = crate::instrumentation::measure_deterministic_work(|| {
             for read in reads {
-                assert!(!graph.are_uint64_equal(&read, &MachineTerm::uint64_constant(0)));
+                assert!(!graph.are_uint64_equal(&read, &OldMachineTerm::uint64_constant(0)));
             }
         });
         assert!(production < 500 * size as usize, "{size}: {production}");

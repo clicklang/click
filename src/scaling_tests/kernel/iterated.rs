@@ -12,11 +12,11 @@ fn iterated_exposure_preserves_the_frame_without_admission_or_normalization() {
                 let _session = crate::kernel::VerificationSession::enter();
                 let base = Address {
                     base: AddressBase::Heap(9_970_000),
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0),
                 };
                 let guards = Address {
                     base: "local:iterated-exposure-guards".into(),
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0),
                 };
                 let template = IteratedMemory::new(
                     "cells",
@@ -45,11 +45,11 @@ fn iterated_exposure_preserves_the_frame_without_admission_or_normalization() {
                         } else {
                             Address {
                                 base: base.base.clone(),
-                                offset: AddressOffset::Variable(Variable(9_980_000 + index)),
+                                offset: OldAddressOffset::Variable(Variable(9_980_000 + index)),
                             }
                         };
                         facts = facts.assume_condition(
-                            ConditionTerm::address_equal(base.clone(), alias),
+                            OldConditionTerm::address_equal(base.clone(), alias),
                             true,
                         );
                     }
@@ -98,9 +98,9 @@ fn iterated_exposure_preserves_the_frame_without_admission_or_normalization() {
                 if unfold_clause && axis == "range premises" {
                     for premise in 0..count {
                         let var = Variable(9_990_000);
-                        let index = MachineTerm::Variable(var);
-                        let lower = ConditionTerm::signed_less_equal(1u32.into(), index.clone());
-                        let upper = ConditionTerm::signed_less_than(
+                        let index = OldMachineTerm::Variable(var);
+                        let lower = OldConditionTerm::signed_less_equal(1u32.into(), index.clone());
+                        let upper = OldConditionTerm::signed_less_than(
                             index.clone(),
                             (32 + premise as u32).into(),
                         );
@@ -115,7 +115,7 @@ fn iterated_exposure_preserves_the_frame_without_admission_or_normalization() {
                                     Box::new(Proposition::condition_is(upper, true)),
                                 )),
                                 Box::new(Proposition::condition_is(
-                                    ConditionTerm::equal(cell, 0u32.into()),
+                                    OldConditionTerm::equal(cell, 0u32.into()),
                                     true,
                                 )),
                             ),
@@ -130,9 +130,9 @@ fn iterated_exposure_preserves_the_frame_without_admission_or_normalization() {
                     // Whole-clause unfolding's explicit whole-range premise: a selected
                     // element's known value alone does not prove every guard.
                     let var = Variable(9_990_000);
-                    let index = MachineTerm::Variable(var);
-                    let lower = ConditionTerm::signed_less_equal(0u32.into(), index.clone());
-                    let upper = ConditionTerm::signed_less_than(index.clone(), 4u32.into());
+                    let index = OldMachineTerm::Variable(var);
+                    let lower = OldConditionTerm::signed_less_equal(0u32.into(), index.clone());
+                    let upper = OldConditionTerm::signed_less_than(index.clone(), 4u32.into());
                     let hypotheses = facts
                         .clone()
                         .assume_condition(lower.clone(), true)
@@ -148,7 +148,7 @@ fn iterated_exposure_preserves_the_frame_without_admission_or_normalization() {
                                 Box::new(Proposition::condition_is(upper, true)),
                             )),
                             Box::new(Proposition::condition_is(
-                                ConditionTerm::Compare {
+                                OldConditionTerm::Compare {
                                     format: MachineIntegerType::Int32,
                                     relation: CompareRelation::Equal,
                                     left: Box::new(value),

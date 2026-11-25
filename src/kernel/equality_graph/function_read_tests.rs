@@ -22,7 +22,7 @@ fn a_function_pointer_read_of_its_stored_cell_is_the_stored_function() {
     let _session = crate::kernel::VerificationSession::enter();
     let slot = Address {
         base: "callback-slot".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let target = Address::function("callback");
     let memory =
@@ -50,7 +50,7 @@ fn a_function_pointer_read_through_an_alias_requires_explicit_store_equation() {
     let _session = crate::kernel::VerificationSession::enter();
     let slot = Address {
         base: "callback-slot".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let target = Address::function("callback");
     let stored = callback_value("callback");
@@ -58,7 +58,7 @@ fn a_function_pointer_read_through_an_alias_requires_explicit_store_equation() {
     let query = Address::symbolic(Variable(992001));
     let read = function_read(&memory, &query);
     let empty = PureFactContext::new().assume_condition(
-        ConditionTerm::address_equal(slot.clone(), query.clone()),
+        OldConditionTerm::address_equal(slot.clone(), query.clone()),
         true,
     );
     assert!(
@@ -73,7 +73,7 @@ fn a_function_pointer_read_through_an_alias_requires_explicit_store_equation() {
     let before_alias = PureFactContext::new().assume_proposition(equation);
     assert!(!before_alias.pointers_known_equal(&read, &target));
     let after_alias = before_alias.assume_condition(
-        ConditionTerm::address_equal(slot.clone(), query.clone()),
+        OldConditionTerm::address_equal(slot.clone(), query.clone()),
         true,
     );
     assert!(after_alias.pointers_known_equal(&read, &target));

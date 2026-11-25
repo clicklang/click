@@ -124,12 +124,13 @@ mod tests {
         let mut roots = Vec::new();
         for class in [CScalarClass::Int, CScalarClass::Char] {
             let expected = Some(CAccessClass::Scalar(class));
-            let native = MachineTerm::IntegerAddress(
+            let native = OldMachineTerm::IntegerAddress(
                 Box::new(address.clone()),
                 AddressObjectClass::new(expected.clone()),
             );
             let root = KernelTermImport::default().machine(MachineIntegerType::UInt64, &native);
-            let MachineTerm::IntegerAddress(_, actual) = KernelTermExport::machine(&root).unwrap()
+            let OldMachineTerm::IntegerAddress(_, actual) =
+                KernelTermExport::machine(&root).unwrap()
             else {
                 panic!("address");
             };

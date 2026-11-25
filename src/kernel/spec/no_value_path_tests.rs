@@ -10,7 +10,7 @@ fn error_path(error: RuntimeError) -> ExpressionPath {
 
 fn value_path() -> ExpressionPath {
     ExpressionPath {
-        outcome: ExpressionOutcome::Value(ProgramValue::Int32(MachineTerm::constant(1))),
+        outcome: ExpressionOutcome::Value(ProgramValue::Int32(OldMachineTerm::constant(1))),
         facts: Vec::new().into(),
         obligations: Vec::new(),
     }
@@ -21,7 +21,7 @@ fn width_mismatch() -> RuntimeError {
         pointer: Address::null(),
         value_type: ProgramType::Int32,
         stored: Some(Box::new(ProgramValue::UInt64(
-            MachineTerm::uint64_constant(6),
+            OldMachineTerm::uint64_constant(6),
         ))),
     }
 }

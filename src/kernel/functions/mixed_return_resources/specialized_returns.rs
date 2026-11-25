@@ -17,7 +17,7 @@ pub(super) enum Family {
 pub(super) struct SpecializedReturnEvidence {
     pub(super) instance: Option<ResourceInstance>,
     pub(super) constructor: Option<AlgebraicTerm>,
-    pub(super) authorities: Vec<(ResourceOccurrenceId, MachineTerm)>,
+    pub(super) authorities: Vec<(ResourceOccurrenceId, OldMachineTerm)>,
 }
 
 fn flat(specs: &[ResourceSpec]) -> bool {
@@ -38,7 +38,7 @@ pub(super) fn classify(
     support: &ResourceFact,
     definitions: &[CompositeResourceDefinition],
 ) -> Option<Family> {
-    if support.owned_quantity_term() != Some(&MachineTerm::constant(1)) {
+    if support.owned_quantity_term() != Some(&OldMachineTerm::constant(1)) {
         return None;
     }
     let name = match support.resource() {

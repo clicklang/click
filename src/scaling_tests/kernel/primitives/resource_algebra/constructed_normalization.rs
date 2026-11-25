@@ -9,7 +9,7 @@ fn constructed_normalization_bounds_neighbours_and_ignores_alias_classes() {
             if axis == "aliases" {
                 for index in 0..count {
                     facts = facts.assume_condition(
-                        ConditionTerm::address_equal(
+                        OldConditionTerm::address_equal(
                             pointer.clone(),
                             Address::symbolic(Variable(8_853_100 + u64::from(index))),
                         ),
@@ -56,7 +56,10 @@ fn singleton_normalization_retains_occurrences_without_alias_discovery() {
         let p = Address::symbolic(Variable(8_963_000));
         let facts = (0..count).fold(PureFactContext::new(), |facts, i| {
             facts.assume_condition(
-                ConditionTerm::address_equal(p.clone(), Address::symbolic(Variable(8_963_100 + i))),
+                OldConditionTerm::address_equal(
+                    p.clone(),
+                    Address::symbolic(Variable(8_963_100 + i)),
+                ),
                 true,
             )
         });
@@ -84,15 +87,15 @@ fn singleton_normalization_retains_occurrences_without_alias_discovery() {
 
 #[test]
 fn constructed_normalization_omits_only_proven_empty_ranges() {
-    let start = MachineTerm::Variable(Variable(8_968_000));
-    let end = MachineTerm::Variable(Variable(8_968_001));
+    let start = OldMachineTerm::Variable(Variable(8_968_000));
+    let end = OldMachineTerm::Variable(Variable(8_968_001));
     let range = ResourceFact::own_memory(MemoryRange::new(
         Address::symbolic(Variable(8_968_002)),
         start.clone(),
         end.clone(),
     ));
     let equal = |left, right| {
-        ConditionTerm::machine_compare(
+        OldConditionTerm::machine_compare(
             MachineIntegerType::Int32,
             CompareRelation::Equal,
             left,
@@ -102,12 +105,12 @@ fn constructed_normalization_omits_only_proven_empty_ranges() {
     let work = [4_u64, 16, 64].map(|count| {
         let _session = crate::kernel::VerificationSession::enter();
         let facts = (0..count).fold(PureFactContext::new(), |facts, index| {
-            let adjacent = MachineTerm::Variable(Variable(8_968_100 + index));
-            let unrelated = MachineTerm::Variable(Variable(8_968_200 + index));
+            let adjacent = OldMachineTerm::Variable(Variable(8_968_100 + index));
+            let unrelated = OldMachineTerm::Variable(Variable(8_968_200 + index));
             facts
                 .assume_condition(equal(end.clone(), adjacent), true)
                 .assume_condition(
-                    ConditionTerm::signed_less_equal(0u32.into(), unrelated),
+                    OldConditionTerm::signed_less_equal(0u32.into(), unrelated),
                     true,
                 )
         });

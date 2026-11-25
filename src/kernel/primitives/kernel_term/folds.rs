@@ -108,7 +108,7 @@ impl KernelFold {
             Int32FoldBody::Accumulator => initial.clone(),
             Int32FoldBody::Item => KernelTermImport::default().machine(
                 MachineIntegerType::Int32,
-                &MachineTerm::constant((end - 1) as u32),
+                &OldMachineTerm::constant((end - 1) as u32),
             ),
             Int32FoldBody::Literal => body.clone(),
         })
@@ -182,15 +182,15 @@ impl KernelFold {
         let mut value = initial.clone();
         for index in start..end {
             crate::instrumentation::record_deterministic_work(1);
-            let source = MachineTerm::Variable(self.accumulator);
+            let source = OldMachineTerm::Variable(self.accumulator);
             let mut rewrite =
                 TermRewrite::for_machine_operand(&source, MachineOperandView::Shared(&value));
             let step = rewrite.shared_machine_operand(body);
             let refusal = rewrite.refusal();
             drop(rewrite);
             let step = step.filter(|_| refusal.is_none())?;
-            let source = MachineTerm::Variable(self.item);
-            let item = MachineTerm::constant(index as u32);
+            let source = OldMachineTerm::Variable(self.item);
+            let item = OldMachineTerm::constant(index as u32);
             let mut rewrite = TermRewrite::for_bits(&source, &item);
             let result = rewrite.shared_machine_operand(&step);
             let refusal = rewrite.refusal();
@@ -281,9 +281,9 @@ impl KernelFold {
 
     pub(crate) fn import_machine(
         _import: &mut KernelTermImport,
-        source: &MachineTerm,
+        source: &OldMachineTerm,
     ) -> Option<Self> {
-        let MachineTerm::RangeFold {
+        let OldMachineTerm::RangeFold {
             start,
             end,
             initial,
@@ -297,7 +297,7 @@ impl KernelFold {
         let read = |term| {
             KernelTerm::retained_machine_operand(
                 MachineIntegerType::Int32,
-                MachineOperandView::Legacy(term),
+                MachineOperandView::Old(term),
             )
         };
         Some(
@@ -381,12 +381,12 @@ impl KernelFold {
         })
     }
 
-    pub(crate) fn export_machine(&self) -> Result<MachineTerm, &'static str> {
+    pub(crate) fn export_machine(&self) -> Result<OldMachineTerm, &'static str> {
         if self.result_type() != &KernelType::Program(ProgramType::Int32) {
             return Err("expected int32 fold result");
         }
         let [start, end, initial, body] = &self.arguments;
-        Ok(MachineTerm::RangeFold {
+        Ok(OldMachineTerm::RangeFold {
             start: Box::new(KernelTermExport::machine(start)?),
             end: Box::new(KernelTermExport::machine(end)?),
             initial: Box::new(KernelTermExport::machine(initial)?),
@@ -403,8 +403,8 @@ mod tests {
 
     #[test]
     fn fold_payload_roundtrips_preserve_ranges_binders_and_unreduced_bodies() {
-        let start = SharedIntegerRangeEndpoint::intern(MachineTerm::Variable(Variable(10)));
-        let end = SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0));
+        let start = SharedIntegerRangeEndpoint::intern(OldMachineTerm::Variable(Variable(10)));
+        let end = SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(0));
         let indices = [
             IntegerRangeFoldIndex::Int32 {
                 start: start.clone(),
@@ -442,13 +442,13 @@ mod tests {
             changed.item = Variable(13);
             assert_ne!(common, changed);
         }
-        let native = MachineTerm::RangeFold {
-            start: Box::new(MachineTerm::constant(9)),
-            end: Box::new(MachineTerm::constant(2)),
-            initial: Box::new(MachineTerm::constant(7)),
+        let native = OldMachineTerm::RangeFold {
+            start: Box::new(OldMachineTerm::constant(9)),
+            end: Box::new(OldMachineTerm::constant(2)),
+            initial: Box::new(OldMachineTerm::constant(7)),
             accumulator: Variable(11),
             item: Variable(12),
-            body: Box::new(MachineTerm::Variable(Variable(11))),
+            body: Box::new(OldMachineTerm::Variable(Variable(11))),
         };
         let common = KernelFold::import_machine(&mut KernelTermImport::default(), &native).unwrap();
         assert_eq!(common.export_machine().unwrap(), native);
@@ -500,16 +500,16 @@ mod producer_tests {
     #[test]
     fn fold_syntax_order_preserves_native_conditional_bodies() {
         let _session = crate::kernel::VerificationSession::enter();
-        let make = |guard, branch| MachineTerm::RangeFold {
-            start: Box::new(MachineTerm::constant(0)),
-            end: Box::new(MachineTerm::Variable(Variable(991131))),
-            initial: Box::new(MachineTerm::constant(0)),
+        let make = |guard, branch| OldMachineTerm::RangeFold {
+            start: Box::new(OldMachineTerm::constant(0)),
+            end: Box::new(OldMachineTerm::Variable(Variable(991131))),
+            initial: Box::new(OldMachineTerm::constant(0)),
             accumulator: Variable(991132),
             item: Variable(991133),
-            body: Box::new(MachineTerm::If {
-                condition: Box::new(ConditionTerm::Variable(Variable(guard))),
-                then_term: Box::new(MachineTerm::Variable(Variable(branch))),
-                else_term: Box::new(MachineTerm::Variable(Variable(991132))),
+            body: Box::new(OldMachineTerm::If {
+                condition: Box::new(OldConditionTerm::Variable(Variable(guard))),
+                then_term: Box::new(OldMachineTerm::Variable(Variable(branch))),
+                else_term: Box::new(OldMachineTerm::Variable(Variable(991132))),
             }),
         };
         let first = make(991134, 991135);
@@ -520,7 +520,7 @@ mod producer_tests {
             for (a, b) in [
                 (
                     MachineOperandView::Shared(&root),
-                    MachineOperandView::Legacy(&second),
+                    MachineOperandView::Old(&second),
                 ),
                 (
                     MachineOperandView::Shared(&root),
@@ -541,22 +541,22 @@ mod producer_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let free = Variable(991121);
         let acc = Variable(991122);
-        let native = MachineTerm::RangeFold {
-            start: Box::new(MachineTerm::constant(0)),
-            end: Box::new(MachineTerm::Variable(free)),
-            initial: Box::new(MachineTerm::Variable(acc)),
+        let native = OldMachineTerm::RangeFold {
+            start: Box::new(OldMachineTerm::constant(0)),
+            end: Box::new(OldMachineTerm::Variable(free)),
+            initial: Box::new(OldMachineTerm::Variable(acc)),
             accumulator: acc,
             item: Variable(991123),
-            body: Box::new(MachineTerm::add(
-                MachineTerm::Variable(free),
-                MachineTerm::Variable(acc),
+            body: Box::new(OldMachineTerm::add(
+                OldMachineTerm::Variable(free),
+                OldMachineTerm::Variable(acc),
             )),
         };
-        let replacement = MachineTerm::Variable(acc);
+        let replacement = OldMachineTerm::Variable(acc);
         let expected =
             crate::kernel::reasoning::substitute_bitvector_variable(&native, free, &replacement);
         let root = KernelTermImport::default().machine(MachineIntegerType::Int32, &native);
-        let offset = AddressOffset::Int32Scaled {
+        let offset = OldAddressOffset::Int32Scaled {
             value: SharedMachineIntegerTerm::from_shared(MachineIntegerType::Int32, root).unwrap(),
             byte_width: 4,
         };
@@ -567,7 +567,7 @@ mod producer_tests {
             &replacement,
         );
         assert_eq!(KernelTermExport::machine_export_count(), before);
-        let AddressOffset::Int32Scaled { value, .. } = result else {
+        let OldAddressOffset::Int32Scaled { value, .. } = result else {
             panic!("fold index")
         };
         let actual = KernelTermExport::machine(value.shared_operand().unwrap()).unwrap();
@@ -582,15 +582,15 @@ mod producer_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let accumulator = Variable(991101);
         let item = Variable(991102);
-        let body = MachineTerm::add(
-            MachineTerm::Variable(accumulator),
-            MachineTerm::Variable(item),
+        let body = OldMachineTerm::add(
+            OldMachineTerm::Variable(accumulator),
+            OldMachineTerm::Variable(item),
         );
         for (start, end) in [(0, 0), (0, 1), (0, 4), (4, 0)] {
-            let native = MachineTerm::RangeFold {
-                start: Box::new(MachineTerm::constant(start)),
-                end: Box::new(MachineTerm::constant(end)),
-                initial: Box::new(MachineTerm::constant(7)),
+            let native = OldMachineTerm::RangeFold {
+                start: Box::new(OldMachineTerm::constant(start)),
+                end: Box::new(OldMachineTerm::constant(end)),
+                initial: Box::new(OldMachineTerm::constant(7)),
                 accumulator,
                 item,
                 body: Box::new(body.clone()),
@@ -600,10 +600,10 @@ mod producer_tests {
             let before = KernelTermExport::machine_export_count();
             let result = fold.simplify_machine().unwrap();
             assert_eq!(KernelTermExport::machine_export_count(), before);
-            let expected = MachineTerm::range_fold(
-                MachineTerm::constant(start),
-                MachineTerm::constant(end),
-                MachineTerm::constant(7),
+            let expected = OldMachineTerm::range_fold(
+                OldMachineTerm::constant(start),
+                OldMachineTerm::constant(end),
+                OldMachineTerm::constant(7),
                 accumulator,
                 item,
                 body.clone(),
@@ -615,16 +615,16 @@ mod producer_tests {
     #[test]
     fn machine_fold_observations_keep_opaque_endpoint_identity() {
         let _session = crate::kernel::VerificationSession::enter();
-        let native = MachineTerm::RangeFold {
-            start: Box::new(MachineTerm::constant(0)),
-            end: Box::new(MachineTerm::PureFunctionApplication {
+        let native = OldMachineTerm::RangeFold {
+            start: Box::new(OldMachineTerm::constant(0)),
+            end: Box::new(OldMachineTerm::PureFunctionApplication {
                 name: "fold_end".into(),
-                arguments: vec![MachineTerm::Variable(Variable(991111))],
+                arguments: vec![OldMachineTerm::Variable(Variable(991111))],
             }),
-            initial: Box::new(MachineTerm::constant(0)),
+            initial: Box::new(OldMachineTerm::constant(0)),
             accumulator: Variable(991112),
             item: Variable(991113),
-            body: Box::new(MachineTerm::Variable(Variable(991112))),
+            body: Box::new(OldMachineTerm::Variable(Variable(991112))),
         };
         let first = KernelTermImport::default().machine(MachineIntegerType::Int32, &native);
         let second = KernelTermImport::default().machine(MachineIntegerType::Int32, &native);
@@ -680,9 +680,9 @@ mod producer_tests {
     #[test]
     fn opaque_integer_fold_endpoints_keep_their_existing_observation_identity() {
         let _session = crate::kernel::VerificationSession::enter();
-        let call = MachineTerm::PureFunctionApplication {
+        let call = OldMachineTerm::PureFunctionApplication {
             name: "opaque_fold_bound".into(),
-            arguments: vec![MachineTerm::Variable(Variable(990001))],
+            arguments: vec![OldMachineTerm::Variable(Variable(990001))],
         };
         let endpoint = SharedIntegerRangeEndpoint::intern(call.clone());
         assert!(endpoint.machine_operand().shared_operand().is_none());
@@ -694,7 +694,7 @@ mod producer_tests {
         let produce = |end| {
             IntegerTerm::range_fold(
                 IntegerRangeFoldIndex::UInt64 {
-                    start: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0)),
+                    start: SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(0)),
                     end,
                 },
                 IntegerTerm::constant_i64(0),
@@ -709,9 +709,9 @@ mod producer_tests {
         let second_root = KernelTermImport::default().integer(&second.into());
         assert_eq!(first_root, second_root);
         let changed = produce(SharedIntegerRangeEndpoint::intern(
-            MachineTerm::PureFunctionApplication {
+            OldMachineTerm::PureFunctionApplication {
                 name: "opaque_fold_bound".into(),
-                arguments: vec![MachineTerm::Variable(Variable(990004))],
+                arguments: vec![OldMachineTerm::Variable(Variable(990004))],
             },
         ));
         assert_ne!(

@@ -189,15 +189,15 @@ pub fn pointer_offset_bytes(
 }
 
 pub fn int32_literal(value: u32) -> ProgramExpression {
-    ProgramExpression::Value(int32(MachineTerm::constant(value)))
+    ProgramExpression::Value(int32(OldMachineTerm::constant(value)))
 }
 
 pub fn uint8_literal(value: u8) -> ProgramExpression {
-    ProgramExpression::Value(uint8(MachineTerm::constant(u32::from(value))))
+    ProgramExpression::Value(uint8(OldMachineTerm::constant(u32::from(value))))
 }
 
 pub fn uint32_literal(value: u32) -> ProgramExpression {
-    ProgramExpression::Value(uint32(MachineTerm::constant(value)))
+    ProgramExpression::Value(uint32(OldMachineTerm::constant(value)))
 }
 
 /// Signed wide literal in the common checked machine arena.
@@ -225,19 +225,19 @@ pub fn uint128_literal(value: u128) -> ProgramExpression {
 }
 
 pub fn int64_literal(value: i64) -> ProgramExpression {
-    ProgramExpression::Value(int64(MachineTerm::int64_constant(value)))
+    ProgramExpression::Value(int64(OldMachineTerm::int64_constant(value)))
 }
 
 pub fn uint64_literal(value: u64) -> ProgramExpression {
-    ProgramExpression::Value(uint64(MachineTerm::uint64_constant(value)))
+    ProgramExpression::Value(uint64(OldMachineTerm::uint64_constant(value)))
 }
 
 pub fn float32_literal(bits: u32) -> ProgramExpression {
-    ProgramExpression::Value(float32(MachineTerm::constant(bits)))
+    ProgramExpression::Value(float32(OldMachineTerm::constant(bits)))
 }
 
 pub fn float64_literal(bits: u64) -> ProgramExpression {
-    ProgramExpression::Value(float64(MachineTerm::uint64_constant(bits)))
+    ProgramExpression::Value(float64(OldMachineTerm::uint64_constant(bits)))
 }
 
 pub fn pointer_value(pointer: Address) -> ProgramExpression {

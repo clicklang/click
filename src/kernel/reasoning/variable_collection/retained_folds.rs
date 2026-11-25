@@ -267,15 +267,15 @@ pub(super) fn common_variables(
             }
             KernelTermNode::BoolCompare { .. }
                 if term.cached_condition_output().is_some_and(|condition| {
-                    let ConditionTerm::Compare { left, right, .. } = condition else {
+                    let OldConditionTerm::Compare { left, right, .. } = condition else {
                         return false;
                     };
                     [left.as_ref(), right.as_ref()].into_iter().all(|operand| {
                         matches!(
                             operand,
-                            MachineTerm::Variable(_)
-                                | MachineTerm::Constant { .. }
-                                | MachineTerm::MemoryLoad(..)
+                            OldMachineTerm::Variable(_)
+                                | OldMachineTerm::Constant { .. }
+                                | OldMachineTerm::MemoryLoad(..)
                         )
                     })
                 }) =>
@@ -462,7 +462,7 @@ pub(super) fn common_variables(
                     }
                 }
                 KernelType::Program(_) => collect_machine_leaf(
-                    &MachineTerm::Variable(*variable),
+                    &OldMachineTerm::Variable(*variable),
                     mode,
                     &mut leaf_variables,
                     &mut SeenTerms::default(),
@@ -541,7 +541,7 @@ pub(super) fn common_variables(
 }
 
 pub(super) fn collect_machine_leaf(
-    term: &MachineTerm,
+    term: &OldMachineTerm,
     mode: FoldVariableRead,
     variables: &mut BTreeSet<Variable>,
     seen: &mut SeenTerms,
@@ -691,20 +691,20 @@ mod tests {
         let unrelated = Variable(999944);
         let address = Address {
             base: AddressBase::Symbolic(base),
-            offset: AddressOffset::Variable(coordinate),
+            offset: OldAddressOffset::Variable(coordinate),
         };
         let memory = intern_memory(
             SymbolicMemory::new()
                 .store(
                     address.clone(),
-                    ProgramValue::Bool(MachineTerm::Variable(stored)),
+                    ProgramValue::Bool(OldMachineTerm::Variable(stored)),
                 )
                 .store(
                     Address::symbolic(base),
-                    ProgramValue::Bool(MachineTerm::Variable(unrelated)),
+                    ProgramValue::Bool(OldMachineTerm::Variable(unrelated)),
                 ),
         );
-        let native = ConditionTerm::boolean_cell_read(ProgramPoint::at(&memory), address);
+        let native = OldConditionTerm::boolean_cell_read(ProgramPoint::at(&memory), address);
         let root = KernelTermImport::default().condition(&native);
         for (connections, frame) in [(false, false), (true, false), (true, true), (true, false)] {
             let expected = condition_variables_in_scope(
@@ -742,32 +742,32 @@ mod tests {
         let frame_index = Variable(999955);
         let pointer = Address {
             base: AddressBase::Symbolic(base),
-            offset: AddressOffset::Add(
-                Box::new(AddressOffset::scaled_int32_node(
-                    MachineTerm::Variable(index),
+            offset: OldAddressOffset::Add(
+                Box::new(OldAddressOffset::scaled_int32_node(
+                    OldMachineTerm::Variable(index),
                     4,
                 )),
-                Box::new(AddressOffset::Variable(connection)),
+                Box::new(OldAddressOffset::Variable(connection)),
             ),
         };
         let memory = intern_memory(
             SymbolicMemory::new()
                 .store(
                     SymbolicMemory::global_pointer("comparison-reader-history"),
-                    ProgramValue::Int32(MachineTerm::Variable(state)),
+                    ProgramValue::Int32(OldMachineTerm::Variable(state)),
                 )
                 .store(
                     pointer.clone(),
-                    ProgramValue::Int32(MachineTerm::Variable(stored_connection)),
+                    ProgramValue::Int32(OldMachineTerm::Variable(stored_connection)),
                 ),
         );
         let writes = crate::kernel::MemoryRange::new(
             Address::symbolic(frame_base),
-            MachineTerm::Variable(frame_index),
-            MachineTerm::Binary {
+            OldMachineTerm::Variable(frame_index),
+            OldMachineTerm::Binary {
                 format: crate::kernel::MachineIntegerType::Int32,
                 op: crate::kernel::MachineBinaryOp::Add,
-                left: Box::new(MachineTerm::Variable(frame_index)),
+                left: Box::new(OldMachineTerm::Variable(frame_index)),
                 right: Box::new(1.into()),
             },
         );
@@ -785,14 +785,14 @@ mod tests {
             &origin,
         );
         let native = [
-            MachineTerm::Variable(load),
-            MachineTerm::read_named(
+            OldMachineTerm::Variable(load),
+            OldMachineTerm::read_named(
                 ProgramPoint::at(&memory),
                 Box::new(pointer.clone()),
                 LoadKind::Int32,
             ),
         ]
-        .map(|left| ConditionTerm::Compare {
+        .map(|left| OldConditionTerm::Compare {
             format: crate::kernel::MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(left),
@@ -896,18 +896,21 @@ mod tests {
                 .with_block("float-read-history", 4)
                 .store(
                     SymbolicMemory::global_pointer("float-read-history"),
-                    ProgramValue::Int32(MachineTerm::Variable(Variable(999811))),
+                    ProgramValue::Int32(OldMachineTerm::Variable(Variable(999811))),
                 ),
         );
         let pointer = Address {
             base: AddressBase::Symbolic(Variable(999812)),
-            offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(999813)), 4),
+            offset: OldAddressOffset::scaled_int32_node(
+                OldMachineTerm::Variable(Variable(999813)),
+                4,
+            ),
         };
         for format in [
             crate::kernel::KernelFloatType::Float32,
             crate::kernel::KernelFloatType::Float64,
         ] {
-            let argument = PureFunctionArgument::Value(format.value(MachineTerm::read_named(
+            let argument = PureFunctionArgument::Value(format.value(OldMachineTerm::read_named(
                 ProgramPoint::at(&memory),
                 Box::new(pointer.clone()),
                 format.load_kind(),
@@ -940,22 +943,22 @@ mod tests {
             crate::kernel::KernelFloatType::Float32,
             crate::kernel::KernelFloatType::Float64,
         ] {
-            let left = Box::new(MachineTerm::Variable(Variable(999933)));
-            let right = Box::new(MachineTerm::read_named(
+            let left = Box::new(OldMachineTerm::Variable(Variable(999933)));
+            let right = Box::new(OldMachineTerm::read_named(
                 ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
                 Box::new(Address::symbolic(Variable(999934))),
                 format.load_kind(),
             ));
             let native = match format {
                 crate::kernel::KernelFloatType::Float32 => {
-                    MachineTerm::Float32Negate(Box::new(MachineTerm::Float32Binary {
+                    OldMachineTerm::Float32Negate(Box::new(OldMachineTerm::Float32Binary {
                         operator: crate::kernel::FloatBinaryOperator::Divide,
                         left,
                         right,
                     }))
                 }
                 crate::kernel::KernelFloatType::Float64 => {
-                    MachineTerm::Float64Negate(Box::new(MachineTerm::Float64Binary {
+                    OldMachineTerm::Float64Negate(Box::new(OldMachineTerm::Float64Binary {
                         operator: crate::kernel::FloatBinaryOperator::Divide,
                         left,
                         right,
@@ -989,22 +992,22 @@ mod tests {
             crate::kernel::KernelFloatType::Float32,
             crate::kernel::KernelFloatType::Float64,
         ] {
-            let left = Box::new(MachineTerm::Variable(Variable(999933)));
-            let right = Box::new(MachineTerm::read_named(
+            let left = Box::new(OldMachineTerm::Variable(Variable(999933)));
+            let right = Box::new(OldMachineTerm::read_named(
                 ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
                 Box::new(Address::symbolic(Variable(999934))),
                 format.load_kind(),
             ));
             let native = match format {
                 crate::kernel::KernelFloatType::Float32 => {
-                    MachineTerm::Float32Negate(Box::new(MachineTerm::Float32Binary {
+                    OldMachineTerm::Float32Negate(Box::new(OldMachineTerm::Float32Binary {
                         operator: crate::kernel::FloatBinaryOperator::Divide,
                         left,
                         right,
                     }))
                 }
                 crate::kernel::KernelFloatType::Float64 => {
-                    MachineTerm::Float64Negate(Box::new(MachineTerm::Float64Binary {
+                    OldMachineTerm::Float64Negate(Box::new(OldMachineTerm::Float64Binary {
                         operator: crate::kernel::FloatBinaryOperator::Divide,
                         left,
                         right,
@@ -1021,14 +1024,14 @@ mod tests {
                     crate::kernel::KernelFloatType::Float32,
                 ),
             };
-            let integer = MachineTerm::opaque_conversion(
+            let integer = OldMachineTerm::opaque_conversion(
                 format!(
                     "c_{}_to_int32",
                     crate::kernel::program_type_spelling(format.program_type())
                 ),
                 native.clone(),
             );
-            let native = MachineTerm::opaque_conversion(name, native);
+            let native = OldMachineTerm::opaque_conversion(name, native);
             for argument in [
                 PureFunctionArgument::Value(target.value(native)),
                 PureFunctionArgument::Value(ProgramValue::Int32(integer)),
@@ -1061,10 +1064,10 @@ mod tests {
             crate::kernel::KernelFloatType::Float64,
         ] {
             let constant = match format {
-                crate::kernel::KernelFloatType::Float32 => MachineTerm::constant(0),
-                crate::kernel::KernelFloatType::Float64 => MachineTerm::uint64_constant(0),
+                crate::kernel::KernelFloatType::Float32 => OldMachineTerm::constant(0),
+                crate::kernel::KernelFloatType::Float64 => OldMachineTerm::uint64_constant(0),
             };
-            for native in [MachineTerm::Variable(Variable(999803)), constant] {
+            for native in [OldMachineTerm::Variable(Variable(999803)), constant] {
                 let argument = PureFunctionArgument::Value(format.value(native));
                 let root = KernelTermImport::default().argument(&argument);
                 for mode in [
@@ -1107,7 +1110,7 @@ mod tests {
             algebraic_type: native.algebraic_type.clone(),
             node: AlgebraicTermNode::Variable(Variable(999615)),
         };
-        let condition = ConditionTerm::AlgebraicEqual(Box::new(native.clone()), Box::new(other));
+        let condition = OldConditionTerm::AlgebraicEqual(Box::new(native.clone()), Box::new(other));
         let guard = KernelTermImport::default().condition(&condition);
         let root = KernelTermImport::default().algebraic(&native);
         let argument = PureFunctionArgument::Algebraic(native.clone());
@@ -1175,12 +1178,12 @@ mod tests {
                 arguments: vec![
                     PureFunctionArgument::Integer(fold.into()),
                     PureFunctionArgument::Algebraic(nested),
-                    PureFunctionArgument::Value(ProgramValue::Int32(MachineTerm::Variable(
+                    PureFunctionArgument::Value(ProgramValue::Int32(OldMachineTerm::Variable(
                         Variable(999715),
                     ))),
                     PureFunctionArgument::SharedMachine(SharedMachineIntegerTerm::intern(
                         MachineIntegerType::Int32,
-                        MachineTerm::Variable(Variable(999716)),
+                        OldMachineTerm::Variable(Variable(999716)),
                     )),
                 ],
             },
@@ -1188,7 +1191,7 @@ mod tests {
         let conditional = AlgebraicTerm {
             algebraic_type: native.algebraic_type.clone(),
             node: AlgebraicTermNode::If {
-                condition: Box::new(ConditionTerm::integer_equal(
+                condition: Box::new(OldConditionTerm::integer_equal(
                     IntegerTerm::var(Variable(999717)),
                     IntegerTerm::constant_i64(0),
                 )),
@@ -1207,13 +1210,13 @@ mod tests {
                         .with_block("algebraic-reader", 8)
                         .store(
                             SymbolicMemory::global_pointer("algebraic-reader"),
-                            ProgramValue::UInt64(MachineTerm::Variable(Variable(999741))),
+                            ProgramValue::UInt64(OldMachineTerm::Variable(Variable(999741))),
                         ),
                 )),
                 pointer: Box::new(Address {
                     base: AddressBase::Symbolic(Variable(999742)),
-                    offset: AddressOffset::scaled_int32_node(
-                        MachineTerm::Variable(Variable(999743)),
+                    offset: OldAddressOffset::scaled_int32_node(
+                        OldMachineTerm::Variable(Variable(999743)),
                         4,
                     ),
                 }),
@@ -1270,13 +1273,13 @@ mod tests {
     fn retained_boolean_call_arguments_preserve_dependency_modes() {
         use crate::kernel::BooleanOperandView as V;
         let _session = crate::kernel::VerificationSession::enter();
-        let argument = KernelTermImport::default().condition(&ConditionTerm::BoolIf {
-            condition: Box::new(ConditionTerm::Variable(Variable(999560))),
-            then_condition: Box::new(ConditionTerm::IntegerEqual(
+        let argument = KernelTermImport::default().condition(&OldConditionTerm::BoolIf {
+            condition: Box::new(OldConditionTerm::Variable(Variable(999560))),
+            then_condition: Box::new(OldConditionTerm::IntegerEqual(
                 IntegerTerm::Variable(Variable(999561)).into(),
                 IntegerTerm::Variable(Variable(999562)).into(),
             )),
-            else_condition: Box::new(ConditionTerm::boolean_cell_read(
+            else_condition: Box::new(OldConditionTerm::boolean_cell_read(
                 crate::kernel::ProgramPoint::at(&crate::kernel::intern_memory(
                     SymbolicMemory::new(),
                 )),
@@ -1285,11 +1288,11 @@ mod tests {
         });
         let application = SharedPureApplication::intern(
             "boolean_dependency_handoff".into(),
-            vec![argument.boolean_argument_native().unwrap().clone()],
+            vec![argument.old_boolean_argument().unwrap().clone()],
         );
         let common =
             KernelTermImport::default().boolean_call_with_retained(&application, &[Some(argument)]);
-        let native = ConditionTerm::BoolApplication(application);
+        let native = OldConditionTerm::BoolApplication(application);
         struct Restore(bool);
         impl Drop for Restore {
             fn drop(&mut self) {
@@ -1317,38 +1320,38 @@ mod tests {
     #[test]
     fn standalone_boolean_dependencies_preserve_collection_modes() {
         use crate::kernel::BooleanOperandView as V;
-        let comparison = ConditionTerm::IntegerEqual(
+        let comparison = OldConditionTerm::IntegerEqual(
             IntegerTerm::Variable(Variable(970_001)).into(),
             IntegerTerm::Variable(Variable(970_002)).into(),
         );
         for source in [
-            ConditionTerm::boolean_cell_read(
+            OldConditionTerm::boolean_cell_read(
                 crate::kernel::ProgramPoint::at(&crate::kernel::intern_memory(
                     crate::kernel::SymbolicMemory::new()
                         .with_block("bool-dependencies", 4)
                         .store(
                             crate::kernel::SymbolicMemory::global_pointer("bool-dependencies"),
-                            ProgramValue::Int32(MachineTerm::Variable(Variable(970_030))),
+                            ProgramValue::Int32(OldMachineTerm::Variable(Variable(970_030))),
                         ),
                 )),
                 Address {
                     base: AddressBase::Symbolic(Variable(970_031)),
-                    offset: AddressOffset::scaled_int32_node(
-                        MachineTerm::Variable(Variable(970_032)),
+                    offset: OldAddressOffset::scaled_int32_node(
+                        OldMachineTerm::Variable(Variable(970_032)),
                         4,
                     ),
                 },
             ),
-            ConditionTerm::Overflows {
+            OldConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: crate::kernel::OverflowOperation::Add,
-                left: Box::new(MachineTerm::IntegerToMachine {
+                left: Box::new(OldMachineTerm::IntegerToMachine {
                     value: IntegerTerm::Variable(Variable(970_020)).into(),
                     destination: MachineIntegerType::Int32,
                 }),
-                right: Box::new(MachineTerm::Variable(Variable(970_021))),
+                right: Box::new(OldMachineTerm::Variable(Variable(970_021))),
             },
-            ConditionTerm::PointerEqual(
+            OldConditionTerm::PointerEqual(
                 Box::new(
                     OldPointer::new(
                         Address::symbolic(Variable(970_010)),
@@ -1356,29 +1359,29 @@ mod tests {
                     )
                     .with_bounds(Some(SubobjectBounds {
                         start: Address::symbolic(Variable(970_011)),
-                        width: MachineTerm::Variable(Variable(970_012)),
+                        width: OldMachineTerm::Variable(Variable(970_012)),
                     })),
                 ),
                 Box::new(OldPointer::new(Address::null(), ProgramType::Int32Pointer)),
             ),
-            ConditionTerm::AddressOffsetEqual(
-                Box::new(AddressOffset::Add(
-                    Box::new(AddressOffset::Variable(Variable(970_005))),
-                    Box::new(AddressOffset::scaled_int32_node(
-                        MachineTerm::IntegerToMachine {
+            OldConditionTerm::AddressOffsetEqual(
+                Box::new(OldAddressOffset::Add(
+                    Box::new(OldAddressOffset::Variable(Variable(970_005))),
+                    Box::new(OldAddressOffset::scaled_int32_node(
+                        OldMachineTerm::IntegerToMachine {
                             value: IntegerTerm::Variable(Variable(970_006)).into(),
                             destination: MachineIntegerType::Int32,
                         },
                         4,
                     )),
                 )),
-                Box::new(AddressOffset::scaled_int64_node(
-                    MachineTerm::Variable(Variable(970_007)),
+                Box::new(OldAddressOffset::scaled_int64_node(
+                    OldMachineTerm::Variable(Variable(970_007)),
                     8,
                     true,
                 )),
             ),
-            ConditionTerm::AddressEqual(
+            OldConditionTerm::AddressEqual(
                 Box::new(Address {
                     base: AddressBase::PureFunctionApplication(SharedPureApplication::intern(
                         "raw_pointer_dependency".into(),
@@ -1386,29 +1389,29 @@ mod tests {
                             IntegerTerm::Variable(Variable(970_008)).into(),
                         )],
                     )),
-                    offset: AddressOffset::scaled_int32_node(
-                        MachineTerm::Variable(Variable(970_009)),
+                    offset: OldAddressOffset::scaled_int32_node(
+                        OldMachineTerm::Variable(Variable(970_009)),
                         4,
                     ),
                 }),
                 Box::new(Address {
                     base: AddressBase::ExternalObject(Variable(970_010)),
-                    offset: AddressOffset::scaled_int64_node(
-                        MachineTerm::Variable(Variable(970_011)),
+                    offset: OldAddressOffset::scaled_int64_node(
+                        OldMachineTerm::Variable(Variable(970_011)),
                         8,
                         false,
                     ),
                 }),
             ),
             comparison.clone(),
-            ConditionTerm::BoolIf {
-                condition: Box::new(ConditionTerm::Variable(Variable(970_003))),
+            OldConditionTerm::BoolIf {
+                condition: Box::new(OldConditionTerm::Variable(Variable(970_003))),
                 then_condition: Box::new(comparison),
-                else_condition: Box::new(ConditionTerm::BoolApplication(
+                else_condition: Box::new(OldConditionTerm::BoolApplication(
                     SharedPureApplication::intern(
                         "boolean_dependency_call".into(),
                         vec![PureFunctionArgument::Value(ProgramValue::Int32(
-                            MachineTerm::Variable(Variable(970_004)),
+                            OldMachineTerm::Variable(Variable(970_004)),
                         ))],
                     ),
                 )),
@@ -1434,21 +1437,21 @@ mod tests {
     #[test]
     fn retained_fold_condition_readers_preserve_each_collection_mode() {
         let integer = |n| SharedIntegerTerm::from(IntegerTerm::Variable(Variable(n)));
-        let comparison = ConditionTerm::IntegerEqual(integer(62), integer(63));
+        let comparison = OldConditionTerm::IntegerEqual(integer(62), integer(63));
         for (index, condition) in [
-            ConditionTerm::Variable(Variable(61)),
-            ConditionTerm::Compare {
+            OldConditionTerm::Variable(Variable(61)),
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
-                left: Box::new(MachineTerm::IntegerToMachine {
+                left: Box::new(OldMachineTerm::IntegerToMachine {
                     value: integer(62),
                     destination: MachineIntegerType::Int32,
                 }),
-                right: Box::new(MachineTerm::Variable(Variable(63))),
+                right: Box::new(OldMachineTerm::Variable(Variable(63))),
             },
-            ConditionTerm::BoolEqual(
+            OldConditionTerm::BoolEqual(
                 Box::new(comparison.clone()),
-                Box::new(ConditionTerm::Constant(true)),
+                Box::new(OldConditionTerm::Constant(true)),
             ),
             comparison,
         ]
@@ -1498,19 +1501,19 @@ mod tests {
 
     #[test]
     fn retained_machine_fold_readers_preserve_carrier_specific_scope() {
-        let body = MachineTerm::Binary {
+        let body = OldMachineTerm::Binary {
             format: MachineIntegerType::Int32,
             op: MachineBinaryOp::Add,
-            left: Box::new(MachineTerm::Variable(Variable(51))),
-            right: Box::new(MachineTerm::IntegerToMachine {
+            left: Box::new(OldMachineTerm::Variable(Variable(51))),
+            right: Box::new(OldMachineTerm::IntegerToMachine {
                 value: IntegerTerm::Variable(Variable(51)).into(),
                 destination: MachineIntegerType::Int32,
             }),
         };
-        let source = MachineTerm::RangeFold {
-            start: Box::new(MachineTerm::Variable(Variable(52))),
-            end: Box::new(MachineTerm::Variable(Variable(53))),
-            initial: Box::new(MachineTerm::Variable(Variable(51))),
+        let source = OldMachineTerm::RangeFold {
+            start: Box::new(OldMachineTerm::Variable(Variable(52))),
+            end: Box::new(OldMachineTerm::Variable(Variable(53))),
+            initial: Box::new(OldMachineTerm::Variable(Variable(51))),
             accumulator: Variable(51),
             item: Variable(52),
             body: Box::new(body),
@@ -1540,7 +1543,7 @@ mod tests {
     #[test]
     fn retained_fold_collectors_keep_call_connection_modes_query_local() {
         let value = |n| {
-            PureFunctionArgument::Value(ProgramValue::Int32(MachineTerm::Variable(Variable(n))))
+            PureFunctionArgument::Value(ProgramValue::Int32(OldMachineTerm::Variable(Variable(n))))
         };
         let integer = |n| PureFunctionArgument::Integer(IntegerTerm::Variable(Variable(n)).into());
         let source = IntegerTerm::RangeFold {
@@ -1552,7 +1555,7 @@ mod tests {
             accumulator: Variable(11),
             item: Variable(12),
             body: IntegerTerm::If {
-                condition: Box::new(ConditionTerm::BoolApplication(
+                condition: Box::new(OldConditionTerm::BoolApplication(
                     SharedPureApplication::intern("guard".into(), vec![value(31), integer(32)]),
                 )),
                 then_term: IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
@@ -1615,12 +1618,12 @@ mod tests {
                 end: variable(12),
             },
             IntegerRangeFoldIndex::Int32 {
-                start: SharedIntegerRangeEndpoint::intern(MachineTerm::Variable(Variable(11))),
-                end: SharedIntegerRangeEndpoint::intern(MachineTerm::Variable(Variable(12))),
+                start: SharedIntegerRangeEndpoint::intern(OldMachineTerm::Variable(Variable(11))),
+                end: SharedIntegerRangeEndpoint::intern(OldMachineTerm::Variable(Variable(12))),
             },
             IntegerRangeFoldIndex::UInt64 {
-                start: SharedIntegerRangeEndpoint::intern(MachineTerm::Variable(Variable(11))),
-                end: SharedIntegerRangeEndpoint::intern(MachineTerm::Variable(Variable(12))),
+                start: SharedIntegerRangeEndpoint::intern(OldMachineTerm::Variable(Variable(11))),
+                end: SharedIntegerRangeEndpoint::intern(OldMachineTerm::Variable(Variable(12))),
             },
         ] {
             let source = IntegerTerm::RangeFold {
@@ -1634,7 +1637,7 @@ mod tests {
                         variable(12),
                         IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                             MachineIntegerType::Int32,
-                            MachineTerm::Variable(Variable(12)),
+                            OldMachineTerm::Variable(Variable(12)),
                         ))
                         .into(),
                     )
@@ -1708,24 +1711,24 @@ mod float_call_tests {
     #[test]
     fn float_calls_keep_native_variable_reader_policies() {
         let _session = crate::kernel::VerificationSession::enter();
-        let native = MachineTerm::ClickFunctionApplication {
+        let native = OldMachineTerm::ClickFunctionApplication {
             name: "float_variables".into(),
             arguments: vec![
                 PureFunctionArgument::Integer(IntegerTerm::Variable(Variable(1008205)).into()),
-                PureFunctionArgument::Value(ProgramValue::Int32(MachineTerm::Variable(Variable(
-                    1008206,
-                )))),
+                PureFunctionArgument::Value(ProgramValue::Int32(OldMachineTerm::Variable(
+                    Variable(1008206),
+                ))),
                 PureFunctionArgument::Value(ProgramValue::Float64(
-                    MachineTerm::ClickFunctionApplication {
+                    OldMachineTerm::ClickFunctionApplication {
                         name: "inner".into(),
                         arguments: vec![PureFunctionArgument::Value(ProgramValue::Float64(
-                            MachineTerm::Variable(Variable(1008207)),
+                            OldMachineTerm::Variable(Variable(1008207)),
                         ))],
                     },
                 )),
-                PureFunctionArgument::Value(ProgramValue::Bool(MachineTerm::Variable(Variable(
-                    1008208,
-                )))),
+                PureFunctionArgument::Value(ProgramValue::Bool(OldMachineTerm::Variable(
+                    Variable(1008208),
+                ))),
             ],
         };
         let root = crate::kernel::KernelTermImport::default()
@@ -1770,7 +1773,7 @@ mod mixed_argument_tests {
                 name: "mixed_variables".into(),
                 arguments: vec![
                     PureFunctionArgument::Integer(IntegerTerm::Variable(Variable(1008510)).into()),
-                    PureFunctionArgument::Value(ProgramValue::Float64(MachineTerm::Variable(
+                    PureFunctionArgument::Value(ProgramValue::Float64(OldMachineTerm::Variable(
                         Variable(1008511),
                     ))),
                 ],
@@ -1789,9 +1792,9 @@ mod mixed_argument_tests {
                 pointer,
                 element_type: ProgramType::Int32,
             },
-            PureFunctionArgument::Value(ProgramValue::Bool(MachineTerm::bool_cast(
+            PureFunctionArgument::Value(ProgramValue::Bool(OldMachineTerm::bool_cast(
                 MachineIntegerType::UInt8,
-                ConditionTerm::bool_application(
+                OldConditionTerm::bool_application(
                     "bool_variables",
                     vec![PureFunctionArgument::Integer(
                         IntegerTerm::Variable(Variable(1008513)).into(),

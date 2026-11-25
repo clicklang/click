@@ -7,12 +7,12 @@ use crate::kernel::{CompareRelation, MachineIntegerType};
 
 #[test]
 fn pending_status_resolution_scales_with_explicit_intervening_work() {
-    let status = MachineTerm::Variable(Variable(890_000));
-    let zero = ConditionTerm::Compare {
+    let status = OldMachineTerm::Variable(Variable(890_000));
+    let zero = OldConditionTerm::Compare {
         format: MachineIntegerType::Int32,
         relation: CompareRelation::Equal,
         left: Box::new(status.clone()),
-        right: Box::new(MachineTerm::constant(0)),
+        right: Box::new(OldMachineTerm::constant(0)),
     };
     let success_assumptions =
         PureFactContext::new().assume_proposition(Proposition::condition_is(zero.clone(), true));
@@ -24,7 +24,7 @@ fn pending_status_resolution_scales_with_explicit_intervening_work() {
         let mut pending = PendingThreadCreate::new(
             status.clone(),
             Address::null(),
-            ProgramValue::UInt64(MachineTerm::uint64_constant(0)),
+            ProgramValue::UInt64(OldMachineTerm::uint64_constant(0)),
             &base,
             &base,
         );
@@ -194,7 +194,7 @@ fn joining_one_worker_keeps_the_current_frame_as_owners_and_aliases_grow() {
             if aliases {
                 for index in 0..size {
                     assumptions = assumptions.assume_condition(
-                        ConditionTerm::address_equal(
+                        OldConditionTerm::address_equal(
                             pointer(0),
                             Address::symbolic(Variable(8_796_000 + index as u64)),
                         ),

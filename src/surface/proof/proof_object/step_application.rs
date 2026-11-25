@@ -11,14 +11,14 @@ use crate::kernel::{
 
 fn is_positive_predecessor_goal(proposition: &crate::kernel::Proposition) -> bool {
     let Some((
-        crate::kernel::ConditionTerm::Compare {
+        crate::kernel::OldConditionTerm::Compare {
             format: crate::kernel::MachineIntegerType::Int32,
             relation: crate::kernel::CompareRelation::LessThan,
             left,
             right,
         },
         true,
-    )) = proposition.condition_native()
+    )) = proposition.old_condition()
     else {
         return false;
     };
@@ -29,8 +29,8 @@ fn is_positive_predecessor_goal(proposition: &crate::kernel::Proposition) -> boo
 }
 
 fn signed_atom_matches(
-    left: &crate::kernel::MachineTerm,
-    right: &crate::kernel::MachineTerm,
+    left: &crate::kernel::OldMachineTerm,
+    right: &crate::kernel::OldMachineTerm,
 ) -> bool {
     let left = crate::kernel::canonical_term(left);
     let right = crate::kernel::canonical_term(right);
@@ -49,8 +49,8 @@ fn signed_atom_matches(
             (uint64_constant!(left), uint64_constant!(right))
                 if constant_u64(*left) == constant_u64(*right) => {}
             (
-                crate::kernel::MachineTerm::Variable(left),
-                crate::kernel::MachineTerm::Variable(right),
+                crate::kernel::OldMachineTerm::Variable(left),
+                crate::kernel::OldMachineTerm::Variable(right),
             ) if left == right => {}
             (left, right)
                 if let (Some(left), Some(right)) = (
@@ -87,9 +87,9 @@ fn signed_atom_matches(
     true
 }
 
-fn signed_term_constant_value(term: &crate::kernel::MachineTerm) -> Option<i64> {
+fn signed_term_constant_value(term: &crate::kernel::OldMachineTerm) -> Option<i64> {
     enum Task<'a> {
-        Visit(&'a crate::kernel::MachineTerm),
+        Visit(&'a crate::kernel::OldMachineTerm),
         Combine(bool),
     }
     let mut pending = vec![Task::Visit(term)];
@@ -197,70 +197,70 @@ fn signed_goal_shape_flags(goal: &crate::kernel::Proposition) -> Option<(bool, b
         },
         _ => return None,
     };
-    let (left, right) = match condition.native_compat() {
-        crate::kernel::ConditionTerm::Compare {
+    let (left, right) = match condition.old_form() {
+        crate::kernel::OldConditionTerm::Compare {
             format: crate::kernel::MachineIntegerType::Int32,
             relation: crate::kernel::CompareRelation::LessThan,
             left,
             right,
         }
-        | crate::kernel::ConditionTerm::Compare {
+        | crate::kernel::OldConditionTerm::Compare {
             format: crate::kernel::MachineIntegerType::Int32,
             relation: crate::kernel::CompareRelation::LessEqual,
             left,
             right,
         }
-        | crate::kernel::ConditionTerm::Compare {
+        | crate::kernel::OldConditionTerm::Compare {
             format: crate::kernel::MachineIntegerType::Int32,
             relation: crate::kernel::CompareRelation::GreaterThan,
             left,
             right,
         }
-        | crate::kernel::ConditionTerm::Compare {
+        | crate::kernel::OldConditionTerm::Compare {
             format: crate::kernel::MachineIntegerType::Int32,
             relation: crate::kernel::CompareRelation::GreaterEqual,
             left,
             right,
         }
-        | crate::kernel::ConditionTerm::Compare {
+        | crate::kernel::OldConditionTerm::Compare {
             format:
                 crate::kernel::MachineIntegerType::Int32 | crate::kernel::MachineIntegerType::UInt32,
             relation: crate::kernel::CompareRelation::Equal,
             left,
             right,
         } if value => (left.as_ref(), right.as_ref()),
-        crate::kernel::ConditionTerm::Compare {
+        crate::kernel::OldConditionTerm::Compare {
             format: crate::kernel::MachineIntegerType::Int32,
             relation: crate::kernel::CompareRelation::LessThan,
             left,
             right,
         }
-        | crate::kernel::ConditionTerm::Compare {
+        | crate::kernel::OldConditionTerm::Compare {
             format: crate::kernel::MachineIntegerType::Int32,
             relation: crate::kernel::CompareRelation::LessEqual,
             left,
             right,
         }
-        | crate::kernel::ConditionTerm::Compare {
+        | crate::kernel::OldConditionTerm::Compare {
             format: crate::kernel::MachineIntegerType::Int32,
             relation: crate::kernel::CompareRelation::GreaterThan,
             left,
             right,
         }
-        | crate::kernel::ConditionTerm::Compare {
+        | crate::kernel::OldConditionTerm::Compare {
             format: crate::kernel::MachineIntegerType::Int32,
             relation: crate::kernel::CompareRelation::GreaterEqual,
             left,
             right,
         }
-        | crate::kernel::ConditionTerm::Compare {
+        | crate::kernel::OldConditionTerm::Compare {
             format:
                 crate::kernel::MachineIntegerType::Int32 | crate::kernel::MachineIntegerType::UInt32,
             relation: crate::kernel::CompareRelation::Equal,
             left,
             right,
         } => (left.as_ref(), right.as_ref()),
-        crate::kernel::ConditionTerm::Compare {
+        crate::kernel::OldConditionTerm::Compare {
             format: crate::kernel::MachineIntegerType::UInt32,
             relation:
                 relation @ (crate::kernel::CompareRelation::LessThan
@@ -307,7 +307,7 @@ fn signed_goal_shape_flags(goal: &crate::kernel::Proposition) -> Option<(bool, b
             unary_term!(Int32, BitwiseNot, inner) => {
                 pending.push(inner);
             }
-            crate::kernel::MachineTerm::PureFunctionApplication { arguments, .. } => {
+            crate::kernel::OldMachineTerm::PureFunctionApplication { arguments, .. } => {
                 pending.extend(arguments.iter());
             }
             _ => {}
@@ -321,7 +321,7 @@ fn unsigned_order_names_a_variable(goal: &crate::kernel::Proposition) -> bool {
     matches!(&goal, condition_source_0 @ crate::kernel::Proposition::ConditionIs(
             _,
             true,
-        ) if matches!(condition_source_0.condition_native(), Some((crate::kernel::ConditionTerm::Compare {
+        ) if matches!(condition_source_0.old_condition(), Some((crate::kernel::OldConditionTerm::Compare {
                 format: crate::kernel::MachineIntegerType::UInt32,
                 relation: crate::kernel::CompareRelation::LessThan
                     | crate::kernel::CompareRelation::LessEqual
@@ -329,8 +329,8 @@ fn unsigned_order_names_a_variable(goal: &crate::kernel::Proposition) -> bool {
                     | crate::kernel::CompareRelation::GreaterEqual,
                 left,
                 right,
-            }, _)) if (matches!(left.as_ref(), crate::kernel::MachineTerm::Variable(_))
-            || matches!(right.as_ref(), crate::kernel::MachineTerm::Variable(_)))))
+            }, _)) if (matches!(left.as_ref(), crate::kernel::OldMachineTerm::Variable(_))
+            || matches!(right.as_ref(), crate::kernel::OldMachineTerm::Variable(_)))))
 }
 
 /// The step as `click expand` writes it, for a step with a `using` list,
@@ -1343,7 +1343,7 @@ impl<'a> Proof<'a> {
                             }
                             _ => match self.proposition_goal("`intro` requires a proposition goal").expect("intro checked its goal") {
                                 Proposition::ForAll { sort, .. } if sort.machine_integer_type().is_some() => sort.machine_integer_type().unwrap().symbolic_value(variable),
-                                _ => ProgramValue::Int32(MachineTerm::Variable(variable)),
+                                _ => ProgramValue::Int32(OldMachineTerm::Variable(variable)),
                             },
                         };
                         if algebraic.is_some() {
@@ -1396,7 +1396,7 @@ impl<'a> Proof<'a> {
                                 SyntaxTerm::ProgramExpression(ProgramExpression::Value(
                                     match self.proposition_goal("`intro` requires a proposition goal").expect("intro checked its goal") {
                                         Proposition::ForAll { sort, .. } if sort.machine_integer_type().is_some() => sort.machine_integer_type().unwrap().symbolic_value(variable),
-                                        _ => ProgramValue::Int32(MachineTerm::Variable(variable)),
+                                        _ => ProgramValue::Int32(OldMachineTerm::Variable(variable)),
                                     },
                                 )),
                             );
@@ -1429,7 +1429,7 @@ impl<'a> Proof<'a> {
                             SyntaxTerm::ProgramExpression(ProgramExpression::Value(
                                 match self.proposition_goal("`intro` requires a proposition goal").expect("intro checked its goal") {
                                     Proposition::ForAll { sort, .. } if sort.machine_integer_type().is_some() => sort.machine_integer_type().unwrap().symbolic_value(variable),
-                                    _ => ProgramValue::Int32(MachineTerm::Variable(variable)),
+                                    _ => ProgramValue::Int32(OldMachineTerm::Variable(variable)),
                                 },
                             )),
                         );
@@ -1586,11 +1586,11 @@ impl<'a> Proof<'a> {
         match context.theorem_context.values.get(parameter) {
             Some(ProgramValue::Int32(current)) => {
                 let nonnegative = Proposition::condition_is(
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterEqual,
                         left: Box::new(current.clone()),
-                        right: Box::new(MachineTerm::constant(0)),
+                        right: Box::new(OldMachineTerm::constant(0)),
                     },
                     true,
                 );
@@ -1939,13 +1939,13 @@ fn describe_known_goal(goal: &Proposition) -> &'static str {
         Proposition::ForAll { .. } => "a universal proposition",
         Proposition::Exists { .. } => "an existential proposition",
         Proposition::MemoryLoadable { .. } => "a memory-viewability fact",
-        Proposition::ConditionIs(condition, _) => match condition.native_compat() {
-            ConditionTerm::IntegerLessThan(..) => "an Integer less-than fact",
-            ConditionTerm::IntegerLessEqual(..) => "an Integer less-or-equal fact",
-            ConditionTerm::IntegerGreaterThan(..) => "an Integer greater-than fact",
-            ConditionTerm::IntegerGreaterEqual(..) => "an Integer greater-or-equal fact",
-            ConditionTerm::IntegerEqual(..) => "an Integer equality fact",
-            ConditionTerm::IntegerNotEqual(..) => "an Integer disequality fact",
+        Proposition::ConditionIs(condition, _) => match condition.old_form() {
+            OldConditionTerm::IntegerLessThan(..) => "an Integer less-than fact",
+            OldConditionTerm::IntegerLessEqual(..) => "an Integer less-or-equal fact",
+            OldConditionTerm::IntegerGreaterThan(..) => "an Integer greater-than fact",
+            OldConditionTerm::IntegerGreaterEqual(..) => "an Integer greater-or-equal fact",
+            OldConditionTerm::IntegerEqual(..) => "an Integer equality fact",
+            OldConditionTerm::IntegerNotEqual(..) => "an Integer disequality fact",
             _ => "a condition fact",
         },
         Proposition::Equal(Term::Integer(_), Term::Integer(_)) => "an Integer equality fact",

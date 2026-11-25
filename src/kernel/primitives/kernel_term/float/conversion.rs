@@ -5,7 +5,7 @@ use crate::kernel::primitives::float_conversion::numeric_float_conversion_types;
 
 #[derive(Clone, Copy)]
 pub(crate) enum FloatConversionOperand<'a> {
-    Native(ProgramType, &'a MachineTerm),
+    Native(ProgramType, &'a OldMachineTerm),
     Shared(&'a KernelTerm),
 }
 impl<'a> FloatConversionOperand<'a> {
@@ -25,7 +25,7 @@ impl<'a> FloatConversionOperand<'a> {
             },
         }
     }
-    pub(crate) fn native(self) -> Option<&'a MachineTerm> {
+    pub(crate) fn native(self) -> Option<&'a OldMachineTerm> {
         match self {
             Self::Native(_, value) => Some(value),
             _ => None,
@@ -63,7 +63,7 @@ impl<'a> FloatOperandView<'a> {
 
     pub(crate) fn conversion(self) -> Option<FloatConversionOperand<'a>> {
         match self {
-            Self::Native(format, MachineTerm::PureFunctionApplication { name, arguments }) => {
+            Self::Native(format, OldMachineTerm::PureFunctionApplication { name, arguments }) => {
                 let [operand] = arguments.as_slice() else {
                     return None;
                 };
@@ -129,9 +129,9 @@ impl KernelTermImport {
     pub(crate) fn float_to_machine(
         &mut self,
         target: MachineIntegerType,
-        term: &MachineTerm,
+        term: &OldMachineTerm,
     ) -> Option<KernelTerm> {
-        let MachineTerm::PureFunctionApplication { name, arguments } = term else {
+        let OldMachineTerm::PureFunctionApplication { name, arguments } = term else {
             return None;
         };
         let [operand] = arguments.as_slice() else {
@@ -150,7 +150,7 @@ impl KernelTermImport {
 }
 
 impl KernelTermExport {
-    pub(crate) fn float_to_machine(term: &KernelTerm) -> Result<MachineTerm, &'static str> {
+    pub(crate) fn float_to_machine(term: &KernelTerm) -> Result<OldMachineTerm, &'static str> {
         let KernelTermNode::FloatConvert {
             source,
             destination,
@@ -159,7 +159,7 @@ impl KernelTermExport {
         else {
             return Err("float conversion root");
         };
-        Ok(MachineTerm::PureFunctionApplication {
+        Ok(OldMachineTerm::PureFunctionApplication {
             name: numeric_float_conversion_name(*source, *destination),
             arguments: vec![Self::float_machine(operand)?],
         })
@@ -186,22 +186,22 @@ mod tests {
             ] {
                 let literals = match source {
                     KernelFloatType::Float32 => vec![
-                        MachineTerm::Variable(Variable(999970)),
-                        MachineTerm::constant(0x3fc00000),
-                        MachineTerm::constant(0x80000000),
-                        MachineTerm::constant(0x7f800000),
-                        MachineTerm::constant(0x7fc00001),
+                        OldMachineTerm::Variable(Variable(999970)),
+                        OldMachineTerm::constant(0x3fc00000),
+                        OldMachineTerm::constant(0x80000000),
+                        OldMachineTerm::constant(0x7f800000),
+                        OldMachineTerm::constant(0x7fc00001),
                     ],
                     KernelFloatType::Float64 => vec![
-                        MachineTerm::Variable(Variable(999970)),
-                        MachineTerm::uint64_constant(0x3ff8000000000000),
-                        MachineTerm::uint64_constant(0x8000000000000000),
-                        MachineTerm::uint64_constant(0x7ff0000000000000),
-                        MachineTerm::uint64_constant(0x7ff8000000000001),
+                        OldMachineTerm::Variable(Variable(999970)),
+                        OldMachineTerm::uint64_constant(0x3ff8000000000000),
+                        OldMachineTerm::uint64_constant(0x8000000000000000),
+                        OldMachineTerm::uint64_constant(0x7ff0000000000000),
+                        OldMachineTerm::uint64_constant(0x7ff8000000000001),
                     ],
                 };
                 for operand in literals {
-                    let native = MachineTerm::PureFunctionApplication {
+                    let native = OldMachineTerm::PureFunctionApplication {
                         name: numeric_float_conversion_name(
                             source.program_type(),
                             target.program_type(),
@@ -234,9 +234,9 @@ mod tests {
             ("c_float64_to_int128", MachineIntegerType::Int128),
             ("c_int32_to_int64", MachineIntegerType::Int64),
         ] {
-            let native = MachineTerm::PureFunctionApplication {
+            let native = OldMachineTerm::PureFunctionApplication {
                 name: name.into(),
-                arguments: vec![MachineTerm::Variable(Variable(999971))],
+                arguments: vec![OldMachineTerm::Variable(Variable(999971))],
             };
             let root = KernelTermImport::default().machine(target, &native);
             assert!(matches!(root.node(), KernelTermNode::ImportedScalar(_)));
@@ -263,9 +263,9 @@ mod tests {
                 if source == target.program_type() {
                     continue;
                 }
-                let native = MachineTerm::PureFunctionApplication {
+                let native = OldMachineTerm::PureFunctionApplication {
                     name: float_conversion_name(source, target),
-                    arguments: vec![MachineTerm::Variable(Variable(999960))],
+                    arguments: vec![OldMachineTerm::Variable(Variable(999960))],
                 };
                 let root = KernelTermImport::default().float(target, &native);
                 let count = KernelTermExport::machine_export_count();
@@ -288,20 +288,20 @@ mod tests {
             (
                 ProgramType::Int32,
                 KernelFloatType::Float32,
-                MachineTerm::constant(1),
+                OldMachineTerm::constant(1),
             ),
             (
                 ProgramType::Float32,
                 KernelFloatType::Float64,
-                MachineTerm::constant(0x7f800123),
+                OldMachineTerm::constant(0x7f800123),
             ),
             (
                 ProgramType::Float64,
                 KernelFloatType::Float32,
-                MachineTerm::uint64_constant(0x8000000000000000),
+                OldMachineTerm::uint64_constant(0x8000000000000000),
             ),
         ] {
-            let native = MachineTerm::PureFunctionApplication {
+            let native = OldMachineTerm::PureFunctionApplication {
                 name: float_conversion_name(source, target),
                 arguments: vec![literal],
             };
@@ -317,16 +317,16 @@ mod tests {
     #[test]
     fn float_conversion_recognition_preserves_unknown_and_mismatched_calls() {
         for (name, arguments) in [
-            ("ordinary_call", vec![MachineTerm::constant(1)]),
-            ("c_int128_to_float32", vec![MachineTerm::constant(1)]),
-            ("c_float32_to_float32", vec![MachineTerm::constant(1)]),
-            ("c_int32_to_float64", vec![MachineTerm::constant(1)]),
+            ("ordinary_call", vec![OldMachineTerm::constant(1)]),
+            ("c_int128_to_float32", vec![OldMachineTerm::constant(1)]),
+            ("c_float32_to_float32", vec![OldMachineTerm::constant(1)]),
+            ("c_int32_to_float64", vec![OldMachineTerm::constant(1)]),
             (
                 "c_int32_to_float32",
-                vec![MachineTerm::constant(1), MachineTerm::constant(2)],
+                vec![OldMachineTerm::constant(1), OldMachineTerm::constant(2)],
             ),
         ] {
-            let native = MachineTerm::PureFunctionApplication {
+            let native = OldMachineTerm::PureFunctionApplication {
                 name: name.into(),
                 arguments,
             };

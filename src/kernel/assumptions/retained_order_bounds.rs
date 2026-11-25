@@ -12,11 +12,11 @@ use crate::persistent::{PersistentMap, PersistentSet};
 type BoundKey = (Key, Key, bool, bool);
 
 pub(super) fn order_view(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
     truth: bool,
 ) -> Option<NativeComparisonView<'_>> {
     let view = comparison_view(condition, truth)?;
-    let view = if !matches!(condition, ConditionTerm::Compare { .. }) {
+    let view = if !matches!(condition, OldConditionTerm::Compare { .. }) {
         view.widened().unwrap_or(view)
     } else {
         view
@@ -72,8 +72,8 @@ pub(in crate::kernel) struct OrderBoundIndex {
     endpoints: PersistentMap<Key, Bounds>,
 }
 impl OrderBoundIndex {
-    pub(in crate::kernel) fn get(&self, term: &MachineTerm) -> Option<&Bounds> {
-        self.get_operand(V::Legacy(term))
+    pub(in crate::kernel) fn get(&self, term: &OldMachineTerm) -> Option<&Bounds> {
+        self.get_operand(V::Old(term))
     }
     pub(in crate::kernel) fn get_operand(&self, term: V<'_>) -> Option<&Bounds> {
         self.endpoints.get(&Key::for_format(self.format?, term))
@@ -109,7 +109,7 @@ impl OrderBoundIndex {
             .map(|operand| operand.operand_view());
         let strict = view.relation == Relation::Less;
         let written_signed = matches!(source, Proposition::ConditionIs(condition, true)
-            if crate::kernel::machine_integer::comparison::structural_comparison_view(condition.native_compat())
+            if crate::kernel::machine_integer::comparison::structural_comparison_view(condition.old_form())
                 .is_some_and(|view| view.format == MachineIntegerType::Int32 && !view.negated
                     && matches!(view.relation, CompareRelation::LessThan | CompareRelation::LessEqual)));
         for (own, other, forward) in [(left, right, true), (right, left, false)] {

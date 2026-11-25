@@ -217,9 +217,9 @@ mod certificate_tests {
     fn local_index_surface_candidates_reject_nested_loads() {
         let pointer = Address {
             base: "data".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
-        let load = MachineTerm::read_named(
+        let load = OldMachineTerm::read_named(
             crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(SymbolicMemory::new()))),
             Box::new(pointer),
             crate::kernel::LoadKind::Int32,
@@ -228,34 +228,34 @@ mod certificate_tests {
         assert!(bitvector_term_is_load_free(&binary_node!(
             Int32,
             Add,
-            Box::new(MachineTerm::Variable(Variable(1))),
-            Box::new(MachineTerm::constant(1)),
+            Box::new(OldMachineTerm::Variable(Variable(1))),
+            Box::new(OldMachineTerm::constant(1)),
         )));
         assert!(!bitvector_term_is_load_free(&binary_node!(
             Int32,
             Add,
             Box::new(load),
-            Box::new(MachineTerm::constant(1)),
+            Box::new(OldMachineTerm::constant(1)),
         )));
     }
 
     #[test]
     fn surface_synthesis_rejects_too_deep_terms_with_a_bounded_reason() {
-        let mut term = MachineTerm::Variable(Variable(1));
+        let mut term = OldMachineTerm::Variable(Variable(1));
         for _ in 0..=SURFACE_SYNTHESIS_DEPTH_LIMIT {
             term = binary_node!(
                 Int32,
                 Add,
                 Box::new(term),
-                Box::new(MachineTerm::constant(1))
+                Box::new(OldMachineTerm::constant(1))
             );
         }
         let proposition = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(term),
-                right: Box::new(MachineTerm::constant(0)),
+                right: Box::new(OldMachineTerm::constant(0)),
             },
             true,
         );
@@ -276,7 +276,7 @@ mod certificate_tests {
             left: SyntaxTerm::ProgramBinding("value".to_string()),
             operator: ComparisonOperator::Equal,
             right: SyntaxTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Int32(
-                MachineTerm::constant(0),
+                OldMachineTerm::constant(0),
             ))),
         };
         for _ in 0..=PROGRAM_POINT_ANNOTATION_DEPTH_LIMIT {
@@ -2719,22 +2719,22 @@ fn evaluate_entry_resource_context(
             let Proposition::MemoryLoadable { base, bytes, .. } = fact else {
                 return None;
             };
-            let range = match bytes.native_compat() {
+            let range = match bytes.old_form() {
                 binary_term!(Int32, Multiply, left, right)
-                    if **right == MachineTerm::constant(ProgramType::Int32.byte_width()) =>
+                    if **right == OldMachineTerm::constant(ProgramType::Int32.byte_width()) =>
                 {
                     MemoryRange::new(
                         base.clone(),
-                        MachineTerm::constant(0),
+                        OldMachineTerm::constant(0),
                         left.as_ref().clone(),
                     )
                 }
                 binary_term!(Int32, Multiply, left, right)
-                    if **left == MachineTerm::constant(ProgramType::Int32.byte_width()) =>
+                    if **left == OldMachineTerm::constant(ProgramType::Int32.byte_width()) =>
                 {
                     MemoryRange::new(
                         base.clone(),
-                        MachineTerm::constant(0),
+                        OldMachineTerm::constant(0),
                         right.as_ref().clone(),
                     )
                 }
@@ -2743,16 +2743,16 @@ fn evaluate_entry_resource_context(
                 {
                     MemoryRange::new(
                         base.clone(),
-                        MachineTerm::constant(0),
-                        MachineTerm::constant(
+                        OldMachineTerm::constant(0),
+                        OldMachineTerm::constant(
                             constant_u32(*bytes) / ProgramType::Int32.byte_width(),
                         ),
                     )
                 }
                 _ => MemoryRange::new_with_element_width(
                     base.clone(),
-                    MachineTerm::constant(0),
-                    bytes.native_compat().clone(),
+                    OldMachineTerm::constant(0),
+                    bytes.old_form().clone(),
                     1,
                 ),
             };

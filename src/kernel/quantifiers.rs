@@ -65,9 +65,9 @@ fn rename_unreduced(
 ) -> Option<Proposition> {
     let rename_program_occurrences = |body: &Proposition, pointer: Address| {
         let renamed =
-            substitute_int32_variable_in_proposition(body, from, MachineTerm::Variable(to));
+            substitute_int32_variable_in_proposition(body, from, OldMachineTerm::Variable(to));
         let renamed =
-            proof::restore_range_span_spelling(body, renamed, from, &MachineTerm::Variable(to));
+            proof::restore_range_span_spelling(body, renamed, from, &OldMachineTerm::Variable(to));
         // What is left of `from` after the machine-term rename is an address
         // base, possibly behind a load variable; without one, the body is done.
         if !mentions_possibly(&renamed, from) {
@@ -413,7 +413,7 @@ pub(crate) fn close_foralls(
             (
                 *var,
                 proof::term_rewrite::TypedProgramValueReplacement::Bitvector(
-                    MachineTerm::Variable(Variable::bound(*height)),
+                    OldMachineTerm::Variable(Variable::bound(*height)),
                 ),
             )
         })

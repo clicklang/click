@@ -15,7 +15,7 @@ pub(super) fn named(
         "named_box".into(),
         vec![ProgramValue::pointer(pointer).into()].into(),
         schema.clone(),
-        vec![ProgramValue::Int32(MachineTerm::constant(7)).into()].into(),
+        vec![ProgramValue::Int32(OldMachineTerm::constant(7)).into()].into(),
     )
     .unwrap();
     let definition = CompositeResourceDefinition::new(
@@ -43,7 +43,7 @@ fn emitted(fact: ResourceFact, facts: &PureFactContext) -> EvaluatedReturnResour
 pub(super) fn anchor(identity: u64) -> Address {
     Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Variable(Variable(identity)),
+        offset: OldAddressOffset::Variable(Variable(identity)),
     }
 }
 
@@ -457,7 +457,7 @@ fn authority_identity_cannot_be_recovered_through_a_pointer_alias() {
     let pointer = anchor(8_870_040);
     let alias = anchor(8_870_041);
     let facts = PureFactContext::new().assume_condition(
-        ConditionTerm::address_equal(pointer.clone(), alias.clone()),
+        OldConditionTerm::address_equal(pointer.clone(), alias.clone()),
         true,
     );
     let state = ledger(pointer);

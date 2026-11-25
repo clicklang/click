@@ -270,12 +270,8 @@ pub fn inventory(path: &str, file: &syn::File) -> BTreeMap<String, usize> {
                 "presentation"
             } else if matches!(
                 caller.as_str(),
-                "apply_planned_fact_transport_inner"
-                    | "apply_planned_outcome_fact_transport"
-                    | "apply_step_without_outcome_wrapping"
+                "apply_step_without_outcome_wrapping"
                     | "apply_theorem_application"
-                    | "certified_fact_transport_reaches"
-                    | "check_fixed_state_fact_transport_inner"
                     | "certified_transitions_from_execution"
                     | "capture_resource_field_initializer"
                     | "surface_branch_path_for_outcome"

@@ -11,9 +11,9 @@ use crate::kernel::ResourceFact;
 use crate::kernel::binary_node;
 use crate::kernel::binary_term;
 use crate::kernel::{
-    Address, AddressOffset, AlgebraicTerm, AlgebraicTermNode, AlgebraicValue, AlgebraicValueType,
-    ConditionTerm, ExecutionState, ExpressionOutcome, IntegerRangeFoldIndex, IntegerTerm,
-    MachineTerm, ProgramValue, Proposition, PureFunctionArgument, Resource, Sort,
+    Address, AlgebraicTerm, AlgebraicTermNode, AlgebraicValue, AlgebraicValueType, ExecutionState,
+    ExpressionOutcome, IntegerRangeFoldIndex, IntegerTerm, OldAddressOffset, OldConditionTerm,
+    OldMachineTerm, ProgramValue, Proposition, PureFunctionArgument, Resource, Sort,
     SpecCaptureRefusal, SymbolicMemory, Term, Variable,
 };
 use crate::kernel::{CompareRelation, MachineIntegerType};
@@ -69,7 +69,7 @@ pub(crate) struct MemoryStateLabels {
     recorded_states: Option<crate::surface::RecordedStates>,
     source_names: HashMap<Variable, String>,
     /// Exact structural reads held by source locals or recorded states.
-    source_read_names: HashMap<MachineTerm, String>,
+    source_read_names: HashMap<OldMachineTerm, String>,
     source_types: HashMap<Variable, crate::kernel::ProgramType>,
     anonymous_names: HashMap<Variable, String>,
     /// How many placeholders (`<unnamed A>`, `<pointer A>`, `<state A>`)
@@ -102,7 +102,7 @@ pub(crate) struct MemoryStateLabels {
 /// or parameter holding a promoted value is named, and typed, as the word
 /// it holds, as it was when promotion reused the word. Only the widening is
 /// read through; a σ keeps its own node.
-fn widened_word(term: &MachineTerm) -> &MachineTerm {
+fn widened_word(term: &OldMachineTerm) -> &OldMachineTerm {
     match term.narrow_widening32_operand() {
         Some((_, word)) => word,
         None => term,
@@ -111,11 +111,11 @@ fn widened_word(term: &MachineTerm) -> &MachineTerm {
 
 /// The binder a parameter's value is, if it is one: a scalar's variable, or
 /// a `Bool` binder carried as its cast (Stage 5).
-fn value_binder(term: &MachineTerm) -> Option<Variable> {
+fn value_binder(term: &OldMachineTerm) -> Option<Variable> {
     match widened_word(term) {
-        MachineTerm::Variable(variable) => Some(*variable),
-        MachineTerm::BoolCast { value, .. } => match value.as_ref() {
-            crate::kernel::ConditionTerm::Variable(variable) => Some(*variable),
+        OldMachineTerm::Variable(variable) => Some(*variable),
+        OldMachineTerm::BoolCast { value, .. } => match value.as_ref() {
+            crate::kernel::OldConditionTerm::Variable(variable) => Some(*variable),
             _ => None,
         },
         _ => None,
@@ -132,7 +132,7 @@ impl MemoryStateLabels {
     }
     pub(crate) fn source_value_type(&mut self, value: &crate::kernel::ProgramValue) {
         if let crate::kernel::arithmetic_c_value!(term) = value
-            && let MachineTerm::Variable(variable) = widened_word(term)
+            && let OldMachineTerm::Variable(variable) = widened_word(term)
         {
             self.source_type(*variable, value.program_type());
         }
@@ -146,7 +146,7 @@ impl MemoryStateLabels {
     pub(crate) fn source_result(&mut self, value: &crate::kernel::ProgramValue) {
         self.source_value_type(value);
         match value {
-            crate::kernel::arithmetic_c_value!(MachineTerm::Variable(variable))
+            crate::kernel::arithmetic_c_value!(OldMachineTerm::Variable(variable))
                 if crate::kernel::registered_load_for_variable(variable).is_none()
                     && crate::kernel::model_fields::model_field_surface(*variable).is_none() =>
             {
@@ -211,7 +211,7 @@ impl MemoryStateLabels {
                 | crate::kernel::ProgramValue::Float64(term) => term,
                 _ => continue,
             };
-            if matches!(widened_word(term), MachineTerm::MemoryLoad(..)) {
+            if matches!(widened_word(term), OldMachineTerm::MemoryLoad(..)) {
                 labels
                     .source_read_names
                     .entry(widened_word(term).clone())
@@ -320,7 +320,7 @@ impl MemoryStateLabels {
             names
                 .iter()
                 .filter(|(base, _)| {
-                    base.base == pointer.base && base.offset == AddressOffset::Constant(0)
+                    base.base == pointer.base && base.offset == OldAddressOffset::Constant(0)
                 })
                 .map(|(_, name)| name.as_str())
                 .min_by(|left, right| left.len().cmp(&right.len()).then(left.cmp(right)))
@@ -729,11 +729,11 @@ impl MemoryStateLabels {
         }
     }
 
-    pub(crate) fn fallback_read_name(&mut self, read: &MachineTerm, name: String) {
+    pub(crate) fn fallback_read_name(&mut self, read: &OldMachineTerm, name: String) {
         self.source_read_names.entry(read.clone()).or_insert(name);
     }
 
-    fn source_read_name_for(&self, read: &MachineTerm) -> Option<&str> {
+    fn source_read_name_for(&self, read: &OldMachineTerm) -> Option<&str> {
         self.source_read_names
             .get(read)
             .map(String::as_str)
@@ -841,7 +841,7 @@ fn distinct_pointers_at_one_address(
 }
 
 pub(super) fn pointer_comparison_needs_source(proposition: &Proposition) -> bool {
-    matches!(proposition.condition_native(), Some((ConditionTerm::PointerEqual(left, right), _))
+    matches!(proposition.old_condition(), Some((OldConditionTerm::PointerEqual(left, right), _))
         if distinct_pointers_at_one_address(left, right))
 }
 
@@ -899,7 +899,7 @@ pub(crate) fn render_read_resolution(
     let _typed = TypedNotationScope::enter();
     let query = render_proposition_labeled(
         &Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
                 left: Box::new(resolution.read.clone()),
@@ -1279,7 +1279,7 @@ pub(crate) fn render_resource_fact_labeled(
             renderer.push("owns ");
             renderer.resource(resource);
             renderer.push(" x ");
-            renderer.bitvector(quantity.native_compat());
+            renderer.bitvector(quantity.old_form());
         }
         ResourceFact::View(resource) => {
             renderer.push("views ");
@@ -1592,16 +1592,16 @@ impl Renderer<'_> {
                 self.fmt(format_args!("volatile-{operation}-event#{}(", event.id.0));
                 self.pointer(&event.pointer);
                 self.push(", ");
-                self.cvalue(event.value.native_compat());
+                self.cvalue(event.value.old_form());
                 self.push(")");
             }
             Proposition::Equal(left, right) => self.binary_term(left, " = ", right),
             Proposition::SequenceMembership { element, .. } => {
-                self.cvalue(element.native_compat());
+                self.cvalue(element.old_form());
                 self.push(" in sequence(<bounded opaque value>)");
             }
             Proposition::ConditionIs(condition, value) => {
-                self.condition(condition.native_compat());
+                self.condition(condition.old_form());
                 self.push(if *value { " is true" } else { " is false" });
             }
             Proposition::Predicate { name, arguments } => {
@@ -1698,7 +1698,7 @@ impl Renderer<'_> {
                 } else {
                     ", bytes:uint32="
                 });
-                self.bitvector(bytes.native_compat());
+                self.bitvector(bytes.old_form());
                 self.push(")");
             }
             Proposition::MemoryCanStore {
@@ -1947,15 +1947,15 @@ impl Renderer<'_> {
             return;
         }
         match term {
-            Term::Condition(c) => self.condition(c.native_compat()),
-            Term::Bitvector32(v) => self.bitvector(v.native_compat()),
-            Term::Integer(i) => self.integer(i.native_compat()),
-            Term::PointerOffset(o) => self.offset(o.native_compat(), 0),
-            Term::ProgramValue(v) => self.cvalue(v.native_compat()),
+            Term::Condition(c) => self.condition(c.old_form()),
+            Term::Bitvector32(v) => self.bitvector(v.old_form()),
+            Term::Integer(i) => self.integer(i.old_form()),
+            Term::PointerOffset(o) => self.offset(o.old_form(), 0),
+            Term::ProgramValue(v) => self.cvalue(v.old_form()),
             Term::ArrayReadPoint(point) => self.memory(point.memory()),
             Term::ExecutionState(s) => self.state(s),
             Term::Sequence(_) => self.push("sequence(<bounded opaque value>)"),
-            Term::Algebraic(value) => self.algebraic(value.native_compat()),
+            Term::Algebraic(value) => self.algebraic(value.old_form()),
         }
     }
 
@@ -2114,7 +2114,7 @@ impl Renderer<'_> {
         }
         self.depth -= 1;
     }
-    fn condition(&mut self, c: &ConditionTerm) {
+    fn condition(&mut self, c: &OldConditionTerm) {
         // Definedness of a partial machine operation is the condition a
         // capture or evaluation refusal most often names, so print the
         // operation instead of a placeholder.
@@ -2129,8 +2129,8 @@ impl Renderer<'_> {
             return;
         }
         match c {
-            ConditionTerm::Constant(v) => self.push(if *v { "true" } else { "false" }),
-            ConditionTerm::Variable(v) => {
+            OldConditionTerm::Constant(v) => self.push(if *v { "true" } else { "false" }),
+            OldConditionTerm::Variable(v) => {
                 let name = self.variable_name(*v, "condition");
                 self.push(&name);
             }
@@ -2138,27 +2138,27 @@ impl Renderer<'_> {
                 self.push("integer-condition(");
                 self.integer_shared(a);
                 self.push(match c {
-                    ConditionTerm::IntegerLessThan(..) => " < ",
-                    ConditionTerm::IntegerLessEqual(..) => " <= ",
-                    ConditionTerm::IntegerGreaterThan(..) => " > ",
-                    ConditionTerm::IntegerGreaterEqual(..) => " >= ",
-                    ConditionTerm::IntegerEqual(..) => " = ",
+                    OldConditionTerm::IntegerLessThan(..) => " < ",
+                    OldConditionTerm::IntegerLessEqual(..) => " <= ",
+                    OldConditionTerm::IntegerGreaterThan(..) => " > ",
+                    OldConditionTerm::IntegerGreaterEqual(..) => " >= ",
+                    OldConditionTerm::IntegerEqual(..) => " = ",
                     _ => " != ",
                 });
                 self.integer_shared(b);
                 self.push(")");
             }
-            ConditionTerm::AlgebraicEqual(a, b) => {
+            OldConditionTerm::AlgebraicEqual(a, b) => {
                 self.algebraic(a);
                 self.push(" = ");
                 self.algebraic(b);
             }
-            ConditionTerm::AddressOffsetEqual(a, b) => {
+            OldConditionTerm::AddressOffsetEqual(a, b) => {
                 self.offset(a, 0);
                 self.push(" = ");
                 self.offset(b, 0);
             }
-            ConditionTerm::PointerEqual(a, b) => {
+            OldConditionTerm::PointerEqual(a, b) => {
                 if distinct_pointers_at_one_address(a, b) {
                     self.push("pointer equality at ");
                     self.pointer(a.address());
@@ -2169,16 +2169,16 @@ impl Renderer<'_> {
                     self.pointer(b.address());
                 }
             }
-            ConditionTerm::AddressEqual(a, b) => {
+            OldConditionTerm::AddressEqual(a, b) => {
                 self.pointer(a);
                 self.push(" = ");
                 self.pointer(b);
             }
-            ConditionTerm::BoolApplication(application) => {
+            OldConditionTerm::BoolApplication(application) => {
                 self.push(application.name());
                 self.push("(...)");
             }
-            ConditionTerm::BoolIf {
+            OldConditionTerm::BoolIf {
                 condition,
                 then_condition,
                 else_condition,
@@ -2191,7 +2191,7 @@ impl Renderer<'_> {
                 self.condition(else_condition);
                 self.push(" }");
             }
-            ConditionTerm::BoolEqual(a, b) => {
+            OldConditionTerm::BoolEqual(a, b) => {
                 self.push("bool(");
                 self.condition(a);
                 self.push(" = ");
@@ -2201,13 +2201,13 @@ impl Renderer<'_> {
             _ => self.push("condition(<bounded operation>)"),
         }
     }
-    fn binary_condition_bv(&mut self, a: &MachineTerm, b: &MachineTerm, label: &str) {
+    fn binary_condition_bv(&mut self, a: &OldMachineTerm, b: &OldMachineTerm, label: &str) {
         // Equality shares one 32-bit kernel form between signed and unsigned
         // C values. Retained type metadata disambiguates a returned value
         // even when it has no source name.
         let unsigned_equality = label == "int32 ="
             && [a, b].iter().any(|value| {
-                matches!(value, MachineTerm::Variable(variable)
+                matches!(value, OldMachineTerm::Variable(variable)
                 if self.labels.source_types.get(variable) == Some(&crate::kernel::ProgramType::UInt32))
             });
         self.push(if unsigned_equality { "uint32 =" } else { label });
@@ -2218,7 +2218,7 @@ impl Renderer<'_> {
         self.comparison_bitvector(b, signed);
         self.push(")");
     }
-    fn comparison_bitvector(&mut self, value: &MachineTerm, signed: bool) {
+    fn comparison_bitvector(&mut self, value: &OldMachineTerm, signed: bool) {
         if signed && let bits32_constant!(value) = value {
             self.fmt(format_args!("{}", constant_u32(*value) as i32));
         } else {
@@ -2227,8 +2227,8 @@ impl Renderer<'_> {
     }
     fn overflow_condition_bv(
         &mut self,
-        a: &MachineTerm,
-        b: &MachineTerm,
+        a: &OldMachineTerm,
+        b: &OldMachineTerm,
         width: &str,
         operator: &str,
     ) {
@@ -2380,7 +2380,7 @@ impl Renderer<'_> {
         self.integer_shared(right);
         self.push(")");
     }
-    fn bitvector(&mut self, v: &MachineTerm) {
+    fn bitvector(&mut self, v: &OldMachineTerm) {
         if self.truncated || !self.visit() || self.depth >= MAX_DEPTH {
             self.truncated = true;
             return;
@@ -2388,7 +2388,7 @@ impl Renderer<'_> {
         self.depth += 1;
         // Rule C1: a specification `Bool` travels as its cast to `uint8`,
         // which reads as the `Bool` itself.
-        if let MachineTerm::BoolCast { to, value } = v {
+        if let OldMachineTerm::BoolCast { to, value } = v {
             if *to == crate::kernel::MachineIntegerType::UInt8 {
                 self.condition(value);
             } else {
@@ -2399,7 +2399,7 @@ impl Renderer<'_> {
             self.depth -= 1;
             return;
         }
-        if let MachineTerm::MemoryLoad(retained_state, pointer, kind) = v {
+        if let OldMachineTerm::MemoryLoad(retained_state, pointer, kind) = v {
             // `memory` prints its own memory label.
             if self.trace_facts {
                 self.fmt(format_args!("read<{}>(", trace_load_kind(*kind)));
@@ -2419,7 +2419,7 @@ impl Renderer<'_> {
         // numbers, and printing only the address made them look identical;
         // neither says which memory each side reads, which is the whole
         // question wherever a load fact fails to carry across a step.
-        if let MachineTerm::Variable(variable) = v
+        if let OldMachineTerm::Variable(variable) = v
             && crate::kernel::is_load_variable(variable)
             && let Some((retained_state, pointer)) =
                 crate::kernel::registered_load_for_variable(variable)
@@ -2458,13 +2458,13 @@ impl Renderer<'_> {
             // and the field is the part a reader compares. The id is kept
             // beside it here, as a load variable's is, because this renderer
             // prints the kernel's own goal and premises.
-            MachineTerm::Variable(v)
+            OldMachineTerm::Variable(v)
                 if let Some(spelling) = crate::kernel::model_fields::model_field_surface(*v) =>
             {
                 let name = self.variable_name(*v, "value");
                 self.fmt(format_args!("{name}={spelling}"))
             }
-            MachineTerm::Variable(v) => {
+            OldMachineTerm::Variable(v) => {
                 let name = self.variable_name(*v, "value");
                 self.push(&name);
             }
@@ -2472,7 +2472,7 @@ impl Renderer<'_> {
             binary_term!(Int32, Subtract, a, b) => self.binary_bv("-", a, b),
             binary_term!(Int32, Multiply, a, b) => self.binary_bv("*", a, b),
             _ if self.machine_operation(v) => {}
-            MachineTerm::RangeFold {
+            OldMachineTerm::RangeFold {
                 start,
                 end,
                 initial,
@@ -2494,13 +2494,13 @@ impl Renderer<'_> {
                 self.bound_names.pop();
                 self.push(")");
             }
-            MachineTerm::PureFunctionApplication { name, arguments }
+            OldMachineTerm::PureFunctionApplication { name, arguments }
                 if let Some(spelled) =
                     crate::kernel::layout_term_spelling(name, arguments.len()) =>
             {
                 self.push(&crate::languages::display_source_names(&spelled));
             }
-            MachineTerm::PureFunctionApplication { name, arguments } => {
+            OldMachineTerm::PureFunctionApplication { name, arguments } => {
                 self.push(name);
                 self.push("(");
                 for (index, argument) in arguments.iter().enumerate() {
@@ -2514,13 +2514,13 @@ impl Renderer<'_> {
                 }
                 self.push(")");
             }
-            MachineTerm::ClickFunctionApplication { name, arguments } => {
+            OldMachineTerm::ClickFunctionApplication { name, arguments } => {
                 self.push(name);
                 self.push("(");
                 self.pure_arguments(arguments);
                 self.push(")");
             }
-            MachineTerm::AlgebraicMatch { scrutinee, arms } => {
+            OldMachineTerm::AlgebraicMatch { scrutinee, arms } => {
                 self.push("match ");
                 self.algebraic(scrutinee);
                 self.push(" { ");
@@ -2537,12 +2537,12 @@ impl Renderer<'_> {
                 }
                 self.push(" }");
             }
-            MachineTerm::IntegerAddress(pointer, _) => {
+            OldMachineTerm::IntegerAddress(pointer, _) => {
                 self.push("address(");
                 self.pointer(pointer);
                 self.push(")");
             }
-            MachineTerm::Cast {
+            OldMachineTerm::Cast {
                 spelling: MachineCastSpelling::Generic,
                 value,
                 to: destination,
@@ -2559,25 +2559,25 @@ impl Renderer<'_> {
         }
         self.depth -= 1;
     }
-    fn binary_bv(&mut self, op: &str, left: &MachineTerm, right: &MachineTerm) {
+    fn binary_bv(&mut self, op: &str, left: &OldMachineTerm, right: &OldMachineTerm) {
         self.push("(");
         self.bitvector(left);
         self.push(op);
         self.bitvector(right);
         self.push(")");
     }
-    fn offset(&mut self, o: &AddressOffset, _depth: usize) {
+    fn offset(&mut self, o: &OldAddressOffset, _depth: usize) {
         if self.depth >= MAX_DEPTH || self.truncated {
             self.truncated = true;
             return;
         }
         match o {
-            AddressOffset::Constant(v) => self.fmt(format_args!("{v}")),
-            AddressOffset::Variable(v) => {
+            OldAddressOffset::Constant(v) => self.fmt(format_args!("{v}")),
+            OldAddressOffset::Variable(v) => {
                 let name = self.variable_name(*v, "offset");
                 self.push(&name);
             }
-            AddressOffset::Add(a, b) => {
+            OldAddressOffset::Add(a, b) => {
                 self.depth += 1;
                 self.push("(");
                 self.offset(a, 0);
@@ -2586,12 +2586,12 @@ impl Renderer<'_> {
                 self.push(")");
                 self.depth -= 1;
             }
-            AddressOffset::Int32Scaled { value, byte_width } => {
+            OldAddressOffset::Int32Scaled { value, byte_width } => {
                 self.push("int32(");
                 self.bitvector(value.structural_value());
                 self.fmt(format_args!(")*{byte_width} bytes"));
             }
-            AddressOffset::Int64Scaled {
+            OldAddressOffset::Int64Scaled {
                 value,
                 byte_width,
                 unsigned,
@@ -2826,7 +2826,7 @@ impl Renderer<'_> {
                 self.bitvector(iterated.guard().value());
                 self.push(", element=");
                 self.resource(&Resource::Memory(
-                    iterated.element_range(&MachineTerm::Variable(index)),
+                    iterated.element_range(&OldMachineTerm::Variable(index)),
                 ));
                 self.bound_names.pop();
                 self.push(", holes=[");
@@ -2837,7 +2837,7 @@ impl Renderer<'_> {
                     if index > 0 {
                         self.push(", ");
                     }
-                    self.bitvector(hole.native_compat());
+                    self.bitvector(hole.old_form());
                 }
                 self.push("])");
             }
@@ -2941,7 +2941,7 @@ impl Renderer<'_> {
     }
     fn outcome(&mut self, outcome: &ExpressionOutcome<crate::kernel::StoredProgramValue>) {
         match outcome {
-            ExpressionOutcome::Value(value) => self.cvalue(value.native_compat()),
+            ExpressionOutcome::Value(value) => self.cvalue(value.old_form()),
             ExpressionOutcome::UndefinedBehavior(_) => self.push("undefined-behavior"),
             ExpressionOutcome::RuntimeError(_) => self.push("runtime-error"),
         }
@@ -3026,7 +3026,7 @@ mod tests {
                     .with_block(format!("later{index}"), 4)
                     .store(
                         cell.clone(),
-                        crate::kernel::ProgramValue::UInt64(MachineTerm::uint64_constant(
+                        crate::kernel::ProgramValue::UInt64(OldMachineTerm::uint64_constant(
                             index as u64,
                         )),
                     ),
@@ -3069,10 +3069,10 @@ mod tests {
         let left = OldPointer::new(address.clone(), ProgramType::Int32Pointer);
         let right = left.clone().with_bounds(Some(SubobjectBounds {
             start: address,
-            width: MachineTerm::uint64_constant(4),
+            width: OldMachineTerm::uint64_constant(4),
         }));
         let goal = Proposition::condition_is(
-            ConditionTerm::PointerEqual(Box::new(left), Box::new(right)),
+            OldConditionTerm::PointerEqual(Box::new(left), Box::new(right)),
             true,
         );
         let mut labels = MemoryStateLabels::ambient();
@@ -3085,19 +3085,19 @@ mod tests {
 
     #[test]
     fn retained_contract_offset_diagnostic_preserves_shape_and_width() {
-        use crate::kernel::{AddressOffset, MachineTerm, Term};
+        use crate::kernel::{OldAddressOffset, OldMachineTerm, Term};
         let _session = crate::kernel::VerificationSession::enter();
-        let offset = AddressOffset::Add(
-            Box::new(AddressOffset::scaled_int64_node(
-                MachineTerm::uint64_constant(3),
+        let offset = OldAddressOffset::Add(
+            Box::new(OldAddressOffset::scaled_int64_node(
+                OldMachineTerm::uint64_constant(3),
                 8,
                 true,
             )),
-            Box::new(AddressOffset::Constant(-2)),
+            Box::new(OldAddressOffset::Constant(-2)),
         );
         let claim = Proposition::Equal(
             Term::PointerOffset(offset.into()),
-            Term::PointerOffset(AddressOffset::Constant(22).into()),
+            Term::PointerOffset(OldAddressOffset::Constant(22).into()),
         );
         let source = surface::source(&claim, &mut MemoryStateLabels::ambient());
         assert!(source.contains(" * 8 + -2"), "{source}");
@@ -3130,15 +3130,15 @@ mod tests {
             );
         }
         let fact = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::Variable(Variable(988002))),
+                left: Box::new(OldMachineTerm::Variable(Variable(988002))),
                 right: Box::new(binary_node!(
                     Int32,
                     Add,
-                    Box::new(MachineTerm::Variable(Variable(988001))),
-                    Box::new(MachineTerm::constant(1)),
+                    Box::new(OldMachineTerm::Variable(Variable(988001))),
+                    Box::new(OldMachineTerm::constant(1)),
                 )),
             },
             true,
@@ -3195,13 +3195,13 @@ mod tests {
         ] {
             let pointer = Address {
                 base: format!("local:{local}").into(),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             };
             let memory = SymbolicMemory::new()
                 .with_block(format!("local:{local}"), 4)
                 .store(
                     pointer,
-                    crate::kernel::ProgramValue::Int32(MachineTerm::constant(7)),
+                    crate::kernel::ProgramValue::Int32(OldMachineTerm::constant(7)),
                 );
             assert_eq!(
                 MemoryStateLabels::default().describe_state(&memory),
@@ -3215,11 +3215,11 @@ mod tests {
         let mut labels = MemoryStateLabels::default();
         labels.source_name(Variable(7), "cur".into());
         let proposition = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::Variable(Variable(7))),
-                right: Box::new(MachineTerm::Variable(Variable(8))),
+                left: Box::new(OldMachineTerm::Variable(Variable(7))),
+                right: Box::new(OldMachineTerm::Variable(Variable(8))),
             },
             true,
         );
@@ -3240,7 +3240,7 @@ mod tests {
             "path".into(),
             Variable(7),
             Sort::Algebraic(path),
-            Proposition::condition_is(ConditionTerm::Constant(true), true),
+            Proposition::condition_is(OldConditionTerm::Constant(true), true),
         );
         let rendered = render_proposition(&proposition);
         assert!(rendered.starts_with("∃path:Path<Integer>. "), "{rendered}");
@@ -3260,11 +3260,11 @@ mod tests {
         labels.source_name(Variable(7), "r".into());
         let equality = |variable| {
             Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left: Box::new(MachineTerm::Variable(variable)),
-                    right: Box::new(MachineTerm::constant(0)),
+                    left: Box::new(OldMachineTerm::Variable(variable)),
+                    right: Box::new(OldMachineTerm::constant(0)),
                 },
                 false,
             )
@@ -3281,7 +3281,7 @@ mod tests {
 
     #[test]
     fn deep_dag_is_bounded_and_marks_truncation() {
-        let mut proposition = Proposition::condition_is(ConditionTerm::Constant(true), true);
+        let mut proposition = Proposition::condition_is(OldConditionTerm::Constant(true), true);
         for _ in 0..128 {
             proposition = Proposition::Not(Box::new(proposition));
         }
@@ -3295,7 +3295,7 @@ mod tests {
         let left = SharedIntegerTerm::from(IntegerTerm::from(11));
         let right = SharedIntegerTerm::from(IntegerTerm::from(19));
         let proposition =
-            Proposition::condition_is(ConditionTerm::IntegerLessThan(left, right), true);
+            Proposition::condition_is(OldConditionTerm::IntegerLessThan(left, right), true);
         let rendered = render_proposition(&proposition);
         assert!(rendered.contains("integer-condition"));
         assert!(rendered.contains("<"));
@@ -3305,17 +3305,17 @@ mod tests {
 
     #[test]
     fn range_fold_keeps_bounds_and_body_variables() {
-        let fold = MachineTerm::RangeFold {
-            start: Box::new(MachineTerm::constant(1)),
-            end: Box::new(MachineTerm::constant(4)),
-            initial: Box::new(MachineTerm::constant(0)),
+        let fold = OldMachineTerm::RangeFold {
+            start: Box::new(OldMachineTerm::constant(1)),
+            end: Box::new(OldMachineTerm::constant(4)),
+            initial: Box::new(OldMachineTerm::constant(0)),
             accumulator: crate::kernel::Variable(8),
             item: crate::kernel::Variable(9),
-            body: Box::new(MachineTerm::Variable(crate::kernel::Variable(10))),
+            body: Box::new(OldMachineTerm::Variable(crate::kernel::Variable(10))),
         };
         let rendered = render_proposition(&Proposition::Equal(
             Term::Bitvector32(fold.into()),
-            Term::Bitvector32(MachineTerm::constant(0).into()),
+            Term::Bitvector32(OldMachineTerm::constant(0).into()),
         ));
         assert!(rendered.contains("fold("));
         assert!(rendered.contains("acc=acc, item=item"), "{rendered}");
@@ -3327,9 +3327,9 @@ mod tests {
             memory,
             base: Address {
                 base: crate::kernel::AddressBase::ExternalArgument,
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
-            bytes: (MachineTerm::constant(1)).into(),
+            bytes: (OldMachineTerm::constant(1)).into(),
             wide: false,
         }
     }
@@ -3413,18 +3413,18 @@ mod tests {
 
     #[test]
     fn deep_bitvector_tree_is_bounded() {
-        let mut value = MachineTerm::constant(1);
+        let mut value = OldMachineTerm::constant(1);
         for _ in 0..128 {
             value = binary_node!(
                 Int32,
                 Add,
                 Box::new(value),
-                Box::new(MachineTerm::constant(1))
+                Box::new(OldMachineTerm::constant(1))
             );
         }
         let rendered = render_proposition(&Proposition::Equal(
             Term::Bitvector32(value.into()),
-            Term::Bitvector32(MachineTerm::constant(0).into()),
+            Term::Bitvector32(OldMachineTerm::constant(0).into()),
         ));
         assert!(rendered.contains("truncated"));
     }
@@ -3457,9 +3457,11 @@ mod tests {
     #[test]
     fn machine_and_program_value_types_remain_visible() {
         let int32 = render_proposition(&Proposition::Equal(
-            Term::ProgramValue(crate::kernel::ProgramValue::Int32(MachineTerm::constant(1)).into()),
             Term::ProgramValue(
-                crate::kernel::ProgramValue::UInt32(MachineTerm::constant(1)).into(),
+                crate::kernel::ProgramValue::Int32(OldMachineTerm::constant(1)).into(),
+            ),
+            Term::ProgramValue(
+                crate::kernel::ProgramValue::UInt32(OldMachineTerm::constant(1)).into(),
             ),
         ));
         assert!(int32.contains("int32(1)"));
@@ -3471,7 +3473,7 @@ mod tests {
         let resource = ResourceFact::View(Resource::Token {
             name: "child_ref".into(),
             arguments: Vec::from([AlgebraicValue::Program(crate::kernel::ProgramValue::Int32(
-                MachineTerm::constant(7),
+                OldMachineTerm::constant(7),
             ))])
             .into(),
         });
@@ -3488,8 +3490,8 @@ mod wide_range_reader_tests {
     fn wide_resource_diagnostics_keep_the_high_bits_of_bounds() {
         let wide = MemoryRange::new_wide(
             Address::symbolic(Variable(985_500)),
-            MachineTerm::uint64_constant(0),
-            MachineTerm::uint64_constant(1 << 33),
+            OldMachineTerm::uint64_constant(0),
+            OldMachineTerm::uint64_constant(1 << 33),
             4,
         );
         let fact = Proposition::ResourceContains {
@@ -3513,7 +3515,7 @@ mod resource_detail_tests {
     fn typed_resource_arguments_keep_publication_payload_values() {
         let flag = Address {
             base: "ready".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let publication = |value| {
             ResourceFact::own(Resource::Publication(PublicationRight::new(
@@ -3522,7 +3524,7 @@ mod resource_detail_tests {
                 ResourceDescription::new(
                     "payload".into(),
                     vec![AlgebraicValue::Program(ProgramValue::Int32(
-                        MachineTerm::constant(value),
+                        OldMachineTerm::constant(value),
                     ))]
                     .into(),
                     ResourceFieldSchema::new(vec![]).unwrap(),
@@ -3540,11 +3542,11 @@ mod resource_detail_tests {
     fn typed_iterated_resources_keep_guards_elements_and_taken_indices() {
         let base = Address {
             base: "elements".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let guard = Address {
             base: "flags".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let iterated = IteratedMemory::new(
             "selected",
@@ -3553,14 +3555,20 @@ mod resource_detail_tests {
             2,
             0,
             1,
-            MachineTerm::constant(0),
-            MachineTerm::constant(8),
-            IteratedGuard::new(guard, ProgramType::Int32, 4, true, MachineTerm::constant(1)),
+            OldMachineTerm::constant(0),
+            OldMachineTerm::constant(8),
+            IteratedGuard::new(
+                guard,
+                ProgramType::Int32,
+                4,
+                true,
+                OldMachineTerm::constant(1),
+            ),
         )
         .unwrap();
         let render = |hole| {
             let fact = ResourceFact::own(Resource::Iterated(std::sync::Arc::new(
-                iterated.with_hole(MachineTerm::constant(hole)),
+                iterated.with_hole(OldMachineTerm::constant(hole)),
             )));
             let mut labels = MemoryStateLabels::default();
             let mut text = render_resource_fact_labeled(&fact, &mut labels);

@@ -173,9 +173,9 @@ mod storage_tests {
     #[test]
     fn imported_program_fields_preserve_native_call_argument_carriers() {
         let _session = VerificationSession::enter();
-        let word = MachineTerm::Variable(Variable(1012150));
+        let word = OldMachineTerm::Variable(Variable(1012150));
         let call = |argument| {
-            ProgramValue::UInt32(MachineTerm::ClickFunctionApplication {
+            ProgramValue::UInt32(OldMachineTerm::ClickFunctionApplication {
                 name: "imported_field_identity".into(),
                 arguments: vec![argument],
             })
@@ -197,35 +197,35 @@ mod storage_tests {
     #[test]
     fn imported_fields_keep_nested_program_call_carriers() {
         let _session = VerificationSession::enter();
-        let call = MachineTerm::ClickFunctionApplication {
+        let call = OldMachineTerm::ClickFunctionApplication {
             name: "nested_field_input".into(),
             arguments: vec![PureFunctionArgument::SharedMachine(
                 SharedMachineIntegerTerm::intern(
                     MachineIntegerType::UInt32,
-                    MachineTerm::Variable(Variable(1012151)),
+                    OldMachineTerm::Variable(Variable(1012151)),
                 ),
             )],
         };
         let values = [
-            ProgramValue::UInt32(MachineTerm::Binary {
+            ProgramValue::UInt32(OldMachineTerm::Binary {
                 op: MachineBinaryOp::Add,
                 format: MachineIntegerType::UInt32,
                 left: Box::new(call.clone()),
-                right: Box::new(MachineTerm::uint32_constant(1)),
+                right: Box::new(OldMachineTerm::uint32_constant(1)),
             }),
-            ProgramValue::Float64(MachineTerm::ClickFunctionApplication {
+            ProgramValue::Float64(OldMachineTerm::ClickFunctionApplication {
                 name: "outer_float_field".into(),
                 arguments: vec![PureFunctionArgument::Value(ProgramValue::UInt32(
                     call.clone(),
                 ))],
             }),
-            ProgramValue::Bool(MachineTerm::BoolCast {
+            ProgramValue::Bool(OldMachineTerm::BoolCast {
                 to: MachineIntegerType::UInt8,
-                value: Box::new(ConditionTerm::Compare {
+                value: Box::new(OldConditionTerm::Compare {
                     format: MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
                     left: Box::new(call),
-                    right: Box::new(MachineTerm::uint32_constant(7)),
+                    right: Box::new(OldMachineTerm::uint32_constant(7)),
                 }),
             }),
         ];
@@ -349,7 +349,7 @@ mod storage_tests {
     #[test]
     fn imported_fields_preserve_raw_boolean_words_and_program_parameter_envelopes() {
         let _session = VerificationSession::enter();
-        let raw_bool = AlgebraicValue::Program(ProgramValue::Bool(MachineTerm::constant(2)));
+        let raw_bool = AlgebraicValue::Program(ProgramValue::Bool(OldMachineTerm::constant(2)));
         assert_eq!(
             AlgebraicFieldResult::from_native(raw_bool.clone()).into_native(),
             raw_bool

@@ -14,13 +14,13 @@ pub(in crate::kernel) struct BooleanStorageKey(BooleanKeyKind);
 // constructor, so a raw Word can never alias a projected Cast.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 enum BooleanKeyKind {
-    Word(MachineTerm),
+    Word(OldMachineTerm),
     Cast(MachineIntegerType, ConditionStorageKey),
 }
 impl BooleanStorageKey {
-    pub(super) fn native(word: &MachineTerm) -> Self {
+    pub(super) fn native(word: &OldMachineTerm) -> Self {
         Self(match word {
-            MachineTerm::BoolCast { to, value } => {
+            OldMachineTerm::BoolCast { to, value } => {
                 BooleanKeyKind::Cast(*to, ConditionStorageKey::native(value))
             }
             _ => BooleanKeyKind::Word(word.clone()),
@@ -30,7 +30,7 @@ impl BooleanStorageKey {
         if root.ty() == &KernelType::Program(ProgramType::Bool) {
             return match root.node() {
                 KernelTermNode::Variable(v) => {
-                    Self(BooleanKeyKind::Word(MachineTerm::Variable(*v)))
+                    Self(BooleanKeyKind::Word(OldMachineTerm::Variable(*v)))
                 }
                 KernelTermNode::ImportedScalar(input) => Self::native(input.value()),
                 KernelTermNode::ObservedArgument(_) | KernelTermNode::CallArgument(_) => {
@@ -46,9 +46,9 @@ impl BooleanStorageKey {
         }
         Self(
             if let Some(value) = BooleanOperandView::Shared(root).constant() {
-                BooleanKeyKind::Word(MachineTerm::bool_cast(
+                BooleanKeyKind::Word(OldMachineTerm::bool_cast(
                     MachineIntegerType::UInt8,
-                    ConditionTerm::Constant(value),
+                    OldConditionTerm::Constant(value),
                 ))
             } else {
                 BooleanKeyKind::Cast(MachineIntegerType::UInt8, root.condition_storage_key())
@@ -78,7 +78,7 @@ impl Ord for BooleanStorageKey {
     }
 }
 
-// Native MachineTerm variant order, shared by both family projections. The
+// Native OldMachineTerm variant order, shared by both family projections. The
 // exhaustive match forces a review when a new opaque word variant is added.
 const PURE_APPLICATION_RANK: u8 = 6;
 const CLICK_APPLICATION_RANK: u8 = 7;
@@ -87,27 +87,27 @@ const FLOAT32_BINARY_RANK: u8 = 14;
 const FLOAT64_NEGATE_RANK: u8 = 15;
 const FLOAT64_BINARY_RANK: u8 = 16;
 const BOOL_CAST_RANK: u8 = 17;
-fn native_machine_rank(value: &MachineTerm) -> u8 {
+fn native_machine_rank(value: &OldMachineTerm) -> u8 {
     match value {
-        MachineTerm::Constant { .. } => 0,
-        MachineTerm::Variable(_) => 1,
-        MachineTerm::Binary { .. } => 2,
-        MachineTerm::Unary { .. } => 3,
-        MachineTerm::If { .. } => 4,
-        MachineTerm::RangeFold { .. } => 5,
-        MachineTerm::PureFunctionApplication { .. } => PURE_APPLICATION_RANK,
-        MachineTerm::ClickFunctionApplication { .. } => CLICK_APPLICATION_RANK,
-        MachineTerm::AlgebraicMatch { .. } => 8,
-        MachineTerm::MemoryLoad(..) => 9,
-        MachineTerm::IntegerAddress(..) => 10,
-        MachineTerm::IntegerToMachine { .. } => 11,
-        MachineTerm::Cast { .. } => 12,
-        MachineTerm::Float32Negate(_) => FLOAT32_NEGATE_RANK,
-        MachineTerm::Float32Binary { .. } => FLOAT32_BINARY_RANK,
-        MachineTerm::Float64Negate(_) => FLOAT64_NEGATE_RANK,
-        MachineTerm::Float64Binary { .. } => FLOAT64_BINARY_RANK,
-        MachineTerm::BoolCast { .. } => BOOL_CAST_RANK,
-        MachineTerm::ThreadHandle(_) => 18,
+        OldMachineTerm::Constant { .. } => 0,
+        OldMachineTerm::Variable(_) => 1,
+        OldMachineTerm::Binary { .. } => 2,
+        OldMachineTerm::Unary { .. } => 3,
+        OldMachineTerm::If { .. } => 4,
+        OldMachineTerm::RangeFold { .. } => 5,
+        OldMachineTerm::PureFunctionApplication { .. } => PURE_APPLICATION_RANK,
+        OldMachineTerm::ClickFunctionApplication { .. } => CLICK_APPLICATION_RANK,
+        OldMachineTerm::AlgebraicMatch { .. } => 8,
+        OldMachineTerm::MemoryLoad(..) => 9,
+        OldMachineTerm::IntegerAddress(..) => 10,
+        OldMachineTerm::IntegerToMachine { .. } => 11,
+        OldMachineTerm::Cast { .. } => 12,
+        OldMachineTerm::Float32Negate(_) => FLOAT32_NEGATE_RANK,
+        OldMachineTerm::Float32Binary { .. } => FLOAT32_BINARY_RANK,
+        OldMachineTerm::Float64Negate(_) => FLOAT64_NEGATE_RANK,
+        OldMachineTerm::Float64Binary { .. } => FLOAT64_BINARY_RANK,
+        OldMachineTerm::BoolCast { .. } => BOOL_CAST_RANK,
+        OldMachineTerm::ThreadHandle(_) => 18,
     }
 }
 
@@ -120,7 +120,7 @@ struct ConditionKeyData {
 }
 #[derive(Debug, Hash)]
 enum ConditionShape {
-    Atom(ConditionTerm),
+    Atom(OldConditionTerm),
     If([ConditionStorageKey; 3]),
     Equal([ConditionStorageKey; 2]),
 }
@@ -145,9 +145,9 @@ impl ConditionStorageKey {
             _ => Self::native(&BooleanOperandView::Shared(root).identity_leaf()),
         }
     }
-    pub(in crate::kernel) fn native(term: &ConditionTerm) -> Self {
+    pub(in crate::kernel) fn native(term: &OldConditionTerm) -> Self {
         enum Task<'a> {
-            Enter(&'a ConditionTerm),
+            Enter(&'a OldConditionTerm),
             If,
             Equal,
         }
@@ -155,7 +155,7 @@ impl ConditionStorageKey {
         let mut values = Vec::new();
         while let Some(task) = pending.pop() {
             match task {
-                Task::Enter(ConditionTerm::BoolIf {
+                Task::Enter(OldConditionTerm::BoolIf {
                     condition,
                     then_condition,
                     else_condition,
@@ -165,7 +165,7 @@ impl ConditionStorageKey {
                         [else_condition, then_condition, condition].map(|v| Task::Enter(v)),
                     );
                 }
-                Task::Enter(ConditionTerm::BoolEqual(a, b)) => {
+                Task::Enter(OldConditionTerm::BoolEqual(a, b)) => {
                     pending.push(Task::Equal);
                     pending.push(Task::Enter(b));
                     pending.push(Task::Enter(a));
@@ -193,24 +193,24 @@ impl ConditionShape {
             Self::If(_) => 17,
             Self::Equal(_) => 18,
             Self::Atom(value) => match value {
-                ConditionTerm::Constant(_) => 0,
-                ConditionTerm::Variable(_) => 1,
-                ConditionTerm::AlgebraicEqual(..) => 2,
-                ConditionTerm::Compare { .. } => 3,
-                ConditionTerm::Overflows { .. } => 4,
-                ConditionTerm::Float32(_) => 5,
-                ConditionTerm::Float64(_) => 6,
-                ConditionTerm::AddressOffsetEqual(..) => 7,
-                ConditionTerm::AddressEqual(..) => 8,
-                ConditionTerm::PointerEqual(..) => 9,
-                ConditionTerm::IntegerLessThan(..) => 10,
-                ConditionTerm::IntegerLessEqual(..) => 11,
-                ConditionTerm::IntegerGreaterThan(..) => 12,
-                ConditionTerm::IntegerGreaterEqual(..) => 13,
-                ConditionTerm::IntegerEqual(..) => 14,
-                ConditionTerm::IntegerNotEqual(..) => 15,
-                ConditionTerm::BoolApplication(_) => 16,
-                ConditionTerm::BoolIf { .. } | ConditionTerm::BoolEqual(..) => {
+                OldConditionTerm::Constant(_) => 0,
+                OldConditionTerm::Variable(_) => 1,
+                OldConditionTerm::AlgebraicEqual(..) => 2,
+                OldConditionTerm::Compare { .. } => 3,
+                OldConditionTerm::Overflows { .. } => 4,
+                OldConditionTerm::Float32(_) => 5,
+                OldConditionTerm::Float64(_) => 6,
+                OldConditionTerm::AddressOffsetEqual(..) => 7,
+                OldConditionTerm::AddressEqual(..) => 8,
+                OldConditionTerm::PointerEqual(..) => 9,
+                OldConditionTerm::IntegerLessThan(..) => 10,
+                OldConditionTerm::IntegerLessEqual(..) => 11,
+                OldConditionTerm::IntegerGreaterThan(..) => 12,
+                OldConditionTerm::IntegerGreaterEqual(..) => 13,
+                OldConditionTerm::IntegerEqual(..) => 14,
+                OldConditionTerm::IntegerNotEqual(..) => 15,
+                OldConditionTerm::BoolApplication(_) => 16,
+                OldConditionTerm::BoolIf { .. } | OldConditionTerm::BoolEqual(..) => {
                     unreachable!("projected connective")
                 }
             },
@@ -431,7 +431,7 @@ impl Drop for ConditionStorageKey {
             if let Some(data) = Arc::get_mut(&mut key.0) {
                 match std::mem::replace(
                     &mut data.shape,
-                    ConditionShape::Atom(ConditionTerm::Constant(false)),
+                    ConditionShape::Atom(OldConditionTerm::Constant(false)),
                 ) {
                     ConditionShape::If(children) => pending.extend(children),
                     ConditionShape::Equal(children) => pending.extend(children),

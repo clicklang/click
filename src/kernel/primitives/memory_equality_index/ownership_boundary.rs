@@ -286,7 +286,7 @@ impl ResourceContext {
         if let (Some((first, last)), Some((start, end))) =
             (intervals.bounding_span(), range.int32_bounds())
         {
-            let bound = |term: &MachineTerm| {
+            let bound = |term: &OldMachineTerm| {
                 term.as_const()
                     .map(|n| (i64::from(n as i32), i64::from(n as i32)))
                     .or_else(|| assumptions.indexed_constant_interval(term))
@@ -374,7 +374,7 @@ fn checked_pair(
         return None;
     }
     if a.base() != b.base()
-        && facts.decide(&ConditionTerm::address_equal(
+        && facts.decide(&OldConditionTerm::address_equal(
             a.base().clone(),
             b.base().clone(),
         )) != Some(true)
@@ -386,7 +386,7 @@ fn checked_pair(
         }
     }
     let ((as_, ae), (bs, be)) = (a.int32_bounds()?, b.int32_bounds()?);
-    let le = |a: &MachineTerm, b: &MachineTerm| direct_endpoint_separation(a, b, facts);
+    let le = |a: &OldMachineTerm, b: &OldMachineTerm| direct_endpoint_separation(a, b, facts);
     if le(ae, as_) || le(be, bs) || le(ae, bs) || le(be, as_) {
         return Some(true);
     }
@@ -397,13 +397,13 @@ fn checked_pair(
     }) {
         return None;
     }
-    let lt = |a: &MachineTerm, b: &MachineTerm| {
-        if facts.exact_condition_value(&ConditionTerm::signed_less_than(a.clone(), b.clone()))
+    let lt = |a: &OldMachineTerm, b: &OldMachineTerm| {
+        if facts.exact_condition_value(&OldConditionTerm::signed_less_than(a.clone(), b.clone()))
             == Some(true)
         {
             return true;
         }
-        let bound = |term: &MachineTerm| {
+        let bound = |term: &OldMachineTerm| {
             term.as_const()
                 .map(|value| (i64::from(value as i32), i64::from(value as i32)))
                 .or_else(|| facts.indexed_constant_interval(term))

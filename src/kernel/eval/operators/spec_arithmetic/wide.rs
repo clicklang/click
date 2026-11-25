@@ -38,7 +38,7 @@ pub(super) fn apply(
         .and_then(|constant| {
             crate::kernel::machine_integer::range::constant_word(destination, constant)
         })
-        .unwrap_or_else(|| MachineTerm::IntegerToMachine {
+        .unwrap_or_else(|| OldMachineTerm::IntegerToMachine {
             value: result.into(),
             destination,
         });
@@ -122,7 +122,7 @@ mod tests {
                 else {
                     panic!("a wide quotient has a wide value");
                 };
-                assert!(matches!(term, MachineTerm::IntegerToMachine { .. }));
+                assert!(matches!(term, OldMachineTerm::IntegerToMachine { .. }));
                 assert!(total.obligations.is_empty());
                 let defined = apply(
                     op,

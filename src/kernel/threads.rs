@@ -22,9 +22,9 @@ use crate::persistent::PersistentMap;
 use super::borrows::{BorrowBinding, BorrowBindings, BorrowLedger, StableViewTransferPlan};
 use super::functions::suspend_verified_worker;
 use super::{
-    Address, AddressBase, ConditionTerm, ExecutionBudget, ExecutionEnvironment, ExecutionPureFact,
-    ExecutionResult, ExecutionState, MachineTerm, MemoryRange, ProgramValue, Proposition,
-    PureFactContext, ResourceContext, ResourceFact, RuntimeError, SymbolicMemory,
+    Address, AddressBase, ExecutionBudget, ExecutionEnvironment, ExecutionPureFact,
+    ExecutionResult, ExecutionState, MemoryRange, OldConditionTerm, OldMachineTerm, ProgramValue,
+    Proposition, PureFactContext, ResourceContext, ResourceFact, RuntimeError, SymbolicMemory,
     VerifiedFunctionRule, VerifiedFunctionTerminationRule,
 };
 
@@ -185,7 +185,7 @@ impl PendingCreateAuthority {
 
 struct PendingThreadCreateStorage {
     identity: u64,
-    status: MachineTerm,
+    status: OldMachineTerm,
     handle_slot: Address,
     handle_value: ProgramValue,
     success_memory: SymbolicMemory,
@@ -217,7 +217,7 @@ impl PendingThreadCreate {
     }
 
     pub(super) fn new(
-        status: MachineTerm,
+        status: OldMachineTerm,
         handle_slot: Address,
         handle_value: ProgramValue,
         success: &ExecutionState,
@@ -281,7 +281,7 @@ impl PendingThreadCreate {
 
     pub(super) fn map_terms(
         &self,
-        status: impl Fn(&MachineTerm) -> MachineTerm,
+        status: impl Fn(&OldMachineTerm) -> OldMachineTerm,
         resources: impl Fn(&ResourceContext) -> ResourceContext,
         pointer: impl Fn(&Address) -> Address,
         value: impl Fn(&ProgramValue) -> ProgramValue,
@@ -342,11 +342,11 @@ impl PendingThreadCreate {
         visible: &ExecutionState,
         assumptions: &PureFactContext,
     ) -> Option<ExecutionState> {
-        let zero = ConditionTerm::Compare {
+        let zero = OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(self.storage.status.clone()),
-            right: Box::new(MachineTerm::constant(0)),
+            right: Box::new(OldMachineTerm::constant(0)),
         };
         let success = assumptions.decide(&zero)?;
         let mut selected = visible.clone();
@@ -707,7 +707,7 @@ impl ThreadLedger {
 
 impl ThreadHandle {
     pub(super) fn program_value(self) -> ProgramValue {
-        ProgramValue::UInt64(MachineTerm::ThreadHandle(self))
+        ProgramValue::UInt64(OldMachineTerm::ThreadHandle(self))
     }
 
     pub(super) fn resolve_program_value(
@@ -722,7 +722,7 @@ impl ThreadHandle {
 
     pub(super) fn from_program_value(value: &ProgramValue) -> Option<Self> {
         match value.numeric_value() {
-            ProgramValue::UInt64(MachineTerm::ThreadHandle(handle)) => Some(*handle),
+            ProgramValue::UInt64(OldMachineTerm::ThreadHandle(handle)) => Some(*handle),
             _ => None,
         }
     }
@@ -735,11 +735,12 @@ mod handle_tests {
     #[test]
     fn handle_is_a_shared_opaque_word_without_numeric_or_join_authority() {
         use super::super::{
-            ConditionTerm, KernelTermExport, KernelTermImport, KernelTermNode, MachineIntegerType,
+            KernelTermExport, KernelTermImport, KernelTermNode, MachineIntegerType,
+            OldConditionTerm,
         };
         let _session = super::super::VerificationSession::enter();
         let id = ThreadHandle(42);
-        let native = MachineTerm::ThreadHandle(id);
+        let native = OldMachineTerm::ThreadHandle(id);
         let shared = KernelTermImport::default().machine(MachineIntegerType::UInt64, &native);
         assert!(matches!(shared.node(), KernelTermNode::ThreadHandle(actual) if *actual == id));
         assert!(shared.children().is_empty());
@@ -752,20 +753,22 @@ mod handle_tests {
         assert_eq!(KernelTermExport::machine(&shared).unwrap(), native);
         assert_eq!(native.as_machine_constant(), None);
         for number in [0, 42, 43] {
-            let equality =
-                ConditionTerm::uint64_equal(native.clone(), MachineTerm::uint64_constant(number));
+            let equality = OldConditionTerm::uint64_equal(
+                native.clone(),
+                OldMachineTerm::uint64_constant(number),
+            );
             assert_eq!(PureFactContext::new().decide(&equality), None);
             let stated = PureFactContext::new()
                 .assume_proposition(Proposition::condition_is(equality.clone(), true));
             assert_eq!(stated.decide(&equality), Some(true));
             assert_eq!(
                 ThreadHandle::from_program_value(&ProgramValue::UInt64(
-                    MachineTerm::uint64_constant(number)
+                    OldMachineTerm::uint64_constant(number)
                 )),
                 None
             );
         }
-        let old_encoding = ProgramValue::UInt64(MachineTerm::PureFunctionApplication {
+        let old_encoding = ProgramValue::UInt64(OldMachineTerm::PureFunctionApplication {
             name: format!("\0click.pthread.handle:{}", id.0),
             arguments: vec![],
         });
@@ -774,13 +777,13 @@ mod handle_tests {
 
     #[test]
     fn forwarded_handle_resolution_uses_equality_and_preserves_forks() {
-        use super::super::{ConditionTerm, Variable};
+        use super::super::{OldConditionTerm, Variable};
         let _session = super::super::VerificationSession::enter();
-        let alias = MachineTerm::Variable(Variable(1008891));
+        let alias = OldMachineTerm::Variable(Variable(1008891));
         let value = ProgramValue::UInt64(alias.clone());
         let equality = |handle| {
             Proposition::condition_is(
-                ConditionTerm::uint64_equal(alias.clone(), MachineTerm::ThreadHandle(handle)),
+                OldConditionTerm::uint64_equal(alias.clone(), OldMachineTerm::ThreadHandle(handle)),
                 true,
             )
         };
@@ -821,7 +824,7 @@ mod handle_tests {
         let substituted = super::super::reasoning::substitute_bitvector_variable_in_program_value(
             &value,
             super::super::Variable(42),
-            &super::super::MachineTerm::Variable(super::super::Variable(43)),
+            &super::super::OldMachineTerm::Variable(super::super::Variable(43)),
         );
         assert_eq!(substituted, value);
         assert_eq!(ThreadHandle::from_program_value(&substituted), Some(handle));
@@ -1230,7 +1233,7 @@ impl ThreadContext {
                         &deferred.block,
                         &deferred.description,
                         deferred.produce,
-                        deferred.quantity.native_compat(),
+                        deferred.quantity.old_form(),
                         assumptions,
                     )
                 } else {
@@ -1238,7 +1241,7 @@ impl ThreadContext {
                         &deferred.block,
                         &deferred.description,
                         deferred.produce,
-                        deferred.quantity.native_compat(),
+                        deferred.quantity.old_form(),
                         assumptions,
                     )
                 }
@@ -1306,7 +1309,7 @@ impl ThreadContext {
 #[cfg(test)]
 mod ownership_partition_tests {
     use super::*;
-    use crate::kernel::AddressOffset;
+    use crate::kernel::OldAddressOffset;
 
     #[test]
     fn worker_partition_receipt_survives_private_slots_but_not_public_ownership_or_registry_changes()
@@ -1318,7 +1321,7 @@ mod ownership_partition_tests {
             ResourceFact::own_memory(super::super::MemoryRange::new(
                 Address {
                     base: block,
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0),
                 },
                 0u32.into(),
                 4u32.into(),

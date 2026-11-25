@@ -8,16 +8,16 @@ fn late_conflict_uses_only_affected_predicate_parents() {
     for count in [4, 16, 64, 256] {
         let mut context = PureFactContext::new()
             .assume_proposition(Proposition::condition_is(
-                ConditionTerm::pointer_aligned(p.clone(), 8),
+                OldConditionTerm::pointer_aligned(p.clone(), 8),
                 true,
             ))
             .assume_proposition(Proposition::condition_is(
-                ConditionTerm::pointer_aligned(q.clone(), 8),
+                OldConditionTerm::pointer_aligned(q.clone(), 8),
                 false,
             ));
         for index in 0..count {
             context = context.assume_proposition(Proposition::condition_is(
-                ConditionTerm::pointer_aligned(Address::symbolic(Variable(980_000 + index)), 8),
+                OldConditionTerm::pointer_aligned(Address::symbolic(Variable(980_000 + index)), 8),
                 true,
             ));
         }
@@ -25,7 +25,7 @@ fn late_conflict_uses_only_affected_predicate_parents() {
             context
                 .clone()
                 .assume_proposition(Proposition::condition_is(
-                    ConditionTerm::address_equal(p.clone(), q.clone()),
+                    OldConditionTerm::address_equal(p.clone(), q.clone()),
                     true,
                 ))
         });

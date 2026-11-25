@@ -44,7 +44,7 @@ mod tests {
     use super::*;
 
     fn literal() -> SpecExpression {
-        SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(0)))
+        SpecExpression::Value(ProgramValue::Int32(OldMachineTerm::constant(0)))
     }
 
     fn count() -> SpecExpression {

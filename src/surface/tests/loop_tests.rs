@@ -2913,9 +2913,10 @@ fn recorded_states_find_the_point_reading_a_memory() {
     let mark = |name: &str| ProgramPointSelector::Mark(name.to_string());
     let memory = |index: u32| {
         let pointer = Address::symbolic(Variable(97_400 + u64::from(index)));
-        crate::kernel::intern_memory(
-            SymbolicMemory::new().store(pointer, ProgramValue::Int32(MachineTerm::constant(index))),
-        )
+        crate::kernel::intern_memory(SymbolicMemory::new().store(
+            pointer,
+            ProgramValue::Int32(OldMachineTerm::constant(index)),
+        ))
     };
     let state = |memory: &crate::kernel::SharedMemory| {
         ExecutionState::new().with_memory(memory.memory().clone())

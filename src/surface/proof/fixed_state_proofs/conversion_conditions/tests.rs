@@ -14,7 +14,10 @@ fn indexed_pointer_site() -> (ProgramValueBindings, ExecutionState) {
     let pointer = ProgramValue::typed_pointer(
         Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(100_000)), 4),
+            offset: OldAddressOffset::scaled_int32_node(
+                OldMachineTerm::Variable(Variable(100_000)),
+                4,
+            ),
         },
         ProgramType::Int32Pointer,
     );
@@ -22,7 +25,7 @@ fn indexed_pointer_site() -> (ProgramValueBindings, ExecutionState) {
         ("p".to_string(), pointer),
         (
             "index".to_string(),
-            ProgramValue::Int32(MachineTerm::Variable(Variable(1))),
+            ProgramValue::Int32(OldMachineTerm::Variable(Variable(1))),
         ),
     ]);
     (values, ExecutionState::new())
@@ -40,13 +43,13 @@ fn pointer_base(values: &ProgramValueBindings) -> Address {
 fn indexed_cell(values: &ProgramValueBindings) -> Address {
     Address {
         base: pointer_base(values).base,
-        offset: AddressOffset::Add(
-            Box::new(AddressOffset::scaled_int32_node(
-                MachineTerm::Variable(Variable(100_000)),
+        offset: OldAddressOffset::Add(
+            Box::new(OldAddressOffset::scaled_int32_node(
+                OldMachineTerm::Variable(Variable(100_000)),
                 4,
             )),
-            Box::new(AddressOffset::scaled_int32_node(
-                MachineTerm::Variable(Variable(1)),
+            Box::new(OldAddressOffset::scaled_int32_node(
+                OldMachineTerm::Variable(Variable(1)),
                 4,
             )),
         ),
@@ -85,7 +88,7 @@ fn an_expression_form_names_itself_its_cell_and_its_repair() {
         &unproved(Proposition::MemoryLoadable {
             memory: state.memory().clone(),
             base: indexed_cell(&values),
-            bytes: (MachineTerm::constant(4)).into(),
+            bytes: (OldMachineTerm::constant(4)).into(),
             wide: false,
         }),
         &PureFactContext::new(),
@@ -119,11 +122,11 @@ fn a_program_expression_form_lists_the_premises_it_consulted() {
     let site = StatedSite::new(StatedForm::ProgramExpression(&expression), &state, &values);
     let assumptions = PureFactContext::new()
         .assume_proposition(Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
-                left: Box::new(MachineTerm::constant(0)),
-                right: Box::new(MachineTerm::Variable(Variable(1))),
+                left: Box::new(OldMachineTerm::constant(0)),
+                right: Box::new(OldMachineTerm::Variable(Variable(1))),
             },
             true,
         ))
@@ -133,8 +136,8 @@ fn a_program_expression_form_lists_the_premises_it_consulted() {
             bytes: (binary_node!(
                 Int32,
                 Multiply,
-                Box::new(MachineTerm::Variable(Variable(1))),
-                Box::new(MachineTerm::constant(4)),
+                Box::new(OldMachineTerm::Variable(Variable(1))),
+                Box::new(OldMachineTerm::constant(4)),
             ))
             .into(),
             wide: false,
@@ -143,7 +146,7 @@ fn a_program_expression_form_lists_the_premises_it_consulted() {
         &unproved(Proposition::MemoryLoadable {
             memory: state.memory().clone(),
             base: indexed_cell(&values),
-            bytes: (MachineTerm::constant(4)).into(),
+            bytes: (OldMachineTerm::constant(4)).into(),
             wide: false,
         }),
         &assumptions,
@@ -170,11 +173,11 @@ fn an_overflow_guard_names_its_operation_without_wrapping_parentheses() {
     let site = StatedSite::new(StatedForm::ProgramExpression(&expression), &state, &values);
     let message = refuse_unproved_conversion_bounds(
         &unproved(Proposition::condition_is(
-            ConditionTerm::Overflows {
+            OldConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::Subtract,
-                left: Box::new(MachineTerm::Variable(Variable(1))),
-                right: Box::new(MachineTerm::constant(1)),
+                left: Box::new(OldMachineTerm::Variable(Variable(1))),
+                right: Box::new(OldMachineTerm::constant(1)),
             },
             false,
         )),
@@ -197,18 +200,18 @@ fn established_conditions_are_named_beside_the_missing_one() {
     let expression = ProgramExpression::Variable(("index".to_string()).into());
     let site = StatedSite::new(StatedForm::ProgramExpression(&expression), &state, &values);
     let guard = Proposition::condition_is(
-        ConditionTerm::Overflows {
+        OldConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Subtract,
-            left: Box::new(MachineTerm::Variable(Variable(1))),
-            right: Box::new(MachineTerm::constant(1)),
+            left: Box::new(OldMachineTerm::Variable(Variable(1))),
+            right: Box::new(OldMachineTerm::constant(1)),
         },
         false,
     );
     let loadable = Proposition::MemoryLoadable {
         memory: state.memory().clone(),
         base: indexed_cell(&values),
-        bytes: (MachineTerm::constant(4)).into(),
+        bytes: (OldMachineTerm::constant(4)).into(),
         wide: false,
     };
     let message = refuse_unproved_conversion_bounds(
@@ -245,7 +248,7 @@ fn every_refusal_says_no_span_is_available() {
     let site = StatedSite::new(StatedForm::ProgramExpression(&expression), &state, &values);
     let message = refuse_unproved_conversion_bounds(
         &unproved(Proposition::condition_is(
-            ConditionTerm::Constant(false),
+            OldConditionTerm::Constant(false),
             true,
         )),
         &PureFactContext::new(),
@@ -269,7 +272,7 @@ fn an_assumable_obligation_is_not_refused() {
         Proposition::MemoryLoadable {
             memory: state.memory().clone(),
             base: indexed_cell(&values),
-            bytes: (MachineTerm::constant(4)).into(),
+            bytes: (OldMachineTerm::constant(4)).into(),
             wide: false,
         },
     )];
@@ -382,11 +385,11 @@ fn a_conditional_fold_body_quotes_the_condition_it_carried_out() {
         &crate::kernel::DroppedFoldBody {
             body_paths: 1,
             unavailable_body_fact: Some(Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left: Box::new(MachineTerm::Variable(Variable(1 << 41))),
-                    right: Box::new(MachineTerm::Variable(Variable(1))),
+                    left: Box::new(OldMachineTerm::Variable(Variable(1 << 41))),
+                    right: Box::new(OldMachineTerm::Variable(Variable(1))),
                 },
                 true,
             )),
@@ -440,11 +443,11 @@ mod scaling_tests {
 #[test]
 fn quantified_reflexive_domain_guard_needs_no_search_or_ambient_fact() {
     let premise = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
-            left: Box::new(MachineTerm::Variable(Variable(760_000))),
-            right: Box::new(MachineTerm::constant(10)),
+            left: Box::new(OldMachineTerm::Variable(Variable(760_000))),
+            right: Box::new(OldMachineTerm::constant(10)),
         },
         true,
     );
@@ -468,7 +471,7 @@ fn quantified_reflexive_domain_guard_needs_no_search_or_ambient_fact() {
         &PureFactContext::new(),
         &integer_guard
     ));
-    let falsehood = Proposition::condition_is(ConditionTerm::Constant(false), true);
+    let falsehood = Proposition::condition_is(OldConditionTerm::Constant(false), true);
     assert!(!established_condition(
         &PureFactContext::new(),
         &guard(falsehood.clone())

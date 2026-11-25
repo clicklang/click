@@ -10,7 +10,7 @@ fn specification_execution_adapter_retains_growing_machine_results() {
             expression = SpecExpression::Add(
                 Box::new(expression),
                 Box::new(SpecExpression::Value(ProgramValue::UInt32(
-                    MachineTerm::Variable(Variable(998253)),
+                    OldMachineTerm::Variable(Variable(998253)),
                 ))),
             );
         }
@@ -72,14 +72,14 @@ fn specification_machine_expression_handoff_does_not_export_growing_results() {
     let mut work = Vec::new();
     for size in [8, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
-        let mut source = ProgramExpression::Value(ProgramValue::UInt32(MachineTerm::Variable(
+        let mut source = ProgramExpression::Value(ProgramValue::UInt32(OldMachineTerm::Variable(
             Variable(999998),
         )));
         for _ in 0..size {
             source = ProgramExpression::Add(
                 Box::new(source),
                 Box::new(ProgramExpression::Value(ProgramValue::UInt32(
-                    MachineTerm::uint32_constant(1),
+                    OldMachineTerm::uint32_constant(1),
                 ))),
             );
         }
@@ -110,16 +110,16 @@ fn boolean_lowering_keeps_growing_logical_results_shared() {
     let mut costs = Vec::new();
     for size in [8, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
-        let mut condition = ConditionTerm::Variable(Variable(999991));
+        let mut condition = OldConditionTerm::Variable(Variable(999991));
         for index in 0..size {
-            condition = ConditionTerm::BoolIf {
-                condition: Box::new(ConditionTerm::Variable(Variable(999000 + index))),
+            condition = OldConditionTerm::BoolIf {
+                condition: Box::new(OldConditionTerm::Variable(Variable(999000 + index))),
                 then_condition: Box::new(condition),
-                else_condition: Box::new(ConditionTerm::Constant(false)),
+                else_condition: Box::new(OldConditionTerm::Constant(false)),
             };
         }
         let expression = SpecExpression::ProgramExpression(ProgramExpression::Value(
-            ProgramValue::Bool(MachineTerm::BoolCast {
+            ProgramValue::Bool(OldMachineTerm::BoolCast {
                 to: MachineIntegerType::UInt8,
                 value: Box::new(condition),
             }),
@@ -185,12 +185,12 @@ fn float_lowering_conversions_keep_growing_operands_shared() {
     let mut costs = Vec::new();
     for size in [8, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
-        let mut value = MachineTerm::Variable(Variable(999970));
+        let mut value = OldMachineTerm::Variable(Variable(999970));
         for _ in 0..size {
-            value = MachineTerm::Float32Binary {
+            value = OldMachineTerm::Float32Binary {
                 operator: FloatBinaryOperator::Add,
                 left: Box::new(value),
-                right: Box::new(MachineTerm::constant(0x3f80_0000)),
+                right: Box::new(OldMachineTerm::constant(0x3f80_0000)),
             };
         }
         let expression = SpecExpression::Cast(
@@ -227,12 +227,12 @@ fn mixed_call_assembly_keeps_growing_float_arguments_shared() {
         let mut costs = Vec::new();
         for size in [8, 32, 128] {
             let _session = crate::kernel::VerificationSession::enter();
-            let mut value = MachineTerm::Variable(Variable(999950));
+            let mut value = OldMachineTerm::Variable(Variable(999950));
             for _ in 0..size {
-                value = MachineTerm::Float32Binary {
+                value = OldMachineTerm::Float32Binary {
                     operator: FloatBinaryOperator::Add,
                     left: Box::new(value),
-                    right: Box::new(MachineTerm::constant(0x3f80_0000)),
+                    right: Box::new(OldMachineTerm::constant(0x3f80_0000)),
                 };
             }
             let expression = SpecExpression::PureFunctionApplication {

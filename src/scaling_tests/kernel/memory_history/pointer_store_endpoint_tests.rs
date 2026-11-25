@@ -11,12 +11,12 @@ fn selected_pointer_store_endpoint_preserves_width_history_and_scales() {
     let _session = crate::kernel::VerificationSession::enter();
     let base = |id| Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(id)), 4),
+        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(id)), 4),
     };
     let written = base(160_001).offset_by_bytes(8);
     let address = base(160_002).offset_by_bytes(8);
     let alias = Proposition::condition_is(
-        ConditionTerm::address_equal(base(160_001), base(160_002)),
+        OldConditionTerm::address_equal(base(160_001), base(160_002)),
         true,
     );
     let endpoint = |memory: SymbolicMemory| MemoryDagCell::Unwritten {
@@ -30,7 +30,7 @@ fn selected_pointer_store_endpoint_preserves_width_history_and_scales() {
         let mut memory = SymbolicMemory::new();
         for index in 0..count {
             context = context.assume_condition(
-                ConditionTerm::address_equal(
+                OldConditionTerm::address_equal(
                     Address::symbolic(Variable(170_000 + index * 2)),
                     Address::symbolic(Variable(170_001 + index * 2)),
                 ),
@@ -38,7 +38,7 @@ fn selected_pointer_store_endpoint_preserves_width_history_and_scales() {
             );
             memory = memory.store(
                 written.offset_by_bytes(32 + index as u32 * 8),
-                ProgramValue::UInt64(MachineTerm::uint64_constant(index)),
+                ProgramValue::UInt64(OldMachineTerm::uint64_constant(index)),
             );
         }
         let stored = Address::symbolic(Variable(180_000 + count));
@@ -110,7 +110,7 @@ fn selected_pointer_store_endpoint_preserves_width_history_and_scales() {
         for offset in [0, 4, 32] {
             let changed = endpoint(memory.clone().store(
                 written.offset_by_bytes(offset),
-                ProgramValue::Int32(MachineTerm::constant(1)),
+                ProgramValue::Int32(OldMachineTerm::constant(1)),
             ));
             assert!(
                 pointer_value_at_stopping_store(&changed, &address, LoadKind::Int32, 8, &context)

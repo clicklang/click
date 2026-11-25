@@ -6,7 +6,8 @@ fn growing_cycle_endpoints_keep_shared_identity() {
         let ty = MachineIntegerType::Int32;
         let mut root =
             KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(995311));
-        let other = IntegerTerm::from_machine(ty, MachineTerm::Variable(Variable(995312))).unwrap();
+        let other =
+            IntegerTerm::from_machine(ty, OldMachineTerm::Variable(Variable(995312))).unwrap();
         let exports = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..size {

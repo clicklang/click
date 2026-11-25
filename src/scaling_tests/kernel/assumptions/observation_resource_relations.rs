@@ -9,9 +9,9 @@ fn resource_relation_comparison_keys_visit_only_selected_arguments() {
             name: "selected".into(),
             arguments: (0..size)
                 .map(|i| {
-                    AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(Variable(
-                        3_219_400 + i as u64,
-                    ))))
+                    AlgebraicValue::Program(ProgramValue::Int32(OldMachineTerm::Variable(
+                        Variable(3_219_400 + i as u64),
+                    )))
                 })
                 .collect(),
         };
@@ -44,9 +44,9 @@ fn resource_relation_comparison_lookup_ignores_unrelated_facts() {
             4,
         );
         let pointer = OldPointer::new(address.clone(), ProgramType::Int32Pointer);
-        let source = relation(MachineTerm::Variable(name), pointer.clone(), false);
+        let source = relation(OldMachineTerm::Variable(name), pointer.clone(), false);
         let goal = relation(
-            MachineTerm::read_named(
+            OldMachineTerm::read_named(
                 ProgramPoint::at(&memory),
                 Box::new(address),
                 LoadKind::Int32,
@@ -84,7 +84,7 @@ fn deep_logical_comparison_keys_visit_each_selected_node_once() {
         for _ in 0..depth {
             proposition = Proposition::Implies(
                 Box::new(Proposition::condition_is(
-                    ConditionTerm::Constant(true),
+                    OldConditionTerm::Constant(true),
                     true,
                 )),
                 Box::new(proposition),

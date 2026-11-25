@@ -5,15 +5,15 @@ fn signed_literal_domain_reading_ignores_unrelated_terms_and_parents() {
         let _session = crate::kernel::VerificationSession::enter();
         let literal = KernelTermImport::default().machine(
             MachineIntegerType::Int64,
-            &MachineTerm::uint64_constant(u64::MAX - 6),
+            &OldMachineTerm::uint64_constant(u64::MAX - 6),
         );
-        let variable = MachineTerm::Variable(Variable(1_991_000));
+        let variable = OldMachineTerm::Variable(Variable(1_991_000));
         let mut parent = literal.clone();
         let mut unrelated = Vec::new();
         for index in 0..size {
             unrelated.push(KernelTermImport::default().machine(
                 MachineIntegerType::Int64,
-                &MachineTerm::Variable(Variable(1_992_000 + index)),
+                &OldMachineTerm::Variable(Variable(1_992_000 + index)),
             ));
             parent = KernelTerm::machine_binary_shared(
                 MachineIntegerType::Int64,
@@ -27,7 +27,7 @@ fn signed_literal_domain_reading_ignores_unrelated_terms_and_parents() {
                 MachineIntegerType::Int64,
                 MachineBinaryOp::Add,
                 MachineOperandView::Shared(&literal),
-                MachineOperandView::Legacy(&variable),
+                MachineOperandView::Old(&variable),
             )
         });
         assert_eq!(
@@ -35,7 +35,7 @@ fn signed_literal_domain_reading_ignores_unrelated_terms_and_parents() {
             Proposition::signed_arithmetic_domain(
                 MachineIntegerType::Int64,
                 MachineBinaryOp::Add,
-                &MachineTerm::int64_constant(-7),
+                &OldMachineTerm::int64_constant(-7),
                 &variable,
             )
         );

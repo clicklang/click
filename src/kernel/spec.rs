@@ -1662,7 +1662,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
         // A written literal is the constant condition itself; no comparison
         // is formed or folded.
         SpecProposition::Truth(value) => Ok(vec![SpecPropositionPath {
-            proposition: Proposition::condition_is(ConditionTerm::Constant(*value), true),
+            proposition: Proposition::condition_is(OldConditionTerm::Constant(*value), true),
             facts: ExecutionFacts::new(),
             obligations: Vec::new(),
             introductions: Vec::new(),
@@ -2219,7 +2219,7 @@ fn definedness_claim(paths: Vec<SpecExpressionPath>) -> Proposition {
         )
     });
     normal_paths.next().map_or_else(
-        || Proposition::condition_is(ConditionTerm::Constant(false), true),
+        || Proposition::condition_is(OldConditionTerm::Constant(false), true),
         |first| {
             normal_paths.fold(first, |left, right| {
                 Proposition::Or(Box::new(left), Box::new(right))
@@ -2233,7 +2233,7 @@ fn definedness_claim(paths: Vec<SpecExpressionPath>) -> Proposition {
 /// all branches still describe the same witness.
 fn proposition_or_all(mut propositions: Vec<Proposition>) -> Proposition {
     if propositions.is_empty() {
-        return Proposition::condition_is(ConditionTerm::Constant(false), true);
+        return Proposition::condition_is(OldConditionTerm::Constant(false), true);
     }
     while propositions.len() > 1 {
         let mut next = Vec::with_capacity(propositions.len().div_ceil(2));
@@ -2383,7 +2383,7 @@ fn evaluate_spec_integer_expression_paths_in(
                 })
                 .reduce(|left, right| Proposition::Or(Box::new(left), Box::new(right)))
                 .unwrap_or(Proposition::condition_is(
-                    ConditionTerm::Constant(false),
+                    OldConditionTerm::Constant(false),
                     true,
                 ));
             paths
@@ -2650,18 +2650,18 @@ fn evaluate_spec_integer_expression_paths_in(
 /// contents are never traversed here.
 pub(crate) fn is_verified_load_variable_defining_fact(proposition: &Proposition) -> bool {
     let Some((
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             relation: CompareRelation::Equal,
             left,
             right,
             ..
         },
         true,
-    )) = proposition.condition_native()
+    )) = proposition.old_condition()
     else {
         return false;
     };
-    let MachineTerm::Variable(variable) = left.as_ref() else {
+    let OldMachineTerm::Variable(variable) = left.as_ref() else {
         return false;
     };
     if !crate::kernel::is_load_variable(variable) {
@@ -2673,8 +2673,8 @@ pub(crate) fn is_verified_load_variable_defining_fact(proposition: &Proposition)
     // A produced definition uses the registered read handle on both sides.
     // Retained raw definitions must still name its exact state and kind.
     match right.as_ref() {
-        MachineTerm::Variable(read) => read == variable,
-        raw @ MachineTerm::MemoryLoad(_, _, _) => descriptor == *raw,
+        OldMachineTerm::Variable(read) => read == variable,
+        raw @ OldMachineTerm::MemoryLoad(_, _, _) => descriptor == *raw,
         _ => false,
     }
 }
@@ -2769,17 +2769,18 @@ fn integer_carrier_in_pointer(pointer: &Address, variable: Variable) -> bool {
     ) || integer_carrier_in_pointer_offset(&pointer.offset, variable)
 }
 
-fn integer_carrier_in_pointer_offset(offset: &AddressOffset, variable: Variable) -> bool {
+fn integer_carrier_in_pointer_offset(offset: &OldAddressOffset, variable: Variable) -> bool {
     match offset {
-        AddressOffset::Constant(_) => false,
-        AddressOffset::Variable(load) => {
-            integer_carrier_in_bitvector(&MachineTerm::Variable(*load), variable)
+        OldAddressOffset::Constant(_) => false,
+        OldAddressOffset::Variable(load) => {
+            integer_carrier_in_bitvector(&OldMachineTerm::Variable(*load), variable)
         }
-        AddressOffset::Add(left, right) => {
+        OldAddressOffset::Add(left, right) => {
             integer_carrier_in_pointer_offset(left, variable)
                 || integer_carrier_in_pointer_offset(right, variable)
         }
-        AddressOffset::Int32Scaled { value, .. } | AddressOffset::Int64Scaled { value, .. } => {
+        OldAddressOffset::Int32Scaled { value, .. }
+        | OldAddressOffset::Int64Scaled { value, .. } => {
             integer_carrier_in_offset_index(value.operand_view(), variable)
         }
     }
@@ -2788,12 +2789,12 @@ fn integer_carrier_in_pointer_offset(offset: &AddressOffset, variable: Variable)
 fn integer_carrier_in_stored_offset(offset: &StoredPointerOffset, variable: Variable) -> bool {
     use crate::kernel::{KernelAddressOffset, SharedAddressOffset};
     let Some(root) = offset.root() else {
-        return integer_carrier_in_pointer_offset(offset.native_compat(), variable);
+        return integer_carrier_in_pointer_offset(offset.old_form(), variable);
     };
     !root.visit_root_while(|node| {
         let carries_integer = match node {
             KernelAddressOffset::Variable(load) => {
-                integer_carrier_in_bitvector(&MachineTerm::Variable(*load), variable)
+                integer_carrier_in_bitvector(&OldMachineTerm::Variable(*load), variable)
             }
             node => node.index().is_some_and(|index| {
                 integer_carrier_in_offset_index(
@@ -2808,7 +2809,7 @@ fn integer_carrier_in_stored_offset(offset: &StoredPointerOffset, variable: Vari
 
 fn integer_carrier_in_offset_index(operand: MachineOperandView<'_>, variable: Variable) -> bool {
     if let Some(load) = operand.variable() {
-        integer_carrier_in_bitvector(&MachineTerm::Variable(*load), variable)
+        integer_carrier_in_bitvector(&OldMachineTerm::Variable(*load), variable)
     } else {
         // The existing rule conservatively retains every composite.
         operand.literal().is_none()
@@ -2821,15 +2822,15 @@ fn integer_carrier_in_offset_index(operand: MachineOperandView<'_>, variable: Va
 /// Keep this query conservative for those selected pointer leaves: retaining
 /// the accumulator quantifier is sound, while expanding the registry here
 /// would duplicate the checked carrier collector and reopen its DAG.
-fn pointer_offset_contains_registered_load(offset: &AddressOffset) -> bool {
+fn pointer_offset_contains_registered_load(offset: &OldAddressOffset) -> bool {
     match offset {
-        AddressOffset::Constant(_) => false,
-        AddressOffset::Variable(variable) => crate::kernel::is_load_variable(variable),
-        AddressOffset::Add(left, right) => {
+        OldAddressOffset::Constant(_) => false,
+        OldAddressOffset::Variable(variable) => crate::kernel::is_load_variable(variable),
+        OldAddressOffset::Add(left, right) => {
             pointer_offset_contains_registered_load(left)
                 || pointer_offset_contains_registered_load(right)
         }
-        AddressOffset::Int32Scaled { .. } | AddressOffset::Int64Scaled { .. } => false,
+        OldAddressOffset::Int32Scaled { .. } | OldAddressOffset::Int64Scaled { .. } => false,
     }
 }
 
@@ -2837,18 +2838,18 @@ fn pointer_offset_contains_registered_load(offset: &AddressOffset) -> bool {
 /// inspect only a registered load's selected pointer.  The memory state is
 /// deliberately never traversed.  Unknown registry entries are treated as a
 /// dependency so a missing pointer cannot drop an accumulator quantifier.
-fn integer_carrier_in_bitvector(term: &MachineTerm, variable: Variable) -> bool {
+fn integer_carrier_in_bitvector(term: &OldMachineTerm, variable: Variable) -> bool {
     let mut variables = BTreeSet::new();
     collect_bitvector_integer_variables(term, &mut variables);
     if variables.contains(&variable) {
         return true;
     }
-    let MachineTerm::Variable(load) = term else {
+    let OldMachineTerm::Variable(load) = term else {
         // The shared collector covers known Integer-to-machine payloads.  A
         // composite machine expression can still hide a registered load
         // whose pointer carries an Integer, so retain the scope rather than
         // returning an unsound negative for that opaque case.
-        return !matches!(term, MachineTerm::Constant { .. });
+        return !matches!(term, OldMachineTerm::Constant { .. });
     };
     if !crate::kernel::is_load_variable(load) {
         return false;
@@ -2877,7 +2878,7 @@ fn integer_carrier_in_bitvector(term: &MachineTerm, variable: Variable) -> bool 
     let Some(kind) = crate::kernel::eval::registered_load_kind_for_variable(load) else {
         return true;
     };
-    let selected_load = crate::kernel::MachineTerm::read_named(
+    let selected_load = crate::kernel::OldMachineTerm::read_named(
         ProgramPoint::viewing(&memory, &registered),
         pointer,
         kind,
@@ -2924,7 +2925,7 @@ fn integer_carrier_in_integer(term: &IntegerTerm, variable: Variable) -> bool {
         IntegerTerm::Machine(machine) => {
             let view = machine.operand_view();
             if let Some(load) = view.variable() {
-                integer_carrier_in_bitvector(&MachineTerm::Variable(*load), variable)
+                integer_carrier_in_bitvector(&OldMachineTerm::Variable(*load), variable)
             } else {
                 // The existing conservative rule keeps every composite carrier.
                 // Only a literal can be discarded here; inspecting descendants
@@ -2982,15 +2983,15 @@ fn sequence_contains_integer_variable(sequence: &SequenceTerm, variable: Variabl
 fn proposition_mentions_integer_variable(proposition: &Proposition, variable: Variable) -> bool {
     fn term_contains(term: &Term, variable: Variable) -> bool {
         match term {
-            Term::Integer(term) => integer_carrier_in_integer(term.native_compat(), variable),
-            Term::Bitvector32(term) => integer_carrier_in_bitvector(term.native_compat(), variable),
-            Term::Condition(condition) => condition_contains(condition.native_compat(), variable),
+            Term::Integer(term) => integer_carrier_in_integer(term.old_form(), variable),
+            Term::Bitvector32(term) => integer_carrier_in_bitvector(term.old_form(), variable),
+            Term::Condition(condition) => condition_contains(condition.old_form(), variable),
             Term::ProgramValue(value) => {
-                integer_carrier_in_program_value(value.native_compat(), variable)
+                integer_carrier_in_program_value(value.old_form(), variable)
             }
             Term::Sequence(sequence) => sequence_contains_integer_variable(sequence, variable),
             Term::PointerOffset(offset) => integer_carrier_in_stored_offset(offset, variable),
-            Term::Algebraic(value) => integer_carrier_in_algebraic(value.native_compat(), variable),
+            Term::Algebraic(value) => integer_carrier_in_algebraic(value.old_form(), variable),
             // A state may carry a mathematical machine conversion in a
             // nested local.  Keep this conservative
             // rather than silently dropping the accumulator scope; memory
@@ -3000,9 +3001,9 @@ fn proposition_mentions_integer_variable(proposition: &Proposition, variable: Va
         }
     }
 
-    fn condition_contains(condition: &ConditionTerm, variable: Variable) -> bool {
+    fn condition_contains(condition: &OldConditionTerm, variable: Variable) -> bool {
         match condition {
-            ConditionTerm::PointerEqual(left, right) => left
+            OldConditionTerm::PointerEqual(left, right) => left
                 .pointers()
                 .chain(right.pointers())
                 .any(|p| integer_carrier_in_pointer(p, variable)),
@@ -3015,30 +3016,31 @@ fn proposition_mentions_integer_variable(proposition: &Proposition, variable: Va
                 integer_carrier_in_bitvector(left, variable)
                     || integer_carrier_in_bitvector(right, variable)
             }
-            ConditionTerm::Constant(_) | ConditionTerm::Variable(_) => false,
-            ConditionTerm::Float32(float_condition) | ConditionTerm::Float64(float_condition) => {
+            OldConditionTerm::Constant(_) | OldConditionTerm::Variable(_) => false,
+            OldConditionTerm::Float32(float_condition)
+            | OldConditionTerm::Float64(float_condition) => {
                 let mut found = false;
                 float_condition.for_each_bitvector_term(|term| {
                     found |= integer_carrier_in_bitvector(term, variable);
                 });
                 found
             }
-            ConditionTerm::AlgebraicEqual(left, right) => {
+            OldConditionTerm::AlgebraicEqual(left, right) => {
                 integer_carrier_in_algebraic(left, variable)
                     || integer_carrier_in_algebraic(right, variable)
             }
-            ConditionTerm::AddressOffsetEqual(left, right) => {
+            OldConditionTerm::AddressOffsetEqual(left, right) => {
                 integer_carrier_in_pointer_offset(left, variable)
                     || integer_carrier_in_pointer_offset(right, variable)
             }
-            ConditionTerm::AddressEqual(left, right) => {
+            OldConditionTerm::AddressEqual(left, right) => {
                 integer_carrier_in_pointer(left, variable)
                     || integer_carrier_in_pointer(right, variable)
             }
             // An application's arguments or a read's address may carry
             // one; keep the scope, as for an opaque payload.
-            ConditionTerm::BoolApplication(_) => true,
-            ConditionTerm::BoolIf { .. } | ConditionTerm::BoolEqual(..) => condition
+            OldConditionTerm::BoolApplication(_) => true,
+            OldConditionTerm::BoolIf { .. } | OldConditionTerm::BoolEqual(..) => condition
                 .bool_children()
                 .any(|child| condition_contains(child, variable)),
         }
@@ -3049,11 +3051,11 @@ fn proposition_mentions_integer_variable(proposition: &Proposition, variable: Va
             term_contains(left, variable) || term_contains(right, variable)
         }
         Proposition::SequenceMembership { element, sequence } => {
-            integer_carrier_in_program_value(element.native_compat(), variable)
+            integer_carrier_in_program_value(element.old_form(), variable)
                 || sequence_contains_integer_variable(sequence, variable)
         }
         Proposition::ConditionIs(condition, _) => {
-            condition_contains(condition.native_compat(), variable)
+            condition_contains(condition.old_form(), variable)
         }
         Proposition::Predicate { arguments, .. } => {
             arguments.iter().any(|term| term_contains(term, variable))
@@ -3062,7 +3064,7 @@ fn proposition_mentions_integer_variable(proposition: &Proposition, variable: Va
             pointer, outcome, ..
         } => {
             integer_carrier_in_pointer(pointer, variable)
-                || matches!(outcome, ExpressionOutcome::Value(value) if integer_carrier_in_program_value(value.native_compat(), variable))
+                || matches!(outcome, ExpressionOutcome::Value(value) if integer_carrier_in_program_value(value.old_form(), variable))
         }
         Proposition::MemoryCanStore { pointer, .. } => {
             integer_carrier_in_pointer(pointer, variable)
@@ -3071,7 +3073,7 @@ fn proposition_mentions_integer_variable(proposition: &Proposition, variable: Va
             integer_carrier_in_pointer(pointer, variable)
         }
         Proposition::MemoryLoadable { base, bytes, .. } => {
-            integer_carrier_in_bitvector(bytes.native_compat(), variable)
+            integer_carrier_in_bitvector(bytes.old_form(), variable)
                 || integer_carrier_in_pointer(base, variable)
         }
         Proposition::MemoryMutatesOnly { writes, .. } => writes
@@ -3549,7 +3551,7 @@ fn rewrite_integer_match_typed_fields(
                 (ProgramValue::Void, ProgramValue::Void) => {}
                 (from, to) if program_value_bitvector_term(from).is_some() => {
                     let from = program_value_bitvector_term(from)?;
-                    let MachineTerm::Variable(from) = from else {
+                    let OldMachineTerm::Variable(from) = from else {
                         return None;
                     };
                     if !ExecutionBudget::is_match_binder_variable(from) {
@@ -3673,7 +3675,7 @@ fn evaluate_integer_binary_paths_in(
                 IntegerBinaryOperation::TruncatingQuotient
                     | IntegerBinaryOperation::TruncatingRemainder
             ) {
-                let nonzero = ConditionTerm::integer_not_equal(
+                let nonzero = OldConditionTerm::integer_not_equal(
                     right_path.value.clone().into_native_compat(),
                     IntegerTerm::constant_i64(0),
                 );
@@ -3914,7 +3916,7 @@ fn evaluate_spec_algebraic_call_in(
                 && let Some(SpecCallArgument::Native(PureFunctionArgument::Integer(value))) =
                     arguments.first()
             {
-                let nonnegative = ConditionTerm::integer_greater_equal(
+                let nonnegative = OldConditionTerm::integer_greater_equal(
                     value.as_ref().clone(),
                     crate::kernel::IntegerTerm::Constant(0.into()),
                 );
@@ -4801,7 +4803,7 @@ fn sequence_member_comparisons<'a>(
 fn sequence_membership_disjunction(element: &ProgramValue, sequence: &SequenceTerm) -> Proposition {
     sequence_member_comparisons(element, sequence)
         .reduce(|left, right| Proposition::Or(Box::new(left), Box::new(right)))
-        .unwrap_or_else(|| Proposition::condition_is(ConditionTerm::Constant(false), true))
+        .unwrap_or_else(|| Proposition::condition_is(OldConditionTerm::Constant(false), true))
 }
 
 pub(crate) fn sequence_membership_view(proposition: &Proposition) -> Option<Proposition> {
@@ -4809,7 +4811,7 @@ pub(crate) fn sequence_membership_view(proposition: &Proposition) -> Option<Prop
         return None;
     };
     Some(sequence_membership_disjunction(
-        element.native_compat(),
+        element.old_form(),
         sequence,
     ))
 }
@@ -4821,7 +4823,7 @@ pub(crate) fn sequence_nonmembership_components(
         return None;
     };
     Some(
-        sequence_member_comparisons(element.native_compat(), sequence).map(|claim| {
+        sequence_member_comparisons(element.old_form(), sequence).map(|claim| {
             let Proposition::ConditionIs(condition, truth) = claim else {
                 unreachable!("machine integer membership")
             };
@@ -4959,7 +4961,7 @@ pub(crate) fn retained_sequence_equality_view(proposition: &Proposition) -> Opti
 pub(crate) fn checks_retained_sequence_comparison(
     proposition: &Proposition,
     expected: bool,
-    mut proves: impl FnMut(&ConditionTerm, bool) -> bool,
+    mut proves: impl FnMut(&OldConditionTerm, bool) -> bool,
 ) -> Option<bool> {
     let (equation, expected) = match proposition {
         Proposition::Not(equation) => (equation.as_ref(), !expected),
@@ -4969,10 +4971,10 @@ pub(crate) fn checks_retained_sequence_comparison(
         let Proposition::ConditionIs(condition, truth) = component else {
             unreachable!("machine integer component equality")
         };
-        proves(condition.native_compat(), truth == expected)
+        proves(condition.old_form(), truth == expected)
     };
     if let Proposition::SequenceMembership { element, sequence } = equation {
-        let mut components = sequence_member_comparisons(element.native_compat(), sequence);
+        let mut components = sequence_member_comparisons(element.old_form(), sequence);
         return Some(if expected {
             components.any(check)
         } else {
@@ -5010,7 +5012,7 @@ fn finite_sequence_equalities(
             (None, None) => break,
             _ => {
                 return Some(vec![Proposition::condition_is(
-                    ConditionTerm::Constant(false),
+                    OldConditionTerm::Constant(false),
                     true,
                 )]);
             }
@@ -5021,7 +5023,7 @@ fn finite_sequence_equalities(
 
 fn balance_sequence_equalities(mut equalities: Vec<Proposition>) -> Proposition {
     if equalities.is_empty() {
-        return Proposition::condition_is(ConditionTerm::Constant(true), true);
+        return Proposition::condition_is(OldConditionTerm::Constant(true), true);
     }
     while equalities.len() > 1 {
         let mut next = Vec::with_capacity(equalities.len().div_ceil(2));
@@ -5317,22 +5319,22 @@ fn lower_spec_float_classification_proposition_at_state_in(
         let condition = if path.value.shared().is_none() {
             let native = match path.value.clone().into_native() {
                 ProgramValue::Float32(value) => {
-                    ConditionTerm::float32_classification(value, classification)
+                    OldConditionTerm::float32_classification(value, classification)
                 }
                 ProgramValue::Float64(value) => {
-                    ConditionTerm::float64_classification(value, classification)
+                    OldConditionTerm::float64_classification(value, classification)
                 }
                 _ => unreachable!("float value"),
             };
             StoredConditionTerm::from(native)
         } else if let Some(bits) = operand.closed_arithmetic_bits() {
             let native = match format {
-                KernelFloatType::Float32 => ConditionTerm::float32_classification(
-                    MachineTerm::uint32_constant(bits as u32),
+                KernelFloatType::Float32 => OldConditionTerm::float32_classification(
+                    OldMachineTerm::uint32_constant(bits as u32),
                     classification,
                 ),
-                KernelFloatType::Float64 => ConditionTerm::float64_classification(
-                    MachineTerm::uint64_constant(bits),
+                KernelFloatType::Float64 => OldConditionTerm::float64_classification(
+                    OldMachineTerm::uint64_constant(bits),
                     classification,
                 ),
             };
@@ -5620,7 +5622,7 @@ fn evaluate_spec_resource_at_state_in(
                             Some(Resource::Memory(MemoryRange::from_pointer_value(
                                 base,
                                 start.clone(),
-                                MachineTerm::constant(end as u32),
+                                OldMachineTerm::constant(end as u32),
                                 element_width,
                             )))
                         }
@@ -5757,7 +5759,7 @@ fn lower_spec_memory_loadable_at_state_in(
                     base: base.base.clone(),
                     offset: crate::kernel::eval::canonical_offset_term(&base.offset),
                 },
-                MachineTerm::uint64_constant(0),
+                OldMachineTerm::uint64_constant(0),
                 crate::kernel::eval::canonical_term(end),
                 element_width,
             );
@@ -5832,7 +5834,7 @@ fn lower_spec_memory_loadable_at_state_in(
                             guards
                         };
                         let ordered = Proposition::condition_is(
-                            ConditionTerm::signed_less_equal(
+                            OldConditionTerm::signed_less_equal(
                                 range_start.clone(),
                                 range_end.clone(),
                             ),
@@ -5962,24 +5964,24 @@ fn evaluate_spec_integer_pure_function_application_paths_in(
 }
 
 /// An element index scaled to bytes, folded when the index is a constant.
-fn canonical_scaled_offset(value: MachineTerm, byte_width: i64) -> AddressOffset {
+fn canonical_scaled_offset(value: OldMachineTerm, byte_width: i64) -> OldAddressOffset {
     match value {
         bits32_constant!(value) => {
-            AddressOffset::Constant((constant_u32(value) as i32 as i64) * byte_width)
+            OldAddressOffset::Constant((constant_u32(value) as i32 as i64) * byte_width)
         }
-        value => AddressOffset::scaled_int32_node(value, byte_width),
+        value => OldAddressOffset::scaled_int32_node(value, byte_width),
     }
 }
 
 /// `left + right` on offsets with constants folded and zero addends dropped.
-fn canonical_offset_sum(left: AddressOffset, right: AddressOffset) -> AddressOffset {
+fn canonical_offset_sum(left: OldAddressOffset, right: OldAddressOffset) -> OldAddressOffset {
     match (&left, &right) {
-        (AddressOffset::Constant(left), AddressOffset::Constant(right)) => {
-            AddressOffset::Constant(left + right)
+        (OldAddressOffset::Constant(left), OldAddressOffset::Constant(right)) => {
+            OldAddressOffset::Constant(left + right)
         }
-        (AddressOffset::Constant(0), _) => right,
-        (_, AddressOffset::Constant(0)) => left,
-        _ => AddressOffset::Add(Box::new(left), Box::new(right)),
+        (OldAddressOffset::Constant(0), _) => right,
+        (_, OldAddressOffset::Constant(0)) => left,
+        _ => OldAddressOffset::Add(Box::new(left), Box::new(right)),
     }
 }
 
@@ -6098,22 +6100,22 @@ fn retained_integer_comparison(
         .iter()
         .any(|root| matches!(root.node(), KernelTermNode::MachineObservation { .. }));
     let native = if atomic_observations {
-        let left = left.native_compat();
-        let right = right.native_compat();
+        let left = left.old_form();
+        let right = right.old_form();
         let condition = match operator {
-            IntegerComparisonOperator::Equal => ConditionTerm::IntegerEqual(left, right),
-            IntegerComparisonOperator::NotEqual => ConditionTerm::IntegerNotEqual(left, right),
-            IntegerComparisonOperator::LessThan => ConditionTerm::IntegerLessThan(left, right),
-            IntegerComparisonOperator::LessEqual => ConditionTerm::IntegerLessEqual(left, right),
+            IntegerComparisonOperator::Equal => OldConditionTerm::IntegerEqual(left, right),
+            IntegerComparisonOperator::NotEqual => OldConditionTerm::IntegerNotEqual(left, right),
+            IntegerComparisonOperator::LessThan => OldConditionTerm::IntegerLessThan(left, right),
+            IntegerComparisonOperator::LessEqual => OldConditionTerm::IntegerLessEqual(left, right),
             IntegerComparisonOperator::GreaterThan => {
-                ConditionTerm::IntegerGreaterThan(left, right)
+                OldConditionTerm::IntegerGreaterThan(left, right)
             }
             IntegerComparisonOperator::GreaterEqual => {
-                ConditionTerm::IntegerGreaterEqual(left, right)
+                OldConditionTerm::IntegerGreaterEqual(left, right)
             }
         };
         match crate::kernel::machine_integer::comparison::structural_native_comparison_of_integer_observation(&condition, true) {
-            Some((ConditionTerm::Constant(_), _)) | None => Some(condition),
+            Some((OldConditionTerm::Constant(_), _)) | None => Some(condition),
             Some((native, truth)) => {
                 let mut source = arguments.each_ref();
                 if matches!(operator, IntegerComparisonOperator::GreaterThan | IntegerComparisonOperator::GreaterEqual) {
@@ -6126,7 +6128,7 @@ fn retained_integer_comparison(
                     KernelTermNode::MachineObservation { operand, .. } => matches!(operand.node(), KernelTermNode::Variable(_)),
                     _ => false,
                 });
-                if simple && let ConditionTerm::Compare { format, relation, left, right } = &native {
+                if simple && let OldConditionTerm::Compare { format, relation, left, right } = &native {
                     let mut import = KernelTermImport::for_exact_field_inputs();
                     let operands = source.into_iter().zip([left.as_ref(), right.as_ref()]).map(|(root, literal)| {
                         match root.node() {
@@ -6137,7 +6139,7 @@ fn retained_integer_comparison(
                     }).collect::<Vec<_>>();
                     let root = KernelTerm::boolean_comparison_raw(*format, *relation,
                         [operands[0].clone(), operands[1].clone()]);
-                    root.retain_native_condition_output(native);
+                    root.retain_old_condition_output(native);
                     return (StoredConditionTerm::from_root(root).expect("canonical comparison"), truth);
                 }
                 return (StoredConditionTerm::from_minted(native), truth);
@@ -6148,7 +6150,7 @@ fn retained_integer_comparison(
     };
     let root = KernelTerm::integer_comparison(operator, arguments).expect("Integer operands");
     if let Some(native) = native {
-        root.retain_native_condition_output(native);
+        root.retain_old_condition_output(native);
     }
     (
         StoredConditionTerm::from_root(root).expect("logical comparison"),
@@ -6208,7 +6210,7 @@ fn lower_spec_comparison_proposition_at_state_in(
             return Ok(vec![SpecPropositionPath {
                 introductions: Vec::new(),
                 proposition: Proposition::condition_is(
-                    ConditionTerm::Constant(operator == ComparisonOperator::Equal),
+                    OldConditionTerm::Constant(operator == ComparisonOperator::Equal),
                     true,
                 ),
                 facts: ExecutionFacts::new(),
@@ -6322,7 +6324,10 @@ fn lower_mutex_held_at_state_in(
                 {
                     return SpecPropositionPath {
                         introductions: Vec::new(),
-                        proposition: Proposition::condition_is(ConditionTerm::Constant(true), true),
+                        proposition: Proposition::condition_is(
+                            OldConditionTerm::Constant(true),
+                            true,
+                        ),
                         facts: path.facts,
                         obligations: path.obligations,
                     };
@@ -6336,7 +6341,7 @@ fn lower_mutex_held_at_state_in(
             let held = state
                 .mutex_ledger
                 .as_ref()
-                .map_or(ConditionTerm::Constant(false), |ledger| {
+                .map_or(OldConditionTerm::Constant(false), |ledger| {
                     ledger.held_condition(mutex.address())
                 });
             SpecPropositionPath {
@@ -6730,7 +6735,7 @@ fn apply_spec_cast(
         && let Some(format) = MachineIntegerType::from_program_type(target_type)
         && let Some(cast) = program_value_from_bitvector_term(
             target_type,
-            MachineTerm::bool_cast(format, condition.clone()),
+            OldMachineTerm::bool_cast(format, condition.clone()),
         )
     {
         return vec![ExpressionPath {
@@ -7067,7 +7072,7 @@ fn evaluate_resource_count_paths(
                 // does not restore ownership or permission to change members.
                 if creation.checked_empty_population(&description) {
                     return Ok(SpecExpressionPath {
-                        value: ProgramValue::Int32(MachineTerm::constant(0)).into(),
+                        value: ProgramValue::Int32(OldMachineTerm::constant(0)).into(),
                         facts,
                         obligations,
                     });
@@ -7132,9 +7137,9 @@ fn evaluate_resource_count_paths(
                     let entry_owned = symbolic
                         .entry_symbolic_members
                         .clone()
-                        .unwrap_or(MachineTerm::constant(symbolic.entry_owned_members));
+                        .unwrap_or(OldMachineTerm::constant(symbolic.entry_owned_members));
                     let minimum = Proposition::condition_is(
-                        ConditionTerm::signed_greater_equal(entry.clone(), entry_owned),
+                        OldConditionTerm::signed_greater_equal(entry.clone(), entry_owned),
                         true,
                     );
                     facts.push(ExecutionPureFact::certified(minimum.clone()));
@@ -7143,15 +7148,15 @@ fn evaluate_resource_count_paths(
                     if let Some((true, quantity)) = &symbolic.symbolic_delta
                         && symbolic.delta > 0
                     {
-                        let overflow = ConditionTerm::signed_add_overflows(
+                        let overflow = OldConditionTerm::signed_add_overflows(
                             quantity.clone(),
-                            MachineTerm::constant(symbolic.delta as u32),
+                            OldMachineTerm::constant(symbolic.delta as u32),
                         );
                         let no_overflow = Proposition::signed_arithmetic_domain(
                             MachineIntegerType::Int32,
                             MachineBinaryOp::Add,
                             quantity,
-                            &MachineTerm::constant(symbolic.delta as u32),
+                            &OldMachineTerm::constant(symbolic.delta as u32),
                         );
                         if !path_assumptions.proves_exact(&no_overflow)
                             && PureFactContext::decide_intrinsically(&overflow) != Some(false)
@@ -7167,7 +7172,7 @@ fn evaluate_resource_count_paths(
                     let count = match delta {
                         None => entry,
                         Some((true, quantity)) => {
-                            let overflow = ConditionTerm::signed_add_overflows(
+                            let overflow = OldConditionTerm::signed_add_overflows(
                                 entry.clone(),
                                 quantity.clone(),
                             );
@@ -7191,11 +7196,11 @@ fn evaluate_resource_count_paths(
                                         .with_context("count(reference) fits in int32"),
                                 );
                             }
-                            MachineTerm::add(entry, quantity)
+                            OldMachineTerm::add(entry, quantity)
                         }
                         Some((false, quantity)) => {
                             let within = Proposition::condition_is(
-                                ConditionTerm::signed_greater_equal(
+                                OldConditionTerm::signed_greater_equal(
                                     entry.clone(),
                                     quantity.clone(),
                                 ),
@@ -7203,7 +7208,7 @@ fn evaluate_resource_count_paths(
                             );
                             let bounded = path_assumptions.assume_proposition(minimum);
                             if !bounded.proves_exact(&within)
-                                && bounded.decide(&ConditionTerm::signed_greater_equal(
+                                && bounded.decide(&OldConditionTerm::signed_greater_equal(
                                     entry.clone(),
                                     quantity.clone(),
                                 )) != Some(true)
@@ -7213,7 +7218,7 @@ fn evaluate_resource_count_paths(
                                         .with_context("count(reference) contains consumed members"),
                                 );
                             }
-                            MachineTerm::subtract(entry, quantity)
+                            OldMachineTerm::subtract(entry, quantity)
                         }
                     };
                     return Ok(SpecExpressionPath {
@@ -7222,7 +7227,7 @@ fn evaluate_resource_count_paths(
                         obligations,
                     });
                 }
-                if anchor.offset != AddressOffset::Constant(0) {
+                if anchor.offset != OldAddressOffset::Constant(0) {
                     return Err(ExecutionLimit::AuthorityCountNeedsExactPointer);
                 }
                 if creation.governing_authority(&description).as_ref() != Some(&description) {
@@ -7237,7 +7242,7 @@ fn evaluate_resource_count_paths(
                         Proposition::signed_arithmetic_domain(
                             MachineIntegerType::Int32,
                             MachineBinaryOp::Add,
-                            &MachineTerm::constant(base),
+                            &OldMachineTerm::constant(base),
                             &quantity,
                         ),
                     ));
@@ -7345,14 +7350,14 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     }
                 } else {
                     let lower_bound = Proposition::condition_is(
-                        ConditionTerm::integer_greater_equal(
+                        OldConditionTerm::integer_greater_equal(
                             path.value.clone().into_native_compat(),
                             lower.clone(),
                         ),
                         true,
                     );
                     let upper_bound = Proposition::condition_is(
-                        ConditionTerm::integer_less_equal(
+                        OldConditionTerm::integer_less_equal(
                             path.value.clone().into_native_compat(),
                             upper.clone(),
                         ),
@@ -7364,8 +7369,8 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 let value: SpecValue = if budget.machine_result_production_disabled {
                     program_value_from_bitvector_term(
                         destination.program_type(),
-                        MachineTerm::IntegerToMachine {
-                            value: path.value.native_compat(),
+                        OldMachineTerm::IntegerToMachine {
+                            value: path.value.old_form(),
                             destination: *destination,
                         },
                     )
@@ -7618,7 +7623,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                         SpecValue::from(
                             program_value_from_bitvector_term(
                                 result_type,
-                                MachineTerm::AlgebraicMatch {
+                                OldMachineTerm::AlgebraicMatch {
                                     scrutinee: Box::new(scrutinee_path.value.into_native_compat()),
                                     arms: compatibility_arms,
                                 },
@@ -8432,7 +8437,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     )]
                 } else if !*exact
                     && *value_type == ProgramType::UInt32
-                    && matches!(pointer.offset, AddressOffset::Constant(0))
+                    && matches!(pointer.offset, OldAddressOffset::Constant(0))
                     && let Some((value, byte_facts)) = crate::kernel::eval::indexed_uint32_byte_read(
                         &read_point,
                         &pointer,
@@ -8627,7 +8632,7 @@ fn evaluate_spec_pure_function_application_paths_in(
                         base: AddressBase::PureFunctionApplication(
                             application.as_ref().unwrap().clone(),
                         ),
-                        offset: AddressOffset::Constant(0),
+                        offset: OldAddressOffset::Constant(0),
                     }
                 },
                 result_type,
@@ -8685,14 +8690,14 @@ fn evaluate_spec_pure_function_application_paths_in(
         } else if result_type == ProgramType::Bool {
             // A `-> Bool` application is a `Bool` term of the kernel sort
             // (Stage 5), carried as its cast to `uint8` (rule C1).
-            ProgramValue::Bool(MachineTerm::bool_cast(
+            ProgramValue::Bool(OldMachineTerm::bool_cast(
                 MachineIntegerType::UInt8,
-                ConditionTerm::bool_application(name, call_arguments(arguments)),
+                OldConditionTerm::bool_application(name, call_arguments(arguments)),
             ))
         } else {
             program_value_from_bitvector_term(
                 result_type,
-                MachineTerm::ClickFunctionApplication {
+                OldMachineTerm::ClickFunctionApplication {
                     name: name.to_string(),
                     arguments: call_arguments(arguments),
                 },
@@ -8780,7 +8785,7 @@ pub(crate) fn refine_object_pointer_argument(
         memory,
         assumptions,
         |facts, pointer| {
-            facts.decide(&ConditionTerm::address_equal(
+            facts.decide(&OldConditionTerm::address_equal(
                 pointer.clone(),
                 Address::null(),
             )) == Some(true)
@@ -8802,7 +8807,7 @@ pub(crate) fn refine_object_pointer_argument_using_facts(
         memory,
         assumptions,
         |facts, pointer| {
-            facts.exact_condition_value(&ConditionTerm::address_equal(
+            facts.exact_condition_value(&OldConditionTerm::address_equal(
                 pointer.clone(),
                 Address::null(),
             )) == Some(true)
@@ -8831,7 +8836,7 @@ fn refine_object_pointer_argument_with_null(
         [value.address(), value.provenance()]
             .into_iter()
             .any(|object| {
-                object.offset == AddressOffset::Constant(0)
+                object.offset == OldAddressOffset::Constant(0)
                     && memory.declared_class(object).as_ref() == Some(object_class)
             })
     };
@@ -8970,7 +8975,7 @@ fn evaluate_spec_pure_function_argument_paths_in(
                 .into_iter()
                 .map(|path| SpecPureFunctionArgumentPath {
                     value: SpecCallArgument::Native(PureFunctionArgument::Integer(
-                        path.value.native_compat(),
+                        path.value.old_form(),
                     )),
                     facts: path.facts,
                     obligations: path.obligations,
@@ -9091,7 +9096,9 @@ fn indexed_array_version(source: &ProgramPoint, block: &AddressBase) -> Option<P
     )
 }
 
-pub(in crate::kernel) fn program_value_bitvector_term(value: &ProgramValue) -> Option<MachineTerm> {
+pub(in crate::kernel) fn program_value_bitvector_term(
+    value: &ProgramValue,
+) -> Option<OldMachineTerm> {
     let value = value.numeric_value();
     match value.numeric_value() {
         ProgramValue::PointerInteger(_) => unreachable!("numeric projection"),
@@ -9121,7 +9128,7 @@ pub(super) fn integer_machine_bounds(
 
 fn program_value_from_bitvector_term(
     program_type: ProgramType,
-    term: MachineTerm,
+    term: OldMachineTerm,
 ) -> Option<ProgramValue> {
     ProgramValue::from_bitvector_term(program_type, term)
 }
@@ -9207,25 +9214,25 @@ fn refuted_narrowing_error(obligations: &[ProofObligation]) -> Option<RuntimeErr
         let Proposition::ConditionIs(condition, true) = obligation.proposition() else {
             continue;
         };
-        if PureFactContext::decide_intrinsically(condition.native_compat()) != Some(false) {
+        if PureFactContext::decide_intrinsically(condition.old_form()) != Some(false) {
             continue;
         }
-        let comparison = match condition.native_compat() {
-            ConditionTerm::Compare {
+        let comparison = match condition.old_form() {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
                 left,
                 right,
             }
-            | ConditionTerm::Compare {
+            | OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterEqual,
                 left,
                 right,
             } => {
                 let op = if matches!(
-                    condition.native_compat(),
-                    ConditionTerm::Compare {
+                    condition.old_form(),
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessEqual,
                         ..
@@ -9239,21 +9246,21 @@ fn refuted_narrowing_error(obligations: &[ProofObligation]) -> Option<RuntimeErr
                     .zip(right.as_const())
                     .map(|(left, right)| format!("{} {op} {}", left as i32, right as i32))
             }
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::LessEqual,
                 left,
                 right,
             }
-            | ConditionTerm::Compare {
+            | OldConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::GreaterEqual,
                 left,
                 right,
             } => {
                 let op = if matches!(
-                    condition.native_compat(),
-                    ConditionTerm::Compare {
+                    condition.old_form(),
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int64,
                         relation: CompareRelation::LessEqual,
                         ..
@@ -9267,7 +9274,7 @@ fn refuted_narrowing_error(obligations: &[ProofObligation]) -> Option<RuntimeErr
                     .zip(right.int64_as_const())
                     .map(|(left, right)| format!("{left} {op} {right}"))
             }
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::UInt64,
                 relation: CompareRelation::LessEqual,
                 left,
@@ -9276,12 +9283,9 @@ fn refuted_narrowing_error(obligations: &[ProofObligation]) -> Option<RuntimeErr
                 .uint64_as_const()
                 .zip(right.uint64_as_const())
                 .map(|(left, right)| format!("{left} <= {right}")),
-            ConditionTerm::IntegerLessEqual(left, right)
-            | ConditionTerm::IntegerGreaterEqual(left, right) => {
-                let op = if matches!(
-                    condition.native_compat(),
-                    ConditionTerm::IntegerLessEqual(..)
-                ) {
+            OldConditionTerm::IntegerLessEqual(left, right)
+            | OldConditionTerm::IntegerGreaterEqual(left, right) => {
+                let op = if matches!(condition.old_form(), OldConditionTerm::IntegerLessEqual(..)) {
                     "<="
                 } else {
                     ">="
@@ -9731,17 +9735,17 @@ fn evaluate_spec_program_expression_paths_in(
             .into_iter()
             .map(|path| {
                 let condition = match path.value.native().numeric_value() {
-                    ProgramValue::Float32(bits) => ConditionTerm::float32_classification(
+                    ProgramValue::Float32(bits) => OldConditionTerm::float32_classification(
                         bits.clone(),
                         FloatClassification::Zero,
                     )
                     .truth_claim(false),
-                    ProgramValue::Float64(bits) => ConditionTerm::float64_classification(
+                    ProgramValue::Float64(bits) => OldConditionTerm::float64_classification(
                         bits.clone(),
                         FloatClassification::Zero,
                     )
                     .truth_claim(false),
-                    value => ConditionTerm::nonzero_test(value)
+                    value => OldConditionTerm::nonzero_test(value)
                         .ok_or(ExecutionLimit::Paths)?
                         .truth_claim(true),
                 };
@@ -9868,7 +9872,7 @@ fn join_spec_if_paths_in(
 
                 Proposition::ConditionIs(condition, _)
                     if crate::kernel::machine_integer::comparison::is_bounded_machine_comparison(
-                        condition.native_compat(),
+                        condition.old_form(),
                     ) =>
                 {
                     true
@@ -9877,18 +9881,18 @@ fn join_spec_if_paths_in(
                 condition_source_0 @ Proposition::ConditionIs(
                     _,
                     _,
-                ) if let Some((ConditionTerm::Compare {
+                ) if let Some((OldConditionTerm::Compare {
                         format,
                         left,
                         right,
                         ..
-                    }, _)) = condition_source_0.condition_native() && (matches!(
+                    }, _)) = condition_source_0.old_condition() && (matches!(
                     format,
                     MachineIntegerType::Int32
                         | MachineIntegerType::UInt32
                         | MachineIntegerType::Int64
                         | MachineIntegerType::UInt64
-                ) && matches!((left.as_ref(), right.as_ref()), (MachineTerm::Variable(left), MachineTerm::Variable(right)) if left == right)) =>
+                ) && matches!((left.as_ref(), right.as_ref()), (OldMachineTerm::Variable(left), OldMachineTerm::Variable(right)) if left == right)) =>
                 {
                     true
                 }
@@ -9896,12 +9900,12 @@ fn join_spec_if_paths_in(
                 condition_source_0 @ Proposition::ConditionIs(
                     _,
                     _,
-                ) if let Some((ConditionTerm::Compare {
+                ) if let Some((OldConditionTerm::Compare {
                         format: MachineIntegerType::Int64 | MachineIntegerType::UInt64,
                         relation: CompareRelation::Equal,
                         left,
                         right,
-                    }, _)) = condition_source_0.condition_native() => {
+                    }, _)) = condition_source_0.old_condition() => {
                     // Wide equality reads words, including unsigned literal
                     // payloads filed under the native Int64 equality format.
                     left.bitvector64_as_const().is_some()
@@ -9910,12 +9914,12 @@ fn join_spec_if_paths_in(
                 condition_source_0 @ Proposition::ConditionIs(
                     _,
                     _,
-                ) if let Some((ConditionTerm::Compare {
+                ) if let Some((OldConditionTerm::Compare {
                         format,
                         relation,
                         left,
                         right,
-                    }, _)) = condition_source_0.condition_native() => {
+                    }, _)) = condition_source_0.old_condition() => {
                     let closed = matches!(
                         format,
                         MachineIntegerType::Int32
@@ -10128,11 +10132,9 @@ fn simple_algebraic_if_arm(expression: &SpecAlgebraicExpression) -> bool {
 }
 
 fn retains_closed_value_if(proposition: &Proposition) -> bool {
-    proposition
-        .condition_native()
-        .is_some_and(|(condition, _)| {
-            crate::kernel::proof::fact_reasoning::literal_value_if_guard(condition).is_some()
-        })
+    proposition.old_condition().is_some_and(|(condition, _)| {
+        crate::kernel::proof::fact_reasoning::literal_value_if_guard(condition).is_some()
+    })
 }
 
 /// Preserve a closed guard over simple arms in a logical comparison.
@@ -10693,7 +10695,7 @@ fn symbolic_int32_fold_scope<'a>(
     let mut body_scope = bindings::Scope::new(scope, [accumulator, item]);
     body_scope.bind_program_local(
         accumulator,
-        int32(MachineTerm::Variable(spec_fold_bound_variable(
+        int32(OldMachineTerm::Variable(spec_fold_bound_variable(
             accumulator,
             0,
         )))
@@ -10701,7 +10703,7 @@ fn symbolic_int32_fold_scope<'a>(
     );
     body_scope.bind_program_local(
         item,
-        int32(MachineTerm::Variable(spec_fold_bound_variable(item, 1))).into(),
+        int32(OldMachineTerm::Variable(spec_fold_bound_variable(item, 1))).into(),
     );
     body_scope
 }
@@ -10773,7 +10775,7 @@ pub(super) fn symbolic_spec_range_fold_value(
 /// Turn a compound scalar guard into one existing condition without changing
 /// its meaning under ambient facts. Each logical node owns its children once;
 /// the selected value's arms are not copied through the guard tree.
-fn compound_spec_value_condition(proposition: &Proposition) -> Option<(ConditionTerm, bool)> {
+fn compound_spec_value_condition(proposition: &Proposition) -> Option<(OldConditionTerm, bool)> {
     crate::instrumentation::record_deterministic_work(1);
     let (left, right, conjunction) = match proposition {
         Proposition::And(left, right) => (left.as_ref(), right.as_ref(), true),
@@ -10789,19 +10791,22 @@ fn compound_spec_value_condition(proposition: &Proposition) -> Option<(Condition
     };
     let (left, left_expected) = compound_spec_value_condition(left)?;
     let (right, right_expected) = compound_spec_value_condition(right)?;
-    let right_value = MachineTerm::if_then_else(
+    let right_value = OldMachineTerm::if_then_else(
         right,
-        MachineTerm::constant(u32::from(right_expected)),
-        MachineTerm::constant(u32::from(!right_expected)),
+        OldMachineTerm::constant(u32::from(right_expected)),
+        OldMachineTerm::constant(u32::from(!right_expected)),
     );
-    let constant = MachineTerm::constant(u32::from(!conjunction));
+    let constant = OldMachineTerm::constant(u32::from(!conjunction));
     let (then_term, else_term) = if conjunction == left_expected {
         (right_value, constant)
     } else {
         (constant, right_value)
     };
-    let value = MachineTerm::if_then_else(left, then_term, else_term);
-    Some((ConditionTerm::equal(value, MachineTerm::constant(1)), true))
+    let value = OldMachineTerm::if_then_else(left, then_term, else_term);
+    Some((
+        OldConditionTerm::equal(value, OldMachineTerm::constant(1)),
+        true,
+    ))
 }
 
 pub(super) fn conditional_spec_value(
@@ -10816,7 +10821,7 @@ pub(super) fn conditional_spec_value(
         .or_else(|| compound_spec_value_condition(proposition))?;
     // A `bool` conditional of two `bool` values selects one of them, so its
     // leaves stay exactly `0` or `1`.
-    let (then_term, else_term, rebuild): (_, _, fn(MachineTerm) -> ProgramValue) =
+    let (then_term, else_term, rebuild): (_, _, fn(OldMachineTerm) -> ProgramValue) =
         match (then_value, else_value) {
             (ProgramValue::Int32(then_term), ProgramValue::Int32(else_term)) => {
                 (then_term, else_term, ProgramValue::Int32)
@@ -10828,12 +10833,12 @@ pub(super) fn conditional_spec_value(
                 } else {
                     (else_term, then_term)
                 };
-                return Some(ProgramValue::Bool(MachineTerm::bool_cast(
+                return Some(ProgramValue::Bool(OldMachineTerm::bool_cast(
                     MachineIntegerType::UInt8,
-                    ConditionTerm::bool_if(
+                    OldConditionTerm::bool_if(
                         condition,
-                        ConditionTerm::truth_of_bool_word(&then_term),
-                        ConditionTerm::truth_of_bool_word(&else_term),
+                        OldConditionTerm::truth_of_bool_word(&then_term),
+                        OldConditionTerm::truth_of_bool_word(&else_term),
                     ),
                 )));
             }
@@ -10879,30 +10884,30 @@ pub(super) fn conditional_spec_value(
     } else {
         (else_term, then_term)
     };
-    Some(rebuild(MachineTerm::if_then_else(
+    Some(rebuild(OldMachineTerm::if_then_else(
         condition, then_term, else_term,
     )))
 }
 
 pub(super) fn proposition_as_single_condition(
     proposition: &Proposition,
-) -> Option<(ConditionTerm, bool)> {
+) -> Option<(OldConditionTerm, bool)> {
     match proposition {
         Proposition::ConditionIs(condition, value) => {
-            Some(((condition.clone()).native_compat().clone(), *value))
+            Some(((condition.clone()).old_form().clone(), *value))
         }
         Proposition::SequenceMembership { element, sequence } => {
-            let mut comparisons = sequence_member_comparisons(element.native_compat(), sequence);
+            let mut comparisons = sequence_member_comparisons(element.old_form(), sequence);
             match (comparisons.next(), comparisons.next()) {
-                (None, _) => Some((ConditionTerm::Constant(false), true)),
+                (None, _) => Some((OldConditionTerm::Constant(false), true)),
                 (Some(comparison), None) => proposition_as_single_condition(&comparison),
                 (_, Some(_)) => None,
             }
         }
         Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) => Some((
-            ConditionTerm::AlgebraicEqual(
-                Box::new(left.native_compat().clone()),
-                Box::new(right.native_compat().clone()),
+            OldConditionTerm::AlgebraicEqual(
+                Box::new(left.old_form().clone()),
+                Box::new(right.old_form().clone()),
             ),
             true,
         )),
@@ -10933,7 +10938,7 @@ pub(super) fn constant_spec_condition_value(proposition: &Proposition) -> Option
     }
     match proposition {
         Proposition::ConditionIs(condition, value) => {
-            PureFactContext::decide_intrinsically(condition.native_compat())
+            PureFactContext::decide_intrinsically(condition.old_form())
                 .map(|decided| decided == *value)
         }
         _ => None,
@@ -10963,7 +10968,7 @@ fn bool_word_truth_proposition(word: &ProgramValue, value: bool) -> Option<Propo
     // A word that is not a cast (a havocked carrier) holds C's test
     // `w != 0` at `uint8`: the claim is that test, the very condition the
     // program's own test of the local decides, so the two are one fact.
-    Some(ConditionTerm::truth_of_bool_word(term).truth_claim(value))
+    Some(OldConditionTerm::truth_of_bool_word(term).truth_claim(value))
 }
 
 /// A comparison with a `bool` operand (Stage 5). `Bool` has equality and
@@ -10997,15 +11002,15 @@ fn bool_comparison_proposition(
     let (ProgramValue::Bool(left_term), ProgramValue::Bool(right_term)) = (left, right) else {
         unreachable!("both operands are `bool`");
     };
-    let literal = MachineTerm::bool_constant_value;
+    let literal = OldMachineTerm::bool_constant_value;
     match (literal(left_term), literal(right_term)) {
         // Two literals keep their comparison; checking decides it
         // (`closed_condition_value`).
         (Some(left), Some(right)) => {
             return Some(Ok(Proposition::condition_is(
-                ConditionTerm::BoolEqual(
-                    Box::new(ConditionTerm::Constant(left)),
-                    Box::new(ConditionTerm::Constant(right)),
+                OldConditionTerm::BoolEqual(
+                    Box::new(OldConditionTerm::Constant(left)),
+                    Box::new(OldConditionTerm::Constant(right)),
                 ),
                 equal,
             )));
@@ -11027,12 +11032,12 @@ fn bool_comparison_proposition(
     // inside its test for that reduction.
     let truth =
         if left_term.bool_cast_operand().is_some() && right_term.bool_cast_operand().is_some() {
-            ConditionTerm::truth_of_bool_word
+            OldConditionTerm::truth_of_bool_word
         } else {
-            ConditionTerm::nonzero_bool_word
+            OldConditionTerm::nonzero_bool_word
         };
     Some(Ok(Proposition::condition_is(
-        ConditionTerm::bool_equal(truth(left_term), truth(right_term)),
+        OldConditionTerm::bool_equal(truth(left_term), truth(right_term)),
         equal,
     )))
 }
@@ -11054,7 +11059,7 @@ pub(super) fn program_value_comparison_proposition(
                 ) =>
         {
             return Some(Proposition::condition_is(
-                ConditionTerm::AlgebraicEqual(a.clone(), b.clone()),
+                OldConditionTerm::AlgebraicEqual(a.clone(), b.clone()),
                 operator == ComparisonOperator::Equal,
             ));
         }
@@ -11070,7 +11075,7 @@ pub(super) fn program_value_comparison_proposition(
             ComparisonOperator::Equal | ComparisonOperator::NotEqual
         )
     {
-        let condition = ConditionTerm::pointer_equal(a.clone(), b.clone());
+        let condition = OldConditionTerm::pointer_equal(a.clone(), b.clone());
         return Some(Proposition::condition_is(
             condition,
             operator == ComparisonOperator::Equal,
@@ -11198,10 +11203,10 @@ pub(super) fn program_value_comparison_proposition(
         }
         let condition = match (target_type, left, right) {
             (ProgramType::Float32, ProgramValue::Float32(left), ProgramValue::Float32(right)) => {
-                ConditionTerm::float32_compare(left, right, operator)
+                OldConditionTerm::float32_compare(left, right, operator)
             }
             (ProgramType::Float64, ProgramValue::Float64(left), ProgramValue::Float64(right)) => {
-                ConditionTerm::float64_compare(left, right, operator)
+                OldConditionTerm::float64_compare(left, right, operator)
             }
             _ => return None,
         };
@@ -11215,12 +11220,12 @@ pub(super) fn program_value_comparison_proposition(
         let right = program_value_uint64_term(right)?;
         let condition = match operator {
             ComparisonOperator::Equal | ComparisonOperator::NotEqual => {
-                ConditionTerm::uint64_equal(left, right)
+                OldConditionTerm::uint64_equal(left, right)
             }
-            ComparisonOperator::LessThan => ConditionTerm::uint64_less_than(left, right),
-            ComparisonOperator::LessEqual => ConditionTerm::uint64_less_equal(left, right),
-            ComparisonOperator::GreaterThan => ConditionTerm::uint64_greater_than(left, right),
-            ComparisonOperator::GreaterEqual => ConditionTerm::uint64_greater_equal(left, right),
+            ComparisonOperator::LessThan => OldConditionTerm::uint64_less_than(left, right),
+            ComparisonOperator::LessEqual => OldConditionTerm::uint64_less_equal(left, right),
+            ComparisonOperator::GreaterThan => OldConditionTerm::uint64_greater_than(left, right),
+            ComparisonOperator::GreaterEqual => OldConditionTerm::uint64_greater_equal(left, right),
         };
         return Some(Proposition::condition_is(
             condition,
@@ -11232,15 +11237,15 @@ pub(super) fn program_value_comparison_proposition(
         let right = program_value_int64_term(right)?;
         let condition = match operator {
             ComparisonOperator::Equal | ComparisonOperator::NotEqual => {
-                ConditionTerm::int64_equal(left, right)
+                OldConditionTerm::int64_equal(left, right)
             }
-            ComparisonOperator::LessThan => ConditionTerm::int64_signed_less_than(left, right),
-            ComparisonOperator::LessEqual => ConditionTerm::int64_signed_less_equal(left, right),
+            ComparisonOperator::LessThan => OldConditionTerm::int64_signed_less_than(left, right),
+            ComparisonOperator::LessEqual => OldConditionTerm::int64_signed_less_equal(left, right),
             ComparisonOperator::GreaterThan => {
-                ConditionTerm::int64_signed_greater_than(left, right)
+                OldConditionTerm::int64_signed_greater_than(left, right)
             }
             ComparisonOperator::GreaterEqual => {
-                ConditionTerm::int64_signed_greater_equal(left, right)
+                OldConditionTerm::int64_signed_greater_equal(left, right)
             }
         };
         return Some(Proposition::condition_is(
@@ -11265,7 +11270,7 @@ pub(super) fn program_value_comparison_proposition(
             ComparisonOperator::GreaterEqual => (CompareRelation::GreaterEqual, true),
         };
         return Some(Proposition::condition_is(
-            ConditionTerm::machine_compare(format, relation, a, b),
+            OldConditionTerm::machine_compare(format, relation, a, b),
             value,
         ));
     }
@@ -11285,41 +11290,41 @@ pub(super) fn program_value_comparison_proposition(
     let (condition, value) = match operator {
         ComparisonOperator::Equal | ComparisonOperator::NotEqual => (
             if unsigned {
-                ConditionTerm::uint32_equal(left, right)
+                OldConditionTerm::uint32_equal(left, right)
             } else {
-                ConditionTerm::equal(left, right)
+                OldConditionTerm::equal(left, right)
             },
             matches!(operator, ComparisonOperator::Equal),
         ),
         ComparisonOperator::LessThan => (
             if unsigned {
-                ConditionTerm::unsigned_less_than(left, right)
+                OldConditionTerm::unsigned_less_than(left, right)
             } else {
-                ConditionTerm::signed_less_than(left, right)
+                OldConditionTerm::signed_less_than(left, right)
             },
             true,
         ),
         ComparisonOperator::LessEqual => (
             if unsigned {
-                ConditionTerm::unsigned_less_equal(left, right)
+                OldConditionTerm::unsigned_less_equal(left, right)
             } else {
-                ConditionTerm::signed_less_equal(left, right)
+                OldConditionTerm::signed_less_equal(left, right)
             },
             true,
         ),
         ComparisonOperator::GreaterThan => (
             if unsigned {
-                ConditionTerm::unsigned_greater_than(left, right)
+                OldConditionTerm::unsigned_greater_than(left, right)
             } else {
-                ConditionTerm::signed_greater_than(left, right)
+                OldConditionTerm::signed_greater_than(left, right)
             },
             true,
         ),
         ComparisonOperator::GreaterEqual => (
             if unsigned {
-                ConditionTerm::unsigned_greater_equal(left, right)
+                OldConditionTerm::unsigned_greater_equal(left, right)
             } else {
-                ConditionTerm::signed_greater_equal(left, right)
+                OldConditionTerm::signed_greater_equal(left, right)
             },
             true,
         ),
@@ -11334,7 +11339,7 @@ pub(super) fn program_value_comparison_proposition(
 fn native_narrow_comparison_operands(
     left: &ProgramValue,
     right: &ProgramValue,
-) -> Option<(MachineIntegerType, MachineTerm, MachineTerm)> {
+) -> Option<(MachineIntegerType, OldMachineTerm, OldMachineTerm)> {
     let narrow = |value: &ProgramValue| match value {
         ProgramValue::Int8(term)
         | ProgramValue::UInt8(term)
@@ -11350,7 +11355,7 @@ fn native_narrow_comparison_operands(
             let value = i128::from(constant_u32(*bits) as i32);
             let (low, high) = format.format().bounds();
             (num_bigint::BigInt::from(value) >= low && num_bigint::BigInt::from(value) <= high)
-                .then(|| MachineTerm::narrow_constant(format, value as u128))
+                .then(|| OldMachineTerm::narrow_constant(format, value as u128))
         }
         _ => None,
     };
@@ -11368,7 +11373,7 @@ fn native_narrow_comparison_operands(
 pub(crate) fn program_value_word32_term(
     value: &ProgramValue,
     format: MachineIntegerType,
-) -> Option<MachineTerm> {
+) -> Option<OldMachineTerm> {
     match value.numeric_value() {
         ProgramValue::PointerInteger(_) => unreachable!("numeric projection"),
         value @ (ProgramValue::Bool(_)
@@ -11394,12 +11399,12 @@ pub(crate) fn program_value_word32_term(
 
 /// The word an integer operand has at `int64`: its own word, a 32-bit
 /// word's extension, or a narrow value's or `Bool`'s conversion.
-fn program_value_int64_term(value: &ProgramValue) -> Option<MachineTerm> {
+fn program_value_int64_term(value: &ProgramValue) -> Option<OldMachineTerm> {
     match value.numeric_value() {
         ProgramValue::PointerInteger(_) => unreachable!("numeric projection"),
         ProgramValue::Int64(value) => Some(value.clone()),
-        ProgramValue::Int32(value) => Some(MachineTerm::int64_from_32(value.clone())),
-        ProgramValue::UInt32(value) => Some(MachineTerm::int64_from_uint32(value.clone())),
+        ProgramValue::Int32(value) => Some(OldMachineTerm::int64_from_32(value.clone())),
+        ProgramValue::UInt32(value) => Some(OldMachineTerm::int64_from_uint32(value.clone())),
         value @ (ProgramValue::Bool(_)
         | ProgramValue::Int8(_)
         | ProgramValue::Int16(_)
@@ -11421,20 +11426,21 @@ fn program_value_int64_term(value: &ProgramValue) -> Option<MachineTerm> {
 
 /// The word an integer operand has at `uint64`, modulo 2^64: its own word,
 /// a 32-bit word's conversion, or a narrow value's or `Bool`'s.
-fn program_value_uint64_term(value: &ProgramValue) -> Option<MachineTerm> {
+fn program_value_uint64_term(value: &ProgramValue) -> Option<OldMachineTerm> {
     match value.numeric_value() {
         ProgramValue::PointerInteger(_) => unreachable!("numeric projection"),
         ProgramValue::UInt64(value) => Some(value.clone()),
-        ProgramValue::Int64(value) => Some(MachineTerm::uint64_from_int64(value.clone())),
-        ProgramValue::Int32(value) => Some(MachineTerm::uint64_from_int32(value.clone())),
-        ProgramValue::UInt32(value) => Some(MachineTerm::uint64_from_32(value.clone())),
-        ProgramValue::Bool(word) => {
-            Some(MachineTerm::bool_word_as(MachineIntegerType::UInt64, word))
-        }
+        ProgramValue::Int64(value) => Some(OldMachineTerm::uint64_from_int64(value.clone())),
+        ProgramValue::Int32(value) => Some(OldMachineTerm::uint64_from_int32(value.clone())),
+        ProgramValue::UInt32(value) => Some(OldMachineTerm::uint64_from_32(value.clone())),
+        ProgramValue::Bool(word) => Some(OldMachineTerm::bool_word_as(
+            MachineIntegerType::UInt64,
+            word,
+        )),
         value @ (ProgramValue::Int8(word)
         | ProgramValue::Int16(word)
         | ProgramValue::UInt8(word)
-        | ProgramValue::UInt16(word)) => Some(MachineTerm::machine_integer_cast(
+        | ProgramValue::UInt16(word)) => Some(OldMachineTerm::machine_integer_cast(
             MachineIntegerType::from_program_type(value.program_type())?,
             MachineIntegerType::UInt64,
             word.clone(),
@@ -11553,14 +11559,14 @@ mod assumed_arithmetic_domain_tests {
     #[test]
     fn held_body_arithmetic_assumes_only_its_own_domain_and_preserves_the_value() {
         let inherited = ProofObligation::evaluation_domain(Proposition::condition_is(
-            ConditionTerm::Constant(false),
+            OldConditionTerm::Constant(false),
             true,
         ));
         let evaluate = |assumptions: &PureFactContext| {
             apply_spec_arithmetic(
                 crate::kernel::MachineBinaryOp::Multiply,
-                ProgramValue::Int32(MachineTerm::Variable(Variable(994_020))),
-                ProgramValue::Int32(MachineTerm::constant(4)),
+                ProgramValue::Int32(OldMachineTerm::Variable(Variable(994_020))),
+                ProgramValue::Int32(OldMachineTerm::constant(4)),
                 ExecutionFacts::default(),
                 vec![inherited.clone()],
                 assumptions,
@@ -11604,12 +11610,12 @@ mod shared_fold_operand_tests {
         ] {
             let endpoint = |value| {
                 let literal = if format == MachineIntegerType::UInt64 {
-                    MachineTerm::uint64_constant(value)
+                    OldMachineTerm::uint64_constant(value)
                 } else {
-                    MachineTerm::constant(value as u32)
+                    OldMachineTerm::constant(value as u32)
                 };
                 let root = KernelTermImport::default().machine(MachineIntegerType::Int32, &literal);
-                SharedIntegerRangeEndpoint::intern(MachineTerm::Variable(Variable(998000)))
+                SharedIntegerRangeEndpoint::intern(OldMachineTerm::Variable(Variable(998000)))
                     .with_shared_operand(root)
                     .unwrap()
             };

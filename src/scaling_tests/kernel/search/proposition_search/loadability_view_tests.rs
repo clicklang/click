@@ -7,7 +7,7 @@ fn ambient_loadability_enumeration_charges_every_visited_fact() {
             context = context.assume_proposition(Proposition::MemoryLoadable {
                 memory: state.memory().clone(),
                 base: Address::symbolic(Variable(670_000 + index)),
-                bytes: (MachineTerm::constant(4)).into(),
+                bytes: (OldMachineTerm::constant(4)).into(),
                 wide: false,
             });
         }
@@ -35,7 +35,7 @@ fn witness_collection_stops_when_its_work_budget_is_exhausted() {
             context = context.assume_proposition(Proposition::MemoryLoadable {
                 memory: state.memory().clone(),
                 base: Address::symbolic(Variable(680_000 + index)),
-                bytes: (MachineTerm::constant(4)).into(),
+                bytes: (OldMachineTerm::constant(4)).into(),
                 wide: false,
             });
         }

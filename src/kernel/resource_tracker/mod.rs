@@ -1478,7 +1478,7 @@ pub(crate) fn reads_of_proposition(fact: &Proposition) -> Vec<ResourceRead> {
 fn collect_proposition_reads(fact: &Proposition, reads: &mut Vec<ResourceRead>) {
     match fact {
         Proposition::ConditionIs(condition, _) => {
-            collect_condition_reads(condition.native_compat(), reads)
+            collect_condition_reads(condition.old_form(), reads)
         }
         Proposition::Equal(left, right) => {
             collect_term_reads(left, reads);
@@ -1500,21 +1500,21 @@ fn collect_proposition_reads(fact: &Proposition, reads: &mut Vec<ResourceRead>) 
 
 fn collect_term_reads(term: &Term, reads: &mut Vec<ResourceRead>) {
     match term {
-        Term::Condition(condition) => collect_condition_reads(condition.native_compat(), reads),
-        Term::Bitvector32(term) => collect_bitvector_reads(term.native_compat(), reads),
-        Term::Integer(term) => collect_integer_term_reads(term.native_compat(), reads),
+        Term::Condition(condition) => collect_condition_reads(condition.old_form(), reads),
+        Term::Bitvector32(term) => collect_bitvector_reads(term.old_form(), reads),
+        Term::Integer(term) => collect_integer_term_reads(term.old_form(), reads),
         Term::PointerOffset(offset) => {
             if let Some(root) = offset.root() {
                 collect_shared_offset_reads(root, reads);
             } else {
-                collect_offset_reads(offset.native_compat(), reads);
+                collect_offset_reads(offset.old_form(), reads);
             }
         }
         Term::Algebraic(term) => {
-            term.native_compat()
+            term.old_form()
                 .for_each_machine_operand(|term| collect_operand_reads(term, reads));
         }
-        Term::ProgramValue(value) => collect_value_reads(value.native_compat(), reads),
+        Term::ProgramValue(value) => collect_value_reads(value.old_form(), reads),
         _ => {}
     }
 }
@@ -1628,15 +1628,15 @@ fn collect_condition_operand_reads(
     });
 }
 
-fn collect_condition_reads(condition: &ConditionTerm, reads: &mut Vec<ResourceRead>) {
+fn collect_condition_reads(condition: &OldConditionTerm, reads: &mut Vec<ResourceRead>) {
     match condition {
-        ConditionTerm::PointerEqual(left, right) => {
+        OldConditionTerm::PointerEqual(left, right) => {
             for pointer in left.pointers().chain(right.pointers()) {
                 collect_pointer_reads(pointer, reads);
             }
         }
 
-        ConditionTerm::AlgebraicEqual(left, right) => {
+        OldConditionTerm::AlgebraicEqual(left, right) => {
             left.for_each_machine_operand(|term| collect_operand_reads(term, reads));
             right.for_each_machine_operand(|term| collect_operand_reads(term, reads));
         }
@@ -1644,25 +1644,25 @@ fn collect_condition_reads(condition: &ConditionTerm, reads: &mut Vec<ResourceRe
             collect_integer_reads(left, reads);
             collect_integer_reads(right, reads);
         }
-        ConditionTerm::Float32(float) | ConditionTerm::Float64(float) => {
+        OldConditionTerm::Float32(float) | OldConditionTerm::Float64(float) => {
             float.for_each_bitvector_term(|term| collect_bitvector_reads(term, reads));
         }
-        ConditionTerm::AddressOffsetEqual(left, right) => {
+        OldConditionTerm::AddressOffsetEqual(left, right) => {
             collect_offset_reads(left, reads);
             collect_offset_reads(right, reads);
         }
-        ConditionTerm::AddressEqual(left, right) => {
+        OldConditionTerm::AddressEqual(left, right) => {
             collect_pointer_reads(left, reads);
             collect_pointer_reads(right, reads);
         }
-        ConditionTerm::Constant(_) | ConditionTerm::Variable(_) => {}
+        OldConditionTerm::Constant(_) | OldConditionTerm::Variable(_) => {}
         crate::kernel::binary_bitvector_condition!(left, right) => {
             collect_bitvector_reads(left, reads);
             collect_bitvector_reads(right, reads);
         }
         // As a word-valued Click application: not entered.
-        ConditionTerm::BoolApplication(_) => {}
-        ConditionTerm::BoolIf { .. } | ConditionTerm::BoolEqual(..) => {
+        OldConditionTerm::BoolApplication(_) => {}
+        OldConditionTerm::BoolIf { .. } | OldConditionTerm::BoolEqual(..) => {
             for child in condition.bool_children() {
                 collect_condition_reads(child, reads);
             }
@@ -1701,15 +1701,16 @@ fn collect_shared_offset_reads(
     });
 }
 
-fn collect_offset_reads(offset: &AddressOffset, reads: &mut Vec<ResourceRead>) {
+fn collect_offset_reads(offset: &OldAddressOffset, reads: &mut Vec<ResourceRead>) {
     let mut pending = vec![offset];
     while let Some(offset) = pending.pop() {
         match offset {
-            AddressOffset::Add(left, right) => {
+            OldAddressOffset::Add(left, right) => {
                 pending.push(left);
                 pending.push(right);
             }
-            AddressOffset::Int32Scaled { value, .. } | AddressOffset::Int64Scaled { value, .. } => {
+            OldAddressOffset::Int32Scaled { value, .. }
+            | OldAddressOffset::Int64Scaled { value, .. } => {
                 collect_operand_reads(value.operand_view(), reads)
             }
             _ => {}
@@ -1856,11 +1857,11 @@ fn collect_argument_reads(argument: &PureFunctionArgument, reads: &mut Vec<Resou
     }
 }
 
-fn collect_bitvector_reads(term: &MachineTerm, reads: &mut Vec<ResourceRead>) {
+fn collect_bitvector_reads(term: &OldMachineTerm, reads: &mut Vec<ResourceRead>) {
     match term {
-        MachineTerm::MemoryLoad(..) | MachineTerm::Variable(_) => {
+        OldMachineTerm::MemoryLoad(..) | OldMachineTerm::Variable(_) => {
             if let Some(read) = crate::kernel::eval::scalar_read_observation(
-                crate::kernel::MachineOperandView::Legacy(term),
+                crate::kernel::MachineOperandView::Old(term),
             ) {
                 push_read(
                     reads,
@@ -1878,7 +1879,7 @@ fn collect_bitvector_reads(term: &MachineTerm, reads: &mut Vec<ResourceRead>) {
         }
         unary_term!(Bits32, BitwiseNot, inner)
         | cast_term!(Int64From32, inner)
-        | MachineTerm::Cast {
+        | OldMachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             value: inner,
             ..
@@ -1888,7 +1889,7 @@ fn collect_bitvector_reads(term: &MachineTerm, reads: &mut Vec<ResourceRead>) {
         | cast_term!(Int64FromUInt32, inner)
         | cast_term!(UInt64FromInt32, inner)
         | cast_term!(UInt64FromInt64, inner) => collect_bitvector_reads(inner, reads),
-        MachineTerm::If {
+        OldMachineTerm::If {
             condition,
             then_term,
             else_term,

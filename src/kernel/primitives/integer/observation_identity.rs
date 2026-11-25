@@ -15,7 +15,7 @@ pub(super) fn clear() {
 // Boolean guard imports can contain exact generic machine payloads. They
 // are numeric observation leaves here, without changing the producer's node
 // or admitting arbitrary legacy payloads into the machine operand API.
-fn machine_payload(term: &KernelTerm) -> Option<&MachineTerm> {
+fn machine_payload(term: &KernelTerm) -> Option<&OldMachineTerm> {
     if let KernelTermNode::ImportedScalar(input) = term.node() {
         return match term.ty() {
             KernelType::Program(ty) if MachineIntegerType::from_program_type(*ty).is_some() => {
@@ -73,13 +73,13 @@ pub(in crate::kernel::primitives) fn normalize(root: &KernelTerm) -> KernelTerm 
                 && machine_payload(&term).is_some()
             {
                 let value = machine_payload(&term).expect("retained machine leaf");
-                let view = MachineOperandView::Legacy(value);
+                let view = MachineOperandView::Old(value);
                 if view.binary().is_some()
                     || view.unary().is_some()
                     || view.cast().is_some()
                     || matches!(
                         value,
-                        MachineTerm::If { .. } | MachineTerm::AlgebraicMatch { .. }
+                        OldMachineTerm::If { .. } | OldMachineTerm::AlgebraicMatch { .. }
                     )
                 {
                     let replacement = KernelTerm::retained_machine_operand(format, view);
@@ -416,15 +416,15 @@ mod recursive_call_tests {
     fn mathematical_guards_normalize_nested_call_argument_carriers() {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::UInt64;
-        let argument = MachineTerm::constant(7);
+        let argument = OldMachineTerm::constant(7);
         let shared = SharedMachineIntegerTerm::intern(format, argument.clone());
-        let call = |argument| MachineTerm::ClickFunctionApplication {
+        let call = |argument| OldMachineTerm::ClickFunctionApplication {
             name: "math_guard_length".into(),
             arguments: vec![argument],
         };
         let native = call(PureFunctionArgument::Value(ProgramValue::UInt64(argument)));
         let retained = call(PureFunctionArgument::SharedMachine(shared));
-        let guard = |call: &MachineTerm| {
+        let guard = |call: &OldMachineTerm| {
             let observation = KernelTerm::intern(
                 KernelType::Integer,
                 KernelTermNode::MachineObservation {
@@ -456,8 +456,8 @@ mod recursive_call_tests {
                 format,
                 [
                     guard,
-                    KernelTermImport::default().machine(format, &MachineTerm::constant(48)),
-                    KernelTermImport::default().machine(format, &MachineTerm::constant(49)),
+                    KernelTermImport::default().machine(format, &OldMachineTerm::constant(48)),
+                    KernelTermImport::default().machine(format, &OldMachineTerm::constant(49)),
                 ],
             )
         };
@@ -476,7 +476,7 @@ mod recursive_call_tests {
             shared_written
         );
         let different = guard(&call(PureFunctionArgument::Value(ProgramValue::UInt64(
-            MachineTerm::constant(8),
+            OldMachineTerm::constant(8),
         ))));
         assert_ne!(normalize(&native_guard), normalize(&different));
     }
@@ -485,7 +485,7 @@ mod recursive_call_tests {
     fn observation_identity_allows_nested_shared_opaque_call_arguments() {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::Int32;
-        let call = |name: &str, arguments| MachineTerm::ClickFunctionApplication {
+        let call = |name: &str, arguments| OldMachineTerm::ClickFunctionApplication {
             name: name.into(),
             arguments,
         };
@@ -511,9 +511,9 @@ mod recursive_call_tests {
     fn opaque_call_identity_preserves_format_order_and_exact_argument_carriers() {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::Int32;
-        let argument = MachineTerm::constant(7);
+        let argument = OldMachineTerm::constant(7);
         let retained = SharedMachineIntegerTerm::intern(format, argument.clone());
-        let call = |arguments| MachineTerm::ClickFunctionApplication {
+        let call = |arguments| OldMachineTerm::ClickFunctionApplication {
             name: "exact_call_carriers".into(),
             arguments,
         };
@@ -536,7 +536,7 @@ mod recursive_call_tests {
             SharedMachineIntegerTerm::intern(format, call(vec![marker, shared_argument]))
         );
         let different_argument_sort = call(vec![
-            PureFunctionArgument::Value(ProgramValue::UInt32(MachineTerm::constant(7))),
+            PureFunctionArgument::Value(ProgramValue::UInt32(OldMachineTerm::constant(7))),
             PureFunctionArgument::Integer(IntegerTerm::constant(9.into()).into()),
         ]);
         assert_ne!(

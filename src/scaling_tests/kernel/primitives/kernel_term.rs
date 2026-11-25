@@ -1,5 +1,5 @@
 use super::*;
-use crate::kernel::{MachineCastSpelling, MachineTerm};
+use crate::kernel::{MachineCastSpelling, OldMachineTerm};
 
 #[test]
 fn interner_cleanup_drains_replaced_terms() {
@@ -69,9 +69,9 @@ fn machine_term_bridge_is_linear_in_explicit_tree_size() {
             .map(|i| KernelTerm::variable(KernelType::Integer, Variable(920_000 + i)))
             .collect::<Vec<_>>();
         for size in [16, 64, 256] {
-            let mut bits = MachineTerm::Variable(Variable(921_000));
+            let mut bits = OldMachineTerm::Variable(Variable(921_000));
             for i in 0..size {
-                bits = MachineTerm::Binary {
+                bits = OldMachineTerm::Binary {
                     format: MachineIntegerType::Int32,
                     op: match i % 3 {
                         0 => MachineBinaryOp::Add,
@@ -79,7 +79,7 @@ fn machine_term_bridge_is_linear_in_explicit_tree_size() {
                         _ => MachineBinaryOp::ShiftRight,
                     },
                     left: Box::new(bits),
-                    right: Box::new(MachineTerm::constant(1)),
+                    right: Box::new(OldMachineTerm::constant(1)),
                 };
             }
             let source = PureFunctionArgument::Value(ProgramValue::Int32(bits));
@@ -103,11 +103,11 @@ fn specialized_cast_bridge_is_linear_beside_unrelated_terms() {
             .map(|i| KernelTerm::variable(KernelType::Integer, Variable(930_000 + i)))
             .collect::<Vec<_>>();
         for size in [16, 64, 256] {
-            let mut bits = MachineTerm::Variable(Variable(931_000));
+            let mut bits = OldMachineTerm::Variable(Variable(931_000));
             for _ in 0..size {
-                bits = MachineTerm::legacy_cast(
+                bits = OldMachineTerm::legacy_cast(
                     MachineCastSpelling::UInt32From64,
-                    Box::new(MachineTerm::legacy_cast(
+                    Box::new(OldMachineTerm::legacy_cast(
                         MachineCastSpelling::UInt64From32,
                         Box::new(bits),
                     )),
@@ -136,13 +136,13 @@ fn machine_observation_bridge_scales_with_its_explicit_operand() {
             .map(|i| KernelTerm::variable(KernelType::Integer, Variable(940_000 + i)))
             .collect::<Vec<_>>();
         for size in [16, 64, 256] {
-            let mut bits = MachineTerm::Variable(Variable(941_000));
+            let mut bits = OldMachineTerm::Variable(Variable(941_000));
             for _ in 0..size {
-                bits = MachineTerm::Binary {
+                bits = OldMachineTerm::Binary {
                     format: MachineIntegerType::Int32,
                     op: MachineBinaryOp::Add,
                     left: Box::new(bits),
-                    right: Box::new(MachineTerm::constant(1)),
+                    right: Box::new(OldMachineTerm::constant(1)),
                 };
             }
             let machine = SharedMachineIntegerTerm::intern(MachineIntegerType::Int32, bits);
@@ -174,11 +174,12 @@ fn integer_conversion_bridge_scales_with_shared_operand() {
             for _ in 0..size {
                 value = IntegerTerm::Add(value.clone(), value).into();
             }
-            let source =
-                PureFunctionArgument::Value(ProgramValue::Int32(MachineTerm::IntegerToMachine {
+            let source = PureFunctionArgument::Value(ProgramValue::Int32(
+                OldMachineTerm::IntegerToMachine {
                     value,
                     destination: MachineIntegerType::Int32,
-                }));
+                },
+            ));
             let (restored, work) = crate::instrumentation::measure_deterministic_work(|| {
                 let term = KernelTermImport::default().argument(&source);
                 KernelTermExport::default().argument(&term).unwrap()
@@ -199,18 +200,19 @@ fn boolean_conversion_bridge_is_linear_in_explicit_conditions() {
             .map(|i| KernelTerm::variable(KernelType::Integer, Variable(962_000 + i)))
             .collect::<Vec<_>>();
         for size in [16, 64, 256] {
-            let mut condition = ConditionTerm::Variable(Variable(963_000));
+            let mut condition = OldConditionTerm::Variable(Variable(963_000));
             for _ in 0..size {
-                condition = ConditionTerm::BoolIf {
-                    condition: Box::new(ConditionTerm::Variable(Variable(963_001))),
+                condition = OldConditionTerm::BoolIf {
+                    condition: Box::new(OldConditionTerm::Variable(Variable(963_001))),
                     then_condition: Box::new(condition),
-                    else_condition: Box::new(ConditionTerm::Constant(false)),
+                    else_condition: Box::new(OldConditionTerm::Constant(false)),
                 };
             }
-            let source = PureFunctionArgument::Value(ProgramValue::Int32(MachineTerm::BoolCast {
-                to: MachineIntegerType::Int32,
-                value: Box::new(condition),
-            }));
+            let source =
+                PureFunctionArgument::Value(ProgramValue::Int32(OldMachineTerm::BoolCast {
+                    to: MachineIntegerType::Int32,
+                    value: Box::new(condition),
+                }));
             let (restored, work) = crate::instrumentation::measure_deterministic_work(|| {
                 let term = KernelTermImport::default().argument(&source);
                 KernelTermExport::default().argument(&term).unwrap()
@@ -235,7 +237,7 @@ fn integer_comparison_bridge_reconstructs_shared_operands_linearly() {
             for _ in 0..size {
                 value = IntegerTerm::Add(value.clone(), value).into();
             }
-            let source = ConditionTerm::IntegerGreaterEqual(value.clone(), value);
+            let source = OldConditionTerm::IntegerGreaterEqual(value.clone(), value);
             let ((term, restored), work) =
                 crate::instrumentation::measure_deterministic_work(|| {
                     let term = KernelTermImport::default().condition(&source);
@@ -353,7 +355,7 @@ fn machine_root_checking_views_keep_shared_prefixes_unboxed() {
                             arguments: [
                                 term.clone(),
                                 KernelTermImport::default()
-                                    .machine(format, &MachineTerm::int64_constant(2)),
+                                    .machine(format, &OldMachineTerm::int64_constant(2)),
                             ],
                         },
                     );
@@ -414,7 +416,7 @@ fn retained_load_terms_grow_without_rewalking_states_or_prior_arithmetic() {
             let exports = KernelTermExport::machine_export_count();
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 for index in 0..size {
-                    let read = MachineTerm::read_named(
+                    let read = OldMachineTerm::read_named(
                         ProgramPoint::at(&memory),
                         Box::new(Address::symbolic(Variable(993201 + index))),
                         LoadKind::Int32,
@@ -447,14 +449,14 @@ fn retained_load_terms_grow_without_rewalking_states_or_prior_arithmetic() {
 fn retained_named_reads_do_not_rewalk_their_address_on_each_import() {
     let _session = crate::kernel::VerificationSession::enter();
     for size in [16, 64, 256] {
-        let mut offset = AddressOffset::Variable(Variable(993500));
+        let mut offset = OldAddressOffset::Variable(Variable(993500));
         for index in 0..size {
-            offset = AddressOffset::Add(
+            offset = OldAddressOffset::Add(
                 Box::new(offset),
-                Box::new(AddressOffset::Variable(Variable(993501 + index))),
+                Box::new(OldAddressOffset::Variable(Variable(993501 + index))),
             );
         }
-        let raw = MachineTerm::read_named(
+        let raw = OldMachineTerm::read_named(
             ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
             Box::new(Address {
                 base: AddressBase::Symbolic(Variable(993499)),
@@ -486,7 +488,7 @@ fn retained_named_reads_do_not_rewalk_their_address_on_each_import() {
 fn shared_read_selection_reuses_growing_arithmetic_prefixes() {
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
-        let raw = MachineTerm::read_named(
+        let raw = OldMachineTerm::read_named(
             ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
             Box::new(Address::symbolic(Variable(994110))),
             LoadKind::Int32,
@@ -531,18 +533,18 @@ fn nested_read_address_import_is_linear_beside_unrelated_memory() {
         for index in 0..unrelated {
             memory = memory.store(
                 Address::symbolic(Variable(997000 + index)),
-                ProgramValue::Int32(MachineTerm::constant(index as u32)),
+                ProgramValue::Int32(OldMachineTerm::constant(index as u32)),
             );
         }
         let memory = intern_memory(memory);
         for depth in [16, 64, 256] {
-            let mut raw = MachineTerm::constant(0);
+            let mut raw = OldMachineTerm::constant(0);
             for _ in 0..depth {
-                raw = MachineTerm::read_named(
+                raw = OldMachineTerm::read_named(
                     ProgramPoint::at(&memory),
                     Box::new(Address {
                         base: AddressBase::Symbolic(Variable(996999)),
-                        offset: AddressOffset::scaled_int32_node(raw, 4),
+                        offset: OldAddressOffset::scaled_int32_node(raw, 4),
                     }),
                     LoadKind::Int32,
                 );
@@ -565,10 +567,10 @@ fn conditional_observation_retyping_matches_native_import_without_expanding_dags
     let _session = crate::kernel::VerificationSession::enter();
     let unsigned = MachineIntegerType::UInt32;
     let signed = MachineIntegerType::Int32;
-    let a = MachineTerm::Variable(Variable(995910));
-    let b = MachineTerm::Variable(Variable(995911));
-    let guard = ConditionTerm::unsigned_less_equal(a.clone(), b.clone());
-    let native = MachineTerm::If {
+    let a = OldMachineTerm::Variable(Variable(995910));
+    let b = OldMachineTerm::Variable(Variable(995911));
+    let guard = OldConditionTerm::unsigned_less_equal(a.clone(), b.clone());
+    let native = OldMachineTerm::If {
         condition: Box::new(guard.clone()),
         then_term: Box::new(a.clone()),
         else_term: Box::new(b),
@@ -670,7 +672,7 @@ fn repeated_scalar_read_imports_reuse_live_address_components() {
         }
         let pointer = Address {
             base: AddressBase::Concrete("shared-read-hot".into()),
-            offset: AddressOffset::Int32Scaled {
+            offset: OldAddressOffset::Int32Scaled {
                 value: SharedMachineIntegerTerm::from_shared(MachineIntegerType::Int32, index)
                     .unwrap(),
                 byte_width: 4,
@@ -1018,7 +1020,7 @@ fn boolean_guard_views_do_not_export_growing_prefixes() {
                 );
             }
             let arm = KernelTermImport::default()
-                .machine(MachineIntegerType::Int32, &MachineTerm::constant(1));
+                .machine(MachineIntegerType::Int32, &OldMachineTerm::constant(1));
             let root = KernelTerm::intern(
                 KernelType::Program(ProgramType::Int32),
                 KernelTermNode::MachineIf {
@@ -1085,11 +1087,11 @@ fn growing_common_boolean_comparisons_keep_operands_shared() {
             );
             let pointer = crate::kernel::Address {
                 base: block.into(),
-                offset: crate::kernel::AddressOffset::Constant(0),
+                offset: crate::kernel::OldAddressOffset::Constant(0),
             };
             KernelTermImport::default().machine(
                 format,
-                &MachineTerm::read_named(
+                &OldMachineTerm::read_named(
                     ProgramPoint::at(&memory),
                     Box::new(pointer),
                     crate::kernel::LoadKind::Int32,
@@ -1098,8 +1100,8 @@ fn growing_common_boolean_comparisons_keep_operands_shared() {
         };
         let mut left = read("bool-left");
         let mut right = read("bool-right");
-        let zero =
-            crate::kernel::KernelTermImport::default().machine(format, &MachineTerm::constant(0));
+        let zero = crate::kernel::KernelTermImport::default()
+            .machine(format, &OldMachineTerm::constant(0));
         let exports = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..size {
@@ -1149,11 +1151,11 @@ fn common_boolean_identity_visits_shared_connectives_once() {
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let atom = |format| {
-            KernelTermImport::default().condition(&ConditionTerm::Compare {
+            KernelTermImport::default().condition(&OldConditionTerm::Compare {
                 format,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::Variable(Variable(964_099))),
-                right: Box::new(MachineTerm::constant(1)),
+                left: Box::new(OldMachineTerm::Variable(Variable(964_099))),
+                right: Box::new(OldMachineTerm::constant(1)),
             })
         };
         let mut left = atom(MachineIntegerType::Int32);
@@ -1198,7 +1200,7 @@ fn boolean_substitution_retains_shared_connective_prefixes() {
             crate::kernel::reasoning::substitute_bitvector_variable_in_common_condition(
                 &root,
                 variable,
-                &MachineTerm::constant(1),
+                &OldMachineTerm::constant(1),
             )
             .unwrap()
         });
@@ -1212,9 +1214,9 @@ fn boolean_substitution_retains_shared_connective_prefixes() {
         }
         // An Int32 word is not a typed Bool literal. Preserve the native
         // truth conversion, including its explicit UInt8 comparison.
-        let expected = KernelTermImport::default().condition(&ConditionTerm::truth_of_bool_word(
-            &MachineTerm::constant(1),
-        ));
+        let expected = KernelTermImport::default().condition(
+            &OldConditionTerm::truth_of_bool_word(&OldMachineTerm::constant(1)),
+        );
         assert_eq!(rewritten, expected);
     }
 }
@@ -1231,8 +1233,9 @@ fn boolean_substitution_reuses_overlapping_arithmetic_operands() {
             KernelType::Program(format.program_type()),
             Variable(971_151),
         );
-        let zero = KernelTermImport::default().machine(format, &MachineTerm::constant(0));
-        let mut condition = KernelTermImport::default().condition(&ConditionTerm::Constant(true));
+        let zero = KernelTermImport::default().machine(format, &OldMachineTerm::constant(0));
+        let mut condition =
+            KernelTermImport::default().condition(&OldConditionTerm::Constant(true));
         for _ in 0..size {
             word = KernelTerm::machine_binary_shared(
                 format,
@@ -1252,7 +1255,7 @@ fn boolean_substitution_reuses_overlapping_arithmetic_operands() {
                 crate::kernel::reasoning::substitute_bitvector_variable_in_common_condition(
                     &condition,
                     source,
-                    &MachineTerm::Variable(Variable(971_152)),
+                    &OldMachineTerm::Variable(Variable(971_152)),
                 )
                 .unwrap();
             assert_ne!(result, condition);
@@ -1310,7 +1313,7 @@ fn boolean_transport_keeps_shared_arithmetic_operands() {
                 [operand.clone(), operand],
             );
         }
-        let zero = KernelTermImport::default().machine(format, &MachineTerm::constant(0));
+        let zero = KernelTermImport::default().machine(format, &OldMachineTerm::constant(0));
         let guard =
             KernelTerm::boolean_comparison_raw(format, CompareRelation::LessThan, [operand, zero]);
         let exports = KernelTermExport::machine_export_count();

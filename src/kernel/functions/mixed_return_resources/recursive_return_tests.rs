@@ -43,7 +43,7 @@ pub(super) fn recursive_definition() -> CompositeResourceDefinition {
 
 pub(super) fn recursive_output(
     pointer: Address,
-    remaining: MachineTerm,
+    remaining: OldMachineTerm,
     facts: &PureFactContext,
 ) -> EvaluatedReturnResources {
     EvaluatedReturnResources::new(facts)
@@ -65,7 +65,7 @@ pub(super) fn recursive_output(
 fn recursive_return_retains_one_explicit_frontier_and_its_actual_child_identity() {
     let facts = PureFactContext::new();
     let pointer = Address::symbolic(Variable(8_860_000));
-    let evaluated = recursive_output(pointer, MachineTerm::constant(64), &facts);
+    let evaluated = recursive_output(pointer, OldMachineTerm::constant(64), &facts);
     let source = evaluated.occurrences[0].source;
     let state = ExecutionState::new();
     let bodies =
@@ -108,8 +108,8 @@ fn recursive_return_retains_one_explicit_frontier_and_its_actual_child_identity(
 fn recursive_empty_and_undecided_guards_retain_the_correct_finite_boundary() {
     let facts = PureFactContext::new();
     for (remaining, opaque) in [
-        (MachineTerm::constant(0), false),
-        (MachineTerm::Variable(Variable(8_860_001)), true),
+        (OldMachineTerm::constant(0), false),
+        (OldMachineTerm::Variable(Variable(8_860_001)), true),
     ] {
         let evaluated = recursive_output(Address::symbolic(Variable(8_860_002)), remaining, &facts);
         let source = evaluated.occurrences[0].source;
@@ -142,10 +142,10 @@ fn recursive_visible_memory_still_refuses_a_held_alias_and_preserves_branches() 
     let pointer = Address::symbolic(Variable(8_860_003));
     let alias = Address::symbolic(Variable(8_860_004));
     let facts = PureFactContext::new().assume_condition(
-        ConditionTerm::address_equal(pointer.clone(), alias.clone()),
+        OldConditionTerm::address_equal(pointer.clone(), alias.clone()),
         true,
     );
-    let evaluated = recursive_output(pointer, MachineTerm::constant(64), &facts);
+    let evaluated = recursive_output(pointer, OldMachineTerm::constant(64), &facts);
     let source = evaluated.occurrences[0].source;
     let bodies = ConstructedReturnBodies::construct(
         &evaluated,
@@ -206,7 +206,7 @@ fn viewed_recursive_children_remain_folded_views_with_emitted_identities() {
     .unwrap();
     let evaluated = recursive_output(
         Address::symbolic(Variable(8_860_005)),
-        MachineTerm::constant(3),
+        OldMachineTerm::constant(3),
         &facts,
     );
     let source = evaluated.occurrences[0].source;

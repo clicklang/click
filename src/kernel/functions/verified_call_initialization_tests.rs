@@ -3,7 +3,7 @@ use super::*;
 fn local_pointer() -> Address {
     Address {
         base: AddressBase::Concrete("local:caller:x".to_string()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     }
 }
 
@@ -30,8 +30,8 @@ fn caller_state(pointer: &Address) -> ExecutionState {
     let resources = ResourceContext::new().unchecked_with_fact(ResourceFact::own(
         Resource::Memory(MemoryRange::new(
             pointer.clone(),
-            MachineTerm::constant(0),
-            MachineTerm::constant(1),
+            OldMachineTerm::constant(0),
+            OldMachineTerm::constant(1),
         )),
     ));
     ExecutionState::new()
@@ -140,13 +140,17 @@ fn aliased_byte_output_fixture(
     let mut previous = alias.clone();
     for i in 0..size {
         let next = Address::symbolic(Variable(987_001 + u64::from(i)));
-        assumptions = assumptions
-            .assume_condition(ConditionTerm::address_equal(previous, next.clone()), true);
+        assumptions = assumptions.assume_condition(
+            OldConditionTerm::address_equal(previous, next.clone()),
+            true,
+        );
         previous = next;
         memory = memory.with_block(format!("unrelated-output-{i}"), 4);
     }
-    assumptions =
-        assumptions.assume_condition(ConditionTerm::address_equal(previous, word.clone()), true);
+    assumptions = assumptions.assume_condition(
+        OldConditionTerm::address_equal(previous, word.clone()),
+        true,
+    );
     let segment = MemorySegment::new(
         crate::kernel::program_expression::variable("p"),
         crate::kernel::program_expression::int32_literal(0),

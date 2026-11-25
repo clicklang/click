@@ -2813,8 +2813,8 @@ impl<'a> Proof<'a> {
                         ref condition_source_0 @ Proposition::ConditionIs(
                             _,
                             true,
-                        ) if let Some((ConditionTerm::IntegerLessEqual(left, right), _)) = condition_source_0.condition_native() => Some(Proposition::condition_is(
-                            ConditionTerm::integer_equal(left.as_ref().clone(), right.as_ref().clone()),
+                        ) if let Some((OldConditionTerm::IntegerLessEqual(left, right), _)) = condition_source_0.old_condition() => Some(Proposition::condition_is(
+                            OldConditionTerm::integer_equal(left.as_ref().clone(), right.as_ref().clone()),
                             true,
                         )),
                         _ => None,
@@ -3317,7 +3317,7 @@ impl<'a> Proof<'a> {
             } => self.facts().assumptions().proves_native_memory_loadable(
                 memory,
                 base,
-                bytes.native_compat(),
+                bytes.old_form(),
             ),
             _ => {
                 return Some(format!(
@@ -3334,73 +3334,6 @@ impl<'a> Proof<'a> {
                 "the kernel native view checker did not establish `{target}` in the current proof context; `solve` did not construct a checked source proof"
             )
         })
-    }
-
-    fn attach_transport_check_error(&self, error: ClickError) -> ClickError {
-        if let Some(required) = error.unresolved_requirement() {
-            let (reason, label) = if required.context.as_deref() == Some("checked transport target")
-            {
-                (error.raw_summary(), "checked transport target")
-            } else {
-                (
-                    "transport frame check requires an exact premise",
-                    "required transport premise",
-                )
-            };
-            self.step_error_with_requirement(
-                reason,
-                None,
-                Some((label, Box::new(required.proposition.clone()), None)),
-            )
-        } else {
-            self.attach_step_diagnostic(error)
-        }
-    }
-
-    /// Explain why the written source cannot frame the target. The frame
-    /// analysis is diagnostic only and never advances this proof.
-    pub(in crate::surface::proof) fn execution_fact_transport_refusal(
-        &self,
-        source: &SyntaxProposition,
-        target: &SyntaxProposition,
-    ) -> Option<ClickError> {
-        let diagnose = || {
-            let view = self
-                .outcome_fixed_state_view()
-                .or_else(|| self.execution_fixed_state_view())
-                .ok_or_else(|| {
-                    self.step_error("fact transport requires a recorded execution state")
-                })?;
-            let source = self.substitute_fixed_state_locals_in_proposition(source)?;
-            let target = self.substitute_fixed_state_locals_in_proposition(target)?;
-            let checked_call_events = self
-                .execution()
-                .filter(|_| self.goal().is_none() && self.focused_outcome_data().is_none())
-                .map(|execution| {
-                    execution
-                        .core
-                        .register_current_call_views(self.facts().assumptions());
-                    execution.core.checked_call_events()
-                });
-            let _checked_call_event_scope = checked_call_events
-                .as_ref()
-                .map(crate::kernel::CheckedCallEventScope::start_registering_views);
-            check_fixed_state_fact_transport(
-                &source,
-                &target,
-                std::slice::from_ref(&source),
-                view.claim_label,
-                view.tactic_index,
-                self.facts(),
-                view.effect_facts,
-                view.parameter_binding,
-                view.fixed_state,
-                view.surface_propositions,
-                view.spec_definitions,
-            )
-            .map_err(|error| self.attach_transport_check_error(error))
-        };
-        diagnose().err()
     }
 }
 

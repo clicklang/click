@@ -81,20 +81,20 @@ fn numeric_call_certification_refuses_unsupported_float_syntax_without_exporting
     let mut previous = None;
     for depth in [8, 32, 128] {
         let _session = VerificationSession::enter();
-        let mut source = MachineTerm::Variable(Variable(995953));
+        let mut source = OldMachineTerm::Variable(Variable(995953));
         for _ in 0..depth {
-            source = MachineTerm::Float32Negate(Box::new(source));
+            source = OldMachineTerm::Float32Negate(Box::new(source));
         }
-        let native = MachineTerm::ClickFunctionApplication {
+        let native = OldMachineTerm::ClickFunctionApplication {
             name: "numeric_boundary".into(),
             arguments: vec![A::Value(ProgramValue::Float32(source))],
         };
         let root =
             crate::kernel::KernelTermImport::default().machine(MachineIntegerType::Int32, &native);
-        assert!(!Comparison::default().machine(Operand::Legacy(&native), Operand::Legacy(&native)));
+        assert!(!Comparison::default().machine(Operand::Old(&native), Operand::Old(&native)));
         let exports = KernelTermExport::float_export_count();
         let (equal, work) = crate::instrumentation::measure_deterministic_work(|| {
-            Comparison::default().machine(Operand::Shared(&root), Operand::Legacy(&native))
+            Comparison::default().machine(Operand::Shared(&root), Operand::Old(&native))
         });
         assert!(!equal);
         assert_eq!(KernelTermExport::float_export_count(), exports);
@@ -115,15 +115,15 @@ fn integer_conversion_certification_keeps_native_refusal_without_exporting_the_o
         for _ in 0..depth {
             source = IntegerTerm::Add(source.into(), IntegerTerm::constant_i64(1).into());
         }
-        let native = MachineTerm::IntegerToMachine {
+        let native = OldMachineTerm::IntegerToMachine {
             destination: MachineIntegerType::Int32,
             value: source.into(),
         };
         let root =
             crate::kernel::KernelTermImport::default().machine(MachineIntegerType::Int32, &native);
-        assert!(!Comparison::default().machine(Operand::Legacy(&native), Operand::Legacy(&native)));
+        assert!(!Comparison::default().machine(Operand::Old(&native), Operand::Old(&native)));
         let (equal, work) = crate::instrumentation::measure_deterministic_work(|| {
-            Comparison::default().machine(Operand::Shared(&root), Operand::Legacy(&native))
+            Comparison::default().machine(Operand::Shared(&root), Operand::Old(&native))
         });
         assert!(!equal);
         if let Some(previous) = previous {
@@ -140,7 +140,7 @@ fn logical_argument_refusals_do_not_convert_growing_boolean_or_algebraic_trees()
     let mut previous = None;
     for depth in [8, 32, 128] {
         let _session = VerificationSession::enter();
-        let atom = ConditionTerm::Variable(Variable(995955));
+        let atom = OldConditionTerm::Variable(Variable(995955));
         let mut condition = atom.clone();
         let variable = AlgebraicTerm {
             algebraic_type: AlgebraicType::parameter("T".into()),
@@ -148,10 +148,10 @@ fn logical_argument_refusals_do_not_convert_growing_boolean_or_algebraic_trees()
         };
         let mut algebraic = variable.clone();
         for _ in 0..depth {
-            condition = ConditionTerm::BoolIf {
+            condition = OldConditionTerm::BoolIf {
                 condition: Box::new(atom.clone()),
                 then_condition: Box::new(condition),
-                else_condition: Box::new(ConditionTerm::Constant(false)),
+                else_condition: Box::new(OldConditionTerm::Constant(false)),
             };
             algebraic = AlgebraicTerm {
                 algebraic_type: variable.algebraic_type.clone(),
@@ -164,7 +164,7 @@ fn logical_argument_refusals_do_not_convert_growing_boolean_or_algebraic_trees()
         }
         let boolean = crate::kernel::KernelTermImport::default().condition(&condition);
         let root = crate::kernel::KernelTermImport::default().algebraic(&algebraic);
-        let native = A::Value(ProgramValue::Bool(MachineTerm::bool_cast(
+        let native = A::Value(ProgramValue::Bool(OldMachineTerm::bool_cast(
             MachineIntegerType::UInt8,
             condition,
         )));

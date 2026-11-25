@@ -19,7 +19,7 @@ impl ProgramValueBindings {
         self.0.contains_key(name)
     }
     pub(super) fn get(&self, name: &str) -> Option<&ProgramValue> {
-        self.0.get(name).map(RetainedProgramValue::native_compat)
+        self.0.get(name).map(RetainedProgramValue::old_form)
     }
     pub(super) fn get_retained(&self, name: &str) -> Option<&RetainedProgramValue> {
         self.0.get(name)
@@ -50,14 +50,12 @@ impl ProgramValueBindings {
     pub(super) fn iter(
         &self,
     ) -> impl DoubleEndedIterator<Item = (&String, &ProgramValue)> + ExactSizeIterator {
-        self.0
-            .iter()
-            .map(|(name, value)| (name, value.native_compat()))
+        self.0.iter().map(|(name, value)| (name, value.old_form()))
     }
     pub(super) fn values(
         &self,
     ) -> impl DoubleEndedIterator<Item = &ProgramValue> + ExactSizeIterator {
-        self.0.values().map(RetainedProgramValue::native_compat)
+        self.0.values().map(RetainedProgramValue::old_form)
     }
 }
 impl FromIterator<(String, ProgramValue)> for ProgramValueBindings {
@@ -100,9 +98,7 @@ impl<'a> IntoIterator for &'a ProgramValueBindings {
         fn((&'a String, &'a RetainedProgramValue)) -> (&'a String, &'a ProgramValue),
     >;
     fn into_iter(self) -> Self::IntoIter {
-        self.0
-            .iter()
-            .map(|(name, value)| (name, value.native_compat()))
+        self.0.iter().map(|(name, value)| (name, value.old_form()))
     }
 }
 impl std::ops::Index<&str> for ProgramValueBindings {
@@ -155,7 +151,7 @@ mod tests {
         let copy = values.clone();
         assert_eq!(
             copy.get("chosen"),
-            Some(&ProgramValue::UInt64(MachineTerm::Variable(Variable(
+            Some(&ProgramValue::UInt64(OldMachineTerm::Variable(Variable(
                 996931
             ))))
         );
@@ -177,16 +173,16 @@ mod tests {
         };
         let _session = crate::kernel::VerificationSession::enter();
         let values = [
-            ProgramValue::Bool(MachineTerm::Constant {
+            ProgramValue::Bool(OldMachineTerm::Constant {
                 format: MachineIntegerType::UInt8,
                 bits: 2,
             }),
-            ProgramValue::Float32(MachineTerm::uint32_constant(0x7fc00123)),
-            ProgramValue::Float64(MachineTerm::uint64_constant(0x8000000000000000)),
-            ProgramValue::Int32(MachineTerm::ClickFunctionApplication {
+            ProgramValue::Float32(OldMachineTerm::uint32_constant(0x7fc00123)),
+            ProgramValue::Float64(OldMachineTerm::uint64_constant(0x8000000000000000)),
+            ProgramValue::Int32(OldMachineTerm::ClickFunctionApplication {
                 name: "retained_argument".into(),
                 arguments: vec![PureFunctionArgument::Value(ProgramValue::UInt64(
-                    MachineTerm::uint64_constant(9),
+                    OldMachineTerm::uint64_constant(9),
                 ))],
             }),
             ProgramValue::typed_pointer(
@@ -201,11 +197,8 @@ mod tests {
         ];
         for value in values {
             let stored = RetainedProgramValue::from(value.clone());
-            assert_eq!(stored.native_compat(), &value);
-            assert_eq!(
-                format!("{:?}", stored.native_compat()),
-                format!("{value:?}")
-            );
+            assert_eq!(stored.old_form(), &value);
+            assert_eq!(format!("{:?}", stored.old_form()), format!("{value:?}"));
             assert_eq!(stored.clone(), RetainedProgramValue::from(value));
         }
     }
@@ -214,9 +207,9 @@ mod tests {
     fn native_call_argument_carrier_identity_survives_storage() {
         use crate::kernel::{PureFunctionArgument, SharedMachineIntegerTerm};
         let _session = crate::kernel::VerificationSession::enter();
-        let word = MachineTerm::Variable(Variable(996939));
+        let word = OldMachineTerm::Variable(Variable(996939));
         let call = |argument| {
-            ProgramValue::UInt32(MachineTerm::ClickFunctionApplication {
+            ProgramValue::UInt32(OldMachineTerm::ClickFunctionApplication {
                 name: "retained_call_identity".into(),
                 arguments: vec![argument],
             })
@@ -231,15 +224,15 @@ mod tests {
         let stored_a = RetainedProgramValue::from(a.clone());
         let stored_b = RetainedProgramValue::from(b.clone());
         assert_ne!(stored_a, stored_b);
-        assert_eq!(stored_a.native_compat(), &a);
-        assert_eq!(stored_b.native_compat(), &b);
+        assert_eq!(stored_a.old_form(), &a);
+        assert_eq!(stored_b.old_form(), &b);
     }
 
     #[test]
     fn recorded_values_keep_native_naming_and_replace_loop_count_identity() {
         let _session = crate::kernel::VerificationSession::enter();
         let mut states = RecordedStates::new();
-        let native = ProgramValue::UInt64(MachineTerm::Variable(Variable(996933)));
+        let native = ProgramValue::UInt64(OldMachineTerm::Variable(Variable(996933)));
         states.record_call_result(7, Some(native.clone()));
         assert_eq!(states.call_result_native(&7), Some(&native));
         let old = crate::kernel::Variable(996934);

@@ -207,7 +207,7 @@ mod tests {
         OldPointer::new(Address::symbolic(Variable(id)), ProgramType::Int32Pointer)
     }
     fn equal(facts: PureFactContext, a: &OldPointer, b: &OldPointer) -> PureFactContext {
-        facts.assume_condition(ConditionTerm::pointer_equal(a.clone(), b.clone()), true)
+        facts.assume_condition(OldConditionTerm::pointer_equal(a.clone(), b.clone()), true)
     }
     fn member(parent: &OldPointer) -> OldPointer {
         parent
@@ -274,7 +274,7 @@ mod tests {
         let selected = member(&parent);
         let returned = pointer(997_012);
         let numeric = PureFactContext::new().assume_condition(
-            ConditionTerm::address_equal(returned.address().clone(), selected.address().clone()),
+            OldConditionTerm::address_equal(returned.address().clone(), selected.address().clone()),
             true,
         );
         assert_eq!(numeric.pointer_domain(&returned), PointerDomain::Unknown);
@@ -395,15 +395,15 @@ mod tests {
         let facts = equal(PureFactContext::new(), &returned, &selected);
         let held = MemoryRange::from_pointer_value_wide(
             &selected,
-            MachineTerm::uint64_constant(0),
-            MachineTerm::uint64_constant(1),
+            OldMachineTerm::uint64_constant(0),
+            OldMachineTerm::uint64_constant(1),
             4,
         );
         assert!(facts.access_provenance_match(returned.access_provenance(), &held));
         let outside = MemoryRange::from_pointer_value_wide(
             &selected,
-            MachineTerm::uint64_constant(1 << 32),
-            MachineTerm::uint64_constant((1 << 32) + 1),
+            OldMachineTerm::uint64_constant(1 << 32),
+            OldMachineTerm::uint64_constant((1 << 32) + 1),
             4,
         );
         assert!(!facts.access_provenance_match(returned.access_provenance(), &outside));

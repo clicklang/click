@@ -2280,8 +2280,8 @@ fn quantified_index_interval(
 fn unsigned_binder_zero(binder_type: &ClickType) -> Option<ProgramExpression> {
     let value = match binder_type.interface_type()? {
         InterfaceType::UInt8 => crate::kernel::uint8(0),
-        InterfaceType::UInt32 => ProgramValue::UInt32(MachineTerm::uint32_constant(0)),
-        InterfaceType::UInt64(_) => ProgramValue::UInt64(MachineTerm::uint64_constant(0)),
+        InterfaceType::UInt32 => ProgramValue::UInt32(OldMachineTerm::uint32_constant(0)),
+        InterfaceType::UInt64(_) => ProgramValue::UInt64(OldMachineTerm::uint64_constant(0)),
         _ => return None,
     };
     Some(ProgramExpression::Value(value))
@@ -2941,7 +2941,7 @@ fn collect_resource_fact_reads_from_program_expression(
             collect_resource_fact_reads_from_program_expression(pointer, reads);
             reads.push(ResourceFactRead {
                 base: pointer.as_ref().clone(),
-                index: ProgramExpression::Value(ProgramValue::Int32(MachineTerm::constant(0))),
+                index: ProgramExpression::Value(ProgramValue::Int32(OldMachineTerm::constant(0))),
                 expression: describe_program_expression(expression),
                 enclosing_range: None,
                 extent: None,
@@ -2955,7 +2955,7 @@ fn collect_resource_fact_reads_from_program_expression(
             collect_resource_fact_reads_from_program_expression(pointer, reads);
             reads.push(ResourceFactRead {
                 base: pointer.as_ref().clone(),
-                index: ProgramExpression::Value(ProgramValue::Int32(MachineTerm::constant(0))),
+                index: ProgramExpression::Value(ProgramValue::Int32(OldMachineTerm::constant(0))),
                 expression: describe_program_expression(expression),
                 enclosing_range: None,
                 extent: Some(crate::kernel::AccessExtent::of_type(*value_type)),
@@ -3527,20 +3527,20 @@ mod read_authority_tests {
             ProgramExpression::Value(int32(0)),
             bound.clone(),
         ));
-        let index_value = MachineTerm::Variable(Variable(12_001));
-        let bound_value = MachineTerm::Variable(Variable(12_002));
+        let index_value = OldMachineTerm::Variable(Variable(12_001));
+        let bound_value = OldMachineTerm::Variable(Variable(12_002));
         let assumptions = PureFactContext::new()
             .assume_proposition(Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
-                    left: Box::new(MachineTerm::constant(0)),
+                    left: Box::new(OldMachineTerm::constant(0)),
                     right: Box::new(index_value.clone()),
                 },
                 true,
             ))
             .assume_proposition(Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
                     left: Box::new(index_value.clone()),

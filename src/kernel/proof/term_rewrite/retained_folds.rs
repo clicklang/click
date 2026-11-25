@@ -76,22 +76,22 @@ mod tests {
 
     #[test]
     fn common_machine_fold_rewrite_matches_native_capture_and_scope() {
-        let source = MachineTerm::Variable(Variable(31));
+        let source = OldMachineTerm::Variable(Variable(31));
         for replacement in [
-            MachineTerm::constant(7),
-            MachineTerm::Variable(Variable(32)),
+            OldMachineTerm::constant(7),
+            OldMachineTerm::Variable(Variable(32)),
         ] {
-            let native = MachineTerm::RangeFold {
+            let native = OldMachineTerm::RangeFold {
                 start: Box::new(source.clone()),
-                end: Box::new(MachineTerm::constant(9)),
-                initial: Box::new(MachineTerm::Variable(Variable(32))),
+                end: Box::new(OldMachineTerm::constant(9)),
+                initial: Box::new(OldMachineTerm::Variable(Variable(32))),
                 accumulator: Variable(32),
                 item: Variable(33),
                 body: Box::new(binary_node!(
                     Int32,
                     Add,
                     Box::new(source.clone()),
-                    Box::new(MachineTerm::Variable(Variable(32))),
+                    Box::new(OldMachineTerm::Variable(Variable(32))),
                 )),
             };
             let fold =
@@ -112,14 +112,14 @@ mod tests {
         let memory = SymbolicMemory::new();
         let source = Variable(55);
         let replacement = Address::symbolic(Variable(56));
-        let read = MachineTerm::read_named(
+        let read = OldMachineTerm::read_named(
             ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
             Box::new(Address::symbolic(source)),
             LoadKind::Int32,
         );
-        let native = MachineTerm::RangeFold {
-            start: Box::new(MachineTerm::constant(0)),
-            end: Box::new(MachineTerm::constant(9)),
+        let native = OldMachineTerm::RangeFold {
+            start: Box::new(OldMachineTerm::constant(0)),
+            end: Box::new(OldMachineTerm::constant(9)),
             initial: Box::new(read.clone()),
             accumulator: Variable(57),
             item: Variable(58),
@@ -132,10 +132,10 @@ mod tests {
         let mut new = TermRewrite::for_pointer_variable(source, &replacement);
         let result = new.retained_fold(&fold).unwrap();
         assert_eq!(result.export_machine().unwrap(), expected);
-        let MachineTerm::RangeFold { body, .. } = expected else {
+        let OldMachineTerm::RangeFold { body, .. } = expected else {
             unreachable!()
         };
-        let MachineTerm::MemoryLoad(retained_state, pointer, _) = *body else {
+        let OldMachineTerm::MemoryLoad(retained_state, pointer, _) = *body else {
             unreachable!()
         };
         assert_eq!(
@@ -144,15 +144,15 @@ mod tests {
         );
         assert_eq!(*pointer, replacement);
 
-        let condition = ConditionTerm::Variable(Variable(59));
-        let conditional = MachineTerm::If {
+        let condition = OldConditionTerm::Variable(Variable(59));
+        let conditional = OldMachineTerm::If {
             condition: Box::new(condition.clone()),
-            then_term: Box::new(MachineTerm::constant(1)),
-            else_term: Box::new(MachineTerm::constant(2)),
+            then_term: Box::new(OldMachineTerm::constant(1)),
+            else_term: Box::new(OldMachineTerm::constant(2)),
         };
-        let native = MachineTerm::RangeFold {
-            start: Box::new(MachineTerm::constant(0)),
-            end: Box::new(MachineTerm::constant(9)),
+        let native = OldMachineTerm::RangeFold {
+            start: Box::new(OldMachineTerm::constant(0)),
+            end: Box::new(OldMachineTerm::constant(9)),
             initial: Box::new(conditional.clone()),
             accumulator: Variable(57),
             item: Variable(58),
@@ -228,7 +228,7 @@ mod tests {
                 [0, 9].map(|v| {
                     KernelTerm::retained_machine_operand(
                         format,
-                        MachineOperandView::Legacy(&MachineTerm::constant(v)),
+                        MachineOperandView::Old(&OldMachineTerm::constant(v)),
                     )
                 })
             };

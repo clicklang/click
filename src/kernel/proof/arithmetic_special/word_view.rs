@@ -22,13 +22,13 @@ pub(super) enum Node<'a> {
 impl<'a> Word<'a> {
     pub(super) fn key(self) -> Key {
         match self.0 {
-            View::Legacy(value) => Key::Native(value as *const _ as usize),
+            View::Old(value) => Key::Native(value as *const _ as usize),
             View::Shared(root) => Key::Shared(root.id()),
         }
     }
-    pub(super) fn leaf(self) -> Option<&'a MachineTerm> {
+    pub(super) fn leaf(self) -> Option<&'a OldMachineTerm> {
         match self.0 {
-            View::Legacy(value) => Some(value),
+            View::Old(value) => Some(value),
             View::Shared(root) => root
                 .machine_conversion_leaf()
                 .or_else(|| root.machine_read_leaf()),
@@ -43,7 +43,7 @@ impl<'a> Word<'a> {
                 right: Word(right),
             };
         }
-        if let Some(MachineTerm::IntegerAddress(pointer, _)) = self.leaf() {
+        if let Some(OldMachineTerm::IntegerAddress(pointer, _)) = self.leaf() {
             return Node::IntegerAddress(pointer);
         }
         Node::Other
@@ -52,9 +52,9 @@ impl<'a> Word<'a> {
         self.0.uint64_constant()
     }
 }
-impl<'a> From<&'a MachineTerm> for Word<'a> {
-    fn from(value: &'a MachineTerm) -> Self {
-        Self(View::Legacy(value))
+impl<'a> From<&'a OldMachineTerm> for Word<'a> {
+    fn from(value: &'a OldMachineTerm) -> Self {
+        Self(View::Old(value))
     }
 }
 
@@ -98,11 +98,11 @@ pub(super) fn hashes(roots: &[Word<'_>]) -> Option<HashMap<Key, u64>> {
                     pending.extend([(word, true), (right, false), (left, false)]);
                     continue;
                 }
-                let header = MachineTerm::Binary {
+                let header = OldMachineTerm::Binary {
                     format,
                     op,
-                    left: Box::new(MachineTerm::constant(0)),
-                    right: Box::new(MachineTerm::constant(0)),
+                    left: Box::new(OldMachineTerm::constant(0)),
+                    right: Box::new(OldMachineTerm::constant(0)),
                 };
                 let mut hash = DefaultHasher::new();
                 std::mem::discriminant(&header).hash(&mut hash);

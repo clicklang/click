@@ -59,7 +59,7 @@ fn literal(value: &BigInt) -> SyntaxTerm {
         let observed = SyntaxTerm::Call {
             name: "to_integer".into(),
             arguments: vec![SyntaxTerm::ProgramExpression(ProgramExpression::Value(
-                crate::kernel::uint64(MachineTerm::uint64_constant(magnitude)),
+                crate::kernel::uint64(OldMachineTerm::uint64_constant(magnitude)),
             ))],
         };
         return observed;
@@ -185,20 +185,20 @@ pub(super) fn parts(
 ) -> Option<(&SharedIntegerTerm, bool, &SharedIntegerTerm)> {
     match proposition {
         condition_source_0 @ Proposition::ConditionIs(_, true)
-            if let Some((ConditionTerm::IntegerLessEqual(a, b), _)) =
-                condition_source_0.condition_native() =>
+            if let Some((OldConditionTerm::IntegerLessEqual(a, b), _)) =
+                condition_source_0.old_condition() =>
         {
             Some((a, false, b))
         }
         condition_source_0 @ Proposition::ConditionIs(_, true)
-            if let Some((ConditionTerm::IntegerGreaterEqual(a, b), _)) =
-                condition_source_0.condition_native() =>
+            if let Some((OldConditionTerm::IntegerGreaterEqual(a, b), _)) =
+                condition_source_0.old_condition() =>
         {
             Some((b, false, a))
         }
         condition_source_0 @ Proposition::ConditionIs(_, true)
-            if let Some((ConditionTerm::IntegerEqual(a, b), _)) =
-                condition_source_0.condition_native() =>
+            if let Some((OldConditionTerm::IntegerEqual(a, b), _)) =
+                condition_source_0.old_condition() =>
         {
             Some((a, true, b))
         }
@@ -225,7 +225,7 @@ fn reading(proposition: &Proposition) -> Option<Reading> {
         return None;
     };
     let truth = *truth != negative;
-    if matches!(condition.native_compat(), ConditionTerm::Compare { .. }) {
+    if matches!(condition.old_form(), OldConditionTerm::Compare { .. }) {
         let observed =
             crate::kernel::machine_integer::comparison::integer_readings_with_promotions(
                 &Proposition::condition_is(condition.clone(), truth),
@@ -234,17 +234,17 @@ fn reading(proposition: &Proposition) -> Option<Reading> {
             .next()?;
         return reading(&observed);
     }
-    let (a, b, equal, strict, reverse) = match (condition.native_compat(), truth) {
-        (ConditionTerm::IntegerEqual(a, b), true)
-        | (ConditionTerm::IntegerNotEqual(a, b), false) => (a, b, true, false, false),
-        (ConditionTerm::IntegerLessEqual(a, b), true)
-        | (ConditionTerm::IntegerGreaterThan(a, b), false) => (a, b, false, false, false),
-        (ConditionTerm::IntegerGreaterEqual(a, b), true)
-        | (ConditionTerm::IntegerLessThan(a, b), false) => (a, b, false, false, true),
-        (ConditionTerm::IntegerLessThan(a, b), true)
-        | (ConditionTerm::IntegerGreaterEqual(a, b), false) => (a, b, false, true, false),
-        (ConditionTerm::IntegerGreaterThan(a, b), true)
-        | (ConditionTerm::IntegerLessEqual(a, b), false) => (a, b, false, true, true),
+    let (a, b, equal, strict, reverse) = match (condition.old_form(), truth) {
+        (OldConditionTerm::IntegerEqual(a, b), true)
+        | (OldConditionTerm::IntegerNotEqual(a, b), false) => (a, b, true, false, false),
+        (OldConditionTerm::IntegerLessEqual(a, b), true)
+        | (OldConditionTerm::IntegerGreaterThan(a, b), false) => (a, b, false, false, false),
+        (OldConditionTerm::IntegerGreaterEqual(a, b), true)
+        | (OldConditionTerm::IntegerLessThan(a, b), false) => (a, b, false, false, true),
+        (OldConditionTerm::IntegerLessThan(a, b), true)
+        | (OldConditionTerm::IntegerGreaterEqual(a, b), false) => (a, b, false, true, false),
+        (OldConditionTerm::IntegerGreaterThan(a, b), true)
+        | (OldConditionTerm::IntegerLessEqual(a, b), false) => (a, b, false, true, true),
         _ => return None,
     };
     Some(Reading {
@@ -455,7 +455,7 @@ fn disequality_operands(proposition: &Proposition) -> Vec<(SharedIntegerTerm, Sh
     let Proposition::ConditionIs(c, v) = p else {
         return Vec::new();
     };
-    if matches!(c.native_compat(), ConditionTerm::Compare { .. }) {
+    if matches!(c.old_form(), OldConditionTerm::Compare { .. }) {
         return crate::kernel::machine_integer::comparison::integer_readings_with_promotions(
             &Proposition::condition_is(c.clone(), *v != negative),
         )
@@ -463,9 +463,9 @@ fn disequality_operands(proposition: &Proposition) -> Vec<(SharedIntegerTerm, Sh
         .flat_map(disequality_operands)
         .collect();
     }
-    match (c.native_compat(), *v != negative) {
-        (ConditionTerm::IntegerNotEqual(a, b), true)
-        | (ConditionTerm::IntegerEqual(a, b), false) => vec![(a.clone(), b.clone())],
+    match (c.old_form(), *v != negative) {
+        (OldConditionTerm::IntegerNotEqual(a, b), true)
+        | (OldConditionTerm::IntegerEqual(a, b), false) => vec![(a.clone(), b.clone())],
         _ => Vec::new(),
     }
 }
@@ -484,7 +484,7 @@ fn strict_node(
             for reverse in [false, true] {
                 let (left, right) = if reverse { (&b, &a) } else { (&a, &b) };
                 let forward = Proposition::condition_is(
-                    ConditionTerm::IntegerLessEqual(left.clone(), right.clone()),
+                    OldConditionTerm::IntegerLessEqual(left.clone(), right.clone()),
                     true,
                 );
                 if integer_affine_claim(&forward).as_ref() == Some(&bound.semantic) {
@@ -860,13 +860,13 @@ fn range_bound_available(proof: &Proof<'_>, bound: &Proposition) -> bool {
         return true;
     }
     let reversed = match bound {
-        Proposition::ConditionIs(condition, value) => match condition.native_compat() {
-            ConditionTerm::IntegerGreaterEqual(left, right) => Proposition::condition_is(
-                ConditionTerm::IntegerLessEqual(right.clone(), left.clone()),
+        Proposition::ConditionIs(condition, value) => match condition.old_form() {
+            OldConditionTerm::IntegerGreaterEqual(left, right) => Proposition::condition_is(
+                OldConditionTerm::IntegerLessEqual(right.clone(), left.clone()),
                 *value,
             ),
-            ConditionTerm::IntegerLessEqual(left, right) => Proposition::condition_is(
-                ConditionTerm::IntegerGreaterEqual(right.clone(), left.clone()),
+            OldConditionTerm::IntegerLessEqual(left, right) => Proposition::condition_is(
+                OldConditionTerm::IntegerGreaterEqual(right.clone(), left.clone()),
                 *value,
             ),
             _ => return false,
@@ -1196,7 +1196,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                             let min = min_plus_one - BigInt::one();
                             (
                                 Proposition::condition_is(
-                                    ConditionTerm::IntegerLessEqual(
+                                    OldConditionTerm::IntegerLessEqual(
                                         IntegerTerm::constant(min.clone()).into(),
                                         relation.right,
                                     ),
@@ -1209,7 +1209,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                                 relation.right.as_const().expect("upper endpoint") + BigInt::one();
                             (
                                 Proposition::condition_is(
-                                    ConditionTerm::IntegerLessEqual(
+                                    OldConditionTerm::IntegerLessEqual(
                                         relation.left,
                                         IntegerTerm::constant(max.clone()).into(),
                                     ),
@@ -1674,8 +1674,10 @@ mod tests {
         let x: SharedIntegerTerm = IntegerTerm::Variable(Variable(871_001)).into();
         let y: SharedIntegerTerm = IntegerTerm::Variable(Variable(871_002)).into();
         let z: SharedIntegerTerm = IntegerTerm::Variable(Variable(871_003)).into();
-        let premise =
-            Proposition::condition_is(ConditionTerm::IntegerLessEqual(x.clone(), y.clone()), true);
+        let premise = Proposition::condition_is(
+            OldConditionTerm::IntegerLessEqual(x.clone(), y.clone()),
+            true,
+        );
         let surface = compare(
             SyntaxTerm::Binding("x".into()),
             false,
@@ -1698,7 +1700,7 @@ mod tests {
         }
         for index in 1..=ambient {
             context.requires.push(Proposition::condition_is(
-                ConditionTerm::IntegerLessEqual(
+                OldConditionTerm::IntegerLessEqual(
                     if related { x.clone() } else { z.clone() },
                     if related {
                         IntegerTerm::add(
@@ -1731,7 +1733,7 @@ mod tests {
         }
         let factor = BigInt::one() << depth;
         let goal = Proposition::condition_is(
-            ConditionTerm::IntegerLessEqual(
+            OldConditionTerm::IntegerLessEqual(
                 IntegerTerm::multiply(IntegerTerm::Constant(factor.clone()), x.as_ref().clone())
                     .into(),
                 IntegerTerm::multiply(IntegerTerm::Constant(factor.clone()), y.as_ref().clone())

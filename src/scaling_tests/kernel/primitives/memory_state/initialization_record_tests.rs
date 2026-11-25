@@ -67,13 +67,13 @@ fn a_covering_query_scales_with_the_cells_it_crosses() {
         for index in 0..count {
             memory = memory.store(
                 element(&block, index),
-                ProgramValue::Int32(MachineTerm::constant(1)),
+                ProgramValue::Int32(OldMachineTerm::constant(1)),
             );
         }
-        let index = MachineTerm::Variable(Variable(924_008));
+        let index = OldMachineTerm::Variable(Variable(924_008));
         let read = Address {
             base: AddressBase::from(block.as_str()),
-            offset: AddressOffset::scale_int32(index.clone(), 4),
+            offset: OldAddressOffset::scale_int32(index.clone(), 4),
         };
         let assumptions = index_between(&index, 7, 8);
         let (covered, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -96,18 +96,18 @@ fn forgotten_external_initialization_does_not_scan_unrelated_cached_cells() {
         let field = Address::symbolic(Variable(924_052));
         let output = Address {
             base: AddressBase::Heap(924_053),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let background = |index| Address {
             base: AddressBase::Heap(925_000 + u64::from(index)),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let mut before =
             SymbolicMemory::new().store(field.clone(), ProgramValue::pointer(Address::null()));
         for index in 0..count {
             before = before.store(
                 background(index),
-                ProgramValue::Int32(MachineTerm::constant(7)),
+                ProgramValue::Int32(OldMachineTerm::constant(7)),
             );
         }
         let before = before.with_uninitialized_object(output.clone(), 4);

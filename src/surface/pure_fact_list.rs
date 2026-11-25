@@ -199,14 +199,14 @@ fn conjunction_nodes(fact: &Proposition, visit: &mut impl FnMut(&Proposition)) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::{ConditionTerm, MachineTerm, Variable};
+    use crate::kernel::{OldConditionTerm, OldMachineTerm, Variable};
 
-    fn condition(variable: u64) -> ConditionTerm {
-        ConditionTerm::Compare {
+    fn condition(variable: u64) -> OldConditionTerm {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::Variable(Variable(variable))),
-            right: Box::new(MachineTerm::constant(0)),
+            left: Box::new(OldMachineTerm::Variable(Variable(variable))),
+            right: Box::new(OldMachineTerm::constant(0)),
         }
     }
 

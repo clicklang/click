@@ -40,5 +40,5 @@ void set_at(int32* p, const struct S* s, uint64 i, int32 v) {
 ```
 
 ```expect
-fail: found no frame evidence
+fail: `transport` found no checked proof from its source
 ```

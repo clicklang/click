@@ -7,18 +7,18 @@ use std::collections::HashMap;
 type Bounds = (i128, i128);
 
 fn parts(p: &Proposition) -> Option<(&SharedIntegerTerm, &SharedIntegerTerm, bool)> {
-    let (condition, expected) = p.condition_native()?;
+    let (condition, expected) = p.old_condition()?;
     // Integer order is total. A negative C safety test is the opposite
     // directed bound, with the opposite strictness.
     match (condition, expected) {
-        (ConditionTerm::IntegerLessEqual(a, b), true)
-        | (ConditionTerm::IntegerGreaterThan(a, b), false) => Some((a, b, false)),
-        (ConditionTerm::IntegerLessThan(a, b), true)
-        | (ConditionTerm::IntegerGreaterEqual(a, b), false) => Some((a, b, true)),
-        (ConditionTerm::IntegerGreaterEqual(a, b), true)
-        | (ConditionTerm::IntegerLessThan(a, b), false) => Some((b, a, false)),
-        (ConditionTerm::IntegerGreaterThan(a, b), true)
-        | (ConditionTerm::IntegerLessEqual(a, b), false) => Some((b, a, true)),
+        (OldConditionTerm::IntegerLessEqual(a, b), true)
+        | (OldConditionTerm::IntegerGreaterThan(a, b), false) => Some((a, b, false)),
+        (OldConditionTerm::IntegerLessThan(a, b), true)
+        | (OldConditionTerm::IntegerGreaterEqual(a, b), false) => Some((a, b, true)),
+        (OldConditionTerm::IntegerGreaterEqual(a, b), true)
+        | (OldConditionTerm::IntegerLessThan(a, b), false) => Some((b, a, false)),
+        (OldConditionTerm::IntegerGreaterThan(a, b), true)
+        | (OldConditionTerm::IntegerLessEqual(a, b), false) => Some((b, a, true)),
         _ => None,
     }
 }
@@ -225,7 +225,7 @@ pub(super) fn reduces_one_operation(goal: &Proposition, premises: &[Proposition]
                 return false;
             };
             if !crate::kernel::machine_integer::comparison::comparison_view(
-                condition.native_compat(),
+                condition.old_form(),
                 *truth,
             )
             .is_some_and(|view| {
@@ -309,21 +309,21 @@ mod tests {
         IntegerTerm::constant_i64(n).into()
     }
     fn le(a: SharedIntegerTerm, b: SharedIntegerTerm) -> Proposition {
-        Proposition::condition_is(ConditionTerm::IntegerLessEqual(a, b), true)
+        Proposition::condition_is(OldConditionTerm::IntegerLessEqual(a, b), true)
     }
-    fn observe(value: MachineTerm) -> SharedIntegerTerm {
+    fn observe(value: OldMachineTerm) -> SharedIntegerTerm {
         IntegerTerm::from_machine(MachineIntegerType::Int32, value)
             .unwrap()
             .into()
     }
     fn inputs(op: MachineBinaryOp, constant: i32) -> (Proposition, Vec<Proposition>) {
-        let x = MachineTerm::Variable(Variable(987_701));
+        let x = OldMachineTerm::Variable(Variable(987_701));
         let observed = observe(x.clone());
-        let operation = MachineTerm::logical_machine_binary(
+        let operation = OldMachineTerm::logical_machine_binary(
             MachineIntegerType::Int32,
             op,
             x,
-            MachineTerm::constant(constant as u32),
+            OldMachineTerm::constant(constant as u32),
         );
         (
             le(observe(operation), literal(11)),
@@ -341,12 +341,12 @@ mod tests {
     }
     #[test]
     fn signed_observations_do_not_clip_with_an_unsigned_guard() {
-        let x = MachineTerm::Variable(Variable(987_777));
-        let root = MachineTerm::logical_machine_binary(
+        let x = OldMachineTerm::Variable(Variable(987_777));
+        let root = OldMachineTerm::logical_machine_binary(
             MachineIntegerType::UInt32,
             MachineBinaryOp::Add,
             x.clone(),
-            MachineTerm::constant(1),
+            OldMachineTerm::constant(1),
         );
         let unsigned: SharedIntegerTerm = IntegerTerm::from_machine(MachineIntegerType::UInt32, x)
             .unwrap()
@@ -370,7 +370,7 @@ mod tests {
     #[test]
     fn extreme_strict_endpoints_refuse_without_panicking() {
         let (goal, _) = inputs(MachineBinaryOp::Add, 1);
-        let x = observe(MachineTerm::Variable(Variable(987_701)));
+        let x = observe(OldMachineTerm::Variable(Variable(987_701)));
         for (value, lower) in [(i128::MAX, true), (i128::MIN, false)] {
             let endpoint: SharedIntegerTerm = IntegerTerm::Constant(value.into()).into();
             let (a, b) = if lower {
@@ -378,7 +378,7 @@ mod tests {
             } else {
                 (x.clone(), endpoint)
             };
-            let premise = Proposition::condition_is(ConditionTerm::IntegerLessThan(a, b), true);
+            let premise = Proposition::condition_is(OldConditionTerm::IntegerLessThan(a, b), true);
             assert!(!reduces_one_operation(&goal, &[premise]));
         }
     }

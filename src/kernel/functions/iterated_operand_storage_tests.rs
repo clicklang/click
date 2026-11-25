@@ -10,7 +10,8 @@ fn evaluated_iterated_guard_retains_the_existing_common_producer() {
         [atom.clone(), atom],
     );
     let state = ExecutionState::new().with_retained_local("guard", root.clone().into());
-    let value = |bits| ProgramExpression::Value(ProgramValue::Int32(MachineTerm::constant(bits)));
+    let value =
+        |bits| ProgramExpression::Value(ProgramValue::Int32(OldMachineTerm::constant(bits)));
     let pointer =
         |id| ProgramExpression::Value(ProgramValue::pointer(Address::symbolic(Variable(id))));
     let spec = crate::kernel::IteratedSpec {

@@ -24,10 +24,10 @@ fn loop_view_partition_uses_alias_graph_without_scanning_ambient_ranges() {
     ));
     let target = Address {
         base: source.base.clone(),
-        offset: AddressOffset::Constant(2),
+        offset: OldAddressOffset::Constant(2),
     };
     let assumptions = PureFactContext::new()
-        .assume_condition(ConditionTerm::address_equal(alias.clone(), target), true);
+        .assume_condition(OldConditionTerm::address_equal(alias.clone(), target), true);
     let spec = ResourceSpec::new(
         ResourceTerm::Memory(
             MemorySegment::new(

@@ -23,8 +23,8 @@ impl AnnotationLowerer<'_> {
             })
         };
         if let (Some(left_element), Some(right_element)) = (
-            self.contract_pointer_element_type(left, environment),
-            self.contract_pointer_element_type(right, environment),
+            self.contract_pointer_element_type(left, &TypingEnvironment::of(environment)),
+            self.contract_pointer_element_type(right, &TypingEnvironment::of(environment)),
         ) && left_element != right_element
         {
             return Err(format!(
@@ -86,18 +86,22 @@ impl AnnotationLowerer<'_> {
                 SurfaceProposition::Not(Box::new(equal))
             });
         }
-        let has_algebraic = self.enum_program_value_type(left, environment).is_some()
-            || self.enum_program_value_type(right, environment).is_some()
+        let has_algebraic = self
+            .enum_program_value_type(left, &TypingEnvironment::of(environment))
+            .is_some()
+            || self
+                .enum_program_value_type(right, &TypingEnvironment::of(environment))
+                .is_some()
             || contract_expression_is_algebraic(
                 left,
                 self.spec_definitions.functions,
-                environment,
+                &TypingEnvironment::of(environment),
                 &mut Vec::new(),
             )
             || contract_expression_is_algebraic(
                 right,
                 self.spec_definitions.functions,
-                environment,
+                &TypingEnvironment::of(environment),
                 &mut Vec::new(),
             )
             || self.generic_call_returns_algebraic(left, environment)

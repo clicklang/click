@@ -35,7 +35,9 @@ fn subslice(length: u64) -> AlgebraicTerm {
                     Address::null(),
                     ProgramType::UInt8Pointer,
                 )),
-                AlgebraicValue::Program(ProgramValue::UInt64(MachineTerm::uint64_constant(length))),
+                AlgebraicValue::Program(ProgramValue::UInt64(OldMachineTerm::uint64_constant(
+                    length,
+                ))),
             ],
         },
     }

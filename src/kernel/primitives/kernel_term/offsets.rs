@@ -151,32 +151,34 @@ impl KernelAddressOffset {
         Ok(SharedAddressOffset::intern(self))
     }
 
-    pub(crate) fn import(offset: &AddressOffset) -> SharedAddressOffset {
+    pub(crate) fn import(offset: &OldAddressOffset) -> SharedAddressOffset {
         Self::try_import(offset).expect("native offset types")
     }
 
-    pub(crate) fn try_import(offset: &AddressOffset) -> Result<SharedAddressOffset, &'static str> {
+    pub(crate) fn try_import(
+        offset: &OldAddressOffset,
+    ) -> Result<SharedAddressOffset, &'static str> {
         enum Task<'a> {
-            Enter(&'a AddressOffset),
+            Enter(&'a OldAddressOffset),
             Add,
         }
         let mut pending = vec![Task::Enter(offset)];
         let mut values = Vec::new();
         while let Some(task) = pending.pop() {
             let node = match task {
-                Task::Enter(AddressOffset::Constant(value)) => Self::Constant(*value),
-                Task::Enter(AddressOffset::Variable(value)) => Self::Variable(*value),
-                Task::Enter(AddressOffset::Add(left, right)) => {
+                Task::Enter(OldAddressOffset::Constant(value)) => Self::Constant(*value),
+                Task::Enter(OldAddressOffset::Variable(value)) => Self::Variable(*value),
+                Task::Enter(OldAddressOffset::Add(left, right)) => {
                     pending.extend([Task::Add, Task::Enter(right), Task::Enter(left)]);
                     continue;
                 }
-                Task::Enter(AddressOffset::Int32Scaled { value, byte_width }) => {
+                Task::Enter(OldAddressOffset::Int32Scaled { value, byte_width }) => {
                     Self::Int32Scaled {
                         value: KernelTerm::retain_address_index(value),
                         byte_width: *byte_width,
                     }
                 }
-                Task::Enter(AddressOffset::Int64Scaled {
+                Task::Enter(OldAddressOffset::Int64Scaled {
                     value,
                     byte_width,
                     unsigned,
@@ -221,7 +223,7 @@ impl KernelAddressOffset {
 
     /// Explicit native output. Completed offset children are moved, never
     /// cached and cloned at every prefix. Shared numeric indices stay shared.
-    pub(crate) fn export(root: &SharedAddressOffset) -> Result<AddressOffset, &'static str> {
+    pub(crate) fn export(root: &SharedAddressOffset) -> Result<OldAddressOffset, &'static str> {
         enum Task<'a> {
             Enter(&'a SharedAddressOffset),
             Add,
@@ -233,13 +235,13 @@ impl KernelAddressOffset {
             crate::instrumentation::record_deterministic_work(1);
             let value = match task {
                 Task::Enter(root) => match root.node() {
-                    Self::Constant(value) => AddressOffset::Constant(*value),
-                    Self::Variable(value) => AddressOffset::Variable(*value),
+                    Self::Constant(value) => OldAddressOffset::Constant(*value),
+                    Self::Variable(value) => OldAddressOffset::Variable(*value),
                     Self::Add([left, right]) => {
                         pending.extend([Task::Add, Task::Enter(right), Task::Enter(left)]);
                         continue;
                     }
-                    Self::Int32Scaled { value, byte_width } => AddressOffset::Int32Scaled {
+                    Self::Int32Scaled { value, byte_width } => OldAddressOffset::Int32Scaled {
                         value: index(value)?,
                         byte_width: *byte_width,
                     },
@@ -247,7 +249,7 @@ impl KernelAddressOffset {
                         value,
                         byte_width,
                         unsigned,
-                    } => AddressOffset::Int64Scaled {
+                    } => OldAddressOffset::Int64Scaled {
                         value: index(value)?,
                         byte_width: *byte_width,
                         unsigned: *unsigned,
@@ -256,7 +258,7 @@ impl KernelAddressOffset {
                 Task::Add => {
                     let right = values.pop().ok_or("missing right offset")?;
                     let left = values.pop().ok_or("missing left offset")?;
-                    AddressOffset::Add(Box::new(left), Box::new(right))
+                    OldAddressOffset::Add(Box::new(left), Box::new(right))
                 }
             };
             values.push(value);
@@ -273,40 +275,41 @@ mod tests {
     fn offset_payload_round_trips_shape_scale_and_interpretation() {
         let _session = crate::kernel::VerificationSession::enter();
         let mut values = vec![
-            AddressOffset::Constant(i64::MIN),
-            AddressOffset::Constant(i64::MAX),
-            AddressOffset::Variable(Variable(994001)),
+            OldAddressOffset::Constant(i64::MIN),
+            OldAddressOffset::Constant(i64::MAX),
+            OldAddressOffset::Variable(Variable(994001)),
         ];
         for width in [0, -8, 4] {
-            values.push(AddressOffset::scaled_int32_node(
-                MachineTerm::Variable(Variable(994002)),
+            values.push(OldAddressOffset::scaled_int32_node(
+                OldMachineTerm::Variable(Variable(994002)),
                 width,
             ));
             for unsigned in [false, true] {
-                values.push(AddressOffset::scaled_int64_node(
-                    MachineTerm::Variable(Variable(994003)),
+                values.push(OldAddressOffset::scaled_int64_node(
+                    OldMachineTerm::Variable(Variable(994003)),
                     width,
                     unsigned,
                 ));
             }
         }
         for value in values {
-            let source = AddressOffset::Add(Box::new(AddressOffset::Constant(0)), Box::new(value));
+            let source =
+                OldAddressOffset::Add(Box::new(OldAddressOffset::Constant(0)), Box::new(value));
             let root = KernelAddressOffset::import(&source);
             assert_eq!(KernelAddressOffset::export(&root).unwrap(), source);
             assert_eq!(KernelAddressOffset::import(&source), root);
             assert_eq!(root.node().offset_children().len(), 2);
         }
-        let signed = AddressOffset::scaled_int64_node(
-            MachineTerm::Constant {
+        let signed = OldAddressOffset::scaled_int64_node(
+            OldMachineTerm::Constant {
                 format: MachineIntegerType::Int64,
                 bits: u64::MAX as u128,
             },
             1,
             false,
         );
-        let unsigned = AddressOffset::scaled_int64_node(
-            MachineTerm::Constant {
+        let unsigned = OldAddressOffset::scaled_int64_node(
+            OldMachineTerm::Constant {
                 format: MachineIntegerType::Int64,
                 bits: u64::MAX as u128,
             },
@@ -329,14 +332,14 @@ mod tests {
             MachineIntegerType::UInt64,
         ] {
             let value =
-                SharedMachineIntegerTerm::index(format, MachineTerm::Variable(Variable(994006)));
+                SharedMachineIntegerTerm::index(format, OldMachineTerm::Variable(Variable(994006)));
             let source = if format.format().bits() == 32 {
-                AddressOffset::Int32Scaled {
+                OldAddressOffset::Int32Scaled {
                     value: value.clone(),
                     byte_width: 4,
                 }
             } else {
-                AddressOffset::Int64Scaled {
+                OldAddressOffset::Int64Scaled {
                     value: value.clone(),
                     byte_width: 8,
                     unsigned: false,
@@ -359,8 +362,8 @@ mod tests {
         let mut natives = Vec::new();
         for class in [CScalarClass::Int, CScalarClass::Char] {
             let expected = Some(CAccessClass::Scalar(class));
-            let source = AddressOffset::scaled_int64_node(
-                MachineTerm::IntegerAddress(
+            let source = OldAddressOffset::scaled_int64_node(
+                OldMachineTerm::IntegerAddress(
                     Box::new(Address::symbolic(Variable(994004))),
                     crate::kernel::AddressObjectClass::new(expected.clone()),
                 ),
@@ -370,10 +373,10 @@ mod tests {
             let root = KernelAddressOffset::import(&source);
             let output = KernelAddressOffset::export(&root).unwrap();
             assert_eq!(source, output);
-            let AddressOffset::Int64Scaled { value, .. } = output else {
+            let OldAddressOffset::Int64Scaled { value, .. } = output else {
                 panic!("scaled index")
             };
-            let MachineTerm::IntegerAddress(_, annotation) = value.structural_value() else {
+            let OldMachineTerm::IntegerAddress(_, annotation) = value.structural_value() else {
                 panic!("exact address input")
             };
             assert_eq!(annotation.class(), expected);

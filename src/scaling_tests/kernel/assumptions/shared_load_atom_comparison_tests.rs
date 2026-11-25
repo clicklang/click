@@ -9,7 +9,7 @@ fn growing_shared_state_comparisons_reuse_syntax_but_recheck_loads() {
                 let _session = crate::kernel::VerificationSession::enter();
                 let ty = MachineIntegerType::Int32;
                 let (left_read, right_read, a, b) = load_pair(ty);
-                let leaf = |read: &MachineTerm, variable| {
+                let leaf = |read: &OldMachineTerm, variable| {
                     if structural {
                         crate::kernel::KernelTermImport::default()
                             .machine_arithmetic(ty, read)
@@ -21,18 +21,20 @@ fn growing_shared_state_comparisons_reuse_syntax_but_recheck_loads() {
                 let mut left = leaf(&left_read, a);
                 let mut right = leaf(&right_read, b);
                 let zero = crate::kernel::KernelTermImport::default()
-                    .machine(ty, &MachineTerm::constant(0));
+                    .machine(ty, &OldMachineTerm::constant(0));
                 let guard = |read, variable| {
-                    crate::kernel::KernelTermImport::default().condition(&ConditionTerm::Compare {
-                        format: ty,
-                        relation: CompareRelation::GreaterThan,
-                        left: Box::new(if structural {
-                            read
-                        } else {
-                            MachineTerm::Variable(variable)
-                        }),
-                        right: Box::new(MachineTerm::constant(0)),
-                    })
+                    crate::kernel::KernelTermImport::default().condition(
+                        &OldConditionTerm::Compare {
+                            format: ty,
+                            relation: CompareRelation::GreaterThan,
+                            left: Box::new(if structural {
+                                read
+                            } else {
+                                OldMachineTerm::Variable(variable)
+                            }),
+                            right: Box::new(OldMachineTerm::constant(0)),
+                        },
+                    )
                 };
                 let guards = [guard(left_read.clone(), a), guard(right_read.clone(), b)];
                 if conditional {
@@ -40,7 +42,7 @@ fn growing_shared_state_comparisons_reuse_syntax_but_recheck_loads() {
                     right = zero.clone();
                 }
                 let condition = |root| {
-                    ConditionTerm::integer_less_equal(
+                    OldConditionTerm::integer_less_equal(
                         IntegerTerm::Machine(
                             SharedMachineIntegerTerm::from_shared(ty, root).unwrap(),
                         ),

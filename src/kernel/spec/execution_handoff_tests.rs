@@ -15,14 +15,14 @@ fn adapter(expression: &SpecExpression) -> Vec<ExpressionPath<SpecValue>> {
 fn sum(format: MachineIntegerType) -> SpecExpression {
     SpecExpression::Add(
         Box::new(SpecExpression::Value(
-            format.value_from_term(MachineTerm::Variable(Variable(998252))),
+            format.value_from_term(OldMachineTerm::Variable(Variable(998252))),
         )),
         Box::new(SpecExpression::Value(format.value_from_term(
             match format {
-                MachineIntegerType::Int32 => MachineTerm::constant(1),
-                MachineIntegerType::UInt32 => MachineTerm::uint32_constant(1),
-                MachineIntegerType::Int64 => MachineTerm::int64_constant(1),
-                MachineIntegerType::UInt64 => MachineTerm::uint64_constant(1),
+                MachineIntegerType::Int32 => OldMachineTerm::constant(1),
+                MachineIntegerType::UInt32 => OldMachineTerm::uint32_constant(1),
+                MachineIntegerType::Int64 => OldMachineTerm::int64_constant(1),
+                MachineIntegerType::UInt64 => OldMachineTerm::uint64_constant(1),
                 _ => unreachable!(),
             },
         ))),
@@ -68,14 +68,14 @@ fn specification_execution_handoff_keeps_the_produced_root_and_debts() {
 fn program_expression_handoff_preserves_values_and_errors() {
     let _session = crate::kernel::VerificationSession::enter();
     for expression in [
-        ProgramExpression::Value(ProgramValue::UInt32(MachineTerm::uint32_constant(7))),
+        ProgramExpression::Value(ProgramValue::UInt32(OldMachineTerm::uint32_constant(7))),
         ProgramExpression::Variable("missing".into()),
         ProgramExpression::Divide(
             Box::new(ProgramExpression::Value(ProgramValue::Int32(
-                MachineTerm::constant(1),
+                OldMachineTerm::constant(1),
             ))),
             Box::new(ProgramExpression::Value(ProgramValue::Int32(
-                MachineTerm::constant(0),
+                OldMachineTerm::constant(0),
             ))),
         ),
     ] {
@@ -169,10 +169,10 @@ fn specification_machine_expression_handoff_keeps_the_execution_root() {
     ] {
         let source = ProgramExpression::Add(
             Box::new(ProgramExpression::Value(
-                format.value_from_term(MachineTerm::Variable(Variable(999997))),
+                format.value_from_term(OldMachineTerm::Variable(Variable(999997))),
             )),
             Box::new(ProgramExpression::Value(
-                format.value_from_term(MachineTerm::Variable(Variable(999998))),
+                format.value_from_term(OldMachineTerm::Variable(Variable(999998))),
             )),
         );
         let state = ExecutionState::new();
@@ -227,55 +227,55 @@ fn specification_machine_expression_handoff_keeps_the_execution_root() {
 #[test]
 fn boolean_lowering_preserves_logical_roots_and_exact_c_carriers() {
     let _session = crate::kernel::VerificationSession::enter();
-    let condition = ConditionTerm::Variable(Variable(999991));
+    let condition = OldConditionTerm::Variable(Variable(999991));
     let cases = [
         (
-            MachineTerm::Constant {
+            OldMachineTerm::Constant {
                 format: MachineIntegerType::UInt8,
                 bits: 0,
             },
             true,
         ),
         (
-            MachineTerm::Constant {
+            OldMachineTerm::Constant {
                 format: MachineIntegerType::UInt8,
                 bits: 1,
             },
             true,
         ),
         (
-            MachineTerm::BoolCast {
+            OldMachineTerm::BoolCast {
                 to: MachineIntegerType::UInt8,
                 value: Box::new(condition),
             },
             true,
         ),
         (
-            MachineTerm::Constant {
+            OldMachineTerm::Constant {
                 format: MachineIntegerType::UInt8,
                 bits: 2,
             },
             false,
         ),
         (
-            MachineTerm::Constant {
+            OldMachineTerm::Constant {
                 format: MachineIntegerType::UInt32,
                 bits: 1,
             },
             false,
         ),
-        (MachineTerm::Variable(Variable(999992)), false),
+        (OldMachineTerm::Variable(Variable(999992)), false),
         (
-            MachineTerm::BoolCast {
+            OldMachineTerm::BoolCast {
                 to: MachineIntegerType::UInt8,
-                value: Box::new(ConditionTerm::Constant(true)),
+                value: Box::new(OldConditionTerm::Constant(true)),
             },
             false,
         ),
         (
-            MachineTerm::BoolCast {
+            OldMachineTerm::BoolCast {
                 to: MachineIntegerType::UInt32,
-                value: Box::new(ConditionTerm::Variable(Variable(999993))),
+                value: Box::new(OldConditionTerm::Variable(Variable(999993))),
             },
             false,
         ),
@@ -285,11 +285,11 @@ fn boolean_lowering_preserves_logical_roots_and_exact_c_carriers() {
         // Specification payloads must still preserve those exact carriers.
         let valid_c_value = matches!(
             &word,
-            MachineTerm::Constant {
+            OldMachineTerm::Constant {
                 format: MachineIntegerType::UInt8,
                 bits: 0 | 1
-            } | MachineTerm::Variable(_)
-                | MachineTerm::BoolCast {
+            } | OldMachineTerm::Variable(_)
+                | OldMachineTerm::BoolCast {
                     to: MachineIntegerType::UInt8,
                     ..
                 }
@@ -422,7 +422,7 @@ fn pointer_lowering_keeps_producers_and_complete_metadata() {
     .with_bounds_owner(Some(Arc::new(Address::symbolic(Variable(999983)))))
     .with_bounds(Some(SubobjectBounds {
         start: Address::symbolic(Variable(999984)),
-        width: MachineTerm::Variable(Variable(999985)),
+        width: OldMachineTerm::Variable(Variable(999985)),
     }))
     .with_object_type_evidence(Some(ObjectTypeEvidence::parameter(class, 3, 999986, false)));
     let payload = SharedPointer::import(&source);
@@ -544,7 +544,7 @@ fn explicit_pointer_cast_lowering_keeps_native_bounds_rules() {
         let pointer = OldPointer::new(Address::symbolic(Variable(999940)), source).with_bounds(
             Some(SubobjectBounds {
                 start: Address::symbolic(Variable(999940)),
-                width: MachineTerm::constant(4),
+                width: OldMachineTerm::constant(4),
             }),
         );
         let expression = SpecExpression::Cast(
@@ -625,22 +625,22 @@ fn float_lowering_conversions_preserve_bits_roots_and_path_context() {
         ),
     ] {
         let literal = |bits| match format {
-            KernelFloatType::Float32 => MachineTerm::constant(bits as u32),
-            KernelFloatType::Float64 => MachineTerm::uint64_constant(bits),
+            KernelFloatType::Float32 => OldMachineTerm::constant(bits as u32),
+            KernelFloatType::Float64 => OldMachineTerm::uint64_constant(bits),
         };
         let mut values = literals.into_iter().map(literal).collect::<Vec<_>>();
-        values.push(MachineTerm::Variable(Variable(999970)));
+        values.push(OldMachineTerm::Variable(Variable(999970)));
         values.push(match format {
-            KernelFloatType::Float32 => MachineTerm::Float32Negate(Box::new(literal(0))),
-            KernelFloatType::Float64 => MachineTerm::Float64Negate(Box::new(literal(0))),
+            KernelFloatType::Float32 => OldMachineTerm::Float32Negate(Box::new(literal(0))),
+            KernelFloatType::Float64 => OldMachineTerm::Float64Negate(Box::new(literal(0))),
         });
         values.push(match format {
-            KernelFloatType::Float32 => MachineTerm::Float32Binary {
+            KernelFloatType::Float32 => OldMachineTerm::Float32Binary {
                 operator: FloatBinaryOperator::Add,
                 left: Box::new(literal(0x3f80_0000)),
                 right: Box::new(literal(0x3f80_0000)),
             },
-            KernelFloatType::Float64 => MachineTerm::Float64Binary {
+            KernelFloatType::Float64 => OldMachineTerm::Float64Binary {
                 operator: FloatBinaryOperator::Add,
                 left: Box::new(literal(0x3ff0_0000_0000_0000)),
                 right: Box::new(literal(0x3ff0_0000_0000_0000)),
@@ -700,7 +700,7 @@ fn mixed_call_assembly_preserves_typed_roots_without_exports() {
         let Some(format) = MachineIntegerType::from_program_type(value.program_type()) else {
             return value;
         };
-        let Some(MachineTerm::ClickFunctionApplication { name, arguments }) =
+        let Some(OldMachineTerm::ClickFunctionApplication { name, arguments }) =
             program_value_bitvector_term(&value)
         else {
             return value;
@@ -714,7 +714,7 @@ fn mixed_call_assembly_preserves_typed_roots_without_exports() {
                 argument => argument,
             })
             .collect();
-        format.value_from_term(MachineTerm::ClickFunctionApplication { name, arguments })
+        format.value_from_term(OldMachineTerm::ClickFunctionApplication { name, arguments })
     }
     let _session = crate::kernel::VerificationSession::enter();
     let algebraic_type = AlgebraicType::parameter("T".into());
@@ -729,10 +729,10 @@ fn mixed_call_assembly_preserves_typed_roots_without_exports() {
     let arguments = vec![
         SpecPureFunctionArgument::Value(sum(MachineIntegerType::UInt32)),
         SpecPureFunctionArgument::Value(SpecExpression::Value(ProgramValue::Float32(
-            MachineTerm::Float32Binary {
+            OldMachineTerm::Float32Binary {
                 operator: FloatBinaryOperator::Add,
-                left: Box::new(MachineTerm::Variable(Variable(999962))),
-                right: Box::new(MachineTerm::constant(0x3f80_0000)),
+                left: Box::new(OldMachineTerm::Variable(Variable(999962))),
+                right: Box::new(OldMachineTerm::constant(0x3f80_0000)),
             },
         ))),
         SpecPureFunctionArgument::Value(SpecExpression::Value(ProgramValue::Parameter(Box::new(
@@ -746,7 +746,7 @@ fn mixed_call_assembly_preserves_typed_roots_without_exports() {
             Variable(999964),
         ))),
         SpecPureFunctionArgument::Value(SpecExpression::Value(ProgramValue::Bool(
-            MachineTerm::Constant {
+            OldMachineTerm::Constant {
                 format: MachineIntegerType::UInt8,
                 bits: 1,
             },
@@ -816,7 +816,7 @@ fn mixed_call_assembly_preserves_typed_roots_without_exports() {
     for value in [
         ProgramValue::Void,
         ProgramValue::Pointer(pointer),
-        ProgramValue::Bool(MachineTerm::Constant {
+        ProgramValue::Bool(OldMachineTerm::Constant {
             format: MachineIntegerType::UInt8,
             bits: 2,
         }),

@@ -13,7 +13,7 @@ fn exact_materialization_work_scales_near_linearly_with_chain_length() {
             let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
                 exact_materialized_load_fixed_point(&chain)
             });
-            assert_eq!(result, MachineTerm::constant(23));
+            assert_eq!(result, OldMachineTerm::constant(23));
             assert!(work > 0);
             (length, work)
         })
@@ -33,7 +33,7 @@ fn retained_materialization_equality_keeps_growing_indices_shared() {
     let root = |v| {
         KernelTerm::retained_machine_operand(
             format,
-            MachineOperandView::Legacy(&MachineTerm::Variable(Variable(v))),
+            MachineOperandView::Old(&OldMachineTerm::Variable(Variable(v))),
         )
     };
     let mut samples = Vec::new();
@@ -53,7 +53,7 @@ fn retained_materialization_equality_keeps_growing_indices_shared() {
                     MachineBinaryOp::Add,
                     [b.clone(), b.clone()],
                 );
-                let offset = |root| AddressOffset::Int32Scaled {
+                let offset = |root| OldAddressOffset::Int32Scaled {
                     value: SharedMachineIntegerTerm::from_shared(format, root).unwrap(),
                     byte_width: 4,
                 };

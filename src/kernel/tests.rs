@@ -11,12 +11,12 @@ fn checked_memory_load_equality(
     assumptions: &PureFactContext,
 ) -> bool {
     checked_atomic_load_equality(
-        &MachineTerm::read_named(
+        &OldMachineTerm::read_named(
             ProgramPoint::at(&(intern_memory_ref(left))),
             Box::new(pointer.clone()),
             crate::kernel::LoadKind::Int32,
         ),
-        &MachineTerm::read_named(
+        &OldMachineTerm::read_named(
             ProgramPoint::at(&(intern_memory_ref(right))),
             Box::new(pointer.clone()),
             crate::kernel::LoadKind::Int32,
@@ -29,8 +29,8 @@ fn checked_memory_load_equality(
 pub(in crate::kernel) fn explicit_signed_elements(
     base: Address,
     ty: ProgramType,
-    i: MachineTerm,
-    j: MachineTerm,
+    i: OldMachineTerm,
+    j: OldMachineTerm,
     facts: PureFactContext,
 ) -> PureFactContext {
     let law = crate::kernel::prove_separation_elements(
@@ -131,22 +131,22 @@ pub(in crate::kernel) fn explicit_frame(
     let new = observe(&exit);
     let condition = match (new.numeric_value(), old.numeric_value()) {
         (ProgramValue::Parameter(a), ProgramValue::Parameter(b)) => {
-            ConditionTerm::AlgebraicEqual(a.clone(), b.clone())
+            OldConditionTerm::AlgebraicEqual(a.clone(), b.clone())
         }
         (ProgramValue::Pointer(a), ProgramValue::Pointer(b)) => {
-            ConditionTerm::pointer_equal(a.clone(), b.clone())
+            OldConditionTerm::pointer_equal(a.clone(), b.clone())
         }
         (ProgramValue::Int32(a), ProgramValue::Int32(b)) => {
-            ConditionTerm::equal(a.clone(), b.clone())
+            OldConditionTerm::equal(a.clone(), b.clone())
         }
-        (ProgramValue::UInt8(a), ProgramValue::UInt8(b)) => ConditionTerm::machine_compare(
+        (ProgramValue::UInt8(a), ProgramValue::UInt8(b)) => OldConditionTerm::machine_compare(
             MachineIntegerType::UInt8,
             CompareRelation::Equal,
             a.clone(),
             b.clone(),
         ),
         (ProgramValue::UInt64(a), ProgramValue::UInt64(b)) => {
-            ConditionTerm::uint64_equal(a.clone(), b.clone())
+            OldConditionTerm::uint64_equal(a.clone(), b.clone())
         }
         other => panic!("unsupported test observation: {other:?}"),
     };
@@ -265,40 +265,40 @@ fn kernel_source_reads_no_environment_variable() {
 
 fn memory_range(
     base: Address,
-    start: impl Into<MachineTerm>,
-    end: impl Into<MachineTerm>,
+    start: impl Into<OldMachineTerm>,
+    end: impl Into<OldMachineTerm>,
 ) -> MemoryRange {
     MemoryRange::new(base, start.into(), end.into())
 }
 
 fn view_memory_fact(
     base: Address,
-    start: impl Into<MachineTerm>,
-    end: impl Into<MachineTerm>,
+    start: impl Into<OldMachineTerm>,
+    end: impl Into<OldMachineTerm>,
 ) -> ResourceFact {
     ResourceFact::view_memory(memory_range(base, start, end))
 }
 
 fn own_memory_fact(
     base: Address,
-    start: impl Into<MachineTerm>,
-    end: impl Into<MachineTerm>,
+    start: impl Into<OldMachineTerm>,
+    end: impl Into<OldMachineTerm>,
 ) -> ResourceFact {
     ResourceFact::own_memory(memory_range(base, start, end))
 }
 
 fn view_memory_context(
     base: Address,
-    start: impl Into<MachineTerm>,
-    end: impl Into<MachineTerm>,
+    start: impl Into<OldMachineTerm>,
+    end: impl Into<OldMachineTerm>,
 ) -> ResourceContext {
     ResourceContext::new().unchecked_with_fact(view_memory_fact(base, start, end))
 }
 
 fn own_memory_context(
     base: Address,
-    start: impl Into<MachineTerm>,
-    end: impl Into<MachineTerm>,
+    start: impl Into<OldMachineTerm>,
+    end: impl Into<OldMachineTerm>,
 ) -> ResourceContext {
     ResourceContext::new().unchecked_with_fact(own_memory_fact(base, start, end))
 }
@@ -317,7 +317,7 @@ fn assert_checkable_derivation(assumptions: &PureFactContext, proposition: &Prop
 fn arc_pointer(offset: i64) -> Address {
     Address {
         base: "arg-memory".into(),
-        offset: AddressOffset::Constant(offset),
+        offset: OldAddressOffset::Constant(offset),
     }
 }
 

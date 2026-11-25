@@ -63,7 +63,7 @@ impl TermRewrite<'_> {
                     match literal(&operand) {
                         Some(value) => imported(
                             *format,
-                            MachineTerm::machine_unary(*format, *operator, value),
+                            OldMachineTerm::machine_unary(*format, *operator, value),
                         ),
                         None => KernelTerm::machine_unary_shared(*format, *operator, operand),
                     }
@@ -89,7 +89,7 @@ fn wide(term: &KernelTerm) -> Option<u64> {
 fn word(value: u64) -> KernelTerm {
     imported(
         MachineIntegerType::UInt64,
-        MachineTerm::uint64_constant(value),
+        OldMachineTerm::uint64_constant(value),
     )
 }
 fn binary_read(
@@ -121,7 +121,7 @@ fn binary_uncached(
     use MachineIntegerType as T;
     let raw = |left, right| KernelTerm::machine_binary_shared(format, op, [left, right]);
     if let (Some(a), Some(b)) = (literal(&left), literal(&right)) {
-        return imported(format, MachineTerm::machine_binary(format, op, a, b));
+        return imported(format, OldMachineTerm::machine_binary(format, op, a, b));
     }
     // Preserve the native constructor's atomic-only unsigned subtraction rule.
     if op == O::Subtract
@@ -131,9 +131,9 @@ fn binary_uncached(
         return imported(
             format,
             if format == T::Int64 {
-                MachineTerm::int64_constant(0)
+                OldMachineTerm::int64_constant(0)
             } else {
-                MachineTerm::uint64_constant(0)
+                OldMachineTerm::uint64_constant(0)
             },
         );
     }
@@ -153,9 +153,9 @@ fn binary_uncached(
             return imported(
                 format,
                 if format == T::Int64 {
-                    MachineTerm::int64_constant(0)
+                    OldMachineTerm::int64_constant(0)
                 } else {
-                    MachineTerm::uint64_constant(0)
+                    OldMachineTerm::uint64_constant(0)
                 },
             );
         }
@@ -232,12 +232,12 @@ mod tests {
         let _session = VerificationSession::enter();
         for format in [MachineIntegerType::Int64, MachineIntegerType::UInt64] {
             let context = PureFactContext::new();
-            let x = MachineTerm::Variable(Variable(989601));
-            let y = MachineTerm::Variable(Variable(989602));
+            let x = OldMachineTerm::Variable(Variable(989601));
+            let y = OldMachineTerm::Variable(Variable(989602));
             let literal = |v: i64| {
                 crate::kernel::machine_integer::range::constant_word(format, &v.into()).unwrap()
             };
-            let binary = |op, a: MachineTerm, b: MachineTerm| MachineTerm::Binary {
+            let binary = |op, a: OldMachineTerm, b: OldMachineTerm| OldMachineTerm::Binary {
                 format,
                 op,
                 left: a.into(),
@@ -303,11 +303,11 @@ mod tests {
         for format in [MachineIntegerType::Int64, MachineIntegerType::UInt64] {
             for observed in [MachineIntegerType::Int64, MachineIntegerType::UInt64] {
                 for value in [
-                    MachineTerm::Variable(Variable(989612)),
-                    MachineTerm::int64_constant(0),
-                    MachineTerm::uint64_constant(1),
+                    OldMachineTerm::Variable(Variable(989612)),
+                    OldMachineTerm::int64_constant(0),
+                    OldMachineTerm::uint64_constant(1),
                 ] {
-                    let native = MachineTerm::Unary {
+                    let native = OldMachineTerm::Unary {
                         format,
                         op: MachineUnaryOp::BitwiseNot,
                         operand: value.into(),
@@ -330,7 +330,7 @@ mod tests {
     fn wide_checking_masks_decide_without_exporting_the_shared_tree() {
         let _session = VerificationSession::enter();
         let format = MachineIntegerType::UInt64;
-        let x = imported(format, MachineTerm::Variable(Variable(989611)));
+        let x = imported(format, OldMachineTerm::Variable(Variable(989611)));
         let raw = |op, a, b| KernelTerm::machine_binary_shared(format, op, [a, b]);
         let masked = raw(MachineBinaryOp::BitwiseAnd, x.clone(), word(1));
         let tagged = raw(MachineBinaryOp::BitwiseOr, masked, word(3));
@@ -340,7 +340,7 @@ mod tests {
         let exports = KernelTermExport::machine_export_count();
         for (value, expected) in [(0, true), (1, false)] {
             let goal =
-                ConditionTerm::integer_equal(observed.clone(), IntegerTerm::constant_i64(value));
+                OldConditionTerm::integer_equal(observed.clone(), IntegerTerm::constant_i64(value));
             assert_eq!(PureFactContext::new().decide(&goal), Some(expected));
         }
         assert_eq!(KernelTermExport::machine_export_count(), exports);

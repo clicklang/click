@@ -9,7 +9,7 @@ fn identity(view: V<'_>) -> Identity {
     match view {
         V::Shared(root) => (true, root.id()),
         // Only a query-local visitation key, never a semantic term identity.
-        V::Legacy(term) => (false, term as *const _ as usize as u64),
+        V::Old(term) => (false, term as *const _ as usize as u64),
     }
 }
 

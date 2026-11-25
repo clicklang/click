@@ -6,7 +6,7 @@ fn token_discovery_follows_a_producer_defined_pointer_read() {
     let memory = crate::kernel::intern_memory(SymbolicMemory::new());
     let field = Address {
         base: "local:field".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let value = Address::symbolic(Variable(976_000));
     let read = Address::loaded_value(&memory, &field);
@@ -40,7 +40,7 @@ fn class_candidates_follow_merges_and_removals_without_leaking_to_siblings() {
     let resources = ResourceContext::new().unchecked_with_fact(held.clone());
     resources.synchronize_memory_equalities(&facts);
     let extended = facts.clone().assume_proposition(Proposition::condition_is(
-        ConditionTerm::pointer_equal(
+        OldConditionTerm::pointer_equal(
             OldPointer::new(base, ProgramType::Int32Pointer),
             OldPointer::new(alias, ProgramType::Int32Pointer),
         ),
@@ -75,7 +75,7 @@ fn definitions_registered_after_publication_select_existing_payloads() {
     let memory = crate::kernel::intern_memory(SymbolicMemory::new());
     let field = Address {
         base: "local:late_field".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let value = Address::symbolic(Variable(976_200));
     let read = Address::loaded_value(&memory, &field);
@@ -111,8 +111,8 @@ fn memory_direct_support_preserves_held_identity_and_authority() {
                 if native {
                     MemoryRange::new_wide(
                         p.clone(),
-                        MachineTerm::uint64_constant(start.into()),
-                        MachineTerm::uint64_constant(end.into()),
+                        OldMachineTerm::uint64_constant(start.into()),
+                        OldMachineTerm::uint64_constant(end.into()),
                         4,
                     )
                 } else {

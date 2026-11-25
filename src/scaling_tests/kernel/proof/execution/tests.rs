@@ -7,14 +7,14 @@ use crate::kernel::{CompareRelation, MachineIntegerType};
 
 #[test]
 fn balanced_unit_sum_domain_uses_only_indexed_related_bounds() {
-    use crate::kernel::ConditionTerm;
-    let a = MachineTerm::Variable(Variable(200));
-    let b = MachineTerm::Variable(Variable(201));
-    let one = MachineTerm::constant(1);
+    use crate::kernel::OldConditionTerm;
+    let a = OldMachineTerm::Variable(Variable(200));
+    let b = OldMachineTerm::Variable(Variable(201));
+    let one = OldMachineTerm::constant(1);
     let goal = Proposition::condition_is(
-        ConditionTerm::signed_add_overflows(
-            MachineTerm::add(a.clone(), one.clone()),
-            MachineTerm::subtract(b.clone(), one),
+        OldConditionTerm::signed_add_overflows(
+            OldMachineTerm::add(a.clone(), one.clone()),
+            OldMachineTerm::subtract(b.clone(), one),
         ),
         false,
     );
@@ -22,22 +22,25 @@ fn balanced_unit_sum_domain_uses_only_indexed_related_bounds() {
     for n in [8, 32, 128, 512] {
         let mut facts = PureFactContext::new()
             .assume_condition(
-                ConditionTerm::signed_add_overflows(a.clone(), b.clone()),
+                OldConditionTerm::signed_add_overflows(a.clone(), b.clone()),
                 false,
             )
             .assume_condition(
-                ConditionTerm::signed_less_than(a.clone(), MachineTerm::constant(i32::MAX as u32)),
+                OldConditionTerm::signed_less_than(
+                    a.clone(),
+                    OldMachineTerm::constant(i32::MAX as u32),
+                ),
                 true,
             )
             .assume_condition(
-                ConditionTerm::signed_greater_equal(b.clone(), MachineTerm::constant(1)),
+                OldConditionTerm::signed_greater_equal(b.clone(), OldMachineTerm::constant(1)),
                 true,
             );
         for i in 0..n {
             facts = facts.assume_condition(
-                ConditionTerm::signed_less_equal(
-                    MachineTerm::Variable(Variable(1000 + i)),
-                    MachineTerm::constant(100),
+                OldConditionTerm::signed_less_equal(
+                    OldMachineTerm::Variable(Variable(1000 + i)),
+                    OldMachineTerm::constant(100),
                 ),
                 true,
             );
@@ -47,7 +50,10 @@ fn balanced_unit_sum_domain_uses_only_indexed_related_bounds() {
         assert!(valid);
         // Removing the old domain must fail without searching the frame.
         let missing_old = PureFactContext::new().assume_condition(
-            ConditionTerm::signed_less_than(a.clone(), MachineTerm::constant(i32::MAX as u32)),
+            OldConditionTerm::signed_less_than(
+                a.clone(),
+                OldMachineTerm::constant(i32::MAX as u32),
+            ),
             true,
         );
         assert!(!missing_old.settles_exactly(&goal));
@@ -63,10 +69,10 @@ fn balanced_unit_sum_domain_uses_only_indexed_related_bounds() {
 
 #[test]
 fn named_cell_check_rejects_removals_and_ignores_unchanged_cells() {
-    use crate::kernel::{Address, AddressBase, AddressOffset, SymbolicMemory};
+    use crate::kernel::{Address, AddressBase, OldAddressOffset, SymbolicMemory};
     let target = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let mut samples = Vec::new();
     for count in [8, 32, 128, 512] {
@@ -75,9 +81,9 @@ fn named_cell_check_rejects_removals_and_ignores_unchanged_cells() {
             before = before.store(
                 Address {
                     base: AddressBase::Heap(index),
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0),
                 },
-                ProgramValue::Int32(MachineTerm::constant(7)),
+                ProgramValue::Int32(OldMachineTerm::constant(7)),
             );
         }
         let name = crate::kernel::canonical_form_of_load(
@@ -115,7 +121,7 @@ fn constructor_partition_transports_pointer_payloads_without_scanning_ambient_fa
         )],
     };
     let alias = Proposition::condition_is(
-        crate::kernel::ConditionTerm::address_equal(payload.clone(), program.clone()),
+        crate::kernel::OldConditionTerm::address_equal(payload.clone(), program.clone()),
         true,
     );
     let env = crate::kernel::ExecutionEnvironment::new();
@@ -135,7 +141,7 @@ fn constructor_partition_transports_pointer_payloads_without_scanning_ambient_fa
             });
         let witness = Address::symbolic(fields[0][0].0);
         let transported = Proposition::condition_is(
-            crate::kernel::ConditionTerm::address_equal(program.clone(), witness),
+            crate::kernel::OldConditionTerm::address_equal(program.clone(), witness),
             true,
         );
         assert!(partition.facts_for_case(0).unwrap().available(&transported));
@@ -260,7 +266,7 @@ fn cached_body_loadability_work_is_linear_in_cache_delta_and_selected_facts() {
         memory.store(
             Address {
                 base: "ambient".into(),
-                offset: crate::kernel::AddressOffset::Constant(i64::from(index) * 4),
+                offset: crate::kernel::OldAddressOffset::Constant(i64::from(index) * 4),
             },
             int32(index),
         )
@@ -271,7 +277,7 @@ fn cached_body_loadability_work_is_linear_in_cache_delta_and_selected_facts() {
             memory.with_seeded_cells(
                 Address {
                     base: format!("cache-{index}").into(),
-                    offset: crate::kernel::AddressOffset::Constant(0),
+                    offset: crate::kernel::OldAddressOffset::Constant(0),
                 },
                 4,
                 crate::kernel::ProgramType::Int32,
@@ -284,9 +290,9 @@ fn cached_body_loadability_work_is_linear_in_cache_delta_and_selected_facts() {
             memory,
             base: Address {
                 base: "body".into(),
-                offset: crate::kernel::AddressOffset::Constant(i64::from(index) * 4),
+                offset: crate::kernel::OldAddressOffset::Constant(i64::from(index) * 4),
             },
-            bytes: (MachineTerm::constant(4)).into(),
+            bytes: (OldMachineTerm::constant(4)).into(),
             wide: false,
         };
         let allowed = (0..size).map(|index| view(before.clone(), index)).collect();
@@ -326,7 +332,7 @@ fn return_materialized_reads_scale_with_the_selected_cells() {
             let fact = Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: pointer,
-                bytes: (MachineTerm::constant(4)).into(),
+                bytes: (OldMachineTerm::constant(4)).into(),
                 wide: false,
             };
             let roots = base.with_fact(fact.clone());
@@ -355,9 +361,9 @@ fn return_proposition_context_validation_scales_with_introductions() {
         let premises: Vec<_> = (0..size)
             .map(|i| {
                 Proposition::condition_is(
-                    crate::kernel::ConditionTerm::equal(
-                        MachineTerm::Variable(Variable(i)),
-                        MachineTerm::constant(i as u32),
+                    crate::kernel::OldConditionTerm::equal(
+                        OldMachineTerm::Variable(Variable(i)),
+                        OldMachineTerm::constant(i as u32),
                     ),
                     true,
                 )
@@ -556,9 +562,9 @@ fn return_instance_folds_are_indexed_and_do_not_copy_sibling_traces() {
             .collect_return_resource_rewrites(&core, size / 2)
             .unwrap();
         let extra = Proposition::condition_is(
-            crate::kernel::ConditionTerm::equal(
-                MachineTerm::Variable(Variable(1000)),
-                MachineTerm::constant(9),
+            crate::kernel::OldConditionTerm::equal(
+                OldMachineTerm::Variable(Variable(1000)),
+                OldMachineTerm::constant(9),
             ),
             true,
         );
@@ -697,7 +703,7 @@ fn instance_rewrite_certificate_rejects_unrelated_state_and_fact_changes() {
         "a rewrite cannot retain scratch field bindings as a handle"
     );
     let forged_facts = facts.with_fact(Proposition::condition_is(
-        crate::kernel::ConditionTerm::Constant(false),
+        crate::kernel::OldConditionTerm::Constant(false),
         true,
     ));
     assert!(
@@ -797,7 +803,7 @@ fn interface_abstraction_work_scales_with_unrelated_locals_and_memory() {
             memory = memory.store(
                 Address {
                     base: AddressBase::ExternalArgument,
-                    offset: AddressOffset::Constant(i64::from(index * 4)),
+                    offset: OldAddressOffset::Constant(i64::from(index * 4)),
                 },
                 int32(index),
             );
@@ -836,18 +842,18 @@ fn interface_abstraction_work_scales_with_unrelated_locals_and_memory() {
 
 #[test]
 fn branch_fact_availability_is_exact_and_independent_of_ambient_history() {
-    use crate::kernel::ConditionTerm;
-    let x = MachineTerm::Variable(Variable(910_000));
+    use crate::kernel::OldConditionTerm;
+    let x = OldMachineTerm::Variable(Variable(910_000));
     let strong = Proposition::condition_is(
-        ConditionTerm::signed_greater_than(x.clone(), MachineTerm::constant(0)),
+        OldConditionTerm::signed_greater_than(x.clone(), OldMachineTerm::constant(0)),
         true,
     );
     let weak = Proposition::condition_is(
-        ConditionTerm::signed_greater_equal(x.clone(), MachineTerm::constant(0)),
+        OldConditionTerm::signed_greater_equal(x.clone(), OldMachineTerm::constant(0)),
         true,
     );
     let reflexive = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(x.clone()),
@@ -860,9 +866,9 @@ fn branch_fact_availability_is_exact_and_independent_of_ambient_history() {
         let mut facts = PureFactStore::default().with_fact(strong.clone());
         for index in 0..size {
             facts = facts.with_fact(Proposition::condition_is(
-                ConditionTerm::signed_less_than(
-                    MachineTerm::Variable(Variable(920_000 + index)),
-                    MachineTerm::constant(100),
+                OldConditionTerm::signed_less_than(
+                    OldMachineTerm::Variable(Variable(920_000 + index)),
+                    OldMachineTerm::constant(100),
                 ),
                 true,
             ));
@@ -896,11 +902,11 @@ fn branch_fact_availability_is_exact_and_independent_of_ambient_history() {
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn interface_aliased_wide_read_preserves_scope_history_and_scales() {
-    use crate::kernel::{ConditionTerm, OldPointer, SpecPoint};
+    use crate::kernel::{OldConditionTerm, OldPointer, SpecPoint};
     let _session = crate::kernel::VerificationSession::enter();
     let owner = Address::symbolic(Variable(951_000));
     let alias = Address::symbolic(Variable(951_001));
-    let value = MachineTerm::uint64_constant(0x1234_5678_9abc_def0);
+    let value = OldMachineTerm::uint64_constant(0x1234_5678_9abc_def0);
     let load = SpecExpression::MemoryLoad {
         point: SpecPoint::Current,
         pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
@@ -921,9 +927,9 @@ fn interface_aliased_wide_read_preserves_scope_history_and_scales() {
         for index in 0..count {
             memory = memory.store(owner.offset_by_bytes((index + 1) * 8), int32(index));
             parent = parent.with_fact(Proposition::condition_is(
-                ConditionTerm::equal(
-                    MachineTerm::Variable(Variable(952_000 + u64::from(index))),
-                    MachineTerm::constant(index),
+                OldConditionTerm::equal(
+                    OldMachineTerm::Variable(Variable(952_000 + u64::from(index))),
+                    OldMachineTerm::constant(index),
                 ),
                 true,
             ));
@@ -931,7 +937,7 @@ fn interface_aliased_wide_read_preserves_scope_history_and_scales() {
         memory = memory.store(owner.clone(), ProgramValue::UInt64(value.clone()));
         let state = ExecutionState::new().with_memory(memory.clone());
         let arm = parent.with_fact(Proposition::condition_is(
-            ConditionTerm::address_equal(alias.clone(), owner.clone()),
+            OldConditionTerm::address_equal(alias.clone(), owner.clone()),
             true,
         ));
         let check = |state: &ExecutionState, facts: &PureFactStore, spec: &SpecProposition| {
@@ -960,7 +966,7 @@ fn interface_aliased_wide_read_preserves_scope_history_and_scales() {
             "logical value evidence does not authorize a C read"
         );
         for (offset, overwrite) in [
-            (0, ProgramValue::UInt64(MachineTerm::uint64_constant(7))),
+            (0, ProgramValue::UInt64(OldMachineTerm::uint64_constant(7))),
             (4, int32(7)),
         ] {
             let address = owner.offset_by_bytes(offset);
@@ -987,9 +993,9 @@ fn interface_read_premises_are_indexed_and_check_the_exact_range() {
         memory,
         base: Address {
             base: block.into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         },
-        bytes: (MachineTerm::constant(width)).into(),
+        bytes: (OldMachineTerm::constant(width)).into(),
         wide: false,
     };
     let goal = readable(memory.clone(), "selected".into(), 4);
@@ -1163,7 +1169,7 @@ fn an_interface_owned_export_normalizes_only_its_neighbors() {
         let pointer = ProgramExpression::Value(ProgramValue::typed_pointer(
             Address {
                 base: AddressBase::ExternalArgument,
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
             ProgramType::Int32Pointer,
         ));
@@ -1235,7 +1241,7 @@ fn an_interface_view_check_ignores_unrelated_owned_ranges() {
         let pointer = ProgramExpression::Value(ProgramValue::typed_pointer(
             Address {
                 base: AddressBase::ExternalArgument,
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
             ProgramType::Int32Pointer,
         ));
@@ -1305,7 +1311,7 @@ fn a_checked_interface_join_does_not_reconstruct_a_calls_havoc() {
         let _session = crate::kernel::VerificationSession::enter();
         let base = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let mut memory = SymbolicMemory::new();
         for index in 0..count {
@@ -1369,12 +1375,12 @@ fn taking_a_constructor_arm_reuses_its_constructed_fact_context() {
         value.node = crate::kernel::AlgebraicTermNode::Constructor {
             variant: "C0".into(),
             fields: vec![crate::kernel::AlgebraicValue::Program(ProgramValue::Int32(
-                MachineTerm::ClickFunctionApplication {
+                OldMachineTerm::ClickFunctionApplication {
                     name: "opaque_payload".into(),
                     arguments: (0..count)
                         .map(|i| {
                             crate::kernel::PureFunctionArgument::Value(ProgramValue::Int32(
-                                MachineTerm::Variable(Variable(8_100_000 + i)),
+                                OldMachineTerm::Variable(Variable(8_100_000 + i)),
                             ))
                         })
                         .collect(),

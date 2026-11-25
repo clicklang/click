@@ -8,22 +8,22 @@ fn unsigned_switch_dispatch_does_not_scan_unrelated_or_alias_facts() {
             let mut costs = Vec::new();
             for size in [0, 32, 128] {
                 let _session = crate::kernel::VerificationSession::enter();
-                let selector = MachineTerm::Variable(Variable(996_001));
+                let selector = OldMachineTerm::Variable(Variable(996_001));
                 let mut facts = PureFactContext::new().assume_condition(
-                    ConditionTerm::uint32_equal(
+                    OldConditionTerm::uint32_equal(
                         selector.clone(),
-                        MachineTerm::uint32_constant(selected),
+                        OldMachineTerm::uint32_constant(selected),
                     ),
                     true,
                 );
                 for index in 0..size {
                     facts = facts.assume_condition(
-                        ConditionTerm::uint32_equal(
-                            MachineTerm::Variable(Variable(997_000 + index)),
+                        OldConditionTerm::uint32_equal(
+                            OldMachineTerm::Variable(Variable(997_000 + index)),
                             if aliases {
                                 selector.clone()
                             } else {
-                                MachineTerm::uint32_constant(index as u32)
+                                OldMachineTerm::uint32_constant(index as u32)
                             },
                         ),
                         true,
@@ -58,7 +58,7 @@ fn unsigned_switch_dispatch_work_tracks_explicit_cases() {
         let facts = PureFactContext::new();
         let (outcome, work) = crate::instrumentation::measure_deterministic_work(|| {
             dispatch(
-                ProgramValue::UInt32(MachineTerm::uint32_constant(u32::MAX)),
+                ProgramValue::UInt32(OldMachineTerm::uint32_constant(u32::MAX)),
                 cases,
                 &facts,
             )

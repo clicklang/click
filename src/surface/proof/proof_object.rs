@@ -1495,14 +1495,14 @@ impl Proof<'_> {
                     crate::kernel::AlgebraicTermNode::Variable(variable) => Some(variable),
                     _ => None,
                 },
-                crate::kernel::arithmetic_c_value!(MachineTerm::Variable(variable)) => {
+                crate::kernel::arithmetic_c_value!(OldMachineTerm::Variable(variable)) => {
                     Some(*variable)
                 }
                 ProgramValue::Pointer(pointer) => {
                     match (&pointer.address().base, &pointer.address().offset) {
                         (
                             crate::kernel::AddressBase::Symbolic(variable),
-                            AddressOffset::Constant(0),
+                            OldAddressOffset::Constant(0),
                         ) => Some(*variable),
                         _ => None,
                     }
@@ -1569,20 +1569,21 @@ fn diagnostic_value_variable(value: &ProgramValue) -> Option<Variable> {
             _ => None,
         },
         crate::kernel::arithmetic_c_value!(term) => match term {
-            MachineTerm::Variable(variable) => Some(*variable),
+            OldMachineTerm::Variable(variable) => Some(*variable),
             // A `Bool` binder (Stage 5), carried as its cast.
-            MachineTerm::BoolCast { value, .. } => match value.as_ref() {
-                crate::kernel::ConditionTerm::Variable(variable) => Some(*variable),
+            OldMachineTerm::BoolCast { value, .. } => match value.as_ref() {
+                crate::kernel::OldConditionTerm::Variable(variable) => Some(*variable),
                 _ => None,
             },
             _ => None,
         },
         ProgramValue::Pointer(pointer) => match &pointer.address().offset {
-            AddressOffset::Variable(variable) => Some(*variable),
+            OldAddressOffset::Variable(variable) => Some(*variable),
             // C pointers to sized elements keep their direct symbolic offset
             // in element units. An added displacement is composite and does
             // not identify the pointer local itself.
-            AddressOffset::Int32Scaled { value, .. } | AddressOffset::Int64Scaled { value, .. } => {
+            OldAddressOffset::Int32Scaled { value, .. }
+            | OldAddressOffset::Int64Scaled { value, .. } => {
                 value.operand_view().variable().copied()
             }
             _ => None,
@@ -1630,10 +1631,10 @@ fn register_call_result_name(
     value: &ProgramValue,
 ) {
     match value.numeric_value() {
-        crate::kernel::arithmetic_c_value!(MachineTerm::Variable(variable)) => {
+        crate::kernel::arithmetic_c_value!(OldMachineTerm::Variable(variable)) => {
             labels.fallback_source_name(*variable, spelling, value.program_type());
         }
-        crate::kernel::arithmetic_c_value!(read @ MachineTerm::MemoryLoad(..)) => {
+        crate::kernel::arithmetic_c_value!(read @ OldMachineTerm::MemoryLoad(..)) => {
             labels.fallback_read_name(read, spelling);
         }
         ProgramValue::Pointer(pointer) => {
@@ -1727,7 +1728,7 @@ fn register_state_names(
             // A `usize` or `uintptr_t` local is a pointer integer; its
             // numeric value is the scalar the local held.
             match value.numeric_value() {
-                crate::kernel::arithmetic_c_value!(MachineTerm::Variable(variable)) => {
+                crate::kernel::arithmetic_c_value!(OldMachineTerm::Variable(variable)) => {
                     // A read of a memory a recorded point names is spelled as
                     // that read, `old(g[0])`, which says where the value came
                     // from.
@@ -1742,7 +1743,7 @@ fn register_state_names(
                         value.program_type(),
                     );
                 }
-                crate::kernel::arithmetic_c_value!(read @ MachineTerm::MemoryLoad(memory, _, _)) => {
+                crate::kernel::arithmetic_c_value!(read @ OldMachineTerm::MemoryLoad(memory, _, _)) => {
                     if !labels.names_memory(memory.memory()) {
                         labels.fallback_read_name(read, format!("at({point}, {name})"));
                     }

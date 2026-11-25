@@ -79,7 +79,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if !matches!(&input.goal(), Some(condition_source_0 @ Proposition::ConditionIs(
                 _,
                 true
-            )) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::IntegerEqual(..), _))))
+            )) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::IntegerEqual(..), _))))
         {
             return Ok(None);
         }
@@ -115,7 +115,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     &eq(d.clone(), d.clone()),
                     "quotient shift divisor",
                 )?;
-                let Some((ConditionTerm::IntegerEqual(value, _), true)) = kernel.condition_native()
+                let Some((OldConditionTerm::IntegerEqual(value, _), true)) = kernel.old_condition()
                 else {
                     continue;
                 };

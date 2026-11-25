@@ -692,7 +692,7 @@ fn c_sequential_profile_rejects_concurrency_builtins() {
 
 #[test]
 fn c_wide_static_initializers_use_checked_wide_values() {
-    use crate::kernel::{MachineTerm, ProgramValue};
+    use crate::kernel::{OldMachineTerm, ProgramValue};
     let unit = syntax::parse_translation_unit_for_source(
         r#"
         static long low = -9223372036854775807L - 1;
@@ -712,40 +712,40 @@ fn c_wide_static_initializers_use_checked_wide_values() {
     for (name, expected) in [
         (
             "low",
-            ProgramValue::Int64(MachineTerm::int64_constant(i64::MIN)),
+            ProgramValue::Int64(OldMachineTerm::int64_constant(i64::MIN)),
         ),
         (
             "high",
-            ProgramValue::UInt64(MachineTerm::uint64_constant(u64::MAX)),
+            ProgramValue::UInt64(OldMachineTerm::uint64_constant(u64::MAX)),
         ),
         (
             "wrapped",
-            ProgramValue::UInt64(MachineTerm::uint64_constant(u64::MAX)),
+            ProgramValue::UInt64(OldMachineTerm::uint64_constant(u64::MAX)),
         ),
         (
             "mixed",
-            ProgramValue::UInt32(MachineTerm::uint32_constant(0)),
+            ProgramValue::UInt32(OldMachineTerm::uint32_constant(0)),
         ),
         (
             "conditional",
-            ProgramValue::UInt32(MachineTerm::uint32_constant(u32::MAX)),
+            ProgramValue::UInt32(OldMachineTerm::uint32_constant(u32::MAX)),
         ),
         (
             "shifted",
-            ProgramValue::UInt32(MachineTerm::uint32_constant(u32::MAX - 1)),
+            ProgramValue::UInt32(OldMachineTerm::uint32_constant(u32::MAX - 1)),
         ),
         (
             "zero",
-            ProgramValue::UInt64(MachineTerm::uint64_constant(0)),
+            ProgramValue::UInt64(OldMachineTerm::uint64_constant(0)),
         ),
         (
             "promoted",
-            ProgramValue::Int64(MachineTerm::int64_constant(i64::from(u32::MAX))),
+            ProgramValue::Int64(OldMachineTerm::int64_constant(i64::from(u32::MAX))),
         ),
         // GCC converts an out-of-range constant modulo 2^64.
         (
             "converted",
-            ProgramValue::Int64(MachineTerm::int64_constant(i64::MIN)),
+            ProgramValue::Int64(OldMachineTerm::int64_constant(i64::MIN)),
         ),
     ] {
         let global = unit.globals[name].to_kernel_global().unwrap();
@@ -1339,7 +1339,7 @@ fn c_pointer_object_volatile_accesses_preserve_pointer_provenance() {
 
     let node_pointer = crate::kernel::Address {
         base: crate::kernel::AddressBase::ExternalArgument,
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let node = crate::kernel::ProgramValue::typed_pointer(
         node_pointer.clone(),
@@ -3557,16 +3557,16 @@ fn c_static_array_parity_rejects_invalid_initializers() {
 
 fn memory_range(
     base: crate::kernel::Address,
-    start: impl Into<crate::kernel::MachineTerm>,
-    end: impl Into<crate::kernel::MachineTerm>,
+    start: impl Into<crate::kernel::OldMachineTerm>,
+    end: impl Into<crate::kernel::OldMachineTerm>,
 ) -> crate::kernel::MemoryRange {
     crate::kernel::MemoryRange::new(base, start.into(), end.into())
 }
 
 fn view_memory_context(
     base: crate::kernel::Address,
-    start: impl Into<crate::kernel::MachineTerm>,
-    end: impl Into<crate::kernel::MachineTerm>,
+    start: impl Into<crate::kernel::OldMachineTerm>,
+    end: impl Into<crate::kernel::OldMachineTerm>,
 ) -> crate::kernel::ResourceContext {
     crate::kernel::ResourceContext::new().unchecked_with_fact(
         crate::kernel::ResourceFact::view_memory(memory_range(base, start, end)),
@@ -3575,8 +3575,8 @@ fn view_memory_context(
 
 fn own_memory_context(
     base: crate::kernel::Address,
-    start: impl Into<crate::kernel::MachineTerm>,
-    end: impl Into<crate::kernel::MachineTerm>,
+    start: impl Into<crate::kernel::OldMachineTerm>,
+    end: impl Into<crate::kernel::OldMachineTerm>,
 ) -> crate::kernel::ResourceContext {
     crate::kernel::ResourceContext::new().unchecked_with_fact(
         crate::kernel::ResourceFact::own_memory(memory_range(base, start, end)),
@@ -5527,7 +5527,7 @@ fn c_unary_minus_preserves_signed_overflow_semantics() {
             .find(|parameter| parameter.name() == "value")
             .unwrap()
             .binding_name(),
-        crate::kernel::int32(crate::kernel::MachineTerm::constant(0x8000_0000)),
+        crate::kernel::int32(crate::kernel::OldMachineTerm::constant(0x8000_0000)),
     );
     let theorem = crate::kernel::prove_symbolic_program_execution(
         state.clone(),
@@ -5690,7 +5690,7 @@ fn c_embedded_struct_field_access_lowers_to_nested_scalar_offset() {
     .to_kernel_function();
     let packet = crate::kernel::Address {
         base: "packet".into(),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let resources = own_memory_context(packet.clone(), 0, 4);
     let state = crate::kernel::ExecutionState::new()
@@ -5707,7 +5707,7 @@ fn c_embedded_struct_field_access_lowers_to_nested_scalar_offset() {
                 .store(
                     crate::kernel::Address {
                         base: "packet".into(),
-                        offset: crate::kernel::AddressOffset::Constant(4),
+                        offset: crate::kernel::OldAddressOffset::Constant(4),
                     },
                     crate::kernel::int32(7),
                 ),
@@ -6093,7 +6093,7 @@ fn c_tagged_union_member_addresses_preserve_member_type_and_offset() {
         .to_kernel_function();
     let packet = crate::kernel::Address {
         base: "packet".into(),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let theorem = crate::kernel::prove_symbolic_program_function_execution(
         crate::kernel::ExecutionState::new().with_memory(
@@ -6289,12 +6289,12 @@ fn c_enum_field_comparison_lowers_named_constant() {
     .to_kernel_function();
     let packet = crate::kernel::Address {
         base: "packet".into(),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let resources = own_memory_context(packet.clone(), 1, 2);
     let state_pointer = crate::kernel::Address {
         base: "packet".into(),
-        offset: crate::kernel::AddressOffset::Constant(4),
+        offset: crate::kernel::OldAddressOffset::Constant(4),
     };
     let state = crate::kernel::ExecutionState::new()
         .with_memory(
@@ -6742,11 +6742,11 @@ fn c_chained_field_load_executes_through_typed_pointer_memory() {
     .expect("chained struct-pointer fields should parse");
     let root = crate::kernel::Address {
         base: "root".into(),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let leaf = crate::kernel::Address {
         base: "leaf".into(),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let memory = crate::kernel::SymbolicMemory::new()
         .store(
@@ -6895,8 +6895,8 @@ fn c_syntax_targets_kernel_max_body() {
 
     let a = crate::kernel::Variable(30);
     let b = crate::kernel::Variable(31);
-    let a_bits = crate::kernel::MachineTerm::Variable(a);
-    let b_bits = crate::kernel::MachineTerm::Variable(b);
+    let a_bits = crate::kernel::OldMachineTerm::Variable(a);
+    let b_bits = crate::kernel::OldMachineTerm::Variable(b);
     let condition = crate::kernel::program_max_lt_condition(a_bits.clone(), b_bits.clone());
     let state = crate::kernel::ExecutionState::new()
         .with_local(
@@ -6924,7 +6924,7 @@ fn c_syntax_targets_kernel_max_body() {
                 state: Box::new(state.clone()),
                 statement: Box::new(statement),
                 outcome: crate::kernel::StatementOutcome::Return {
-                    value: crate::kernel::int32(crate::kernel::MachineTerm::Variable(b)).into(),
+                    value: crate::kernel::int32(crate::kernel::OldMachineTerm::Variable(b)).into(),
                     state: Box::new(state),
                 },
             }),
@@ -7088,7 +7088,7 @@ fn c_syntax_targets_kernel_store_and_load() {
 
     let pointer = crate::kernel::Address {
         base: "block".into(),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let statement = function.body_kernel_statement();
     let resources = own_memory_context(pointer.clone(), 0, 1);
@@ -7160,7 +7160,7 @@ fn c_syntax_targets_kernel_struct_field_load() {
 
     let pointer = crate::kernel::Address {
         base: "object".into(),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let statement = function.body_kernel_statement();
     let memory = crate::kernel::SymbolicMemory::new()
@@ -7215,9 +7215,9 @@ fn c_syntax_targets_kernel_float64_struct_field_load() {
 
     let pointer = crate::kernel::Address {
         base: "object".into(),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
-    let value = crate::kernel::float64(crate::kernel::MachineTerm::uint64_constant(
+    let value = crate::kernel::float64(crate::kernel::OldMachineTerm::uint64_constant(
         1.25f64.to_bits(),
     ));
     let statement = function.body_kernel_statement();
@@ -7275,7 +7275,7 @@ fn c_syntax_targets_kernel_struct_field_store() {
 
     let pointer = crate::kernel::Address {
         base: "object".into(),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let resources = own_memory_context(pointer.clone(), 0, 1);
     let state = crate::kernel::ExecutionState::new()
@@ -7357,11 +7357,11 @@ fn c_syntax_targets_kernel_multifield_struct_offset_load() {
 
     let base = crate::kernel::Address {
         base: "pair".into(),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let second = crate::kernel::Address {
         base: "pair".into(),
-        offset: crate::kernel::AddressOffset::Constant(4),
+        offset: crate::kernel::OldAddressOffset::Constant(4),
     };
     let memory = crate::kernel::SymbolicMemory::new()
         .with_classed_block("pair".into(), function.parameters()[0].pointee_class(), 8)
@@ -7416,15 +7416,15 @@ fn c_syntax_targets_kernel_struct_pointer_field_roundtrip() {
 
     let owner = crate::kernel::Address {
         base: "owner".into(),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let owner_data = crate::kernel::Address {
         base: "owner".into(),
-        offset: crate::kernel::AddressOffset::Constant(8),
+        offset: crate::kernel::OldAddressOffset::Constant(8),
     };
     let data = crate::kernel::Address {
         base: "data".into(),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let resources = crate::kernel::ResourceContext::new().unchecked_with_facts(vec![
         crate::kernel::ResourceFact::own_memory(memory_range(owner.clone(), 0, 4)),
@@ -7491,7 +7491,7 @@ fn c_syntax_targets_kernel_store_and_load_function_call() {
 
     let pointer = crate::kernel::Address {
         base: "block".into(),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let resources = own_memory_context(pointer.clone(), 0, 1);
     let state = crate::kernel::ExecutionState::new()
@@ -7542,11 +7542,11 @@ fn c_syntax_targets_kernel_pointer_addition_load() {
 
     let base = crate::kernel::Address {
         base: "block".into(),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let second = crate::kernel::Address {
         base: "block".into(),
-        offset: crate::kernel::AddressOffset::Constant(4),
+        offset: crate::kernel::OldAddressOffset::Constant(4),
     };
     let memory = crate::kernel::SymbolicMemory::new()
         .with_block("block", 16)
@@ -7592,11 +7592,11 @@ fn c_syntax_targets_kernel_array_index_load() {
 
     let base = crate::kernel::Address {
         base: "block".into(),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let second = crate::kernel::Address {
         base: "block".into(),
-        offset: crate::kernel::AddressOffset::Constant(4),
+        offset: crate::kernel::OldAddressOffset::Constant(4),
     };
     let memory = crate::kernel::SymbolicMemory::new()
         .with_block("block", 16)
@@ -7643,11 +7643,11 @@ fn c_syntax_targets_kernel_array_index_store() {
 
     let base = crate::kernel::Address {
         base: "block".into(),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let second = crate::kernel::Address {
         base: "block".into(),
-        offset: crate::kernel::AddressOffset::Constant(4),
+        offset: crate::kernel::OldAddressOffset::Constant(4),
     };
     let memory = crate::kernel::SymbolicMemory::new().with_block("block", 16);
     let resources = own_memory_context(base.clone(), 1, 2);
@@ -7700,16 +7700,16 @@ fn c_syntax_targets_kernel_address_of_array_index() {
 
     let base = crate::kernel::Address {
         base: "block".into(),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let second = crate::kernel::Address {
         base: "block".into(),
-        offset: crate::kernel::AddressOffset::Constant(4),
+        offset: crate::kernel::OldAddressOffset::Constant(4),
     };
     let local_q_block = automatic_test_block(function.name(), 0);
     let local_q = crate::kernel::Address {
         base: local_q_block.clone(),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let memory = crate::kernel::SymbolicMemory::new()
         .with_block("block", 16)
@@ -7777,7 +7777,7 @@ fn c_syntax_targets_kernel_pointer_null_equality() {
 
     let null = crate::kernel::Address {
         base: "null".into(),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let state = crate::kernel::ExecutionState::new();
     let arguments = vec![crate::kernel::program_expression::pointer_value(null)];
@@ -7821,11 +7821,11 @@ fn c_syntax_targets_kernel_logical_short_circuiting() {
 
     let null = crate::kernel::Address {
         base: "null".into(),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let pointer = crate::kernel::Address {
         base: "block".into(),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let cases = [
         (
@@ -7903,7 +7903,7 @@ fn c_syntax_targets_kernel_unary_not() {
 
     let pointer = crate::kernel::Address {
         base: "block".into(),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let state = crate::kernel::ExecutionState::new();
     let arguments = vec![crate::kernel::program_expression::pointer_value(pointer)];
@@ -7946,7 +7946,7 @@ fn c_syntax_targets_kernel_local_address_of() {
     let local_x_block = automatic_test_block(function.name(), 0);
     let local_pointer = crate::kernel::Address {
         base: local_x_block.clone(),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let state = crate::kernel::ExecutionState::new();
     let final_state = crate::kernel::ExecutionState::new().with_memory(
@@ -8000,11 +8000,11 @@ fn c_syntax_targets_kernel_local_array_storage() {
     let local_a_block = automatic_test_block(function.name(), 0);
     let a0 = crate::kernel::Address {
         base: local_a_block.clone(),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let a1 = crate::kernel::Address {
         base: local_a_block.clone(),
-        offset: crate::kernel::AddressOffset::Constant(4),
+        offset: crate::kernel::OldAddressOffset::Constant(4),
     };
     let state = crate::kernel::ExecutionState::new();
     let final_state = crate::kernel::ExecutionState::new().with_memory(
@@ -8057,15 +8057,15 @@ fn c_syntax_lowers_local_array_initializer_stores() {
     let local_a_block = automatic_test_block(function.name(), 0);
     let a0 = crate::kernel::Address {
         base: local_a_block.clone(),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let a1 = crate::kernel::Address {
         base: local_a_block.clone(),
-        offset: crate::kernel::AddressOffset::Constant(4),
+        offset: crate::kernel::OldAddressOffset::Constant(4),
     };
     let a2 = crate::kernel::Address {
         base: local_a_block.clone(),
-        offset: crate::kernel::AddressOffset::Constant(8),
+        offset: crate::kernel::OldAddressOffset::Constant(8),
     };
     let state = crate::kernel::ExecutionState::new();
     let final_state = crate::kernel::ExecutionState::new().with_memory(
@@ -8121,11 +8121,11 @@ fn c_syntax_flattens_multidimensional_local_array_indices() {
     let local_values_block = automatic_test_block(function.name(), 0);
     let first = crate::kernel::Address {
         base: local_values_block.clone(),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let last = crate::kernel::Address {
         base: local_values_block.clone(),
-        offset: crate::kernel::AddressOffset::Constant(20),
+        offset: crate::kernel::OldAddressOffset::Constant(20),
     };
     let state = crate::kernel::ExecutionState::new();
     let final_state = crate::kernel::ExecutionState::new().with_memory(
@@ -8183,42 +8183,42 @@ fn c_syntax_lowers_nested_multidimensional_array_initializers() {
             .store(
                 crate::kernel::Address {
                     base: local_values_block.clone(),
-                    offset: crate::kernel::AddressOffset::Constant(0),
+                    offset: crate::kernel::OldAddressOffset::Constant(0),
                 },
                 crate::kernel::int32(1),
             )
             .store(
                 crate::kernel::Address {
                     base: local_values_block.clone(),
-                    offset: crate::kernel::AddressOffset::Constant(4),
+                    offset: crate::kernel::OldAddressOffset::Constant(4),
                 },
                 crate::kernel::int32(2),
             )
             .store(
                 crate::kernel::Address {
                     base: local_values_block.clone(),
-                    offset: crate::kernel::AddressOffset::Constant(8),
+                    offset: crate::kernel::OldAddressOffset::Constant(8),
                 },
                 crate::kernel::int32(3),
             )
             .store(
                 crate::kernel::Address {
                     base: local_values_block.clone(),
-                    offset: crate::kernel::AddressOffset::Constant(12),
+                    offset: crate::kernel::OldAddressOffset::Constant(12),
                 },
                 crate::kernel::int32(4),
             )
             .store(
                 crate::kernel::Address {
                     base: local_values_block.clone(),
-                    offset: crate::kernel::AddressOffset::Constant(16),
+                    offset: crate::kernel::OldAddressOffset::Constant(16),
                 },
                 crate::kernel::int32(5),
             )
             .store(
                 crate::kernel::Address {
                     base: local_values_block.clone(),
-                    offset: crate::kernel::AddressOffset::Constant(20),
+                    offset: crate::kernel::OldAddressOffset::Constant(20),
                 },
                 crate::kernel::int32(6),
             ),
@@ -8274,11 +8274,11 @@ fn c_syntax_lowers_local_struct_array_fields_with_abi_stride() {
     let local_items_block = automatic_test_block(function.name(), 0);
     let tag = crate::kernel::Address {
         base: local_items_block.clone(),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let value = crate::kernel::Address {
         base: local_items_block.clone(),
-        offset: crate::kernel::AddressOffset::Constant(12),
+        offset: crate::kernel::OldAddressOffset::Constant(12),
     };
     let state = crate::kernel::ExecutionState::new();
     let final_state = crate::kernel::ExecutionState::new().with_memory(
@@ -8354,70 +8354,70 @@ fn c_syntax_lowers_local_struct_array_initializers() {
             .store(
                 crate::kernel::Address {
                     base: local_items_block.clone(),
-                    offset: crate::kernel::AddressOffset::Constant(0),
+                    offset: crate::kernel::OldAddressOffset::Constant(0),
                 },
                 crate::kernel::uint8(1),
             )
             .store(
                 crate::kernel::Address {
                     base: local_items_block.clone(),
-                    offset: crate::kernel::AddressOffset::Constant(4),
+                    offset: crate::kernel::OldAddressOffset::Constant(4),
                 },
                 crate::kernel::int32(10),
             )
             .store(
                 crate::kernel::Address {
                     base: local_items_block.clone(),
-                    offset: crate::kernel::AddressOffset::Constant(8),
+                    offset: crate::kernel::OldAddressOffset::Constant(8),
                 },
                 crate::kernel::uint8(1),
             )
             .store(
                 crate::kernel::Address {
                     base: local_items_block.clone(),
-                    offset: crate::kernel::AddressOffset::Constant(12),
+                    offset: crate::kernel::OldAddressOffset::Constant(12),
                 },
                 crate::kernel::int32(2),
             )
             .store(
                 crate::kernel::Address {
                     base: local_items_block.clone(),
-                    offset: crate::kernel::AddressOffset::Constant(16),
+                    offset: crate::kernel::OldAddressOffset::Constant(16),
                 },
                 crate::kernel::int32(0),
             )
             .store(
                 crate::kernel::Address {
                     base: local_items_block.clone(),
-                    offset: crate::kernel::AddressOffset::Constant(20),
+                    offset: crate::kernel::OldAddressOffset::Constant(20),
                 },
                 crate::kernel::uint8(2),
             )
             .store(
                 crate::kernel::Address {
                     base: local_items_block.clone(),
-                    offset: crate::kernel::AddressOffset::Constant(24),
+                    offset: crate::kernel::OldAddressOffset::Constant(24),
                 },
                 crate::kernel::int32(20),
             )
             .store(
                 crate::kernel::Address {
                     base: local_items_block.clone(),
-                    offset: crate::kernel::AddressOffset::Constant(28),
+                    offset: crate::kernel::OldAddressOffset::Constant(28),
                 },
                 crate::kernel::uint8(0),
             )
             .store(
                 crate::kernel::Address {
                     base: local_items_block.clone(),
-                    offset: crate::kernel::AddressOffset::Constant(32),
+                    offset: crate::kernel::OldAddressOffset::Constant(32),
                 },
                 crate::kernel::int32(3),
             )
             .store(
                 crate::kernel::Address {
                     base: local_items_block.clone(),
-                    offset: crate::kernel::AddressOffset::Constant(36),
+                    offset: crate::kernel::OldAddressOffset::Constant(36),
                 },
                 crate::kernel::int32(4),
             ),
@@ -8538,11 +8538,11 @@ fn c_syntax_local_array_decays_to_pointer_argument() {
     let local_result_block = automatic_test_block(caller.name(), 1);
     let a0 = crate::kernel::Address {
         base: local_a_block.clone(),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let result_pointer = crate::kernel::Address {
         base: local_result_block.clone(),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let environment =
         crate::kernel::ExecutionEnvironment::new().with_function((read_first).with_inline_body());
@@ -8779,7 +8779,7 @@ fn c_wide_scalar_struct_fields_execute_at_declared_widths() {
     .to_kernel_function();
     let packet = crate::kernel::Address {
         base: "packet".into(),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let resources = own_memory_context(packet.clone(), 0, 8);
     let state = crate::kernel::ExecutionState::new()
@@ -8800,23 +8800,23 @@ fn c_wide_scalar_struct_fields_execute_at_declared_widths() {
                 .store(
                     crate::kernel::Address {
                         base: "packet".into(),
-                        offset: crate::kernel::AddressOffset::Constant(4),
+                        offset: crate::kernel::OldAddressOffset::Constant(4),
                     },
                     crate::kernel::uint32(7),
                 )
                 .store(
                     crate::kernel::Address {
                         base: "packet".into(),
-                        offset: crate::kernel::AddressOffset::Constant(8),
+                        offset: crate::kernel::OldAddressOffset::Constant(8),
                     },
-                    crate::kernel::int64(crate::kernel::MachineTerm::int64_constant(-9)),
+                    crate::kernel::int64(crate::kernel::OldMachineTerm::int64_constant(-9)),
                 )
                 .store(
                     crate::kernel::Address {
                         base: "packet".into(),
-                        offset: crate::kernel::AddressOffset::Constant(16),
+                        offset: crate::kernel::OldAddressOffset::Constant(16),
                     },
-                    crate::kernel::uint64(crate::kernel::MachineTerm::uint64_constant(11)),
+                    crate::kernel::uint64(crate::kernel::OldMachineTerm::uint64_constant(11)),
                 ),
         )
         .with_resource_context(resources);
@@ -8845,7 +8845,7 @@ fn c_wide_scalar_struct_fields_execute_at_declared_widths() {
             function: Box::new(function),
             arguments,
             outcome: crate::kernel::FunctionOutcome::Return {
-                value: crate::kernel::uint64(crate::kernel::MachineTerm::uint64_constant(11))
+                value: crate::kernel::uint64(crate::kernel::OldMachineTerm::uint64_constant(11))
                     .into(),
                 state: Box::new(final_state),
             },
@@ -9326,11 +9326,11 @@ fn c_struct_value_pointer_parameter_and_return_copy_pointee_identity() {
 
     let packet = crate::kernel::Address {
         base: "packet".into(),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let data = crate::kernel::Address {
         base: "data".into(),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let state = crate::kernel::ExecutionState::new().with_memory(
         crate::kernel::SymbolicMemory::new()
@@ -9700,7 +9700,7 @@ fn c_struct_inline_scalar_array_field_supports_indexed_load_and_store() {
     .to_kernel_function();
     let packet = crate::kernel::Address {
         base: "packet".into(),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let resources = own_memory_context(packet.clone(), 0, 4);
     let state = crate::kernel::ExecutionState::new()
@@ -9721,7 +9721,7 @@ fn c_struct_inline_scalar_array_field_supports_indexed_load_and_store() {
                 .store(
                     crate::kernel::Address {
                         base: "packet".into(),
-                        offset: crate::kernel::AddressOffset::Constant(2),
+                        offset: crate::kernel::OldAddressOffset::Constant(2),
                     },
                     crate::kernel::uint8(7),
                 ),
@@ -9769,7 +9769,7 @@ fn c_struct_multidimensional_scalar_array_field_flattens_row_major() {
     .to_kernel_function();
     let packet = crate::kernel::Address {
         base: "packet".into(),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let resources = own_memory_context(packet.clone(), 0, 10);
     let state = crate::kernel::ExecutionState::new()
@@ -9790,7 +9790,7 @@ fn c_struct_multidimensional_scalar_array_field_flattens_row_major() {
                 .store(
                     crate::kernel::Address {
                         base: "packet".into(),
-                        offset: crate::kernel::AddressOffset::Constant(24),
+                        offset: crate::kernel::OldAddressOffset::Constant(24),
                     },
                     crate::kernel::int32(7),
                 ),
@@ -9909,16 +9909,16 @@ fn c_struct_scalar_array_element_address_executes_at_element_width() {
     .to_kernel_function();
     let packet = crate::kernel::Address {
         base: "packet".into(),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let value = crate::kernel::Address {
         base: "packet".into(),
-        offset: crate::kernel::AddressOffset::Constant(24),
+        offset: crate::kernel::OldAddressOffset::Constant(24),
     };
     let local_value_address_base = automatic_test_block(function.name(), 0);
     let local_value_pointer = crate::kernel::Address {
         base: local_value_address_base.clone(),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let resources = own_memory_context(packet.clone(), 0, 10);
     let state = crate::kernel::ExecutionState::new()
@@ -9994,16 +9994,16 @@ fn c_struct_byte_array_element_address_executes_at_byte_width() {
     .to_kernel_function();
     let packet = crate::kernel::Address {
         base: "packet".into(),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let byte = crate::kernel::Address {
         base: "packet".into(),
-        offset: crate::kernel::AddressOffset::Constant(6),
+        offset: crate::kernel::OldAddressOffset::Constant(6),
     };
     let local_byte_address_base = automatic_test_block(function.name(), 0);
     let local_byte_pointer = crate::kernel::Address {
         base: local_byte_address_base.clone(),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let resources = own_memory_context(packet.clone(), 0, 2);
     let state = crate::kernel::ExecutionState::new()
@@ -10119,7 +10119,7 @@ fn c_embedded_struct_array_field_preserves_stride_and_accesses_leaf() {
     let function = function.to_kernel_function();
     let packet = crate::kernel::Address {
         base: "packet".into(),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let resources = own_memory_context(packet.clone(), 0, 6);
     let state = crate::kernel::ExecutionState::new()
@@ -10140,7 +10140,7 @@ fn c_embedded_struct_array_field_preserves_stride_and_accesses_leaf() {
                 .store(
                     crate::kernel::Address {
                         base: "packet".into(),
-                        offset: crate::kernel::AddressOffset::Constant(12),
+                        offset: crate::kernel::OldAddressOffset::Constant(12),
                     },
                     crate::kernel::int32(7),
                 ),
@@ -10232,7 +10232,7 @@ fn c_multidimensional_embedded_struct_array_preserves_row_major_stride() {
     let function = function.to_kernel_function();
     let packet = crate::kernel::Address {
         base: "packet".into(),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let resources = own_memory_context(packet.clone(), 0, 10);
     let state = crate::kernel::ExecutionState::new()
@@ -10253,7 +10253,7 @@ fn c_multidimensional_embedded_struct_array_preserves_row_major_stride() {
                 .store(
                     crate::kernel::Address {
                         base: "packet".into(),
-                        offset: crate::kernel::AddressOffset::Constant(28),
+                        offset: crate::kernel::OldAddressOffset::Constant(28),
                     },
                     crate::kernel::int32(7),
                 ),
@@ -10685,7 +10685,7 @@ fn c_syntax_rejects_assignment_to_local_array_object() {
 
     let pointer = crate::kernel::Address {
         base: "block".into(),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let state = crate::kernel::ExecutionState::new();
     let arguments = vec![crate::kernel::program_expression::pointer_value(pointer)];
@@ -11021,7 +11021,7 @@ fn c_syntax_targets_kernel_known_function_call_assignment() {
     let local_result_block = automatic_test_block(caller.name(), 0);
     let local_pointer = crate::kernel::Address {
         base: local_result_block.clone(),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let environment =
         crate::kernel::ExecutionEnvironment::new().with_function((increment).with_inline_body());
@@ -11110,7 +11110,7 @@ fn c_syntax_targets_kernel_float_argument_conversion() {
     };
     assert_eq!(
         value,
-        crate::kernel::MachineTerm::uint64_constant(1.0f64.to_bits())
+        crate::kernel::OldMachineTerm::uint64_constant(1.0f64.to_bits())
     );
 }
 
@@ -11373,7 +11373,7 @@ fn c_assignment_expression_short_circuits_a_guard_read() {
     .to_kernel_function();
     let null = crate::kernel::Address {
         base: "null".into(),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
 
     let theorem = crate::kernel::prove_symbolic_program_function_execution(
@@ -11457,7 +11457,7 @@ fn c_assignment_expression_loop_guard_reexecutes_once_after_continue() {
     assert_eq!(value.native().as_ref(), &crate::kernel::int32(3));
     let calls = crate::kernel::Address {
         base: "local:calls".into(),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     assert_eq!(
         state.memory().load(&calls),
@@ -11596,7 +11596,7 @@ fn c_struct_union_fields_are_copyable_by_value_without_flattening_overlap() {
 
     let source = crate::kernel::Address {
         base: "packet".into(),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let state = crate::kernel::ExecutionState::new().with_memory(
         crate::kernel::SymbolicMemory::new()
@@ -11841,14 +11841,14 @@ fn c_function_pointers_preserve_signature_and_dispatch_callback() {
                                 .store(
                                     crate::kernel::Address {
                                         base: local_lifetime_0_result_block.clone(),
-                                        offset: crate::kernel::AddressOffset::Constant(0),
+                                        offset: crate::kernel::OldAddressOffset::Constant(0),
                                     },
                                     crate::kernel::int32(38),
                                 )
                                 .store(
                                     crate::kernel::Address {
                                         base: local_result_block.clone(),
-                                        offset: crate::kernel::AddressOffset::Constant(0),
+                                        offset: crate::kernel::OldAddressOffset::Constant(0),
                                     },
                                     crate::kernel::int32(38),
                                 )
@@ -12038,7 +12038,7 @@ fn c_struct_function_pointer_fields_load_and_dispatch_known_targets() {
 
     let table = crate::kernel::Address {
         base: "table".into(),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let callback = crate::kernel::ProgramValue::typed_pointer(
         crate::kernel::Address::function("compare"),
@@ -12114,7 +12114,7 @@ fn c_struct_function_pointer_fields_support_direct_calls() {
         .to_kernel_function();
     let table = crate::kernel::Address {
         base: "table".into(),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let callback = crate::kernel::ProgramValue::typed_pointer(
         crate::kernel::Address::function("compare"),
@@ -12367,24 +12367,24 @@ fn c_memory_safety_demo_fill_three_ints() {
 
     let base = crate::kernel::Address {
         base: "buf".into(),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let first = crate::kernel::Address {
         base: "buf".into(),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let second = crate::kernel::Address {
         base: "buf".into(),
-        offset: crate::kernel::AddressOffset::Constant(4),
+        offset: crate::kernel::OldAddressOffset::Constant(4),
     };
     let third = crate::kernel::Address {
         base: "buf".into(),
-        offset: crate::kernel::AddressOffset::Constant(8),
+        offset: crate::kernel::OldAddressOffset::Constant(8),
     };
     let local_i_block = automatic_test_block(function.name(), 0);
     let local_i = crate::kernel::Address {
         base: local_i_block.clone(),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let initial_memory = crate::kernel::SymbolicMemory::new().with_block("buf", 12);
     let resources = own_memory_context(base.clone(), 0, 3);
@@ -12709,7 +12709,7 @@ fn c_floating_point_storage_initializers_cover_static_local_arrays_and_calloc() 
     );
     assert_eq!(
         load.to_kernel_function().static_variables()[0].initial_value(),
-        &crate::kernel::ProgramValue::Float32(crate::kernel::MachineTerm::constant(
+        &crate::kernel::ProgramValue::Float32(crate::kernel::OldMachineTerm::constant(
             2.5f32.to_bits(),
         ))
     );
@@ -12750,11 +12750,11 @@ fn c_struct_pointer_indirection_updates_one_pointer_cell() {
 
     let root = crate::kernel::Address {
         base: "root".into(),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let replacement = crate::kernel::Address {
         base: "replacement".into(),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let left = root.offset_by_bytes(8);
     let resources = own_memory_context(root.clone(), 2, 3).unchecked_with_fact(
@@ -12793,7 +12793,7 @@ fn c_struct_pointer_indirection_updates_one_pointer_cell() {
                 .store(
                     crate::kernel::Address {
                         base: local_link_block.clone(),
-                        offset: crate::kernel::AddressOffset::Constant(0),
+                        offset: crate::kernel::OldAddressOffset::Constant(0),
                     },
                     crate::kernel::ProgramValue::typed_pointer(
                         root.offset_by_bytes(8),
@@ -13105,7 +13105,7 @@ fn c_bool_header_constants_pointer_conversion_and_callbacks_are_typed() {
         vec![crate::kernel::program_expression::pointer_value(
             crate::kernel::Address {
                 base: crate::kernel::AddressBase::Concrete("null".to_string()),
-                offset: crate::kernel::AddressOffset::Constant(0),
+                offset: crate::kernel::OldAddressOffset::Constant(0),
             },
         )],
         Default::default(),
@@ -13129,7 +13129,7 @@ fn c_bool_header_constants_pointer_conversion_and_callbacks_are_typed() {
         vec![crate::kernel::program_expression::pointer_value(
             crate::kernel::Address {
                 base: crate::kernel::AddressBase::Concrete("object".to_string()),
-                offset: crate::kernel::AddressOffset::Constant(0),
+                offset: crate::kernel::OldAddressOffset::Constant(0),
             },
         )],
         Default::default(),
@@ -13431,7 +13431,7 @@ fn signed_byte_storage_and_pointer_identity() {
 /// automatic initializer, an assignment, a cast, a return, and an argument.
 #[test]
 fn c_out_of_range_integer_constants_convert_modulo_the_destination_width() {
-    use crate::kernel::{MachineTerm, ProgramValue};
+    use crate::kernel::{OldMachineTerm, ProgramValue};
     let unit = syntax::parse_translation_unit_for_source(
         "signed char high = 128; signed char low = -129; unsigned char negative = -56;\n\
          unsigned char wide = 300; short big = 40000; int value = (unsigned char) 256;",
@@ -13445,7 +13445,7 @@ fn c_out_of_range_integer_constants_convert_modulo_the_destination_width() {
         ("negative", crate::kernel::uint8(200)),
         ("wide", crate::kernel::uint8(44)),
         ("big", crate::kernel::int16(-25536i32 as u32)),
-        ("value", ProgramValue::Int32(MachineTerm::constant(0))),
+        ("value", ProgramValue::Int32(OldMachineTerm::constant(0))),
     ] {
         let global = unit.globals[name].to_kernel_global().unwrap();
         assert_eq!(global.initial_value(), &expected, "{name}");
@@ -14620,7 +14620,7 @@ fn c_long_double_prototypes_are_unusable_and_keep_type_positions() {
 // updates as statements, including full-width unsigned wrap.
 #[test]
 fn c_scalar_updates_preserve_old_new_values_and_loop_exit_updates() {
-    use crate::kernel::{ExecutionState, FunctionOutcome, MachineTerm, Proposition};
+    use crate::kernel::{ExecutionState, FunctionOutcome, OldMachineTerm, Proposition};
     for (source, expected) in [
         (
             "int32 run() { int32 n = 5; return n++; }",
@@ -14636,11 +14636,11 @@ fn c_scalar_updates_preserve_old_new_values_and_loop_exit_updates() {
         ),
         (
             "uint64 run() { uint64 n = 0; uint64 before = n--; return n; }",
-            crate::kernel::uint64(MachineTerm::uint64_constant(u64::MAX)),
+            crate::kernel::uint64(OldMachineTerm::uint64_constant(u64::MAX)),
         ),
         (
             "uint64 run() { uint64 n = 0; while (n--) { } return n; }",
-            crate::kernel::uint64(MachineTerm::uint64_constant(u64::MAX)),
+            crate::kernel::uint64(OldMachineTerm::uint64_constant(u64::MAX)),
         ),
         (
             "int32 run() { uint64 n = 2; int32 count = 0; while (n--) { count++; } return count; }",

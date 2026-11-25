@@ -4954,9 +4954,9 @@ pub(in crate::surface) fn contract_expression_as_program_expression_resolving_fi
             Some(ProgramExpression::Value(if value <= i32::MAX as u64 {
                 int32(value as u32)
             } else if value <= i64::MAX as u64 {
-                ProgramValue::Int64(MachineTerm::int64_constant(value as i64))
+                ProgramValue::Int64(OldMachineTerm::int64_constant(value as i64))
             } else {
-                ProgramValue::UInt64(MachineTerm::uint64_constant(value))
+                ProgramValue::UInt64(OldMachineTerm::uint64_constant(value))
             }))
         }
         SyntaxTerm::Negate(inner) => {

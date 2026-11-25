@@ -209,7 +209,7 @@ mod tests {
         let value = OldPointer::new(
             Address {
                 base: AddressBase::Concrete("global:table".into()),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
             ProgramType::Int32Pointer,
         );

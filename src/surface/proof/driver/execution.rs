@@ -1197,22 +1197,12 @@ fn apply_frontier_source_tactic<'a>(
     } else if let ProofTactic::ApplyTheorem(application) = &indexed.tactic {
         apply_written_theorem(&proof, application)?
     } else if let ProofTactic::Transport { source, target } = &indexed.tactic {
-        match crate::kernel::search::ProofSearch::try_execution_fact_transport_or_refusal(
-            &(proof),
+        crate::kernel::search::ProofSearch::apply_written_fact_transport(
+            &proof,
             source,
             target,
-        )? {
-            Ok(transported) => transported,
-            Err(source_refusal) => {
-                crate::kernel::search::ProofSearch::apply_planned_fact_transport(
-                    &proof,
-                    source,
-                    target,
-                    indexed.index,
-                    source_refusal.as_ref(),
-                )?
-            }
-        }
+            indexed.index,
+        )?
     } else if let Some(have) = frontier_have(&indexed.tactic) {
         let nested = proof.driver().open_source_have(have)?;
         let goal = nested.goal().cloned();
@@ -2344,7 +2334,7 @@ pub(in crate::surface::proof) fn source_have_error(
     let pointer_equality = matches!(&goal, Some(condition_source_0 @ Proposition::ConditionIs(
             _,
             true
-        )) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::AddressEqual(_, _), _))));
+        )) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::AddressEqual(_, _), _))));
     let detail = if pointer_equality {
         "missing pure fact: pointer equality is true".to_string()
     } else {

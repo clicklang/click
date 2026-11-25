@@ -37,7 +37,7 @@ use crate::kernel::borrows::{
 };
 use crate::kernel::functions::CheckedResourceFact;
 use crate::kernel::{
-    Address, AddressOffset, MachineTerm, MemoryRange, PureFactContext, ResourceContext,
+    Address, MemoryRange, OldAddressOffset, OldMachineTerm, PureFactContext, ResourceContext,
     ResourceFact, ResourceOccurrenceId, ResourceStateSource, ResourceTransferRole,
 };
 
@@ -1246,10 +1246,10 @@ fn production_memory_fact(start: u32, end: u32, own: bool) -> ResourceFact {
     let range = MemoryRange::new(
         Address {
             base: "v14-buffer".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         },
-        MachineTerm::constant(start),
-        MachineTerm::constant(end),
+        OldMachineTerm::constant(start),
+        OldMachineTerm::constant(end),
     );
     if own {
         ResourceFact::own_memory(range)

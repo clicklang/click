@@ -4,7 +4,7 @@ use super::*;
 fn external(id: u64) -> Address {
     Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(id)), 4),
+        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(id)), 4),
     }
 }
 fn copy(memory: SymbolicMemory, target: &Address, source: &Address, count: u32) -> SymbolicMemory {
@@ -38,11 +38,11 @@ fn external_array_sparse_copies_forward_states_and_preserve_neighbors() {
         let source = external(931_000);
         let target = Address {
             base: "local:sparse-copy".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let destination = Address {
             base: "local:sparse-destination".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let before = SymbolicMemory::new()
             .with_block(target.base.clone(), count * 4)
@@ -76,7 +76,7 @@ fn external_array_sparse_copies_forward_states_and_preserve_neighbors() {
     }
     let source = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let memory = (0..5).fold(SymbolicMemory::new(), |memory, index| {
         memory.store(
@@ -138,7 +138,7 @@ fn external_array_states_reject_invalid_storage_and_preserve_empty_semantics() {
         (
             Address {
                 base: "local:uninitialized".into(),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
             SymbolicMemory::new().with_block("local:uninitialized", 16),
         ),
@@ -185,7 +185,7 @@ fn external_array_copy_representatives_cover_source_and_destination_stem_cancell
     let destination = external(938_001);
     let shifted = |p: &Address, shift| Address {
         base: p.base.clone(),
-        offset: AddressOffset::add(p.offset.clone(), AddressOffset::Constant(shift)),
+        offset: OldAddressOffset::add(p.offset.clone(), OldAddressOffset::Constant(shift)),
     };
     for (source_shift, target_shift) in [(-4, -8), (-8, -4), (0, -4), (-4, 0)] {
         let source = shifted(&source, source_shift);

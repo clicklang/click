@@ -1,6 +1,6 @@
 //! Exact mathematical integer terms.
 //!
-//! `IntegerTerm` is deliberately separate from `MachineTerm`: the latter
+//! `IntegerTerm` is deliberately separate from `OldMachineTerm`: the latter
 //! is also the arena for C machine values and therefore carries machine-width
 //! and overflow semantics.  Mathematical integers have no C representation.
 
@@ -76,10 +76,10 @@ pub enum IntegerTerm {
         arms: Vec<AlgebraicIntegerMatchArm>,
     },
     /// A conditional Integer value, the counterpart of the machine
-    /// `MachineTerm::If`. Built by [`IntegerTerm::if_then_else`], so a
+    /// `OldMachineTerm::If`. Built by [`IntegerTerm::if_then_else`], so a
     /// constant condition or equal branches never stand.
     If {
-        condition: Box<ConditionTerm>,
+        condition: Box<OldConditionTerm>,
         then_term: SharedIntegerTerm,
         else_term: SharedIntegerTerm,
     },
@@ -117,7 +117,7 @@ pub(crate) struct PureApplicationIdentity {
 
 struct SharedPureApplicationNode {
     identity: Arc<PureApplicationIdentity>,
-    call: MachineTerm,
+    call: OldMachineTerm,
     common_arguments: Mutex<Option<PreparedApplicationArguments>>,
 }
 
@@ -250,7 +250,7 @@ impl SharedPureApplication {
         // and repeated readings do not accumulate a bucket of payload versions.
         SharedPureApplication(Arc::new(SharedPureApplicationNode {
             identity,
-            call: MachineTerm::ClickFunctionApplication { name, arguments },
+            call: OldMachineTerm::ClickFunctionApplication { name, arguments },
             common_arguments: Mutex::new(None),
         }))
     }
@@ -357,18 +357,18 @@ impl SharedPureApplication {
         Arc::as_ptr(&self.0) as usize
     }
     pub(crate) fn name(&self) -> &str {
-        let MachineTerm::ClickFunctionApplication { name, .. } = &self.0.call else {
+        let OldMachineTerm::ClickFunctionApplication { name, .. } = &self.0.call else {
             unreachable!("application payload")
         };
         name
     }
     pub(crate) fn arguments(&self) -> &[PureFunctionArgument] {
-        let MachineTerm::ClickFunctionApplication { arguments, .. } = &self.0.call else {
+        let OldMachineTerm::ClickFunctionApplication { arguments, .. } = &self.0.call else {
             unreachable!("application payload")
         };
         arguments
     }
-    pub(crate) fn native_call(&self) -> &MachineTerm {
+    pub(crate) fn native_call(&self) -> &OldMachineTerm {
         &self.0.call
     }
 }
@@ -494,7 +494,7 @@ impl SharedIntegerRangeEndpoint {
         SharedMachineIntegerTerm::from_shared(self.node.ty(), root).map(|node| Self { node })
     }
 
-    pub fn intern(value: MachineTerm) -> Self {
+    pub fn intern(value: OldMachineTerm) -> Self {
         Self {
             node: SharedMachineIntegerTerm::intern(MachineIntegerType::Int32, value),
         }
@@ -502,7 +502,7 @@ impl SharedIntegerRangeEndpoint {
     pub fn id(&self) -> u64 {
         self.node.id()
     }
-    pub fn value(&self) -> &MachineTerm {
+    pub fn value(&self) -> &OldMachineTerm {
         self.node.value()
     }
 }
@@ -572,7 +572,7 @@ pub enum MachineIntegerType {
 
 impl MachineIntegerType {
     pub fn symbolic_value(self, variable: Variable) -> ProgramValue {
-        let term = MachineTerm::Variable(variable);
+        let term = OldMachineTerm::Variable(variable);
         match self {
             Self::Int8 => ProgramValue::Int8(term),
             Self::Int16 => ProgramValue::Int16(term),
@@ -662,13 +662,13 @@ enum MachineIntegerOperand {
     Shared {
         term: KernelTerm,
         native_source: OnceLock<MachineIntegerNativeSource>,
-        structural: OnceLock<MachineTerm>,
+        structural: OnceLock<OldMachineTerm>,
     },
-    Legacy(MachineTerm),
+    Legacy(OldMachineTerm),
     // Keep this producer's complete payload even when legacy equality omits
     // annotations. The retained identity keeps the old native key alive.
     ExactLegacy {
-        value: MachineTerm,
+        value: OldMachineTerm,
         _identity: SharedMachineIntegerTerm,
     },
 }
@@ -676,7 +676,7 @@ enum MachineIntegerOperand {
 /// The observation may use the exact spelling supplied by its caller. When
 /// there is no such spelling, both native readers borrow the structural value.
 enum MachineIntegerNativeSource {
-    Written(MachineTerm),
+    Written(OldMachineTerm),
     Structural,
 }
 
@@ -740,7 +740,7 @@ impl SharedMachineIntegerTerm {
 
     /// An explicit native operand already imported in this verification.
     /// Read-only: a miss does not import syntax or retain an opaque payload.
-    pub(crate) fn retained_import(ty: MachineIntegerType, value: &MachineTerm) -> Option<Self> {
+    pub(crate) fn retained_import(ty: MachineIntegerType, value: &OldMachineTerm) -> Option<Self> {
         let key = MachineIntegerKey::native(ty, value.clone());
         let fingerprint = key.fingerprint();
         let found = MACHINE_INTEGER_INTERNER
@@ -756,7 +756,7 @@ impl SharedMachineIntegerTerm {
     /// An address index owns its exact structure. Import shared operands
     /// directly: a cached native input may still contain a reserved name,
     /// and native state equality is not a cross-arena structural key.
-    pub(crate) fn index(ty: MachineIntegerType, value: MachineTerm) -> Self {
+    pub(crate) fn index(ty: MachineIntegerType, value: OldMachineTerm) -> Self {
         let mut import = KernelTermImport::default();
         if let Some(term) = import.machine_arithmetic(ty, &value) {
             let shared = Self::from_shared(ty, term).expect("admitted index operand");
@@ -784,12 +784,12 @@ impl SharedMachineIntegerTerm {
     /// Retain an unchanged index after a native mapper. Numeric syntax without
     /// reads/conversions has exact native equality; opaque payloads do not.
     /// A direct read compares arena identity before any native address data.
-    pub(crate) fn with_mapped_index(&self, mapped: MachineTerm) -> Self {
+    pub(crate) fn with_mapped_index(&self, mapped: OldMachineTerm) -> Self {
         if let Some(root) = self.shared_operand() {
-            let unchanged = if let Some(MachineTerm::MemoryLoad(memory, address, kind)) =
+            let unchanged = if let Some(OldMachineTerm::MemoryLoad(memory, address, kind)) =
                 root.machine_read_leaf()
             {
-                matches!(&mapped, MachineTerm::MemoryLoad(other, pointer, other_kind)
+                matches!(&mapped, OldMachineTerm::MemoryLoad(other, pointer, other_kind)
                     if memory.shared_memory().arena_id() == other.shared_memory().arena_id() && address.address() == pointer.address() && kind == other_kind)
             } else {
                 !root.has_machine_reads()
@@ -803,7 +803,7 @@ impl SharedMachineIntegerTerm {
         Self::index(self.ty(), mapped)
     }
 
-    pub fn intern(ty: MachineIntegerType, value: MachineTerm) -> Self {
+    pub fn intern(ty: MachineIntegerType, value: OldMachineTerm) -> Self {
         // Legacy callers already supply a boxed tree. Reuse its existing
         // interned observation before importing, and retain that explicit tree
         // instead of exporting it again on the first checker read.
@@ -812,7 +812,7 @@ impl SharedMachineIntegerTerm {
             // Calls compare their typed argument values, independently of
             // whether a producer supplied a native or retained reading.
             // Keep this producer's exact payload outside that identity key.
-            let value = MachineTerm::ClickFunctionApplication {
+            let value = OldMachineTerm::ClickFunctionApplication {
                 name: application.name().to_owned(),
                 arguments: application.arguments().to_vec(),
             };
@@ -872,11 +872,11 @@ impl SharedMachineIntegerTerm {
             shared.remember_explicit_import(key);
             return shared;
         }
-        let view = MachineOperandView::Legacy(value);
+        let view = MachineOperandView::Old(value);
         if view.binary().is_some()
             || view.unary().is_some()
             || view.cast().is_some()
-            || matches!(value, MachineTerm::If { .. })
+            || matches!(value, OldMachineTerm::If { .. })
         {
             let root = KernelTerm::retained_machine_operand(ty, view);
             let shared = Self::observe_shared(ty, root).expect("retained machine observation");
@@ -892,7 +892,10 @@ impl SharedMachineIntegerTerm {
     /// Import an explicitly supplied native arithmetic operand once per
     /// verification. Unlike `intern`, a non-arithmetic payload is refused
     /// without placing its memory states in the global interner.
-    pub(crate) fn import_arithmetic(ty: MachineIntegerType, value: &MachineTerm) -> Option<Self> {
+    pub(crate) fn import_arithmetic(
+        ty: MachineIntegerType,
+        value: &OldMachineTerm,
+    ) -> Option<Self> {
         if let Some(found) = Self::retained_import(ty, value) {
             return Some(found);
         }
@@ -974,7 +977,7 @@ impl SharedMachineIntegerTerm {
     }
     /// The explicit legacy input, if one was already retained. Unlike
     /// `value`, this never exports a shared operand or fills its cache.
-    pub(crate) fn retained_written_operand(&self) -> Option<&MachineTerm> {
+    pub(crate) fn retained_written_operand(&self) -> Option<&OldMachineTerm> {
         match &self.0.operand {
             MachineIntegerOperand::Shared {
                 native_source,
@@ -1003,7 +1006,7 @@ impl SharedMachineIntegerTerm {
     /// Explicit legacy structural output. May expand shared arithmetic; checked
     /// consumers must use `operand_view` instead. The
     /// separate written-input cache can contain a registered read name.
-    pub(crate) fn structural_value(&self) -> &MachineTerm {
+    pub(crate) fn structural_value(&self) -> &OldMachineTerm {
         match &self.0.operand {
             MachineIntegerOperand::Shared {
                 term, structural, ..
@@ -1014,7 +1017,7 @@ impl SharedMachineIntegerTerm {
         }
     }
 
-    pub fn value(&self) -> &MachineTerm {
+    pub fn value(&self) -> &OldMachineTerm {
         match &self.0.operand {
             MachineIntegerOperand::Shared {
                 term,
@@ -1086,7 +1089,7 @@ impl SharedMachineIntegerTerm {
                     let (ty, read) = reading?;
                     if let KernelTermNode::MachineLiteral(value) = read.node() {
                         return Some(IntegerTerm::constant(
-                            ty.constant_from_term(&value.legacy_term())?.to_integer(),
+                            ty.constant_from_term(&value.old_term())?.to_integer(),
                         ));
                     }
                     if ty == self.ty() && read.id() == root.id() {
@@ -1131,7 +1134,7 @@ enum MachineIntegerKey {
         // content equality across arenas, which can walk unrelated memory.
         arena: u32,
         ty: MachineIntegerType,
-        value: MachineTerm,
+        value: OldMachineTerm,
     },
     Application {
         arena: u32,
@@ -1148,8 +1151,8 @@ impl MachineIntegerKey {
         hasher.finish()
     }
 
-    fn native(ty: MachineIntegerType, value: MachineTerm) -> Self {
-        if let MachineTerm::ClickFunctionApplication { name, arguments } = value {
+    fn native(ty: MachineIntegerType, value: OldMachineTerm) -> Self {
+        if let OldMachineTerm::ClickFunctionApplication { name, arguments } = value {
             return Self::Application {
                 arena: super::memory_arena_token(),
                 ty,
@@ -1252,7 +1255,7 @@ impl MachineIntegerInterner {
                 ty, application, ..
             } => (
                 *ty,
-                MachineIntegerOperand::Legacy(MachineTerm::ClickFunctionApplication {
+                MachineIntegerOperand::Legacy(OldMachineTerm::ClickFunctionApplication {
                     name: application.name().to_owned(),
                     arguments: application.arguments().to_vec(),
                 }),
@@ -1575,7 +1578,7 @@ pub(super) enum IntegerShallowKey {
         scrutinee: Box<AlgebraicTerm>,
         arms: Vec<AlgebraicIntegerMatchArm>,
     },
-    If(Box<ConditionTerm>, u64, u64),
+    If(Box<OldConditionTerm>, u64, u64),
     RangeFold(IntegerRangeIdentity, u64, Variable, Variable, u64),
 }
 
@@ -1640,7 +1643,7 @@ impl IntegerTerm {
     }
 
     #[track_caller]
-    pub fn from_machine(ty: MachineIntegerType, value: MachineTerm) -> Option<Self> {
+    pub fn from_machine(ty: MachineIntegerType, value: OldMachineTerm) -> Option<Self> {
         if ty.format().bits() == 128 && !ty.accepts_wide_term(&value) {
             return None;
         }
@@ -1684,7 +1687,7 @@ impl IntegerTerm {
         // wider than the value's format is the caller's, not structure the
         // source wrote, and the conversion itself is retained).
         match &value {
-            MachineTerm::Cast {
+            OldMachineTerm::Cast {
                 spelling: MachineCastSpelling::Generic,
                 to: destination,
                 ..
@@ -1823,11 +1826,11 @@ impl IntegerTerm {
 /// observation at `.0` of the operand `.1`, borrowed from the observed term.
 pub(crate) enum ValueReading<'a> {
     Constant(BigInt),
-    Observation(MachineIntegerType, &'a MachineTerm),
+    Observation(MachineIntegerType, &'a OldMachineTerm),
 }
 
-fn is_machine_constant(value: &MachineTerm) -> bool {
-    matches!(value, MachineTerm::Constant { .. })
+fn is_machine_constant(value: &OldMachineTerm) -> bool {
+    matches!(value, OldMachineTerm::Constant { .. })
 }
 
 /// The value relations of an Integer observation of a conversion (rule W),
@@ -1845,7 +1848,7 @@ fn is_machine_constant(value: &MachineTerm) -> bool {
 /// observed at a type that does not contain its destination).
 pub(crate) fn machine_value_reading(
     ty: MachineIntegerType,
-    value: &MachineTerm,
+    value: &OldMachineTerm,
 ) -> Option<ValueReading<'_>> {
     let mut value = value;
     if matches!(ty, MachineIntegerType::Int32 | MachineIntegerType::UInt32) {
@@ -1858,7 +1861,7 @@ pub(crate) fn machine_value_reading(
         }
     }
     match value {
-        MachineTerm::Cast {
+        OldMachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             to: destination,
             ..
@@ -1868,14 +1871,14 @@ pub(crate) fn machine_value_reading(
         {
             return machine_value_reading(*destination, value);
         }
-        MachineTerm::Cast {
+        OldMachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             to: destination,
             ..
         } if *destination != ty => {
             return None;
         }
-        MachineTerm::Cast {
+        OldMachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             from: source,
             value: operand,
@@ -2115,11 +2118,15 @@ impl IntegerTerm {
     /// `if condition { then_term } else { else_term }`: one branch when the
     /// condition is a constant or both branches are the same term, as
     /// `AlgebraicTerm::if_then_else` builds an algebraic conditional.
-    pub(crate) fn if_then_else(condition: ConditionTerm, then_term: Self, else_term: Self) -> Self {
+    pub(crate) fn if_then_else(
+        condition: OldConditionTerm,
+        then_term: Self,
+        else_term: Self,
+    ) -> Self {
         crate::instrumentation::record_deterministic_work(1);
         match condition {
-            ConditionTerm::Constant(true) => then_term,
-            ConditionTerm::Constant(false) => else_term,
+            OldConditionTerm::Constant(true) => then_term,
+            OldConditionTerm::Constant(false) => else_term,
             condition => {
                 let then_term = SharedIntegerTerm::intern(then_term);
                 let else_term = SharedIntegerTerm::intern(else_term);
@@ -2378,7 +2385,7 @@ fn fmt_integer_shared(
     fmt_integer_term(term.as_ref(), formatter, seen)
 }
 
-impl ConditionTerm {
+impl OldConditionTerm {
     pub(crate) fn integer_less_than(left: IntegerTerm, right: IntegerTerm) -> Self {
         match (left.as_const(), right.as_const()) {
             (Some(left), Some(right)) => {
@@ -2447,9 +2454,9 @@ mod tests {
 
     /// The shared root a lowering builds for `tree`: leaves as retained
     /// operands, each operation and cast as its shared node over its children.
-    fn shared_root(ty: MachineIntegerType, tree: &MachineTerm) -> KernelTerm {
+    fn shared_root(ty: MachineIntegerType, tree: &OldMachineTerm) -> KernelTerm {
         match tree {
-            MachineTerm::Binary {
+            OldMachineTerm::Binary {
                 format,
                 op,
                 left,
@@ -2460,7 +2467,7 @@ mod tests {
                 *op,
                 [shared_root(*format, left), shared_root(*format, right)],
             ),
-            MachineTerm::Cast {
+            OldMachineTerm::Cast {
                 spelling,
                 from,
                 to,
@@ -2478,8 +2485,8 @@ mod tests {
         use MachineBinaryOp as O;
         use MachineIntegerType as Ty;
         let _session = crate::kernel::VerificationSession::enter();
-        let variable = |id| MachineTerm::Variable(Variable(id));
-        let binary = |format, op, left, right| MachineTerm::Binary {
+        let variable = |id| OldMachineTerm::Variable(Variable(id));
+        let binary = |format, op, left, right| OldMachineTerm::Binary {
             format,
             op,
             left: Box::new(left),
@@ -2493,7 +2500,7 @@ mod tests {
                     Ty::Int64,
                     O::Add,
                     variable(954000),
-                    MachineTerm::int64_constant(1),
+                    OldMachineTerm::int64_constant(1),
                 ),
             ),
             (
@@ -2505,7 +2512,7 @@ mod tests {
                         Ty::Int64,
                         O::Multiply,
                         binary(Ty::Int64, O::Add, variable(954000), variable(954001)),
-                        MachineTerm::int64_constant(3),
+                        OldMachineTerm::int64_constant(3),
                     ),
                     variable(954002),
                 ),
@@ -2515,7 +2522,7 @@ mod tests {
                 binary(
                     Ty::Int64,
                     O::Add,
-                    MachineTerm::int64_from_32(variable(954003)),
+                    OldMachineTerm::int64_from_32(variable(954003)),
                     variable(954000),
                 ),
             ),
@@ -2524,8 +2531,8 @@ mod tests {
                 binary(
                     Ty::UInt64,
                     O::Add,
-                    MachineTerm::opaque_conversion("observed_leaf", variable(954004)),
-                    MachineTerm::uint64_constant(1),
+                    OldMachineTerm::opaque_conversion("observed_leaf", variable(954004)),
+                    OldMachineTerm::uint64_constant(1),
                 ),
             ),
             (
@@ -2534,18 +2541,18 @@ mod tests {
                     Ty::Int32,
                     O::Add,
                     variable(954005),
-                    MachineTerm::constant(1),
+                    OldMachineTerm::constant(1),
                 ),
             ),
         ];
         let memory = crate::kernel::intern_memory(
             crate::kernel::SymbolicMemory::new().with_block("cells", 16),
         );
-        let read = MachineTerm::read_named(
+        let read = OldMachineTerm::read_named(
             crate::kernel::ProgramPoint::at(&memory),
             Box::new(crate::kernel::Address {
                 base: crate::kernel::AddressBase::Concrete("cells".into()),
-                offset: crate::kernel::AddressOffset::Constant(4),
+                offset: crate::kernel::OldAddressOffset::Constant(4),
             }),
             crate::kernel::LoadKind::Int32,
         );
@@ -2553,7 +2560,7 @@ mod tests {
             (Ty::Int32, read.clone()),
             (
                 Ty::Int32,
-                binary(Ty::Int32, O::Subtract, read, MachineTerm::constant(1)),
+                binary(Ty::Int32, O::Subtract, read, OldMachineTerm::constant(1)),
             ),
         ];
         for (ty, tree) in cases.into_iter().chain(reads) {
@@ -2571,11 +2578,11 @@ mod tests {
 
     #[test]
     fn boxed_observation_imports_are_session_local_and_released_on_reset() {
-        let value = MachineTerm::Binary {
+        let value = OldMachineTerm::Binary {
             format: MachineIntegerType::Int64,
             op: MachineBinaryOp::Add,
-            left: Box::new(MachineTerm::Variable(Variable(953000))),
-            right: Box::new(MachineTerm::int64_constant(1)),
+            left: Box::new(OldMachineTerm::Variable(Variable(953000))),
+            right: Box::new(OldMachineTerm::int64_constant(1)),
         };
         let mut costs = Vec::new();
         let mut previous = Weak::<SharedMachineIntegerNode>::new();
@@ -2671,7 +2678,7 @@ mod tests {
             next_id: 0,
         };
         let child: SharedIntegerTerm = IntegerTerm::If {
-            condition: Box::new(ConditionTerm::Variable(Variable(790_100))),
+            condition: Box::new(OldConditionTerm::Variable(Variable(790_100))),
             then_term: IntegerTerm::constant_i64(31).into(),
             else_term: IntegerTerm::constant_i64(32).into(),
         }
@@ -2747,8 +2754,8 @@ mod tests {
         let initial = IntegerTerm::constant_i64(4);
         for index in [
             IntegerRangeFoldIndex::Int32 {
-                start: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(3)),
-                end: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(3)),
+                start: SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(3)),
+                end: SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(3)),
             },
             IntegerRangeFoldIndex::Integer {
                 start: SharedIntegerTerm::from(IntegerTerm::constant_i64(3)),
@@ -2774,8 +2781,8 @@ mod tests {
             ))
         );
         let reversed = IntegerRangeFoldIndex::Int32 {
-            start: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(4)),
-            end: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(3)),
+            start: SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(4)),
+            end: SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(3)),
         };
         assert_eq!(
             IntegerTerm::range_fold_empty_or_step(&reversed, &initial, accumulator, item, &body,)
@@ -2820,8 +2827,8 @@ mod tests {
         let Proposition::Implies(_, conclusion) = empty.proposition() else {
             unreachable!()
         };
-        let Some((ConditionTerm::IntegerEqual(left, right), true)) =
-            conclusion.as_ref().condition_native()
+        let Some((OldConditionTerm::IntegerEqual(left, right), true)) =
+            conclusion.as_ref().old_condition()
         else {
             unreachable!()
         };
@@ -2839,8 +2846,8 @@ mod tests {
             unreachable!()
         };
         assert!(matches!(guard.as_ref(), Proposition::ConditionIs(_, true)));
-        let Some((ConditionTerm::IntegerEqual(left, _), true)) =
-            conclusion.as_ref().condition_native()
+        let Some((OldConditionTerm::IntegerEqual(left, _), true)) =
+            conclusion.as_ref().old_condition()
         else {
             unreachable!()
         };
@@ -2857,8 +2864,8 @@ mod tests {
         let start = Variable(31_102);
         let end = Variable(31_103);
         let index = IntegerRangeFoldIndex::Int32 {
-            start: SharedIntegerRangeEndpoint::intern(MachineTerm::Variable(start)),
-            end: SharedIntegerRangeEndpoint::intern(MachineTerm::Variable(end)),
+            start: SharedIntegerRangeEndpoint::intern(OldMachineTerm::Variable(start)),
+            end: SharedIntegerRangeEndpoint::intern(OldMachineTerm::Variable(end)),
         };
         let initial = IntegerTerm::constant_i64(0);
         let body = IntegerTerm::var(accumulator);
@@ -2866,10 +2873,10 @@ mod tests {
             "counted".to_string(),
             vec![
                 crate::kernel::PureFunctionArgument::Value(ProgramValue::Int32(
-                    MachineTerm::Variable(start),
+                    OldMachineTerm::Variable(start),
                 )),
                 crate::kernel::PureFunctionArgument::Value(ProgramValue::Int32(
-                    MachineTerm::Variable(end),
+                    OldMachineTerm::Variable(end),
                 )),
             ],
         ));
@@ -2893,21 +2900,21 @@ mod tests {
             unreachable!("the empty form carries the defining equation beside its guard")
         };
         assert!(
-            matches!(&defining.as_ref(), condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::IntegerEqual(_, _), _))))
+            matches!(&defining.as_ref(), condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::IntegerEqual(_, _), _))))
         );
         assert!(
             matches!(&ordering.as_ref(), condition_source_0 @ Proposition::ConditionIs(
                 _,
                 true
-            ) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare {
+            ) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
                     left: _,
                     right: _
                 }, _))))
         );
-        let Some((ConditionTerm::IntegerEqual(left, right), true)) =
-            conclusion.as_ref().condition_native()
+        let Some((OldConditionTerm::IntegerEqual(left, right), true)) =
+            conclusion.as_ref().old_condition()
         else {
             unreachable!()
         };
@@ -2945,13 +2952,13 @@ mod tests {
         let defining = premises
             .iter()
             .filter(|premise| {
-                matches!(&premise, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::IntegerEqual(_, _), _))))
+                matches!(&premise, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::IntegerEqual(_, _), _))))
             })
             .count();
         assert_eq!(defining, 2, "both defining equations must be premises");
-        assert!(premises.iter().any(|premise| matches!(&premise, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::IntegerEqual(left, _), _)) if (left.as_ref() == &prior)))));
-        let Some((ConditionTerm::IntegerEqual(left, right), true)) =
-            conclusion.as_ref().condition_native()
+        assert!(premises.iter().any(|premise| matches!(&premise, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::IntegerEqual(left, _), _)) if (left.as_ref() == &prior)))));
+        let Some((OldConditionTerm::IntegerEqual(left, right), true)) =
+            conclusion.as_ref().old_condition()
         else {
             unreachable!()
         };
@@ -2968,7 +2975,7 @@ mod tests {
         ));
         let replacement = SharedIntegerTerm::from(IntegerTerm::constant_i64(7));
         let goal = Proposition::condition_is(
-            ConditionTerm::IntegerLessEqual(
+            OldConditionTerm::IntegerLessEqual(
                 SharedIntegerTerm::from(IntegerTerm::constant_i64(0)),
                 SharedIntegerTerm::from(IntegerTerm::Add(
                     application.clone(),
@@ -2983,7 +2990,7 @@ mod tests {
             &replacement,
         )
         .expect("the application occurs on the arithmetic spine");
-        let Some((ConditionTerm::IntegerLessEqual(_, right), true)) = rewritten.condition_native()
+        let Some((OldConditionTerm::IntegerLessEqual(_, right), true)) = rewritten.old_condition()
         else {
             unreachable!()
         };
@@ -3002,10 +3009,10 @@ mod tests {
 
     #[test]
     fn range_fold_append_theorem_evaluates_both_sides_for_both_carriers() {
-        fn eval_bits(term: &MachineTerm, bits: &BTreeMap<Variable, i64>) -> i64 {
+        fn eval_bits(term: &OldMachineTerm, bits: &BTreeMap<Variable, i64>) -> i64 {
             match term {
                 bits32_constant!(value) => constant_u32(*value) as i32 as i64,
-                MachineTerm::Variable(variable) => bits[variable],
+                OldMachineTerm::Variable(variable) => bits[variable],
                 binary_term!(Int32, Add, left, right) => {
                     eval_bits(left, bits) + eval_bits(right, bits)
                 }
@@ -3111,16 +3118,18 @@ mod tests {
         for start in [-2_i64, 0, 2] {
             let end = start + 2;
             let index = IntegerRangeFoldIndex::Int32 {
-                start: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(
+                start: SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(
                     start as i32 as u32,
                 )),
-                end: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(end as i32 as u32)),
+                end: SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(
+                    end as i32 as u32,
+                )),
             };
             let body = IntegerTerm::add(
                 IntegerTerm::var(accumulator),
                 IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                     MachineIntegerType::Int32,
-                    MachineTerm::Variable(item),
+                    OldMachineTerm::Variable(item),
                 )),
             );
             let theorem = crate::kernel::prove_integer_range_fold_append(
@@ -3134,8 +3143,8 @@ mod tests {
             let Proposition::Implies(_, conclusion) = theorem.proposition() else {
                 unreachable!()
             };
-            let Some((ConditionTerm::IntegerEqual(left, right), true)) =
-                conclusion.as_ref().condition_native()
+            let Some((OldConditionTerm::IntegerEqual(left, right), true)) =
+                conclusion.as_ref().old_condition()
             else {
                 unreachable!()
             };
@@ -3161,8 +3170,8 @@ mod tests {
         let Proposition::Implies(_, conclusion) = theorem.proposition() else {
             unreachable!()
         };
-        let Some((ConditionTerm::IntegerEqual(left, right), true)) =
-            conclusion.as_ref().condition_native()
+        let Some((OldConditionTerm::IntegerEqual(left, right), true)) =
+            conclusion.as_ref().old_condition()
         else {
             unreachable!()
         };
@@ -3192,8 +3201,8 @@ mod tests {
         let Proposition::Implies(_, conclusion) = theorem.proposition() else {
             unreachable!()
         };
-        let Some((ConditionTerm::IntegerEqual(left, _), true)) =
-            conclusion.as_ref().condition_native()
+        let Some((OldConditionTerm::IntegerEqual(left, _), true)) =
+            conclusion.as_ref().old_condition()
         else {
             unreachable!()
         };
@@ -3242,7 +3251,7 @@ mod tests {
 
     #[test]
     fn typed_machine_observations_are_canonical_but_signedness_is_distinct() {
-        let value = MachineTerm::Variable(Variable(77));
+        let value = OldMachineTerm::Variable(Variable(77));
         let signed = SharedMachineIntegerTerm::intern(MachineIntegerType::Int32, value.clone());
         let signed_again =
             SharedMachineIntegerTerm::intern(MachineIntegerType::Int32, value.clone());
@@ -3255,12 +3264,12 @@ mod tests {
 
     #[test]
     fn range_endpoints_retain_machine_interner_identity_while_live() {
-        let first = SharedIntegerRangeEndpoint::intern(MachineTerm::constant(17));
+        let first = SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(17));
         let first_id = first.id();
         for value in 0..32 {
-            let _ = SharedIntegerRangeEndpoint::intern(MachineTerm::constant(value));
+            let _ = SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(value));
         }
-        let second = SharedIntegerRangeEndpoint::intern(MachineTerm::constant(17));
+        let second = SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(17));
         assert_eq!(first_id, second.id());
         assert_eq!(first.value(), second.value());
     }
@@ -3268,31 +3277,37 @@ mod tests {
     #[test]
     fn machine_conversion_preserves_width_and_signedness_for_constants() {
         assert_eq!(
-            IntegerTerm::from_machine(MachineIntegerType::Int32, MachineTerm::constant(u32::MAX))
-                .and_then(|v| v.as_const().cloned()),
+            IntegerTerm::from_machine(
+                MachineIntegerType::Int32,
+                OldMachineTerm::constant(u32::MAX)
+            )
+            .and_then(|v| v.as_const().cloned()),
             Some(BigInt::from(-1))
         );
         assert_eq!(
-            IntegerTerm::from_machine(MachineIntegerType::UInt32, MachineTerm::constant(u32::MAX))
-                .and_then(|v| v.as_const().cloned()),
+            IntegerTerm::from_machine(
+                MachineIntegerType::UInt32,
+                OldMachineTerm::constant(u32::MAX)
+            )
+            .and_then(|v| v.as_const().cloned()),
             Some(BigInt::from(u32::MAX))
         );
         assert_eq!(
             IntegerTerm::from_machine(
                 MachineIntegerType::UInt64,
-                MachineTerm::uint64_constant(u64::MAX)
+                OldMachineTerm::uint64_constant(u64::MAX)
             )
             .and_then(|v| v.as_const().cloned()),
             Some(BigInt::from(u64::MAX))
         );
         assert!(
-            IntegerTerm::from_machine(MachineIntegerType::UInt8, MachineTerm::constant(256))
+            IntegerTerm::from_machine(MachineIntegerType::UInt8, OldMachineTerm::constant(256))
                 .is_none()
         );
         assert!(
             IntegerTerm::from_machine(
                 MachineIntegerType::Int32,
-                MachineTerm::int64_constant(i64::MAX)
+                OldMachineTerm::int64_constant(i64::MAX)
             )
             .is_none()
         );
@@ -3320,16 +3335,16 @@ mod tests {
     #[test]
     fn comparison_constructors_fold_only_root_constants() {
         assert_eq!(
-            ConditionTerm::integer_less_than(
+            OldConditionTerm::integer_less_than(
                 IntegerTerm::constant_i64(2),
                 IntegerTerm::constant_i64(3)
             ),
-            ConditionTerm::Constant(true)
+            OldConditionTerm::Constant(true)
         );
         let x = IntegerTerm::var(Variable(17));
         assert!(matches!(
-            ConditionTerm::integer_equal(x.clone(), x),
-            ConditionTerm::IntegerEqual(_, _)
+            OldConditionTerm::integer_equal(x.clone(), x),
+            OldConditionTerm::IntegerEqual(_, _)
         ));
     }
 
@@ -3435,7 +3450,7 @@ mod tests {
                 IntegerTerm::TruncatingQuotient(x.clone(), y.clone())
             };
             let proposition = Proposition::condition_is(
-                ConditionTerm::IntegerEqual(term.into(), IntegerTerm::constant_i64(99).into()),
+                OldConditionTerm::IntegerEqual(term.into(), IntegerTerm::constant_i64(99).into()),
                 true,
             );
             let first = crate::kernel::substitute_integer_term_in_proposition(
@@ -3450,7 +3465,7 @@ mod tests {
                 &IntegerTerm::constant_i64(3).into(),
             )
             .unwrap();
-            let Some((ConditionTerm::IntegerEqual(left, _), true)) = rewritten.condition_native()
+            let Some((OldConditionTerm::IntegerEqual(left, _), true)) = rewritten.old_condition()
             else {
                 unreachable!()
             };
@@ -3464,7 +3479,7 @@ mod tests {
                 &IntegerTerm::constant_i64(0).into(),
             )
             .unwrap();
-            let Some((ConditionTerm::IntegerEqual(left, _), true)) = zero.condition_native() else {
+            let Some((OldConditionTerm::IntegerEqual(left, _), true)) = zero.old_condition() else {
                 unreachable!()
             };
             assert!(left.as_const().is_none(), "zero substitution stays opaque");
@@ -3485,11 +3500,11 @@ mod explicit_input_after_lookup_tests {
     fn default_observation_output_borrows_the_existing_structural_value() {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
-        let native = MachineTerm::Binary {
+        let native = OldMachineTerm::Binary {
             format: ty,
             op: MachineBinaryOp::Multiply,
-            left: Box::new(MachineTerm::Variable(Variable(993273))),
-            right: Box::new(MachineTerm::Variable(Variable(993274))),
+            left: Box::new(OldMachineTerm::Variable(Variable(993273))),
+            right: Box::new(OldMachineTerm::Variable(Variable(993274))),
         };
         let observation = SharedMachineIntegerTerm::index(ty, native.clone());
         let structural = observation.structural_value();
@@ -3504,11 +3519,11 @@ mod explicit_input_after_lookup_tests {
     fn native_lookup_keeps_shared_storage_until_a_boxed_input_is_supplied() {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
-        let native = MachineTerm::Binary {
+        let native = OldMachineTerm::Binary {
             format: ty,
             op: MachineBinaryOp::Multiply,
-            left: Box::new(MachineTerm::Variable(Variable(993271))),
-            right: Box::new(MachineTerm::Variable(Variable(993272))),
+            left: Box::new(OldMachineTerm::Variable(Variable(993271))),
+            right: Box::new(OldMachineTerm::Variable(Variable(993272))),
         };
         let root = KernelTermImport::default()
             .machine_arithmetic(ty, &native)

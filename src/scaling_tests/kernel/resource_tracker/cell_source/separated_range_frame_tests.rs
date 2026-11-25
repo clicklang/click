@@ -19,22 +19,22 @@ fn model_start_membership_ignores_unrelated_order_bounds() {
             _ => unreachable!(),
         };
         for extra in 0..size {
-            let noise = MachineTerm::Variable(Variable(9_949_000 + extra));
+            let noise = OldMachineTerm::Variable(Variable(9_949_000 + extra));
             context = context
                 .assume_condition(
-                    ConditionTerm::signed_less_equal(range.start().clone(), noise.clone()),
+                    OldConditionTerm::signed_less_equal(range.start().clone(), noise.clone()),
                     true,
                 )
                 .assume_condition(
-                    ConditionTerm::signed_less_than(noise, range.end().clone()),
+                    OldConditionTerm::signed_less_than(noise, range.end().clone()),
                     true,
                 );
         }
         let index = binary_node!(
             Int32,
             Add,
-            Box::new(MachineTerm::Variable(Variable(9_941_002))),
-            Box::new(MachineTerm::Variable(Variable(9_941_004))),
+            Box::new(OldMachineTerm::Variable(Variable(9_941_002))),
+            Box::new(OldMachineTerm::Variable(Variable(9_941_004))),
         );
         let access = data.offset_by_elements(index, 4);
         PureFactContext::reset_exact_order_evidence_visits();

@@ -23,7 +23,7 @@ pub(super) fn initialize_program_function_globals_owned(
                 state.set_memory(state.memory.clone().store(
                     Address {
                         base: slot.base.clone(),
-                        offset: AddressOffset::Constant(offset as i64),
+                        offset: OldAddressOffset::Constant(offset as i64),
                     },
                     literal.element_value(byte),
                 ));
@@ -40,8 +40,8 @@ pub(super) fn initialize_program_function_globals_owned(
         Arc::make_mut(&mut state.literal_values).insert(literal.identity().clone(), value.into());
         let literal_resource = ResourceFact::own_memory(MemoryRange::new_with_element_width(
             slot,
-            MachineTerm::constant(0),
-            MachineTerm::constant(literal.bytes().len() as u32),
+            OldMachineTerm::constant(0),
+            OldMachineTerm::constant(literal.bytes().len() as u32),
             1,
         ));
         if !function.is_program_entry()
@@ -541,8 +541,8 @@ pub(super) fn aggregate_zero_fields(
                 ProgramType::UInt8 => uint8(0),
                 ProgramType::UInt16 => uint16(0),
                 ProgramType::UInt32 => uint32(0),
-                ProgramType::Int64 => ProgramValue::Int64(MachineTerm::int64_constant(0)),
-                ProgramType::UInt64 => ProgramValue::UInt64(MachineTerm::uint64_constant(0)),
+                ProgramType::Int64 => ProgramValue::Int64(OldMachineTerm::int64_constant(0)),
+                ProgramType::UInt64 => ProgramValue::UInt64(OldMachineTerm::uint64_constant(0)),
                 ProgramType::Int128 => MachineIntegerType::Int128
                     .constant_value(
                         MachineIntegerConstant::from_signed(MachineIntegerType::Int128.format(), 0)
@@ -558,8 +558,8 @@ pub(super) fn aggregate_zero_fields(
                         .unwrap(),
                     )
                     .unwrap(),
-                ProgramType::Float32 => ProgramValue::Float32(MachineTerm::constant(0)),
-                ProgramType::Float64 => ProgramValue::Float64(MachineTerm::uint64_constant(0)),
+                ProgramType::Float32 => ProgramValue::Float32(OldMachineTerm::constant(0)),
+                ProgramType::Float64 => ProgramValue::Float64(OldMachineTerm::uint64_constant(0)),
                 ProgramType::Int128Pointer
                 | ProgramType::UInt128Pointer
                 | ProgramType::Int128PointerPointer
@@ -1257,16 +1257,16 @@ pub(super) fn copy_aggregate_fields_from(
                         ProgramType::UInt16 => Some(uint16(0)),
                         ProgramType::UInt32 => Some(uint32(0)),
                         ProgramType::Int64 => {
-                            Some(ProgramValue::Int64(MachineTerm::int64_constant(0)))
+                            Some(ProgramValue::Int64(OldMachineTerm::int64_constant(0)))
                         }
                         ProgramType::UInt64 => {
-                            Some(ProgramValue::UInt64(MachineTerm::uint64_constant(0)))
+                            Some(ProgramValue::UInt64(OldMachineTerm::uint64_constant(0)))
                         }
                         ProgramType::Float32 => {
-                            Some(ProgramValue::Float32(MachineTerm::constant(0)))
+                            Some(ProgramValue::Float32(OldMachineTerm::constant(0)))
                         }
                         ProgramType::Float64 => {
-                            Some(ProgramValue::Float64(MachineTerm::uint64_constant(0)))
+                            Some(ProgramValue::Float64(OldMachineTerm::uint64_constant(0)))
                         }
                         _ => None,
                     };
@@ -1464,17 +1464,17 @@ fn copy_retained_aggregate_union_member<'a>(
             | ProgramType::FunctionPointer(_) => {
                 let pointer = if matches!(element_type, ProgramType::FunctionPointer(_)) {
                     match load {
-                        MachineTerm::Variable(variable) => Address::symbolic_function(variable),
+                        OldMachineTerm::Variable(variable) => Address::symbolic_function(variable),
                         load => Address {
                             base: source_field.base.clone(),
-                            offset: AddressOffset::scale_int32(load, 1),
+                            offset: OldAddressOffset::scale_int32(load, 1),
                         },
                     }
                 } else {
                     let pointee_type = element_type.pointee_type()?;
                     Address {
                         base: source_field.base.clone(),
-                        offset: AddressOffset::scale_int32(
+                        offset: OldAddressOffset::scale_int32(
                             load,
                             i64::from(pointee_type.byte_width()),
                         ),

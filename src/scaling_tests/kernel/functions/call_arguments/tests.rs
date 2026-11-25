@@ -6,9 +6,10 @@ fn retained_contract_result_storage_and_exit_memory_skip_expression_prefixes() {
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::UInt32;
-        let mut root =
-            KernelTermImport::default().machine(format, &MachineTerm::Variable(Variable(998340)));
-        let three = KernelTermImport::default().machine(format, &MachineTerm::uint32_constant(3));
+        let mut root = KernelTermImport::default()
+            .machine(format, &OldMachineTerm::Variable(Variable(998340)));
+        let three =
+            KernelTermImport::default().machine(format, &OldMachineTerm::uint32_constant(3));
         for _ in 0..size {
             root = KernelTerm::machine_binary_shared(
                 format,
@@ -61,7 +62,7 @@ fn pointer_return_handoffs_retain_prepared_dags_without_export() {
         for n in 0..unrelated {
             state.locals.set_typed(
                 format!("other_{n}"),
-                ProgramValue::Int32(MachineTerm::constant(n)),
+                ProgramValue::Int32(OldMachineTerm::constant(n)),
                 ProgramType::Int32,
             );
         }
@@ -320,15 +321,18 @@ fn proof_input_rebinding_retains_storage_without_reusing_it_for_calls() {
             1
         );
 
-        let ordinary = bind_program_function_arguments_retained(
-            &caller,
-            &function,
-            values,
-            &[],
-            &mut Vec::new(),
-        )
-        .unwrap();
-        assert_ne!(ordinary.locals.slot("parameter"), Some(&address));
+        // An ordinary call never reuses the proof input: it receives only an
+        // object its frontend prepared, so this one is refused.
+        assert!(
+            bind_program_function_arguments_retained(
+                &caller,
+                &function,
+                values,
+                &[],
+                &mut Vec::new(),
+            )
+            .is_none()
+        );
         let other_entry =
             bind_program_function_arguments(&caller, &other_function, values).unwrap();
         assert_ne!(other_entry.locals.slot("parameter"), Some(&address));

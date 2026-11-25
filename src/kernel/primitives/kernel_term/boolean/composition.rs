@@ -33,7 +33,7 @@ impl KernelTerm {
         if let Some(value) = BooleanOperandView::Shared(&operand).constant() {
             KernelTermImport::default().machine(
                 destination,
-                &MachineTerm::bool_cast(destination, ConditionTerm::Constant(value)),
+                &OldMachineTerm::bool_cast(destination, OldConditionTerm::Constant(value)),
             )
         } else {
             Self::bool_cast(destination, operand).expect("Boolean conversion")
@@ -71,10 +71,10 @@ mod tests {
     fn boolean_composition_matches_native_root_reductions() {
         let _session = crate::kernel::VerificationSession::enter();
         let values = [
-            ConditionTerm::Constant(false),
-            ConditionTerm::Constant(true),
-            ConditionTerm::Variable(Variable(999420)),
-            ConditionTerm::BoolApplication(SharedPureApplication::intern(
+            OldConditionTerm::Constant(false),
+            OldConditionTerm::Constant(true),
+            OldConditionTerm::Variable(Variable(999420)),
+            OldConditionTerm::BoolApplication(SharedPureApplication::intern(
                 "bool_composed".into(),
                 vec![],
             )),
@@ -87,7 +87,7 @@ mod tests {
                     );
                     assert_eq!(
                         KernelTermExport::condition(&root).unwrap(),
-                        ConditionTerm::bool_if(guard.clone(), yes.clone(), no.clone())
+                        OldConditionTerm::bool_if(guard.clone(), yes.clone(), no.clone())
                     );
                 }
                 let root = KernelTerm::boolean_equal(
@@ -95,7 +95,7 @@ mod tests {
                 );
                 assert_eq!(
                     KernelTermExport::condition(&root).unwrap(),
-                    ConditionTerm::bool_equal(guard.clone(), yes.clone())
+                    OldConditionTerm::bool_equal(guard.clone(), yes.clone())
                 );
             }
         }
@@ -117,7 +117,7 @@ mod tests {
                 assert!(root.is_shared_machine_operand());
                 assert_eq!(
                     KernelTermExport::machine(&root).unwrap(),
-                    MachineTerm::bool_cast(format, value.clone())
+                    OldMachineTerm::bool_cast(format, value.clone())
                 );
             }
         }

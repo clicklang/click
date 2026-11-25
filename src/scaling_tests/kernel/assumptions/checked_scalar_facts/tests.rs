@@ -24,7 +24,7 @@ fn shared_scalar_sources_keep_identity_and_branch_locality() {
         let operand =
             SharedMachineIntegerTerm::from_shared(MachineIntegerType::Int32, root).unwrap();
         let observed = IntegerTerm::Machine(operand.clone());
-        let source = ConditionTerm::IntegerNotEqual(
+        let source = OldConditionTerm::IntegerNotEqual(
             observed.clone().into(),
             IntegerTerm::constant(7.into()).into(),
         );
@@ -48,7 +48,7 @@ fn shared_scalar_sources_keep_identity_and_branch_locality() {
         previous = Some((size, work));
         let parent = index.clone();
         for value in 1..=size {
-            let excluded = ConditionTerm::IntegerEqual(
+            let excluded = OldConditionTerm::IntegerEqual(
                 observed.clone().into(),
                 IntegerTerm::constant(value.into()).into(),
             );
@@ -72,21 +72,21 @@ fn shared_scalar_sources_keep_identity_and_branch_locality() {
 
 #[test]
 fn scalar_sources_preserve_truth_and_format() {
-    let term = MachineTerm::Variable(Variable(991702));
-    let view = MachineOperandView::Legacy(&term);
+    let term = OldMachineTerm::Variable(Variable(991702));
+    let view = MachineOperandView::Old(&term);
     let observed = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
         MachineIntegerType::Int32,
         term.clone(),
     ));
     let ordinary =
-        ConditionTerm::IntegerNotEqual(observed.into(), IntegerTerm::constant(7.into()).into());
+        OldConditionTerm::IntegerNotEqual(observed.into(), IntegerTerm::constant(7.into()).into());
     let mut index = CheckedScalarFacts::default();
     index.adjust(&ordinary, false);
     assert_eq!(
         index.literal_equality(view),
         Some(&(ordinary.clone(), false))
     );
-    let wide = ConditionTerm::int64_equal(term, MachineTerm::int64_constant(7));
+    let wide = OldConditionTerm::int64_equal(term, OldMachineTerm::int64_constant(7));
     let mut index = CheckedScalarFacts::default();
     index.adjust(&wide, true);
     assert!(index.literals.is_empty());
@@ -94,20 +94,20 @@ fn scalar_sources_preserve_truth_and_format() {
 
 #[test]
 fn shared_scalar_premise_selection_keeps_written_truth() {
-    let x = MachineTerm::Variable(Variable(991703));
+    let x = OldMachineTerm::Variable(Variable(991703));
     let observed = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
         MachineIntegerType::Int32,
         x,
     ));
     let source = Proposition::condition_is(
-        ConditionTerm::IntegerNotEqual(
+        OldConditionTerm::IntegerNotEqual(
             observed.clone().into(),
             IntegerTerm::constant(7.into()).into(),
         ),
         false,
     );
     let goal = Proposition::condition_is(
-        ConditionTerm::IntegerEqual(observed.into(), IntegerTerm::constant(7.into()).into()),
+        OldConditionTerm::IntegerEqual(observed.into(), IntegerTerm::constant(7.into()).into()),
         true,
     );
     let facts = PureFactContext::new().assume_proposition(source);
@@ -128,16 +128,16 @@ fn promoted_call_endpoint_keys_preserve_typed_argument_identity() {
         KernelTermExport, ProgramValue, PureFunctionArgument, VerificationSession,
     };
     let _session = VerificationSession::enter();
-    let argument = MachineTerm::uint64_constant(7);
+    let argument = OldMachineTerm::uint64_constant(7);
     let shared = SharedMachineIntegerTerm::intern(MachineIntegerType::UInt64, argument.clone());
-    let call = |argument| MachineTerm::ClickFunctionApplication {
+    let call = |argument| OldMachineTerm::ClickFunctionApplication {
         name: "promoted_digit".into(),
         arguments: vec![argument],
     };
     let native = call(PureFunctionArgument::Value(ProgramValue::UInt64(argument)));
     let retained = call(PureFunctionArgument::SharedMachine(shared));
     let promote = |value| {
-        MachineTerm::machine_integer_cast(
+        OldMachineTerm::machine_integer_cast(
             MachineIntegerType::UInt8,
             MachineIntegerType::Int32,
             value,
@@ -146,7 +146,7 @@ fn promoted_call_endpoint_keys_preserve_typed_argument_identity() {
     let native = promote(native);
     let retained = promote(retained);
     let exports = KernelTermExport::machine_export_count();
-    let key = |term: &MachineTerm| ScalarOperandKey::new(MachineOperandView::Legacy(term));
+    let key = |term: &OldMachineTerm| ScalarOperandKey::new(MachineOperandView::Old(term));
     assert_eq!(key(&native), key(&retained));
     let root = KernelTerm::retained_native_machine_operand(MachineIntegerType::Int32, &retained);
     assert_eq!(
@@ -155,18 +155,18 @@ fn promoted_call_endpoint_keys_preserve_typed_argument_identity() {
     );
     assert_eq!(KernelTermExport::machine_export_count(), exports);
     let different = promote(call(PureFunctionArgument::Value(ProgramValue::UInt64(
-        MachineTerm::uint64_constant(8),
+        OldMachineTerm::uint64_constant(8),
     ))));
     assert_ne!(key(&native), key(&different));
     let different_sort = promote(call(PureFunctionArgument::Value(ProgramValue::Int64(
-        MachineTerm::int64_constant(7),
+        OldMachineTerm::int64_constant(7),
     ))));
     assert_ne!(key(&native), key(&different_sort));
-    let different_cast = MachineTerm::machine_integer_cast(
+    let different_cast = OldMachineTerm::machine_integer_cast(
         MachineIntegerType::Int8,
         MachineIntegerType::Int32,
         call(PureFunctionArgument::Value(ProgramValue::UInt64(
-            MachineTerm::uint64_constant(7),
+            OldMachineTerm::uint64_constant(7),
         ))),
     );
     assert_ne!(key(&native), key(&different_cast));
@@ -178,41 +178,41 @@ fn arithmetic_call_endpoint_keys_preserve_argument_identity_and_opaque_refusal()
         KernelTermExport, ProgramValue, PureFunctionArgument, VerificationSession,
     };
     let _session = VerificationSession::enter();
-    let call = |shared| MachineTerm::ClickFunctionApplication {
+    let call = |shared| OldMachineTerm::ClickFunctionApplication {
         name: "arithmetic_digit".into(),
         arguments: vec![if shared {
             PureFunctionArgument::SharedMachine(SharedMachineIntegerTerm::intern(
                 MachineIntegerType::UInt64,
-                MachineTerm::uint64_constant(7),
+                OldMachineTerm::uint64_constant(7),
             ))
         } else {
-            PureFunctionArgument::Value(ProgramValue::UInt64(MachineTerm::uint64_constant(7)))
+            PureFunctionArgument::Value(ProgramValue::UInt64(OldMachineTerm::uint64_constant(7)))
         }],
     };
     let promote = |value| {
-        MachineTerm::machine_integer_cast(
+        OldMachineTerm::machine_integer_cast(
             MachineIntegerType::UInt8,
             MachineIntegerType::Int32,
             value,
         )
     };
-    let add = |left, right| MachineTerm::Binary {
+    let add = |left, right| OldMachineTerm::Binary {
         format: MachineIntegerType::Int32,
         op: MachineBinaryOp::Add,
         left: Box::new(left),
         right: Box::new(right),
     };
-    let invert = |operand| MachineTerm::Unary {
+    let invert = |operand| OldMachineTerm::Unary {
         format: MachineIntegerType::Int32,
         op: crate::kernel::MachineUnaryOp::BitwiseNot,
         operand: Box::new(operand),
     };
-    let key = |term: &MachineTerm| ScalarOperandKey::new(MachineOperandView::Legacy(term));
+    let key = |term: &OldMachineTerm| ScalarOperandKey::new(MachineOperandView::Old(term));
     let exports = KernelTermExport::machine_export_count();
     for (native, retained) in [
         (
-            add(promote(call(false)), MachineTerm::constant(1)),
-            add(promote(call(true)), MachineTerm::constant(1)),
+            add(promote(call(false)), OldMachineTerm::constant(1)),
+            add(promote(call(true)), OldMachineTerm::constant(1)),
         ),
         (invert(promote(call(false))), invert(promote(call(true)))),
     ] {
@@ -225,19 +225,17 @@ fn arithmetic_call_endpoint_keys_preserve_argument_identity_and_opaque_refusal()
         );
     }
     assert_eq!(KernelTermExport::machine_export_count(), exports);
-    let read = MachineTerm::read_named(
+    let read = OldMachineTerm::read_named(
         ProgramPoint::at(&(crate::kernel::intern_memory_ref(&SymbolicMemory::new()))),
         Box::new(Address::null()),
         LoadKind::Int32,
     );
     let mixed = add(call(false), read);
-    assert!(!selected_call_expression(MachineOperandView::Legacy(
-        &mixed
-    )));
+    assert!(!selected_call_expression(MachineOperandView::Old(&mixed)));
     assert!(matches!(key(&mixed), ScalarOperandKey::Written(_)));
     assert_ne!(
-        key(&add(call(false), MachineTerm::constant(1))),
-        key(&add(call(true), MachineTerm::constant(2)))
+        key(&add(call(false), OldMachineTerm::constant(1))),
+        key(&add(call(true), OldMachineTerm::constant(2)))
     );
 }
 
@@ -247,10 +245,10 @@ fn opaque_call_endpoint_observation_is_linear_cold_and_constant_warm() {
     let mut samples = Vec::new();
     for depth in [8, 32, 96] {
         let _session = crate::kernel::VerificationSession::enter();
-        let call = MachineTerm::ClickFunctionApplication {
+        let call = OldMachineTerm::ClickFunctionApplication {
             name: "shared_endpoint_leaf".into(),
             arguments: vec![PureFunctionArgument::Value(ProgramValue::Int32(
-                MachineTerm::constant(7),
+                OldMachineTerm::constant(7),
             ))],
         };
         let mut root =

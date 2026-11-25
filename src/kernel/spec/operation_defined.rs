@@ -1112,8 +1112,8 @@ fn replace_conversion_operand(
 
 fn is_true(proposition: &Proposition) -> bool {
     matches!(
-        proposition.condition_native(),
-        Some((ConditionTerm::Constant(true), true))
+        proposition.old_condition(),
+        Some((OldConditionTerm::Constant(true), true))
     )
 }
 

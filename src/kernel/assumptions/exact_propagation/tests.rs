@@ -122,7 +122,7 @@ fn exact_propagation_is_idempotent_and_does_not_fire_cycles_without_a_seed() {
 
 #[test]
 fn exact_propagation_keeps_condition_polarity_and_restriction_support() {
-    let a = ConditionTerm::Variable(crate::kernel::Variable(780_000));
+    let a = OldConditionTerm::Variable(crate::kernel::Variable(780_000));
     let b = atom("result");
     let rule = or(Proposition::condition_is(a.clone(), true), b.clone());
     let parent = context(vec![rule.clone()]);
@@ -146,27 +146,27 @@ fn exact_propagation_does_not_match_different_memory_states_or_types() {
     use crate::kernel::*;
     let pointer = Address {
         base: "propagation-cell".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let before = SymbolicMemory::new()
         .with_block("propagation-cell", 4)
         .store(
             pointer.clone(),
-            ProgramValue::Int32(MachineTerm::Variable(Variable(781_000))),
+            ProgramValue::Int32(OldMachineTerm::Variable(Variable(781_000))),
         );
     let after = before.clone().store(
         pointer.clone(),
-        ProgramValue::Int32(MachineTerm::Variable(Variable(781_001))),
+        ProgramValue::Int32(OldMachineTerm::Variable(Variable(781_001))),
     );
     let read = |memory| {
         Proposition::condition_is(
-            ConditionTerm::equal(
-                MachineTerm::read_named(
+            OldConditionTerm::equal(
+                OldMachineTerm::read_named(
                     ProgramPoint::at(&intern_memory(memory)),
                     Box::new(pointer.clone()),
                     LoadKind::Int32,
                 ),
-                MachineTerm::constant(0),
+                OldMachineTerm::constant(0),
             ),
             true,
         )
@@ -190,8 +190,8 @@ fn exact_propagation_preserves_models_of_nested_boolean_formulas() {
                 assignment & (1 << name.parse::<usize>().unwrap()) != 0
             }
             condition_source_0 @ Proposition::ConditionIs(_, b)
-                if let Some((ConditionTerm::Constant(a), _)) =
-                    condition_source_0.condition_native() =>
+                if let Some((OldConditionTerm::Constant(a), _)) =
+                    condition_source_0.old_condition() =>
             {
                 a == b
             }
@@ -274,13 +274,13 @@ fn exact_propagation_does_not_match_distinct_numeric_carriers() {
     let narrow = Proposition::Predicate {
         name: "typed".into(),
         arguments: vec![Term::ProgramValue(
-            (ProgramValue::Int32(MachineTerm::constant(0))).into(),
+            (ProgramValue::Int32(OldMachineTerm::constant(0))).into(),
         )],
     };
     let wide = Proposition::Predicate {
         name: "typed".into(),
         arguments: vec![Term::ProgramValue(
-            (ProgramValue::UInt64(MachineTerm::uint64_constant(0))).into(),
+            (ProgramValue::UInt64(OldMachineTerm::uint64_constant(0))).into(),
         )],
     };
     let result = atom("result");
@@ -315,13 +315,16 @@ fn exact_propagation_records_conflicts_without_contaminating_siblings() {
 #[test]
 fn exact_propagation_does_not_use_equality_derived_guards() {
     use crate::kernel::*;
-    let a = MachineTerm::Variable(Variable(782_000));
-    let b = MachineTerm::Variable(Variable(782_001));
-    let guard = ConditionTerm::equal(b.clone(), MachineTerm::constant(0));
+    let a = OldMachineTerm::Variable(Variable(782_000));
+    let b = OldMachineTerm::Variable(Variable(782_001));
+    let guard = OldConditionTerm::equal(b.clone(), OldMachineTerm::constant(0));
     let result = atom("result");
     let ctx = PureFactContext::new()
-        .assume_condition(ConditionTerm::equal(a.clone(), b), true)
-        .assume_condition(ConditionTerm::equal(a, MachineTerm::constant(0)), true)
+        .assume_condition(OldConditionTerm::equal(a.clone(), b), true)
+        .assume_condition(
+            OldConditionTerm::equal(a, OldMachineTerm::constant(0)),
+            true,
+        )
         .assume_proposition(implies(
             Proposition::condition_is(guard.clone(), true),
             result.clone(),
@@ -334,12 +337,15 @@ fn exact_propagation_does_not_use_equality_derived_guards() {
 #[test]
 fn exact_propagation_uses_only_intrinsic_literal_and_reflexive_truths() {
     use crate::kernel::*;
-    let x = MachineTerm::Variable(Variable(782_010));
+    let x = OldMachineTerm::Variable(Variable(782_010));
     let result = atom("result");
     for guard in [
-        ConditionTerm::equal(x.clone(), x.clone()),
-        ConditionTerm::signed_less_equal(MachineTerm::constant(0), MachineTerm::constant(7)),
-        ConditionTerm::integer_less_equal(
+        OldConditionTerm::equal(x.clone(), x.clone()),
+        OldConditionTerm::signed_less_equal(
+            OldMachineTerm::constant(0),
+            OldMachineTerm::constant(7),
+        ),
+        OldConditionTerm::integer_less_equal(
             IntegerTerm::constant_i64(0),
             IntegerTerm::constant_i64(7),
         ),
@@ -364,16 +370,17 @@ fn exact_propagation_uses_only_intrinsic_literal_and_reflexive_truths() {
 #[test]
 fn exact_propagation_matches_native_observation_guards_at_both_polarities() {
     use crate::kernel::*;
-    let x = MachineTerm::Variable(Variable(782_020));
+    let x = OldMachineTerm::Variable(Variable(782_020));
     let observed = IntegerTerm::from_machine(MachineIntegerType::Int32, x.clone()).unwrap();
-    let integer = ConditionTerm::integer_less_equal(IntegerTerm::constant_i64(0), observed.clone());
-    let native = ConditionTerm::signed_less_equal(MachineTerm::constant(0), x.clone());
+    let integer =
+        OldConditionTerm::integer_less_equal(IntegerTerm::constant_i64(0), observed.clone());
+    let native = OldConditionTerm::signed_less_equal(OldMachineTerm::constant(0), x.clone());
     let result = atom("result");
     for (integer, native) in [
         (integer, native),
         (
-            ConditionTerm::integer_greater_equal(observed, IntegerTerm::constant_i64(0)),
-            ConditionTerm::signed_greater_equal(x, MachineTerm::constant(0)),
+            OldConditionTerm::integer_greater_equal(observed, IntegerTerm::constant_i64(0)),
+            OldConditionTerm::signed_greater_equal(x, OldMachineTerm::constant(0)),
         ),
     ] {
         for truth in [true, false] {
@@ -404,23 +411,25 @@ fn exact_propagation_matches_native_observation_guards_at_both_polarities() {
 fn exact_propagation_matches_value_preserving_observation_conversions() {
     use crate::kernel::*;
     use MachineIntegerType as M;
-    let x = MachineTerm::Variable(Variable(782_030));
-    let y = MachineTerm::Variable(Variable(782_031));
-    let widened = MachineTerm::machine_integer_cast(M::Int32, M::Int64, x.clone());
+    let x = OldMachineTerm::Variable(Variable(782_030));
+    let y = OldMachineTerm::Variable(Variable(782_031));
+    let widened = OldMachineTerm::machine_integer_cast(M::Int32, M::Int64, x.clone());
     let guard = Proposition::condition_is(
-        ConditionTerm::integer_less_than(
+        OldConditionTerm::integer_less_than(
             IntegerTerm::from_machine(M::Int64, widened).unwrap(),
             IntegerTerm::from_machine(M::Int32, y.clone()).unwrap(),
         ),
         true,
     );
-    let fact =
-        Proposition::condition_is(ConditionTerm::signed_less_than(x.clone(), y.clone()), true);
+    let fact = Proposition::condition_is(
+        OldConditionTerm::signed_less_than(x.clone(), y.clone()),
+        true,
+    );
     let result = atom("converted_result");
     assert!(context(vec![implies(guard, result.clone()), fact.clone()]).contains_known(&result));
-    let wrapping = MachineTerm::machine_integer_cast(M::Int32, M::UInt64, x);
+    let wrapping = OldMachineTerm::machine_integer_cast(M::Int32, M::UInt64, x);
     let different = Proposition::condition_is(
-        ConditionTerm::integer_less_than(
+        OldConditionTerm::integer_less_than(
             IntegerTerm::from_machine(M::UInt64, wrapping).unwrap(),
             IntegerTerm::from_machine(M::Int32, y).unwrap(),
         ),
@@ -434,7 +443,7 @@ fn exact_propagation_matches_retained_and_native_arithmetic_operands() {
     use crate::kernel::*;
     use MachineIntegerType as M;
     let _session = VerificationSession::enter();
-    let variable = |id| MachineTerm::Variable(Variable(id));
+    let variable = |id| OldMachineTerm::Variable(Variable(id));
     let root = |id| KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(id));
     let subtract = KernelTerm::machine_binary_shared(
         M::Int32,
@@ -444,16 +453,16 @@ fn exact_propagation_matches_retained_and_native_arithmetic_operands() {
     let retained =
         IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(M::Int32, subtract).unwrap());
     let guard = Proposition::condition_is(
-        ConditionTerm::integer_less_than(
+        OldConditionTerm::integer_less_than(
             IntegerTerm::from_machine(M::Int32, variable(782040)).unwrap(),
             retained,
         ),
         true,
     );
     let native = Proposition::condition_is(
-        ConditionTerm::signed_less_than(
+        OldConditionTerm::signed_less_than(
             variable(782040),
-            MachineTerm::machine_binary(
+            OldMachineTerm::machine_binary(
                 M::Int32,
                 MachineBinaryOp::Subtract,
                 variable(782041),
@@ -473,9 +482,9 @@ fn exact_propagation_matches_retained_and_native_arithmetic_operands() {
         assert!(ctx.contains_assumed_exact(&native));
     }
     let different = Proposition::condition_is(
-        ConditionTerm::signed_less_than(
+        OldConditionTerm::signed_less_than(
             variable(782040),
-            MachineTerm::machine_binary(
+            OldMachineTerm::machine_binary(
                 M::Int32,
                 MachineBinaryOp::Add,
                 variable(782041),
@@ -492,11 +501,11 @@ fn exact_propagation_computes_substituted_word_equality_guards() {
     use crate::kernel::*;
     let result = atom("result");
     for (right, equal) in [(0, false), (1, true), (2, false)] {
-        let comparison = ConditionTerm::Compare {
+        let comparison = OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::uint64_constant(1)),
-            right: Box::new(MachineTerm::int64_constant(right)),
+            left: Box::new(OldMachineTerm::uint64_constant(1)),
+            right: Box::new(OldMachineTerm::int64_constant(right)),
         };
         for truth in [true, false] {
             let guard = Proposition::condition_is(comparison.clone(), truth);
@@ -505,11 +514,11 @@ fn exact_propagation_computes_substituted_word_equality_guards() {
         }
     }
     // A width mismatch is not an intrinsic equality, even for equal bits.
-    let mismatched = ConditionTerm::Compare {
+    let mismatched = OldConditionTerm::Compare {
         format: MachineIntegerType::Int64,
         relation: CompareRelation::Equal,
-        left: Box::new(MachineTerm::constant(1)),
-        right: Box::new(MachineTerm::int64_constant(1)),
+        left: Box::new(OldMachineTerm::constant(1)),
+        right: Box::new(OldMachineTerm::int64_constant(1)),
     };
     assert_eq!(
         crate::kernel::proof::fact_reasoning::trivial_condition_value(&mismatched),

@@ -4116,8 +4116,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                         continue;
                                     }
                                     if let Proposition::ConditionIs(condition, value) = proposition
-                                        && assumptions.decide(condition.native_compat())
-                                            == Some(!*value)
+                                        && assumptions.decide(condition.old_form()) == Some(!*value)
                                     {
                                         refuted.push(obligation.clone());
                                         continue;
@@ -5065,12 +5064,9 @@ pub(super) fn finish_ordered_proof<'a>(
                                     // retain its checked lowerings.
                                     let prepared = evolving.with_outcome_store_consequences()?;
                                     let before = prepared.checkpoint();
-                                    let transported = match crate::kernel::search::ProofSearch::try_execution_fact_transport_or_refusal(&prepared, source, target)? {
-                                        Ok(transported) => Ok(transported),
-                                        Err(source_refusal) => crate::kernel::search::ProofSearch::apply_planned_fact_transport(
-                                            &prepared, source, target, *tactic_index, source_refusal.as_ref(),
-                                        ),
-                                    }
+                                    let transported = crate::kernel::search::ProofSearch::apply_written_fact_transport(
+                                        &prepared, source, target, *tactic_index,
+                                    )
                                     .inspect_err(|_| {
                                         prepared.record_certification_failure_trace(
                                             &proof_label,
@@ -5089,8 +5085,8 @@ pub(super) fn finish_ordered_proof<'a>(
                                         "`{proof_label}` path {path_index}, tactic {tactic_index}: the typed outcome goal for this path is unavailable"
                                     )));
                                 };
-                                // Ordinary `have` publication retains its target;
-                                // the legacy transport transition retains both ends.
+                                // The ordinary proof retains the target and may also
+                                // record its checked source.
                                 match checked_facts.as_slice() {
                                     [checked_source, checked_target] => {
                                         outcome_surface_propositions
@@ -6737,11 +6733,11 @@ mod tests {
 
     #[test]
     fn inconsistent_context_is_not_sibling_path_evidence() {
-        let left = MachineTerm::Variable(Variable(1));
-        let right = MachineTerm::Variable(Variable(2));
+        let left = OldMachineTerm::Variable(Variable(1));
+        let right = OldMachineTerm::Variable(Variable(2));
         let assumptions = PureFactContext::new()
             .assume_proposition(Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
                     left: Box::new(left.clone()),
@@ -6750,7 +6746,7 @@ mod tests {
                 true,
             ))
             .assume_proposition(Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
                     left: Box::new(right.clone()),
@@ -6763,7 +6759,7 @@ mod tests {
         // conflict, and the inconsistency guard is what stops that conflict
         // from being read as sibling-path evidence.
         let exactly_refuted = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left: Box::new(right_term.clone()),
@@ -6780,11 +6776,11 @@ mod tests {
         // reason since the general prover left the kernel: the exact routes
         // report no conflict at all rather than deriving one by explosion.
         let unrelated = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
-                left: Box::new(MachineTerm::Variable(Variable(2))),
-                right: Box::new(MachineTerm::constant(10)),
+                left: Box::new(OldMachineTerm::Variable(Variable(2))),
+                right: Box::new(OldMachineTerm::constant(10)),
             },
             true,
         );
@@ -6796,11 +6792,11 @@ mod tests {
 
     #[test]
     fn consistent_exact_conflict_remains_sibling_path_evidence() {
-        let condition = ConditionTerm::Compare {
+        let condition = OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
-            left: Box::new(MachineTerm::Variable(Variable(1))),
-            right: Box::new(MachineTerm::constant(10)),
+            left: Box::new(OldMachineTerm::Variable(Variable(1))),
+            right: Box::new(OldMachineTerm::constant(10)),
         };
         let assumptions = PureFactContext::new()
             .assume_proposition(Proposition::condition_is(condition.clone(), false));

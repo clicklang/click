@@ -6,8 +6,8 @@
 
 use super::{Anchor, AuthorityState, Holder, Refusal};
 use crate::kernel::{
-    AddressBase, AddressOffset, AlgebraicValue, CompositeResourceDefinition, ExecutionState,
-    MachineTerm, ProgramValue, PureFactContext, Resource, ResourceDescription, ResourceFact,
+    AddressBase, AlgebraicValue, CompositeResourceDefinition, ExecutionState, OldAddressOffset,
+    OldMachineTerm, ProgramValue, PureFactContext, Resource, ResourceDescription, ResourceFact,
     ResourceReference,
 };
 use crate::persistent::{PersistentMap, PersistentSet};
@@ -22,11 +22,15 @@ fn fresh_identity() -> u64 {
         .expect("C population creation identity exhausted")
 }
 
-fn same_quantity(left: &MachineTerm, right: &MachineTerm, assumptions: &PureFactContext) -> bool {
+fn same_quantity(
+    left: &OldMachineTerm,
+    right: &OldMachineTerm,
+    assumptions: &PureFactContext,
+) -> bool {
     left == right
         || crate::kernel::quantity_condition_holds(
             assumptions,
-            crate::kernel::ConditionTerm::Compare {
+            crate::kernel::OldConditionTerm::Compare {
                 format: crate::kernel::MachineIntegerType::Int32,
                 relation: crate::kernel::CompareRelation::Equal,
                 left: Box::new(left.clone()),
@@ -39,7 +43,7 @@ fn same_quantity(left: &MachineTerm, right: &MachineTerm, assumptions: &PureFact
 /// an equality with the sender's complete batch. The caller checks custody;
 /// neither a global count nor a bound can supply missing member rights.
 fn numerical_batch_quantity(
-    quantity: &MachineTerm,
+    quantity: &OldMachineTerm,
     held: u32,
     assumptions: &PureFactContext,
 ) -> Option<u32> {
@@ -51,9 +55,9 @@ fn numerical_batch_quantity(
                 .map(|value| value as u32)
         })
         .or_else(|| {
-            (assumptions.exact_condition_value(&crate::kernel::ConditionTerm::equal(
+            (assumptions.exact_condition_value(&crate::kernel::OldConditionTerm::equal(
                 quantity.clone(),
-                MachineTerm::constant(held),
+                OldMachineTerm::constant(held),
             )) == Some(true))
             .then_some(held)
         })
@@ -88,7 +92,7 @@ struct Root {
     /// Rechecking a transfer or return uses the same successor identity.
     /// Keys contain only small holder/population IDs, never resource trees.
     transfers:
-        Mutex<BTreeMap<(Holder, Holder, super::Population, bool, MachineTerm), CreationEvents>>,
+        Mutex<BTreeMap<(Holder, Holder, super::Population, bool, OldMachineTerm), CreationEvents>>,
     returns: Mutex<BTreeMap<u64, CreationEvents>>,
     storage_events: Mutex<BTreeMap<StorageEvent, CreationEvents>>,
     invocation: Holder,
@@ -116,14 +120,14 @@ struct Root {
     opaque_holders: PersistentMap<Holder, u32>,
     opaque_transfers:
         Mutex<BTreeMap<(Holder, Holder, u64, ResourceDescription, bool, u32), CreationEvents>>,
-    opaque_entry_counts: Mutex<BTreeMap<ResourceDescription, MachineTerm>>,
+    opaque_entry_counts: Mutex<BTreeMap<ResourceDescription, OldMachineTerm>>,
     empty_populations: PersistentMap<AddressBase, PersistentSet<String>>,
 }
 
 #[derive(Clone)]
 struct SymbolicBatch {
     owner: Holder,
-    quantity: MachineTerm,
+    quantity: OldMachineTerm,
 }
 
 #[derive(Clone)]
@@ -139,17 +143,17 @@ struct OpaqueImport {
     private_members: PersistentMap<ResourceDescription, PrivateMember>,
     private_birth_generation: u64,
     /// Stable arbitrary exact counts shared by all successors of this import.
-    exact_entry_counts: Arc<Mutex<BTreeMap<ResourceDescription, MachineTerm>>>,
+    exact_entry_counts: Arc<Mutex<BTreeMap<ResourceDescription, OldMachineTerm>>>,
     /// The checked definition used to open this exact entry control for a
     /// read-only count observation. Current ownership is checked on each read.
     control: Option<(ResourceFact, Arc<CompositeResourceDefinition>)>,
     entry_owned_members: u32,
     owned_members: u32,
     /// Symbolic cardinality is admitted only through a checked control wrapper.
-    entry_symbolic_members: Option<MachineTerm>,
+    entry_symbolic_members: Option<OldMachineTerm>,
     /// Whole-batch custody is independent of the authority holder.
     symbolic_member_holder: Option<Holder>,
-    symbolic_delta: Option<(bool, MachineTerm)>,
+    symbolic_delta: Option<(bool, OldMachineTerm)>,
     /// Occurrences consumed by checked named rewrites, independent of count observations.
     consumed_named: PersistentMap<crate::kernel::InstanceId, Arc<crate::kernel::ResourceInstance>>,
     /// Named births remain distinct from entry occurrences, even after death.
@@ -159,7 +163,7 @@ struct OpaqueImport {
     named_selection: Option<ResourceDescription>,
     named_ambiguous: bool,
     /// Only a checked control wrapper can supply this immutable entry load.
-    entry_count: Option<MachineTerm>,
+    entry_count: Option<OldMachineTerm>,
     /// For a total acquired with a lock rather than at entry, the program
     /// point the lock started from.
     acquired_at: Option<crate::kernel::program_point::ProgramPointId>,
@@ -180,25 +184,25 @@ struct PrivateMember {
 }
 
 pub(in crate::kernel) struct SymbolicPopulationCount {
-    pub entry_count: MachineTerm,
+    pub entry_count: OldMachineTerm,
     pub delta: i32,
     pub entry_owned_members: u32,
-    pub entry_symbolic_members: Option<MachineTerm>,
-    pub symbolic_delta: Option<(bool, MachineTerm)>,
+    pub entry_symbolic_members: Option<OldMachineTerm>,
+    pub symbolic_delta: Option<(bool, OldMachineTerm)>,
 }
 
 impl SymbolicPopulationCount {
     /// Preserve both components of a checked symbolic birth followed by
     /// numerical births. Other mixed directions are not admitted by the ledger.
-    pub(in crate::kernel) fn combined_delta(&self) -> Option<(bool, MachineTerm)> {
+    pub(in crate::kernel) fn combined_delta(&self) -> Option<(bool, OldMachineTerm)> {
         match (&self.symbolic_delta, self.delta) {
             (Some((true, quantity)), delta) if delta > 0 => Some((
                 true,
-                MachineTerm::add(quantity.clone(), MachineTerm::constant(delta as u32)),
+                OldMachineTerm::add(quantity.clone(), OldMachineTerm::constant(delta as u32)),
             )),
             (Some(delta), _) => Some(delta.clone()),
             (None, delta) if delta != 0 => {
-                Some((delta > 0, MachineTerm::constant(delta.unsigned_abs())))
+                Some((delta > 0, OldMachineTerm::constant(delta.unsigned_abs())))
             }
             (None, _) => None,
         }
@@ -585,7 +589,7 @@ impl CreationEvents {
     ) -> Result<Self, CreationRefusal> {
         self.import_observable_contract_population_quantity(
             description,
-            &MachineTerm::constant(owned_members),
+            &OldMachineTerm::constant(owned_members),
         )
     }
 
@@ -594,7 +598,7 @@ impl CreationEvents {
     fn fresh_opaque_entry_count(
         &self,
         description: &ResourceDescription,
-    ) -> Result<MachineTerm, CreationRefusal> {
+    ) -> Result<OldMachineTerm, CreationRefusal> {
         if let Some(import) = self.0.opaque_imports.get(description) {
             return import
                 .entry_count
@@ -608,7 +612,7 @@ impl CreationEvents {
             .expect("opaque entry count cache")
             .entry(description.clone())
             .or_insert_with(|| {
-                MachineTerm::Variable(
+                OldMachineTerm::Variable(
                     crate::kernel::Variable::allocate_fresh()
                         .expect("opaque count identity exhausted"),
                 )
@@ -619,7 +623,7 @@ impl CreationEvents {
     pub(in crate::kernel) fn import_observable_contract_population_quantity(
         &self,
         description: &ResourceDescription,
-        quantity: &MachineTerm,
+        quantity: &OldMachineTerm,
     ) -> Result<Self, CreationRefusal> {
         let (owned_members, symbolic_members) = match quantity.as_const() {
             Some(value) if value <= i32::MAX as u32 => (value, None),
@@ -655,7 +659,7 @@ impl CreationEvents {
                 .expect("opaque entry count cache")
                 .entry(description.clone())
                 .or_insert_with(|| {
-                    MachineTerm::Variable(
+                    OldMachineTerm::Variable(
                         crate::kernel::Variable::allocate_fresh()
                             .expect("opaque count identity exhausted"),
                     )
@@ -720,7 +724,7 @@ impl CreationEvents {
             counts
                 .entry(description.clone())
                 .or_insert_with(|| {
-                    MachineTerm::Variable(
+                    OldMachineTerm::Variable(
                         crate::kernel::Variable::allocate_fresh()
                             .expect("opaque entry count identity exhausted"),
                     )
@@ -791,7 +795,7 @@ impl CreationEvents {
                         } else {
                             let variable = crate::kernel::Variable::allocate_fresh()
                                 .ok_or("opaque entry count identity exhausted")?;
-                            let count = MachineTerm::Variable(variable);
+                            let count = OldMachineTerm::Variable(variable);
                             counts.insert(description.clone(), count.clone());
                             count
                         }
@@ -875,8 +879,8 @@ impl CreationEvents {
         &self,
         description: &ResourceDescription,
         owned_members: u32,
-        entry_count: Option<MachineTerm>,
-        symbolic_members: Option<MachineTerm>,
+        entry_count: Option<OldMachineTerm>,
+        symbolic_members: Option<OldMachineTerm>,
         control: Option<(ResourceFact, Arc<CompositeResourceDefinition>)>,
     ) -> Result<Self, CreationRefusal> {
         if description.population_arity().is_some() {
@@ -896,8 +900,8 @@ impl CreationEvents {
         &self,
         description: &ResourceDescription,
         owned_members: u32,
-        entry_count: Option<MachineTerm>,
-        symbolic_members: Option<MachineTerm>,
+        entry_count: Option<OldMachineTerm>,
+        symbolic_members: Option<OldMachineTerm>,
         control: Option<(ResourceFact, Arc<CompositeResourceDefinition>)>,
         members: OpaqueMemberInputs,
     ) -> Result<Self, CreationRefusal> {
@@ -965,7 +969,7 @@ impl CreationEvents {
         {
             return Err(CreationRefusal::OpaqueImportConflict);
         }
-        if let Some(MachineTerm::Variable(variable)) = &entry_count {
+        if let Some(OldMachineTerm::Variable(variable)) = &entry_count {
             crate::kernel::model_fields::register_population_entry_count(
                 *variable,
                 crate::kernel::model_fields::PopulationEntryCount {
@@ -1284,7 +1288,7 @@ impl CreationEvents {
     pub(in crate::kernel) fn imported_member_delta_since_entry(
         &self,
         description: &ResourceDescription,
-    ) -> Option<(bool, MachineTerm)> {
+    ) -> Option<(bool, OldMachineTerm)> {
         // Retirement preserves authenticated transition accounting. Reporting
         // the spent batch here grants no live count read or member custody.
         let scope = self.governing_authority(description)?;
@@ -1297,7 +1301,7 @@ impl CreationEvents {
                 .then(|| {
                     (
                         true,
-                        MachineTerm::constant(u32::from(member.owner.is_some())),
+                        OldMachineTerm::constant(u32::from(member.owner.is_some())),
                     )
                 });
         }
@@ -1311,9 +1315,9 @@ impl CreationEvents {
         if import.has_composable_symbolic_birth() {
             return Some((
                 true,
-                MachineTerm::add(
+                OldMachineTerm::add(
                     import.symbolic_delta.as_ref()?.1.clone(),
-                    MachineTerm::constant(import.owned_members),
+                    OldMachineTerm::constant(import.owned_members),
                 ),
             ));
         }
@@ -1327,13 +1331,13 @@ impl CreationEvents {
                 return None;
             }
             if import.entry_owned_members.checked_add(1) == Some(import.owned_members) {
-                Some((true, MachineTerm::constant(1)))
+                Some((true, OldMachineTerm::constant(1)))
             } else if import.owned_members.checked_add(1) == Some(import.entry_owned_members) {
-                Some((false, MachineTerm::constant(1)))
+                Some((false, OldMachineTerm::constant(1)))
             } else {
                 Some((
                     import.owned_members >= import.entry_owned_members,
-                    MachineTerm::constant(
+                    OldMachineTerm::constant(
                         import.owned_members.abs_diff(import.entry_owned_members),
                     ),
                 ))
@@ -1431,7 +1435,7 @@ impl CreationEvents {
                 crate::instrumentation::record_deterministic_work(1);
                 matches!(
                     &import.entry_count,
-                    Some(MachineTerm::Variable(entry)) if *entry == variable
+                    Some(OldMachineTerm::Variable(entry)) if *entry == variable
                 )
                 .then_some(description)
             })
@@ -1446,7 +1450,7 @@ impl CreationEvents {
             crate::instrumentation::record_deterministic_work(1);
             matches!(
                 &import.entry_count,
-                Some(MachineTerm::Variable(entry)) if *entry == variable
+                Some(OldMachineTerm::Variable(entry)) if *entry == variable
             )
             .then_some(import.acquired_at)
             .flatten()
@@ -1465,7 +1469,7 @@ impl CreationEvents {
         self.observe_symbolic(description).is_some_and(|count| {
             count.delta == 0
                 && count.symbolic_delta.is_none()
-                && count.entry_count == MachineTerm::Variable(variable)
+                && count.entry_count == OldMachineTerm::Variable(variable)
         })
     }
 
@@ -1540,7 +1544,7 @@ impl CreationEvents {
         description: &ResourceDescription,
         member_description: &ResourceDescription,
         authority_fact: bool,
-        quantity: &MachineTerm,
+        quantity: &OldMachineTerm,
         assumptions: &PureFactContext,
     ) -> Result<Self, CreationRefusal> {
         let import = self
@@ -1813,7 +1817,7 @@ impl CreationEvents {
         else {
             return Err(CreationRefusal::InvalidMember);
         };
-        if pointer.address().offset != AddressOffset::Constant(0)
+        if pointer.address().offset != OldAddressOffset::Constant(0)
             || &pointer.address().base != block
             || self.governing_authority(description).is_none()
         {
@@ -1850,7 +1854,7 @@ impl CreationEvents {
 
     /// A fresh entry count for the exact member `member`, registered so a
     /// diagnostic spells it `old(count(R(a, k)))`.
-    fn fresh_member_entry_count(member: &ResourceDescription) -> MachineTerm {
+    fn fresh_member_entry_count(member: &ResourceDescription) -> OldMachineTerm {
         let variable =
             crate::kernel::Variable::allocate_fresh().expect("exact count identity exhausted");
         if let Some(crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(anchor))) =
@@ -1866,7 +1870,7 @@ impl CreationEvents {
                 },
             );
         }
-        MachineTerm::Variable(variable)
+        OldMachineTerm::Variable(variable)
     }
 
     /// An exact count is global to the family, not the caller's owned quantity.
@@ -1923,7 +1927,7 @@ impl CreationEvents {
                     return Err(CreationRefusal::InvalidMember);
                 }
                 return Ok(SymbolicPopulationCount {
-                    entry_count: MachineTerm::constant(u32::from(member.owner.is_some())),
+                    entry_count: OldMachineTerm::constant(u32::from(member.owner.is_some())),
                     delta: 0,
                     entry_owned_members: 0,
                     entry_symbolic_members: None,
@@ -2009,7 +2013,7 @@ impl CreationEvents {
             return Err(CreationRefusal::InvalidMember);
         }
         Ok(SymbolicPopulationCount {
-            entry_count: MachineTerm::constant(if empty {
+            entry_count: OldMachineTerm::constant(if empty {
                 0
             } else {
                 self.0
@@ -2032,7 +2036,7 @@ impl CreationEvents {
             AlgebraicValue::Program(ProgramValue::Pointer(pointer)) => {
                 let mut address = pointer.address().clone();
                 if let Some(offset) = address.offset.as_const() {
-                    address.offset = AddressOffset::Constant(offset);
+                    address.offset = OldAddressOffset::Constant(offset);
                 }
                 AlgebraicValue::Program(ProgramValue::pointer(address))
             }
@@ -2042,7 +2046,10 @@ impl CreationEvents {
                 // member was created.
                 let value = crate::kernel::read_over_write_value(value).unwrap_or(value.clone());
                 AlgebraicValue::Program(ProgramValue::Int32(
-                    value.as_const().map(MachineTerm::constant).unwrap_or(value),
+                    value
+                        .as_const()
+                        .map(OldMachineTerm::constant)
+                        .unwrap_or(value),
                 ))
             }
             other => other.clone(),
@@ -2073,7 +2080,7 @@ impl CreationEvents {
         &self,
         block: &AddressBase,
         family: &str,
-    ) -> Result<MachineTerm, CreationRefusal> {
+    ) -> Result<OldMachineTerm, CreationRefusal> {
         let anchor = *self
             .0
             .anchors
@@ -2089,9 +2096,9 @@ impl CreationEvents {
             .authority
             .observe(self.0.invocation, population)
             .map_err(CreationRefusal::from)?;
-        let base = MachineTerm::constant(base);
+        let base = OldMachineTerm::constant(base);
         Ok(match self.0.symbolic_batches.get(&population) {
-            Some(batch) => MachineTerm::add(base, batch.quantity.clone()),
+            Some(batch) => OldMachineTerm::add(base, batch.quantity.clone()),
             None => base,
         })
     }
@@ -2100,7 +2107,7 @@ impl CreationEvents {
         &self,
         block: &AddressBase,
         family: &str,
-    ) -> Option<(u32, MachineTerm)> {
+    ) -> Option<(u32, OldMachineTerm)> {
         let anchor = *self.0.anchors.get(block)?;
         let population = self.0.authority.population_at(anchor, family)?;
         let base = self
@@ -2122,7 +2129,7 @@ impl CreationEvents {
         block: &AddressBase,
         description: &ResourceDescription,
         produce: bool,
-        quantity: &MachineTerm,
+        quantity: &OldMachineTerm,
         assumptions: &PureFactContext,
     ) -> Result<(Self, CheckedPopulationMemberExchange), CreationRefusal> {
         if quantity.as_const() != Some(1) {
@@ -2145,7 +2152,7 @@ impl CreationEvents {
         block: &AddressBase,
         description: &ResourceDescription,
         produce: bool,
-        quantity: &MachineTerm,
+        quantity: &OldMachineTerm,
         assumptions: &PureFactContext,
     ) -> Result<(Self, CheckedPopulationMemberExchange), CreationRefusal> {
         if !description.schema().is_fieldless() {
@@ -2160,7 +2167,7 @@ impl CreationEvents {
             .then(|| crate::kernel::assumptions::exact_signed_constant(quantity, assumptions))
             .flatten()
             .filter(|value| (0..=i64::from(i32::MAX)).contains(value))
-            .map(|value| MachineTerm::constant(value as u32));
+            .map(|value| OldMachineTerm::constant(value as u32));
         let quantity = exact_numeric.as_ref().unwrap_or(quantity);
         // A helper may select the complete numerical batch by an entry field
         // rather than a literal. Keep the symbolic-batch path unchanged.
@@ -2181,7 +2188,7 @@ impl CreationEvents {
                     assumptions,
                 )
             })
-            .map(MachineTerm::constant);
+            .map(OldMachineTerm::constant);
         let quantity = numerical.as_ref().unwrap_or(quantity);
         if quantity.as_const() == Some(1) {
             return self.checked_member_exchange_with_context(
@@ -2231,9 +2238,11 @@ impl CreationEvents {
                     .clone()
                     .ok_or(CreationRefusal::UnknownTotal)?;
                 let delta = i64::from(import.owned_members) - i64::from(import.entry_owned_members);
-                let zero_entry = assumptions.exact_condition_value(
-                    &crate::kernel::ConditionTerm::equal(entry.clone(), MachineTerm::constant(0)),
-                ) == Some(true);
+                let zero_entry =
+                    assumptions.exact_condition_value(&crate::kernel::OldConditionTerm::equal(
+                        entry.clone(),
+                        OldMachineTerm::constant(0),
+                    )) == Some(true);
                 let upper = entry
                     .as_const()
                     .map(|value| i64::from(value as i32))
@@ -2247,13 +2256,13 @@ impl CreationEvents {
                         high + delta + i64::from(amount) <= i64::from(i32::MAX)
                     });
                 let current = if delta >= 0 {
-                    MachineTerm::add(entry, MachineTerm::constant(delta as u32))
+                    OldMachineTerm::add(entry, OldMachineTerm::constant(delta as u32))
                 } else {
-                    MachineTerm::subtract(entry, MachineTerm::constant((-delta) as u32))
+                    OldMachineTerm::subtract(entry, OldMachineTerm::constant((-delta) as u32))
                 };
                 if !bounded
                     && assumptions.exact_condition_value(
-                        &crate::kernel::ConditionTerm::signed_add_overflows(
+                        &crate::kernel::OldConditionTerm::signed_add_overflows(
                             current,
                             quantity.clone(),
                         ),
@@ -2275,9 +2284,9 @@ impl CreationEvents {
         }
         if !crate::kernel::quantity_condition_holds(
             assumptions,
-            crate::kernel::ConditionTerm::signed_greater_equal(
+            crate::kernel::OldConditionTerm::signed_greater_equal(
                 quantity.clone(),
-                MachineTerm::constant(0),
+                OldMachineTerm::constant(0),
             ),
         ) {
             return Err(CreationRefusal::InvalidQuantity);
@@ -2312,10 +2321,13 @@ impl CreationEvents {
                     .authority
                     .observe(self.0.invocation, population)
                     .map_err(CreationRefusal::from)?;
-                let maximum = MachineTerm::constant(i32::MAX as u32 - base);
+                let maximum = OldMachineTerm::constant(i32::MAX as u32 - base);
                 if !crate::kernel::quantity_condition_holds(
                     assumptions,
-                    crate::kernel::ConditionTerm::signed_greater_equal(maximum, quantity.clone()),
+                    crate::kernel::OldConditionTerm::signed_greater_equal(
+                        maximum,
+                        quantity.clone(),
+                    ),
                 ) {
                     return Err(CreationRefusal::InvalidQuantity);
                 }
@@ -2397,19 +2409,22 @@ impl CreationEvents {
                 let current = self
                     .observe_symbolic(description)
                     .and_then(|count| {
-                        Some(MachineTerm::add(
+                        Some(OldMachineTerm::add(
                             count.entry_count.clone(),
                             count.combined_delta()?.1,
                         ))
                     })
                     .ok_or(CreationRefusal::MissingAuthority)?;
                 if assumptions.exact_condition_value(
-                    &crate::kernel::ConditionTerm::signed_add_overflows(current, quantity.clone()),
+                    &crate::kernel::OldConditionTerm::signed_add_overflows(
+                        current,
+                        quantity.clone(),
+                    ),
                 ) != Some(false)
                 {
                     return Err(CreationRefusal::InvalidQuantity);
                 }
-                Some((true, MachineTerm::add(prior.clone(), quantity.clone())))
+                Some((true, OldMachineTerm::add(prior.clone(), quantity.clone())))
             } else {
                 if !same_quantity(prior, quantity, assumptions) {
                     return Err(CreationRefusal::InvalidQuantity);
@@ -2543,16 +2558,19 @@ impl CreationEvents {
                 .clone()
                 .ok_or(CreationRefusal::UnknownTotal)?;
             let current = if aggregate.delta >= 0 {
-                MachineTerm::add(entry.clone(), MachineTerm::constant(aggregate.delta as u32))
-            } else {
-                MachineTerm::subtract(
+                OldMachineTerm::add(
                     entry.clone(),
-                    MachineTerm::constant(aggregate.delta.unsigned_abs()),
+                    OldMachineTerm::constant(aggregate.delta as u32),
+                )
+            } else {
+                OldMachineTerm::subtract(
+                    entry.clone(),
+                    OldMachineTerm::constant(aggregate.delta.unsigned_abs()),
                 )
             };
-            let overflow = crate::kernel::ConditionTerm::signed_add_overflows(
+            let overflow = crate::kernel::OldConditionTerm::signed_add_overflows(
                 current,
-                MachineTerm::constant(1),
+                OldMachineTerm::constant(1),
             );
             if assumptions.exact_condition_value(&overflow) != Some(false)
                 && !assumptions
@@ -2621,7 +2639,7 @@ impl CreationEvents {
                     symbolic_delta: (aggregate.delta != 0).then(|| {
                         (
                             aggregate.delta > 0,
-                            MachineTerm::constant(aggregate.delta.unsigned_abs()),
+                            OldMachineTerm::constant(aggregate.delta.unsigned_abs()),
                         )
                     }),
                     consumed_named,
@@ -2765,13 +2783,16 @@ impl CreationEvents {
                     let delta =
                         i64::from(import.owned_members) - i64::from(import.entry_owned_members);
                     let total = if delta >= 0 {
-                        MachineTerm::add(entry.clone(), MachineTerm::constant(delta as u32))
+                        OldMachineTerm::add(entry.clone(), OldMachineTerm::constant(delta as u32))
                     } else {
-                        MachineTerm::subtract(entry.clone(), MachineTerm::constant((-delta) as u32))
+                        OldMachineTerm::subtract(
+                            entry.clone(),
+                            OldMachineTerm::constant((-delta) as u32),
+                        )
                     };
-                    let no_overflow = crate::kernel::ConditionTerm::signed_add_overflows(
+                    let no_overflow = crate::kernel::OldConditionTerm::signed_add_overflows(
                         total,
-                        MachineTerm::constant(1),
+                        OldMachineTerm::constant(1),
                     );
                     if !assumptions.is_some_and(|facts| {
                         facts.exact_condition_value(&no_overflow) == Some(false)
@@ -2800,15 +2821,15 @@ impl CreationEvents {
                     let current = self
                         .observe_symbolic(&scope)
                         .and_then(|count| {
-                            Some(MachineTerm::add(
+                            Some(OldMachineTerm::add(
                                 count.entry_count.clone(),
                                 count.combined_delta()?.1,
                             ))
                         })
                         .ok_or(CreationRefusal::MissingAuthority)?;
-                    let condition = crate::kernel::ConditionTerm::signed_add_overflows(
+                    let condition = crate::kernel::OldConditionTerm::signed_add_overflows(
                         current.clone(),
-                        MachineTerm::constant(amount),
+                        OldMachineTerm::constant(amount),
                     );
                     if !assumptions.is_some_and(|facts| {
                         facts.exact_condition_value(&condition) == Some(false)
@@ -3070,7 +3091,7 @@ impl CreationEvents {
             to,
             description,
             authority_fact,
-            &MachineTerm::constant(1),
+            &OldMachineTerm::constant(1),
             &PureFactContext::new(),
         )
     }
@@ -3081,7 +3102,7 @@ impl CreationEvents {
         to: &Self,
         description: &ResourceDescription,
         authority_fact: bool,
-        quantity: &MachineTerm,
+        quantity: &OldMachineTerm,
         assumptions: &PureFactContext,
     ) -> Result<Self, CreationRefusal> {
         let scope = self.governing_authority(description);
@@ -3106,12 +3127,12 @@ impl CreationEvents {
                     assumptions,
                 )
             })
-            .map(MachineTerm::constant);
+            .map(OldMachineTerm::constant);
         let quantity = numerical.as_ref().unwrap_or(quantity);
         // Zero ownership transports no member capability, including when a
         // checked contract equality establishes that a field-valued quantity
         // is zero. It cannot move the authority or justify a unit operation.
-        if !authority_fact && same_quantity(quantity, &MachineTerm::constant(0), assumptions) {
+        if !authority_fact && same_quantity(quantity, &OldMachineTerm::constant(0), assumptions) {
             return Ok(self.clone());
         }
         if let Some(scope) = scope
@@ -3556,7 +3577,7 @@ impl CreationEvents {
             return Err(CreationRefusal::InvalidMember);
         };
         if &pointer.address().base != block
-            || pointer.address().offset != AddressOffset::Constant(0)
+            || pointer.address().offset != OldAddressOffset::Constant(0)
             || !description.resource_arguments().is_empty()
         {
             return Err(CreationRefusal::InvalidMember);
@@ -3622,10 +3643,10 @@ impl CreationEvents {
         let consumed = symbolic
             .symbolic_delta
             .map(|(_, quantity)| quantity)
-            .unwrap_or(MachineTerm::constant(symbolic.delta.unsigned_abs()));
-        let current = MachineTerm::subtract(symbolic.entry_count.clone(), consumed.clone());
+            .unwrap_or(OldMachineTerm::constant(symbolic.delta.unsigned_abs()));
+        let current = OldMachineTerm::subtract(symbolic.entry_count.clone(), consumed.clone());
         if !same_quantity(&symbolic.entry_count, &consumed, assumptions)
-            && !same_quantity(&current, &MachineTerm::constant(0), assumptions)
+            && !same_quantity(&current, &OldMachineTerm::constant(0), assumptions)
         {
             return Err(CreationRefusal::UnknownTotal);
         }

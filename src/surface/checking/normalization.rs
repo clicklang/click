@@ -31,7 +31,7 @@ pub(in crate::surface) fn normalize_proposition(
             )),
         },
         Proposition::ConditionIs(condition, expected) => {
-            match normalize_condition_without_assumptions(condition.native_compat()) {
+            match normalize_condition_without_assumptions(condition.old_form()) {
                 Some(actual) if actual == *expected => NormalizedProposition::True,
                 Some(_) => NormalizedProposition::False,
                 None => NormalizedProposition::Proposition(proposition.clone()),
@@ -104,8 +104,8 @@ pub(in crate::surface) use crate::kernel::proof::equality_rewrite::rewrite_propo
 impl NormalizedProposition {
     fn into_proposition(self) -> Proposition {
         match self {
-            Self::True => Proposition::condition_is(ConditionTerm::Constant(true), true),
-            Self::False => Proposition::condition_is(ConditionTerm::Constant(false), true),
+            Self::True => Proposition::condition_is(OldConditionTerm::Constant(true), true),
+            Self::False => Proposition::condition_is(OldConditionTerm::Constant(false), true),
             Self::Proposition(proposition) => proposition,
         }
     }
@@ -119,12 +119,12 @@ pub(in crate::surface) fn normalized_terms_equal(left: &Term, right: &Term) -> O
     }
     match (&left, &right) {
         (Term::Bitvector32(left), Term::Bitvector32(right)) => Some(
-            evaluate_bitvector_constant(&normalize_bitvector(left.native_compat()))?
-                == evaluate_bitvector_constant(&normalize_bitvector(right.native_compat()))?,
+            evaluate_bitvector_constant(&normalize_bitvector(left.old_form()))?
+                == evaluate_bitvector_constant(&normalize_bitvector(right.old_form()))?,
         ),
         (Term::Condition(left), Term::Condition(right)) => Some(
-            normalize_condition_without_assumptions(left.native_compat())?
-                == normalize_condition_without_assumptions(right.native_compat())?,
+            normalize_condition_without_assumptions(left.old_form())?
+                == normalize_condition_without_assumptions(right.old_form())?,
         ),
         _ => None,
     }
@@ -139,8 +139,8 @@ pub(in crate::surface) fn normalize_term(term: &Term) -> Term {
             normalize_term(&Term::ProgramValue(value.numeric_value().clone().into()))
         }
         Term::Condition(condition) => {
-            match normalize_condition_without_assumptions(condition.native_compat()) {
-                Some(value) => Term::Condition(ConditionTerm::Constant(value).into()),
+            match normalize_condition_without_assumptions(condition.old_form()) {
+                Some(value) => Term::Condition(OldConditionTerm::Constant(value).into()),
                 None => term.clone(),
             }
         }
@@ -165,48 +165,48 @@ pub(in crate::surface) fn normalize_term(term: &Term) -> Term {
 }
 
 pub(in crate::surface) fn normalize_condition_without_assumptions(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
 ) -> Option<bool> {
     match condition {
-        ConditionTerm::PointerEqual(_, _) => {
+        OldConditionTerm::PointerEqual(_, _) => {
             crate::kernel::SelectedFacts::from_propositions(&[]).decide_selected_condition(condition)
         }
 
-        ConditionTerm::AlgebraicEqual(_, _) => {
+        OldConditionTerm::AlgebraicEqual(_, _) => {
             crate::kernel::SelectedFacts::from_propositions(&[]).decide_selected_condition(condition)
         }
-        ConditionTerm::IntegerEqual(left, right) => {
+        OldConditionTerm::IntegerEqual(left, right) => {
             if left == right {
                 Some(true)
             } else {
                 Some(left.as_const()? == right.as_const()?)
             }
         }
-        ConditionTerm::IntegerNotEqual(left, right) => {
+        OldConditionTerm::IntegerNotEqual(left, right) => {
             if left == right {
                 Some(false)
             } else {
                 Some(left.as_const()? != right.as_const()?)
             }
         }
-        ConditionTerm::IntegerLessThan(left, right) => Some(left.as_const()? < right.as_const()?),
-        ConditionTerm::IntegerLessEqual(left, right) => Some(left.as_const()? <= right.as_const()?),
-        ConditionTerm::IntegerGreaterThan(left, right) => {
+        OldConditionTerm::IntegerLessThan(left, right) => Some(left.as_const()? < right.as_const()?),
+        OldConditionTerm::IntegerLessEqual(left, right) => Some(left.as_const()? <= right.as_const()?),
+        OldConditionTerm::IntegerGreaterThan(left, right) => {
             Some(left.as_const()? > right.as_const()?)
         }
-        ConditionTerm::IntegerGreaterEqual(left, right) => {
+        OldConditionTerm::IntegerGreaterEqual(left, right) => {
             Some(left.as_const()? >= right.as_const()?)
         }
-        ConditionTerm::Constant(value) => Some(*value),
+        OldConditionTerm::Constant(value) => Some(*value),
         // A closed comparison, native at any width or of two `bool`
         // literals, which lowering retains.
-        condition @ (ConditionTerm::Compare { .. } | ConditionTerm::BoolEqual(..))
+        condition @ (OldConditionTerm::Compare { .. } | OldConditionTerm::BoolEqual(..))
             if let Some(value) =
                 crate::kernel::machine_integer::comparison::closed_condition_value(condition) =>
         {
             Some(value)
         }
-        ConditionTerm::Compare { format: MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, left, right } => {
+        OldConditionTerm::Compare { format: MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, left, right } => {
             let left = normalize_bitvector(left);
             let right = normalize_bitvector(right);
             if left == right {
@@ -215,7 +215,7 @@ pub(in crate::surface) fn normalize_condition_without_assumptions(
                 Some(evaluate_bitvector_constant(&left)? == evaluate_bitvector_constant(&right)?)
             }
         }
-        ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::LessThan, left, right } => {
+        OldConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::LessThan, left, right } => {
             let left = normalize_bitvector(left);
             let right = normalize_bitvector(right);
             if left == right {
@@ -224,7 +224,7 @@ pub(in crate::surface) fn normalize_condition_without_assumptions(
                 Some((evaluate_bitvector_constant(&left)? as i32) < (evaluate_bitvector_constant(&right)? as i32))
             }
         }
-        ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::LessEqual, left, right } => {
+        OldConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::LessEqual, left, right } => {
             let left = normalize_bitvector(left);
             let right = normalize_bitvector(right);
             if left == right {
@@ -235,7 +235,7 @@ pub(in crate::surface) fn normalize_condition_without_assumptions(
                 )
             }
         }
-        ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::GreaterThan, left, right } => {
+        OldConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::GreaterThan, left, right } => {
             let left = normalize_bitvector(left);
             let right = normalize_bitvector(right);
             if left == right {
@@ -244,7 +244,7 @@ pub(in crate::surface) fn normalize_condition_without_assumptions(
                 Some((evaluate_bitvector_constant(&left)? as i32) > (evaluate_bitvector_constant(&right)? as i32))
             }
         }
-        ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::GreaterEqual, left, right } => {
+        OldConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::GreaterEqual, left, right } => {
             let left = normalize_bitvector(left);
             let right = normalize_bitvector(right);
             if left == right {
@@ -255,7 +255,7 @@ pub(in crate::surface) fn normalize_condition_without_assumptions(
                 )
             }
         }
-        ConditionTerm::Compare { format: MachineIntegerType::Int64, relation: CompareRelation::LessThan, left, right } => {
+        OldConditionTerm::Compare { format: MachineIntegerType::Int64, relation: CompareRelation::LessThan, left, right } => {
             let left = normalize_bitvector(left);
             let right = normalize_bitvector(right);
             if left == right {
@@ -263,7 +263,7 @@ pub(in crate::surface) fn normalize_condition_without_assumptions(
             }
             Some(left.int64_as_const()? < right.int64_as_const()?)
         }
-        ConditionTerm::Compare { format: MachineIntegerType::Int64, relation: CompareRelation::LessEqual, left, right } => {
+        OldConditionTerm::Compare { format: MachineIntegerType::Int64, relation: CompareRelation::LessEqual, left, right } => {
             let left = normalize_bitvector(left);
             let right = normalize_bitvector(right);
             if left == right {
@@ -271,7 +271,7 @@ pub(in crate::surface) fn normalize_condition_without_assumptions(
             }
             Some(left.int64_as_const()? <= right.int64_as_const()?)
         }
-        ConditionTerm::Compare { format: MachineIntegerType::Int64, relation: CompareRelation::GreaterThan, left, right } => {
+        OldConditionTerm::Compare { format: MachineIntegerType::Int64, relation: CompareRelation::GreaterThan, left, right } => {
             let left = normalize_bitvector(left);
             let right = normalize_bitvector(right);
             if left == right {
@@ -279,7 +279,7 @@ pub(in crate::surface) fn normalize_condition_without_assumptions(
             }
             Some(left.int64_as_const()? > right.int64_as_const()?)
         }
-        ConditionTerm::Compare { format: MachineIntegerType::Int64, relation: CompareRelation::GreaterEqual, left, right } => {
+        OldConditionTerm::Compare { format: MachineIntegerType::Int64, relation: CompareRelation::GreaterEqual, left, right } => {
             let left = normalize_bitvector(left);
             let right = normalize_bitvector(right);
             if left == right {
@@ -287,7 +287,7 @@ pub(in crate::surface) fn normalize_condition_without_assumptions(
             }
             Some(left.int64_as_const()? >= right.int64_as_const()?)
         }
-        ConditionTerm::Compare { format: MachineIntegerType::UInt64, relation: CompareRelation::LessThan, left, right } => Some({
+        OldConditionTerm::Compare { format: MachineIntegerType::UInt64, relation: CompareRelation::LessThan, left, right } => Some({
             let left = normalize_bitvector(left);
             let right = normalize_bitvector(right);
             if left == right {
@@ -295,7 +295,7 @@ pub(in crate::surface) fn normalize_condition_without_assumptions(
             }
             left.uint64_as_const()? < right.uint64_as_const()?
         }),
-        ConditionTerm::Compare { format: MachineIntegerType::UInt64, relation: CompareRelation::LessEqual, left, right } => Some({
+        OldConditionTerm::Compare { format: MachineIntegerType::UInt64, relation: CompareRelation::LessEqual, left, right } => Some({
             let left = normalize_bitvector(left);
             let right = normalize_bitvector(right);
             if left == right {
@@ -303,7 +303,7 @@ pub(in crate::surface) fn normalize_condition_without_assumptions(
             }
             left.uint64_as_const()? <= right.uint64_as_const()?
         }),
-        ConditionTerm::Compare { format: MachineIntegerType::UInt64, relation: CompareRelation::GreaterThan, left, right } => Some({
+        OldConditionTerm::Compare { format: MachineIntegerType::UInt64, relation: CompareRelation::GreaterThan, left, right } => Some({
             let left = normalize_bitvector(left);
             let right = normalize_bitvector(right);
             if left == right {
@@ -311,7 +311,7 @@ pub(in crate::surface) fn normalize_condition_without_assumptions(
             }
             left.uint64_as_const()? > right.uint64_as_const()?
         }),
-        ConditionTerm::Compare { format: MachineIntegerType::UInt64, relation: CompareRelation::GreaterEqual, left, right } => Some({
+        OldConditionTerm::Compare { format: MachineIntegerType::UInt64, relation: CompareRelation::GreaterEqual, left, right } => Some({
             let left = normalize_bitvector(left);
             let right = normalize_bitvector(right);
             if left == right {
@@ -319,7 +319,7 @@ pub(in crate::surface) fn normalize_condition_without_assumptions(
             }
             left.uint64_as_const()? >= right.uint64_as_const()?
         }),
-        ConditionTerm::Compare { format: MachineIntegerType::Int64, relation: CompareRelation::Equal, left, right } => {
+        OldConditionTerm::Compare { format: MachineIntegerType::Int64, relation: CompareRelation::Equal, left, right } => {
             let left = normalize_bitvector(left);
             let right = normalize_bitvector(right);
             if left == right {
@@ -335,38 +335,38 @@ pub(in crate::surface) fn normalize_condition_without_assumptions(
                 .or_else(|| right.uint64_as_const())?;
             Some(left == right)
         }
-        ConditionTerm::Variable(_)
+        OldConditionTerm::Variable(_)
         // The other formats have no constant folding here.
-        | ConditionTerm::Compare { .. }
-        | ConditionTerm::Overflows { .. }
-        | ConditionTerm::Float32(_)
-        | ConditionTerm::Float64(_)
-        | ConditionTerm::AddressOffsetEqual(_, _)
-        | ConditionTerm::AddressEqual(_, _) => None,
+        | OldConditionTerm::Compare { .. }
+        | OldConditionTerm::Overflows { .. }
+        | OldConditionTerm::Float32(_)
+        | OldConditionTerm::Float64(_)
+        | OldConditionTerm::AddressOffsetEqual(_, _)
+        | OldConditionTerm::AddressEqual(_, _) => None,
         // A `Bool` value decides by its shape, as the kernel decides it
         // with no facts.
-        ConditionTerm::BoolApplication(_)
-        | ConditionTerm::BoolIf { .. }
-        | ConditionTerm::BoolEqual(..) => {
+        OldConditionTerm::BoolApplication(_)
+        | OldConditionTerm::BoolIf { .. }
+        | OldConditionTerm::BoolEqual(..) => {
             crate::kernel::SelectedFacts::from_propositions(&[]).decide_selected_condition(condition)
         }
     }
 }
 
-pub(in crate::surface) fn evaluate_bitvector_constant(term: &MachineTerm) -> Option<u32> {
+pub(in crate::surface) fn evaluate_bitvector_constant(term: &OldMachineTerm) -> Option<u32> {
     match term {
-        MachineTerm::ThreadHandle(_) => None,
-        MachineTerm::Cast {
+        OldMachineTerm::ThreadHandle(_) => None,
+        OldMachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             ..
         } => None,
         // Rule C1: a decided `Bool` casts to 1 or 0.
-        MachineTerm::BoolCast { value, .. } => {
+        OldMachineTerm::BoolCast { value, .. } => {
             Some(u32::from(normalize_condition_without_assumptions(value)?))
         }
 
         bits32_constant!(value) => Some(constant_u32(*value)),
-        MachineTerm::Variable(_)
+        OldMachineTerm::Variable(_)
         | int64_constant!(_)
         | uint64_constant!(_)
         | native_constant!(_, _)
@@ -378,16 +378,16 @@ pub(in crate::surface) fn evaluate_bitvector_constant(term: &MachineTerm) -> Opt
         | cast_term!(UInt64FromInt64, _)
         | crate::kernel::binary_wide_term!(..)
         | crate::kernel::unary_wide_term!(..)
-        | MachineTerm::Float32Negate(_)
-        | MachineTerm::Float32Binary { .. }
-        | MachineTerm::Float64Negate(_)
-        | MachineTerm::Float64Binary { .. }
-        | MachineTerm::RangeFold { .. }
-        | MachineTerm::PureFunctionApplication { .. }
-        | MachineTerm::ClickFunctionApplication { .. }
-        | MachineTerm::AlgebraicMatch { .. }
-        | MachineTerm::IntegerAddress(_, _)
-        | MachineTerm::MemoryLoad(_, _, _) => None,
+        | OldMachineTerm::Float32Negate(_)
+        | OldMachineTerm::Float32Binary { .. }
+        | OldMachineTerm::Float64Negate(_)
+        | OldMachineTerm::Float64Binary { .. }
+        | OldMachineTerm::RangeFold { .. }
+        | OldMachineTerm::PureFunctionApplication { .. }
+        | OldMachineTerm::ClickFunctionApplication { .. }
+        | OldMachineTerm::AlgebraicMatch { .. }
+        | OldMachineTerm::IntegerAddress(_, _)
+        | OldMachineTerm::MemoryLoad(_, _, _) => None,
         binary_term!(Bits32, Add, left, right) => Some(
             evaluate_bitvector_constant(left)?.wrapping_add(evaluate_bitvector_constant(right)?),
         ),
@@ -455,7 +455,7 @@ pub(in crate::surface) fn evaluate_bitvector_constant(term: &MachineTerm) -> Opt
             Some(evaluate_bitvector_constant(left)? ^ evaluate_bitvector_constant(right)?)
         }
         unary_term!(Bits32, BitwiseNot, value) => Some(!evaluate_bitvector_constant(value)?),
-        MachineTerm::If {
+        OldMachineTerm::If {
             condition,
             then_term,
             else_term,
@@ -463,18 +463,18 @@ pub(in crate::surface) fn evaluate_bitvector_constant(term: &MachineTerm) -> Opt
             true => evaluate_bitvector_constant(then_term),
             false => evaluate_bitvector_constant(else_term),
         },
-        MachineTerm::IntegerToMachine { .. } => None,
+        OldMachineTerm::IntegerToMachine { .. } => None,
     }
 }
 
-pub(in crate::surface) fn normalize_bitvector(term: &MachineTerm) -> MachineTerm {
+pub(in crate::surface) fn normalize_bitvector(term: &OldMachineTerm) -> OldMachineTerm {
     match term {
-        MachineTerm::ThreadHandle(_) => term.clone(),
-        MachineTerm::Constant { .. } | MachineTerm::Variable(_) => term.clone(),
-        MachineTerm::IntegerToMachine { .. } => term.clone(),
-        MachineTerm::BoolCast { value, .. } => {
+        OldMachineTerm::ThreadHandle(_) => term.clone(),
+        OldMachineTerm::Constant { .. } | OldMachineTerm::Variable(_) => term.clone(),
+        OldMachineTerm::IntegerToMachine { .. } => term.clone(),
+        OldMachineTerm::BoolCast { value, .. } => {
             match normalize_condition_without_assumptions(value) {
-                Some(value) => MachineTerm::constant(u32::from(value)),
+                Some(value) => OldMachineTerm::constant(u32::from(value)),
                 None => term.clone(),
             }
         }
@@ -522,27 +522,27 @@ pub(in crate::surface) fn normalize_bitvector(term: &MachineTerm) -> MachineTerm
             bitvector32_xor(normalize_bitvector(left), normalize_bitvector(right))
         }
         unary_term!(Int32, BitwiseNot, value) => bitvector32_not(normalize_bitvector(value)),
-        MachineTerm::If {
+        OldMachineTerm::If {
             condition,
             then_term,
             else_term,
         } => match normalize_condition_without_assumptions(condition) {
             Some(true) => normalize_bitvector(then_term),
             Some(false) => normalize_bitvector(else_term),
-            None => MachineTerm::if_then_else(
+            None => OldMachineTerm::if_then_else(
                 condition.as_ref().clone(),
                 normalize_bitvector(then_term),
                 normalize_bitvector(else_term),
             ),
         },
-        MachineTerm::RangeFold {
+        OldMachineTerm::RangeFold {
             start,
             end,
             initial,
             accumulator,
             item,
             body,
-        } => MachineTerm::range_fold(
+        } => OldMachineTerm::range_fold(
             normalize_bitvector(start),
             normalize_bitvector(end),
             normalize_bitvector(initial),
@@ -550,19 +550,19 @@ pub(in crate::surface) fn normalize_bitvector(term: &MachineTerm) -> MachineTerm
             *item,
             normalize_bitvector(body),
         ),
-        MachineTerm::PureFunctionApplication { name, arguments } => {
-            MachineTerm::PureFunctionApplication {
+        OldMachineTerm::PureFunctionApplication { name, arguments } => {
+            OldMachineTerm::PureFunctionApplication {
                 name: name.clone(),
                 arguments: arguments.iter().map(normalize_bitvector).collect(),
             }
         }
-        MachineTerm::ClickFunctionApplication { .. } | MachineTerm::AlgebraicMatch { .. } => {
+        OldMachineTerm::ClickFunctionApplication { .. } | OldMachineTerm::AlgebraicMatch { .. } => {
             term.clone()
         }
-        MachineTerm::MemoryLoad(memory, pointer, kind) => {
-            MachineTerm::read_named(memory.clone(), pointer.clone(), *kind)
+        OldMachineTerm::MemoryLoad(memory, pointer, kind) => {
+            OldMachineTerm::read_named(memory.clone(), pointer.clone(), *kind)
         }
-        MachineTerm::IntegerAddress(_, _) => term.clone(),
+        OldMachineTerm::IntegerAddress(_, _) => term.clone(),
         term => match (term.as_binary(), term.as_unary()) {
             (Some((op, left, right)), _) => {
                 op.build(normalize_bitvector(left), normalize_bitvector(right))
@@ -588,24 +588,24 @@ mod tests {
     #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: 1.8s in the parallel gate"]
     fn equality_rewrite_search_observes_the_deadline() {
-        let variable = |index: u64| MachineTerm::Variable(Variable(93_400 + index));
+        let variable = |index: u64| OldMachineTerm::Variable(Variable(93_400 + index));
         let count = 6;
         let sum = (1..count).fold(variable(0), |sum, index| {
-            MachineTerm::add(sum, variable(index))
+            OldMachineTerm::add(sum, variable(index))
         });
         let goal = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left: Box::new(sum),
-                right: Box::new(MachineTerm::constant(0)),
+                right: Box::new(OldMachineTerm::constant(0)),
             },
             true,
         );
         let premises = (0..count)
             .map(|index| {
                 let kernel = Proposition::condition_is(
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
                         left: Box::new(variable(index)),
@@ -659,7 +659,7 @@ mod tests {
             let source = Address::symbolic(Variable(910_000 + case));
             let target = Address {
                 base: AddressBase::Heap(920_000 + case),
-                offset: AddressOffset::Constant(4),
+                offset: OldAddressOffset::Constant(4),
             };
             let identity = crate::kernel::intern_memory(
                 SymbolicMemory::new().with_block(format!("rewrite-origin-{case}"), 16),
@@ -670,11 +670,11 @@ mod tests {
                     .clone()
                     .store(
                         target.clone(),
-                        ProgramValue::Int32(MachineTerm::constant(17)),
+                        ProgramValue::Int32(OldMachineTerm::constant(17)),
                     )
                     .store(
                         target.clone(),
-                        ProgramValue::Int32(MachineTerm::constant(stored)),
+                        ProgramValue::Int32(OldMachineTerm::constant(stored)),
                     ),
             );
             let load = crate::kernel::load_variable_for_cell_with_origin(
@@ -685,16 +685,16 @@ mod tests {
                 &observed,
             );
             let goal = Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left: Box::new(MachineTerm::Variable(load)),
-                    right: Box::new(MachineTerm::constant(17)),
+                    left: Box::new(OldMachineTerm::Variable(load)),
+                    right: Box::new(OldMachineTerm::constant(17)),
                 },
                 true,
             );
             let equality =
-                Proposition::condition_is(ConditionTerm::address_equal(source, target), true);
+                Proposition::condition_is(OldConditionTerm::address_equal(source, target), true);
             let rewritten = rewrite_proposition_by_exact_equality(
                 &goal,
                 &equality,
@@ -704,16 +704,16 @@ mod tests {
             // The rewritten goal reads the target at the observed state,
             // named as a read: the read-over-write authority relates it to
             // the latest overwrite stored there.
-            let Some((ConditionTerm::Compare { left, right, .. }, true)) =
-                rewritten.condition_native()
+            let Some((OldConditionTerm::Compare { left, right, .. }, true)) =
+                rewritten.old_condition()
             else {
                 panic!("the rewrite keeps the comparison: {rewritten:?}");
             };
-            assert_eq!(right.as_ref(), &MachineTerm::constant(17));
-            assert_ne!(left.as_ref(), &MachineTerm::Variable(load));
+            assert_eq!(right.as_ref(), &OldMachineTerm::constant(17));
+            assert_ne!(left.as_ref(), &OldMachineTerm::Variable(load));
             assert_eq!(
                 crate::kernel::read_over_write_value(left),
-                Some(MachineTerm::constant(stored))
+                Some(OldMachineTerm::constant(stored))
             );
         }
     }
@@ -726,7 +726,7 @@ mod tests {
         let source = Address::symbolic(Variable(930_000));
         let target = Address {
             base: AddressBase::Heap(930_001),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let memory = crate::kernel::intern_memory(
             SymbolicMemory::new().with_block(AddressBase::Heap(930_001), 16),
@@ -739,33 +739,33 @@ mod tests {
             &memory,
         );
         let (target_loaded, _) =
-            crate::kernel::load_variable_for_term(&crate::kernel::MachineTerm::read_named(
+            crate::kernel::load_variable_for_term(&crate::kernel::OldMachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(&memory),
                 target.clone(),
                 crate::kernel::LoadKind::Int32,
             ))
             .expect("the target read has a name");
         let read_through = |variable| {
-            crate::kernel::MachineTerm::read_named(
+            crate::kernel::OldMachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(&memory),
                 Address {
                     base: AddressBase::Symbolic(variable),
-                    offset: AddressOffset::Constant(8),
+                    offset: OldAddressOffset::Constant(8),
                 },
                 crate::kernel::LoadKind::Int32,
             )
         };
         let goal = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(read_through(loaded)),
-                right: Box::new(MachineTerm::constant(5)),
+                right: Box::new(OldMachineTerm::constant(5)),
             },
             true,
         );
         let equality =
-            Proposition::condition_is(ConditionTerm::address_equal(source, target), true);
+            Proposition::condition_is(OldConditionTerm::address_equal(source, target), true);
         let rewritten = rewrite_proposition_by_exact_equality(
             &goal,
             &equality,
@@ -775,11 +775,11 @@ mod tests {
         assert_eq!(
             rewritten,
             Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
                     left: Box::new(read_through(target_loaded)),
-                    right: Box::new(MachineTerm::constant(5))
+                    right: Box::new(OldMachineTerm::constant(5))
                 },
                 true,
             )
@@ -791,32 +791,32 @@ mod tests {
         let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let source = Address {
             base: AddressBase::Symbolic(Variable(91)),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let target = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(92)), 4),
+            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(92)), 4),
         };
         let field_load = |base: &Address, displacement| {
-            crate::kernel::MachineTerm::read_named(
+            crate::kernel::OldMachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(&memory),
                 Address {
                     base: base.base.clone(),
-                    offset: AddressOffset::add(
+                    offset: OldAddressOffset::add(
                         base.offset.clone(),
-                        AddressOffset::Constant(displacement),
+                        OldAddressOffset::Constant(displacement),
                     ),
                 },
                 crate::kernel::LoadKind::Int32,
             )
         };
         let equality = Proposition::condition_is(
-            ConditionTerm::address_equal(source.clone(), target.clone()),
+            OldConditionTerm::address_equal(source.clone(), target.clone()),
             true,
         );
         let goal = Proposition::And(
             Box::new(Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
                     left: Box::new(field_load(&source, 4)),
@@ -825,7 +825,7 @@ mod tests {
                 true,
             )),
             Box::new(Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
                     left: Box::new(field_load(&source, 8)),
@@ -847,7 +847,7 @@ mod tests {
         .expect("one cited equality rewrites both field addresses");
         let expected = Proposition::And(
             Box::new(Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
                     left: Box::new(field_load(&target, 4)),
@@ -856,7 +856,7 @@ mod tests {
                 true,
             )),
             Box::new(Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
                     left: Box::new(field_load(&target, 8)),
@@ -870,10 +870,10 @@ mod tests {
 
     #[test]
     fn rewrite_uses_pointer_offset_equalities_inside_pointer_goals() {
-        let left = AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(41)), 4);
-        let right = AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(42)), 4);
+        let left = OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(41)), 4);
+        let right = OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(42)), 4);
         let equality = Proposition::condition_is(
-            ConditionTerm::AddressOffsetEqual(Box::new(left.clone()), Box::new(right.clone())),
+            OldConditionTerm::AddressOffsetEqual(Box::new(left.clone()), Box::new(right.clone())),
             true,
         );
         let pointer = |offset| Address {
@@ -882,10 +882,10 @@ mod tests {
         };
         let null = Address {
             base: "null".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let goal = Proposition::condition_is(
-            ConditionTerm::address_equal(pointer(left), null.clone()),
+            OldConditionTerm::address_equal(pointer(left), null.clone()),
             true,
         );
 
@@ -896,35 +896,35 @@ mod tests {
                 std::slice::from_ref(&equality),
             )
             .unwrap(),
-            Proposition::condition_is(ConditionTerm::address_equal(pointer(right), null), true,),
+            Proposition::condition_is(OldConditionTerm::address_equal(pointer(right), null), true,),
         );
     }
 
     #[test]
     fn rewrite_substitutes_index_and_base_equalities_inside_load_addresses() {
         let memory = crate::kernel::intern_memory(SymbolicMemory::new());
-        let data = MachineTerm::Variable(Variable(51));
-        let alias = MachineTerm::Variable(Variable(52));
-        let index = MachineTerm::Variable(Variable(53));
+        let data = OldMachineTerm::Variable(Variable(51));
+        let alias = OldMachineTerm::Variable(Variable(52));
+        let index = OldMachineTerm::Variable(Variable(53));
         let pointer = |offset| Address {
             base: AddressBase::ExternalArgument,
             offset,
         };
         let load = |offset| {
-            crate::kernel::MachineTerm::read_named(
+            crate::kernel::OldMachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(&memory),
                 pointer(offset),
                 crate::kernel::LoadKind::Int32,
             )
         };
-        let data_offset = AddressOffset::scale_int32(data.clone(), 4);
-        let alias_offset = AddressOffset::scale_int32(alias.clone(), 4);
-        let indexed_offset = AddressOffset::add(
+        let data_offset = OldAddressOffset::scale_int32(data.clone(), 4);
+        let alias_offset = OldAddressOffset::scale_int32(alias.clone(), 4);
+        let indexed_offset = OldAddressOffset::add(
             data_offset.clone(),
-            AddressOffset::scale_int32(index.clone(), 4),
+            OldAddressOffset::scale_int32(index.clone(), 4),
         );
         let goal = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(load(indexed_offset)),
@@ -933,16 +933,16 @@ mod tests {
             true,
         );
         let index_is_zero = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(index),
-                right: Box::new(MachineTerm::constant(0)),
+                right: Box::new(OldMachineTerm::constant(0)),
             },
             true,
         );
         let data_is_alias = Proposition::condition_is(
-            ConditionTerm::AddressOffsetEqual(Box::new(data_offset), Box::new(alias_offset)),
+            OldConditionTerm::AddressOffsetEqual(Box::new(data_offset), Box::new(alias_offset)),
             true,
         );
         let available = [index_is_zero.clone(), data_is_alias.clone()];
@@ -956,25 +956,25 @@ mod tests {
 
     #[test]
     fn rewrite_substitutes_length_and_base_equalities_inside_memory_resources() {
-        let source = MachineTerm::Variable(Variable(61));
-        let target = MachineTerm::Variable(Variable(62));
-        let source_len = MachineTerm::Variable(Variable(63));
-        let target_len = MachineTerm::Variable(Variable(64));
+        let source = OldMachineTerm::Variable(Variable(61));
+        let target = OldMachineTerm::Variable(Variable(62));
+        let source_len = OldMachineTerm::Variable(Variable(63));
+        let target_len = OldMachineTerm::Variable(Variable(64));
         let fixed = Resource::Memory(MemoryRange::new(
             Address {
                 base: AddressBase::ExternalArgument,
-                offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(65)), 4),
+                offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(65)), 4),
             },
-            MachineTerm::constant(0),
-            MachineTerm::constant(4),
+            OldMachineTerm::constant(0),
+            OldMachineTerm::constant(4),
         ));
-        let range = |base: MachineTerm, end: MachineTerm| {
+        let range = |base: OldMachineTerm, end: OldMachineTerm| {
             Resource::Memory(MemoryRange::new(
                 Address {
                     base: AddressBase::ExternalArgument,
-                    offset: AddressOffset::scale_int32(base, 4),
+                    offset: OldAddressOffset::scale_int32(base, 4),
                 },
-                MachineTerm::constant(0),
+                OldMachineTerm::constant(0),
                 end,
             ))
         };
@@ -983,7 +983,7 @@ mod tests {
             right: Box::new(range(source.clone(), source_len.clone())),
         };
         let length_equality = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(source_len),
@@ -992,9 +992,9 @@ mod tests {
             true,
         );
         let base_equality = Proposition::condition_is(
-            ConditionTerm::AddressOffsetEqual(
-                Box::new(AddressOffset::scale_int32(source.clone(), 4)),
-                Box::new(AddressOffset::scale_int32(target.clone(), 4)),
+            OldConditionTerm::AddressOffsetEqual(
+                Box::new(OldAddressOffset::scale_int32(source.clone(), 4)),
+                Box::new(OldAddressOffset::scale_int32(target.clone(), 4)),
             ),
             true,
         );
@@ -1011,7 +1011,7 @@ mod tests {
                 right: Box::new(match range(source, target_len) {
                     Resource::Memory(range) => Resource::Memory(range.with_base(Address {
                         base: AddressBase::ExternalArgument,
-                        offset: AddressOffset::scale_int32(target, 4),
+                        offset: OldAddressOffset::scale_int32(target, 4),
                     })),
                     _ => unreachable!(),
                 }),
@@ -1025,9 +1025,9 @@ mod tests {
             crate::kernel::intern_memory(SymbolicMemory::new().with_block("rewrite-cell", 4));
         let pointer = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
-        let load = crate::kernel::MachineTerm::read_named(
+        let load = crate::kernel::OldMachineTerm::read_named(
             crate::kernel::ProgramPoint::at(&memory),
             pointer,
             crate::kernel::LoadKind::Int32,
@@ -1035,15 +1035,15 @@ mod tests {
         let observed = IntegerTerm::from_machine(MachineIntegerType::Int32, load.clone())
             .expect("a symbolic int32 load is a mathematical observation");
         let goal = Proposition::condition_is(
-            ConditionTerm::IntegerEqual(IntegerTerm::constant_i64(0).into(), observed.into()),
+            OldConditionTerm::IntegerEqual(IntegerTerm::constant_i64(0).into(), observed.into()),
             true,
         );
         let equality = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(load),
-                right: Box::new(MachineTerm::constant(0)),
+                right: Box::new(OldMachineTerm::constant(0)),
             },
             true,
         );
@@ -1055,23 +1055,23 @@ mod tests {
 
     #[test]
     fn integer_range_fold_rewrite_changes_only_int32_endpoints() {
-        let from = MachineTerm::Variable(Variable(71));
-        let to = MachineTerm::Variable(Variable(72));
+        let from = OldMachineTerm::Variable(Variable(71));
+        let to = OldMachineTerm::Variable(Variable(72));
         let memory = crate::kernel::intern_memory(SymbolicMemory::new().with_block("fold", 4));
         let body = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             MachineIntegerType::Int32,
-            crate::kernel::MachineTerm::read_named(
+            crate::kernel::OldMachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(&memory),
                 Address {
                     base: "fold".into(),
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0),
                 },
                 crate::kernel::LoadKind::Int32,
             ),
         ));
         let fold = IntegerTerm::range_fold(
             IntegerRangeFoldIndex::Int32 {
-                start: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0)),
+                start: SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(0)),
                 end: SharedIntegerRangeEndpoint::intern(from.clone()),
             },
             IntegerTerm::constant_i64(0),
@@ -1080,11 +1080,14 @@ mod tests {
             body.clone(),
         );
         let goal = Proposition::condition_is(
-            ConditionTerm::IntegerEqual(fold.clone().into(), IntegerTerm::constant_i64(0).into()),
+            OldConditionTerm::IntegerEqual(
+                fold.clone().into(),
+                IntegerTerm::constant_i64(0).into(),
+            ),
             true,
         );
         let equality = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(from),
@@ -1100,7 +1103,7 @@ mod tests {
         .expect("a checked endpoint equality should rewrite the Int32 fold bound");
         let expected = IntegerTerm::range_fold(
             IntegerRangeFoldIndex::Int32 {
-                start: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0)),
+                start: SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(0)),
                 end: SharedIntegerRangeEndpoint::intern(to),
             },
             IntegerTerm::constant_i64(0),
@@ -1111,7 +1114,10 @@ mod tests {
         assert_eq!(
             rewritten,
             Proposition::condition_is(
-                ConditionTerm::IntegerEqual(expected.into(), IntegerTerm::constant_i64(0).into()),
+                OldConditionTerm::IntegerEqual(
+                    expected.into(),
+                    IntegerTerm::constant_i64(0).into()
+                ),
                 true,
             )
         );
@@ -1119,8 +1125,8 @@ mod tests {
 
     #[test]
     fn integer_range_fold_rewrite_rejects_missing_or_integer_bound_equalities() {
-        let from = MachineTerm::Variable(Variable(81));
-        let to = MachineTerm::Variable(Variable(82));
+        let from = OldMachineTerm::Variable(Variable(81));
+        let to = OldMachineTerm::Variable(Variable(82));
         let fold = IntegerTerm::range_fold(
             IntegerRangeFoldIndex::Integer {
                 start: IntegerTerm::constant_i64(0).into(),
@@ -1135,11 +1141,11 @@ mod tests {
             ),
         );
         let goal = Proposition::condition_is(
-            ConditionTerm::IntegerEqual(fold.into(), IntegerTerm::constant_i64(0).into()),
+            OldConditionTerm::IntegerEqual(fold.into(), IntegerTerm::constant_i64(0).into()),
             true,
         );
         let equality = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(from),
@@ -1163,27 +1169,27 @@ mod tests {
     fn integer_observation_rewrite_does_not_cross_memory_states() {
         let pointer = Address {
             base: AddressBase::Concrete("rewrite-cell".into()),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let first_memory = crate::kernel::intern_memory(
             SymbolicMemory::new().with_block("rewrite-cell", 4).store(
                 pointer.clone(),
-                ProgramValue::Int32(MachineTerm::constant(0)),
+                ProgramValue::Int32(OldMachineTerm::constant(0)),
             ),
         );
         let second_memory = crate::kernel::intern_memory(
             SymbolicMemory::new().with_block("rewrite-cell", 4).store(
                 pointer.clone(),
-                ProgramValue::Int32(MachineTerm::constant(7)),
+                ProgramValue::Int32(OldMachineTerm::constant(7)),
             ),
         );
         assert_ne!(first_memory, second_memory);
-        let first_load = crate::kernel::MachineTerm::read_named(
+        let first_load = crate::kernel::OldMachineTerm::read_named(
             crate::kernel::ProgramPoint::at(&first_memory),
             pointer.clone(),
             crate::kernel::LoadKind::Int32,
         );
-        let second_load = crate::kernel::MachineTerm::read_named(
+        let second_load = crate::kernel::OldMachineTerm::read_named(
             crate::kernel::ProgramPoint::at(&second_memory),
             pointer,
             crate::kernel::LoadKind::Int32,
@@ -1191,15 +1197,15 @@ mod tests {
         let observed = IntegerTerm::from_machine(MachineIntegerType::Int32, second_load)
             .expect("a symbolic int32 load is a mathematical observation");
         let goal = Proposition::condition_is(
-            ConditionTerm::IntegerEqual(IntegerTerm::constant_i64(0).into(), observed.into()),
+            OldConditionTerm::IntegerEqual(IntegerTerm::constant_i64(0).into(), observed.into()),
             true,
         );
         let equality = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(first_load),
-                right: Box::new(MachineTerm::constant(0)),
+                right: Box::new(OldMachineTerm::constant(0)),
             },
             true,
         );
@@ -1238,11 +1244,11 @@ mod partial_arithmetic_tests {
                     }),
                 ),
             ] {
-                let term = MachineTerm::machine_binary(
+                let term = OldMachineTerm::machine_binary(
                     crate::kernel::MachineIntegerType::UInt32,
                     operator,
-                    MachineTerm::uint32_constant(5),
-                    MachineTerm::uint32_constant(divisor),
+                    OldMachineTerm::uint32_constant(5),
+                    OldMachineTerm::uint32_constant(divisor),
                 );
                 assert_eq!(evaluate_bitvector_constant(&term), expected);
             }

@@ -27,7 +27,7 @@ fn offset_nodes_retain_shared_index_dags_with_constant_work() {
             let operand =
                 SharedMachineIntegerTerm::from_shared(MachineIntegerType::Int64, index.clone())
                     .unwrap();
-            let source = AddressOffset::Int64Scaled {
+            let source = OldAddressOffset::Int64Scaled {
                 value: operand.clone(),
                 byte_width: 8,
                 unsigned: true,
@@ -52,9 +52,10 @@ fn offset_nodes_retain_shared_index_dags_with_constant_work() {
 #[test]
 fn offset_chain_import_and_explicit_output_have_linear_work() {
     for size in [16, 64, 256] {
-        let mut source = AddressOffset::Variable(Variable(996001));
+        let mut source = OldAddressOffset::Variable(Variable(996001));
         for _ in 0..size {
-            source = AddressOffset::Add(Box::new(source), Box::new(AddressOffset::Constant(0)));
+            source =
+                OldAddressOffset::Add(Box::new(source), Box::new(OldAddressOffset::Constant(0)));
         }
         let ((root, output), work) = crate::instrumentation::measure_deterministic_work(|| {
             let root = KernelAddressOffset::import(&source);
@@ -109,7 +110,7 @@ fn offset_condition_rewrites_preserve_shared_offset_dags() {
                     crate::kernel::reasoning::substitute_bitvector_variable_in_common_condition(
                         &source,
                         Variable(998201),
-                        &MachineTerm::constant(1),
+                        &OldMachineTerm::constant(1),
                     )
                     .unwrap();
                 let transported = crate::kernel::memory_history::transport_framed_common_condition(
@@ -139,7 +140,7 @@ fn growing_offset_guards_reuse_observation_normalization() {
         .unwrap();
         let zero = KernelAddressOffset::Constant(0).into_shared().unwrap();
         let word = KernelTermImport::default()
-            .machine(MachineIntegerType::Int32, &MachineTerm::constant(1));
+            .machine(MachineIntegerType::Int32, &OldMachineTerm::constant(1));
         let exports = KernelTermExport::machine_export_count();
         let mut retained = Vec::new();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {

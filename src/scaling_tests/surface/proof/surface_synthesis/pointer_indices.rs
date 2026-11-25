@@ -28,11 +28,11 @@ fn pointer_surface_index_readers_retain_shared_dags() {
                     .unwrap();
             let base = Address {
                 base: AddressBase::Concrete("surface-index-dag".into()),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             };
             let pointer = Address {
                 base: base.base.clone(),
-                offset: AddressOffset::Int32Scaled {
+                offset: OldAddressOffset::Int32Scaled {
                     value,
                     byte_width: 4,
                 },

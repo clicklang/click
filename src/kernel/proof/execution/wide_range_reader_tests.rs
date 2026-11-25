@@ -7,8 +7,8 @@ fn wide_interface_and_memory_effect_readers_preserve_the_range_kind() {
     let base = Address::symbolic(Variable(984_600));
     let wide = MemoryRange::new_wide(
         base.clone(),
-        MachineTerm::uint64_constant(0),
-        MachineTerm::uint64_constant(1 << 33),
+        OldMachineTerm::uint64_constant(0),
+        OldMachineTerm::uint64_constant(1 << 33),
         4,
     );
     let resource = ResourceFact::own_memory(wide.clone());

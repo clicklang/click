@@ -20,7 +20,7 @@ fn cold_offset_evidence_misses_do_not_export_shared_dags() {
                 [right.clone(), right],
             );
         }
-        let wrap = |root| AddressOffset::Int32Scaled {
+        let wrap = |root| OldAddressOffset::Int32Scaled {
             value: SharedMachineIntegerTerm::from_shared(ty, root).unwrap(),
             byte_width: 4,
         };
@@ -65,15 +65,15 @@ fn shared_offset_source_paths_scale_with_selected_dags() {
         }
         let l = SharedMachineIntegerTerm::from_shared(ty, left).unwrap();
         let r = SharedMachineIntegerTerm::from_shared(ty, right).unwrap();
-        let source = ConditionTerm::IntegerEqual(
+        let source = OldConditionTerm::IntegerEqual(
             crate::kernel::IntegerTerm::Machine(l.clone()).into(),
             crate::kernel::IntegerTerm::Machine(r.clone()).into(),
         );
-        let a = AddressOffset::Int32Scaled {
+        let a = OldAddressOffset::Int32Scaled {
             value: l,
             byte_width: 4,
         };
-        let b = AddressOffset::Int32Scaled {
+        let b = OldAddressOffset::Int32Scaled {
             value: r,
             byte_width: 4,
         };

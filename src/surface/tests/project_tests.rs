@@ -1499,21 +1499,21 @@ int32 drain(int32 n) {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by project_batch_05")]
 fn unrelated_non_comparison_conditions_are_not_polarity_equivalent() {
     let overflow = Proposition::condition_is(
-        ConditionTerm::Overflows {
+        OldConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Add,
-            left: Box::new(MachineTerm::Variable(Variable(1))),
-            right: Box::new(MachineTerm::constant(1)),
+            left: Box::new(OldMachineTerm::Variable(Variable(1))),
+            right: Box::new(OldMachineTerm::constant(1)),
         },
         false,
     );
-    let constant = Proposition::condition_is(ConditionTerm::Constant(true), true);
+    let constant = Proposition::condition_is(OldConditionTerm::Constant(true), true);
     let equality = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::Variable(Variable(2))),
-            right: Box::new(MachineTerm::constant(7)),
+            left: Box::new(OldMachineTerm::Variable(Variable(2))),
+            right: Box::new(OldMachineTerm::constant(7)),
         },
         true,
     );
@@ -1535,40 +1535,40 @@ fn unrelated_non_comparison_conditions_are_not_polarity_equivalent() {
         assert!(condition_polarity_equivalent(condition, condition));
     }
     let less_than = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
-            left: Box::new(MachineTerm::Variable(Variable(1))),
-            right: Box::new(MachineTerm::Variable(Variable(2))),
+            left: Box::new(OldMachineTerm::Variable(Variable(1))),
+            right: Box::new(OldMachineTerm::Variable(Variable(2))),
         },
         true,
     );
     let greater_equal = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterEqual,
-            left: Box::new(MachineTerm::Variable(Variable(1))),
-            right: Box::new(MachineTerm::Variable(Variable(2))),
+            left: Box::new(OldMachineTerm::Variable(Variable(1))),
+            right: Box::new(OldMachineTerm::Variable(Variable(2))),
         },
         false,
     );
     assert!(condition_polarity_equivalent(&less_than, &greater_equal));
 
     let greater_equal_true = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterEqual,
-            left: Box::new(MachineTerm::Variable(Variable(2))),
-            right: Box::new(MachineTerm::Variable(Variable(1))),
+            left: Box::new(OldMachineTerm::Variable(Variable(2))),
+            right: Box::new(OldMachineTerm::Variable(Variable(1))),
         },
         true,
     );
     let reversed_less_equal = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessEqual,
-            left: Box::new(MachineTerm::Variable(Variable(1))),
-            right: Box::new(MachineTerm::Variable(Variable(2))),
+            left: Box::new(OldMachineTerm::Variable(Variable(1))),
+            right: Box::new(OldMachineTerm::Variable(Variable(2))),
         },
         true,
     );

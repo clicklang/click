@@ -22,7 +22,7 @@ fn selected_constructor_payload_check_scales_with_written_fields() {
             match ty {
                 AlgebraicValueType::Integer => AlgebraicValue::Integer(IntegerTerm::var(variable)),
                 AlgebraicValueType::Program(ProgramType::Bool) => AlgebraicValue::Program(
-                    ProgramValue::of_bool(ConditionTerm::Variable(variable)),
+                    ProgramValue::of_bool(OldConditionTerm::Variable(variable)),
                 ),
                 AlgebraicValueType::Program(program_type) => AlgebraicValue::Program(
                     MachineIntegerType::from_program_type(*program_type)
@@ -46,7 +46,7 @@ fn selected_constructor_payload_check_scales_with_written_fields() {
         let mut result_fields = bindings.iter().cloned().rev().collect::<Vec<_>>();
         let extra_field = match ty {
             AlgebraicValueType::Program(ProgramType::UInt64) => {
-                AlgebraicValue::Program(uint64(MachineTerm::uint64_constant(7)))
+                AlgebraicValue::Program(uint64(OldMachineTerm::uint64_constant(7)))
             }
             _ => value(992_500),
         };
@@ -265,7 +265,7 @@ fn nested_constructor_selection_reuses_closed_payloads() {
                 },
             };
             body = value(AlgebraicTermNode::If {
-                condition: Box::new(ConditionTerm::Variable(flag)),
+                condition: Box::new(OldConditionTerm::Variable(flag)),
                 then_term: Box::new(body),
                 else_term: Box::new(link(end.clone())),
             });
@@ -279,7 +279,7 @@ fn nested_constructor_selection_reuses_closed_payloads() {
                     binding_names: Default::default(),
                     bindings: vec![
                         AlgebraicValue::Algebraic(variable(0)),
-                        AlgebraicValue::Program(ProgramValue::of_bool(ConditionTerm::Variable(
+                        AlgebraicValue::Program(ProgramValue::of_bool(OldConditionTerm::Variable(
                             flag,
                         ))),
                     ],
@@ -415,7 +415,7 @@ fn constructor_match_computation_visits_shared_terms_once() {
             left = IntegerTerm::Add(left.clone(), left).into();
             right = IntegerTerm::Add(right.clone(), right).into();
         }
-        let goal = Proposition::condition_is(ConditionTerm::IntegerEqual(left, right), true);
+        let goal = Proposition::condition_is(OldConditionTerm::IntegerEqual(left, right), true);
         let (proved, work) =
             crate::instrumentation::measure_deterministic_work(|| computes_leaf(&goal));
         assert!(proved);
@@ -428,17 +428,17 @@ fn stored_byte_order_uses_only_the_exact_cells() {
     let _session = VerificationSession::enter();
     let block = |name: &str| Address {
         base: AddressBase::Concrete(name.into()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let left = block("byte-order-left");
     let right = block("byte-order-right");
     let other = block("byte-order-other");
     let format = MachineIntegerType::Int32;
     let read = |memory: &SymbolicMemory, pointer: Address| {
-        MachineTerm::machine_integer_cast(
+        OldMachineTerm::machine_integer_cast(
             MachineIntegerType::UInt8,
             format,
-            MachineTerm::read_named(
+            OldMachineTerm::read_named(
                 ProgramPoint::at(&crate::kernel::intern_memory(memory.clone())),
                 Box::new(pointer),
                 LoadKind::UInt8,
@@ -451,7 +451,7 @@ fn stored_byte_order_uses_only_the_exact_cells() {
         .with_block(other.base.clone(), 256);
     let order = |memory: &SymbolicMemory, left_address, right_address| {
         Proposition::condition_is(
-            ConditionTerm::machine_compare(
+            OldConditionTerm::machine_compare(
                 format,
                 CompareRelation::LessThan,
                 read(memory, left_address),
@@ -514,13 +514,13 @@ fn cached_read_definedness_checks_only_the_selected_typed_cell() {
     let _session = VerificationSession::enter();
     let selected = Address {
         base: AddressBase::Concrete("local:definedness-read".into()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let unrelated = Address {
         base: AddressBase::Concrete("local:other-definedness-read".into()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
-    let int32 = |value| ProgramValue::Int32(MachineTerm::constant(value));
+    let int32 = |value| ProgramValue::Int32(OldMachineTerm::constant(value));
     let before = SymbolicMemory::new()
         .with_block(selected.base.clone(), 4096)
         .with_block(unrelated.base.clone(), 4096);
@@ -586,7 +586,7 @@ fn declared_word_definedness_requires_its_complete_initialized_representation() 
     let _session = VerificationSession::enter();
     let pointer = Address {
         base: AddressBase::Concrete("local:initialized-word".into()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let memory = SymbolicMemory::new().with_declared_scalar_block(
         pointer.base.clone(),
@@ -620,11 +620,11 @@ fn computation_refusal_is_independent_of_memory_history() {
         let _session = VerificationSession::enter();
         let pointer = Address {
             base: AddressBase::Concrete("computation-read".into()),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let other = Address {
             base: AddressBase::Concrete("computation-write".into()),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let before = crate::kernel::intern_memory(
             SymbolicMemory::new()
@@ -633,31 +633,34 @@ fn computation_refusal_is_independent_of_memory_history() {
         );
         let mut after = before.memory().clone();
         for _ in 0..size {
-            after = after.store(other.clone(), ProgramValue::Int32(MachineTerm::constant(7)));
+            after = after.store(
+                other.clone(),
+                ProgramValue::Int32(OldMachineTerm::constant(7)),
+            );
         }
         let after = crate::kernel::intern_memory(after);
-        let left = MachineTerm::read_named(
+        let left = OldMachineTerm::read_named(
             ProgramPoint::at(&before),
             Box::new(pointer.clone()),
             LoadKind::Int32,
         );
-        let right = MachineTerm::read_named(
+        let right = OldMachineTerm::read_named(
             ProgramPoint::at(&after),
             Box::new(pointer.clone()),
             LoadKind::Int32,
         );
         let read_equality =
-            Proposition::condition_is(ConditionTerm::equal(left.clone(), right), true);
-        let add = |left, right| MachineTerm::Binary {
+            Proposition::condition_is(OldConditionTerm::equal(left.clone(), right), true);
+        let add = |left, right| OldMachineTerm::Binary {
             format: MachineIntegerType::Int32,
             op: MachineBinaryOp::Add,
             left: Box::new(left),
             right: Box::new(right),
         };
         let rearranged = Proposition::condition_is(
-            ConditionTerm::equal(
-                add(left.clone(), MachineTerm::constant(1)),
-                add(MachineTerm::constant(1), left),
+            OldConditionTerm::equal(
+                add(left.clone(), OldMachineTerm::constant(1)),
+                add(OldMachineTerm::constant(1), left),
             ),
             true,
         );
@@ -671,7 +674,7 @@ fn computation_refusal_is_independent_of_memory_history() {
         assert!(!computes_leaf(&Proposition::MemoryLoadable {
             memory: before.memory().clone(),
             base: pointer,
-            bytes: (MachineTerm::constant(5)).into(),
+            bytes: (OldMachineTerm::constant(5)).into(),
             wide: false,
         }));
     }
@@ -691,13 +694,13 @@ fn monomial_normalization_work_tracks_written_factors() {
             |values: Vec<IntegerTerm>| values.into_iter().reduce(IntegerTerm::multiply).unwrap();
         let a = product(factors.clone());
         let b = product(factors.into_iter().rev().collect());
-        let condition = ConditionTerm::IntegerEqual(a.clone().into(), b.clone().into());
+        let condition = OldConditionTerm::IntegerEqual(a.clone().into(), b.clone().into());
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
             integer_linear_comparison(&condition)
         });
         assert_eq!(result, Some(true));
         assert_ne!(
-            integer_linear_comparison(&ConditionTerm::IntegerEqual(
+            integer_linear_comparison(&OldConditionTerm::IntegerEqual(
                 a.into(),
                 IntegerTerm::add(b, IntegerTerm::constant_i64(1)).into()
             )),
@@ -714,7 +717,7 @@ fn distribution_check_is_one_local_step_and_never_expands_a_polynomial() {
         std::array::from_fn(|n| IntegerTerm::var(Variable(881000 + n as u64)));
     let mul = IntegerTerm::multiply;
     let add = IntegerTerm::add;
-    let step = ConditionTerm::IntegerEqual(
+    let step = OldConditionTerm::IntegerEqual(
         mul(add(a.clone(), b.clone()), c.clone()).into(),
         add(mul(a.clone(), c.clone()), mul(b.clone(), c)).into(),
     );
@@ -722,7 +725,7 @@ fn distribution_check_is_one_local_step_and_never_expands_a_polynomial() {
     // Surface evaluation retains raw arithmetic nodes, including products
     // by one. The local rule must retain that same representation.
     let factor = IntegerTerm::Add(a.clone().into(), IntegerTerm::constant_i64(2).into());
-    let raw_step = ConditionTerm::IntegerEqual(
+    let raw_step = OldConditionTerm::IntegerEqual(
         IntegerTerm::Multiply(
             IntegerTerm::Add(a.clone().into(), IntegerTerm::constant_i64(1).into()).into(),
             factor.clone().into(),
@@ -735,7 +738,7 @@ fn distribution_check_is_one_local_step_and_never_expands_a_polynomial() {
         .into(),
     );
     assert!(integer_distribution_step(&raw_step));
-    let full = ConditionTerm::IntegerEqual(
+    let full = OldConditionTerm::IntegerEqual(
         mul(add(a.clone(), b.clone()), add(a.clone(), d.clone())).into(),
         add(
             add(mul(a.clone(), a.clone()), mul(a.clone(), d.clone())),
@@ -751,11 +754,11 @@ fn distribution_check_is_one_local_step_and_never_expands_a_polynomial() {
 fn integer_normalization_uses_intrinsic_widenings_with_linear_work() {
     use crate::kernel::{MachineCastSpelling, MachineIntegerType as Ty};
     fn observation(variable: u64, destination: Ty) -> IntegerTerm {
-        let value = MachineTerm::Variable(Variable(variable));
+        let value = OldMachineTerm::Variable(Variable(variable));
         let value = if destination == Ty::UInt8 {
             value
         } else {
-            MachineTerm::Cast {
+            OldMachineTerm::Cast {
                 spelling: MachineCastSpelling::Generic,
                 value: Box::new(value),
                 from: Ty::UInt8,
@@ -779,7 +782,7 @@ fn integer_normalization_uses_intrinsic_widenings_with_linear_work() {
             let narrow = observation(variable, Ty::UInt8);
             right = IntegerTerm::add(right, IntegerTerm::add(narrow.clone(), narrow));
         }
-        let condition = ConditionTerm::IntegerEqual(left.into(), right.into());
+        let condition = OldConditionTerm::IntegerEqual(left.into(), right.into());
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
             integer_linear_comparison(&condition)
         });
@@ -791,7 +794,7 @@ fn integer_normalization_uses_intrinsic_widenings_with_linear_work() {
         "{samples:?}"
     );
     // Converting the same byte to a signed byte may change its value.
-    let narrowing = ConditionTerm::IntegerEqual(
+    let narrowing = OldConditionTerm::IntegerEqual(
         observation(883000, Ty::Int8).into(),
         observation(883000, Ty::UInt8).into(),
     );

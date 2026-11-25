@@ -2204,15 +2204,15 @@ fn condition_premise_selection_walks_a_reversed_chain_once() {
     use crate::kernel::search::proposition_search::{
         condition_selection_visits, reset_condition_selection_visits,
     };
-    use crate::kernel::{ConditionTerm, MachineTerm, Proposition, Variable};
+    use crate::kernel::{OldConditionTerm, OldMachineTerm, Proposition, Variable};
 
     let less = |left: u64, right: u64| {
         Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
-                left: Box::new(MachineTerm::Variable(Variable(left))),
-                right: Box::new(MachineTerm::Variable(Variable(right))),
+                left: Box::new(OldMachineTerm::Variable(Variable(left))),
+                right: Box::new(OldMachineTerm::Variable(Variable(right))),
             },
             true,
         )
@@ -2221,11 +2221,11 @@ fn condition_premise_selection_walks_a_reversed_chain_once() {
         let mut available = Vec::new();
         for index in 0..unrelated {
             available.push(Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
-                    left: Box::new(MachineTerm::Variable(Variable(441_000 + index as u64))),
-                    right: Box::new(MachineTerm::constant(1_000 + index as u32)),
+                    left: Box::new(OldMachineTerm::Variable(Variable(441_000 + index as u64))),
+                    right: Box::new(OldMachineTerm::constant(1_000 + index as u32)),
                 },
                 true,
             ));
@@ -2311,21 +2311,22 @@ fn condition_premise_selection_walks_a_reversed_chain_once() {
 fn loadable_candidate_selection_ignores_facts_about_other_objects() {
     use crate::kernel::search::proposition_search::{candidate_visits, reset_candidate_visits};
     use crate::kernel::{
-        Address, AddressOffset, MachineTerm, Proposition, PureFactContext, SymbolicMemory, Variable,
+        Address, OldAddressOffset, OldMachineTerm, Proposition, PureFactContext, SymbolicMemory,
+        Variable,
     };
 
     let memory = SymbolicMemory::new();
     let at = |block: &str, element: u32| {
         Address {
             base: block.into(),
-            offset: AddressOffset::Variable(Variable(450_000)),
+            offset: OldAddressOffset::Variable(Variable(450_000)),
         }
         .offset_by_bytes(4 * element)
     };
     let loadable = |base: Address, bytes: u32| Proposition::MemoryLoadable {
         memory: memory.clone(),
         base,
-        bytes: (MachineTerm::constant(bytes)).into(),
+        bytes: (OldMachineTerm::constant(bytes)).into(),
         wide: false,
     };
     // (sources stated about the goal's object, goal, premises the
@@ -2430,8 +2431,8 @@ fn loadable_candidate_selection_ignores_facts_about_other_objects() {
 fn read_defined_and_separation_selection_try_indexed_sources_first() {
     use crate::kernel::search::proposition_search::{candidate_visits, reset_candidate_visits};
     use crate::kernel::{
-        Address, AddressOffset, ConditionTerm, MachineTerm, MemoryRange, ProgramType, Proposition,
-        PureFactContext, Resource, SymbolicMemory, Variable,
+        Address, MemoryRange, OldAddressOffset, OldConditionTerm, OldMachineTerm, ProgramType,
+        Proposition, PureFactContext, Resource, SymbolicMemory, Variable,
     };
 
     let memory = SymbolicMemory::new().with_block("goal", 64);
@@ -2443,13 +2444,13 @@ fn read_defined_and_separation_selection_try_indexed_sources_first() {
     };
     let at = |block: String, variable: u64| Address {
         base: block.as_str().into(),
-        offset: AddressOffset::Variable(Variable(variable)),
+        offset: OldAddressOffset::Variable(Variable(variable)),
     };
     let range = |base: Address, start: u32, end: u32| {
         Resource::Memory(MemoryRange::new(
             base,
-            MachineTerm::constant(start),
-            MachineTerm::constant(end),
+            OldMachineTerm::constant(start),
+            OldMachineTerm::constant(end),
         ))
     };
     let separate =
@@ -2459,7 +2460,7 @@ fn read_defined_and_separation_selection_try_indexed_sources_first() {
         };
     let address = Address {
         base: "goal".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let alias = Address::symbolic(Variable(460_000));
     let cases: [(
@@ -2473,7 +2474,7 @@ fn read_defined_and_separation_selection_try_indexed_sources_first() {
             vec![
                 read_defined(address.clone()),
                 Proposition::condition_is(
-                    ConditionTerm::address_equal(alias.clone(), address),
+                    OldConditionTerm::address_equal(alias.clone(), address),
                     true,
                 ),
             ],
@@ -2481,7 +2482,7 @@ fn read_defined_and_separation_selection_try_indexed_sources_first() {
             &|index| {
                 read_defined(Address {
                     base: format!("other{index}").as_str().into(),
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0),
                 })
             },
         ),
@@ -4779,15 +4780,15 @@ fn solve_equality_chain_is_linear_and_unrelated_queries_are_flat() {
 /// the goal, so the failing derivation's work stays flat as they grow.
 #[test]
 fn failing_solve_derivation_ignores_unrelated_disjunctions() {
-    use crate::kernel::{ConditionTerm, MachineTerm, Proposition, PureFactContext, Variable};
+    use crate::kernel::{OldConditionTerm, OldMachineTerm, Proposition, PureFactContext, Variable};
 
     let equal = |variable: u64, value: u32| {
         Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::Variable(Variable(variable))),
-                right: Box::new(MachineTerm::constant(value)),
+                left: Box::new(OldMachineTerm::Variable(Variable(variable))),
+                right: Box::new(OldMachineTerm::constant(value)),
             },
             true,
         )
@@ -4804,11 +4805,11 @@ fn failing_solve_derivation_ignores_unrelated_disjunctions() {
                 ));
             }
             let goal = Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
-                    left: Box::new(MachineTerm::Variable(Variable(433_000))),
-                    right: Box::new(MachineTerm::constant(5)),
+                    left: Box::new(OldMachineTerm::Variable(Variable(433_000))),
+                    right: Box::new(OldMachineTerm::constant(5)),
                 },
                 true,
             );
@@ -4834,7 +4835,7 @@ fn failing_solve_derivation_ignores_unrelated_disjunctions() {
 fn failing_solve_derivation_ignores_unrelated_algebraic_disjunctions() {
     use crate::kernel::{
         AlgebraicSchemas, AlgebraicTerm, AlgebraicTermNode, AlgebraicType, AlgebraicValueType,
-        AlgebraicVariantType, ConditionTerm, MachineTerm, Proposition, PureFactContext, Term,
+        AlgebraicVariantType, OldConditionTerm, OldMachineTerm, Proposition, PureFactContext, Term,
         Variable,
     };
 
@@ -4889,11 +4890,11 @@ fn failing_solve_derivation_ignores_unrelated_algebraic_disjunctions() {
                 ));
             }
             let goal = Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
-                    left: Box::new(MachineTerm::Variable(Variable(435_000))),
-                    right: Box::new(MachineTerm::constant(5)),
+                    left: Box::new(OldMachineTerm::Variable(Variable(435_000))),
+                    right: Box::new(OldMachineTerm::constant(5)),
                 },
                 true,
             );
@@ -5508,221 +5509,6 @@ fn call_separation_requirements_ignore_unrelated_owned_objects() {
     );
 }
 
-/// A copy loop whose preservation `solve` reaches a fact transport the
-/// explicit-premise planner cannot view: the element just stored is named
-/// `dst[k]` under `k == i - 1`, so `old(src[k]) == old(src[k])` does not
-/// transport to it until `k` is rewritten. Each unrelated `requires` joins
-/// the planner's candidate list. The planner decides the complete list
-/// before it grows a prefix, so the failing plan costs the same number of
-/// checks (six) at every size. It used to check once per growing prefix,
-/// about 15k units per unrelated fact in each preservation attempt; the
-/// remaining linear cost of lowering and offering a candidate is about 1k.
-fn copy_loop_with_unrelated_requirements(fact_count: usize) -> String {
-    let unrelated = (0..fact_count)
-        .map(|index| format!("    requires length != {};\n", index + 100_000))
-        .collect::<String>();
-    format!(
-        "verifying \"transport_copy.c\";\n\
-         \n\
-         int32 transport_copy(int32 dst[], int32 src[], int32 length) {{\n    \
-             requires 0 <= length;\n    \
-             requires (length as uint32) <= 1073741823u32;\n    \
-             owns dst[0..length];\n    \
-             views src[0..length];\n    \
-             requires separate(memory(dst[0..length]), memory(src[0..length]));\n\
-         {unrelated}    \
-             ensures result == length;\n\
-         }} by {{\n    \
-             step();\n    \
-             step();\n    \
-             loop {{\n        \
-                 decreases length - i;\n        \
-                 invariant 0 <= i;\n        \
-                 invariant i <= length;\n        \
-                 invariant forall (k: int32) {{ 0 <= k and k < i implies dst[k] == old(src[k]) }};\n        \
-                 owns dst[0..length];\n        \
-                 initialize by {{\n            \
-                     have 0 <= i by {{\n                normalize();\n            }}\n            \
-                     have i <= length by {{\n                close();\n            }}\n            \
-                     have forall (k: int32) {{ 0 <= k and k < i implies dst[k] == old(src[k]) }} by {{\n                \
-                         intro() {{\n                \
-                         intro() {{\n                \
-                         have 0 <= k by close();\n                \
-                         have k < i by close();\n                \
-                         have i == 0 by {{\n                    normalize();\n                }}\n                \
-                         have not (0 <= k) by {{\n                    \
-                             close() using {{\n                        k < i;\n                        i == 0;\n                    }}\n                \
-                         }}\n                \
-                         contradiction(0 <= k);\n                }} }}\n            \
-                     }}\n        \
-                 }}\n        \
-                 maintain by {{\n            step();\n            step();\n            close();\n        }}\n    \
-             }}\n    \
-             have i == length by {{\n        \
-                 have at(loop(0).exit, i) == at(loop(0).exit, length) by {{\n            \
-                     close() using {{\n                \
-                         at(loop(0).exit, i) <= at(loop(0).exit, length);\n                \
-                         not at(loop(0).exit, i) < at(loop(0).exit, length);\n            \
-                     }}\n        \
-                 }}\n        \
-                 close();\n    \
-             }}\n    \
-             step();\n    \
-             close();\n\
-         }}\n"
-    )
-}
-
-#[test]
-#[cfg(not(feature = "fast-gate"))]
-#[ignore = "nightly: 7s in the parallel gate"]
-fn failing_fact_transport_plan_ignores_unrelated_candidates() {
-    const COPY_SOURCE: &str = "int32 transport_copy(int32 dst[], int32 src[], int32 length) {\n    \
-                               int32 i;\n    i = 0;\n    while (i < length) {\n        \
-                               dst[i] = src[i];\n        i = i + 1;\n    }\n    return i;\n}\n";
-    let mut samples = Vec::new();
-    let mut plan_checks = Vec::new();
-    let mut solve_work = Vec::new();
-    const SIZES: [usize; 4] = [3, 6, 12, 24];
-    for size in SIZES {
-        let click_source = copy_loop_with_unrelated_requirements(size);
-        let ((verified, work), events) = crate::instrumentation::collect(|| {
-            crate::instrumentation::measure_deterministic_work(|| {
-                verify_c_sources(&click_source, &[("transport_copy.c", COPY_SOURCE)])
-            })
-        });
-        verified.unwrap_or_else(|error| {
-            panic!(
-                "size {size} fact-transport scaling fixture failed: {}",
-                error.message()
-            )
-        });
-        let mut named_work = BTreeMap::<String, usize>::new();
-        let mut checks = 0;
-        let mut solve = 0;
-        for event in events {
-            match event {
-                crate::instrumentation::VerificationEvent::OperationFinished {
-                    name, work, ..
-                } => {
-                    if name == "explicit fact transport: premise check" {
-                        checks += 1;
-                    }
-                    *named_work.entry(format!("operation `{name}`")).or_default() += work;
-                }
-                crate::instrumentation::VerificationEvent::TacticFinished {
-                    tactic, work, ..
-                } => {
-                    if tactic.tactic_name == "solve" {
-                        solve += work;
-                    }
-                    *named_work
-                        .entry(format!("{} tactic `{}`", tactic.class, tactic.tactic_name))
-                        .or_default() += work;
-                }
-                _ => {}
-            }
-        }
-        plan_checks.push(checks);
-        solve_work.push(solve);
-        samples.push(ScalingSample {
-            size,
-            work,
-            named_work,
-        });
-    }
-    assert!(
-        plan_checks[0] > 0,
-        "the preservation solve never planned a fact transport: {plan_checks:?}"
-    );
-    assert!(
-        plan_checks.iter().all(|checks| *checks == plan_checks[0]),
-        "fact-transport planning checked once per unrelated candidate: {plan_checks:?}; \
-         named work: {}",
-        named_growth_diagnostic(&samples)
-    );
-    // Each unrelated requirement is still read, lowered, and offered as a
-    // candidate, which is linear; a check per candidate cost an order of
-    // magnitude more per fact.
-    let per_fact = (solve_work[3] - solve_work[0]) / (SIZES[3] - SIZES[0]);
-    assert!(
-        per_fact <= 4_000,
-        "solve work grew by {per_fact} units per unrelated requirement: {solve_work:?}"
-    );
-    assert_near_linear_scaling("fact-transport plan unrelated candidates", &samples);
-}
-
-/// Explicit fold read framing along a straight line of endpoint stores: each
-/// store is followed by one `transport` of the prefix count, which crosses
-/// exactly that store. Total work stays near linear in the number of stores,
-/// and so does the framing rule's own named work, rather than rescanning the
-/// history once per transport.
-#[test]
-#[cfg(not(feature = "fast-gate"))]
-#[ignore = "nightly: 1.2s in the parallel gate"]
-fn explicit_fold_read_transport_along_a_store_sequence_is_near_linear() {
-    let mut samples = Vec::new();
-    let mut framing = Vec::new();
-    for size in [4usize, 8, 16, 32] {
-        let stores = (0..size)
-            .map(|index| format!("    v[i] = {index};\n"))
-            .collect::<String>();
-        let c_source = format!("void mark(int32 *v, int32 i) {{\n{stores}}}\n");
-        let steps = (0..size)
-            .map(|index| {
-                format!(
-                    "    mark m{index};\n    step();\n    have zeros(v, 0, i) == 0 by {{\n        transport(\n            at(m{index}, zeros(v, 0, i)) == 0,\n            zeros(v, 0, i) == 0\n        );\n        close();\n    }}\n"
-                )
-            })
-            .collect::<String>();
-        let click_source = format!(
-            "verifying \"mark.c\";\n\n\
-             function zeros(v: int32[], lo: int32, hi: int32) -> Integer {{\n    \
-                 (lo..hi).fold(0, |acc, k| {{ acc + to_integer(if v[k] == 0 {{ 1 }} else {{ 0 }}) }})\n\
-             }}\n\n\
-             void mark(int32 *v, int32 i) {{\n    \
-                 requires 0 <= i;\n    \
-                 requires i < 1000;\n    \
-                 requires zeros(v, 0, i) == 0;\n    \
-                 owns v[i..(i + 1)];\n    \
-                 ensures zeros(v, 0, i) == 0;\n\
-             }} by {{\n{steps}    step_until(function.exit);\n    close();\n}}\n"
-        );
-        let (verified, sample) = scaling_sample(size, || {
-            verify_c_sources(&click_source, &[("mark.c", c_source.as_str())])
-        });
-        verified.unwrap_or_else(|error| {
-            panic!(
-                "{size} framed endpoint stores should verify: {}",
-                error.message()
-            )
-        });
-        framing.push(
-            sample
-                .named_work
-                .get("operation `explicit fact transport: fold read frame`")
-                .copied()
-                .unwrap_or(0),
-        );
-        samples.push(sample);
-    }
-    eprintln!(
-        "fold read transport along stores: total {:?}, framing {framing:?}",
-        samples.iter().map(|sample| sample.work).collect::<Vec<_>>()
-    );
-    assert!(
-        framing[0] > 0,
-        "the fold read frame did not run: {framing:?}"
-    );
-    for pair in framing.windows(2) {
-        assert!(
-            pair[1] <= pair[0].saturating_mul(3),
-            "fold read framing work is not near linear in the store count: {framing:?}"
-        );
-    }
-    assert_near_linear_scaling("explicit fold read transport along stores", &samples);
-}
-
 /// Collecting the variables of a state's memory reads the state's counts,
 /// kept once per session from its derivation base's, so a proof beside a
 /// global array visits each of the array's cells once however many steps
@@ -5906,137 +5692,6 @@ fn the_back_edge_without_the_explicit_transport_costs_a_small_multiple() {
         implicit_work <= explicit_work.saturating_mul(3) / 2,
         "closing without the explicit transport costs {implicit_work} units against {explicit_work}"
     );
-}
-
-/// One quantified frame case: `stores` stores into the owned `visited`, a
-/// quantified body of `conjuncts` framed reads of the viewed `left`, and
-/// `facts` unrelated requirements in the context.
-fn quantified_frame_project(stores: usize, conjuncts: usize, facts: usize) -> (String, String) {
-    // Each store writes its own cell `visited[c{index}]`: repeated stores to
-    // one cell collapse into one recorded step.
-    let indices = (0..stores)
-        .map(|index| format!(", int32 c{index}"))
-        .collect::<String>();
-    let store_lines = (0..stores)
-        .map(|index| format!("    visited[c{index}] = {index};\n"))
-        .collect::<String>();
-    let signature = format!("void mark(int32 *left, int32 *visited, int32 n, int32 x{indices})");
-    let c_source = format!("{signature} {{\n{store_lines}}}\n");
-    let bounds = (0..stores)
-        .map(|index| format!("    requires 0 <= c{index};\n    requires c{index} < n;\n"))
-        .collect::<String>();
-    let unrelated = (0..facts)
-        .map(|index| format!("    requires x != {index};\n"))
-        .collect::<String>();
-    let body = |now: &str| vec![format!("{now}(left[k]) == old(left[k])"); conjuncts].join(" and ");
-    let source = format!(
-        "forall (k: int32) {{ 0 <= k and k < n implies {} }}",
-        body("old")
-    );
-    let target = format!(
-        "forall (k: int32) {{ 0 <= k and k < n implies {} }}",
-        body("")
-    );
-    let steps = "    step();\n".repeat(stores);
-    let click_source = format!(
-        "verifying \"mark.c\";\n\n\
-         {signature} {{\n{bounds}{unrelated}    \
-             views left[0..n];\n    \
-             owns visited[0..n];\n    \
-             ensures {target};\n\
-         }} by {{\n{steps}    transport({source}, {target});\n    \
-             step_until(function.exit);\n    close();\n}}\n"
-    );
-    (c_source, click_source)
-}
-
-fn quantified_frame_samples(
-    axis: &str,
-    sizes: [usize; 4],
-    project: impl Fn(usize) -> (String, String),
-) -> (Vec<ScalingSample>, Vec<usize>) {
-    let mut samples = Vec::new();
-    let mut framing = Vec::new();
-    for size in sizes {
-        let (c_source, click_source) = project(size);
-        let (verified, sample) = scaling_sample(size, || {
-            verify_c_sources(&click_source, &[("mark.c", c_source.as_str())])
-        });
-        verified.unwrap_or_else(|error| {
-            panic!("{axis} at size {size} should verify: {}", error.message())
-        });
-        framing.push(
-            sample
-                .named_work
-                .get("operation `explicit fact transport: quantified frame`")
-                .copied()
-                .unwrap_or(0),
-        );
-        samples.push(sample);
-    }
-    eprintln!(
-        "{axis}: total {:?}, framing {framing:?}; named work: {}",
-        samples.iter().map(|sample| sample.work).collect::<Vec<_>>(),
-        named_growth_diagnostic(&samples)
-    );
-    assert!(
-        framing[0] > 0,
-        "{axis}: the quantified frame did not run: {framing:?}"
-    );
-    for pair in framing.windows(2) {
-        assert!(
-            pair[1] <= pair[0].saturating_mul(3),
-            "{axis}: quantified frame work is not near linear: {framing:?}"
-        );
-    }
-    (samples, framing)
-}
-
-/// A quantified fact about a separated array crosses a straight line of
-/// stores into the owned array. The frame walks each read's history once, so
-/// its own work is near linear in the stores, and so is the whole
-/// verification: each store's refusal to keep the earlier cell it may alias
-/// reads only the order facts filed under the two indices
-/// (`stores_to_bounded_unordered_indices_are_near_linear`), where it used to
-/// scan every index's bounds (40,117 to 142,848 units at 4 to 32 stores).
-#[test]
-#[cfg(not(feature = "fast-gate"))]
-#[ignore = "nightly: 2s in the parallel gate"]
-fn quantified_frame_is_near_linear_in_crossed_stores() {
-    let (samples, framing) =
-        quantified_frame_samples("quantified frame across stores", [2, 4, 8, 16], |size| {
-            quantified_frame_project(size, 1, 0)
-        });
-    assert_bounded_work_increments("quantified frame across stores", &framing, 20, 7);
-    assert_near_linear_scaling_with_increment_bound("quantified frame across stores", &samples);
-}
-
-/// The quantified body grows by one framed conjunct per step: one leaf and
-/// one read question each, so near linear in the body.
-#[test]
-#[cfg(not(feature = "fast-gate"))]
-#[ignore = "nightly: 0.7s in the parallel gate"]
-fn quantified_frame_is_near_linear_in_its_body() {
-    let (samples, _) =
-        quantified_frame_samples("quantified frame over its body", [4, 8, 16, 32], |size| {
-            quantified_frame_project(2, size, 0)
-        });
-    assert_near_linear_scaling("quantified frame over its body", &samples);
-}
-
-/// Unrelated requirements join the context the frame reads, but it reads it
-/// only by indexed lookup, so they cost the frame nothing beyond the
-/// context's own construction.
-#[test]
-#[cfg(not(feature = "fast-gate"))]
-#[ignore = "nightly: 1.0s in the parallel gate"]
-fn quantified_frame_is_near_linear_in_unrelated_facts() {
-    let (samples, _) = quantified_frame_samples(
-        "quantified frame with unrelated facts",
-        [4, 8, 16, 32],
-        |size| quantified_frame_project(2, 1, size),
-    );
-    assert_near_linear_scaling("quantified frame with unrelated facts", &samples);
 }
 
 /// A function whose contract views `size` arrays over one shared length and
@@ -6743,7 +6398,7 @@ fn entry_resource_clauses_do_not_rebuild_every_parameter() {
             syntax::parse_function(&format!("void f({parameters}) {{ }}")).unwrap();
         let arguments = (0..count as u64)
             .map(|index| {
-                ProgramExpression::Value(ProgramValue::Int32(MachineTerm::Variable(Variable(
+                ProgramExpression::Value(ProgramValue::Int32(OldMachineTerm::Variable(Variable(
                     9_100_000 + index,
                 ))))
             })
@@ -7433,7 +7088,7 @@ fn the_automatic_loop_closer_joins_c_branches_instead_of_walking_every_path() {
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn atomic_memory_evidence_cites_only_connected_conditions() {
     use crate::kernel::{
-        Address, AddressOffset, ConditionTerm, MachineTerm, Proposition, PureFactContext,
+        Address, OldAddressOffset, OldConditionTerm, OldMachineTerm, Proposition, PureFactContext,
         SymbolicMemory, Variable,
     };
 
@@ -7441,21 +7096,24 @@ fn atomic_memory_evidence_cites_only_connected_conditions() {
     // The address of element `variable` of the goal's array.
     let at = |variable: u64| Address {
         base: "goal".into(),
-        offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(variable)), 4),
+        offset: OldAddressOffset::scaled_int32_node(
+            OldMachineTerm::Variable(Variable(variable)),
+            4,
+        ),
     };
     let loadable = |base: Address, bytes: u32| Proposition::MemoryLoadable {
         memory: memory.clone(),
         base,
-        bytes: (MachineTerm::constant(bytes)).into(),
+        bytes: (OldMachineTerm::constant(bytes)).into(),
         wide: false,
     };
     let equal = |left: u64, right: u64| {
         Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::Variable(Variable(left))),
-                right: Box::new(MachineTerm::Variable(Variable(right))),
+                left: Box::new(OldMachineTerm::Variable(Variable(left))),
+                right: Box::new(OldMachineTerm::Variable(Variable(right))),
             },
             true,
         )
@@ -7473,7 +7131,7 @@ fn atomic_memory_evidence_cites_only_connected_conditions() {
             vec![
                 loadable(Address::symbolic(Variable(470_002)), 16),
                 Proposition::condition_is(
-                    ConditionTerm::address_equal(
+                    OldConditionTerm::address_equal(
                         Address::symbolic(Variable(470_002)),
                         Address::null(),
                     ),
@@ -7505,7 +7163,7 @@ fn atomic_memory_evidence_cites_only_connected_conditions() {
                     context = context
                         .assume_proposition(equal(471_000 + 2 * index, 471_001 + 2 * index))
                         .assume_proposition(Proposition::condition_is(
-                            ConditionTerm::address_equal(
+                            OldConditionTerm::address_equal(
                                 Address::symbolic(Variable(475_000 + index)),
                                 Address::null(),
                             ),
@@ -7515,9 +7173,9 @@ fn atomic_memory_evidence_cites_only_connected_conditions() {
                             memory: memory.clone(),
                             base: Address {
                                 base: format!("other{index}").as_str().into(),
-                                offset: AddressOffset::Constant(0),
+                                offset: OldAddressOffset::Constant(0),
                             },
-                            bytes: (MachineTerm::constant(16)).into(),
+                            bytes: (OldMachineTerm::constant(16)).into(),
                             wide: false,
                         });
                 }
@@ -7590,21 +7248,21 @@ fn atomic_memory_evidence_cites_only_connected_conditions() {
 #[test]
 fn atomic_load_dependencies_ignore_other_state_cells() {
     use crate::kernel::{
-        Address, AddressOffset, ConditionTerm, MachineTerm, ProgramValue, Proposition,
+        Address, OldAddressOffset, OldConditionTerm, OldMachineTerm, ProgramValue, Proposition,
         PureFactContext, SymbolicMemory, Variable,
     };
 
     let index_cell = Address {
         base: "selected-index".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
-    let index = MachineTerm::Variable(Variable(490_000));
+    let index = OldMachineTerm::Variable(Variable(490_000));
     let equality = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(index.clone()),
-            right: Box::new(MachineTerm::constant(2)),
+            right: Box::new(OldMachineTerm::constant(2)),
         },
         true,
     );
@@ -7614,42 +7272,42 @@ fn atomic_load_dependencies_ignore_other_state_cells() {
             SymbolicMemory::new().store(index_cell.clone(), ProgramValue::Int32(index.clone()));
         let mut context = PureFactContext::new();
         for i in 0..size {
-            let value = MachineTerm::Variable(Variable(491_000 + i as u64));
+            let value = OldMachineTerm::Variable(Variable(491_000 + i as u64));
             memory = memory.store(
                 Address {
                     base: format!("other-cell-{i}").as_str().into(),
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0),
                 },
                 ProgramValue::Int32(value.clone()),
             );
             context = context.assume_proposition(Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
                     left: Box::new(value),
-                    right: Box::new(MachineTerm::constant(7)),
+                    right: Box::new(OldMachineTerm::constant(7)),
                 },
                 true,
             ));
         }
         let at = |value| Address {
             base: "selected-array".into(),
-            offset: AddressOffset::scaled_int32_node(value, 4),
+            offset: OldAddressOffset::scaled_int32_node(value, 4),
         };
         let source = Proposition::MemoryLoadable {
             memory: memory.clone(),
-            base: at(MachineTerm::constant(2)),
-            bytes: (MachineTerm::constant(4)).into(),
+            base: at(OldMachineTerm::constant(2)),
+            bytes: (OldMachineTerm::constant(4)).into(),
             wide: false,
         };
         let goal = Proposition::MemoryLoadable {
             memory: memory.clone(),
-            base: at(MachineTerm::read_named(
+            base: at(OldMachineTerm::read_named(
                 crate::kernel::ProgramPoint::of_memory(&memory),
                 Box::new(index_cell.clone()),
                 crate::kernel::LoadKind::Int32,
             )),
-            bytes: (MachineTerm::constant(4)).into(),
+            bytes: (OldMachineTerm::constant(4)).into(),
             wide: false,
         };
         context = context
@@ -7688,13 +7346,13 @@ fn atomic_load_dependencies_ignore_other_state_cells() {
 #[ignore = "nightly: 1.1s in the parallel gate"]
 fn atomic_evidence_without_one_source_cites_connected_facts() {
     use crate::kernel::{
-        Address, AddressOffset, ConditionTerm, MachineTerm, Proposition, PureFactContext, Sort,
-        SymbolicMemory, Variable,
+        Address, OldAddressOffset, OldConditionTerm, OldMachineTerm, Proposition, PureFactContext,
+        Sort, SymbolicMemory, Variable,
     };
 
     let memory = SymbolicMemory::new();
-    let load = |offset: AddressOffset| {
-        MachineTerm::read_named(
+    let load = |offset: OldAddressOffset| {
+        OldMachineTerm::read_named(
             crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
             Box::new(Address {
                 base: "data".into(),
@@ -7703,9 +7361,9 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
             crate::kernel::LoadKind::Int32,
         )
     };
-    let equal = |left: MachineTerm, right: MachineTerm| {
+    let equal = |left: OldMachineTerm, right: OldMachineTerm| {
         Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(left),
@@ -7714,9 +7372,9 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
             true,
         )
     };
-    let less = |left: MachineTerm, right: MachineTerm, holds: bool| {
+    let less = |left: OldMachineTerm, right: OldMachineTerm, holds: bool| {
         Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left: Box::new(left),
@@ -7725,7 +7383,7 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
             holds,
         )
     };
-    let variable = |id: u64| MachineTerm::Variable(Variable(id));
+    let variable = |id: u64| OldMachineTerm::Variable(Variable(id));
     let index = Variable(480_000);
     // forall index. index < exit ==> data[index] == index
     let quantified = crate::kernel::quantifiers::test_forall(
@@ -7735,14 +7393,17 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
         Proposition::Implies(
             Box::new(less(variable(480_000), variable(480_001), true)),
             Box::new(equal(
-                load(AddressOffset::scaled_int32_node(variable(480_000), 4)),
+                load(OldAddressOffset::scaled_int32_node(variable(480_000), 4)),
                 variable(480_000),
             )),
         ),
     );
     // not (exit < 3), so index 2 is below exit.
-    let bound = less(variable(480_001), MachineTerm::constant(3), false);
-    let goal = equal(load(AddressOffset::Constant(8)), MachineTerm::constant(2));
+    let bound = less(variable(480_001), OldMachineTerm::constant(3), false);
+    let goal = equal(
+        load(OldAddressOffset::Constant(8)),
+        OldMachineTerm::constant(2),
+    );
     let context = |unrelated: u64, with_bound: bool| {
         let mut context = PureFactContext::new();
         for index in 0..unrelated {
@@ -7756,9 +7417,9 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
                     memory: memory.clone(),
                     base: Address {
                         base: format!("other{index}").as_str().into(),
-                        offset: AddressOffset::scaled_int32_node(variable(482_000 + index), 4),
+                        offset: OldAddressOffset::scaled_int32_node(variable(482_000 + index), 4),
                     },
-                    bytes: (MachineTerm::constant(16)).into(),
+                    bytes: (OldMachineTerm::constant(16)).into(),
                     wide: false,
                 });
         }
@@ -7835,9 +7496,9 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
                         memory: memory.clone(),
                         base: Address {
                             base: format!("extension{step}").as_str().into(),
-                            offset: AddressOffset::Constant(0),
+                            offset: OldAddressOffset::Constant(0),
                         },
-                        bytes: (MachineTerm::constant(16)).into(),
+                        bytes: (OldMachineTerm::constant(16)).into(),
                         wide: false,
                     });
                 let proof = crate::kernel::search::ProofSearch::derive_atomic_proposition(
@@ -8485,12 +8146,12 @@ fn a_linear_goal_costs_a_constant_per_equality_connected_to_its_atoms() {
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn recorded_value_names_index_only_the_locals_each_point_changes() {
-    use crate::kernel::{MachineTerm, Variable};
+    use crate::kernel::{OldMachineTerm, Variable};
     let point = |index| ProgramPointRef {
         region: CodeRegionRef::Region(index),
         kind: ProgramPointKind::Exit,
     };
-    let value = |index: usize| MachineTerm::Variable(Variable(700_000 + index as u64));
+    let value = |index: usize| OldMachineTerm::Variable(Variable(700_000 + index as u64));
     let schema = crate::kernel::ResourceFieldSchema::new(vec![(
         "size".into(),
         crate::kernel::ResourceFieldType::Program(ProgramType::Int32),
@@ -8498,7 +8159,7 @@ fn recorded_value_names_index_only_the_locals_each_point_changes() {
     .unwrap();
     let block_pointer = |index: usize| crate::kernel::Address {
         base: crate::kernel::AddressBase::Symbolic(Variable(800_000 + index as u64)),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     for size in [16usize, 64, 256, 1024] {
         let mut retained_states = RecordedStates::new();
@@ -8546,7 +8207,7 @@ fn recorded_value_names_index_only_the_locals_each_point_changes() {
             let memory = state.memory().clone().store(
                 crate::kernel::Address {
                     base: crate::kernel::AddressBase::Concrete("cells".into()),
-                    offset: crate::kernel::AddressOffset::Constant(4 * index as i64),
+                    offset: crate::kernel::OldAddressOffset::Constant(4 * index as i64),
                 },
                 ProgramValue::Int32(value(6 * size + index)),
             );
@@ -10788,13 +10449,13 @@ fn recorded_pointer_call_results_scale_and_follow_replacement() {
 
 #[test]
 fn recorded_call_results_scale_and_replace_execution_occurrences() {
-    use crate::kernel::{ConditionTerm, MachineIntegerType, MachineTerm, Variable};
+    use crate::kernel::{MachineIntegerType, OldConditionTerm, OldMachineTerm, Variable};
     for size in [16usize, 64, 256, 1024] {
         let mut retained_states = RecordedStates::new();
         let value = |index| {
-            ProgramValue::Bool(MachineTerm::bool_cast(
+            ProgramValue::Bool(OldMachineTerm::bool_cast(
                 MachineIntegerType::UInt8,
-                ConditionTerm::Variable(Variable(700_000 + index)),
+                OldConditionTerm::Variable(Variable(700_000 + index)),
             ))
         };
         for index in 0..size {
@@ -11644,7 +11305,7 @@ fn compound_implication_transport_scales_with_reads_and_logical_depth() {
 
 #[test]
 fn volatile_read_results_use_selected_event_indexes() {
-    use crate::kernel::{MachineTerm, Variable};
+    use crate::kernel::{OldMachineTerm, Variable};
     let mut samples = Vec::new();
     let mut repeated_samples = Vec::new();
     for size in [16usize, 64, 256, 1024] {
@@ -11652,13 +11313,13 @@ fn volatile_read_results_use_selected_event_indexes() {
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for index in 0..size {
                 let value =
-                    ProgramValue::Int32(MachineTerm::Variable(Variable(800000 + index as u64)));
+                    ProgramValue::Int32(OldMachineTerm::Variable(Variable(800000 + index as u64)));
                 points.record_read_event_values(index, std::iter::once(&value));
                 assert!(points.read_event_naming_value(&value).is_some());
             }
         });
         samples.push(work);
-        let first = ProgramValue::Int32(MachineTerm::Variable(Variable(800000)));
+        let first = ProgramValue::Int32(OldMachineTerm::Variable(Variable(800000)));
         let branch = points.clone();
         points.record_read_event_values(0, std::iter::empty());
         assert!(points.read_event_naming_value(&first).is_none());

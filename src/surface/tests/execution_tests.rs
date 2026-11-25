@@ -1353,8 +1353,8 @@ fn verifies_fill3_c_source_with_sidecar_specification() {
     };
     let base = argument.address().clone();
     let first = base.clone();
-    let second = offset_pointer_by_int32_elements(base.clone(), MachineTerm::constant(1));
-    let third = offset_pointer_by_int32_elements(base.clone(), MachineTerm::constant(2));
+    let second = offset_pointer_by_int32_elements(base.clone(), OldMachineTerm::constant(1));
+    let third = offset_pointer_by_int32_elements(base.clone(), OldMachineTerm::constant(2));
     let local_i_block = crate::kernel::AddressBase::AutomaticLocal {
         binding: crate::kernel::LocalBindingId::new(
             crate::kernel::LocalFunctionId::new(Some("fill3.c".into()), "fill3".into()),
@@ -1366,7 +1366,7 @@ fn verifies_fill3_c_source_with_sidecar_specification() {
     };
     let local_i = Address {
         base: local_i_block.clone(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let entry = verified
         .specification
@@ -1391,8 +1391,8 @@ fn verifies_fill3_c_source_with_sidecar_specification() {
     let initial_resources =
         ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
             base.clone(),
-            MachineTerm::constant(0),
-            MachineTerm::constant(3),
+            OldMachineTerm::constant(0),
+            OldMachineTerm::constant(3),
         )));
     let final_memory = initial_memory
         .clone()
@@ -1500,8 +1500,8 @@ fn verifies_fill3_c_source_with_sidecar_specification() {
                                         )
                                         .with_validated_ranges(vec![MemoryRange::new(
                                             base.clone(),
-                                            MachineTerm::constant(0),
-                                            MachineTerm::constant(3),
+                                            OldMachineTerm::constant(0),
+                                            OldMachineTerm::constant(3),
                                         )]),
                                     ],
                                     body.as_ref().clone(),

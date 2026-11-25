@@ -16,7 +16,7 @@ fn domain_source_selection_ignores_unrelated_prefix_and_preserves_branches() {
         let operand = SharedMachineIntegerTerm::from_shared(ty, root).unwrap();
         let value = operand.operand_view().observe(ty).unwrap();
         let premise = Proposition::condition_is(
-            ConditionTerm::integer_greater_than(
+            OldConditionTerm::integer_greater_than(
                 IntegerTerm::constant((i32::MAX).into()),
                 value.clone(),
             ),
@@ -31,9 +31,9 @@ fn domain_source_selection_ignores_unrelated_prefix_and_preserves_branches() {
         let mut base = PureFactContext::new();
         for i in 0..size {
             base = base.assume_condition(
-                ConditionTerm::signed_less_than(
-                    MachineTerm::Variable(Variable(980000 + i)),
-                    MachineTerm::constant(i as u32),
+                OldConditionTerm::signed_less_than(
+                    OldMachineTerm::Variable(Variable(980000 + i)),
+                    OldMachineTerm::constant(i as u32),
                 ),
                 true,
             );

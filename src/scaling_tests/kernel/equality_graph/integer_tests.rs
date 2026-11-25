@@ -70,10 +70,10 @@ fn retained_call_argument_congruence_is_linear_cold_and_constant_warm() {
     let mut costs = Vec::new();
     for depth in [8, 32, 96] {
         let _session = crate::kernel::VerificationSession::enter();
-        let leaf = MachineTerm::ClickFunctionApplication {
+        let leaf = OldMachineTerm::ClickFunctionApplication {
             name: "argument_leaf".into(),
             arguments: vec![PureFunctionArgument::Value(ProgramValue::UInt64(
-                MachineTerm::Variable(Variable(982821)),
+                OldMachineTerm::Variable(Variable(982821)),
             ))],
         };
         let mut root = KernelTerm::retained_native_machine_operand(M::UInt64, &leaf);
@@ -86,14 +86,14 @@ fn retained_call_argument_congruence_is_linear_cold_and_constant_warm() {
         }
         let exact = SharedMachineIntegerTerm::from_shared(M::UInt64, root.clone()).unwrap();
         let bound = |argument| {
-            ConditionTerm::narrow_compare(
+            OldConditionTerm::narrow_compare(
                 M::UInt8,
                 crate::kernel::CompareRelation::LessEqual,
-                MachineTerm::Constant {
+                OldMachineTerm::Constant {
                     format: M::UInt8,
                     bits: 48,
                 },
-                MachineTerm::ClickFunctionApplication {
+                OldMachineTerm::ClickFunctionApplication {
                     name: "argument_digit".into(),
                     arguments: vec![PureFunctionArgument::SharedMachine(argument)],
                 },

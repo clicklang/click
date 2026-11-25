@@ -30,12 +30,12 @@ pub(in crate::kernel) fn known_integer_byte(
     memory: &SymbolicMemory,
     pointer: &Address,
     byte_order: Option<ByteOrder>,
-) -> Option<MachineTerm> {
+) -> Option<OldMachineTerm> {
     if let Some(value) = memory.cells.get(pointer) {
         match value {
             ProgramValue::UInt8(bits) => return Some(bits.clone()),
             ProgramValue::Int8(bits) => {
-                return Some(MachineTerm::machine_integer_cast(
+                return Some(OldMachineTerm::machine_integer_cast(
                     MachineIntegerType::Int8,
                     MachineIntegerType::UInt8,
                     bits.clone(),
@@ -48,22 +48,23 @@ pub(in crate::kernel) fn known_integer_byte(
     integer_cell_byte(&cell.value, cell.byte)
 }
 
-pub(in crate::kernel) fn mask_byte(value: MachineTerm, mask: u8) -> MachineTerm {
+pub(in crate::kernel) fn mask_byte(value: OldMachineTerm, mask: u8) -> OldMachineTerm {
     use MachineIntegerType::{UInt8, UInt32};
     if mask == u8::MAX {
         return value;
     }
-    let word = MachineTerm::machine_integer_cast(UInt8, UInt32, value);
-    let bits = MachineTerm::bitwise_and_at(UInt32, word, MachineTerm::constant(u32::from(mask)));
-    MachineTerm::machine_integer_cast(UInt32, UInt8, bits)
+    let word = OldMachineTerm::machine_integer_cast(UInt8, UInt32, value);
+    let bits =
+        OldMachineTerm::bitwise_and_at(UInt32, word, OldMachineTerm::constant(u32::from(mask)));
+    OldMachineTerm::machine_integer_cast(UInt32, UInt8, bits)
 }
 
-pub(super) fn merge_byte_bits(left: MachineTerm, right: MachineTerm) -> MachineTerm {
+pub(super) fn merge_byte_bits(left: OldMachineTerm, right: OldMachineTerm) -> OldMachineTerm {
     use MachineIntegerType::{UInt8, UInt32};
-    let left = MachineTerm::machine_integer_cast(UInt8, UInt32, left);
-    let right = MachineTerm::machine_integer_cast(UInt8, UInt32, right);
-    let word = MachineTerm::bitwise_or_at(UInt32, left, right);
-    MachineTerm::machine_integer_cast(UInt32, UInt8, word)
+    let left = OldMachineTerm::machine_integer_cast(UInt8, UInt32, left);
+    let right = OldMachineTerm::machine_integer_cast(UInt8, UInt32, right);
+    let word = OldMachineTerm::bitwise_or_at(UInt32, left, right);
+    OldMachineTerm::machine_integer_cast(UInt32, UInt8, word)
 }
 
 /// A completed byte output for a declared uint32 relates its word and bytes.
@@ -87,7 +88,7 @@ pub(in crate::kernel) fn declared_uint32_read_representation(
         return None;
     }
     let value = super::memory_loads::canonical_cell_load(point, pointer, ProgramType::UInt32);
-    let mut assembled = MachineTerm::constant(0);
+    let mut assembled = OldMachineTerm::constant(0);
     for byte in 0..4 {
         crate::instrumentation::record_deterministic_work(1);
         let read = super::memory_loads::canonical_cell_load(
@@ -96,13 +97,13 @@ pub(in crate::kernel) fn declared_uint32_read_representation(
             ProgramType::UInt8,
         );
         let bits = byte_word(&ProgramValue::UInt8(read))?;
-        assembled = MachineTerm::bitwise_or(
+        assembled = OldMachineTerm::bitwise_or(
             assembled,
-            MachineTerm::unsigned_shift_left(bits, MachineTerm::constant(8 * byte)),
+            OldMachineTerm::unsigned_shift_left(bits, OldMachineTerm::constant(8 * byte)),
         );
     }
     Some(Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left: Box::new(value),
@@ -121,7 +122,7 @@ pub(in crate::kernel) fn indexed_uint32_byte_read(
     byte_order: Option<ByteOrder>,
 ) -> Option<(ProgramValue, ExecutionFacts)> {
     if byte_order != Some(ByteOrder::Little)
-        || pointer.offset != AddressOffset::Constant(0)
+        || pointer.offset != OldAddressOffset::Constant(0)
         || point.memory().is_ended_local_address(pointer)
     {
         return None;
@@ -134,7 +135,7 @@ pub(in crate::kernel) fn indexed_uint32_byte_read(
         return None;
     }
     let mut facts = ExecutionFacts::new();
-    let mut packed = MachineTerm::constant(0);
+    let mut packed = OldMachineTerm::constant(0);
     for byte in 0..4 {
         crate::instrumentation::record_deterministic_work(1);
         let address = pointer.offset_by_bytes(byte);
@@ -152,8 +153,8 @@ pub(in crate::kernel) fn indexed_uint32_byte_read(
         };
         facts = path.facts;
         let term = byte_word(&value)?;
-        let shifted = MachineTerm::unsigned_shift_left(term, MachineTerm::constant(8 * byte));
-        packed = MachineTerm::bitwise_or(packed, shifted);
+        let shifted = OldMachineTerm::unsigned_shift_left(term, OldMachineTerm::constant(8 * byte));
+        packed = OldMachineTerm::bitwise_or(packed, shifted);
     }
     Some((ProgramValue::UInt32(packed), facts))
 }
@@ -192,9 +193,9 @@ pub(in crate::kernel) fn assemble_declared_uint32_after_byte_store(
     let incoming = as_byte(stored)?;
     let start = Address {
         base: pointer.base.clone(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
-    let mut assembled = MachineTerm::constant(0);
+    let mut assembled = OldMachineTerm::constant(0);
     for byte in 0..4 {
         crate::instrumentation::record_deterministic_work(1);
         let bits = if byte == offset {
@@ -202,9 +203,9 @@ pub(in crate::kernel) fn assemble_declared_uint32_after_byte_store(
         } else {
             as_byte(&memory.cells.get(&start.offset_by_bytes(byte as u32))?)?
         };
-        assembled = MachineTerm::bitwise_or(
+        assembled = OldMachineTerm::bitwise_or(
             assembled,
-            MachineTerm::unsigned_shift_left(bits, MachineTerm::constant(8 * byte as u32)),
+            OldMachineTerm::unsigned_shift_left(bits, OldMachineTerm::constant(8 * byte as u32)),
         );
     }
     Some((start, ProgramValue::UInt32(assembled)))
@@ -213,16 +214,16 @@ pub(in crate::kernel) fn assemble_declared_uint32_after_byte_store(
 /// The 32-bit word of a stored byte, `0..=255`: the zero extension of its
 /// eight bits, `uint8` read directly and `int8` through its conversion to
 /// `uint8`. `None` for a value that is not a byte.
-fn byte_word(value: &ProgramValue) -> Option<MachineTerm> {
+fn byte_word(value: &ProgramValue) -> Option<OldMachineTerm> {
     use crate::kernel::MachineIntegerType as Ty;
     let byte = match value {
         ProgramValue::UInt8(bits) => bits.clone(),
         ProgramValue::Int8(bits) => {
-            MachineTerm::machine_integer_cast(Ty::Int8, Ty::UInt8, bits.clone())
+            OldMachineTerm::machine_integer_cast(Ty::Int8, Ty::UInt8, bits.clone())
         }
         _ => return None,
     };
-    Some(MachineTerm::machine_integer_cast(
+    Some(OldMachineTerm::machine_integer_cast(
         Ty::UInt8,
         Ty::Int32,
         byte,
@@ -276,7 +277,7 @@ pub(in crate::kernel) fn containing_integer_cell(
     if byte_order != Some(ByteOrder::Little) {
         return None;
     }
-    let AddressOffset::Constant(offset) = pointer.offset else {
+    let OldAddressOffset::Constant(offset) = pointer.offset else {
         return None;
     };
     crate::instrumentation::record_deterministic_work(1);
@@ -297,7 +298,7 @@ pub(in crate::kernel) fn containing_integer_cell(
     for cell_offset in (lowest..offset).rev() {
         let cell_pointer = Address {
             base: pointer.base.clone(),
-            offset: AddressOffset::Constant(cell_offset),
+            offset: OldAddressOffset::Constant(cell_offset),
         };
         crate::instrumentation::record_deterministic_work(1);
         let Some(value) = memory.cells.get(&cell_pointer) else {
@@ -326,7 +327,10 @@ pub(in crate::kernel) fn containing_integer_cell(
 /// `unsigned char` it is: the conversion to `uint8` of `v >> 8k`, a native
 /// 8-bit term. A 16-bit value is read through its 32-bit widening, whose
 /// low sixteen bits are its representation whatever its signedness.
-pub(in crate::kernel) fn integer_cell_byte(value: &ProgramValue, byte: u32) -> Option<MachineTerm> {
+pub(in crate::kernel) fn integer_cell_byte(
+    value: &ProgramValue,
+    byte: u32,
+) -> Option<OldMachineTerm> {
     use crate::kernel::MachineIntegerType as Ty;
     let value = value.numeric_value();
     let width = integer_cell_width(value)?;
@@ -334,17 +338,17 @@ pub(in crate::kernel) fn integer_cell_byte(value: &ProgramValue, byte: u32) -> O
         return None;
     }
     let shift = 8 * byte;
-    let word = |term: MachineTerm| {
+    let word = |term: OldMachineTerm| {
         let shifted = if shift == 0 {
             term
         } else {
-            MachineTerm::logical_shift_right(term, MachineTerm::constant(shift))
+            OldMachineTerm::logical_shift_right(term, OldMachineTerm::constant(shift))
         };
-        MachineTerm::machine_integer_cast(Ty::UInt32, Ty::UInt8, shifted)
+        OldMachineTerm::machine_integer_cast(Ty::UInt32, Ty::UInt8, shifted)
     };
     Some(match value {
         ProgramValue::Int16(term) | ProgramValue::UInt16(term) => {
-            word(MachineTerm::machine_integer_cast(
+            word(OldMachineTerm::machine_integer_cast(
                 Ty::from_program_type(value.program_type())?,
                 Ty::UInt32,
                 term.clone(),
@@ -353,18 +357,18 @@ pub(in crate::kernel) fn integer_cell_byte(value: &ProgramValue, byte: u32) -> O
         ProgramValue::Int32(term) | ProgramValue::UInt32(term) => word(term.clone()),
         ProgramValue::Int64(term) | ProgramValue::UInt64(term) => {
             let bits = match value {
-                ProgramValue::Int64(_) => MachineTerm::uint64_from_int64(term.clone()),
+                ProgramValue::Int64(_) => OldMachineTerm::uint64_from_int64(term.clone()),
                 _ => term.clone(),
             };
             let shifted = if shift == 0 {
                 bits
             } else {
-                MachineTerm::uint64_logical_shift_right(
+                OldMachineTerm::uint64_logical_shift_right(
                     bits,
-                    MachineTerm::uint64_constant(u64::from(shift)),
+                    OldMachineTerm::uint64_constant(u64::from(shift)),
                 )
             };
-            MachineTerm::machine_integer_cast(Ty::UInt64, Ty::UInt8, shifted)
+            OldMachineTerm::machine_integer_cast(Ty::UInt64, Ty::UInt8, shifted)
         }
         _ => return None,
     })
@@ -383,7 +387,11 @@ pub(in crate::kernel) fn byte_view_load_value(
     match value_type {
         ProgramType::UInt8 => Some(ProgramValue::UInt8(byte)),
         ProgramType::Int8 => Ty::UInt8.constant_from_term(&byte).map(|_| {
-            ProgramValue::Int8(MachineTerm::machine_integer_cast(Ty::UInt8, Ty::Int8, byte))
+            ProgramValue::Int8(OldMachineTerm::machine_integer_cast(
+                Ty::UInt8,
+                Ty::Int8,
+                byte,
+            ))
         }),
         _ => None,
     }
@@ -411,19 +419,19 @@ pub(in crate::kernel) fn integer_cell_with_byte(
     // is only used by cells of at most four bytes, where it is too.
     let mask32 = !0xFFu32.checked_shl(shift).unwrap_or(0);
     let mask64 = !(0xFFu64 << shift);
-    let update32 = |term: &MachineTerm| {
-        MachineTerm::bitwise_or(
-            MachineTerm::bitwise_and(term.clone(), MachineTerm::constant(mask32)),
-            MachineTerm::unsigned_shift_left(byte.clone(), MachineTerm::constant(shift)),
+    let update32 = |term: &OldMachineTerm| {
+        OldMachineTerm::bitwise_or(
+            OldMachineTerm::bitwise_and(term.clone(), OldMachineTerm::constant(mask32)),
+            OldMachineTerm::unsigned_shift_left(byte.clone(), OldMachineTerm::constant(shift)),
         )
     };
     use crate::kernel::MachineIntegerType as Ty;
     Some(match cell.value.numeric_value() {
         // A 16-bit cell is updated in its 32-bit widening and converted back.
-        ProgramValue::UInt16(term) => ProgramValue::UInt16(MachineTerm::machine_integer_cast(
+        ProgramValue::UInt16(term) => ProgramValue::UInt16(OldMachineTerm::machine_integer_cast(
             Ty::UInt32,
             Ty::UInt16,
-            update32(&MachineTerm::machine_integer_cast(
+            update32(&OldMachineTerm::machine_integer_cast(
                 Ty::UInt16,
                 Ty::UInt32,
                 term.clone(),
@@ -431,11 +439,14 @@ pub(in crate::kernel) fn integer_cell_with_byte(
         )),
         ProgramValue::Int32(term) => ProgramValue::Int32(update32(term)),
         ProgramValue::UInt32(term) => ProgramValue::UInt32(update32(term)),
-        ProgramValue::UInt64(term) => ProgramValue::UInt64(MachineTerm::uint64_bitwise_or(
-            MachineTerm::uint64_bitwise_and(term.clone(), MachineTerm::uint64_constant(mask64)),
-            MachineTerm::uint64_shift_left(
-                MachineTerm::uint64_from_32(byte),
-                MachineTerm::uint64_constant(u64::from(shift)),
+        ProgramValue::UInt64(term) => ProgramValue::UInt64(OldMachineTerm::uint64_bitwise_or(
+            OldMachineTerm::uint64_bitwise_and(
+                term.clone(),
+                OldMachineTerm::uint64_constant(mask64),
+            ),
+            OldMachineTerm::uint64_shift_left(
+                OldMachineTerm::uint64_from_32(byte),
+                OldMachineTerm::uint64_constant(u64::from(shift)),
             ),
         )),
         ProgramValue::Int16(term) => {
@@ -447,7 +458,7 @@ pub(in crate::kernel) fn integer_cell_with_byte(
         ProgramValue::Int64(term) => {
             let (value, byte) = (term.int64_as_const()?, byte.as_const()?);
             let bits = (value as u64 & mask64) | (u64::from(byte & 0xFF) << shift);
-            ProgramValue::Int64(MachineTerm::int64_constant(bits as i64))
+            ProgramValue::Int64(OldMachineTerm::int64_constant(bits as i64))
         }
         _ => return None,
     })

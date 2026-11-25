@@ -52,7 +52,7 @@ fn exit_local_argument_context_indexing_is_linear_and_shared() {
         let facts = (0..size)
             .map(|index| {
                 ExecutionPureFact::new(Proposition::condition_is(
-                    ConditionTerm::address_equal(
+                    OldConditionTerm::address_equal(
                         Address::symbolic(Variable(10000 + index)),
                         Address::symbolic(Variable(20000 + index)),
                     ),
@@ -83,9 +83,9 @@ fn exit_argument_checks_reuse_the_checked_path_context() {
     let _session = crate::kernel::VerificationSession::enter();
     let fact = |id, value| {
         Proposition::condition_is(
-            ConditionTerm::equal(
-                MachineTerm::Variable(Variable(id)),
-                MachineTerm::constant(value),
+            OldConditionTerm::equal(
+                OldMachineTerm::Variable(Variable(id)),
+                OldMachineTerm::constant(value),
             ),
             true,
         )

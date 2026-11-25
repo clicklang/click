@@ -3617,9 +3617,9 @@ facts. Prove unchanged reads across named footprints with `preserve` and use
 **Failure, checking, and tools:**
 
 Unrelated propositions, unsafe writes, or a source that does not carry the
-target alone fail. The diagnostic identifies the recorded effects and, for a
-quantified fact, the leaf still needing proof. Expansion writes the ordinary checks, such as `preserve` and
-`rewrite`, when it records a replayable derivation.
+target alone fail. When search finds no checked proof, the diagnostic shows
+the source and wanted target with their read identities. Expansion writes the
+ordinary checks, such as `preserve` and `rewrite`, for a successful proof.
 
 **Checked examples:** [`known_value_transport_expansion.md`](https://github.com/clicklang/click/blob/master/mdtests/known_value_transport_expansion.md), [`transport_model_pointer_binding.md`](https://github.com/clicklang/click/blob/master/mdtests/transport_model_pointer_binding.md)
 

@@ -27,7 +27,7 @@ Nothing in the kernel says once what a value of one of these types is, how
 it converts, or which rules hold for it. Each rule carries its own list of
 supported widths, and the lists disagree.
 
-**Representation.** `MachineTerm` (`src/kernel/primitives.rs`) has 60
+**Representation.** `OldMachineTerm` (`src/kernel/primitives.rs`) has 60
 variants and no width field. The width is implied by the operator family,
 the constant's shape, a load's kind, or the enclosing `CValue` tag.
 
@@ -40,7 +40,7 @@ the constant's shape, a load's kind, or the enclosing `CValue` tag.
 | Conversions | 6 legacy (`Int64From32`, `UInt32From64`, ...), plus `MachineIntegerCast` and `IntegerToMachine` |
 | 128-bit operators | none: a 128-bit value is only a constant, variable, load or cast |
 
-`ConditionTerm` has a 32-bit family (4 signed orders, equality, 5 signed
+`OldConditionTerm` has a 32-bit family (4 signed orders, equality, 5 signed
 overflow tests) and a 64-bit family (4 signed orders, 4 unsigned orders,
 equality, 5 signed overflow tests). It has no 32-bit unsigned order: a
 `uint32` order is the signed order of operands XORed with `0x8000_0000`,
@@ -169,8 +169,8 @@ Conditions become `Compare { format, relation, left, right }` and
 every width, beside the existing `Integer*` comparisons. The XOR encoding of
 `uint32` order goes away.
 
-The existing constructors (`ConditionTerm::signed_less_than`,
-`MachineTerm::add`, ...) and the uniform views in `term_shape.rs` stay as
+The existing constructors (`OldConditionTerm::signed_less_than`,
+`OldMachineTerm::add`, ...) and the uniform views in `term_shape.rs` stay as
 the API most code uses. They then build or read the format-carrying nodes,
 so most call sites do not change.
 
@@ -269,11 +269,11 @@ families at the surface.
 
 The ruling in `typed-indices.md` gave four reasons. Measured now:
 
-- **"About 8,000 match sites".** `MachineTerm::` variants appear about
+- **"About 8,000 match sites".** `OldMachineTerm::` variants appear about
   11,600 times in 147 non-test files. About 3,200 of those are leaves
   (`Variable`, constants), which a merge of the typed operators does not
   touch. The per-width operators and conversions account for about 2,700
-  mentions. The `ConditionTerm::Bitvector32*` and `Bitvector64*` families
+  mentions. The `OldConditionTerm::Bitvector32*` and `Bitvector64*` families
   account for about 1,900. Most of those go through constructors and
   uniform views that can keep their signatures. The work is large but
   mostly mechanical, and it can be done one operator family at a time.
@@ -411,7 +411,7 @@ Done 2026-10-24, for every gap that needs no new node. What changed:
 
 Done 2026-10-24. What changed:
 
-- `ConditionTerm` has `Compare { format, relation, left, right }` and
+- `OldConditionTerm` has `Compare { format, relation, left, right }` and
   `Overflows { format, op, left, right }` (`CompareRelation`,
   `OverflowOperation`) in place of its 24 per-width variants. The format
   is a `MachineIntegerType`, `Copy` and part of the derived order and hash.
@@ -420,7 +420,7 @@ Done 2026-10-24. What changed:
   compare exactly. So every fact keeps one spelling.
 - The per-width constructors (`signed_less_than`, `uint64_less_equal`,
   `int64_signed_add_overflows`, ...) build the new nodes, and
-  `ConditionTerm::machine_compare` and `machine_overflows` dispatch to them
+  `OldConditionTerm::machine_compare` and `machine_overflows` dispatch to them
   by format. `as_bitvector_comparison` reports the format with the relation
   or operation. Readers were rewritten to the new nodes; traversals that
   listed every variant (substitution, variable and load collection, the
@@ -467,7 +467,7 @@ Done 2026-10-24. What changed:
   `Cast`, starting with the 64-bit duplicates, then the 32-bit operators,
   then the six legacy conversions.
 - Keep the constructor API. Retire `Bitvector32Term`'s name when it no
-  longer describes the type (renamed `MachineTerm`, 2026-11-04; see
+  longer describes the type (renamed `OldMachineTerm`, 2026-11-04; see
   Progress).
 - Separate floats into their own term type (retired 2026-11-04; see
   Progress).
@@ -475,7 +475,7 @@ Done 2026-10-24. What changed:
 
 Progress:
 
-- The 64-bit operators are merged (2026-10-24). `MachineTerm` has
+- The 64-bit operators are merged (2026-10-24). `OldMachineTerm` has
   `Binary { format, op, left, right }` (`MachineBinaryOp`) and
   `Unary { format, op, operand }` (`MachineUnaryOp`) in place of its 24
   `Int64*` and `UInt64*` operator variants; `ShiftRight` is arithmetic at
@@ -515,13 +515,13 @@ Progress:
   each read is its own load), as a signed byte read is the conversion of the
   byte's unsigned read. Kernel-internal reads stay `Int32`. A trace prints
   either 32-bit kind as `read<Bits32>`, as before. No verdict changed.
-- Step 2, constants with a format, is done (2026-10-25). `MachineTerm`
+- Step 2, constants with a format, is done (2026-10-25). `OldMachineTerm`
   has `UInt32Constant(u32)` beside `Constant(u32)`, which stays the `int32`
   spelling of every kernel-internal constant. A C, C++ or Rust value at
   `uint32` takes it: literals (`c_uint32_literal`, the C++ scalar literal,
   Rust `u32` literals and suffixes), `MachineIntegerType::constant_term`
   and every conversion fold at `uint32`, `kernel::uint32` and
-  `value_from_term` at `uint32` (`MachineTerm::in_format32`, one match
+  `value_from_term` at `uint32` (`OldMachineTerm::in_format32`, one match
   on the root). Its word is `Constant` of the same bits (rule K1): the
   32-bit operator, comparison and overflow constructors and the raw
   32-bit operator builders read it as `Constant` (`into_word32`,
@@ -535,11 +535,11 @@ Progress:
 - A `uint32` equality is filed at `uint32` (2026-10-25, rule K6,
   [Decisions](#decisions)). C `==` on `unsigned` operands, a specification
   `==` of `uint32` values and `machine_compare(UInt32, Equal)` build
-  `Compare { UInt32, Equal }` (`ConditionTerm::uint32_equal`); every other
+  `Compare { UInt32, Equal }` (`OldConditionTerm::uint32_equal`); every other
   equality stays at `int32`. The operands are words, as for any 32-bit
-  comparison. `ConditionTerm` and `BitvectorComparisonOp` compare, hash
+  comparison. `OldConditionTerm` and `BitvectorComparisonOp` compare, hash
   and order by an identity that reads a 32-bit equality's format as
-  `int32` (`ConditionTerm::fact_format`), one match on the root, so the
+  `int32` (`OldConditionTerm::fact_format`), one match on the root, so the
   fact indexes, fact and alpha keys and every equality lookup see one fact;
   the patterns that read a 32-bit equality accept either format, and those
   that read a `uint32` order exclude equality. Diagnostics and traces print
@@ -580,7 +580,7 @@ Progress:
   `Constant { format, bits }` replaces `Constant(u32)`, `UInt32Constant`,
   `Int64Constant`, `UInt64Constant` and `MachineIntegerConstant`: one node
   for every format, its bits masked to the format. The builders keep the
-  old names (`MachineTerm::constant` at `int32`, `uint32_constant`,
+  old names (`OldMachineTerm::constant` at `int32`, `uint32_constant`,
   `int64_constant`, `uint64_constant`, `machine_constant`), and patterns
   name a format (`int32_constant!`, `uint32_constant!`, `bits32_constant!`,
   `int64_constant!`, `uint64_constant!`, `native_constant!` for 8, 16 and
@@ -614,7 +614,7 @@ Progress:
   direction, 2026-11-04: it reads the 64-bit operand's bits, so a fixed
   source is principled, and no source signedness is recorded). The
   builders keep their names (`machine_integer_cast`, `int64_from_32`,
-  `uint32_from_64`, ...) beside the bare `MachineTerm::legacy_cast`
+  `uint32_from_64`, ...) beside the bare `OldMachineTerm::legacy_cast`
   and `cast_node`; patterns use `cast_term!(Spelling, value)` and
   `cast_op!(Spelling)`. `spelling` precedes the formats, so the derived
   order of conversions is the old one. Discriminant-based comparisons and
@@ -637,7 +637,7 @@ Progress:
   not a construction shortcut, so it is not a Stage 3 item.
 - Floats stay in the term family (2026-11-04). The
   split would give floats a term type of their own, `FloatTerm` with a
-  bits leaf (a `MachineTerm`: variable, load, constant, application)
+  bits leaf (a `OldMachineTerm`: variable, load, constant, application)
   and float negation and arithmetic nodes, held by `CValue::Float32`,
   `CValue::Float64` and `CFloatCondition`. It keeps every identity only if
   no float operation sits under a non-float node. A census (a temporary
@@ -653,7 +653,7 @@ Progress:
   `CFloatCondition` sites and 147 uses of the float variants and their
   shape operators) for two fixtures, so it is retired. If floats gain
   richer symbolic use, that bits-leaf `FloatTerm` remains the design.
-- `Bitvector32Term` is renamed `MachineTerm` (2026-11-04), since it holds
+- `Bitvector32Term` is renamed `OldMachineTerm` (2026-11-04), since it holds
   every machine width (8 to 128-bit integers and float bit patterns). The
   rename is mechanical: constructors, variants and `Debug` output are
   unchanged, and so are `Term::Bitvector32` and `Sort::Bitvector32`. Older
@@ -767,7 +767,7 @@ Progress:
      `uint32_and_int32_chains_cost_alike` (equal work at every size). Two
      readers see through one σ for the smart search's cheap closers, each
      one match at a side's root: a 32-bit equality `σ(x) == x` is vacuous
-     as a rewrite and is not a rewrite candidate (`MachineTerm::is_sign_cast32_of`), and a
+     as a rewrite and is not a rewrite candidate (`OldMachineTerm::is_sign_cast32_of`), and a
      `uint32` bound below the sign bit, `σ(y) <=u c`, files and decides its
      signed range on `y` (`unsigned_upper_bound_below_sign_bit`). The
      follow-up PR (2026-11-02, [Decisions](#decisions)) removes two of the
@@ -862,7 +862,7 @@ Progress:
      comparison; an untyped or `int32` literal compared with a narrow value
      takes the value's format when it fits. A native comparison and the
      `int32` comparison of its operands' widenings are one fact at the
-     fact-identity and lookup-key level only (`ConditionTerm::comparison_fact`,
+     fact-identity and lookup-key level only (`OldConditionTerm::comparison_fact`,
      O(1)): identity, hashing and order, the state-blind, alpha and
      identity keys, `condition_match_key`, and the structural condition
      matchers read both as one. A native fact is also filed, inside each
@@ -1011,7 +1011,7 @@ every language, and no {0, 1} integer format ([Decisions](#decisions),
 Progress:
 
 - The kernel sort (2026-10-26). Click `Bool` is the kernel's condition
-  sort: a `Bool` term is a `ConditionTerm`, whose `Constant` and
+  sort: a `Bool` term is a `OldConditionTerm`, whose `Constant` and
   `Variable` are its literals and binders and whose comparisons are `Bool`
   values. Four value forms that are not comparisons join it, after every
   other variant so the derived order of the existing conditions is
@@ -1028,7 +1028,7 @@ Progress:
   merges its operands' classes, which then share their truth, and a false
   one contradicts the merge; applications of one function to equal
   arguments are congruent; an unfolding files `application == body`
-  (`ConditionTerm::bool_unfold_equation`). A binder's truth reaches its
+  (`OldConditionTerm::bool_unfold_equation`). A binder's truth reaches its
   class whichever was filed first (`bool_binder_truth`). Nothing outside
   the kernel's tests builds the new forms yet, so no verdict, output or
   work unit changed: every mdtest and example gives the same `click
@@ -1063,7 +1063,7 @@ Progress:
   two `bool`s is logical equality.
 - Memory (2026-10-27). The byte rule: a store writes C1's byte, and a read
   of a `bool` cell is `byte != 0` over the ordinary byte load
-  (`ConditionTerm::BoolLoad` stays unbuilt, since the byte load already
+  (`OldConditionTerm::BoolLoad` stays unbuilt, since the byte load already
   names the read by its version). A write into a `bool` cell at another
   kind, or a byte view of one, is refused
   (`mdtests/a_bool_cell_is_not_written_through_another_type.md`,
@@ -1202,7 +1202,7 @@ Maintainer direction, 2026-10-25:
   observation depends only on its operands' bits.
 - **K5 (memory), 2026-10-25.** A 32-bit read at signedness F of a cell
   holding a value stored at the other signedness S returns σ_{S→F} of the
-  stored word (`MachineTerm::sign_cast32`, in `CType::read_cell`). Every
+  stored word (`OldMachineTerm::sign_cast32`, in `CType::read_cell`). Every
   load-after-store resolution that answers a load *term* (`read_cell` on a
   `LoadKind`, the materialization and stored-read checks in
   `memory_resolution.rs`, `memory_history.rs`, `contract_claims.rs`,
@@ -1214,7 +1214,7 @@ Maintainer direction, 2026-10-25:
   whichever signedness it is filed at: `Compare { UInt32, Equal }` and
   `Compare { Int32, Equal }` over the same words are one fact, so the
   e-graph, the difference graph, the fact keys and indexes, and every
-  equality lookup treat them as one (`ConditionTerm::fact_format`), and the
+  equality lookup treat them as one (`OldConditionTerm::fact_format`), and the
   `uint32` format is kept for presentation. Soundness: word equality does
   not depend on the reading of the bits.
 - **Printing shows σ where the signedness changes.** A value, fact or step
@@ -1465,7 +1465,7 @@ Maintainer direction, 2026-11-01 (native narrow comparisons, PR 3):
   are the same fact for fact identity and lookup keys. This is a
   reasoning-level equivalence, not a lowering collapse: terms are built and
   printed as written. It is centralized in one O(1) reading,
-  `ConditionTerm::comparison_fact`, which identity, hashing, order and every
+  `OldConditionTerm::comparison_fact`, which identity, hashing, order and every
   structural fact key use, as K6 makes a 32-bit equality one fact at either
   signedness. The 32-bit indexes also file a native fact under its `int32`
   spelling, each inside its own adjuster so that assuming, forgetting and
@@ -1511,7 +1511,7 @@ Maintainer direction, 2026-11-01 (`from_machine` stops folding, PR 4):
   | A machine constant observes as its Integer constant (with a `uint32` constant's word, K1) | Kept | A literal has no structure the constant loses, and every Integer evaluator, normalizer and certificate reads Integer constants; carrying `to_integer(5i32)` would be unwieldy for no retained structure |
   | A 128-bit observation of a term the wide format does not accept (`None`) | Kept | A refusal, not a normalization |
 
-  The 32-bit cast-chain collapse in `MachineTerm::machine_integer_cast`
+  The 32-bit cast-chain collapse in `OldMachineTerm::machine_integer_cast`
   is a constructor of the conversion, not of the observation, and is
   outside this audit.
 
@@ -1668,7 +1668,7 @@ Follow-up, 2026-11-03 (σ of σ as written), under the maintainer's rule that
 lowering keeps the source term's structure and equivalences live in
 reasoning:
 
-- **σ of σ is kept as written.** `MachineTerm::machine_integer_cast`
+- **σ of σ is kept as written.** `OldMachineTerm::machine_integer_cast`
   no longer folds σ(σ(x)) to `x`; `(int32)((uint32)a)` is two σ nodes over
   `a`, and prints as written. R0 already puts σ(σ(x)) in `x`'s class, so
   equality carries across by congruence. The sign-bit rule's equivalent

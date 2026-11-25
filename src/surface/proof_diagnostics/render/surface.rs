@@ -21,7 +21,7 @@ use crate::kernel::OverflowOperation;
 #[cfg(test)]
 use crate::kernel::binary_node;
 use crate::kernel::{MachineBinaryOp, MachineIntegerType, MachineUnaryOp};
-use crate::kernel::{MachineCastSpelling, MachineTerm, cast_op, cast_term};
+use crate::kernel::{MachineCastSpelling, OldMachineTerm, cast_op, cast_term};
 use crate::kernel::{binary_term, unary_term};
 use crate::kernel::{
     bits32_constant, constant_i64, constant_u32, constant_u64, int32_constant, int64_constant,
@@ -79,10 +79,10 @@ fn spelled(text: String, precedence: u8) -> Spelled {
 /// A machine arithmetic result must be observed before it participates in
 /// a specification comparison. Otherwise `+`, `-`, and `*` are read as
 /// exact Integer arithmetic and the printed comparison changes meaning.
-fn comparison_operand(term: &MachineTerm, value: Spelled) -> Spelled {
+fn comparison_operand(term: &OldMachineTerm, value: Spelled) -> Spelled {
     if matches!(
         term,
-        MachineTerm::Binary {
+        OldMachineTerm::Binary {
             op: MachineBinaryOp::Add | MachineBinaryOp::Subtract | MachineBinaryOp::Multiply,
             ..
         }
@@ -443,7 +443,7 @@ impl Printer<'_> {
                         AlgebraicTermNode::Variable(variable) => Some(variable),
                         _ => None,
                     },
-                    crate::kernel::arithmetic_c_value!(MachineTerm::Variable(variable)) => {
+                    crate::kernel::arithmetic_c_value!(OldMachineTerm::Variable(variable)) => {
                         Some(*variable)
                     }
                     _ => None,
@@ -476,7 +476,7 @@ impl Printer<'_> {
             // value has the public source-region spelling read_event(i).result.
             Proposition::VolatileAccess(_) => None,
             Proposition::ConditionIs(condition, polarity) => {
-                self.condition(condition.native_compat(), *polarity, depth)
+                self.condition(condition.old_form(), *polarity, depth)
             }
             Proposition::And(left, right) => {
                 let left = self.proposition(left, depth)?;
@@ -520,7 +520,7 @@ impl Printer<'_> {
                 )))
             }
             Proposition::SequenceMembership { element, sequence } => {
-                let element = self.cvalue(element.native_compat(), depth)?;
+                let element = self.cvalue(element.old_form(), depth)?;
                 let sequence = self.sequence(sequence, depth)?;
                 Some(atom(format!(
                     "{} in {}",
@@ -640,7 +640,7 @@ impl Printer<'_> {
             } => {
                 let fact = atom(format!(
                     "viewable({})",
-                    self.byte_range(base, bytes.native_compat(), *wide, depth)
+                    self.byte_range(base, bytes.old_form(), *wide, depth)
                 ));
                 self.qualify_fact(memory, fact)
             }
@@ -802,7 +802,7 @@ impl Printer<'_> {
 
     fn condition(
         &mut self,
-        condition: &ConditionTerm,
+        condition: &OldConditionTerm,
         polarity: bool,
         depth: usize,
     ) -> Option<Spelled> {
@@ -828,8 +828,10 @@ impl Printer<'_> {
             }
         };
         match condition {
-            ConditionTerm::Constant(value) => return Some(atom((value == &polarity).to_string())),
-            ConditionTerm::Variable(variable) => {
+            OldConditionTerm::Constant(value) => {
+                return Some(atom((value == &polarity).to_string()));
+            }
+            OldConditionTerm::Variable(variable) => {
                 let name = match self.variable_name(*variable) {
                     Some(name) => name,
                     None if self.source_mode() => self.unnamed_variable(*variable),
@@ -837,7 +839,7 @@ impl Printer<'_> {
                 };
                 return Some(negate(name, polarity));
             }
-            ConditionTerm::PointerEqual(left, right) => {
+            OldConditionTerm::PointerEqual(left, right) => {
                 if self.source_mode() && distinct_pointers_at_one_address(left, right) {
                     if let Some(naming) = &self.labels.naming
                         && let (Some(left), Some(right)) = (
@@ -867,7 +869,7 @@ impl Printer<'_> {
                     operand(right, SHIFT)
                 )));
             }
-            ConditionTerm::AddressEqual(left, right) => {
+            OldConditionTerm::AddressEqual(left, right) => {
                 if !self.source_mode() {
                     if self.mode == Mode::ExactIdentity
                         && [left, right]
@@ -914,7 +916,7 @@ impl Printer<'_> {
                     }
                 )));
             }
-            ConditionTerm::AddressOffsetEqual(left, right) => {
+            OldConditionTerm::AddressOffsetEqual(left, right) => {
                 if !self.source_mode() {
                     return None;
                 }
@@ -925,7 +927,7 @@ impl Printer<'_> {
                     if polarity { "==" } else { "!=" }
                 )));
             }
-            ConditionTerm::AlgebraicEqual(left, right) => {
+            OldConditionTerm::AlgebraicEqual(left, right) => {
                 let left = self.algebraic(left, depth)?;
                 let right = self.algebraic(right, depth)?;
                 return Some(atom(format!(
@@ -937,11 +939,11 @@ impl Printer<'_> {
             }
             crate::kernel::integer_comparison_condition!(a, b) => {
                 let operator = match condition {
-                    ConditionTerm::IntegerEqual(..) => "==",
-                    ConditionTerm::IntegerNotEqual(..) => "!=",
-                    ConditionTerm::IntegerLessThan(..) => "<",
-                    ConditionTerm::IntegerLessEqual(..) => "<=",
-                    ConditionTerm::IntegerGreaterThan(..) => ">",
+                    OldConditionTerm::IntegerEqual(..) => "==",
+                    OldConditionTerm::IntegerNotEqual(..) => "!=",
+                    OldConditionTerm::IntegerLessThan(..) => "<",
+                    OldConditionTerm::IntegerLessEqual(..) => "<=",
+                    OldConditionTerm::IntegerGreaterThan(..) => ">",
                     _ => ">=",
                 };
                 let left = self.integer(a, depth)?;
@@ -953,11 +955,11 @@ impl Printer<'_> {
                     operand(right, SHIFT)
                 )));
             }
-            ConditionTerm::Float32(float) | ConditionTerm::Float64(float) => {
+            OldConditionTerm::Float32(float) | OldConditionTerm::Float64(float) => {
                 if !self.source_mode() {
                     return None;
                 }
-                let single = matches!(condition, ConditionTerm::Float32(_));
+                let single = matches!(condition, OldConditionTerm::Float32(_));
                 return match float {
                     crate::kernel::FloatCondition::Comparison {
                         operator,
@@ -1006,17 +1008,17 @@ impl Printer<'_> {
             // in their Surface spellings: an application `f(x)`, a
             // conditional `if c { a } else { b }`, an equality `a == b`, a
             // read the place it reads.
-            ConditionTerm::BoolApplication(application) => {
+            OldConditionTerm::BoolApplication(application) => {
                 let call = self.call(application.name(), application.arguments(), depth)?;
                 return Some(if polarity { call } else { negation(call) });
             }
             // A negation, `if c { false } else { true }`, is `not c`: an
             // integer converted to `Bool` prints `x != 0`.
-            ConditionTerm::BoolIf { .. } if condition.bool_negation_operand().is_some() => {
+            OldConditionTerm::BoolIf { .. } if condition.bool_negation_operand().is_some() => {
                 let operand = condition.bool_negation_operand()?;
                 return self.condition(operand, !polarity, depth);
             }
-            ConditionTerm::BoolIf {
+            OldConditionTerm::BoolIf {
                 condition,
                 then_condition,
                 else_condition,
@@ -1034,7 +1036,7 @@ impl Printer<'_> {
                     negation(spelled_if)
                 });
             }
-            ConditionTerm::BoolEqual(left, right) => {
+            OldConditionTerm::BoolEqual(left, right) => {
                 let left = self.condition(left, true, depth)?;
                 let right = self.condition(right, true, depth)?;
                 return Some(atom(format!(
@@ -1079,7 +1081,7 @@ impl Printer<'_> {
                 Some(false)
             } else if is_equality {
                 [left, right].iter().find_map(|term| {
-                    let MachineTerm::Variable(variable) = term else {
+                    let OldMachineTerm::Variable(variable) = term else {
                         return None;
                     };
                     match self.labels.source_types.get(variable) {
@@ -1138,20 +1140,20 @@ impl Printer<'_> {
     /// right operand reads as the bound it puts on the left one.
     fn overflow(
         &mut self,
-        condition: &ConditionTerm,
+        condition: &OldConditionTerm,
         operator: crate::kernel::BitvectorComparisonOp,
-        a: &MachineTerm,
-        b: &MachineTerm,
+        a: &OldMachineTerm,
+        b: &OldMachineTerm,
         polarity: bool,
         depth: usize,
     ) -> Option<Spelled> {
         if let (
-            ConditionTerm::Overflows {
+            OldConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::Add,
                 ..
             }
-            | ConditionTerm::Overflows {
+            | OldConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::Subtract,
                 ..
@@ -1165,7 +1167,7 @@ impl Printer<'_> {
             }
             let addition = matches!(
                 condition,
-                ConditionTerm::Overflows {
+                OldConditionTerm::Overflows {
                     format: MachineIntegerType::Int32,
                     op: OverflowOperation::Add,
                     ..
@@ -1223,7 +1225,7 @@ impl Printer<'_> {
     /// The exact policy's operand spelling, kept for proof traces.
     fn exact_operand(
         &mut self,
-        value: &MachineTerm,
+        value: &OldMachineTerm,
         signed: Option<bool>,
         depth: usize,
     ) -> Option<String> {
@@ -1250,7 +1252,7 @@ impl Printer<'_> {
 
     /// `value` read as `hint`: a constant written in that type and any
     /// other operand of another known type converted with a cast.
-    fn as_type(&mut self, value: &MachineTerm, hint: Hint, depth: usize) -> Option<Spelled> {
+    fn as_type(&mut self, value: &OldMachineTerm, hint: Hint, depth: usize) -> Option<Spelled> {
         let literal = matches!(
             value,
             bits32_constant!(_) | int64_constant!(_) | uint64_constant!(_)
@@ -1302,7 +1304,7 @@ impl Printer<'_> {
     /// `(b->offset as int64) + 1i64`.
     fn operand_as(
         &mut self,
-        value: &MachineTerm,
+        value: &OldMachineTerm,
         hint: Option<Hint>,
         depth: usize,
     ) -> Option<Spelled> {
@@ -1315,7 +1317,7 @@ impl Printer<'_> {
         };
         let converted = matches!(
             value,
-            MachineTerm::MemoryLoad(_, _, crate::kernel::LoadKind::Bits64)
+            OldMachineTerm::MemoryLoad(_, _, crate::kernel::LoadKind::Bits64)
         ) && self
             .spelled_load_type
             .and_then(Hint::of_type)
@@ -1328,8 +1330,8 @@ impl Printer<'_> {
     }
 
     /// The source type of a term, where it shows.
-    fn hint_of(&self, value: &MachineTerm) -> Option<Hint> {
-        use MachineTerm as B;
+    fn hint_of(&self, value: &OldMachineTerm) -> Option<Hint> {
+        use OldMachineTerm as B;
         match value {
             int64_constant!(_) => Some(Hint::Int64),
             uint64_constant!(_) => Some(Hint::UInt64),
@@ -1445,23 +1447,19 @@ impl Printer<'_> {
             return elided;
         }
         match term {
-            Term::Bitvector32(value) => self.bitvector(value.native_compat(), None, depth + 1),
-            Term::Integer(value) => self.integer(value.native_compat(), depth + 1),
+            Term::Bitvector32(value) => self.bitvector(value.old_form(), None, depth + 1),
+            Term::Integer(value) => self.integer(value.old_form(), depth + 1),
             term_source_0 @ Term::Condition(_)
-                if let Some(ConditionTerm::Constant(value)) = term_source_0.condition_native() =>
+                if let Some(OldConditionTerm::Constant(value)) = term_source_0.old_condition() =>
             {
                 Some(atom(value.to_string()))
             }
-            Term::ProgramValue(value) => self.cvalue(value.native_compat(), depth + 1),
-            Term::Algebraic(value) => self.algebraic(value.native_compat(), depth + 1),
+            Term::ProgramValue(value) => self.cvalue(value.old_form(), depth + 1),
+            Term::Algebraic(value) => self.algebraic(value.old_form(), depth + 1),
             Term::Sequence(value) => self.sequence(value, depth + 1),
             _ if !self.source_mode() => None,
-            Term::Condition(condition) => {
-                self.condition(condition.native_compat(), true, depth + 1)
-            }
-            Term::PointerOffset(offset) => {
-                Some(atom(self.offset(offset.native_compat(), depth + 1)))
-            }
+            Term::Condition(condition) => self.condition(condition.old_form(), true, depth + 1),
+            Term::PointerOffset(offset) => Some(atom(self.offset(offset.old_form(), depth + 1))),
             Term::ArrayReadPoint(point) => Some(atom(self.state_phrase(point.memory()))),
             Term::ExecutionState(state) => Some(atom(self.state_phrase(state.memory()))),
         }
@@ -1502,19 +1500,19 @@ impl Printer<'_> {
         }
     }
 
-    fn offset(&mut self, offset: &AddressOffset, depth: usize) -> String {
+    fn offset(&mut self, offset: &OldAddressOffset, depth: usize) -> String {
         match offset {
-            AddressOffset::Constant(bytes) => bytes.to_string(),
-            AddressOffset::Variable(variable) => self
+            OldAddressOffset::Constant(bytes) => bytes.to_string(),
+            OldAddressOffset::Variable(variable) => self
                 .variable_name(*variable)
                 .unwrap_or_else(|| self.unnamed_variable(*variable)),
-            AddressOffset::Add(left, right) => format!(
+            OldAddressOffset::Add(left, right) => format!(
                 "{} + {}",
                 self.offset(left, depth + 1),
                 self.offset(right, depth + 1)
             ),
-            AddressOffset::Int32Scaled { value, byte_width }
-            | AddressOffset::Int64Scaled {
+            OldAddressOffset::Int32Scaled { value, byte_width }
+            | OldAddressOffset::Int64Scaled {
                 value, byte_width, ..
             } => {
                 let value = self
@@ -1532,11 +1530,11 @@ impl Printer<'_> {
     /// Keep the float type and exact bits in every literal operand.
     fn float_operand(
         &mut self,
-        value: &MachineTerm,
+        value: &OldMachineTerm,
         single: bool,
         depth: usize,
     ) -> Option<Spelled> {
-        if !matches!(value, MachineTerm::Constant { .. }) {
+        if !matches!(value, OldMachineTerm::Constant { .. }) {
             return self.bitvector(value, None, depth);
         }
         if let Err(elided) = self.enter(depth) {
@@ -1552,7 +1550,7 @@ impl Printer<'_> {
 
     fn bitvector(
         &mut self,
-        value: &MachineTerm,
+        value: &OldMachineTerm,
         hint: Option<Hint>,
         depth: usize,
     ) -> Option<Spelled> {
@@ -1560,7 +1558,7 @@ impl Printer<'_> {
             return elided;
         }
         let depth = depth + 1;
-        use MachineTerm as B;
+        use OldMachineTerm as B;
         match value {
             int32_constant!(value) => return self.constant(constant_u32(*value), hint),
             // A `uint32` constant is written in its own type.
@@ -1777,9 +1775,9 @@ impl Printer<'_> {
                     // comparison together.
                     let condition = if matches!(
                         value.as_ref(),
-                        ConditionTerm::Variable(_)
-                            | ConditionTerm::Constant(_)
-                            | ConditionTerm::BoolApplication(_)
+                        OldConditionTerm::Variable(_)
+                            | OldConditionTerm::Constant(_)
+                            | OldConditionTerm::BoolApplication(_)
                     ) {
                         condition
                     } else {
@@ -2114,7 +2112,7 @@ impl Printer<'_> {
             return Some(spelled(name.clone(), precedence));
         }
         if let Some((name, _)) = super::c_library_pointer_name(pointer) {
-            return Some(if pointer.offset == AddressOffset::Constant(0) {
+            return Some(if pointer.offset == OldAddressOffset::Constant(0) {
                 atom(name)
             } else {
                 let offset = self.offset(&pointer.offset, depth + 1);
@@ -2125,7 +2123,7 @@ impl Printer<'_> {
         if let Some(read) = pointer.as_loaded_value() {
             let place =
                 self.pointer_cell(read.defining_memory.memory(), &read.defining_address, depth);
-            return Some(if read.displacement == AddressOffset::Constant(0) {
+            return Some(if read.displacement == OldAddressOffset::Constant(0) {
                 place
             } else {
                 let offset = self.offset(&read.displacement, depth);
@@ -2138,16 +2136,16 @@ impl Printer<'_> {
         if let crate::kernel::AddressBase::PureFunctionApplication(application) = &pointer.base {
             let call = self.call(application.name(), application.arguments(), depth + 1)?;
             return Some(match &pointer.offset {
-                AddressOffset::Constant(0) => call,
-                AddressOffset::Int32Scaled { value, .. }
-                | AddressOffset::Int64Scaled { value, .. } => {
+                OldAddressOffset::Constant(0) => call,
+                OldAddressOffset::Int32Scaled { value, .. }
+                | OldAddressOffset::Int64Scaled { value, .. } => {
                     let index = self.bitvector(value.structural_value(), None, depth + 1)?;
                     spelled(
                         format!("{} + {}", operand(call, ADD), operand(index, MULTIPLY)),
                         ADD,
                     )
                 }
-                AddressOffset::Constant(bytes)
+                OldAddressOffset::Constant(bytes)
                     if let Some(width) = instance_element_width(application.name())
                         && bytes % width == 0 =>
                 {
@@ -2162,7 +2160,7 @@ impl Printer<'_> {
         if !self.source_mode() {
             return None;
         }
-        if let Some(MachineTerm::MemoryLoad(memory, address, _)) =
+        if let Some(OldMachineTerm::MemoryLoad(memory, address, _)) =
             crate::kernel::logical_pointer_read_term(pointer)
         {
             return Some(self.pointer_cell(memory.memory(), &address, depth));
@@ -2214,7 +2212,7 @@ impl Printer<'_> {
         // An address inside an allocation a local held is spelled from that
         // local: `(char *)at(region(2).exit, p) + k * 4`.
         if self.labels.state_pointer_name(pointer).is_none()
-            && pointer.offset != AddressOffset::Constant(0)
+            && pointer.offset != OldAddressOffset::Constant(0)
             && let Some(base) = self.labels.block_base_name(pointer).map(str::to_owned)
             && base.len() <= 256
         {
@@ -2260,7 +2258,7 @@ impl Printer<'_> {
     fn byte_range(
         &mut self,
         base: &Address,
-        bytes: &MachineTerm,
+        bytes: &OldMachineTerm,
         wide: bool,
         depth: usize,
     ) -> String {
@@ -2300,7 +2298,7 @@ impl Printer<'_> {
                     Some(atom(format!("{}u64", constant_u64(*value) as i64 / width)))
                 }
                 binary_term!(Int32, Multiply, left, right)
-                | MachineTerm::Binary {
+                | OldMachineTerm::Binary {
                     format: MachineIntegerType::UInt64,
                     op: MachineBinaryOp::Multiply,
                     left,
@@ -2309,7 +2307,7 @@ impl Printer<'_> {
                     self.bitvector(left, hint, depth)
                 }
                 binary_term!(Int32, Multiply, left, right)
-                | MachineTerm::Binary {
+                | OldMachineTerm::Binary {
                     format: MachineIntegerType::UInt64,
                     op: MachineBinaryOp::Multiply,
                     left,
@@ -2403,7 +2401,7 @@ impl Printer<'_> {
         depth: usize,
         tables: &NamingTables,
     ) -> Option<Spelled> {
-        let AddressOffset::Add(base_offset, extra) = &pointer.offset else {
+        let OldAddressOffset::Add(base_offset, extra) = &pointer.offset else {
             return None;
         };
         let parameter =
@@ -2425,8 +2423,8 @@ impl Printer<'_> {
         let name = parameter.name();
         let width = crate::surface::diagnostics::diagnostic_parameter_element_width(parameter);
         let index = match extra.as_ref() {
-            AddressOffset::Int32Scaled { value, byte_width }
-            | AddressOffset::Int64Scaled {
+            OldAddressOffset::Int32Scaled { value, byte_width }
+            | OldAddressOffset::Int64Scaled {
                 value, byte_width, ..
             } if *byte_width == width && width > 0 => {
                 self.bitvector(value.structural_value(), None, depth + 1)
@@ -2475,7 +2473,7 @@ impl Printer<'_> {
             }
             ResourceFact::Own(_, quantity) => {
                 let quantity = self
-                    .bitvector(quantity.native_compat(), None, 0)
+                    .bitvector(quantity.old_form(), None, 0)
                     .map_or_else(|| "…".into(), |v| v.text);
                 format!("owns {text} (quantity {quantity})")
             }
@@ -2689,7 +2687,7 @@ impl Printer<'_> {
                 _ => None,
             };
         }
-        let typed = |printer: &mut Self, value: &MachineTerm, hint: Hint, suffix: &str| {
+        let typed = |printer: &mut Self, value: &OldMachineTerm, hint: Hint, suffix: &str| {
             let spelled_value = printer.bitvector(value, Some(hint), depth)?;
             Some(match value {
                 bits32_constant!(_) | native_constant!(_, _) if !suffix.is_empty() => {
@@ -3219,13 +3217,13 @@ mod tests {
         AddressBase, LoadKind, OldPointer, ProgramType, ProgramValue, SharedMemory,
     };
 
-    fn equality(value: MachineTerm) -> Proposition {
+    fn equality(value: OldMachineTerm) -> Proposition {
         Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(value),
-                right: Box::new(MachineTerm::constant(0)),
+                right: Box::new(OldMachineTerm::constant(0)),
             },
             true,
         )
@@ -3246,12 +3244,12 @@ mod tests {
             ),
         ];
         let arguments = [
-            crate::kernel::ProgramExpression::Value(ProgramValue::Float64(MachineTerm::Variable(
-                Variable(7),
-            ))),
-            crate::kernel::ProgramExpression::Value(ProgramValue::Float32(MachineTerm::Variable(
-                Variable(8),
-            ))),
+            crate::kernel::ProgramExpression::Value(ProgramValue::Float64(
+                OldMachineTerm::Variable(Variable(7)),
+            )),
+            crate::kernel::ProgramExpression::Value(ProgramValue::Float32(
+                OldMachineTerm::Variable(Variable(8)),
+            )),
         ];
         let mut labels = MemoryStateLabels::naming(ParameterBinding::new(&parameters, &arguments));
         for (value, expected) in [
@@ -3268,24 +3266,24 @@ mod tests {
             (1.5, "d >= float64_from_bits(0x3ff8000000000000u64)"),
         ] {
             let fact = Proposition::condition_is(
-                ConditionTerm::Float64(crate::kernel::FloatCondition::Comparison {
+                OldConditionTerm::Float64(crate::kernel::FloatCondition::Comparison {
                     operator: crate::kernel::ComparisonOperator::GreaterEqual,
-                    left: Box::new(MachineTerm::Variable(Variable(7))),
-                    right: Box::new(MachineTerm::uint64_constant(value.to_bits())),
+                    left: Box::new(OldMachineTerm::Variable(Variable(7))),
+                    right: Box::new(OldMachineTerm::uint64_constant(value.to_bits())),
                 }),
                 true,
             );
             assert_eq!(source(&fact, &mut labels), expected);
         }
         let fact = Proposition::condition_is(
-            ConditionTerm::Float32(crate::kernel::FloatCondition::Comparison {
+            OldConditionTerm::Float32(crate::kernel::FloatCondition::Comparison {
                 operator: crate::kernel::ComparisonOperator::LessThan,
-                left: Box::new(MachineTerm::Float32Binary {
+                left: Box::new(OldMachineTerm::Float32Binary {
                     operator: crate::kernel::FloatBinaryOperator::Add,
-                    left: Box::new(MachineTerm::Variable(Variable(8))),
-                    right: Box::new(MachineTerm::constant(1.5_f32.to_bits())),
+                    left: Box::new(OldMachineTerm::Variable(Variable(8))),
+                    right: Box::new(OldMachineTerm::constant(1.5_f32.to_bits())),
                 }),
-                right: Box::new(MachineTerm::constant(2.0_f32.to_bits())),
+                right: Box::new(OldMachineTerm::constant(2.0_f32.to_bits())),
             }),
             true,
         );
@@ -3294,16 +3292,16 @@ mod tests {
             "f + float32_from_bits(0x3fc00000) < float32_from_bits(0x40000000)"
         );
         let widened = Proposition::condition_is(
-            ConditionTerm::float64_compare(
-                MachineTerm::PureFunctionApplication {
+            OldConditionTerm::float64_compare(
+                OldMachineTerm::PureFunctionApplication {
                     name: "c_float32_to_float64".into(),
-                    arguments: vec![MachineTerm::Float32Binary {
+                    arguments: vec![OldMachineTerm::Float32Binary {
                         operator: crate::kernel::FloatBinaryOperator::Multiply,
-                        left: Box::new(MachineTerm::Variable(Variable(8))),
-                        right: Box::new(MachineTerm::constant(2.0_f32.to_bits())),
+                        left: Box::new(OldMachineTerm::Variable(Variable(8))),
+                        right: Box::new(OldMachineTerm::constant(2.0_f32.to_bits())),
                     }],
                 },
-                MachineTerm::uint64_constant(16.0_f64.to_bits()),
+                OldMachineTerm::uint64_constant(16.0_f64.to_bits()),
                 crate::kernel::ComparisonOperator::LessThan,
             ),
             true,
@@ -3313,11 +3311,11 @@ mod tests {
             "(f * float32_from_bits(0x40000000)) as double < float64_from_bits(0x4030000000000000u64)"
         );
         let integer = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::uint64_constant(1.5_f64.to_bits())),
-                right: Box::new(MachineTerm::Variable(Variable(9))),
+                left: Box::new(OldMachineTerm::uint64_constant(1.5_f64.to_bits())),
+                right: Box::new(OldMachineTerm::Variable(Variable(9))),
             },
             true,
         );
@@ -3331,7 +3329,7 @@ mod tests {
         let application = crate::kernel::SharedPureApplication::intern(
             "size".into(),
             vec![PureFunctionArgument::Value(ProgramValue::Int32(
-                MachineTerm::Variable(Variable(7)),
+                OldMachineTerm::Variable(Variable(7)),
             ))],
         );
         let fact = Proposition::Equal(
@@ -3345,13 +3343,13 @@ mod tests {
     fn unnamed_operands_keep_their_context_without_becoming_exact_citations() {
         let mut labels = MemoryStateLabels::default();
         for depth in [0, 16, 64, 256] {
-            let mut term = MachineTerm::Variable(Variable(999));
+            let mut term = OldMachineTerm::Variable(Variable(999));
             for _ in 0..depth {
                 term = binary_node!(
                     Int32,
                     Add,
                     Box::new(term),
-                    Box::new(MachineTerm::constant(1))
+                    Box::new(OldMachineTerm::constant(1))
                 );
             }
             let fact = equality(term);
@@ -3370,8 +3368,8 @@ mod tests {
     #[test]
     fn source_facts_share_placeholder_identities_within_one_report() {
         let mut labels = MemoryStateLabels::default();
-        let first = equality(MachineTerm::Variable(Variable(998)));
-        let second = equality(MachineTerm::Variable(Variable(999)));
+        let first = equality(OldMachineTerm::Variable(Variable(998)));
+        let second = equality(OldMachineTerm::Variable(Variable(999)));
         assert_eq!(source(&first, &mut labels), "<unnamed A> == 0");
         assert_eq!(source(&second, &mut labels), "<unnamed B> == 0");
         assert_eq!(source(&first, &mut labels), "<unnamed A> == 0");
@@ -3405,8 +3403,8 @@ mod tests {
             },
         );
         let mut labels = MemoryStateLabels::default();
-        let entry = equality(MachineTerm::Variable(Variable(901_001)));
-        let replaced = equality(MachineTerm::Variable(Variable(901_002)));
+        let entry = equality(OldMachineTerm::Variable(Variable(901_001)));
+        let replaced = equality(OldMachineTerm::Variable(Variable(901_002)));
         assert_eq!(source(&entry, &mut labels), "old(up.count) == 0");
         assert_eq!(source(&replaced, &mut labels), "<unnamed A> == 0");
     }
@@ -3415,19 +3413,19 @@ mod tests {
     fn narrowed_wide_values_keep_the_signed_comparison_view() {
         let state = ExecutionState::new().with_local(
             "size",
-            ProgramValue::UInt64(MachineTerm::Variable(Variable(94))),
+            ProgramValue::UInt64(OldMachineTerm::Variable(Variable(94))),
         );
         let mut labels = MemoryStateLabels::with_state(ParameterBinding::default(), &state);
-        let value = MachineTerm::legacy_cast(
+        let value = OldMachineTerm::legacy_cast(
             MachineCastSpelling::UInt32From64,
-            Box::new(MachineTerm::Variable(Variable(94))),
+            Box::new(OldMachineTerm::Variable(Variable(94))),
         );
         let fact = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left: Box::new(value),
-                right: Box::new(MachineTerm::constant(0)),
+                right: Box::new(OldMachineTerm::constant(0)),
             },
             true,
         );
@@ -3445,32 +3443,32 @@ mod tests {
         labels.source_name(Variable(8), "u".into());
         labels.source_types.insert(Variable(8), ProgramType::UInt32);
         let signed = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::Variable(Variable(7))),
-                right: Box::new(MachineTerm::constant((-56i32) as u32)),
+                left: Box::new(OldMachineTerm::Variable(Variable(7))),
+                right: Box::new(OldMachineTerm::constant((-56i32) as u32)),
             },
             true,
         );
         assert_eq!(source(&signed, &mut labels), "a == -56");
         let unsigned = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::Variable(Variable(8))),
-                right: Box::new(MachineTerm::constant((-56i32) as u32)),
+                left: Box::new(OldMachineTerm::Variable(Variable(8))),
+                right: Box::new(OldMachineTerm::constant((-56i32) as u32)),
             },
             false,
         );
         assert_eq!(source(&unsigned, &mut labels), "u != 4294967240u32");
         // An unsigned order over an `int32` value converts it.
         let order = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::UInt32,
                 relation: CompareRelation::LessEqual,
-                left: Box::new(MachineTerm::Variable(Variable(7))),
-                right: Box::new(MachineTerm::constant(1073741823)),
+                left: Box::new(OldMachineTerm::Variable(Variable(7))),
+                right: Box::new(OldMachineTerm::constant(1073741823)),
             },
             true,
         );
@@ -3495,18 +3493,18 @@ mod tests {
                 (MachineBinaryOp::Subtract, "-"),
                 (MachineBinaryOp::Multiply, "*"),
             ] {
-                let arithmetic = MachineTerm::Binary {
+                let arithmetic = OldMachineTerm::Binary {
                     format: if format == MachineIntegerType::UInt32 {
                         MachineIntegerType::Int32
                     } else {
                         format
                     },
                     op,
-                    left: Box::new(MachineTerm::Variable(Variable(7))),
-                    right: Box::new(MachineTerm::Variable(Variable(8))),
+                    left: Box::new(OldMachineTerm::Variable(Variable(7))),
+                    right: Box::new(OldMachineTerm::Variable(Variable(8))),
                 };
                 let fact = Proposition::condition_is(
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format,
                         relation: CompareRelation::LessThan,
                         left: Box::new(arithmetic.clone()),
@@ -3528,8 +3526,8 @@ mod tests {
         let mut labels = MemoryStateLabels::default();
         labels.source_name(Variable(7), "a".into());
         labels.source_name(Variable(8), "b".into());
-        let a = || Box::new(MachineTerm::Variable(Variable(7)));
-        let b = || Box::new(MachineTerm::Variable(Variable(8)));
+        let a = || Box::new(OldMachineTerm::Variable(Variable(7)));
+        let b = || Box::new(OldMachineTerm::Variable(Variable(8)));
         let product = binary_node!(
             Int32,
             Multiply,
@@ -3537,7 +3535,7 @@ mod tests {
             Box::new(binary_node!(Int32, Subtract, a(), b())),
         );
         let less = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left: Box::new(product),
@@ -3546,11 +3544,11 @@ mod tests {
             false,
         );
         let masked = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(binary_node!(Int32, BitwiseAnd, a(), b())),
-                right: Box::new(MachineTerm::constant(0)),
+                right: Box::new(OldMachineTerm::constant(0)),
             },
             true,
         );
@@ -3612,7 +3610,7 @@ mod tests {
         let pointer = ProgramValue::Pointer(OldPointer::new(
             Address {
                 base: AddressBase::Concrete("global:cells".into()),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
             ProgramType::Int32Pointer,
         ));
@@ -3657,7 +3655,7 @@ mod tests {
             ProgramValue::Pointer(OldPointer::new(
                 Address {
                     base: AddressBase::Concrete(format!("global:{name}")),
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0),
                 },
                 ProgramType::Int32Pointer,
             ))
@@ -3707,11 +3705,14 @@ mod tests {
     fn the_contract_result_local_prints_as_result() {
         let state = ExecutionState::new().with_local(
             crate::kernel::CONTRACT_RESULT,
-            ProgramValue::Int32(MachineTerm::Variable(Variable(7))),
+            ProgramValue::Int32(OldMachineTerm::Variable(Variable(7))),
         );
         let mut labels = MemoryStateLabels::with_state(ParameterBinding::default(), &state);
         assert_eq!(
-            source(&equality(MachineTerm::Variable(Variable(7))), &mut labels),
+            source(
+                &equality(OldMachineTerm::Variable(Variable(7))),
+                &mut labels
+            ),
             "result == 0"
         );
     }
@@ -3720,7 +3721,7 @@ mod tests {
     fn historical_loads_use_their_own_state_names_and_keep_their_read_type() {
         let pointer = Address {
             base: AddressBase::Concrete("global:cells".into()),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let base =
             ProgramValue::Pointer(OldPointer::new(pointer.clone(), ProgramType::Int32Pointer));
@@ -3733,7 +3734,7 @@ mod tests {
         let mut labels = MemoryStateLabels::with_state(ParameterBinding::default(), &after);
         labels.source_state(&before, "pre".into());
         let load = |memory: &SymbolicMemory, kind| {
-            equality(MachineTerm::read_named(
+            equality(OldMachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(&(SharedMemory::from(memory.clone()))),
                 Box::new(pointer.clone()),
                 kind,
@@ -3771,7 +3772,7 @@ mod tests {
         let index = Variable(9);
         let heap = Address {
             base: AddressBase::Heap(1),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let before =
             ExecutionState::new().with_memory(SymbolicMemory::new().with_block("global:a", 4));
@@ -3779,21 +3780,21 @@ mod tests {
             ExecutionState::new().with_memory(SymbolicMemory::new().with_block("global:a", 8));
         let mut labels = MemoryStateLabels::with_state(ParameterBinding::default(), &after);
         labels.source_state(&before, "pre".into());
-        labels.source_result(&ProgramValue::Int32(MachineTerm::Variable(index)));
+        labels.source_result(&ProgramValue::Int32(OldMachineTerm::Variable(index)));
         // An allocation no local holds is the returned pointer.
         labels.source_result(&ProgramValue::Pointer(OldPointer::new(
             heap.clone(),
             ProgramType::Int32Pointer,
         )));
         let load = |memory: &SymbolicMemory| {
-            equality(MachineTerm::read_named(
+            equality(OldMachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(&(SharedMemory::from(memory.clone()))),
                 Box::new(heap.clone()),
                 LoadKind::Int32,
             ))
         };
         assert_eq!(
-            source(&equality(MachineTerm::Variable(index)), &mut labels),
+            source(&equality(OldMachineTerm::Variable(index)), &mut labels),
             "result == 0"
         );
         assert_eq!(source(&load(after.memory()), &mut labels), "*result == 0");
@@ -3807,20 +3808,29 @@ mod tests {
 
     #[test]
     fn reassigned_parameters_do_not_rename_their_old_value_as_current() {
-        let entry = ExecutionState::new()
-            .with_local("i", ProgramValue::Int32(MachineTerm::Variable(Variable(7))));
-        let current = entry
-            .clone()
-            .with_local("i", ProgramValue::Int32(MachineTerm::Variable(Variable(8))));
+        let entry = ExecutionState::new().with_local(
+            "i",
+            ProgramValue::Int32(OldMachineTerm::Variable(Variable(7))),
+        );
+        let current = entry.clone().with_local(
+            "i",
+            ProgramValue::Int32(OldMachineTerm::Variable(Variable(8))),
+        );
         let (names, values) = crate::surface::diagnostics::local_naming_tables(&entry);
         let mut labels =
             MemoryStateLabels::with_state(ParameterBinding::new(&names, &values), &current);
         assert_eq!(
-            render(&equality(MachineTerm::Variable(Variable(7))), &mut labels),
+            render(
+                &equality(OldMachineTerm::Variable(Variable(7))),
+                &mut labels
+            ),
             Some("old(i) == 0".into())
         );
         assert_eq!(
-            render(&equality(MachineTerm::Variable(Variable(8))), &mut labels),
+            render(
+                &equality(OldMachineTerm::Variable(Variable(8))),
+                &mut labels
+            ),
             Some("i == 0".into())
         );
     }
@@ -3838,7 +3848,7 @@ mod resource_tests {
     fn resource_arguments_keep_the_same_read_states_as_proposition_operands() {
         let pointer = Address {
             base: AddressBase::Concrete("global:cells".into()),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let before = ExecutionState::new()
             .with_local(
@@ -3852,7 +3862,7 @@ mod resource_tests {
         let resource = |memory: &SymbolicMemory| {
             ResourceFact::view_composite(
                 "sampled".into(),
-                vec![ProgramValue::Int32(MachineTerm::read_named(
+                vec![ProgramValue::Int32(OldMachineTerm::read_named(
                     crate::kernel::ProgramPoint::at(&(SharedMemory::from(memory.clone()))),
                     Box::new(pointer.clone()),
                     LoadKind::Int32,
@@ -3901,7 +3911,7 @@ mod resource_tests {
         let mut labels = MemoryStateLabels::default();
         labels.source_name(Variable(987551), "left_model".into());
         labels.source_name(Variable(987552), "right_model".into());
-        let left = ResourceFact::own_quantity(resource(987551), MachineTerm::constant(2));
+        let left = ResourceFact::own_quantity(resource(987551), OldMachineTerm::constant(2));
         let right = ResourceFact::View(resource(987552));
         assert_eq!(
             source_resource_fact(&left, &mut labels),

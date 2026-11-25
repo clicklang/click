@@ -1054,7 +1054,7 @@ fn loop_entry_branches(
         entries: &[crate::kernel::LoopPreservationContext],
         guards: &[BTreeSet<Proposition>],
         indices: Vec<usize>,
-        mut decided: BTreeSet<crate::kernel::ConditionTerm>,
+        mut decided: BTreeSet<crate::kernel::OldConditionTerm>,
         environment: &ExecutionProofEnvironment<'_>,
         loop_index: usize,
     ) -> Result<LoopEntryBranches, ClickError> {
@@ -1066,7 +1066,7 @@ fn loop_entry_branches(
             let Proposition::ConditionIs(condition, _) = fact else {
                 continue;
             };
-            if decided.contains(condition.native_compat()) {
+            if decided.contains(condition.old_form()) {
                 continue;
             }
             let positive = Proposition::condition_is(condition.clone(), true);
@@ -1083,7 +1083,7 @@ fn loop_entry_branches(
             if yes.len() + no.len() != indices.len() {
                 continue;
             }
-            decided.insert((condition.clone()).native_compat().clone());
+            decided.insert((condition.clone()).old_form().clone());
             if yes.is_empty() || no.is_empty() {
                 continue;
             }

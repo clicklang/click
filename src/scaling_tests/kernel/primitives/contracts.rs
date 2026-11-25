@@ -10,13 +10,13 @@ fn loadable_count_production_retains_growing_bound_dags() {
                 MachineIntegerType::Int32
             };
             let zero = if wide {
-                MachineTerm::uint64_constant(0)
+                OldMachineTerm::uint64_constant(0)
             } else {
-                MachineTerm::constant(0)
+                OldMachineTerm::constant(0)
             };
             let mut end = KernelTerm::retained_machine_operand(
                 format,
-                MachineOperandView::Legacy(&MachineTerm::Variable(Variable(10993702))),
+                MachineOperandView::Old(&OldMachineTerm::Variable(Variable(10993702))),
             );
             for _ in 0..size {
                 end = KernelTerm::machine_binary_shared(

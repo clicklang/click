@@ -8,7 +8,7 @@ use super::*;
 fn independent_body_expansion_indexes_definitions_and_walks_depth_once() {
     let pointer = Address {
         base: "counter".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let assumptions = PureFactContext::new();
     let memory = SymbolicMemory::new().with_block("counter", 4);
@@ -124,8 +124,8 @@ fn a_call_keeps_argument_direct_composites_in_work_independent_of_their_number()
         let assumptions = PureFactContext::new();
         let written = MemoryRange::new(
             object(size + 1),
-            MachineTerm::constant(0),
-            MachineTerm::constant(1),
+            OldMachineTerm::constant(0),
+            OldMachineTerm::constant(1),
         );
         let (after, work) = crate::instrumentation::measure_deterministic_work(|| {
             let kept = call_kept_ownership(&residual, &[boxed_definition()].into(), &assumptions);
@@ -153,7 +153,10 @@ fn kept_call_reads_do_not_scan_same_block_owners_or_aliases() {
         let _session = VerificationSession::enter();
         let argument = |index| Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(784_000 + index)), 4),
+            offset: OldAddressOffset::scale_int32(
+                OldMachineTerm::Variable(Variable(784_000 + index)),
+                4,
+            ),
         };
         let residual = (0..size).fold(ResourceContext::new(), |residual, index| {
             residual.unchecked_with_fact(ResourceFact::own_composite(
@@ -165,7 +168,7 @@ fn kept_call_reads_do_not_scan_same_block_owners_or_aliases() {
         let hit = argument(0);
         let assumptions = (0..size).fold(PureFactContext::new(), |facts, index| {
             facts.assume_condition(
-                ConditionTerm::address_equal(
+                OldConditionTerm::address_equal(
                     hit.clone(),
                     Address::symbolic(Variable(786_000 + index)),
                 ),
@@ -174,8 +177,8 @@ fn kept_call_reads_do_not_scan_same_block_owners_or_aliases() {
         });
         let written = MemoryRange::new(
             argument(1_001),
-            MachineTerm::constant(0),
-            MachineTerm::constant(1),
+            OldMachineTerm::constant(0),
+            OldMachineTerm::constant(1),
         );
         let kept = call_kept_ownership(&residual, &[boxed_definition()].into(), &assumptions);
         let after = SymbolicMemory::new().with_call_memory_havoc(
@@ -213,7 +216,10 @@ fn a_transferred_flat_cell_does_not_open_unrelated_kept_composites() {
         let _session = VerificationSession::enter();
         let object = |index: u64| Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(783_000 + index)), 4),
+            offset: OldAddressOffset::scale_int32(
+                OldMachineTerm::Variable(Variable(783_000 + index)),
+                4,
+            ),
         };
         let residual = (0..size).fold(ResourceContext::new(), |resources, index| {
             resources.unchecked_with_fact(ResourceFact::own_composite(
@@ -224,8 +230,8 @@ fn a_transferred_flat_cell_does_not_open_unrelated_kept_composites() {
         let cell = object(size + 1);
         let written = MemoryRange::new(
             cell.clone(),
-            MachineTerm::constant(0),
-            MachineTerm::constant(1),
+            OldMachineTerm::constant(0),
+            OldMachineTerm::constant(1),
         );
         let original = residual
             .clone()

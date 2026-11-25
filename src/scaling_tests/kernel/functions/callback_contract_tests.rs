@@ -8,7 +8,7 @@ use super::*;
 fn authoritative_memory_projection_scales_with_used_members_not_unrelated_frames() {
     let pointer = Address {
         base: AddressBase::Concrete("local:projection:data".to_string()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let state = ExecutionState::new()
         .with_local("p", ProgramValue::pointer(pointer.clone()))
@@ -80,8 +80,8 @@ fn authoritative_memory_projection_scales_with_used_members_not_unrelated_frames
     let checked_resources = [CheckedResourceFact {
         fact: ResourceFact::own_memory(MemoryRange::new(
             pointer,
-            MachineTerm::constant(0),
-            MachineTerm::constant(1),
+            OldMachineTerm::constant(0),
+            OldMachineTerm::constant(1),
         )),
         role: ResourceTransferRole::Consume,
         state_source: ResourceStateSource::Entry,
@@ -108,7 +108,7 @@ fn authoritative_memory_projection_scales_with_used_members_not_unrelated_frames
 fn checked_transition_projection_ignores_unrelated_caller_frame() {
     let pointer = Address {
         base: AddressBase::Concrete("local:transition:data".to_string()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let mut samples = Vec::new();
     for used_members in [1usize, 4, 16, 64] {
@@ -128,8 +128,8 @@ fn checked_transition_projection_ignores_unrelated_caller_frame() {
                 .map(|index| {
                     ResourceFact::own_memory(MemoryRange::new(
                         pointer.clone(),
-                        MachineTerm::constant(index as u32),
-                        MachineTerm::constant(index as u32 + 1),
+                        OldMachineTerm::constant(index as u32),
+                        OldMachineTerm::constant(index as u32 + 1),
                     ))
                 })
                 .chain((0..unrelated).map(|index| {
@@ -202,7 +202,7 @@ fn checked_transition_projection_ignores_unrelated_caller_frame() {
 fn checked_wrapper_projection_scales_with_used_members() {
     let pointer = Address {
         base: AddressBase::Concrete("local:wrapper:data".to_string()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let mut samples = Vec::new();
     for used_members in [1usize, 4, 16, 64] {
@@ -370,13 +370,13 @@ fn callback_fact_lookup_scales_with_calls_not_unrelated_supported_facts() {
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn contract_refinement_work_is_flat_in_unrelated_facts() {
-    let variable = |index| MachineTerm::Variable(Variable(index));
-    let bound = ConditionTerm::signed_less_than(variable(70_001), MachineTerm::constant(10));
-    let equality = ConditionTerm::equal(variable(70_002), variable(70_003));
-    let refuted = ConditionTerm::signed_less_than(variable(70_005), MachineTerm::constant(0));
+    let variable = |index| OldMachineTerm::Variable(Variable(index));
+    let bound = OldConditionTerm::signed_less_than(variable(70_001), OldMachineTerm::constant(10));
+    let equality = OldConditionTerm::equal(variable(70_002), variable(70_003));
+    let refuted = OldConditionTerm::signed_less_than(variable(70_005), OldMachineTerm::constant(0));
     let integer = |index| IntegerTerm::Variable(Variable(index));
-    let size_invariant = ConditionTerm::integer_equal(integer(70_010), integer(70_011));
-    let unrelated_size = ConditionTerm::integer_equal(integer(70_012), integer(70_013));
+    let size_invariant = OldConditionTerm::integer_equal(integer(70_010), integer(70_011));
+    let unrelated_size = OldConditionTerm::integer_equal(integer(70_012), integer(70_013));
     let unproved = Proposition::Predicate {
         name: "unproved_refinement_clause".to_string(),
         arguments: vec![],
@@ -412,16 +412,16 @@ fn contract_refinement_work_is_flat_in_unrelated_facts() {
                 .assume_condition(size_invariant.clone(), true);
             for index in 0..size {
                 assumptions = assumptions.assume_condition(
-                    ConditionTerm::integer_equal(
+                    OldConditionTerm::integer_equal(
                         integer(72_000 + index as u64),
                         IntegerTerm::Constant(num_bigint::BigInt::from(index)),
                     ),
                     true,
                 );
                 assumptions = assumptions.assume_condition(
-                    ConditionTerm::signed_less_than(
-                        MachineTerm::Variable(Variable(71_000 + index as u64)),
-                        MachineTerm::constant(index as u32 + 1),
+                    OldConditionTerm::signed_less_than(
+                        OldMachineTerm::Variable(Variable(71_000 + index as u64)),
+                        OldMachineTerm::constant(index as u32 + 1),
                     ),
                     true,
                 );
@@ -475,7 +475,7 @@ fn established_callback_frame_rule_ignores_unrelated_owners_and_aliases() {
             if aliases {
                 for i in 0..count {
                     facts = facts.assume_condition(
-                        ConditionTerm::address_equal(
+                        OldConditionTerm::address_equal(
                             Address::symbolic(Variable(8_960_000)),
                             Address::symbolic(Variable(8_962_000 + i)),
                         ),

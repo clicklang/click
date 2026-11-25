@@ -6,16 +6,19 @@ fn concrete_storage_coordinates_follow_transitive_aliases_and_forks() {
     let second = Address::symbolic(Variable(896_001));
     let storage = Address {
         base: "local:mutex".into(),
-        offset: AddressOffset::Constant(8),
+        offset: OldAddressOffset::Constant(8),
     };
     let empty = PureFactContext::new();
     let joined = empty
         .clone()
         .assume_condition(
-            ConditionTerm::address_equal(first.clone(), second.clone()),
+            OldConditionTerm::address_equal(first.clone(), second.clone()),
             true,
         )
-        .assume_condition(ConditionTerm::address_equal(second, storage.clone()), true);
+        .assume_condition(
+            OldConditionTerm::address_equal(second, storage.clone()),
+            true,
+        );
     assert_eq!(
         joined
             .equality_graph
@@ -25,11 +28,11 @@ fn concrete_storage_coordinates_follow_transitive_aliases_and_forks() {
     assert_eq!(empty.equality_graph.storage_address(&first), first);
     let other = Address {
         base: "local:other".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let ambiguous = joined
         .clone()
-        .assume_condition(ConditionTerm::address_equal(first.clone(), other), true);
+        .assume_condition(OldConditionTerm::address_equal(first.clone(), other), true);
     assert_eq!(ambiguous.equality_graph.storage_address(&first), first);
     assert_eq!(joined.equality_graph.storage_address(&first), storage);
 }
@@ -38,27 +41,27 @@ fn concrete_storage_coordinates_follow_transitive_aliases_and_forks() {
 fn external_addresses_select_their_own_concrete_storage_anchor() {
     let first = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Variable(Variable(896_010)),
+        offset: OldAddressOffset::Variable(Variable(896_010)),
     };
     let second = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Variable(Variable(896_011)),
+        offset: OldAddressOffset::Variable(Variable(896_011)),
     };
     let one = Address {
         base: "global:first".into(),
-        offset: AddressOffset::Constant(8),
+        offset: OldAddressOffset::Constant(8),
     };
     let two = Address {
         base: "global:second".into(),
-        offset: AddressOffset::Constant(16),
+        offset: OldAddressOffset::Constant(16),
     };
     let facts = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::address_equal(first.clone(), one.clone()),
+            OldConditionTerm::address_equal(first.clone(), one.clone()),
             true,
         )
         .assume_condition(
-            ConditionTerm::address_equal(second.clone(), two.clone()),
+            OldConditionTerm::address_equal(second.clone(), two.clone()),
             true,
         );
     assert!(facts.equality_graph.are_equal(&first, &one));
@@ -83,22 +86,34 @@ fn alignment_uses_the_checked_storage_anchor_through_transitive_equality() {
     let last = Address::symbolic(Variable(896_901));
     let storage = Address {
         base: AddressBase::Heap(896_990),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let empty = PureFactContext::new();
     let facts = empty
         .clone()
-        .assume_condition(ConditionTerm::address_equal(first.clone(), storage), true)
-        .assume_condition(ConditionTerm::address_equal(last.clone(), first), true);
+        .assume_condition(
+            OldConditionTerm::address_equal(first.clone(), storage),
+            true,
+        )
+        .assume_condition(OldConditionTerm::address_equal(last.clone(), first), true);
     assert_eq!(
-        facts.decide(&ConditionTerm::pointer_aligned(last.offset_by_bytes(8), 8)),
+        facts.decide(&OldConditionTerm::pointer_aligned(
+            last.offset_by_bytes(8),
+            8
+        )),
         Some(true)
     );
     assert_eq!(
-        facts.decide(&ConditionTerm::pointer_aligned(last.offset_by_bytes(8), 16)),
+        facts.decide(&OldConditionTerm::pointer_aligned(
+            last.offset_by_bytes(8),
+            16
+        )),
         Some(false)
     );
-    assert_eq!(empty.decide(&ConditionTerm::pointer_aligned(last, 8)), None);
+    assert_eq!(
+        empty.decide(&OldConditionTerm::pointer_aligned(last, 8)),
+        None
+    );
 }
 
 #[test]
@@ -107,13 +122,13 @@ fn declared_alignment_follows_late_transitive_address_equality() {
     let middle = Address::symbolic(Variable(898_101));
     let alias = Address::symbolic(Variable(898_102));
     let original = PureFactContext::new()
-        .assume_condition(ConditionTerm::pointer_aligned(base.clone(), 8), true);
+        .assume_condition(OldConditionTerm::pointer_aligned(base.clone(), 8), true);
     let facts = original
         .clone()
-        .assume_condition(ConditionTerm::address_equal(base, middle.clone()), true)
-        .assume_condition(ConditionTerm::address_equal(middle, alias.clone()), true);
+        .assume_condition(OldConditionTerm::address_equal(base, middle.clone()), true)
+        .assume_condition(OldConditionTerm::address_equal(middle, alias.clone()), true);
     assert_eq!(
-        facts.decide(&ConditionTerm::pointer_aligned(alias.clone(), 8)),
+        facts.decide(&OldConditionTerm::pointer_aligned(alias.clone(), 8)),
         Some(true)
     );
     // The single-premise formation certificate must not silently omit the
@@ -124,7 +139,7 @@ fn declared_alignment_follows_late_transitive_address_equality() {
             .is_none()
     );
     assert_eq!(
-        original.decide(&ConditionTerm::pointer_aligned(alias, 8)),
+        original.decide(&OldConditionTerm::pointer_aligned(alias, 8)),
         None
     );
 }
@@ -147,11 +162,11 @@ fn automatic_declaration_storage_is_an_anchor_and_an_indexed_local_alias() {
             binding,
             instance: crate::kernel::LocalStorageInstance::Frame(3),
         },
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let alias = Address::symbolic(Variable(896_999));
     let facts = PureFactContext::new().assume_condition(
-        ConditionTerm::address_equal(alias.clone(), storage.clone()),
+        OldConditionTerm::address_equal(alias.clone(), storage.clone()),
         true,
     );
     assert_eq!(facts.equality_graph.storage_address(&alias), storage);

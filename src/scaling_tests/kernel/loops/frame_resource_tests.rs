@@ -11,8 +11,8 @@ fn a_loop_frame_normalizes_its_retained_views_once() {
             .map(|index| {
                 ResourceFact::view_memory(MemoryRange::new(
                     Address::symbolic(Variable(9_360_000 + index)),
-                    MachineTerm::constant(0),
-                    MachineTerm::constant(1),
+                    OldMachineTerm::constant(0),
+                    OldMachineTerm::constant(1),
                 ))
             })
             .collect::<Vec<_>>();

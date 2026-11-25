@@ -3,7 +3,7 @@
 // tests" in `docs/internals/testing.md`.
 
 use super::*;
-use crate::kernel::{MachineCastSpelling, MachineTerm};
+use crate::kernel::{MachineCastSpelling, OldMachineTerm};
 
 #[test]
 fn object_class_origin_lookup_is_independent_of_unrelated_facts() {
@@ -11,19 +11,19 @@ fn object_class_origin_lookup_is_independent_of_unrelated_facts() {
     let _session = crate::kernel::VerificationSession::enter();
     let pointer = Address::symbolic(Variable(960010));
     let class = CAccessClass::Scalar(CScalarClass::Int);
-    let word = MachineTerm::Variable(Variable(960011));
-    let premise = ConditionTerm::uint64_equal(
+    let word = OldMachineTerm::Variable(Variable(960011));
+    let premise = OldConditionTerm::uint64_equal(
         word.clone(),
-        MachineTerm::object_pointer_address(pointer.clone(), Some(class.clone())),
+        OldMachineTerm::object_pointer_address(pointer.clone(), Some(class.clone())),
     );
     let mut costs = Vec::new();
     for size in [4, 16, 64, 256] {
         let mut context = PureFactContext::new().assume_condition(premise.clone(), true);
         for index in 0..size {
             context = context.assume_condition(
-                ConditionTerm::uint64_equal(
-                    MachineTerm::Variable(Variable(970000 + index)),
-                    MachineTerm::uint64_constant(index),
+                OldConditionTerm::uint64_equal(
+                    OldMachineTerm::Variable(Variable(970000 + index)),
+                    OldMachineTerm::uint64_constant(index),
                 ),
                 true,
             );
@@ -57,16 +57,16 @@ fn object_class_origin_lookup_is_independent_of_unrelated_facts() {
 fn compound_word_address_lookup_skips_unrelated_equalities() {
     let _session = crate::kernel::VerificationSession::enter();
     let pointer = Address::symbolic(Variable(960001));
-    let word = MachineTerm::Variable(Variable(960002));
+    let word = OldMachineTerm::Variable(Variable(960002));
     let expressions = [
-        MachineTerm::uint64_bitwise_and(word.clone(), MachineTerm::uint64_constant(!3)),
-        MachineTerm::uint64_bitwise_or(word, MachineTerm::Variable(Variable(960003))),
+        OldMachineTerm::uint64_bitwise_and(word.clone(), OldMachineTerm::uint64_constant(!3)),
+        OldMachineTerm::uint64_bitwise_or(word, OldMachineTerm::Variable(Variable(960003))),
     ];
     for expression in expressions {
         let fact = Proposition::condition_is(
-            ConditionTerm::uint64_equal(
+            OldConditionTerm::uint64_equal(
                 expression.clone(),
-                MachineTerm::IntegerAddress(
+                OldMachineTerm::IntegerAddress(
                     Box::new(pointer.clone()),
                     crate::kernel::AddressObjectClass::NONE,
                 ),
@@ -78,9 +78,9 @@ fn compound_word_address_lookup_skips_unrelated_equalities() {
             let mut assumptions = PureFactContext::new().assume_proposition(fact.clone());
             for index in 0..size {
                 assumptions = assumptions.assume_condition(
-                    ConditionTerm::uint64_equal(
-                        MachineTerm::Variable(Variable(970000 + index)),
-                        MachineTerm::uint64_constant(index),
+                    OldConditionTerm::uint64_equal(
+                        OldMachineTerm::Variable(Variable(970000 + index)),
+                        OldMachineTerm::uint64_constant(index),
                     ),
                     true,
                 );
@@ -120,33 +120,33 @@ fn compound_word_address_lookup_skips_unrelated_equalities() {
 fn bounded_symbolic_tag_lookup_ignores_unrelated_facts() {
     let costs = [4u64, 16, 64, 256].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
-        let tag = MachineTerm::Variable(Variable(980_021));
+        let tag = OldMachineTerm::Variable(Variable(980_021));
         let pointer = Address::symbolic(Variable(980_022));
         let mut context = PureFactContext::new()
             .assume_condition(
-                ConditionTerm::signed_less_equal(0u32.into(), tag.clone()),
+                OldConditionTerm::signed_less_equal(0u32.into(), tag.clone()),
                 true,
             )
             .assume_condition(
-                ConditionTerm::signed_less_equal(tag.clone(), 1u32.into()),
+                OldConditionTerm::signed_less_equal(tag.clone(), 1u32.into()),
                 true,
             )
-            .assume_condition(ConditionTerm::pointer_aligned(pointer.clone(), 8), true);
+            .assume_condition(OldConditionTerm::pointer_aligned(pointer.clone(), 8), true);
         for index in 0..size {
             context = context.assume_condition(
-                ConditionTerm::uint64_equal(
-                    MachineTerm::Variable(Variable(990_000 + index)),
-                    MachineTerm::uint64_constant(index),
+                OldConditionTerm::uint64_equal(
+                    OldMachineTerm::Variable(Variable(990_000 + index)),
+                    OldMachineTerm::uint64_constant(index),
                 ),
                 true,
             );
         }
-        let cleared = MachineTerm::uint64_bitwise_and(
-            MachineTerm::uint64_bitwise_or(
-                MachineTerm::integer_address(pointer.clone()),
-                MachineTerm::legacy_cast(MachineCastSpelling::UInt64FromInt32, Box::new(tag)),
+        let cleared = OldMachineTerm::uint64_bitwise_and(
+            OldMachineTerm::uint64_bitwise_or(
+                OldMachineTerm::integer_address(pointer.clone()),
+                OldMachineTerm::legacy_cast(MachineCastSpelling::UInt64FromInt32, Box::new(tag)),
             ),
-            MachineTerm::uint64_constant(!3),
+            OldMachineTerm::uint64_constant(!3),
         );
         let (form, work) = crate::instrumentation::measure_deterministic_work(|| {
             tagged_address_form(&cleared, &context, &mut UsedFacts::new())
@@ -170,9 +170,9 @@ fn shared_tag_bounds_reuse_growing_dags_across_contexts() {
         let mut root = KernelTermImport::default()
             .machine_arithmetic(
                 ty,
-                &MachineTerm::uint64_bitwise_and(
-                    MachineTerm::Variable(Variable(985311)),
-                    MachineTerm::uint64_constant(3),
+                &OldMachineTerm::uint64_bitwise_and(
+                    OldMachineTerm::Variable(Variable(985311)),
+                    OldMachineTerm::uint64_constant(3),
                 ),
             )
             .unwrap();
@@ -182,7 +182,7 @@ fn shared_tag_bounds_reuse_growing_dags_across_contexts() {
             for index in 0..size {
                 context = context
                     .clone()
-                    .assume_condition(ConditionTerm::Variable(Variable(985400 + index)), true);
+                    .assume_condition(OldConditionTerm::Variable(Variable(985400 + index)), true);
                 root = KernelTerm::machine_binary_shared(
                     ty,
                     MachineBinaryOp::BitwiseOr,
@@ -208,10 +208,10 @@ fn unknown_left_tag_bound_does_not_visit_the_right_dag() {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::UInt64;
         let unknown = KernelTermImport::default()
-            .machine_arithmetic(ty, &MachineTerm::Variable(Variable(985312)))
+            .machine_arithmetic(ty, &OldMachineTerm::Variable(Variable(985312)))
             .unwrap();
         let mut right = KernelTermImport::default()
-            .machine_arithmetic(ty, &MachineTerm::uint64_constant(3))
+            .machine_arithmetic(ty, &OldMachineTerm::uint64_constant(3))
             .unwrap();
         for _ in 0..size {
             right = KernelTerm::machine_binary_shared(
@@ -244,10 +244,10 @@ fn cited_shared_tag_bounds_retain_growing_prefixes_and_selected_sources() {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::UInt32;
         let mut root = KernelTermImport::default()
-            .machine_arithmetic(ty, &MachineTerm::Variable(Variable(985331)))
+            .machine_arithmetic(ty, &OldMachineTerm::Variable(Variable(985331)))
             .unwrap();
         let one = KernelTermImport::default()
-            .machine_arithmetic(ty, &MachineTerm::constant(1))
+            .machine_arithmetic(ty, &OldMachineTerm::constant(1))
             .unwrap();
         let mut context = PureFactContext::new();
         let exports = KernelTermExport::machine_export_count();
@@ -277,7 +277,7 @@ fn cited_shared_tag_bounds_retain_growing_prefixes_and_selected_sources() {
                     CompareRelation::LessEqual,
                     [
                         MachineOperandView::Shared(&root),
-                        MachineOperandView::Legacy(&MachineTerm::constant(3)),
+                        MachineOperandView::Old(&OldMachineTerm::constant(3)),
                     ],
                 );
                 context = context.clone().assume_condition(upper.clone(), true);
@@ -309,13 +309,13 @@ fn retained_tag_forms_visit_shared_nodes_once_and_reuse_prefixes() {
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::UInt64;
-        let x = MachineTerm::Variable(Variable(986020));
+        let x = OldMachineTerm::Variable(Variable(986020));
         // Keep a pointer source present, but unrelated: a missing root must
         // traverse its DAG once, not once per occurrence of a shared child.
         let context = PureFactContext::new().assume_condition(
-            ConditionTerm::uint64_equal(
-                MachineTerm::Variable(Variable(986021)),
-                MachineTerm::integer_address(Address::symbolic(Variable(986022))),
+            OldConditionTerm::uint64_equal(
+                OldMachineTerm::Variable(Variable(986021)),
+                OldMachineTerm::integer_address(Address::symbolic(Variable(986022))),
             ),
             true,
         );
@@ -356,15 +356,13 @@ fn mixed_tag_syntax_comparison_reuses_growing_shared_prefixes() {
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::UInt64;
-        let opaque = MachineTerm::integer_address(Address::symbolic(Variable(986050)));
-        let mut left =
-            KernelTerm::retained_machine_operand(ty, MachineOperandView::Legacy(&opaque));
-        let mut right =
-            KernelTerm::retained_machine_operand(ty, MachineOperandView::Legacy(&opaque));
+        let opaque = OldMachineTerm::integer_address(Address::symbolic(Variable(986050)));
+        let mut left = KernelTerm::retained_machine_operand(ty, MachineOperandView::Old(&opaque));
+        let mut right = KernelTerm::retained_machine_operand(ty, MachineOperandView::Old(&opaque));
         assert_ne!(left, right);
         let one = KernelTerm::retained_machine_operand(
             ty,
-            MachineOperandView::Legacy(&MachineTerm::uint64_constant(1)),
+            MachineOperandView::Old(&OldMachineTerm::uint64_constant(1)),
         );
         let exports = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {

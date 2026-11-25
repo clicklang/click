@@ -4,18 +4,21 @@
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn exact_memory_condition_matches_ignore_other_facts() {
-    let var = |id| MachineTerm::Variable(Variable(id));
+    let var = |id| OldMachineTerm::Variable(Variable(id));
     let condition = |kind, left, right| match kind {
-        0 => ConditionTerm::IntegerEqual(
+        0 => OldConditionTerm::IntegerEqual(
             crate::kernel::IntegerTerm::var(Variable(left)).into(),
             crate::kernel::IntegerTerm::var(Variable(right)).into(),
         ),
-        1 => ConditionTerm::address_equal(
+        1 => OldConditionTerm::address_equal(
             Address::symbolic(Variable(left)),
             Address::symbolic(Variable(right)),
         ),
-        2 => ConditionTerm::uint64_less_than(var(left), var(right)),
-        3 => ConditionTerm::signed_less_than(MachineTerm::add(var(left), 1u32.into()), var(right)),
+        2 => OldConditionTerm::uint64_less_than(var(left), var(right)),
+        3 => OldConditionTerm::signed_less_than(
+            OldMachineTerm::add(var(left), 1u32.into()),
+            var(right),
+        ),
         _ => unreachable!(),
     };
     for kind in 0..4 {
@@ -62,9 +65,10 @@ fn symmetric_memory_condition_matches_ignore_other_facts() {
                 let mut samples = Vec::new();
                 for size in [8u64, 16, 32] {
                     let _session = crate::kernel::VerificationSession::enter();
-                    let term =
-                        |id| MachineTerm::add(MachineTerm::Variable(Variable(id)), 1u32.into());
-                    let condition = |left, right, relation| ConditionTerm::Compare {
+                    let term = |id| {
+                        OldMachineTerm::add(OldMachineTerm::Variable(Variable(id)), 1u32.into())
+                    };
+                    let condition = |left, right, relation| OldConditionTerm::Compare {
                         format,
                         relation,
                         left: Box::new(term(left)),
@@ -119,17 +123,18 @@ fn equivalent_equality_spellings_use_bounded_lookups() {
         let mut samples = Vec::new();
         for size in [8u64, 16, 32] {
             let _session = crate::kernel::VerificationSession::enter();
-            let word = |id| MachineTerm::add(MachineTerm::Variable(Variable(id)), 1u32.into());
-            let comparison = |format, left, right| ConditionTerm::Compare {
+            let word =
+                |id| OldMachineTerm::add(OldMachineTerm::Variable(Variable(id)), 1u32.into());
+            let comparison = |format, left, right| OldConditionTerm::Compare {
                 format,
                 relation: Equal,
                 left: Box::new(word(left)),
                 right: Box::new(word(right)),
             };
             let offset = |left, right| {
-                ConditionTerm::AddressOffsetEqual(
-                    Box::new(AddressOffset::Variable(Variable(left))),
-                    Box::new(AddressOffset::Variable(Variable(right))),
+                OldConditionTerm::AddressOffsetEqual(
+                    Box::new(OldAddressOffset::Variable(Variable(left))),
+                    Box::new(OldAddressOffset::Variable(Variable(right))),
                 )
             };
             let mut context = PureFactContext::new();
@@ -178,21 +183,21 @@ fn memory_condition_matching_does_not_walk_alias_classes() {
     for unsigned in [false, true] {
         let compare = |left, right| {
             if unsigned {
-                ConditionTerm::unsigned_less_than(left, right)
+                OldConditionTerm::unsigned_less_than(left, right)
             } else {
-                ConditionTerm::signed_less_than(left, right)
+                OldConditionTerm::signed_less_than(left, right)
             }
         };
         let mut samples = Vec::new();
         for size in [8u64, 32, 128] {
             let _session = crate::kernel::VerificationSession::enter();
-            let left = |id| MachineTerm::Variable(Variable(990_000 + id));
-            let right = |id| MachineTerm::Variable(Variable(991_000 + id));
+            let left = |id| OldMachineTerm::Variable(Variable(990_000 + id));
+            let right = |id| OldMachineTerm::Variable(Variable(991_000 + id));
             let mut facts = PureFactContext::new();
             for id in 1..size {
                 facts = facts
-                    .assume_condition(ConditionTerm::equal(left(0), left(id)), true)
-                    .assume_condition(ConditionTerm::equal(right(0), right(id)), true);
+                    .assume_condition(OldConditionTerm::equal(left(0), left(id)), true)
+                    .assume_condition(OldConditionTerm::equal(right(0), right(id)), true);
             }
             let goal = compare(left(0), right(0));
             let (found, missing) = crate::instrumentation::measure_deterministic_work(|| {
@@ -223,21 +228,21 @@ fn memory_condition_matching_does_not_walk_alias_classes() {
 
 #[test]
 fn aliased_memory_condition_matches_ignore_unrelated_facts() {
-    let var = |id| MachineTerm::Variable(Variable(id));
+    let var = |id| OldMachineTerm::Variable(Variable(id));
     let mut samples = Vec::new();
     for size in [8u64, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
         let mut facts = PureFactContext::new()
-            .assume_condition(ConditionTerm::equal(var(992_000), var(992_001)), true)
-            .assume_condition(ConditionTerm::equal(var(993_000), var(993_001)), true);
+            .assume_condition(OldConditionTerm::equal(var(992_000), var(992_001)), true)
+            .assume_condition(OldConditionTerm::equal(var(993_000), var(993_001)), true);
         for id in 0..size {
             facts = facts.assume_condition(
-                ConditionTerm::signed_less_than(var(id), var(id + 10_000)),
+                OldConditionTerm::signed_less_than(var(id), var(id + 10_000)),
                 true,
             );
         }
-        let goal = ConditionTerm::signed_greater_than(var(993_000), var(992_000));
-        let source = ConditionTerm::signed_less_than(var(992_001), var(993_001));
+        let goal = OldConditionTerm::signed_greater_than(var(993_000), var(992_000));
+        let source = OldConditionTerm::signed_less_than(var(992_001), var(993_001));
         let (found, missing) = crate::instrumentation::measure_deterministic_work(|| {
             facts.has_matching_condition_fact_for_memory_resolution(&goal, true)
         });
@@ -261,21 +266,21 @@ fn aliased_memory_condition_matches_ignore_unrelated_facts() {
 
 #[test]
 fn unsigned_memory_condition_matches_ignore_unrelated_facts() {
-    let var = |id| MachineTerm::Variable(Variable(id));
+    let var = |id| OldMachineTerm::Variable(Variable(id));
     let mut samples = Vec::new();
     for size in [8u64, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
         let mut facts = PureFactContext::new()
-            .assume_condition(ConditionTerm::equal(var(994_000), var(994_001)), true)
-            .assume_condition(ConditionTerm::equal(var(995_000), var(995_001)), true);
+            .assume_condition(OldConditionTerm::equal(var(994_000), var(994_001)), true)
+            .assume_condition(OldConditionTerm::equal(var(995_000), var(995_001)), true);
         for id in 0..size {
             facts = facts.assume_condition(
-                ConditionTerm::unsigned_less_than(var(id), var(id + 10_000)),
+                OldConditionTerm::unsigned_less_than(var(id), var(id + 10_000)),
                 true,
             );
         }
-        let goal = ConditionTerm::unsigned_greater_than(var(995_000), var(994_000));
-        let source = ConditionTerm::unsigned_less_than(var(994_001), var(995_001));
+        let goal = OldConditionTerm::unsigned_greater_than(var(995_000), var(994_000));
+        let source = OldConditionTerm::unsigned_less_than(var(994_001), var(995_001));
         let (found, missing) = crate::instrumentation::measure_deterministic_work(|| {
             facts.has_matching_condition_fact_for_memory_resolution(&goal, true)
         });
@@ -306,21 +311,21 @@ fn compound_load_condition_hits_and_misses_ignore_other_facts() {
             let mut samples = Vec::new();
             for size in [8u64, 32, 128] {
                 let _session = crate::kernel::VerificationSession::enter();
-                let var = |id| MachineTerm::Variable(Variable(id));
-                let raw = MachineTerm::read_named(
+                let var = |id| OldMachineTerm::Variable(Variable(id));
+                let raw = OldMachineTerm::read_named(
                     ProgramPoint::at(&(crate::kernel::intern_memory(SymbolicMemory::new()))),
                     Box::new(Address::symbolic(Variable(997_000))),
                     crate::kernel::LoadKind::Int32,
                 );
-                let named = MachineTerm::Variable(
+                let named = OldMachineTerm::Variable(
                     crate::kernel::eval::load_variable_for_term(&raw).unwrap().0,
                 );
-                let compound = |term| MachineTerm::add(term, 1u32.into());
+                let compound = |term| OldMachineTerm::add(term, 1u32.into());
                 let condition = |left, right| {
                     if unsigned {
-                        ConditionTerm::unsigned_less_than(left, right)
+                        OldConditionTerm::unsigned_less_than(left, right)
                     } else {
-                        ConditionTerm::signed_less_than(left, right)
+                        OldConditionTerm::signed_less_than(left, right)
                     }
                 };
                 let mut facts = PureFactContext::new();
@@ -363,17 +368,17 @@ fn ordinary_condition_misses_do_not_walk_aliases_or_variable_buckets() {
         let mut samples = Vec::new();
         for size in [8u64, 32, 128] {
             let _session = crate::kernel::VerificationSession::enter();
-            let var = |id| MachineTerm::Variable(Variable(930_000 + id));
+            let var = |id| OldMachineTerm::Variable(Variable(930_000 + id));
             let mut context = PureFactContext::new();
             for id in 1..=size {
                 let condition = if aliases {
-                    ConditionTerm::equal(var(0), var(id))
+                    OldConditionTerm::equal(var(0), var(id))
                 } else {
-                    ConditionTerm::signed_less_than(var(0), var(id))
+                    OldConditionTerm::signed_less_than(var(0), var(id))
                 };
                 context = context.assume_condition(condition, true);
             }
-            let goal = ConditionTerm::signed_less_than(var(0), var(1000));
+            let goal = OldConditionTerm::signed_less_than(var(0), var(1000));
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 for _ in 0..4 {
                     assert!(!context.has_condition_fact(goal.clone(), true));
@@ -458,9 +463,9 @@ fn retained_transport_reuses_growing_prefixes_across_context_changes() {
                     [root.clone(), b.clone()],
                 );
                 context = context.assume_condition(
-                    ConditionTerm::equal(
-                        MachineTerm::Variable(Variable(994000 + step)),
-                        MachineTerm::constant(7),
+                    OldConditionTerm::equal(
+                        OldMachineTerm::Variable(Variable(994000 + step)),
+                        OldMachineTerm::constant(7),
                     ),
                     true,
                 );
@@ -487,7 +492,7 @@ fn conditional_transport_reuses_shared_arms_and_requires_selected_equality() {
         let a = Variable(993531);
         let b = Variable(993532);
         let guard =
-            KernelTermImport::default().condition(&ConditionTerm::Variable(Variable(993533)));
+            KernelTermImport::default().condition(&OldConditionTerm::Variable(Variable(993533)));
         let mut left = KernelTerm::variable(KernelType::Program(ty.program_type()), a);
         let mut right = KernelTerm::variable(KernelType::Program(ty.program_type()), b);
         for _ in 0..size {
@@ -496,7 +501,7 @@ fn conditional_transport_reuses_shared_arms_and_requires_selected_equality() {
         }
         let empty = PureFactContext::new();
         let facts = empty.clone().assume_condition(
-            ConditionTerm::equal(MachineTerm::Variable(a), MachineTerm::Variable(b)),
+            OldConditionTerm::equal(OldMachineTerm::Variable(a), OldMachineTerm::Variable(b)),
             true,
         );
         let exports = KernelTermExport::machine_export_count();

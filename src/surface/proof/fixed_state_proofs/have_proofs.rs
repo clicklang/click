@@ -1586,17 +1586,17 @@ pub(in crate::surface::proof) fn reverse_kernel_equality(
         Proposition::Equal(left, right) => Some(Proposition::Equal(right, left)),
         ref condition_source_0 @ Proposition::ConditionIs(_, true)
             if let Some((
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
                     relation: CompareRelation::Equal,
                     left,
                     right,
                 },
                 _,
-            )) = condition_source_0.condition_native() =>
+            )) = condition_source_0.old_condition() =>
         {
             Some(Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: *format,
                     relation: CompareRelation::Equal,
                     left: right.clone(),
@@ -1606,27 +1606,27 @@ pub(in crate::surface::proof) fn reverse_kernel_equality(
             ))
         }
         ref condition_source_0 @ Proposition::ConditionIs(_, true)
-            if let Some((ConditionTerm::IntegerEqual(left, right), _)) =
-                condition_source_0.condition_native() =>
+            if let Some((OldConditionTerm::IntegerEqual(left, right), _)) =
+                condition_source_0.old_condition() =>
         {
             Some(Proposition::condition_is(
-                ConditionTerm::IntegerEqual(right.clone(), left.clone()),
+                OldConditionTerm::IntegerEqual(right.clone(), left.clone()),
                 true,
             ))
         }
         ref condition_source_0 @ Proposition::ConditionIs(_, true)
             if let Some((
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int64,
                     relation: CompareRelation::Equal,
                     left,
                     right,
                 },
                 _,
-            )) = condition_source_0.condition_native() =>
+            )) = condition_source_0.old_condition() =>
         {
             Some(Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int64,
                     relation: CompareRelation::Equal,
                     left: right.clone(),
@@ -1636,29 +1636,29 @@ pub(in crate::surface::proof) fn reverse_kernel_equality(
             ))
         }
         ref condition_source_0 @ Proposition::ConditionIs(_, true)
-            if let Some((ConditionTerm::PointerEqual(left, right), _)) =
-                condition_source_0.condition_native() =>
+            if let Some((OldConditionTerm::PointerEqual(left, right), _)) =
+                condition_source_0.old_condition() =>
         {
             Some(Proposition::condition_is(
-                ConditionTerm::PointerEqual(right.clone(), left.clone()),
+                OldConditionTerm::PointerEqual(right.clone(), left.clone()),
                 true,
             ))
         }
         ref condition_source_0 @ Proposition::ConditionIs(_, true)
-            if let Some((ConditionTerm::AddressEqual(left, right), _)) =
-                condition_source_0.condition_native() =>
+            if let Some((OldConditionTerm::AddressEqual(left, right), _)) =
+                condition_source_0.old_condition() =>
         {
             Some(Proposition::condition_is(
-                ConditionTerm::AddressEqual(right.clone(), left.clone()),
+                OldConditionTerm::AddressEqual(right.clone(), left.clone()),
                 true,
             ))
         }
         ref condition_source_0 @ Proposition::ConditionIs(_, true)
-            if let Some((ConditionTerm::AddressOffsetEqual(left, right), _)) =
-                condition_source_0.condition_native() =>
+            if let Some((OldConditionTerm::AddressOffsetEqual(left, right), _)) =
+                condition_source_0.old_condition() =>
         {
             Some(Proposition::condition_is(
-                ConditionTerm::AddressOffsetEqual(right.clone(), left.clone()),
+                OldConditionTerm::AddressOffsetEqual(right.clone(), left.clone()),
                 true,
             ))
         }
@@ -1907,7 +1907,7 @@ mod aggregate_binding_tests;
 #[cfg(test)]
 mod retained_capture_tests {
     use super::*;
-    use crate::kernel::{ExecutionValue, KernelTerm, KernelTermExport, MachineTerm, Variable};
+    use crate::kernel::{ExecutionValue, KernelTerm, KernelTermExport, OldMachineTerm, Variable};
 
     fn capture(expression: &SyntaxTerm) -> Result<(KernelTerm, Vec<Proposition>), String> {
         let state = ExecutionState::new();
@@ -1931,9 +1931,9 @@ mod retained_capture_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let values = [
             crate::kernel::int32(7),
-            ProgramValue::UInt64(MachineTerm::Variable(Variable(997001))),
-            ProgramValue::Bool(MachineTerm::constant(1)),
-            ProgramValue::Float64(MachineTerm::Variable(Variable(997002))),
+            ProgramValue::UInt64(OldMachineTerm::Variable(Variable(997001))),
+            ProgramValue::Bool(OldMachineTerm::constant(1)),
+            ProgramValue::Float64(OldMachineTerm::Variable(Variable(997002))),
             ProgramValue::Pointer(crate::kernel::OldPointer::new(
                 crate::kernel::Address::symbolic(Variable(997003)),
                 ProgramType::Int32Pointer,

@@ -5,13 +5,13 @@ impl KernelTerm {
     /// A native constructor already produced this exact output. Reuse it in
     /// the existing compatibility slot; reading it must not export its operands
     /// again or change its canonical native spelling.
-    pub(crate) fn retain_native_condition_output(&self, value: ConditionTerm) {
+    pub(crate) fn retain_old_condition_output(&self, value: OldConditionTerm) {
         if matches!(self.node(), KernelTermNode::BoolLiteral(_)) {
             return;
         }
         self.0.argument_leaf.get_or_init(|| {
             Box::new(PureFunctionArgument::Value(ProgramValue::Bool(
-                MachineTerm::BoolCast {
+                OldMachineTerm::BoolCast {
                     to: MachineIntegerType::UInt8,
                     value: Box::new(value),
                 },
@@ -22,8 +22,8 @@ impl KernelTerm {
     /// Borrow an output already supplied by a native producer or requested by
     /// a compatibility consumer. This must not initialize the slot: its
     /// initializer itself reads BooleanOperandView::native().
-    pub(crate) fn cached_condition_output(&self) -> Option<&ConditionTerm> {
-        let PureFunctionArgument::Value(ProgramValue::Bool(MachineTerm::BoolCast {
+    pub(crate) fn cached_condition_output(&self) -> Option<&OldConditionTerm> {
+        let PureFunctionArgument::Value(ProgramValue::Bool(OldMachineTerm::BoolCast {
             value, ..
         })) = self.0.argument_leaf.get()?.as_ref()
         else {
@@ -32,14 +32,14 @@ impl KernelTerm {
         Some(value)
     }
 
-    pub(crate) fn boolean_native(&self) -> Option<&ProgramValue> {
-        let PureFunctionArgument::Value(value) = self.boolean_argument_native()? else {
+    pub(crate) fn old_boolean_value(&self) -> Option<&ProgramValue> {
+        let PureFunctionArgument::Value(value) = self.old_boolean_argument()? else {
             unreachable!("Boolean storage descriptor")
         };
         Some(value)
     }
 
-    pub(crate) fn boolean_argument_native(&self) -> Option<&PureFunctionArgument> {
+    pub(crate) fn old_boolean_argument(&self) -> Option<&PureFunctionArgument> {
         if self.ty() == &KernelType::Program(ProgramType::Bool)
             && let KernelTermNode::Variable(variable) = self.node()
         {
@@ -48,7 +48,7 @@ impl KernelTerm {
                     .argument_leaf
                     .get_or_init(|| {
                         Box::new(PureFunctionArgument::Value(ProgramValue::Bool(
-                            MachineTerm::Variable(*variable),
+                            OldMachineTerm::Variable(*variable),
                         )))
                     })
                     .as_ref(),
@@ -71,12 +71,12 @@ impl KernelTerm {
                     // condition directly. Its storage wrapper needs no second
                     // constant-folding constructor.
                     let value = if matches!(self.node(), KernelTermNode::IntegerCompare { .. }) {
-                        MachineTerm::BoolCast {
+                        OldMachineTerm::BoolCast {
                             to: MachineIntegerType::UInt8,
                             value: Box::new(condition),
                         }
                     } else {
-                        MachineTerm::bool_cast(MachineIntegerType::UInt8, condition)
+                        OldMachineTerm::bool_cast(MachineIntegerType::UInt8, condition)
                     };
                     Box::new(PureFunctionArgument::Value(ProgramValue::Bool(value)))
                 })

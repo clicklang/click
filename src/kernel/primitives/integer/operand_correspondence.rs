@@ -94,11 +94,11 @@ fn shared_operand_leaf_pairs_with_policy(
                 let equal = a == b
                     || match (a, b) {
                         (
-                            MachineTerm::ClickFunctionApplication {
+                            OldMachineTerm::ClickFunctionApplication {
                                 name: an,
                                 arguments: aa,
                             },
-                            MachineTerm::ClickFunctionApplication {
+                            OldMachineTerm::ClickFunctionApplication {
                                 name: bn,
                                 arguments: ba,
                             },
@@ -311,21 +311,21 @@ pub(crate) fn machine_operand_syntax_cmp(
 ) -> std::cmp::Ordering {
     use MachineOperandView as V;
     use std::cmp::Ordering;
-    fn header(view: V<'_>) -> MachineTerm {
-        let zero = || Box::new(MachineTerm::constant(0));
+    fn header(view: V<'_>) -> OldMachineTerm {
+        let zero = || Box::new(OldMachineTerm::constant(0));
         if view.conditional_view().is_some() {
-            MachineTerm::If {
-                condition: Box::new(ConditionTerm::Constant(false)),
+            OldMachineTerm::If {
+                condition: Box::new(OldConditionTerm::Constant(false)),
                 then_term: zero(),
                 else_term: zero(),
             }
         } else if let Some(matched) = view.matched() {
-            MachineTerm::AlgebraicMatch {
+            OldMachineTerm::AlgebraicMatch {
                 scrutinee: Box::new(matched.scrutinee.into_owned()),
                 arms: vec![],
             }
         } else if view.fold().is_some() {
-            MachineTerm::RangeFold {
+            OldMachineTerm::RangeFold {
                 start: zero(),
                 end: zero(),
                 initial: zero(),
@@ -334,20 +334,20 @@ pub(crate) fn machine_operand_syntax_cmp(
                 body: zero(),
             }
         } else if let Some((format, op, _)) = view.binary() {
-            MachineTerm::Binary {
+            OldMachineTerm::Binary {
                 format,
                 op,
                 left: zero(),
                 right: zero(),
             }
         } else if let Some((format, op, _)) = view.unary() {
-            MachineTerm::Unary {
+            OldMachineTerm::Unary {
                 format,
                 op,
                 operand: zero(),
             }
         } else if let Some((spelling, from, to, _)) = view.cast() {
-            MachineTerm::Cast {
+            OldMachineTerm::Cast {
                 spelling,
                 from,
                 to,
@@ -379,7 +379,7 @@ pub(crate) fn machine_operand_syntax_cmp(
         {
             // Native ordering is needed only at this explicit candidate-ordering boundary.
             let native = |view: V<'_>| match view {
-                V::Legacy(value) => value.clone(),
+                V::Old(value) => value.clone(),
                 V::Shared(root) => {
                     crate::kernel::KernelTermExport::machine(root).expect("machine syntax")
                 }
@@ -390,7 +390,7 @@ pub(crate) fn machine_operand_syntax_cmp(
             }
             continue;
         }
-        if let (V::Legacy(a), V::Legacy(b)) = (a, b) {
+        if let (V::Old(a), V::Old(b)) = (a, b) {
             let order = a.cmp(b);
             if !order.is_eq() {
                 return order;

@@ -225,8 +225,10 @@ fn float_to_integer_value(
         return Some(match target_type {
             ProgramType::Int8 => crate::kernel::int8(value as i32 as u32),
             ProgramType::Int16 => crate::kernel::int16(value as i32 as u32),
-            ProgramType::Int32 => ProgramValue::Int32(MachineTerm::constant(value as i32 as u32)),
-            ProgramType::Int64 => ProgramValue::Int64(MachineTerm::int64_constant(value as i64)),
+            ProgramType::Int32 => {
+                ProgramValue::Int32(OldMachineTerm::constant(value as i32 as u32))
+            }
+            ProgramType::Int64 => ProgramValue::Int64(OldMachineTerm::int64_constant(value as i64)),
             _ => unreachable!(),
         });
     }
@@ -241,8 +243,8 @@ fn float_to_integer_value(
     Some(match target_type {
         ProgramType::UInt8 => crate::kernel::uint8(value as u32),
         ProgramType::UInt16 => crate::kernel::uint16(value as u32),
-        ProgramType::UInt32 => ProgramValue::UInt32(MachineTerm::uint32_constant(value as u32)),
-        ProgramType::UInt64 => ProgramValue::UInt64(MachineTerm::uint64_constant(value)),
+        ProgramType::UInt32 => ProgramValue::UInt32(OldMachineTerm::uint32_constant(value as u32)),
+        ProgramType::UInt64 => ProgramValue::UInt64(OldMachineTerm::uint64_constant(value)),
         _ => unreachable!(),
     })
 }
@@ -306,18 +308,19 @@ pub(crate) fn numeric_float_conversion_types(name: &str) -> Option<(ProgramType,
 
 /// Fold only a literal operand of an existing C numeric float conversion.
 /// Rebuilders already visit children: do not scan a symbolic subtree here.
-fn constant_conversion(name: &str, operand: &MachineTerm) -> Option<MachineTerm> {
+fn constant_conversion(name: &str, operand: &OldMachineTerm) -> Option<OldMachineTerm> {
     crate::instrumentation::record_deterministic_work(1);
-    if !matches!(operand, MachineTerm::Constant { .. }) || name.len() > "c_float64_to_float64".len()
+    if !matches!(operand, OldMachineTerm::Constant { .. })
+        || name.len() > "c_float64_to_float64".len()
     {
         return None;
     }
     let (source, target) = numeric_float_conversion_types(name)?;
     match (source, target) {
-        (ProgramType::Float32, ProgramType::Float64) => Some(MachineTerm::uint64_constant(
+        (ProgramType::Float32, ProgramType::Float64) => Some(OldMachineTerm::uint64_constant(
             float32_to_float64_bits(operand.float32_as_const()?),
         )),
-        (ProgramType::Float64, ProgramType::Float32) => Some(MachineTerm::constant(
+        (ProgramType::Float64, ProgramType::Float32) => Some(OldMachineTerm::constant(
             float64_to_float32_bits(operand.float64_as_const()?),
         )),
         (source, ProgramType::Float32 | ProgramType::Float64) => {
@@ -325,9 +328,9 @@ fn constant_conversion(name: &str, operand: &MachineTerm) -> Option<MachineTerm>
             let value = format.value_from_term(operand.clone());
             let (negative, magnitude) = integer_constant_as_sign_magnitude(&value)?;
             Some(if target == ProgramType::Float32 {
-                MachineTerm::constant(integer_to_float32_bits(negative, magnitude))
+                OldMachineTerm::constant(integer_to_float32_bits(negative, magnitude))
             } else {
-                MachineTerm::uint64_constant(integer_to_float64_bits(negative, magnitude))
+                OldMachineTerm::uint64_constant(integer_to_float64_bits(negative, magnitude))
             })
         }
         (ProgramType::Float32 | ProgramType::Float64, target) => {
@@ -345,7 +348,7 @@ fn constant_conversion(name: &str, operand: &MachineTerm) -> Option<MachineTerm>
     }
 }
 
-impl MachineTerm {
+impl OldMachineTerm {
     /// Rebuild an existing native application. Only recognized numeric float
     /// conversions with literal operands simplify; ordinary calls keep identity.
     /// Undefined float-to-integer constants stay symbolic: this operation never
@@ -367,33 +370,33 @@ mod tests {
     #[test]
     fn conversion_rebuild_preserves_unknown_calls_and_undefined_constants() {
         for (name, arguments) in [
-            ("ordinary_call", vec![MachineTerm::constant(1)]),
-            ("c_int128_to_float32", vec![MachineTerm::constant(1)]),
-            ("c_bool_to_float32", vec![MachineTerm::constant(1)]),
+            ("ordinary_call", vec![OldMachineTerm::constant(1)]),
+            ("c_int128_to_float32", vec![OldMachineTerm::constant(1)]),
+            ("c_bool_to_float32", vec![OldMachineTerm::constant(1)]),
             ("c_int32_to_float32", vec![]),
             (
                 "c_int32_to_float32",
-                vec![MachineTerm::constant(1), MachineTerm::constant(2)],
+                vec![OldMachineTerm::constant(1), OldMachineTerm::constant(2)],
             ),
             (
                 "c_float32_to_int32",
-                vec![MachineTerm::constant(0x7fc00001)],
+                vec![OldMachineTerm::constant(0x7fc00001)],
             ),
             (
                 "c_float64_to_uint64",
-                vec![MachineTerm::uint64_constant(0xbff0000000000000)],
+                vec![OldMachineTerm::uint64_constant(0xbff0000000000000)],
             ),
             (
                 "c_float64_to_int64",
-                vec![MachineTerm::uint64_constant(0x7ff0000000000000)],
+                vec![OldMachineTerm::uint64_constant(0x7ff0000000000000)],
             ),
         ] {
-            let expected = MachineTerm::PureFunctionApplication {
+            let expected = OldMachineTerm::PureFunctionApplication {
                 name: name.into(),
                 arguments: arguments.clone(),
             };
             assert_eq!(
-                MachineTerm::rebuild_pure_application(name.into(), arguments),
+                OldMachineTerm::rebuild_pure_application(name.into(), arguments),
                 expected
             );
         }
@@ -404,37 +407,37 @@ mod tests {
         for (name, operand, expected) in [
             (
                 "c_int32_to_float32",
-                MachineTerm::constant(16_777_217),
-                MachineTerm::constant(0x4b800000),
+                OldMachineTerm::constant(16_777_217),
+                OldMachineTerm::constant(0x4b800000),
             ),
             (
                 "c_float32_to_float64",
-                MachineTerm::constant(0x80000000),
-                MachineTerm::uint64_constant(0x8000000000000000),
+                OldMachineTerm::constant(0x80000000),
+                OldMachineTerm::uint64_constant(0x8000000000000000),
             ),
             (
                 "c_float32_to_float64",
-                MachineTerm::constant(0x7f800123),
-                MachineTerm::uint64_constant(0x7ff0002460000000),
+                OldMachineTerm::constant(0x7f800123),
+                OldMachineTerm::uint64_constant(0x7ff0002460000000),
             ),
             (
                 "c_float64_to_float32",
-                MachineTerm::uint64_constant(0xfff8000000000123),
-                MachineTerm::constant(0xffc00000),
+                OldMachineTerm::uint64_constant(0xfff8000000000123),
+                OldMachineTerm::constant(0xffc00000),
             ),
             (
                 "c_float32_to_int32",
-                MachineTerm::constant(0xbff00000),
-                MachineTerm::constant(u32::MAX),
+                OldMachineTerm::constant(0xbff00000),
+                OldMachineTerm::constant(u32::MAX),
             ),
             (
                 "c_float64_to_uint64",
-                MachineTerm::uint64_constant(0x3ffc000000000000),
-                MachineTerm::uint64_constant(1),
+                OldMachineTerm::uint64_constant(0x3ffc000000000000),
+                OldMachineTerm::uint64_constant(1),
             ),
         ] {
             assert_eq!(
-                MachineTerm::opaque_conversion(name, operand),
+                OldMachineTerm::opaque_conversion(name, operand),
                 expected,
                 "{name}"
             );

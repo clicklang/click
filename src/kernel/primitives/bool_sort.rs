@@ -1,23 +1,23 @@
 //! Click `Bool`, the logical sort (`design/machine-integers.md`, Stage 5).
 //!
-//! A `Bool` term is a [`ConditionTerm`]. `Constant` and `Variable` are its
+//! A `Bool` term is a [`OldConditionTerm`]. `Constant` and `Variable` are its
 //! literals and binders, and every comparison is a `Bool` value. This module
 //! holds the constructors for logical applications, conditionals and equality, the
 //! structural helpers every traversal uses for them, and the statements of
 //! the logic rules:
 //!
-//! - **L-If** ([`ConditionTerm::open_bool_if`]):
+//! - **L-If** ([`OldConditionTerm::open_bool_if`]):
 //!   `ConditionIs(if c { a } else { b }, t)` holds exactly when
 //!   `(c and ConditionIs(a, t)) or (not c and ConditionIs(b, t))`. It is
 //!   opened only on demand: by a decision of the conditional itself, which
 //!   reads its condition first (`PureFactContext::decide_bool_if`), or by a
 //!   proof step that asks for the split. Assuming a conditional files it as
 //!   one fact; nothing expands it.
-//! - **L-Eq** ([`ConditionTerm::bool_equal`]): `ConditionIs(a == b, true)`
+//! - **L-Eq** ([`OldConditionTerm::bool_equal`]): `ConditionIs(a == b, true)`
 //!   holds exactly when `a` and `b` have the same truth. A true one merges
 //!   the two values' classes in the e-graph, which then share their truth;
 //!   a false one contradicts the merge.
-//! - **L-Unfold** ([`ConditionTerm::bool_unfold_equation`]): unfolding a
+//! - **L-Unfold** ([`OldConditionTerm::bool_unfold_equation`]): unfolding a
 //!   `-> Bool` function's application files `application == body`.
 //!
 //! Soundness: these are the two-valued meaning of `if` and of logical
@@ -25,10 +25,10 @@
 //! termination is checked where it is declared. No rule here reads an
 //! integer value of a `Bool`: the sort has none.
 
-use super::{ConditionTerm, Proposition, PureFunctionArgument};
+use super::{OldConditionTerm, Proposition, PureFunctionArgument};
 use crate::kernel::SharedPureApplication;
 
-impl ConditionTerm {
+impl OldConditionTerm {
     /// Whether this is one of the `Bool` value forms that are not
     /// comparisons. One match on the root.
     pub(crate) fn is_bool_value_form(&self) -> bool {
@@ -100,7 +100,7 @@ impl ConditionTerm {
             return None;
         };
         crate::instrumentation::record_deterministic_work(1);
-        let arm = |selected: bool, branch: &ConditionTerm| {
+        let arm = |selected: bool, branch: &OldConditionTerm| {
             Proposition::And(
                 Box::new(Proposition::condition_is(
                     condition.as_ref().clone(),
@@ -133,8 +133,8 @@ impl ConditionTerm {
     /// The child conditions of a `Bool` value form, in order: a
     /// conditional's condition and branches, an equality's operands. Empty
     /// for an application, a read and every other condition.
-    pub(crate) fn bool_children(&self) -> impl Iterator<Item = &ConditionTerm> {
-        let children: [Option<&ConditionTerm>; 3] = match self {
+    pub(crate) fn bool_children(&self) -> impl Iterator<Item = &OldConditionTerm> {
+        let children: [Option<&OldConditionTerm>; 3] = match self {
             Self::BoolIf {
                 condition,
                 then_condition,
@@ -152,9 +152,9 @@ impl ConditionTerm {
     /// substitution changes only what it rewrites.
     pub(crate) fn map_bool_value_form(
         &self,
-        mut child: impl FnMut(&ConditionTerm) -> ConditionTerm,
+        mut child: impl FnMut(&OldConditionTerm) -> OldConditionTerm,
         mut argument: impl FnMut(&PureFunctionArgument) -> PureFunctionArgument,
-    ) -> Option<ConditionTerm> {
+    ) -> Option<OldConditionTerm> {
         Some(match self {
             Self::BoolApplication(application) => {
                 Self::BoolApplication(SharedPureApplication::intern(
@@ -179,15 +179,18 @@ impl ConditionTerm {
     }
 }
 
-impl crate::kernel::MachineTerm {
+impl crate::kernel::OldMachineTerm {
     /// Rule C1: the integer value of the `Bool` `value` at format `to`,
     /// `value as to`. A constant folds to its word, 1 or 0; nothing else is
     /// read.
-    pub(crate) fn bool_cast(to: crate::kernel::MachineIntegerType, value: ConditionTerm) -> Self {
+    pub(crate) fn bool_cast(
+        to: crate::kernel::MachineIntegerType,
+        value: OldConditionTerm,
+    ) -> Self {
         crate::instrumentation::record_deterministic_work(1);
         match value {
             // A constant is the word 1 or 0 at `to`'s carrier.
-            ConditionTerm::Constant(value) => {
+            OldConditionTerm::Constant(value) => {
                 crate::kernel::MachineIntegerConstant::from_unsigned(to.format(), u128::from(value))
                     .and_then(|constant| to.constant_term(constant))
                     .expect("every format holds 0 and 1")
@@ -200,7 +203,7 @@ impl crate::kernel::MachineTerm {
     }
 
     /// The `Bool` whose integer value this term is (rule C1), or `None`.
-    pub(crate) fn bool_cast_operand(&self) -> Option<&ConditionTerm> {
+    pub(crate) fn bool_cast_operand(&self) -> Option<&OldConditionTerm> {
         match self {
             Self::BoolCast { value, .. } => Some(value),
             _ => None,
@@ -210,9 +213,9 @@ impl crate::kernel::MachineTerm {
     /// Rule C1: the integer value at format `to` of the `Bool` a
     /// `ProgramValue::Bool` word carries, `b as to`. A constant word is its own
     /// value, 0 or 1 at every format; a cast is recast at `to`; and any other
-    /// word reaches `Bool` by `w != 0` first ([`ConditionTerm::truth_of_bool_word`]).
+    /// word reaches `Bool` by `w != 0` first ([`OldConditionTerm::truth_of_bool_word`]).
     pub(crate) fn bool_word_as(to: crate::kernel::MachineIntegerType, word: &Self) -> Self {
-        Self::bool_cast(to, ConditionTerm::truth_of_bool_word(word))
+        Self::bool_cast(to, OldConditionTerm::truth_of_bool_word(word))
     }
 
     /// The truth a `Bool` constant carrier holds: the `uint8` constant 0 or
@@ -232,10 +235,10 @@ impl crate::kernel::MachineTerm {
     }
 }
 
-impl ConditionTerm {
+impl OldConditionTerm {
     /// The Boolean value of an already selected one-byte cell read.
     pub fn boolean_cell_read(point: super::ProgramPoint, address: super::Address) -> Self {
-        Self::nonzero_bool_word(&crate::kernel::MachineTerm::read_named(
+        Self::nonzero_bool_word(&crate::kernel::OldMachineTerm::read_named(
             point,
             address,
             super::LoadKind::UInt8,
@@ -247,7 +250,7 @@ impl ConditionTerm {
     /// `b`, or as the `uint8` constant 0 or 1, whose truth it is. Any other
     /// 8-bit term (a variable, a conditional of carriers) reaches `Bool` by
     /// C's test `w != 0` at `uint8`.
-    pub(crate) fn truth_of_bool_word(word: &crate::kernel::MachineTerm) -> Self {
+    pub(crate) fn truth_of_bool_word(word: &crate::kernel::OldMachineTerm) -> Self {
         if let Some(value) = word.bool_cast_operand() {
             return value.clone();
         }
@@ -260,13 +263,16 @@ impl ConditionTerm {
     /// C's test `w != 0` at `uint8` of a `Bool` carrier, whatever its form:
     /// the truth of any carrier (rule C1), and for a cast `c as uint8`
     /// exactly `c` (rule C1a). One node over the word.
-    pub(crate) fn nonzero_bool_word(word: &crate::kernel::MachineTerm) -> Self {
+    pub(crate) fn nonzero_bool_word(word: &crate::kernel::OldMachineTerm) -> Self {
         use crate::kernel::MachineIntegerType;
         Self::bool_not(Self::narrow_compare(
             MachineIntegerType::UInt8,
             crate::kernel::CompareRelation::Equal,
             word.clone(),
-            crate::kernel::MachineTerm::bool_cast(MachineIntegerType::UInt8, Self::Constant(false)),
+            crate::kernel::OldMachineTerm::bool_cast(
+                MachineIntegerType::UInt8,
+                Self::Constant(false),
+            ),
         ))
     }
 
@@ -288,7 +294,7 @@ impl ConditionTerm {
         }
     }
 
-    /// The operand of a negation `not c` ([`ConditionTerm::bool_not`]), or
+    /// The operand of a negation `not c` ([`OldConditionTerm::bool_not`]), or
     /// `None`. One match on the root.
     pub(crate) fn bool_negation_operand(&self) -> Option<&Self> {
         match self {
@@ -323,7 +329,7 @@ impl ConditionTerm {
     /// `(bool)2` and `(bool)-1` are true, with no reduction anywhere. `None`
     /// for a value with no such test (a float, an abstract value).
     pub(crate) fn nonzero_test(value: &crate::kernel::ProgramValue) -> Option<Self> {
-        use crate::kernel::{IntegerTerm, MachineIntegerType, MachineTerm, ProgramValue};
+        use crate::kernel::{IntegerTerm, MachineIntegerType, OldMachineTerm, ProgramValue};
         let is_zero = match value.numeric_value() {
             ProgramValue::Bool(word) => return Some(Self::truth_of_bool_word(word)),
             // Rule C1a: a cast is nonzero exactly when its `Bool` holds.
@@ -347,13 +353,13 @@ impl ConditionTerm {
                 )
             }
             ProgramValue::Int32(word) | ProgramValue::UInt32(word) => {
-                Self::equal(word.clone(), MachineTerm::constant(0))
+                Self::equal(word.clone(), OldMachineTerm::constant(0))
             }
             ProgramValue::Int64(word) => {
-                Self::int64_equal(word.clone(), MachineTerm::int64_constant(0))
+                Self::int64_equal(word.clone(), OldMachineTerm::int64_constant(0))
             }
             ProgramValue::UInt64(word) => {
-                Self::uint64_equal(word.clone(), MachineTerm::uint64_constant(0))
+                Self::uint64_equal(word.clone(), OldMachineTerm::uint64_constant(0))
             }
             value @ (ProgramValue::Int128(word) | ProgramValue::UInt128(word)) => {
                 let source = MachineIntegerType::from_program_type(value.program_type())?;
@@ -374,8 +380,8 @@ impl ConditionTerm {
 impl crate::kernel::ProgramValue {
     /// The `ProgramValue::Bool` carrier of the `Bool` `value`: its cast to
     /// `uint8` (rule C1), the byte a `bool` cell holds.
-    pub(crate) fn of_bool(value: ConditionTerm) -> Self {
-        Self::Bool(crate::kernel::MachineTerm::bool_cast(
+    pub(crate) fn of_bool(value: OldConditionTerm) -> Self {
+        Self::Bool(crate::kernel::OldMachineTerm::bool_cast(
             crate::kernel::MachineIntegerType::UInt8,
             value,
         ))
@@ -383,14 +389,14 @@ impl crate::kernel::ProgramValue {
 
     /// The C `bool` constant `value`: the `uint8` constant 1 or 0 (rule C1).
     pub(crate) fn bool_constant(value: bool) -> Self {
-        Self::of_bool(ConditionTerm::Constant(value))
+        Self::of_bool(OldConditionTerm::Constant(value))
     }
 
     /// The scalar value of type `program_type` whose word is `term`; `None` for a
     /// type that is not a scalar.
     pub(crate) fn from_bitvector_term(
         program_type: crate::kernel::ProgramType,
-        term: crate::kernel::MachineTerm,
+        term: crate::kernel::OldMachineTerm,
     ) -> Option<Self> {
         use crate::kernel::ProgramType;
         Some(match program_type {

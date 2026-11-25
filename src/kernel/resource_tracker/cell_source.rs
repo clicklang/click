@@ -107,13 +107,13 @@ pub(in crate::kernel) enum MemoryDagHopJustification {
         write: Address,
     },
     StoreCommonBaseUnequalConstants {
-        condition: ConditionTerm,
+        condition: OldConditionTerm,
     },
     StoreCommonBaseExactInequality {
-        condition: ConditionTerm,
+        condition: OldConditionTerm,
     },
     StoreCommonBaseSignedOrder {
-        condition: ConditionTerm,
+        condition: OldConditionTerm,
         path: Vec<OrderDerivationStep>,
         reversed: bool,
     },
@@ -224,7 +224,7 @@ pub(in crate::kernel) enum PointerInRangeEvidence {
     },
     ExactAlias {
         alias: Address,
-        condition: ConditionTerm,
+        condition: OldConditionTerm,
         membership: Box<PointerInRangeEvidence>,
     },
     ShiftedExactAlias {
@@ -248,7 +248,7 @@ pub(in crate::kernel) enum PointerInRangeEvidence {
     /// index below the range's constant end ([`unsigned_index_in_range`]).
     UnsignedIndexed {
         index: SharedMachineIntegerTerm,
-        upper: ConditionTerm,
+        upper: OldConditionTerm,
     },
 }
 
@@ -265,7 +265,7 @@ pub(in crate::kernel) enum PointerInRangeEvidence {
 pub(in crate::kernel) fn unsigned_index_in_range(
     pointer: &Address,
     range: &MemoryRange,
-) -> Option<(SharedMachineIntegerTerm, Vec<ConditionTerm>)> {
+) -> Option<(SharedMachineIntegerTerm, Vec<OldConditionTerm>)> {
     crate::instrumentation::record_deterministic_work(1);
     let (start, end) = range.int32_bounds()?;
     let start = i64::from(start.as_const()? as i32);
@@ -275,10 +275,10 @@ pub(in crate::kernel) fn unsigned_index_in_range(
     }
     let (index_offset, base_rest) =
         crate::kernel::reasoning::common_base_index_offsets(pointer, range.base())?;
-    if base_rest != AddressOffset::Constant(0) {
+    if base_rest != OldAddressOffset::Constant(0) {
         return None;
     }
-    let AddressOffset::Int64Scaled {
+    let OldAddressOffset::Int64Scaled {
         value,
         byte_width,
         unsigned: true,
@@ -290,15 +290,15 @@ pub(in crate::kernel) fn unsigned_index_in_range(
         return None;
     }
     let index = value.clone();
-    let end_term = MachineTerm::uint64_constant(end as u64);
-    let last = MachineTerm::uint64_constant((end - 1) as u64);
-    let compare = |relation, bound: &MachineTerm, reverse| {
+    let end_term = OldMachineTerm::uint64_constant(end as u64);
+    let last = OldMachineTerm::uint64_constant((end - 1) as u64);
+    let compare = |relation, bound: &OldMachineTerm, reverse| {
         let atom = index.operand_view().literal().or_else(|| {
             index
                 .operand_view()
                 .variable()
                 .copied()
-                .map(MachineTerm::Variable)
+                .map(OldMachineTerm::Variable)
         });
         if let Some(atom) = atom {
             let (left, right) = if reverse {
@@ -306,7 +306,7 @@ pub(in crate::kernel) fn unsigned_index_in_range(
             } else {
                 (atom, bound.clone())
             };
-            return ConditionTerm::Compare {
+            return OldConditionTerm::Compare {
                 format: MachineIntegerType::UInt64,
                 relation,
                 left: Box::new(left),
@@ -315,7 +315,7 @@ pub(in crate::kernel) fn unsigned_index_in_range(
         }
         let mut operands = [
             index.operand_view(),
-            crate::kernel::MachineOperandView::Legacy(bound),
+            crate::kernel::MachineOperandView::Old(bound),
         ];
         if reverse {
             operands.swap(0, 1);
@@ -543,8 +543,8 @@ impl BorrowPartitionRangeEvidence {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::kernel) enum PositiveTermEvidence {
     Constant,
-    ExactCondition(ConditionTerm),
-    OneLowerBound(ConditionTerm),
+    ExactCondition(OldConditionTerm),
+    OneLowerBound(OldConditionTerm),
 }
 
 impl MemoryDagHopJustification {
@@ -625,7 +625,7 @@ impl MemoryDagHopJustification {
                 };
                 pointer_offsets_with_common_base_distinctness_condition(write, pointer)
                     == Some(condition.clone())
-                    && condition == &ConditionTerm::Constant(false)
+                    && condition == &OldConditionTerm::Constant(false)
             }
             Self::StoreCommonBaseExactInequality { condition } => {
                 let Some((write, _)) = derivation.single_write() else {
@@ -643,7 +643,7 @@ impl MemoryDagHopJustification {
                 let Some((write, _)) = derivation.single_write() else {
                     return false;
                 };
-                let Some(ConditionTerm::Compare {
+                let Some(OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
                     left,
@@ -653,7 +653,7 @@ impl MemoryDagHopJustification {
                     return false;
                 };
                 if *condition
-                    != (ConditionTerm::Compare {
+                    != (OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
                         left: left.clone(),
@@ -669,8 +669,8 @@ impl MemoryDagHopJustification {
                 };
                 assumptions.checks_exact_signed_order_source_path(
                     path,
-                    MachineOperandView::Legacy(lower),
-                    MachineOperandView::Legacy(upper),
+                    MachineOperandView::Old(lower),
+                    MachineOperandView::Old(upper),
                     true,
                 )
             }
@@ -711,7 +711,7 @@ impl MemoryDagHopJustification {
                         };
                         retired = Address {
                             base: block.clone(),
-                            offset: AddressOffset::Constant(0),
+                            offset: OldAddressOffset::Constant(0),
                         };
                         (&retired, AccessExtent::Bytes(size))
                     }
@@ -770,7 +770,7 @@ impl MemoryDagHopJustification {
                 MemoryDerivation::LocalLifetimeEnded { block, .. }
                     if pointer.blocks_proven_distinct(&Address {
                         base: block.clone(),
-                        offset: AddressOffset::Constant(0),
+                        offset: OldAddressOffset::Constant(0),
                     })
             ),
             Self::HeapFreeOfDistinctBlock => matches!(
@@ -825,7 +825,7 @@ impl MemoryDagHopJustification {
                     && first.checks(pointer, range, assumptions)
                     && last.checks(
                         &pointer
-                            .offset_by_elements(MachineTerm::constant(bytes / width - 1), width),
+                            .offset_by_elements(OldMachineTerm::constant(bytes / width - 1), width),
                         range,
                         assumptions,
                     )
@@ -939,7 +939,7 @@ impl PositiveTermEvidence {
         }
         let exact = crate::kernel::assumptions::index_comparison(
             CompareRelation::LessThan,
-            MachineOperandView::Legacy(&MachineTerm::constant(0)),
+            MachineOperandView::Old(&OldMachineTerm::constant(0)),
             term,
         );
         if assumptions.selected_comparison_value(&exact) == Some(true) {
@@ -947,7 +947,7 @@ impl PositiveTermEvidence {
         }
         let lower_bound = crate::kernel::assumptions::index_comparison(
             CompareRelation::LessEqual,
-            MachineOperandView::Legacy(&MachineTerm::constant(1)),
+            MachineOperandView::Old(&OldMachineTerm::constant(1)),
             term,
         );
         (assumptions.selected_comparison_value(&lower_bound) == Some(true))
@@ -962,7 +962,7 @@ impl PositiveTermEvidence {
                 condition
                     == &crate::kernel::assumptions::index_comparison(
                         CompareRelation::LessThan,
-                        MachineOperandView::Legacy(&MachineTerm::constant(0)),
+                        MachineOperandView::Old(&OldMachineTerm::constant(0)),
                         term,
                     )
                     && assumptions.selected_comparison_value(condition) == Some(true)
@@ -971,7 +971,7 @@ impl PositiveTermEvidence {
                 condition
                     == &crate::kernel::assumptions::index_comparison(
                         CompareRelation::LessEqual,
-                        MachineOperandView::Legacy(&MachineTerm::constant(1)),
+                        MachineOperandView::Old(&OldMachineTerm::constant(1)),
                         term,
                     )
                     && assumptions.selected_comparison_value(condition) == Some(true)
@@ -1031,7 +1031,7 @@ impl RangeDisjointFromPointerEvidence {
                         crate::kernel::assumptions::index_binary(
                             MachineBinaryOp::Add,
                             offset.operand_view(),
-                            MachineOperandView::Legacy(range.start()),
+                            MachineOperandView::Old(range.start()),
                         )
                         .operand_view(),
                         assumptions,
@@ -1179,14 +1179,14 @@ pub(in crate::kernel) fn memory_dag_cell_lookups_fingerprint() -> u64 {
 
 impl RangeBoundEvidence {
     fn for_true_condition(
-        condition: &ConditionTerm,
+        condition: &OldConditionTerm,
         assumptions: &PureFactContext,
     ) -> Option<Self> {
         use crate::kernel::assumptions::{
             checked_scalar_facts::ScalarOperandKey as Key, order_view_at_format,
         };
         use crate::kernel::machine_integer::Relation;
-        if condition == &ConditionTerm::Constant(true) {
+        if condition == &OldConditionTerm::Constant(true) {
             return Some(Self::Intrinsic);
         }
         let view = order_view_at_format(condition, true, MachineIntegerType::Int32)?;
@@ -1228,13 +1228,13 @@ impl RangeBoundEvidence {
             .map(Self::SignedOrderPath)
     }
 
-    fn checks(&self, condition: &ConditionTerm, assumptions: &PureFactContext) -> bool {
+    fn checks(&self, condition: &OldConditionTerm, assumptions: &PureFactContext) -> bool {
         use crate::kernel::assumptions::{
             checked_scalar_facts::ScalarOperandKey as Key, order_view_at_format,
         };
         use crate::kernel::machine_integer::Relation;
         if matches!(self, Self::Intrinsic) {
-            return condition == &ConditionTerm::Constant(true);
+            return condition == &OldConditionTerm::Constant(true);
         }
         let Some(goal) = order_view_at_format(condition, true, MachineIntegerType::Int32) else {
             return false;
@@ -1256,11 +1256,9 @@ impl RangeBoundEvidence {
                 let Proposition::ConditionIs(condition, truth) = &to_successor.premise else {
                     return false;
                 };
-                let Some(edge) = order_view_at_format(
-                    condition.native_compat(),
-                    *truth,
-                    MachineIntegerType::Int32,
-                ) else {
+                let Some(edge) =
+                    order_view_at_format(condition.old_form(), *truth, MachineIntegerType::Int32)
+                else {
                     return false;
                 };
                 let [lower, upper] = edge
@@ -1270,7 +1268,7 @@ impl RangeBoundEvidence {
                 if !strict
                     || edge.relation != Relation::Less
                     || Key::new(lower) != Key::new(left)
-                    || assumptions.exact_condition_value(condition.native_compat()) != Some(*truth)
+                    || assumptions.exact_condition_value(condition.old_form()) != Some(*truth)
                 {
                     return false;
                 }
@@ -1302,7 +1300,7 @@ impl PointerInRangeEvidence {
                     .find_map(|alias| {
                         let membership = Self::for_pointer_direct(alias, range, assumptions)?;
                         let condition =
-                            ConditionTerm::address_equal(pointer.clone(), alias.clone());
+                            OldConditionTerm::address_equal(pointer.clone(), alias.clone());
                         crate::kernel::record_implicit_consulted_premises(
                             assumptions,
                             &Proposition::condition_is(condition.clone(), true),
@@ -1330,7 +1328,7 @@ impl PointerInRangeEvidence {
                         crate::kernel::record_implicit_consulted_premises(
                             assumptions,
                             &Proposition::condition_is(
-                                ConditionTerm::address_equal(base.clone(), range.base().clone()),
+                                OldConditionTerm::address_equal(base.clone(), range.base().clone()),
                                 true,
                             ),
                         );
@@ -1377,7 +1375,7 @@ impl PointerInRangeEvidence {
         else {
             return None;
         };
-        let start = MachineOperandView::Legacy(start);
+        let start = MachineOperandView::Old(start);
         let candidates = [[start, right], [left, start]].map(|operands| {
             MachineOperandView::Shared(&crate::kernel::KernelTerm::machine_binary_shared(
                 MachineIntegerType::Int32,
@@ -1440,13 +1438,13 @@ impl PointerInRangeEvidence {
             .shared_element_index_from_base_with_width(range.base(), range.element_width())?;
         let lower_condition = crate::kernel::assumptions::index_comparison(
             CompareRelation::LessEqual,
-            MachineOperandView::Legacy(range.start()),
+            MachineOperandView::Old(range.start()),
             index.operand_view(),
         );
         let upper_condition = crate::kernel::assumptions::index_comparison(
             CompareRelation::LessThan,
             index.operand_view(),
-            MachineOperandView::Legacy(range.end()),
+            MachineOperandView::Old(range.end()),
         );
         Some(Self::Indexed {
             index,
@@ -1478,7 +1476,7 @@ impl PointerInRangeEvidence {
         } = self
         {
             return *pointer == base.offset_by_bytes(*bytes)
-                && assumptions.exact_condition_value(&ConditionTerm::address_equal(
+                && assumptions.exact_condition_value(&OldConditionTerm::address_equal(
                     base.clone(),
                     alias.clone(),
                 )) == Some(true)
@@ -1494,7 +1492,7 @@ impl PointerInRangeEvidence {
             membership,
         } = self
         {
-            return *condition == ConditionTerm::address_equal(pointer.clone(), alias.clone())
+            return *condition == OldConditionTerm::address_equal(pointer.clone(), alias.clone())
                 && assumptions.exact_condition_value(condition) == Some(true)
                 && matches!(
                     membership.as_ref(),
@@ -1544,7 +1542,7 @@ impl PointerInRangeEvidence {
         lower.checks(
             &crate::kernel::assumptions::index_comparison(
                 CompareRelation::LessEqual,
-                MachineOperandView::Legacy(range.start()),
+                MachineOperandView::Old(range.start()),
                 index.operand_view(),
             ),
             assumptions,
@@ -1552,7 +1550,7 @@ impl PointerInRangeEvidence {
             &crate::kernel::assumptions::index_comparison(
                 CompareRelation::LessThan,
                 index.operand_view(),
-                MachineOperandView::Legacy(range.end()),
+                MachineOperandView::Old(range.end()),
             ),
             assumptions,
         )
@@ -1624,7 +1622,7 @@ pub(in crate::kernel) fn retirement_inside_its_call_havoc(step: &MemoryDerivatio
 pub(in crate::kernel) fn retirement_keeps_its_call_havocs_forget_mark(
     base: &SharedMemory,
     allocation_base: &Address,
-    bytes: &MachineTerm,
+    bytes: &OldMachineTerm,
 ) -> bool {
     retired_allocation_inside_call_havoc(base, allocation_base, bytes)
 }
@@ -1632,7 +1630,7 @@ pub(in crate::kernel) fn retirement_keeps_its_call_havocs_forget_mark(
 fn retired_allocation_inside_call_havoc(
     base: &SharedMemory,
     allocation_base: &Address,
-    bytes: &MachineTerm,
+    bytes: &OldMachineTerm,
 ) -> bool {
     let mut current = base.clone();
     loop {
@@ -1659,7 +1657,7 @@ fn retired_allocation_inside_call_havoc(
 fn range_structurally_covers_allocation(
     range: &MemoryRange,
     allocation_base: &Address,
-    bytes: &MachineTerm,
+    bytes: &OldMachineTerm,
 ) -> bool {
     // A wide byte range `[0, n)` covers an allocation of exactly `n` bytes,
     // as an object of symbolic size is; other wide ranges are undecided by
@@ -1670,7 +1668,7 @@ fn range_structurally_covers_allocation(
             && start.uint64_as_const() == Some(0)
             && end == bytes;
     }
-    if range.base() != allocation_base || range.start() != &MachineTerm::constant(0) {
+    if range.base() != allocation_base || range.start() != &OldMachineTerm::constant(0) {
         return false;
     }
     let covered = memory_range_byte_count(
@@ -2042,33 +2040,33 @@ mod wide_range_reader_tests {
         let base = Address::symbolic(Variable(984_300));
         let wide = MemoryRange::new_wide(
             base.clone(),
-            MachineTerm::uint64_constant(0),
-            MachineTerm::uint64_constant(1 << 33),
+            OldMachineTerm::uint64_constant(0),
+            OldMachineTerm::uint64_constant(1 << 33),
             4,
         );
         let facts = PureFactContext::new();
         let signed_index = binary_node!(
             Int32,
             Add,
-            Box::new(MachineTerm::Variable(Variable(984_301))),
-            Box::new(MachineTerm::Variable(Variable(984_302))),
+            Box::new(OldMachineTerm::Variable(Variable(984_301))),
+            Box::new(OldMachineTerm::Variable(Variable(984_302))),
         );
         let signed_access = base.offset_by_elements(signed_index, 4);
         assert!(PointerInRangeEvidence::for_pointer(&signed_access, &wide, &facts).is_none());
         assert!(!range_structurally_covers_allocation(
             &wide,
             &base,
-            &MachineTerm::constant(4)
+            &OldMachineTerm::constant(4)
         ));
         let indexed = PointerInRangeEvidence::Indexed {
-            index: MachineOperandView::Legacy(&MachineTerm::constant(0))
+            index: MachineOperandView::Old(&OldMachineTerm::constant(0))
                 .retain(MachineIntegerType::Int32),
             lower: RangeBoundEvidence::Intrinsic,
             upper: RangeBoundEvidence::Intrinsic,
         };
         assert!(!indexed.checks(&base, &wide, &facts));
         let forward = RangeDisjointFromPointerEvidence::ForwardOffset {
-            offset: MachineOperandView::Legacy(&MachineTerm::constant(1))
+            offset: MachineOperandView::Old(&OldMachineTerm::constant(1))
                 .retain(MachineIntegerType::Int32),
             positive: PositiveTermEvidence::Constant,
         };
@@ -2103,7 +2101,7 @@ mod separated_range_frame_tests {
         PureFactContext,
         Vec<Proposition>,
     ) {
-        let word = |id| MachineTerm::Variable(Variable(id));
+        let word = |id| OldMachineTerm::Variable(Variable(id));
         let start = word(9_941_001);
         let loaded_start = word(9_941_002);
         let end = word(9_941_003);
@@ -2114,11 +2112,11 @@ mod separated_range_frame_tests {
             binary_node!(Int32, Add, Box::new(loaded_start.clone()), Box::new(index));
         let field = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let data = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scaled_int32_node(word(9_941_005), 4),
+            offset: OldAddressOffset::scaled_int32_node(word(9_941_005), 4),
         };
         let backing = MemoryRange::new(data.clone(), start.clone(), end.clone());
         let descriptor = MemoryRange::new(field.clone(), 0u32.into(), 4u32.into());
@@ -2127,17 +2125,23 @@ mod separated_range_frame_tests {
                 left: Box::new(Resource::Memory(backing)),
                 right: Box::new(Resource::Memory(descriptor)),
             },
-            Proposition::condition_is(ConditionTerm::equal(loaded_start, start.clone()), true),
+            Proposition::condition_is(OldConditionTerm::equal(loaded_start, start.clone()), true),
             Proposition::condition_is(
-                ConditionTerm::signed_less_equal(start.clone(), model_index.clone()),
+                OldConditionTerm::signed_less_equal(start.clone(), model_index.clone()),
                 true,
             ),
             Proposition::condition_is(
-                ConditionTerm::signed_less_than(model_index, end.clone()),
+                OldConditionTerm::signed_less_than(model_index, end.clone()),
                 true,
             ),
-            Proposition::condition_is(ConditionTerm::signed_less_equal(0u32.into(), start), true),
-            Proposition::condition_is(ConditionTerm::signed_less_equal(end, 1024u32.into()), true),
+            Proposition::condition_is(
+                OldConditionTerm::signed_less_equal(0u32.into(), start),
+                true,
+            ),
+            Proposition::condition_is(
+                OldConditionTerm::signed_less_equal(end, 1024u32.into()),
+                true,
+            ),
         ];
         let context = facts
             .iter()
@@ -2202,7 +2206,7 @@ mod separated_range_frame_tests {
     fn separated_read_start_does_not_frame_an_overlapping_wide_read() {
         let field = Address {
             base: "separated-frame".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let backing = MemoryRange::new(field.offset_by_bytes(8), 0u32.into(), 1u32.into());
         let descriptor = MemoryRange::new(field.clone(), 0u32.into(), 2u32.into());
@@ -2241,16 +2245,16 @@ mod unsigned_index_membership_tests {
     fn byte_at(base: &Address, index: Variable) -> Address {
         Address {
             base: base.base.clone(),
-            offset: AddressOffset::scaled_int64_node(MachineTerm::Variable(index), 1, true),
+            offset: OldAddressOffset::scaled_int64_node(OldMachineTerm::Variable(index), 1, true),
         }
     }
 
-    fn below(index: Variable, end: u64) -> ConditionTerm {
-        ConditionTerm::Compare {
+    fn below(index: Variable, end: u64) -> OldConditionTerm {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessThan,
-            left: Box::new(MachineTerm::Variable(index)),
-            right: Box::new(MachineTerm::uint64_constant(end)),
+            left: Box::new(OldMachineTerm::Variable(index)),
+            right: Box::new(OldMachineTerm::uint64_constant(end)),
         }
     }
 
@@ -2276,11 +2280,11 @@ mod unsigned_index_membership_tests {
         assert!(!membership.checks(&read, &range, &PureFactContext::new()));
         // `k <= 3` is the same bound written inclusively.
         let inclusive = PureFactContext::new().assume_condition(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::UInt64,
                 relation: CompareRelation::LessEqual,
-                left: Box::new(MachineTerm::Variable(k)),
-                right: Box::new(MachineTerm::uint64_constant(3)),
+                left: Box::new(OldMachineTerm::Variable(k)),
+                right: Box::new(OldMachineTerm::uint64_constant(3)),
             },
             true,
         );
@@ -2299,7 +2303,7 @@ mod unsigned_index_membership_tests {
         let retained = PointerInRangeEvidence::UnsignedIndexed {
             index: SharedMachineIntegerTerm::index(
                 MachineIntegerType::UInt64,
-                MachineTerm::Variable(k),
+                OldMachineTerm::Variable(k),
             ),
             upper: below(k, 5),
         };
@@ -2323,7 +2327,7 @@ mod unsigned_index_membership_tests {
         let shifted_base = base.offset_by_bytes(8);
         let shifted = Address {
             base: base.base.clone(),
-            offset: AddressOffset::Add(
+            offset: OldAddressOffset::Add(
                 Box::new(shifted_base.offset.clone()),
                 Box::new(byte_at(&base, k).offset),
             ),
@@ -2339,14 +2343,14 @@ mod unsigned_index_membership_tests {
         let context = PureFactContext::new().assume_condition(below(k, 4), true);
         let signed = Address {
             base: base.base.clone(),
-            offset: AddressOffset::scaled_int64_node(MachineTerm::Variable(k), 1, false),
+            offset: OldAddressOffset::scaled_int64_node(OldMachineTerm::Variable(k), 1, false),
         };
         assert!(unsigned_index_in_range(&signed, &range).is_none());
         // Four-byte elements of a one-byte range: the scale is not the
         // range's element width.
         let wide = Address {
             base: base.base.clone(),
-            offset: AddressOffset::scaled_int64_node(MachineTerm::Variable(k), 4, true),
+            offset: OldAddressOffset::scaled_int64_node(OldMachineTerm::Variable(k), 4, true),
         };
         assert!(unsigned_index_in_range(&wide, &range).is_none());
         assert!(PointerInRangeEvidence::for_pointer(&wide, &range, &context).is_none());
@@ -2367,7 +2371,7 @@ mod empty_range_frame_tests {
     fn empty_frames_cover_every_access_width_but_not_nonempty_ranges() {
         let _session = crate::kernel::VerificationSession::enter();
         let base = Address::symbolic(Variable(9_951_000));
-        let bound = MachineTerm::Variable(Variable(9_951_001));
+        let bound = OldMachineTerm::Variable(Variable(9_951_001));
         let context = PureFactContext::new();
         let ranges = [
             MemoryRange::new(base.clone(), bound.clone(), bound.clone()),
@@ -2377,8 +2381,8 @@ mod empty_range_frame_tests {
             MemoryRange::new(base.clone(), 0u32.into(), 1u32.into()),
             MemoryRange::new_wide(
                 base.clone(),
-                MachineTerm::uint64_constant(0),
-                MachineTerm::uint64_constant(1),
+                OldMachineTerm::uint64_constant(0),
+                OldMachineTerm::uint64_constant(1),
                 4,
             ),
         ];
@@ -2415,7 +2419,7 @@ mod cache_independence_tests {
             let _session = crate::kernel::VerificationSession::enter();
             let address = Address {
                 base: "bounded-cache-independence".into(),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             };
             let before = crate::kernel::intern_memory(
                 SymbolicMemory::new().store(address.clone(), crate::kernel::int32(7)),
@@ -2476,12 +2480,12 @@ mod shared_range_bound_evidence_tests {
             MachineBinaryOp::Add,
             [
                 product.clone(),
-                KernelTermImport::default().machine(format, &MachineTerm::constant(1)),
+                KernelTermImport::default().machine(format, &OldMachineTerm::constant(1)),
             ],
         );
         let observed = SharedMachineIntegerTerm::from_shared(format, product.clone()).unwrap();
         let compare = |a, b| {
-            ConditionTerm::integer_less_than(
+            OldConditionTerm::integer_less_than(
                 IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(format, a).unwrap()),
                 IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(format, b).unwrap()),
             )

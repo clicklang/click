@@ -10,9 +10,9 @@ use crate::kernel::LoadKind;
 use crate::kernel::MachineUnaryOp;
 use crate::kernel::unary_term;
 use crate::kernel::{
-    Address, AddressBase, AddressOffset, BitvectorBinaryOp, BitvectorComparisonOp,
-    BitvectorUnaryOp, ComparisonOperator, ConditionTerm, FloatClassification, FloatCondition,
-    MachineTerm, MemoryRange, Proposition, Variable,
+    Address, AddressBase, BitvectorBinaryOp, BitvectorComparisonOp, BitvectorUnaryOp,
+    ComparisonOperator, FloatClassification, FloatCondition, MemoryRange, OldAddressOffset,
+    OldConditionTerm, OldMachineTerm, Proposition, Variable,
 };
 use crate::kernel::{
     AlgebraicTerm, AlgebraicTermNode, AlgebraicValue, IntegerComparisonOperator, IntegerTerm,
@@ -181,7 +181,7 @@ pub(crate) enum MemoryErasedAddressOffsetNode {
         byte_width: i64,
         unsigned: bool,
     },
-    Exact(AddressOffset),
+    Exact(OldAddressOffset),
 }
 
 impl MemoryErasedPropositionKey {
@@ -367,7 +367,7 @@ fn memory_erased_proposition_key_one(proposition: &Proposition) -> MemoryErasedP
     match proposition {
         condition_source_0 @ Proposition::ConditionIs(_, value)
             if let Some((condition @ crate::kernel::integer_comparison_condition!(_, _), _)) =
-                condition_source_0.condition_native() =>
+                condition_source_0.old_condition() =>
         {
             native_comparison_view(condition, *value)
                 .map(state_observation_key)
@@ -375,13 +375,11 @@ fn memory_erased_proposition_key_one(proposition: &Proposition) -> MemoryErasedP
         }
         // `Bool` values have no state-blind key yet: they are filed
         // exactly until their checked memory bridge has a structural view.
-        Proposition::ConditionIs(condition, _)
-            if condition.native_compat().is_bool_value_form() =>
-        {
+        Proposition::ConditionIs(condition, _) if condition.old_form().is_bool_value_form() => {
             MemoryErasedPropositionKey::Exact(proposition.clone())
         }
         Proposition::ConditionIs(condition, value) => MemoryErasedPropositionKey::Condition(
-            memory_erased_condition_key(condition.native_compat()),
+            memory_erased_condition_key(condition.old_form()),
             *value,
         ),
         Proposition::Implies(left, right) => MemoryErasedPropositionKey::Implies(
@@ -463,7 +461,7 @@ fn state_observation_key(
     let [left, right] = sides.map(|side| match side {
         FactOperand::Term(view) => memory_operands::operand(view),
         FactOperand::Value(value) => {
-            memory_erased_bitvector_key(&MachineTerm::narrow_constant(format, value as u128))
+            memory_erased_bitvector_key(&OldMachineTerm::narrow_constant(format, value as u128))
         }
     });
     MemoryErasedPropositionKey::Condition(
@@ -522,7 +520,7 @@ fn memory_erased_boolean_operand_key(
     memory_erased_condition_key(&condition.native())
 }
 
-fn memory_erased_condition_key(condition: &ConditionTerm) -> MemoryErasedConditionKey {
+fn memory_erased_condition_key(condition: &OldConditionTerm) -> MemoryErasedConditionKey {
     // Keyed at the fact identity: a native 8- or 16-bit comparison and the
     // `int32` comparison of its widenings are one fact.
     if let Some((operator, left, right)) = condition.as_fact_comparison() {
@@ -533,42 +531,42 @@ fn memory_erased_condition_key(condition: &ConditionTerm) -> MemoryErasedConditi
         );
     }
     match condition {
-        ConditionTerm::PointerEqual(left, right) => MemoryErasedConditionKey::PointerEqual(
+        OldConditionTerm::PointerEqual(left, right) => MemoryErasedConditionKey::PointerEqual(
             memory_erased_pointer_key(left),
             memory_erased_pointer_key(right),
         ),
 
-        ConditionTerm::Constant(value) => MemoryErasedConditionKey::Constant(*value),
-        ConditionTerm::AlgebraicEqual(left, right) => {
+        OldConditionTerm::Constant(value) => MemoryErasedConditionKey::Constant(*value),
+        OldConditionTerm::AlgebraicEqual(left, right) => {
             MemoryErasedConditionKey::AlgebraicEqual(left.clone(), right.clone())
         }
-        ConditionTerm::Variable(variable) => MemoryErasedConditionKey::Variable(*variable),
-        ConditionTerm::Float32(float_condition) => {
+        OldConditionTerm::Variable(variable) => MemoryErasedConditionKey::Variable(*variable),
+        OldConditionTerm::Float32(float_condition) => {
             MemoryErasedConditionKey::Float32(memory_erased_float_condition_key(float_condition))
         }
-        ConditionTerm::Float64(float_condition) => {
+        OldConditionTerm::Float64(float_condition) => {
             MemoryErasedConditionKey::Float64(memory_erased_float_condition_key(float_condition))
         }
-        ConditionTerm::AddressOffsetEqual(left, right) => {
+        OldConditionTerm::AddressOffsetEqual(left, right) => {
             MemoryErasedConditionKey::AddressOffsetEqual(
                 memory_erased_address_offset_key(left),
                 memory_erased_address_offset_key(right),
             )
         }
-        ConditionTerm::AddressEqual(left, right) => MemoryErasedConditionKey::AddressEqual(
+        OldConditionTerm::AddressEqual(left, right) => MemoryErasedConditionKey::AddressEqual(
             memory_erased_address_key(left),
             memory_erased_address_key(right),
         ),
-        crate::kernel::ConditionTerm::Compare { .. }
-        | crate::kernel::ConditionTerm::Overflows { .. } => {
+        crate::kernel::OldConditionTerm::Compare { .. }
+        | crate::kernel::OldConditionTerm::Overflows { .. } => {
             unreachable!("bitvector comparisons are keyed above")
         }
         crate::kernel::integer_comparison_condition!(_, _) => {
             unreachable!("integer conditions use the exact proposition index")
         }
-        ConditionTerm::BoolApplication(_)
-        | ConditionTerm::BoolIf { .. }
-        | ConditionTerm::BoolEqual(..) => {
+        OldConditionTerm::BoolApplication(_)
+        | OldConditionTerm::BoolIf { .. }
+        | OldConditionTerm::BoolEqual(..) => {
             unreachable!("`Bool` values use the exact proposition index")
         }
     }
@@ -595,7 +593,7 @@ fn memory_erased_float_condition_key(condition: &FloatCondition) -> MemoryErased
     }
 }
 
-fn memory_erased_bitvector_key(term: &MachineTerm) -> MemoryErasedBitvectorKey {
+fn memory_erased_bitvector_key(term: &OldMachineTerm) -> MemoryErasedBitvectorKey {
     memory_operands::written(term)
 }
 
@@ -634,19 +632,19 @@ fn memory_erased_address_key(pointer: &Address) -> MemoryErasedAddressKey {
     }
 }
 
-fn memory_erased_address_offset_key(offset: &AddressOffset) -> MemoryErasedAddressOffsetKey {
+fn memory_erased_address_offset_key(offset: &OldAddressOffset) -> MemoryErasedAddressOffsetKey {
     Canonical::new(match offset {
-        AddressOffset::Add(left, right) => MemoryErasedAddressOffsetNode::Add(
+        OldAddressOffset::Add(left, right) => MemoryErasedAddressOffsetNode::Add(
             memory_erased_address_offset_key(left),
             memory_erased_address_offset_key(right),
         ),
-        AddressOffset::Int32Scaled { value, byte_width } => {
+        OldAddressOffset::Int32Scaled { value, byte_width } => {
             MemoryErasedAddressOffsetNode::Int32Scaled {
                 value: memory_operands::operand(value.operand_view()),
                 byte_width: *byte_width,
             }
         }
-        AddressOffset::Int64Scaled {
+        OldAddressOffset::Int64Scaled {
             value,
             byte_width,
             unsigned,
@@ -870,7 +868,7 @@ pub(crate) fn integer_condition_alpha_key(
             return None;
         }
     }
-    let (left, right) = match condition.native_compat() {
+    let (left, right) = match condition.old_form() {
         crate::kernel::integer_comparison_condition!(left, right) => (left, right),
         _ => return None,
     };
@@ -901,7 +899,7 @@ pub(crate) fn integer_equality_alpha_key(
             *operator == IntegerComparisonOperator::Equal
         }
         None => {
-            matches!(condition.native_compat(), ConditionTerm::IntegerEqual(_, _))
+            matches!(condition.old_form(), OldConditionTerm::IntegerEqual(_, _))
         }
         _ => false,
     };
@@ -1384,7 +1382,7 @@ fn alpha_machine_key<const ALLOW_LOADS: bool>(
     ) -> Option<usize> {
         let shared_id = match view {
             V::Shared(term) => Some(term.id()),
-            V::Legacy(_) => None,
+            V::Old(_) => None,
         };
         if let Some(id) = shared_id.and_then(|id| memo.get(&id)) {
             return Some(*id);
@@ -1420,11 +1418,11 @@ fn alpha_machine_key<const ALLOW_LOADS: bool>(
                     } => Some((*format, *operator, V::Shared(operand))),
                     _ => None,
                 },
-                V::Legacy(MachineTerm::Unary {
+                V::Old(OldMachineTerm::Unary {
                     format,
                     op,
                     operand,
-                }) => Some((*format, *op, V::Legacy(operand))),
+                }) => Some((*format, *op, V::Old(operand))),
                 _ => None,
             };
             if let Some((format, operator, operand)) = unary {
@@ -1436,7 +1434,7 @@ fn alpha_machine_key<const ALLOW_LOADS: bool>(
                 // same key; neither may advance the enclosing binder scope.
                 let outer_next_binder = *next_binder;
                 let leaf = match view {
-                    V::Legacy(term) => alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(
+                    V::Old(term) => alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(
                         term,
                         bindings,
                         next_binder,
@@ -1494,7 +1492,7 @@ fn alpha_machine_key<const ALLOW_LOADS: bool>(
                     }
                     V::Shared(_) => {
                         let term = if let Some(variable) = view.variable() {
-                            MachineTerm::Variable(*variable)
+                            OldMachineTerm::Variable(*variable)
                         } else {
                             view.literal()?
                         };
@@ -1741,14 +1739,14 @@ pub(crate) fn integer_fold_alpha_key(term: &SharedIntegerTerm) -> Option<Integer
 /// distinction a `left == right` name comparison loses. Binders are restored
 /// when a nested fold's body is finished, so shadowing is handled too.
 ///
-/// Only a root `MachineTerm::RangeFold` on each side is admitted. A
+/// Only a root `OldMachineTerm::RangeFold` on each side is admitted. A
 /// caller with anything else, or a term outside the key builder's supported
 /// fragment (an opaque Click function application, an algebraic match), or
 /// one whose key exhausts the work budget, gets `None` and keeps its ordinary
 /// proof path rather than treating a partial key as authority.
 pub(crate) fn bitvector_folds_alpha_equivalent(
-    left: &MachineTerm,
-    right: &MachineTerm,
+    left: &OldMachineTerm,
+    right: &OldMachineTerm,
 ) -> Option<bool> {
     let (left_key, left_work) = bitvector_fold_alpha_key(left)?;
     let (right_key, right_work) = bitvector_fold_alpha_key(right)?;
@@ -1788,8 +1786,8 @@ pub(crate) fn machine_fold_bodies_alpha_equivalent(
 
 /// Build the state-aware alpha identity of one int32 range fold, with the
 /// work its construction charged. Mirrors [`integer_fold_alpha_key`].
-fn bitvector_fold_alpha_key(term: &MachineTerm) -> Option<(AlphaBitvectorKey, usize)> {
-    if !matches!(term, MachineTerm::RangeFold { .. }) {
+fn bitvector_fold_alpha_key(term: &OldMachineTerm) -> Option<(AlphaBitvectorKey, usize)> {
+    if !matches!(term, OldMachineTerm::RangeFold { .. }) {
         return None;
     }
     let mut environment = fold_keys::bindings();
@@ -2225,14 +2223,14 @@ fn alpha_pointer_load_with_bindings<const ALLOW_LOADS: bool>(
 }
 
 fn alpha_pointer_offset_key_with_bindings<const ALLOW_LOADS: bool>(
-    offset: &AddressOffset,
+    offset: &OldAddressOffset,
     bindings: &mut AlphaBindings,
     next_binder: &mut usize,
 ) -> Option<AlphaAddressOffsetKey> {
     alpha_work_checkpoint(bindings, 1)?;
     Some(Canonical::new(match offset {
-        AddressOffset::Constant(value) => AlphaPointerOffsetNode::Constant(*value),
-        AddressOffset::Variable(variable)
+        OldAddressOffset::Constant(value) => AlphaPointerOffsetNode::Constant(*value),
+        OldAddressOffset::Variable(variable)
             if bindings.state_aware
                 && crate::kernel::is_load_variable(variable)
                 && !bindings.bitvector.contains_key(variable) =>
@@ -2244,26 +2242,28 @@ fn alpha_pointer_offset_key_with_bindings<const ALLOW_LOADS: bool>(
             )?;
             AlphaPointerOffsetNode::RegisteredLoad(load_id)
         }
-        AddressOffset::Variable(variable) => {
+        OldAddressOffset::Variable(variable) => {
             AlphaPointerOffsetNode::Variable(alpha_variable_key_with_bindings::<ALLOW_LOADS>(
                 *variable,
                 bindings,
                 &bindings.bitvector,
             )?)
         }
-        AddressOffset::Add(left, right) => AlphaPointerOffsetNode::Add(
+        OldAddressOffset::Add(left, right) => AlphaPointerOffsetNode::Add(
             alpha_pointer_offset_key_with_bindings::<ALLOW_LOADS>(left, bindings, next_binder)?,
             alpha_pointer_offset_key_with_bindings::<ALLOW_LOADS>(right, bindings, next_binder)?,
         ),
-        AddressOffset::Int32Scaled { value, byte_width } => AlphaPointerOffsetNode::Int32Scaled {
-            value: Canonical::new(alpha_machine_key::<ALLOW_LOADS>(
-                value.operand_view(),
-                bindings,
-                next_binder,
-            )?),
-            byte_width: *byte_width,
-        },
-        AddressOffset::Int64Scaled {
+        OldAddressOffset::Int32Scaled { value, byte_width } => {
+            AlphaPointerOffsetNode::Int32Scaled {
+                value: Canonical::new(alpha_machine_key::<ALLOW_LOADS>(
+                    value.operand_view(),
+                    bindings,
+                    next_binder,
+                )?),
+                byte_width: *byte_width,
+            }
+        }
+        OldAddressOffset::Int64Scaled {
             value,
             byte_width,
             unsigned,
@@ -2425,7 +2425,7 @@ fn alpha_program_value_key_with_bindings<const ALLOW_LOADS: bool>(
                         next_binder,
                     )?,
                     alpha_machine_key::<ALLOW_LOADS>(
-                        crate::kernel::MachineOperandView::Legacy(&bounds.width),
+                        crate::kernel::MachineOperandView::Old(&bounds.width),
                         bindings,
                         next_binder,
                     )?,
@@ -2457,7 +2457,7 @@ fn alpha_program_value_key_with_bindings<const ALLOW_LOADS: bool>(
             AlphaProgramValueKey::Scalar(
                 ty,
                 alpha_machine_key::<ALLOW_LOADS>(
-                    crate::kernel::MachineOperandView::Legacy(term),
+                    crate::kernel::MachineOperandView::Old(term),
                     bindings,
                     next_binder,
                 )?,
@@ -2587,7 +2587,7 @@ fn alpha_pure_function_argument_key_with_bindings<const ALLOW_LOADS: bool>(
 }
 
 fn alpha_bitvector_key_with_bindings<const ALLOW_LOADS: bool>(
-    term: &MachineTerm,
+    term: &OldMachineTerm,
     bindings: &mut AlphaBindings,
     next_binder: &mut usize,
 ) -> Option<AlphaBitvectorKey> {
@@ -2596,14 +2596,14 @@ fn alpha_bitvector_key_with_bindings<const ALLOW_LOADS: bool>(
     // opaque free variables by the memory-free structural authority.
     if !ALLOW_LOADS
         && !bindings.state_aware
-        && (matches!(term, MachineTerm::MemoryLoad(..))
-            || matches!(term, MachineTerm::Variable(variable) if crate::kernel::is_load_variable(variable)))
+        && (matches!(term, OldMachineTerm::MemoryLoad(..))
+            || matches!(term, OldMachineTerm::Variable(variable) if crate::kernel::is_load_variable(variable)))
     {
         return None;
     }
     Some(match term {
-        MachineTerm::ThreadHandle(id) => AlphaBitvectorKey::ThreadHandle(*id),
-        MachineTerm::BoolCast { to, value } => AlphaBitvectorKey::BoolCast(
+        OldMachineTerm::ThreadHandle(id) => AlphaBitvectorKey::ThreadHandle(*id),
+        OldMachineTerm::BoolCast { to, value } => AlphaBitvectorKey::BoolCast(
             *to,
             Box::new(alpha_condition_key_with_bindings::<ALLOW_LOADS>(
                 value,
@@ -2611,7 +2611,7 @@ fn alpha_bitvector_key_with_bindings<const ALLOW_LOADS: bool>(
                 next_binder,
             )?),
         ),
-        MachineTerm::Cast {
+        OldMachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             value,
             from: source,
@@ -2634,7 +2634,7 @@ fn alpha_bitvector_key_with_bindings<const ALLOW_LOADS: bool>(
         bits32_constant!(value) => AlphaBitvectorKey::Constant(constant_u32(*value)),
         int64_constant!(value) => AlphaBitvectorKey::Int64Constant(constant_i64(*value)),
         uint64_constant!(value) => AlphaBitvectorKey::UInt64Constant(constant_u64(*value)),
-        MachineTerm::Variable(variable) => {
+        OldMachineTerm::Variable(variable) => {
             if let Some(ordinal) = bindings.bitvector.get(variable) {
                 AlphaBitvectorKey::Variable(AlphaVariableKey::Bound(*ordinal))
             } else {
@@ -2671,7 +2671,7 @@ fn alpha_bitvector_key_with_bindings<const ALLOW_LOADS: bool>(
         unary_term!(Int32, BitwiseNot, body) => AlphaBitvectorKey::BitwiseNot(Box::new(
             alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(body, bindings, next_binder)?,
         )),
-        MachineTerm::Unary {
+        OldMachineTerm::Unary {
             format,
             op,
             operand: body,
@@ -2684,17 +2684,17 @@ fn alpha_bitvector_key_with_bindings<const ALLOW_LOADS: bool>(
                 next_binder,
             )?),
         ),
-        MachineTerm::Float32Negate(body) => {
+        OldMachineTerm::Float32Negate(body) => {
             AlphaBitvectorKey::Float32Negate(Box::new(alpha_bitvector_key_with_bindings::<
                 ALLOW_LOADS,
             >(body, bindings, next_binder)?))
         }
-        MachineTerm::Float64Negate(body) => {
+        OldMachineTerm::Float64Negate(body) => {
             AlphaBitvectorKey::Float64Negate(Box::new(alpha_bitvector_key_with_bindings::<
                 ALLOW_LOADS,
             >(body, bindings, next_binder)?))
         }
-        MachineTerm::If {
+        OldMachineTerm::If {
             condition,
             then_term,
             else_term,
@@ -2715,7 +2715,7 @@ fn alpha_bitvector_key_with_bindings<const ALLOW_LOADS: bool>(
                 next_binder,
             )?),
         },
-        MachineTerm::RangeFold {
+        OldMachineTerm::RangeFold {
             start,
             end,
             initial,
@@ -2729,13 +2729,13 @@ fn alpha_bitvector_key_with_bindings<const ALLOW_LOADS: bool>(
                 initial.as_ref(),
                 body.as_ref(),
             ]
-            .map(crate::kernel::MachineOperandView::Legacy),
+            .map(crate::kernel::MachineOperandView::Old),
             *accumulator,
             *item,
             bindings,
             next_binder,
         )?,
-        MachineTerm::PureFunctionApplication { name, arguments } => {
+        OldMachineTerm::PureFunctionApplication { name, arguments } => {
             AlphaBitvectorKey::PureFunctionApplication {
                 name: name.clone(),
                 arguments: arguments
@@ -2750,7 +2750,7 @@ fn alpha_bitvector_key_with_bindings<const ALLOW_LOADS: bool>(
                     .collect::<Option<Vec<_>>>()?,
             }
         }
-        MachineTerm::ClickFunctionApplication { name, arguments } => {
+        OldMachineTerm::ClickFunctionApplication { name, arguments } => {
             AlphaBitvectorKey::ClickFunctionApplication {
                 name: name.clone(),
                 arguments: arguments
@@ -2765,10 +2765,10 @@ fn alpha_bitvector_key_with_bindings<const ALLOW_LOADS: bool>(
                     .collect::<Option<Vec<_>>>()?,
             }
         }
-        MachineTerm::AlgebraicMatch { scrutinee, arms } => {
+        OldMachineTerm::AlgebraicMatch { scrutinee, arms } => {
             match_keys::machine::<ALLOW_LOADS>(scrutinee, arms, bindings, next_binder)?
         }
-        MachineTerm::MemoryLoad(memory, pointer, kind) if bindings.state_aware => {
+        OldMachineTerm::MemoryLoad(memory, pointer, kind) if bindings.state_aware => {
             bindings.raw_state_load_seen = true;
             let mut retained_state = alpha_retained_state_key(memory.shared_memory(), bindings)?;
             retained_state.key = memory.read_key();
@@ -2790,7 +2790,7 @@ fn alpha_bitvector_key_with_bindings<const ALLOW_LOADS: bool>(
                 AlphaLoadDecoding::Read(*kind),
             )?)
         }
-        MachineTerm::MemoryLoad(point, pointer, kind) if point.read_version_id().is_some() => {
+        OldMachineTerm::MemoryLoad(point, pointer, kind) if point.read_version_id().is_some() => {
             bindings.raw_state_load_seen = true;
             let mut state = AlphaStateKey::new(point.shared_memory());
             state.key = point.read_key();
@@ -2804,7 +2804,7 @@ fn alpha_bitvector_key_with_bindings<const ALLOW_LOADS: bool>(
                 *kind,
             )
         }
-        MachineTerm::MemoryLoad(_, pointer, kind) => {
+        OldMachineTerm::MemoryLoad(_, pointer, kind) => {
             bindings.raw_state_load_seen = true;
             AlphaBitvectorKey::Load(
                 Box::new(alpha_pointer_key_with_bindings::<ALLOW_LOADS>(
@@ -2815,10 +2815,10 @@ fn alpha_bitvector_key_with_bindings<const ALLOW_LOADS: bool>(
                 *kind,
             )
         }
-        MachineTerm::IntegerAddress(pointer, _) => AlphaBitvectorKey::Address(Box::new(
+        OldMachineTerm::IntegerAddress(pointer, _) => AlphaBitvectorKey::Address(Box::new(
             alpha_pointer_key_with_bindings::<ALLOW_LOADS>(pointer, bindings, next_binder)?,
         )),
-        MachineTerm::IntegerToMachine { value, destination } => {
+        OldMachineTerm::IntegerToMachine { value, destination } => {
             AlphaBitvectorKey::IntegerToMachine(
                 *destination,
                 alpha_integer_key_with_bindings(value.as_ref(), bindings, next_binder)?,
@@ -2887,7 +2887,7 @@ fn alpha_bitvector_key_with_bindings<const ALLOW_LOADS: bool>(
 // still applies carrier-aware scope handling.
 #[cfg(test)]
 fn alpha_bitvector_key<const ALLOW_LOADS: bool>(
-    term: &MachineTerm,
+    term: &OldMachineTerm,
     bindings: &mut BTreeMap<Variable, usize>,
     next_binder: &mut usize,
 ) -> Option<AlphaBitvectorKey> {
@@ -2916,7 +2916,7 @@ fn alpha_bitvector_key<const ALLOW_LOADS: bool>(
 // Alpha identity preserves the written relation and truth. In particular,
 // `obtain` must not silently mirror a named existential's body.
 fn alpha_comparison_view(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
 ) -> Option<(
     crate::kernel::machine_integer::comparison::NativeComparisonView<'_>,
     u8,
@@ -2925,22 +2925,22 @@ fn alpha_comparison_view(
         comparison_view, structural_native_comparison_view,
     };
     let relation = match condition {
-        ConditionTerm::Compare { relation, .. } => match relation {
+        OldConditionTerm::Compare { relation, .. } => match relation {
             crate::kernel::CompareRelation::Equal => 0,
             crate::kernel::CompareRelation::LessThan => 2,
             crate::kernel::CompareRelation::LessEqual => 3,
             crate::kernel::CompareRelation::GreaterThan => 4,
             crate::kernel::CompareRelation::GreaterEqual => 5,
         },
-        ConditionTerm::IntegerEqual(..) => 0,
-        ConditionTerm::IntegerNotEqual(..) => 1,
-        ConditionTerm::IntegerLessThan(..) => 2,
-        ConditionTerm::IntegerLessEqual(..) => 3,
-        ConditionTerm::IntegerGreaterThan(..) => 4,
-        ConditionTerm::IntegerGreaterEqual(..) => 5,
+        OldConditionTerm::IntegerEqual(..) => 0,
+        OldConditionTerm::IntegerNotEqual(..) => 1,
+        OldConditionTerm::IntegerLessThan(..) => 2,
+        OldConditionTerm::IntegerLessEqual(..) => 3,
+        OldConditionTerm::IntegerGreaterThan(..) => 4,
+        OldConditionTerm::IntegerGreaterEqual(..) => 5,
         _ => return None,
     };
-    let view = if matches!(condition, ConditionTerm::Compare { .. }) {
+    let view = if matches!(condition, OldConditionTerm::Compare { .. }) {
         comparison_view(condition, true)?
     } else {
         structural_native_comparison_view(condition, true)?
@@ -2979,7 +2979,7 @@ fn alpha_comparison_key<const ALLOW_LOADS: bool>(
 }
 
 fn alpha_condition_key_with_bindings<const ALLOW_LOADS: bool>(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
     bindings: &mut AlphaBindings,
     next_binder: &mut usize,
 ) -> Option<AlphaConditionKey> {
@@ -2997,19 +2997,19 @@ fn alpha_condition_key_with_bindings<const ALLOW_LOADS: bool>(
         ));
     }
     Some(match condition {
-        ConditionTerm::Constant(value) => AlphaConditionKey::Constant(*value),
-        ConditionTerm::Variable(variable) => {
+        OldConditionTerm::Constant(value) => AlphaConditionKey::Constant(*value),
+        OldConditionTerm::Variable(variable) => {
             AlphaConditionKey::Variable(alpha_variable_key_with_bindings::<ALLOW_LOADS>(
                 *variable,
                 bindings,
                 &bindings.bitvector,
             )?)
         }
-        ConditionTerm::AddressOffsetEqual(left, right) => AlphaConditionKey::AddressOffsetEqual(
+        OldConditionTerm::AddressOffsetEqual(left, right) => AlphaConditionKey::AddressOffsetEqual(
             alpha_pointer_offset_key_with_bindings::<ALLOW_LOADS>(left, bindings, next_binder)?,
             alpha_pointer_offset_key_with_bindings::<ALLOW_LOADS>(right, bindings, next_binder)?,
         ),
-        ConditionTerm::PointerEqual(left, right) => AlphaConditionKey::PointerEqual(
+        OldConditionTerm::PointerEqual(left, right) => AlphaConditionKey::PointerEqual(
             Box::new(alpha_program_value_key_with_bindings::<ALLOW_LOADS>(
                 &ProgramValue::Pointer((**left).clone()),
                 bindings,
@@ -3021,41 +3021,41 @@ fn alpha_condition_key_with_bindings<const ALLOW_LOADS: bool>(
                 next_binder,
             )?),
         ),
-        ConditionTerm::AddressEqual(left, right) => AlphaConditionKey::AddressEqual(
+        OldConditionTerm::AddressEqual(left, right) => AlphaConditionKey::AddressEqual(
             alpha_pointer_key_with_bindings::<ALLOW_LOADS>(left, bindings, next_binder)?,
             alpha_pointer_key_with_bindings::<ALLOW_LOADS>(right, bindings, next_binder)?,
         ),
-        ConditionTerm::IntegerLessThan(left, right) => AlphaConditionKey::IntegerComparison(
+        OldConditionTerm::IntegerLessThan(left, right) => AlphaConditionKey::IntegerComparison(
             IntegerComparisonOperator::LessThan,
             alpha_integer_key_with_bindings(left, bindings, next_binder)?,
             alpha_integer_key_with_bindings(right, bindings, next_binder)?,
         ),
-        ConditionTerm::IntegerLessEqual(left, right) => AlphaConditionKey::IntegerComparison(
+        OldConditionTerm::IntegerLessEqual(left, right) => AlphaConditionKey::IntegerComparison(
             IntegerComparisonOperator::LessEqual,
             alpha_integer_key_with_bindings(left, bindings, next_binder)?,
             alpha_integer_key_with_bindings(right, bindings, next_binder)?,
         ),
-        ConditionTerm::IntegerGreaterThan(left, right) => AlphaConditionKey::IntegerComparison(
+        OldConditionTerm::IntegerGreaterThan(left, right) => AlphaConditionKey::IntegerComparison(
             IntegerComparisonOperator::GreaterThan,
             alpha_integer_key_with_bindings(left, bindings, next_binder)?,
             alpha_integer_key_with_bindings(right, bindings, next_binder)?,
         ),
-        ConditionTerm::IntegerGreaterEqual(left, right) => AlphaConditionKey::IntegerComparison(
+        OldConditionTerm::IntegerGreaterEqual(left, right) => AlphaConditionKey::IntegerComparison(
             IntegerComparisonOperator::GreaterEqual,
             alpha_integer_key_with_bindings(left, bindings, next_binder)?,
             alpha_integer_key_with_bindings(right, bindings, next_binder)?,
         ),
-        ConditionTerm::IntegerEqual(left, right) => AlphaConditionKey::IntegerComparison(
+        OldConditionTerm::IntegerEqual(left, right) => AlphaConditionKey::IntegerComparison(
             IntegerComparisonOperator::Equal,
             alpha_integer_key_with_bindings(left, bindings, next_binder)?,
             alpha_integer_key_with_bindings(right, bindings, next_binder)?,
         ),
-        ConditionTerm::IntegerNotEqual(left, right) => AlphaConditionKey::IntegerComparison(
+        OldConditionTerm::IntegerNotEqual(left, right) => AlphaConditionKey::IntegerComparison(
             IntegerComparisonOperator::NotEqual,
             alpha_integer_key_with_bindings(left, bindings, next_binder)?,
             alpha_integer_key_with_bindings(right, bindings, next_binder)?,
         ),
-        ConditionTerm::AlgebraicEqual(left, right) => AlphaConditionKey::AlgebraicEqual(
+        OldConditionTerm::AlgebraicEqual(left, right) => AlphaConditionKey::AlgebraicEqual(
             Box::new(alpha_algebraic_key_with_bindings::<ALLOW_LOADS>(
                 left,
                 bindings,
@@ -3067,7 +3067,7 @@ fn alpha_condition_key_with_bindings<const ALLOW_LOADS: bool>(
                 next_binder,
             )?),
         ),
-        ConditionTerm::BoolApplication(application) => AlphaConditionKey::BoolApplication {
+        OldConditionTerm::BoolApplication(application) => AlphaConditionKey::BoolApplication {
             name: application.name().to_owned(),
             arguments: application
                 .arguments()
@@ -3081,7 +3081,7 @@ fn alpha_condition_key_with_bindings<const ALLOW_LOADS: bool>(
                 })
                 .collect::<Option<Vec<_>>>()?,
         },
-        ConditionTerm::BoolIf {
+        OldConditionTerm::BoolIf {
             condition,
             then_condition,
             else_condition,
@@ -3102,7 +3102,7 @@ fn alpha_condition_key_with_bindings<const ALLOW_LOADS: bool>(
                 next_binder,
             )?),
         ),
-        ConditionTerm::BoolEqual(left, right) => AlphaConditionKey::BoolEqual(
+        OldConditionTerm::BoolEqual(left, right) => AlphaConditionKey::BoolEqual(
             Box::new(alpha_condition_key_with_bindings::<ALLOW_LOADS>(
                 left,
                 bindings,
@@ -3268,7 +3268,7 @@ mod pointer_load_key_tests {
 
         let mut bindings = fold_keys::bindings();
         bindings.state_aware = true;
-        let word = MachineTerm::read_named(ProgramPoint::at(&memory), cell, LoadKind::Bits64);
+        let word = OldMachineTerm::read_named(ProgramPoint::at(&memory), cell, LoadKind::Bits64);
         let Some(AlphaBitvectorKey::RegisteredLoad(word)) =
             alpha_bitvector_key_with_bindings::<true>(&word, &mut bindings, &mut 0)
         else {
@@ -3283,9 +3283,9 @@ mod proposition_identity_tests {
     use super::*;
     use crate::kernel::{ProgramValue, SymbolicMemory};
 
-    fn equal(left: MachineTerm, right: MachineTerm) -> Proposition {
+    fn equal(left: OldMachineTerm, right: OldMachineTerm) -> Proposition {
         Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(left),
@@ -3312,8 +3312,8 @@ mod proposition_identity_tests {
                 memory: memory.clone(),
                 pointer: Address {
                     base: "local:defined-array".into(),
-                    offset: AddressOffset::scale_int32(
-                        MachineTerm::Variable(Variable(variable)),
+                    offset: OldAddressOffset::scale_int32(
+                        OldMachineTerm::Variable(Variable(variable)),
                         1,
                     ),
                 },
@@ -3327,11 +3327,11 @@ mod proposition_identity_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let array = Address {
             base: "local:defined-array".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let other = Address {
             base: "local:defined-other".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let before = SymbolicMemory::new()
             .with_uninitialized_block(array.base.clone(), 4)
@@ -3375,13 +3375,13 @@ mod proposition_identity_tests {
     fn pure_function_applications_compare_equal_up_to_binder_numbering() {
         let application = |bound: u64| {
             equal(
-                MachineTerm::ClickFunctionApplication {
+                OldMachineTerm::ClickFunctionApplication {
                     name: "count".to_string(),
                     arguments: vec![crate::kernel::PureFunctionArgument::Value(
-                        ProgramValue::Int32(MachineTerm::Variable(Variable(bound))),
+                        ProgramValue::Int32(OldMachineTerm::Variable(Variable(bound))),
                     )],
                 },
-                MachineTerm::constant(1),
+                OldMachineTerm::constant(1),
             )
         };
         let left = forall(2_000_000, application(2_000_000));
@@ -3397,12 +3397,12 @@ mod proposition_identity_tests {
         let ty = crate::kernel::AlgebraicType::parameter("Fuel".into());
         let pointer = Address {
             base: "alpha-array".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let before = SymbolicMemory::new().with_block("alpha-array", 8);
         let after = before.clone().store(
             pointer.clone(),
-            ProgramValue::Int32(MachineTerm::constant(1)),
+            ProgramValue::Int32(OldMachineTerm::constant(1)),
         );
         let make = |binder: u64, argument: u64, memory: SymbolicMemory| {
             crate::kernel::quantifiers::test_exists(
@@ -3410,7 +3410,7 @@ mod proposition_identity_tests {
                 Variable(binder),
                 Sort::Algebraic(ty.clone()),
                 equal(
-                    MachineTerm::ClickFunctionApplication {
+                    OldMachineTerm::ClickFunctionApplication {
                         name: "walk".into(),
                         arguments: vec![
                             PureFunctionArgument::ArrayRef {
@@ -3424,7 +3424,7 @@ mod proposition_identity_tests {
                             }),
                         ],
                     },
-                    MachineTerm::constant(0),
+                    OldMachineTerm::constant(0),
                 ),
             )
         };
@@ -3447,14 +3447,14 @@ mod proposition_identity_tests {
             Variable(2_000_000),
             Sort::Algebraic(ty),
             equal(
-                MachineTerm::read_named(
+                OldMachineTerm::read_named(
                     crate::kernel::ProgramPoint::of_memory(
                         &SymbolicMemory::new().with_block("alpha-array", 8),
                     ),
                     Box::new(pointer),
                     crate::kernel::LoadKind::Int32,
                 ),
-                MachineTerm::constant(0),
+                OldMachineTerm::constant(0),
             ),
         );
         assert!(quantified_algebraic_captured_array_identity_key(&raw_load).is_none());
@@ -3470,17 +3470,17 @@ mod proposition_identity_tests {
                 Sort::Bitvector32,
                 Proposition::And(
                     Box::new(equal(
-                        MachineTerm::Variable(Variable(1)),
-                        MachineTerm::Variable(Variable(2)),
+                        OldMachineTerm::Variable(Variable(1)),
+                        OldMachineTerm::Variable(Variable(2)),
                     )),
                     Box::new(Proposition::Or(
                         Box::new(equal(
-                            MachineTerm::Variable(Variable(2)),
-                            MachineTerm::Variable(Variable(1_000)),
+                            OldMachineTerm::Variable(Variable(2)),
+                            OldMachineTerm::Variable(Variable(1_000)),
                         )),
                         Box::new(Proposition::Not(Box::new(equal(
-                            MachineTerm::Variable(Variable(1)),
-                            MachineTerm::constant(0),
+                            OldMachineTerm::Variable(Variable(1)),
+                            OldMachineTerm::constant(0),
                         )))),
                     )),
                 ),
@@ -3494,17 +3494,17 @@ mod proposition_identity_tests {
                 Sort::Bitvector32,
                 Proposition::And(
                     Box::new(equal(
-                        MachineTerm::Variable(Variable(11)),
-                        MachineTerm::Variable(Variable(12)),
+                        OldMachineTerm::Variable(Variable(11)),
+                        OldMachineTerm::Variable(Variable(12)),
                     )),
                     Box::new(Proposition::Or(
                         Box::new(equal(
-                            MachineTerm::Variable(Variable(12)),
-                            MachineTerm::Variable(Variable(1_000)),
+                            OldMachineTerm::Variable(Variable(12)),
+                            OldMachineTerm::Variable(Variable(1_000)),
                         )),
                         Box::new(Proposition::Not(Box::new(equal(
-                            MachineTerm::Variable(Variable(11)),
-                            MachineTerm::constant(0),
+                            OldMachineTerm::Variable(Variable(11)),
+                            OldMachineTerm::constant(0),
                         )))),
                     )),
                 ),
@@ -3519,8 +3519,8 @@ mod proposition_identity_tests {
                 Variable(12),
                 Sort::Bitvector32,
                 equal(
-                    MachineTerm::Variable(Variable(11)),
-                    MachineTerm::Variable(Variable(1_001)),
+                    OldMachineTerm::Variable(Variable(11)),
+                    OldMachineTerm::Variable(Variable(1_001)),
                 ),
             ),
         );
@@ -3529,8 +3529,14 @@ mod proposition_identity_tests {
 
     #[test]
     fn alpha_identity_rejects_sort_quantifier_and_nonbinder_changes() {
-        let body = equal(MachineTerm::Variable(Variable(7)), MachineTerm::constant(3));
-        let renamed = equal(MachineTerm::Variable(Variable(8)), MachineTerm::constant(3));
+        let body = equal(
+            OldMachineTerm::Variable(Variable(7)),
+            OldMachineTerm::constant(3),
+        );
+        let renamed = equal(
+            OldMachineTerm::Variable(Variable(8)),
+            OldMachineTerm::constant(3),
+        );
         assert!(propositions_are_alpha_equal(
             &forall(7, body.clone()),
             &forall(8, renamed)
@@ -3559,7 +3565,10 @@ mod proposition_identity_tests {
             &forall(7, body),
             &forall(
                 8,
-                equal(MachineTerm::Variable(Variable(8)), MachineTerm::constant(4))
+                equal(
+                    OldMachineTerm::Variable(Variable(8)),
+                    OldMachineTerm::constant(4)
+                )
             ),
         ));
         assert!(!propositions_are_alpha_equal(
@@ -3581,8 +3590,8 @@ mod proposition_identity_tests {
                 outer,
                 Proposition::And(
                     Box::new(equal(
-                        MachineTerm::Variable(Variable(outer)),
-                        MachineTerm::constant(0),
+                        OldMachineTerm::Variable(Variable(outer)),
+                        OldMachineTerm::constant(0),
                     )),
                     Box::new(Proposition::Or(
                         Box::new(Proposition::Implies(
@@ -3591,18 +3600,18 @@ mod proposition_identity_tests {
                                 Variable(inner),
                                 Sort::Bitvector32,
                                 Proposition::Not(Box::new(equal(
-                                    MachineTerm::Variable(Variable(witness)),
-                                    MachineTerm::constant(1),
+                                    OldMachineTerm::Variable(Variable(witness)),
+                                    OldMachineTerm::constant(1),
                                 ))),
                             )),
                             Box::new(equal(
-                                MachineTerm::Variable(Variable(outer)),
-                                MachineTerm::constant(2),
+                                OldMachineTerm::Variable(Variable(outer)),
+                                OldMachineTerm::constant(2),
                             )),
                         )),
                         Box::new(Proposition::Not(Box::new(equal(
-                            MachineTerm::Variable(Variable(outer)),
-                            MachineTerm::constant(3),
+                            OldMachineTerm::Variable(Variable(outer)),
+                            OldMachineTerm::constant(3),
                         )))),
                     )),
                 ),
@@ -3622,29 +3631,29 @@ mod proposition_identity_tests {
     fn alpha_identity_keeps_memory_versions_distinct() {
         let pointer = Address {
             base: "identity-version".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let left_memory = SymbolicMemory::new().with_block("identity-version", 8);
         let right_memory = left_memory.clone().store(
             pointer.clone(),
-            ProgramValue::Int32(MachineTerm::constant(9)),
+            ProgramValue::Int32(OldMachineTerm::constant(9)),
         );
         let left = Proposition::MemoryLoadable {
             memory: left_memory.clone(),
             base: pointer.clone(),
-            bytes: (MachineTerm::constant(1)).into(),
+            bytes: (OldMachineTerm::constant(1)).into(),
             wide: false,
         };
         let same = Proposition::MemoryLoadable {
             memory: left_memory,
             base: pointer.clone(),
-            bytes: (MachineTerm::constant(1)).into(),
+            bytes: (OldMachineTerm::constant(1)).into(),
             wide: false,
         };
         let changed = Proposition::MemoryLoadable {
             memory: right_memory,
             base: pointer,
-            bytes: (MachineTerm::constant(1)).into(),
+            bytes: (OldMachineTerm::constant(1)).into(),
             wide: false,
         };
         assert!(propositions_are_alpha_equal(&left, &same));
@@ -3655,7 +3664,7 @@ mod proposition_identity_tests {
     fn alpha_identity_matches_registered_and_spelled_load_at_one_version() {
         let pointer = Address {
             base: "identity-registered-load".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let memory = SymbolicMemory::new().with_block("identity-registered-load", 8);
         let shared_memory = crate::kernel::intern_memory_ref(&memory);
@@ -3672,19 +3681,19 @@ mod proposition_identity_tests {
         let (load_memory, load_pointer) = crate::kernel::registered_load_for_variable(&load)
             .expect("registered load should retain its exact version");
         let spelled = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::read_named(
+                left: Box::new(OldMachineTerm::read_named(
                     crate::kernel::ProgramPoint::at(&load_memory),
                     Box::new(load_pointer),
                     crate::kernel::LoadKind::Int32,
                 )),
-                right: Box::new(MachineTerm::constant(7)),
+                right: Box::new(OldMachineTerm::constant(7)),
             },
             true,
         );
-        let named = equal(MachineTerm::Variable(load), MachineTerm::constant(7));
+        let named = equal(OldMachineTerm::Variable(load), OldMachineTerm::constant(7));
         assert_eq!(
             proposition_identity_key(&spelled),
             proposition_identity_key(&named)
@@ -3692,7 +3701,7 @@ mod proposition_identity_tests {
 
         let changed_memory = memory.clone().store(
             pointer.clone(),
-            ProgramValue::Int32(MachineTerm::constant(9)),
+            ProgramValue::Int32(OldMachineTerm::constant(9)),
         );
         let changed_shared = crate::kernel::intern_memory_ref(&changed_memory);
         let changed_load = crate::kernel::load_variable_for_cell_with_origin(
@@ -3706,21 +3715,21 @@ mod proposition_identity_tests {
             crate::kernel::registered_load_for_variable(&changed_load)
                 .expect("changed registered load should retain its version");
         let changed_spelled = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::read_named(
+                left: Box::new(OldMachineTerm::read_named(
                     crate::kernel::ProgramPoint::at(&changed_memory),
                     Box::new(changed_pointer),
                     crate::kernel::LoadKind::Int32,
                 )),
-                right: Box::new(MachineTerm::constant(7)),
+                right: Box::new(OldMachineTerm::constant(7)),
             },
             true,
         );
         let changed_named = equal(
-            MachineTerm::Variable(changed_load),
-            MachineTerm::constant(7),
+            OldMachineTerm::Variable(changed_load),
+            OldMachineTerm::constant(7),
         );
         assert!(propositions_are_alpha_equal(
             &changed_spelled,
@@ -3774,12 +3783,12 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
         Proposition::Equal(Term::Bitvector32(left), Term::Bitvector32(right)) => {
             AlphaPropositionKey::EqualBitvector(
                 alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(
-                    left.native_compat(),
+                    left.old_form(),
                     bindings,
                     next_binder,
                 )?,
                 alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(
-                    right.native_compat(),
+                    right.old_form(),
                     bindings,
                     next_binder,
                 )?,
@@ -3788,12 +3797,12 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
         Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) => {
             AlphaPropositionKey::EqualAlgebraic(
                 alpha_algebraic_key_with_bindings::<ALLOW_LOADS>(
-                    left.native_compat(),
+                    left.old_form(),
                     bindings,
                     next_binder,
                 )?,
                 alpha_algebraic_key_with_bindings::<ALLOW_LOADS>(
-                    right.native_compat(),
+                    right.old_form(),
                     bindings,
                     next_binder,
                 )?,
@@ -3801,7 +3810,7 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
         }
         Proposition::ConditionIs(condition, value) => AlphaPropositionKey::Condition(
             alpha_condition_key_with_bindings::<ALLOW_LOADS>(
-                condition.native_compat(),
+                condition.old_form(),
                 bindings,
                 next_binder,
             )?,
@@ -3835,7 +3844,7 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
                         }
                         Term::ProgramValue(value) => AlphaPredicateArgumentKey::Value(
                             alpha_program_value_key_with_bindings::<ALLOW_LOADS>(
-                                value.native_compat(),
+                                value.old_form(),
                                 bindings,
                                 next_binder,
                             )?,
@@ -3848,7 +3857,7 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
                                 fold_keys::integer_operand_key(root, bindings, next_binder)?
                             } else {
                                 alpha_integer_key_with_bindings(
-                                    value.native_compat(),
+                                    value.old_form(),
                                     bindings,
                                     next_binder,
                                 )?
@@ -3857,7 +3866,7 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
                         }
                         Term::Algebraic(value) => AlphaPredicateArgumentKey::Algebraic(
                             alpha_algebraic_key_with_bindings::<ALLOW_LOADS>(
-                                value.native_compat(),
+                                value.old_form(),
                                 bindings,
                                 next_binder,
                             )?,
@@ -3930,7 +3939,7 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
                         next_binder,
                     )?,
                     bytes: alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(
-                        bytes.native_compat(),
+                        bytes.old_form(),
                         bindings,
                         next_binder,
                     )?,
@@ -4280,7 +4289,7 @@ mod integer_alpha_scaling_tests {
                 Variable(binder),
                 Sort::Integer,
                 Proposition::condition_is(
-                    ConditionTerm::IntegerGreaterEqual(
+                    OldConditionTerm::IntegerGreaterEqual(
                         applied.into(),
                         IntegerTerm::constant_i64(0).into(),
                     ),
@@ -4322,7 +4331,7 @@ mod integer_alpha_scaling_tests {
 
     #[test]
     fn alpha_integer_to_machine_keys_rename_math_binders_and_include_destination() {
-        let make = |variable, destination| MachineTerm::IntegerToMachine {
+        let make = |variable, destination| OldMachineTerm::IntegerToMachine {
             value: SharedIntegerTerm::from(IntegerTerm::Variable(variable)),
             destination,
         };
@@ -4346,7 +4355,11 @@ mod integer_alpha_scaling_tests {
     #[test]
     fn wide_cast_alpha_keys_include_source_and_destination_and_rename_operands() {
         let make = |variable, source, destination| {
-            MachineTerm::machine_integer_cast(source, destination, MachineTerm::Variable(variable))
+            OldMachineTerm::machine_integer_cast(
+                source,
+                destination,
+                OldMachineTerm::Variable(variable),
+            )
         };
         let key = |variable, source, destination| {
             alpha_bitvector_key::<false>(
@@ -4438,13 +4451,13 @@ mod integer_alpha_scaling_tests {
         let accumulator = Variable(50_001);
         let item = Variable(50_002);
         let index = crate::kernel::IntegerRangeFoldIndex::Int32 {
-            start: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0)),
-            end: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(1)),
+            start: SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(0)),
+            end: SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(1)),
         };
         let body = |variable| {
             IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                 MachineIntegerType::Int32,
-                MachineTerm::IntegerToMachine {
+                OldMachineTerm::IntegerToMachine {
                     value: SharedIntegerTerm::from(IntegerTerm::var(variable)),
                     destination: MachineIntegerType::Int32,
                 },
@@ -4489,9 +4502,10 @@ mod integer_alpha_scaling_tests {
                 [root.clone(), root],
             );
         }
-        let endpoint = SharedIntegerRangeEndpoint::intern(MachineTerm::Variable(Variable(997999)))
-            .with_shared_operand(root.with_machine_observation_type(MachineIntegerType::Int32))
-            .unwrap();
+        let endpoint =
+            SharedIntegerRangeEndpoint::intern(OldMachineTerm::Variable(Variable(997999)))
+                .with_shared_operand(root.with_machine_observation_type(MachineIntegerType::Int32))
+                .unwrap();
         assert!(!endpoint.machine_operand().has_boxed_operand());
         let index = if format == MachineIntegerType::UInt64 {
             crate::kernel::IntegerRangeFoldIndex::UInt64 {
@@ -4535,12 +4549,12 @@ mod integer_alpha_scaling_tests {
                 "endpoints stay in outer scope even when the item binder uses that name"
             );
             assert_eq!(KernelTermExport::machine_export_count(), exports);
-            let mut written = MachineTerm::IntegerToMachine {
+            let mut written = OldMachineTerm::IntegerToMachine {
                 destination: format,
                 value: IntegerTerm::var(a).into(),
             };
             for _ in 0..3 {
-                written = MachineTerm::Binary {
+                written = OldMachineTerm::Binary {
                     format,
                     op: crate::kernel::MachineBinaryOp::Add,
                     left: Box::new(written.clone()),
@@ -4588,19 +4602,19 @@ mod memory_state_alpha_tests {
 
     fn int32_index() -> IntegerRangeFoldIndex {
         IntegerRangeFoldIndex::Int32 {
-            start: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0)),
-            end: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(2)),
+            start: SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(0)),
+            end: SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(2)),
         }
     }
 
     fn fold_body(memory: &SharedMemory, item: Variable) -> IntegerTerm {
         IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             MachineIntegerType::Int32,
-            MachineTerm::read_named(
+            OldMachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(memory),
                 Box::new(Address {
                     base: "retained_state-alpha".into(),
-                    offset: AddressOffset::Variable(item),
+                    offset: OldAddressOffset::Variable(item),
                 }),
                 crate::kernel::LoadKind::Int32,
             ),
@@ -4656,7 +4670,7 @@ mod memory_state_alpha_tests {
 
     fn equality(term: IntegerTerm) -> Proposition {
         Proposition::condition_is(
-            ConditionTerm::IntegerEqual(IntegerTerm::constant_i64(9).into(), term.into()),
+            OldConditionTerm::IntegerEqual(IntegerTerm::constant_i64(9).into(), term.into()),
             true,
         )
     }
@@ -4665,7 +4679,7 @@ mod memory_state_alpha_tests {
     fn state_alpha_fold_loads_require_exact_state_identity() {
         let pointer = Address {
             base: "retained_state-alpha".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let before = crate::kernel::intern_memory(
             SymbolicMemory::new().with_block("retained_state-alpha", 8),
@@ -4674,7 +4688,7 @@ mod memory_state_alpha_tests {
             before
                 .as_ref()
                 .clone()
-                .store(pointer, ProgramValue::Int32(MachineTerm::constant(7))),
+                .store(pointer, ProgramValue::Int32(OldMachineTerm::constant(7))),
         );
 
         let source = integer_equality_alpha_key(&equality(fold(
@@ -4713,11 +4727,11 @@ mod memory_state_alpha_tests {
             Variable(312_001),
             IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                 MachineIntegerType::Int32,
-                MachineTerm::read_named(
+                OldMachineTerm::read_named(
                     crate::kernel::ProgramPoint::at(&memory),
                     Box::new(Address {
                         base: "retained_state-alpha".into(),
-                        offset: AddressOffset::Variable(unknown_load),
+                        offset: OldAddressOffset::Variable(unknown_load),
                     }),
                     crate::kernel::LoadKind::Int32,
                 ),
@@ -4731,14 +4745,14 @@ mod memory_state_alpha_tests {
     fn state_alpha_registered_loads_keep_their_state_identity() {
         let pointer = Address {
             base: "retained_state-alpha".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let before = crate::kernel::intern_memory(
             SymbolicMemory::new().with_block("retained_state-alpha", 8),
         );
         let after = crate::kernel::intern_memory(before.as_ref().clone().store(
             pointer.clone(),
-            ProgramValue::Int32(MachineTerm::constant(11)),
+            ProgramValue::Int32(OldMachineTerm::constant(11)),
         ));
         let before_load = crate::kernel::load_variable_for_cell_with_origin(
             &before,
@@ -4763,7 +4777,7 @@ mod memory_state_alpha_tests {
                 item,
                 IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                     MachineIntegerType::Int32,
-                    MachineTerm::Variable(load),
+                    OldMachineTerm::Variable(load),
                 )),
             )
         };
@@ -4801,7 +4815,7 @@ mod memory_state_alpha_tests {
         let memory = crate::kernel::intern_memory(SymbolicMemory::new().with_block(block, 16));
         let field = |offset: i64| Address {
             base: block.into(),
-            offset: AddressOffset::Constant(offset),
+            offset: OldAddressOffset::Constant(offset),
         };
         let loaded = crate::kernel::load_variable_for_cell_with_origin(
             &memory,
@@ -4820,7 +4834,7 @@ mod memory_state_alpha_tests {
         let every_element_is_one = |base: Variable, binder: Variable| {
             let element = Address {
                 base: AddressBase::Symbolic(base),
-                offset: AddressOffset::scale_int32(MachineTerm::Variable(binder), 4),
+                offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(binder), 4),
             };
             let element_load = crate::kernel::load_variable_for_cell_with_origin(
                 &memory,
@@ -4834,11 +4848,11 @@ mod memory_state_alpha_tests {
                 binder,
                 Sort::ProgramInt32,
                 Proposition::condition_is(
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
-                        left: Box::new(MachineTerm::Variable(element_load)),
-                        right: Box::new(MachineTerm::constant(1)),
+                        left: Box::new(OldMachineTerm::Variable(element_load)),
+                        right: Box::new(OldMachineTerm::constant(1)),
                     },
                     true,
                 ),
@@ -4862,7 +4876,7 @@ mod memory_state_alpha_tests {
         let memory = crate::kernel::intern_memory(SymbolicMemory::new().with_block(block, 64));
         let first_pointer = Address {
             base: block.into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let first_load = crate::kernel::load_variable_for_cell_with_origin(
             &memory,
@@ -4873,7 +4887,7 @@ mod memory_state_alpha_tests {
         );
         let nested_pointer = Address {
             base: block.into(),
-            offset: AddressOffset::Variable(first_load),
+            offset: OldAddressOffset::Variable(first_load),
         };
         let nested_load = crate::kernel::load_variable_for_cell_with_origin(
             &memory,
@@ -4892,7 +4906,7 @@ mod memory_state_alpha_tests {
         let (nested_memory, nested_registered_pointer) =
             crate::kernel::registered_load_for_variable(&nested_load)
                 .expect("nested load should have a registry entry");
-        let fold_with_body = |body: MachineTerm| {
+        let fold_with_body = |body: OldMachineTerm| {
             IntegerTerm::range_fold(
                 int32_index(),
                 IntegerTerm::constant_i64(0),
@@ -4904,22 +4918,22 @@ mod memory_state_alpha_tests {
                 )),
             )
         };
-        let explicit_first: SharedIntegerTerm = fold_with_body(MachineTerm::read_named(
+        let explicit_first: SharedIntegerTerm = fold_with_body(OldMachineTerm::read_named(
             crate::kernel::ProgramPoint::at(&first_memory),
             Box::new(first_registered_pointer),
             crate::kernel::LoadKind::Int32,
         ))
         .into();
         let registered_first: SharedIntegerTerm =
-            fold_with_body(MachineTerm::Variable(first_load)).into();
-        let explicit_nested: SharedIntegerTerm = fold_with_body(MachineTerm::read_named(
+            fold_with_body(OldMachineTerm::Variable(first_load)).into();
+        let explicit_nested: SharedIntegerTerm = fold_with_body(OldMachineTerm::read_named(
             crate::kernel::ProgramPoint::at(&nested_memory),
             Box::new(nested_registered_pointer),
             crate::kernel::LoadKind::Int32,
         ))
         .into();
         let registered_nested: SharedIntegerTerm =
-            fold_with_body(MachineTerm::Variable(nested_load)).into();
+            fold_with_body(OldMachineTerm::Variable(nested_load)).into();
 
         assert_eq!(
             integer_fold_alpha_key(&explicit_first),
@@ -4943,15 +4957,15 @@ mod memory_state_alpha_tests {
         let make = |accumulator: Variable, item: Variable| {
             IntegerTerm::range_fold(
                 IntegerRangeFoldIndex::Int32 {
-                    start: SharedIntegerRangeEndpoint::intern(MachineTerm::Variable(start)),
-                    end: SharedIntegerRangeEndpoint::intern(MachineTerm::Variable(end)),
+                    start: SharedIntegerRangeEndpoint::intern(OldMachineTerm::Variable(start)),
+                    end: SharedIntegerRangeEndpoint::intern(OldMachineTerm::Variable(end)),
                 },
                 IntegerTerm::constant_i64(0),
                 accumulator,
                 item,
                 IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                     MachineIntegerType::Int32,
-                    MachineTerm::Variable(payload),
+                    OldMachineTerm::Variable(payload),
                 )),
             )
         };
@@ -4973,7 +4987,7 @@ mod memory_state_alpha_tests {
     fn state_alpha_fold_comparison_uses_exact_state_identity() {
         let pointer = Address {
             base: "retained_state-alpha".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let before = crate::kernel::intern_memory(
             SymbolicMemory::new().with_block("retained_state-alpha", 8),
@@ -4982,7 +4996,7 @@ mod memory_state_alpha_tests {
             before
                 .as_ref()
                 .clone()
-                .store(pointer, ProgramValue::Int32(MachineTerm::constant(13))),
+                .store(pointer, ProgramValue::Int32(OldMachineTerm::constant(13))),
         );
         let make = |memory: &SharedMemory, accumulator: Variable, item: Variable| {
             let term = fold_body(memory, item);
@@ -5015,14 +5029,14 @@ mod memory_state_alpha_tests {
     fn state_alpha_nested_folds_canonicalize_load_pointers() {
         let pointer = Address {
             base: "retained_state-alpha".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let before = crate::kernel::intern_memory(
             SymbolicMemory::new().with_block("retained_state-alpha", 8),
         );
         let after = crate::kernel::intern_memory(before.as_ref().clone().store(
             pointer.clone(),
-            ProgramValue::Int32(MachineTerm::constant(5)),
+            ProgramValue::Int32(OldMachineTerm::constant(5)),
         ));
         let nested = |memory: &SharedMemory, accumulator: Variable, item: Variable| {
             let inner = fold(memory, Variable(316_000), Variable(316_001));
@@ -5063,7 +5077,7 @@ mod memory_state_alpha_tests {
             crate::kernel::intern_memory(SymbolicMemory::new().with_block(block.clone(), 4096));
         let mut pointer = Address {
             base: block.into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let mut load = crate::kernel::load_variable_for_cell_with_origin(
             &memory,
@@ -5075,7 +5089,7 @@ mod memory_state_alpha_tests {
         for _ in 0..depth {
             pointer = Address {
                 base: pointer.base.clone(),
-                offset: AddressOffset::Variable(load),
+                offset: OldAddressOffset::Variable(load),
             };
             load = crate::kernel::load_variable_for_cell_with_origin(
                 &memory,
@@ -5094,7 +5108,7 @@ mod memory_state_alpha_tests {
             crate::kernel::intern_memory(SymbolicMemory::new().with_block(block.clone(), 4096));
         let mut pointer = Address {
             base: block.into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let mut load = crate::kernel::load_variable_for_cell_with_origin(
             &memory,
@@ -5106,9 +5120,9 @@ mod memory_state_alpha_tests {
         for _ in 0..depth {
             pointer = Address {
                 base: pointer.base.clone(),
-                offset: AddressOffset::Add(
-                    Box::new(AddressOffset::Variable(load)),
-                    Box::new(AddressOffset::Variable(load)),
+                offset: OldAddressOffset::Add(
+                    Box::new(OldAddressOffset::Variable(load)),
+                    Box::new(OldAddressOffset::Variable(load)),
                 ),
             };
             load = crate::kernel::load_variable_for_cell_with_origin(
@@ -5132,7 +5146,7 @@ mod memory_state_alpha_tests {
             Variable(322_001),
             IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                 MachineIntegerType::Int32,
-                MachineTerm::Variable(load),
+                OldMachineTerm::Variable(load),
             )),
         );
         let tactic = crate::instrumentation::TacticEvent {
@@ -5195,11 +5209,11 @@ mod memory_state_alpha_tests {
                 Variable(324_101 + index * 2),
                 IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                     MachineIntegerType::Int32,
-                    MachineTerm::read_named(
+                    OldMachineTerm::read_named(
                         crate::kernel::ProgramPoint::at(&memory),
                         Box::new(Address {
                             base: block.into(),
-                            offset: AddressOffset::Constant(0),
+                            offset: OldAddressOffset::Constant(0),
                         }),
                         crate::kernel::LoadKind::Int32,
                     ),
@@ -5230,11 +5244,11 @@ mod memory_state_alpha_tests {
                 Variable(325_001 + index * 2),
                 IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                     MachineIntegerType::Int32,
-                    MachineTerm::read_named(
+                    OldMachineTerm::read_named(
                         crate::kernel::ProgramPoint::at(&memory),
                         Box::new(Address {
                             base: block.into(),
-                            offset: AddressOffset::Constant(0),
+                            offset: OldAddressOffset::Constant(0),
                         }),
                         crate::kernel::LoadKind::Int32,
                     ),
@@ -5278,29 +5292,31 @@ mod machine_quantifier_identity_tests {
                 CompareRelation::GreaterEqual,
             ] {
                 for truth in [false, true] {
-                    let native = ConditionTerm::Compare {
+                    let native = OldConditionTerm::Compare {
                         format,
                         relation,
-                        left: Box::new(MachineTerm::Variable(Variable(981))),
-                        right: Box::new(MachineTerm::Variable(Variable(982))),
+                        left: Box::new(OldMachineTerm::Variable(Variable(981))),
+                        right: Box::new(OldMachineTerm::Variable(Variable(982))),
                     };
                     let left =
-                        IntegerTerm::from_machine(format, MachineTerm::Variable(Variable(981)))
+                        IntegerTerm::from_machine(format, OldMachineTerm::Variable(Variable(981)))
                             .unwrap()
                             .into();
                     let right =
-                        IntegerTerm::from_machine(format, MachineTerm::Variable(Variable(982)))
+                        IntegerTerm::from_machine(format, OldMachineTerm::Variable(Variable(982)))
                             .unwrap()
                             .into();
                     let shared = match relation {
-                        CompareRelation::Equal => ConditionTerm::IntegerEqual(left, right),
-                        CompareRelation::LessThan => ConditionTerm::IntegerLessThan(left, right),
-                        CompareRelation::LessEqual => ConditionTerm::IntegerLessEqual(left, right),
+                        CompareRelation::Equal => OldConditionTerm::IntegerEqual(left, right),
+                        CompareRelation::LessThan => OldConditionTerm::IntegerLessThan(left, right),
+                        CompareRelation::LessEqual => {
+                            OldConditionTerm::IntegerLessEqual(left, right)
+                        }
                         CompareRelation::GreaterThan => {
-                            ConditionTerm::IntegerGreaterThan(left, right)
+                            OldConditionTerm::IntegerGreaterThan(left, right)
                         }
                         CompareRelation::GreaterEqual => {
-                            ConditionTerm::IntegerGreaterEqual(left, right)
+                            OldConditionTerm::IntegerGreaterEqual(left, right)
                         }
                     };
                     let quantified = |condition, truth| {
@@ -5339,18 +5355,18 @@ mod machine_quantifier_identity_tests {
                 Sort::ProgramInt64,
                 Proposition::condition_is(
                     if wide {
-                        ConditionTerm::Compare {
+                        OldConditionTerm::Compare {
                             format: MachineIntegerType::Int64,
                             relation: CompareRelation::Equal,
-                            left: Box::new(MachineTerm::Variable(Variable(variable))),
-                            right: Box::new(MachineTerm::int64_constant(bound)),
+                            left: Box::new(OldMachineTerm::Variable(Variable(variable))),
+                            right: Box::new(OldMachineTerm::int64_constant(bound)),
                         }
                     } else {
-                        ConditionTerm::Compare {
+                        OldConditionTerm::Compare {
                             format: MachineIntegerType::Int32,
                             relation: CompareRelation::Equal,
-                            left: Box::new(MachineTerm::Variable(Variable(variable))),
-                            right: Box::new(MachineTerm::constant(bound as u32)),
+                            left: Box::new(OldMachineTerm::Variable(Variable(variable))),
+                            right: Box::new(OldMachineTerm::constant(bound as u32)),
                         }
                     },
                     true,
@@ -5390,16 +5406,16 @@ mod offset_condition_tests {
         let mut keys = Vec::new();
         for width in [1, 8] {
             for unsigned in [false, true] {
-                let source = ConditionTerm::AddressOffsetEqual(
-                    Box::new(AddressOffset::Add(
-                        Box::new(AddressOffset::Constant(0)),
-                        Box::new(AddressOffset::scaled_int64_node(
-                            MachineTerm::Variable(Variable(998600)),
+                let source = OldConditionTerm::AddressOffsetEqual(
+                    Box::new(OldAddressOffset::Add(
+                        Box::new(OldAddressOffset::Constant(0)),
+                        Box::new(OldAddressOffset::scaled_int64_node(
+                            OldMachineTerm::Variable(Variable(998600)),
                             width,
                             unsigned,
                         )),
                     )),
-                    Box::new(AddressOffset::Constant(0)),
+                    Box::new(OldAddressOffset::Constant(0)),
                 );
                 let root = crate::kernel::KernelTermImport::default().condition(&source);
                 let expected = memory_erased_condition_key(&source);
@@ -5426,11 +5442,11 @@ mod raw_pointer_condition_tests {
             AddressBase::ExternalObject(Variable(998610)),
             AddressBase::FunctionSymbolic(Variable(998610)),
         ] {
-            let source = ConditionTerm::AddressEqual(
+            let source = OldConditionTerm::AddressEqual(
                 Box::new(Address {
                     base: block,
-                    offset: AddressOffset::scaled_int64_node(
-                        MachineTerm::Variable(Variable(998611)),
+                    offset: OldAddressOffset::scaled_int64_node(
+                        OldMachineTerm::Variable(Variable(998611)),
                         8,
                         true,
                     ),
@@ -5464,10 +5480,10 @@ mod complete_pointer_condition_tests {
             a.clone().with_root_bounds(),
             a.clone().with_bounds(Some(SubobjectBounds {
                 start: Address::null(),
-                width: MachineTerm::constant(4),
+                width: OldMachineTerm::constant(4),
             })),
         ] {
-            let source = ConditionTerm::PointerEqual(Box::new(value), Box::new(a.clone()));
+            let source = OldConditionTerm::PointerEqual(Box::new(value), Box::new(a.clone()));
             let root = crate::kernel::KernelTermImport::default().condition(&source);
             let actual =
                 memory_erased_boolean_operand_key(crate::kernel::BooleanOperandView::Shared(&root));
@@ -5493,11 +5509,11 @@ mod overflow_condition_tests {
                 crate::kernel::OverflowOperation::Divide,
                 crate::kernel::OverflowOperation::ShiftLeft,
             ] {
-                let source = ConditionTerm::Overflows {
+                let source = OldConditionTerm::Overflows {
                     format,
                     op,
-                    left: Box::new(MachineTerm::Variable(Variable(998630))),
-                    right: Box::new(MachineTerm::Variable(Variable(998631))),
+                    left: Box::new(OldMachineTerm::Variable(Variable(998630))),
+                    right: Box::new(OldMachineTerm::Variable(Variable(998631))),
                 };
                 let root = crate::kernel::KernelTermImport::default().condition(&source);
                 let actual = memory_erased_boolean_operand_key(

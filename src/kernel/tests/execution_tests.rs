@@ -230,8 +230,8 @@ fn active_stable_borrow_requires_separation_for_local_assignment_and_alias_store
 
     let overlapping = active_memory_borrow(MemoryRange::new(
         pointer.clone(),
-        MachineTerm::constant(0),
-        MachineTerm::constant(1),
+        OldMachineTerm::constant(0),
+        OldMachineTerm::constant(1),
     ));
     let with_active_borrow = state.clone().with_borrow_ledger(Some(overlapping));
     let direct = execute(&with_active_borrow, &write);
@@ -252,8 +252,8 @@ fn active_stable_borrow_requires_separation_for_local_assignment_and_alias_store
 
     let disjoint = active_memory_borrow(MemoryRange::new(
         state.locals().slot("y").unwrap().clone(),
-        MachineTerm::constant(0),
-        MachineTerm::constant(1),
+        OldMachineTerm::constant(0),
+        OldMachineTerm::constant(1),
     ));
     let with_active_borrow = state.with_borrow_ledger(Some(disjoint));
     let unowned = with_active_borrow
@@ -341,8 +341,8 @@ fn active_stable_borrow_allows_a_disjoint_local_store() {
     let base = state.locals().slot("a").cloned().expect("array pointer");
     let borrow = active_memory_borrow(MemoryRange::new(
         base.clone(),
-        MachineTerm::constant(0),
-        MachineTerm::constant(1),
+        OldMachineTerm::constant(0),
+        OldMachineTerm::constant(1),
     ));
     let state = state.with_borrow_ledger(Some(borrow)).with_local(
         "p",
@@ -470,7 +470,7 @@ fn scalar_local_updates_share_memory_and_resource_state() {
 fn loop_back_edge_rejects_heap_and_resource_state_changes() {
     let allocation = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let memory = SymbolicMemory::new()
         .with_heap_allocation_claim(allocation.clone(), AllocationSize::int32(16))
@@ -482,15 +482,15 @@ fn loop_back_edge_rejects_heap_and_resource_state_changes() {
                 .unchecked_with_fact(ResourceFact::own_allocation(allocation.clone(), 16))
                 .unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
                     allocation,
-                    MachineTerm::constant(0),
-                    MachineTerm::constant(4),
+                    OldMachineTerm::constant(0),
+                    OldMachineTerm::constant(4),
                 ))),
         );
     let freed = execute_execution_statement_paths(
         &top,
         &program_heap_free(ProgramExpression::Value(ProgramValue::pointer(Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         }))),
         &PureFactContext::new(),
         ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
@@ -527,21 +527,24 @@ fn loop_back_edge_rejects_heap_and_resource_state_changes() {
 #[test]
 fn final_iteration_condition_can_use_the_pre_body_bound() {
     let original = Variable(91_001);
-    let original_bits = MachineTerm::Variable(original);
+    let original_bits = OldMachineTerm::Variable(original);
     let state = ExecutionState::new().with_local(
         "i",
-        int32(MachineTerm::add(
+        int32(OldMachineTerm::add(
             original_bits.clone(),
-            MachineTerm::constant(1),
+            OldMachineTerm::constant(1),
         )),
     );
     let assumptions = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::signed_greater_equal(original_bits.clone(), MachineTerm::constant(0)),
+            OldConditionTerm::signed_greater_equal(
+                original_bits.clone(),
+                OldMachineTerm::constant(0),
+            ),
             true,
         )
         .assume_condition(
-            ConditionTerm::signed_less_than(original_bits, MachineTerm::constant(1)),
+            OldConditionTerm::signed_less_than(original_bits, OldMachineTerm::constant(1)),
             true,
         );
 
@@ -561,10 +564,10 @@ fn final_iteration_condition_can_use_the_pre_body_bound() {
 
 #[test]
 fn join_state_forgets_changed_scalars_and_memory() {
-    let stable_x = int32(MachineTerm::Variable(Variable(7)));
+    let stable_x = int32(OldMachineTerm::Variable(Variable(7)));
     let pointer = Address {
         base: "heap".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let state_zero = ExecutionState::new()
         .with_local("x", stable_x.clone())
@@ -610,11 +613,11 @@ fn join_state_forgets_changed_scalars_and_memory() {
 fn join_state_abstracts_changed_pointer_locals() {
     let left = Address {
         base: "left".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let right = Address {
         base: "right".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let abstract_left = abstract_execution_state_for_join(
         &ExecutionState::new().with_local("selected", ProgramValue::pointer(left)),
@@ -711,11 +714,11 @@ fn symbolic_address_bases_do_not_imply_non_aliasing() {
     let symbolic = Address::symbolic(Variable(21_000));
     let concrete = Address {
         base: "heap".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
 
     assert_eq!(
-        PureFactContext::new().decide(&ConditionTerm::address_equal(symbolic, concrete)),
+        PureFactContext::new().decide(&OldConditionTerm::address_equal(symbolic, concrete)),
         None
     );
 }
@@ -724,11 +727,11 @@ fn symbolic_address_bases_do_not_imply_non_aliasing() {
 fn concrete_address_base_names_cannot_create_symbolic_identity() {
     let misleading_name = Address {
         base: "symbolic-pointer:21000".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let heap = Address {
         base: "heap".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
 
     assert!(!misleading_name.has_symbolic_block());
@@ -788,8 +791,8 @@ fn concrete_max_function_call_preserves_caller_locals() {
 fn symbolic_max_function_call_reports_branch_facts() {
     let a = Variable(14);
     let b = Variable(15);
-    let a_bits = MachineTerm::Variable(a);
-    let b_bits = MachineTerm::Variable(b);
+    let a_bits = OldMachineTerm::Variable(a);
+    let b_bits = OldMachineTerm::Variable(b);
     let condition = program_max_lt_condition(a_bits.clone(), b_bits.clone());
     let state = ExecutionState::new();
     let function = program_max_function();
@@ -920,7 +923,7 @@ fn execution_derivation_matches_only_equivalent_call_havoc() {
 fn function_call_threads_memory_but_discards_callee_locals() {
     let pointer = Address {
         base: "block".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let resources = own_memory_context(pointer.clone(), 0, 1);
     let state = ExecutionState::new()
@@ -1253,8 +1256,8 @@ fn conditional_catch_has_a_continuing_call_outcome_and_a_terminal_one() {
         ExecutionState::new(),
         caller,
         vec![
-            ProgramExpression::Value(bool_value(MachineTerm::Variable(Variable(80_001)))),
-            ProgramExpression::Value(bool_value(MachineTerm::Variable(Variable(80_002)))),
+            ProgramExpression::Value(bool_value(OldMachineTerm::Variable(Variable(80_001)))),
+            ProgramExpression::Value(bool_value(OldMachineTerm::Variable(Variable(80_002)))),
         ],
         PureFactContext::new(),
         ExecutionEnvironment::new().with_function((helper).with_inline_body()),
@@ -1456,7 +1459,7 @@ fn loop_semantics_explicitly_select_verification_or_verified_rules() {
         statement.clone(),
         assumptions
             .clone()
-            .assume_condition(ConditionTerm::Constant(true), true),
+            .assume_condition(OldConditionTerm::Constant(true), true),
         ExecutionEnvironment::new().with_verified_loop_rules([loop_rule.clone()]),
         ExecutionSemantics::APPLY_VERIFIED_RULES,
     );
@@ -1487,7 +1490,7 @@ fn statement_checks_share_one_execution_environment_variable_index() {
         "indexed",
         Vec::new(),
         program_return(ProgramExpression::Value(ProgramValue::Int32(
-            MachineTerm::Variable(reserved),
+            OldMachineTerm::Variable(reserved),
         ))),
     );
     let environment = ExecutionEnvironment::new().with_function(indexed_function);
@@ -1529,7 +1532,7 @@ fn statement_checks_share_one_execution_environment_variable_index() {
         "changed",
         Vec::new(),
         program_return(ProgramExpression::Value(ProgramValue::Int32(
-            MachineTerm::Variable(Variable(1_000_001)),
+            OldMachineTerm::Variable(Variable(1_000_001)),
         ))),
     ));
     assert_eq!(changed.variable_index.build_count(), 0);
@@ -1589,9 +1592,9 @@ fn environment_variable_scans_do_not_multiply_by_statement_count() {
             body = program_seq(
                 program_assign(
                     "symbolic",
-                    ProgramExpression::Value(ProgramValue::Int32(MachineTerm::Variable(Variable(
-                        1_000_000 + index,
-                    )))),
+                    ProgramExpression::Value(ProgramValue::Int32(OldMachineTerm::Variable(
+                        Variable(1_000_000 + index),
+                    ))),
                 ),
                 body,
             );
@@ -1679,7 +1682,7 @@ fn loop_head_preserves_sparse_body_field_view_reservations() {
         )])
         .unwrap(),
         [crate::kernel::AlgebraicValue::Program(int32(
-            MachineTerm::Variable(Variable(base + 1)),
+            OldMachineTerm::Variable(Variable(base + 1)),
         ))]
         .into_iter()
         .collect(),
@@ -1852,10 +1855,10 @@ fn unknown_call_assign_is_runtime_error() {
 fn unreadable_guard_operand_leaves_the_condition_undecided() {
     let pointer = Address {
         base: "external".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let state = ExecutionState::new()
-        .with_local("a", int32(MachineTerm::Variable(Variable(1))))
+        .with_local("a", int32(OldMachineTerm::Variable(Variable(1))))
         .with_local(
             "p",
             ProgramValue::typed_pointer(pointer, ProgramType::Int32Pointer),
@@ -2028,7 +2031,7 @@ fn executor_budgets_cap_steps_calls_and_paths() {
     );
 
     let branchy_statement = program_if(
-        ProgramExpression::Value(int32(MachineTerm::Variable(Variable(75)))),
+        ProgramExpression::Value(int32(OldMachineTerm::Variable(Variable(75)))),
         program_return(crate::kernel::program_expression::int32_literal(1)),
         program_return(crate::kernel::program_expression::int32_literal(0)),
     );
@@ -2110,12 +2113,12 @@ fn whole_function_default_budget_scales_with_selected_source() {
 fn while_invariant_is_proof_obligation() {
     let pointer = Address {
         base: "block".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let invariant = Proposition::MemoryLoadable {
         memory: SymbolicMemory::new(),
         base: pointer,
-        bytes: (MachineTerm::constant(4)).into(),
+        bytes: (OldMachineTerm::constant(4)).into(),
         wide: false,
     };
     let state = ExecutionState::new().with_local("x", int32(0));
@@ -2229,9 +2232,10 @@ fn verified_loop_rules_are_selected_by_their_exact_prerequisites() {
 fn verified_loop_rule_prerequisites_are_not_reproved_from_ambient_facts() {
     let (statement, base_rule) = prerequisite_loop_rule_fixture();
     let state = ExecutionState::new().with_local("i", int32(0));
-    let bound = MachineTerm::Variable(Variable(900_001));
-    let required = ConditionTerm::signed_greater_equal(bound.clone(), MachineTerm::constant(0));
-    let stronger = ConditionTerm::signed_greater_equal(bound, MachineTerm::constant(1));
+    let bound = OldMachineTerm::Variable(Variable(900_001));
+    let required =
+        OldConditionTerm::signed_greater_equal(bound.clone(), OldMachineTerm::constant(0));
+    let stronger = OldConditionTerm::signed_greater_equal(bound, OldMachineTerm::constant(1));
     let mut rule = base_rule;
     rule.required_assumptions = PureFactContext::new().assume_condition(required.clone(), true);
     let environment = ExecutionEnvironment::new().with_verified_loop_rules([rule]);
@@ -2260,10 +2264,10 @@ fn verified_loop_rule_prerequisites_are_not_reproved_from_ambient_facts() {
     assert!(!exact.paths().is_empty());
 }
 
-fn loop_rule_guard(value: u32) -> ConditionTerm {
-    ConditionTerm::equal(
-        MachineTerm::Variable(Variable(900_000)),
-        MachineTerm::constant(value),
+fn loop_rule_guard(value: u32) -> OldConditionTerm {
+    OldConditionTerm::equal(
+        OldMachineTerm::Variable(Variable(900_000)),
+        OldMachineTerm::constant(value),
     )
 }
 
@@ -2322,7 +2326,7 @@ fn prerequisite_loop_rule_fixture() -> (ProgramStatement, VerifiedLoopRule) {
 fn loop_back_edge_refuses_a_dropped_share_or_a_regenerated_root() {
     let pointer = Address {
         base: "block".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let viewed = view_memory_fact(pointer, 0, 1);
     let resources = ResourceContext::new().unchecked_with_fact(viewed.clone());
@@ -2463,7 +2467,7 @@ fn loop_entry_goals_retain_satisfied_duplicate_declarations() {
         goals.declarations()[1][0].proposition()
     );
     assert!(
-        matches!(&goals.declarations()[0][0].proposition(), condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare { .. }, _))))
+        matches!(&goals.declarations()[0][0].proposition(), condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::Compare { .. }, _))))
     );
     assert!(
         loop_invariant_obligations_at_entry(&state, &checks, &assumptions)
@@ -2474,7 +2478,8 @@ fn loop_entry_goals_retain_satisfied_duplicate_declarations() {
 
 #[test]
 fn loop_entry_goals_preserve_guarded_judgments() {
-    let state = ExecutionState::new().with_local("i", int32(MachineTerm::Variable(Variable(600))));
+    let state =
+        ExecutionState::new().with_local("i", int32(OldMachineTerm::Variable(Variable(600))));
     let proposition = SpecProposition::Comparison {
         left: SpecExpression::Value(int32(0)),
         operator: ComparisonOperator::LessEqual,
@@ -2514,11 +2519,11 @@ fn loop_entry_goals_preserve_guarded_judgments() {
 /// `a != 0` as the kernel spells a short-circuit guard operand's fact.
 fn guard_operand_fact(variable: u64, nonzero: bool) -> Proposition {
     Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::Variable(Variable(variable))),
-            right: Box::new(MachineTerm::constant(0)),
+            left: Box::new(OldMachineTerm::Variable(Variable(variable))),
+            right: Box::new(OldMachineTerm::constant(0)),
         },
         !nonzero,
     )
@@ -2598,7 +2603,7 @@ fn a_post_join_allocation_never_reuses_a_join_abstracted_variable() {
     )
     .expect("the arms have one deterministic abstraction");
     let local_native_output_2533 = abstraction.state.locals().get_native("picked");
-    let Some(ProgramValue::Int32(MachineTerm::Variable(abstracted))) =
+    let Some(ProgramValue::Int32(OldMachineTerm::Variable(abstracted))) =
         local_native_output_2533.as_deref()
     else {
         panic!("a local the arms disagree on abstracts to one symbolic int32");
@@ -2754,7 +2759,7 @@ fn a_rebound_binder_field_never_reuses_a_havocked_local_variable() {
             &mut budget,
         )
         .expect("the execution's counter is nowhere near its ceiling");
-        let Some(ResourceFieldValue::Program(ProgramValue::Int32(MachineTerm::Variable(field)))) =
+        let Some(ResourceFieldValue::Program(ProgramValue::Int32(OldMachineTerm::Variable(field)))) =
             fields.get(0)
         else {
             panic!("an int32 model field is one symbolic int32: {fields:?}");
@@ -2785,7 +2790,7 @@ fn a_rebound_binder_field_never_reuses_a_havocked_local_variable() {
 fn loop_preservation_contexts_allocate_above_the_executions_counter() {
     let loop_entry_state = ExecutionState::new()
         .with_local("i", int32(0))
-        .with_local("n", int32(MachineTerm::Variable(Variable(7))));
+        .with_local("n", int32(OldMachineTerm::Variable(Variable(7))));
     let condition = crate::kernel::program_expression::less_than(
         crate::kernel::program_expression::variable("i"),
         crate::kernel::program_expression::variable("n"),
@@ -3414,7 +3419,7 @@ fn loop_join_accepts_null_without_restoring_an_object_class() {
     let null = OldPointer::new(Address::null(), ProgramType::Int32Pointer);
     let empty = PureFactContext::new();
     let known_null = empty.clone().assume_condition(
-        ConditionTerm::address_equal(unknown.address().clone(), Address::null()),
+        OldConditionTerm::address_equal(unknown.address().clone(), Address::null()),
         true,
     );
     for (pointer, facts) in [(null, &empty), (unknown.clone(), &known_null)] {
@@ -3427,7 +3432,7 @@ fn loop_join_accepts_null_without_restoring_an_object_class() {
     let back = ExecutionState::new().with_local("parent", ProgramValue::Pointer(unknown.clone()));
     assert!(loop_state_components_match_at_back_edge(&head, &back, &empty, &[]).is_err());
     let nonnull = empty.assume_condition(
-        ConditionTerm::address_equal(unknown.address().clone(), Address::null()),
+        OldConditionTerm::address_equal(unknown.address().clone(), Address::null()),
         false,
     );
     assert!(loop_state_components_match_at_back_edge(&head, &back, &nonnull, &[]).is_err());

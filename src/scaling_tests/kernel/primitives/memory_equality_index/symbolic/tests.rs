@@ -11,10 +11,10 @@ use super::*;
 fn symbolic_footprint_selection_does_not_scan_same_base_ranges() {
     let base = Address::symbolic(Variable(920_000));
     let alias = Address::symbolic(Variable(920_001));
-    let n = MachineTerm::Variable(Variable(920_002));
+    let n = OldMachineTerm::Variable(Variable(920_002));
     let empty = PureFactContext::new();
     let facts = empty.clone().assume_condition(
-        ConditionTerm::address_equal(base.clone(), alias.clone()),
+        OldConditionTerm::address_equal(base.clone(), alias.clone()),
         true,
     );
     let mut samples = Vec::new();
@@ -23,7 +23,7 @@ fn symbolic_footprint_selection_does_not_scan_same_base_ranges() {
         let mut resources =
             ResourceContext::new_with_equalities(&empty).unchecked_with_fact(held.clone());
         for i in 0..size {
-            let end = MachineTerm::Variable(Variable(921_000 + i));
+            let end = OldMachineTerm::Variable(Variable(921_000 + i));
             resources = resources.unchecked_with_fact(ResourceFact::view_memory(range(
                 &base,
                 0u32.into(),
@@ -43,7 +43,7 @@ fn symbolic_footprint_selection_does_not_scan_same_base_ranges() {
                 let uncertain = range(
                     &alias,
                     0u32.into(),
-                    MachineTerm::Variable(Variable(950_000)),
+                    OldMachineTerm::Variable(Variable(950_000)),
                 );
                 assert_eq!(
                     resources.symbolic_range_read_supported(&uncertain, &facts, None),
@@ -77,20 +77,23 @@ fn symbolic_footprint_selection_does_not_scan_same_base_ranges() {
 fn symbolic_byte_read_consumer_refuses_ambiguous_suppliers_without_search() {
     let base = Address::symbolic(Variable(960_000));
     let alias = Address::symbolic(Variable(960_001));
-    let n = MachineTerm::Variable(Variable(960_002));
-    let m = MachineTerm::Variable(Variable(960_003));
+    let n = OldMachineTerm::Variable(Variable(960_002));
+    let m = OldMachineTerm::Variable(Variable(960_003));
     let empty = PureFactContext::new();
     let facts = empty
         .clone()
         .assume_condition(
-            ConditionTerm::address_equal(base.clone(), alias.clone()),
+            OldConditionTerm::address_equal(base.clone(), alias.clone()),
             true,
         )
         .assume_condition(
-            ConditionTerm::signed_less_equal(0u32.into(), m.clone()),
+            OldConditionTerm::signed_less_equal(0u32.into(), m.clone()),
             true,
         )
-        .assume_condition(ConditionTerm::signed_less_equal(m.clone(), n.clone()), true);
+        .assume_condition(
+            OldConditionTerm::signed_less_equal(m.clone(), n.clone()),
+            true,
+        );
     let mut samples = Vec::new();
     for size in [16u64, 64, 256, 1024] {
         let held = ResourceFact::view_memory(range(&base, 0u32.into(), n.clone()));
@@ -99,7 +102,7 @@ fn symbolic_byte_read_consumer_refuses_ambiguous_suppliers_without_search() {
             resources = resources.unchecked_with_fact(ResourceFact::view_memory(range(
                 &base,
                 0u32.into(),
-                MachineTerm::Variable(Variable(961_000 + i)),
+                OldMachineTerm::Variable(Variable(961_000 + i)),
             )));
         }
         resources.synchronize_memory_equalities(&facts);

@@ -11,7 +11,7 @@ fn fixture(
 ) {
     let pointer = Address {
         base: AddressBase::Concrete("quantity-pool".into()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let state = ExecutionState::new()
         .with_local("pool", ProgramValue::pointer(pointer.clone()))
@@ -19,7 +19,7 @@ fn fixture(
             SymbolicMemory::new()
                 .with_block(pointer.base.clone(), 8)
                 .store(
-                    pointer.offset_by_int32_elements(MachineTerm::constant(1)),
+                    pointer.offset_by_int32_elements(OldMachineTerm::constant(1)),
                     int32(4),
                 ),
         );
@@ -110,11 +110,11 @@ fn sample(unrelated: usize, quantities: usize) -> usize {
     assert_eq!(guards.len(), quantities);
     assert!(guards.iter().all(|guard| guard
         == &Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterEqual,
-                left: Box::new(MachineTerm::constant(4)),
-                right: Box::new(MachineTerm::constant(0))
+                left: Box::new(OldMachineTerm::constant(4)),
+                right: Box::new(OldMachineTerm::constant(0))
             },
             true
         )));
@@ -134,8 +134,8 @@ fn composite_read_projection_requires_positive_ownership() {
     };
     let target = ResourceFact::view_memory(MemoryRange::new(
         pointer.clone(),
-        MachineTerm::constant(1),
-        MachineTerm::constant(2),
+        OldMachineTerm::constant(1),
+        OldMachineTerm::constant(2),
     ));
     for quantity in [0, 1] {
         let supplied = ResourceFact::Own(
@@ -143,7 +143,7 @@ fn composite_read_projection_requires_positive_ownership() {
                 name: "zz_control".into(),
                 arguments: vec![ProgramValue::pointer(pointer.clone()).into()].into(),
             },
-            Box::new(MachineTerm::constant(quantity).into()),
+            Box::new(OldMachineTerm::constant(quantity).into()),
         );
         let supply = resource_clause_section_supply(
             &state,
@@ -188,13 +188,13 @@ fn symbolic_quantity_keeps_the_entry_field_read_through_materialization() {
     let _session = crate::kernel::VerificationSession::enter();
     let pool = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(38_500)), 4),
+        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(38_500)), 4),
     };
     let capacity = pool.offset_by_bytes(4);
     let view = ResourceFact::view_memory(MemoryRange::new(
         pool.clone(),
-        MachineTerm::constant(0),
-        MachineTerm::constant(2),
+        OldMachineTerm::constant(0),
+        OldMachineTerm::constant(2),
     ));
     let entry = ExecutionState::new()
         .with_local("pool", ProgramValue::pointer(pool))
@@ -226,8 +226,8 @@ fn symbolic_quantity_keeps_the_entry_field_read_through_materialization() {
 
     let before = quantity(&entry);
     assert!(matches!(
-        before.native_compat(),
-        MachineTerm::MemoryLoad(read, address, LoadKind::Int32)
+        before.old_form(),
+        OldMachineTerm::MemoryLoad(read, address, LoadKind::Int32)
             if read.read_version_id() == point.id() && address.as_ref() == &capacity
     ));
     assert_eq!(before, quantity(&named));

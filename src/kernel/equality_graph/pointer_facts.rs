@@ -45,14 +45,14 @@ impl EqualityGraph {
             Proposition::Equal(a, b) => vec![Work::Term(a), Work::Term(b)],
             Proposition::Predicate { arguments, .. } => arguments.iter().map(Work::Term).collect(),
             condition_source_0 @ Proposition::ConditionIs(_, true)
-                if let Some((ConditionTerm::PointerEqual(a, b), _)) =
-                    condition_source_0.condition_native() =>
+                if let Some((OldConditionTerm::PointerEqual(a, b), _)) =
+                    condition_source_0.old_condition() =>
             {
                 vec![Work::Pointer(a), Work::Pointer(b)]
             }
             condition_source_0 @ Proposition::ConditionIs(_, true)
-                if let Some((ConditionTerm::AlgebraicEqual(a, b), _)) =
-                    condition_source_0.condition_native() =>
+                if let Some((OldConditionTerm::AlgebraicEqual(a, b), _)) =
+                    condition_source_0.old_condition() =>
             {
                 vec![Work::Model(a), Work::Model(b)]
             }
@@ -63,10 +63,10 @@ impl EqualityGraph {
             crate::instrumentation::record_deterministic_work(1);
             match work {
                 Work::Term(Term::ProgramValue(value)) => {
-                    pending.push(Work::Value(value.native_compat()));
+                    pending.push(Work::Value(value.old_form()));
                 }
                 Work::Term(Term::Algebraic(model)) => {
-                    pending.push(Work::Model(model.native_compat()));
+                    pending.push(Work::Model(model.old_form()));
                 }
                 Work::Model(AlgebraicTerm {
                     node: AlgebraicTermNode::Constructor { fields, .. },
@@ -277,7 +277,7 @@ impl EqualityGraph {
                                     term_source_1.program_value_native() =>
                             {
                                 self.knows_condition(
-                                    &crate::kernel::ConditionTerm::PointerEqual(
+                                    &crate::kernel::OldConditionTerm::PointerEqual(
                                         Box::new(left.clone()),
                                         Box::new(right.clone()),
                                     ),

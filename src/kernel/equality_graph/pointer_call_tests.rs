@@ -7,11 +7,11 @@ fn call(name: &str, arguments: Vec<PureFunctionArgument>) -> Address {
             name.into(),
             arguments,
         )),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     }
 }
-fn word(id: u64) -> MachineTerm {
-    MachineTerm::Variable(Variable(id))
+fn word(id: u64) -> OldMachineTerm {
+    OldMachineTerm::Variable(Variable(id))
 }
 fn argument(id: u64) -> PureFunctionArgument {
     PureFunctionArgument::Value(ProgramValue::Int32(word(id)))
@@ -31,7 +31,7 @@ fn equal_pointer_arguments(graph: &mut EqualityGraph, p: &Address, q: &Address) 
 
 fn equal(a: &Address, b: &Address) -> Proposition {
     Proposition::condition_is(
-        ConditionTerm::AddressEqual(Box::new(a.clone()), Box::new(b.clone())),
+        OldConditionTerm::AddressEqual(Box::new(a.clone()), Box::new(b.clone())),
         true,
     )
 }
@@ -50,7 +50,7 @@ fn pointer_calls_follow_late_model_aliases_and_displaced_addresses() {
     let mut graph = EqualityGraph::default();
     let shifted = |p: &Address| Address {
         base: p.base.clone(),
-        offset: AddressOffset::Constant(8),
+        offset: OldAddressOffset::Constant(8),
     };
     assert!(!graph.are_equal(&shifted(&left), &shifted(&right)));
     graph.add_algebraic_equality(&a, &b);
@@ -131,13 +131,13 @@ fn nested_pointer_calls_feed_scalar_calls_and_checked_reads() {
         p
     };
     let (a, b) = (build(p.clone()), build(q.clone()));
-    let scalar = |p| MachineTerm::ClickFunctionApplication {
+    let scalar = |p| OldMachineTerm::ClickFunctionApplication {
         name: "count".into(),
         arguments: vec![pointer_argument(p)],
     };
     let memory = intern_memory(SymbolicMemory::new());
     let read = |p| {
-        MachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
+        OldMachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
             &memory,
             &p,
             LoadKind::Int32,
@@ -163,7 +163,7 @@ fn pointer_call_evidence_stays_scoped() {
         call("get", vec![argument(51)]),
     );
     let p = Address::symbolic(Variable(52));
-    let premise = Proposition::condition_is(ConditionTerm::equal(word(50), word(51)), true);
+    let premise = Proposition::condition_is(OldConditionTerm::equal(word(50), word(51)), true);
     let held = equal(&p, &a);
     let goal = equal(&p, &b);
     let base = PureFactContext::new().assume_proposition(held.clone());
@@ -193,7 +193,7 @@ fn pointer_call_address_equality_does_not_merge_result_domains() {
     let context = PureFactContext::new().assume_proposition(equal(&a, &b));
     assert!(!context.pointer_provenance_match(&left, &right));
     let complete = context.clone().assume_condition(
-        ConditionTerm::pointer_equal(left.clone(), right.clone()),
+        OldConditionTerm::pointer_equal(left.clone(), right.clone()),
         true,
     );
     assert!(complete.pointer_provenance_match(&left, &right));

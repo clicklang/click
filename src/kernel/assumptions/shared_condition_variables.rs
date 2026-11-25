@@ -7,7 +7,7 @@
 use super::*;
 use crate::persistent::{PersistentMap, PersistentSet};
 
-type Fact = SharedIndexFact<ConditionTerm>;
+type Fact = SharedIndexFact<OldConditionTerm>;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 enum Key {
@@ -43,7 +43,7 @@ pub(in crate::kernel) struct Index {
 impl Index {
     /// This fragment's only dependencies are its written scalar variables.
     /// Registered reads retain the existing state/address-dependent index.
-    fn source(condition: &ConditionTerm, truth: bool) -> Option<Source> {
+    fn source(condition: &OldConditionTerm, truth: bool) -> Option<Source> {
         let crate::kernel::integer_comparison_condition!(left, right) = condition else {
             return None;
         };
@@ -60,13 +60,13 @@ impl Index {
                             shared = true;
                             root.clone()
                         }
-                        MachineOperandView::Legacy(MachineTerm::Variable(variable)) => {
+                        MachineOperandView::Old(OldMachineTerm::Variable(variable)) => {
                             KernelTerm::variable(
                                 KernelType::Program(value.ty().program_type()),
                                 *variable,
                             )
                         }
-                        MachineOperandView::Legacy(value) if value.as_const().is_some() => continue,
+                        MachineOperandView::Old(value) if value.as_const().is_some() => continue,
                         _ => return None,
                     };
                     // Read addresses and states have their own dependency
@@ -184,7 +184,7 @@ impl Index {
         self.sources.insert(fact, source);
     }
 
-    pub(super) fn adjust(&mut self, condition: &ConditionTerm, value: bool) -> bool {
+    pub(super) fn adjust(&mut self, condition: &OldConditionTerm, value: bool) -> bool {
         if self.contains(condition) {
             return true;
         }
@@ -194,20 +194,20 @@ impl Index {
         self.add_source(Fact::new(condition.clone()), source);
         true
     }
-    pub(super) fn contains(&self, condition: &ConditionTerm) -> bool {
+    pub(super) fn contains(&self, condition: &OldConditionTerm) -> bool {
         self.sources.contains_key(condition)
     }
     pub(super) fn witnesses(
         &self,
         variable: Variable,
-    ) -> impl Iterator<Item = (&ConditionTerm, bool)> {
+    ) -> impl Iterator<Item = (&OldConditionTerm, bool)> {
         self.nodes
             .get(&Key::Variable(variable))
             .into_iter()
             .flat_map(|node| node.witnesses.iter())
             .map(|fact| (fact.as_ref(), self.sources.get(fact).unwrap().value))
     }
-    pub(super) fn facts(&self, variable: Variable) -> BTreeMap<&ConditionTerm, bool> {
+    pub(super) fn facts(&self, variable: Variable) -> BTreeMap<&OldConditionTerm, bool> {
         let mut pending = vec![Key::Variable(variable)];
         let mut seen = BTreeSet::new();
         let mut facts = BTreeMap::new();
@@ -243,8 +243,8 @@ mod tests {
             [a, b],
         )
     }
-    fn bound(root: KernelTerm, n: i64) -> ConditionTerm {
-        ConditionTerm::integer_less_equal(
+    fn bound(root: KernelTerm, n: i64) -> OldConditionTerm {
+        OldConditionTerm::integer_less_equal(
             IntegerTerm::Machine(
                 SharedMachineIntegerTerm::from_shared(MachineIntegerType::Int32, root).unwrap(),
             ),
@@ -258,9 +258,9 @@ mod tests {
         let first = bound(xy.clone(), 7);
         let second = bound(product(xy.clone(), variable(994702)), 8);
         let third = bound(product(xy.clone(), xy), 9);
-        let native = ConditionTerm::signed_less_equal(
-            MachineTerm::Variable(Variable(994700)),
-            MachineTerm::constant(10),
+        let native = OldConditionTerm::signed_less_equal(
+            OldMachineTerm::Variable(Variable(994700)),
+            OldMachineTerm::constant(10),
         );
         let parent = PureFactContext::new().assume_condition(first.clone(), true);
         assert_eq!(

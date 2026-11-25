@@ -43,20 +43,20 @@ mod tests {
                 let _session = crate::kernel::VerificationSession::enter();
                 let current = SymbolicMemory::new();
                 let memory = intern_memory_ref(&current);
-                let read = MachineTerm::read_named(
+                let read = OldMachineTerm::read_named(
                     ProgramPoint::at(&memory),
                     Box::new(Address::symbolic(Variable(991901))),
                     LoadKind::Bits64,
                 );
                 let body = if opaque {
-                    MachineTerm::ClickFunctionApplication {
+                    OldMachineTerm::ClickFunctionApplication {
                         name: "opaque".into(),
                         arguments: vec![],
                     }
                 } else {
                     read
                 };
-                let native = MachineTerm::AlgebraicMatch {
+                let native = OldMachineTerm::AlgebraicMatch {
                     scrutinee: Box::new(KernelMatch::test_scrutinee(vec![
                         AlgebraicValueType::Integer,
                     ])),

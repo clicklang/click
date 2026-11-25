@@ -192,7 +192,7 @@ fn pointer_result_from_outcomes<'a>(
             continue;
         }
         let evidence = pointer.object_origin_evidence().cloned().or_else(|| {
-            (pointer.offset == AddressOffset::Constant(0))
+            (pointer.offset == OldAddressOffset::Constant(0))
                 .then(|| {
                     state
                         .memory()
@@ -295,7 +295,7 @@ mod tests {
     fn declared_provenance_supply_type_evidence_without_changing_pointer_views() {
         let object = Address {
             base: "declared_node".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let memory =
             SymbolicMemory::new().with_classed_block(object.base.clone(), Some(class()), 8);
@@ -332,7 +332,7 @@ mod tests {
             (original.clone(), SymbolicMemory::new()),
             (
                 make(Address {
-                    offset: AddressOffset::Constant(4),
+                    offset: OldAddressOffset::Constant(4),
                     ..object
                 }),
                 memory.clone(),
@@ -401,7 +401,7 @@ mod tests {
             unreachable!()
         };
         let bits =
-            MachineTerm::object_pointer_address(source.address().clone(), source.object_class());
+            OldMachineTerm::object_pointer_address(source.address().clone(), source.object_class());
         let decoded = super::super::eval::pointer_tags::cast_tagged_address_to_pointer(
             &bits,
             &PureFactContext::new(),

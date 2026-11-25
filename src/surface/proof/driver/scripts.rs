@@ -1014,24 +1014,15 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 ProofTactic::Transport { source, target } => {
                     // The bare form selects its frame evidence at the
                     // execution frontier this `have` was opened on, exactly
-                    // as between top-level steps: the source-local candidates
-                    // first, then the premise planner, whose refusal is the
-                    // answer. A pure theorem has no frontier to select from.
+                    // as between top-level steps. A pure theorem has no frontier to select from.
                     if !matches!(proof.context.as_ref(), ProofContext::Execution(_)) {
                         return Err(proof.step_error(
                             "`transport` requires a C execution frontier; use `have`, `rewrite`, or `close() using` to prove the goal here",
                         ));
                     }
-                    proof = match crate::kernel::search::ProofSearch::try_execution_fact_transport_or_refusal(&(proof), source, target)? {
-                        Ok(transported) => transported,
-                        Err(source_refusal) => crate::kernel::search::ProofSearch::apply_planned_fact_transport(
- &proof,
-                            source,
-                            target,
-                            index,
-                            source_refusal.as_ref(),
-                        )?,
-                    };
+                    proof = crate::kernel::search::ProofSearch::apply_written_fact_transport(
+                        &proof, source, target, index,
+                    )?;
                 }
                 tactic => {
                     if matches!(tactic, ProofTactic::Sorry) {

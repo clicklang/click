@@ -11,7 +11,7 @@ fn typed_held_observation_ignores_unrelated_mutexes_and_facts() {
         for index in 1..size {
             context = context.initialize_empty(address(index), 40).unwrap();
             assumptions = assumptions.assume_proposition(Proposition::condition_is(
-                ConditionTerm::Variable(Variable(800000 + index as u64)),
+                OldConditionTerm::Variable(Variable(800000 + index as u64)),
                 true,
             ));
         }
@@ -40,10 +40,10 @@ fn typed_held_observation_does_not_search_a_growing_alias_class() {
         for index in 0..size {
             let alias = Address {
                 base: AddressBase::Symbolic(Variable(810000 + index as u64)),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             };
             assumptions = assumptions.assume_proposition(Proposition::condition_is(
-                ConditionTerm::AddressEqual(Box::new(address(0)), Box::new(alias)),
+                OldConditionTerm::AddressEqual(Box::new(address(0)), Box::new(alias)),
                 true,
             ));
         }

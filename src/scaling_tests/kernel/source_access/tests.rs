@@ -11,11 +11,11 @@ fn source_reference_selected_observation_merge_does_not_scan_ambient_facts() {
         let mut prefix = ExecutionFacts::new();
         for index in 0..size {
             prefix.push(ExecutionPureFact::condition(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left: Box::new(MachineTerm::Variable(Variable(index))),
-                    right: Box::new(MachineTerm::constant(7)),
+                    left: Box::new(OldMachineTerm::Variable(Variable(index))),
+                    right: Box::new(OldMachineTerm::constant(7)),
                 },
                 true,
             ));

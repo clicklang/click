@@ -22,7 +22,7 @@
 //! name. No kernel rule or premise depends on it.
 
 use crate::kernel::primitives::{
-    AlgebraicTerm, AlgebraicTermNode, InstanceId, IntegerTerm, MachineTerm, Variable,
+    AlgebraicTerm, AlgebraicTermNode, InstanceId, IntegerTerm, OldMachineTerm, Variable,
 };
 use std::sync::Arc;
 
@@ -42,7 +42,7 @@ pub(crate) fn algebraic_value_variable<'a>(
         }) => Some(*variable),
         crate::kernel::ResourceFieldValue::Program(value) => {
             match crate::kernel::spec::program_value_bitvector_term(value) {
-                Some(MachineTerm::Variable(variable)) => Some(variable),
+                Some(OldMachineTerm::Variable(variable)) => Some(variable),
                 _ => None,
             }
         }

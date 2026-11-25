@@ -115,19 +115,19 @@ fn returned_symbolic_cell_rejoins_without_scanning_unrelated_ownership() {
     let mut samples = Vec::new();
     for size in [4_u64, 16, 64, 256] {
         let base = Address::symbolic(Variable(987_400));
-        let index = MachineTerm::Variable(Variable(987_401));
-        let middle = MachineTerm::add(index.clone(), 1u32.into());
-        let end = MachineTerm::add(index.clone(), 2u32.into());
+        let index = OldMachineTerm::Variable(Variable(987_401));
+        let middle = OldMachineTerm::add(index.clone(), 1u32.into());
+        let end = OldMachineTerm::add(index.clone(), 2u32.into());
         let range = |base, start, end| {
             ResourceFact::own_memory(MemoryRange::new_with_element_width(base, start, end, 4))
         };
         let facts = PureFactContext::new()
             .assume_condition(
-                ConditionTerm::signed_less_equal(0u32.into(), index.clone()),
+                OldConditionTerm::signed_less_equal(0u32.into(), index.clone()),
                 true,
             )
             .assume_condition(
-                ConditionTerm::signed_less_than(index.clone(), 100u32.into()),
+                OldConditionTerm::signed_less_than(index.clone(), 100u32.into()),
                 true,
             );
         let mut resources = ResourceContext::new_with_equalities(&facts);
@@ -178,13 +178,13 @@ fn shared_pointer_load_footprints_keep_depth_refusal_without_tree_expansion() {
         let memory = crate::kernel::intern_memory(
             SymbolicMemory::new().store(address.clone(), crate::kernel::int32(7)),
         );
-        let load = MachineTerm::read_named(
+        let load = OldMachineTerm::read_named(
             ProgramPoint::at(&memory),
             Box::new(address.clone()),
             crate::kernel::LoadKind::Int32,
         );
         let mut root =
-            KernelTerm::retained_machine_operand(MachineIntegerType::Int32, V::Legacy(&load));
+            KernelTerm::retained_machine_operand(MachineIntegerType::Int32, V::Old(&load));
         for _ in 0..depth {
             root = KernelTerm::machine_binary_shared(
                 MachineIntegerType::Int32,
@@ -192,7 +192,7 @@ fn shared_pointer_load_footprints_keep_depth_refusal_without_tree_expansion() {
                 [root.clone(), root],
             );
         }
-        let offset = AddressOffset::Int32Scaled {
+        let offset = OldAddressOffset::Int32Scaled {
             value: S::from_shared(MachineIntegerType::Int32, root).unwrap(),
             byte_width: 4,
         };

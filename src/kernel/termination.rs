@@ -431,7 +431,7 @@ fn branch_establishes_structural_guard(
             expression => {
                 let (left, right) = ordered(
                     expression,
-                    &ProgramExpression::Value(ProgramValue::Int32(MachineTerm::constant(0))),
+                    &ProgramExpression::Value(ProgramValue::Int32(OldMachineTerm::constant(0))),
                 );
                 (ConditionAtom::Equal(left, right), !value)
             }
@@ -713,7 +713,7 @@ fn assume_structural_path(
         let decided = match proposition {
             Proposition::MemoryLoadable { .. } => true,
             Proposition::ConditionIs(condition, value) => {
-                assumptions.decide(condition.native_compat()) == Some(*value)
+                assumptions.decide(condition.old_form()) == Some(*value)
             }
             proposition => assumptions.proves_exact(proposition),
         };
@@ -776,7 +776,7 @@ fn call_passes_witness_child(
             ProgramValue::typed_pointer(
                 Address {
                     base: AddressBase::ExternalArgument,
-                    offset: AddressOffset::scale_int32(MachineTerm::Variable(variable), 1),
+                    offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(variable), 1),
                 },
                 parameter.program_type(),
             )
@@ -868,7 +868,7 @@ fn call_passes_witness_child(
             let expected = expected.address();
             let actual = actual.address();
             if expected != actual
-                && assumptions.decide(&ConditionTerm::address_equal(
+                && assumptions.decide(&OldConditionTerm::address_equal(
                     actual.clone(),
                     expected.clone(),
                 )) != Some(true)
@@ -2516,20 +2516,21 @@ pub(super) fn ranking_nonnegative_proposition(value: &RankingMeasureValue) -> Pr
     Proposition::condition_is(
         match value {
             RankingMeasureValue::Machine(term) => {
-                ConditionTerm::signed_less_equal(MachineTerm::constant(0), term.clone())
+                OldConditionTerm::signed_less_equal(OldMachineTerm::constant(0), term.clone())
             }
             // A signed 64-bit reading owes its lower bound as an int32 does.
-            RankingMeasureValue::Signed64(term) => {
-                ConditionTerm::int64_signed_less_equal(MachineTerm::int64_constant(0), term.clone())
-            }
+            RankingMeasureValue::Signed64(term) => OldConditionTerm::int64_signed_less_equal(
+                OldMachineTerm::int64_constant(0),
+                term.clone(),
+            ),
             RankingMeasureValue::Unsigned32(_) | RankingMeasureValue::Unsigned64(_) => {
-                ConditionTerm::Constant(true)
+                OldConditionTerm::Constant(true)
             }
             RankingMeasureValue::Integer(term) if crate::kernel::is_nat_integer_image(term) => {
-                ConditionTerm::Constant(true)
+                OldConditionTerm::Constant(true)
             }
             RankingMeasureValue::Integer(term) => {
-                ConditionTerm::integer_less_equal(IntegerTerm::constant_i64(0), term.clone())
+                OldConditionTerm::integer_less_equal(IntegerTerm::constant_i64(0), term.clone())
             }
         },
         true,
@@ -2551,26 +2552,26 @@ pub(super) fn ranking_decrease_proposition(
     Ok(Proposition::condition_is(
         match (post, pre) {
             (RankingMeasureValue::Machine(post), RankingMeasureValue::Machine(pre)) => {
-                ConditionTerm::signed_less_than(post.clone(), pre.clone())
+                OldConditionTerm::signed_less_than(post.clone(), pre.clone())
             }
             // Unsigned descent compares the two wrapped values C computes.
             // Strict `<` on the naturals below 2^32 (or 2^64) is well founded,
             // so a measure that wraps is still ranked soundly: a back edge
             // whose wrapped value grows simply fails this member.
             (RankingMeasureValue::Unsigned32(post), RankingMeasureValue::Unsigned32(pre)) => {
-                ConditionTerm::unsigned_less_than(post.clone(), pre.clone())
+                OldConditionTerm::unsigned_less_than(post.clone(), pre.clone())
             }
             (RankingMeasureValue::Unsigned64(post), RankingMeasureValue::Unsigned64(pre)) => {
-                ConditionTerm::uint64_less_than(post.clone(), pre.clone())
+                OldConditionTerm::uint64_less_than(post.clone(), pre.clone())
             }
             // Signed descent below a value that is at least zero: strict `<`
             // on the nonnegative int64 values is well founded, and the
             // bundle's `0 <= m` member keeps each reading among them.
             (RankingMeasureValue::Signed64(post), RankingMeasureValue::Signed64(pre)) => {
-                ConditionTerm::int64_signed_less_than(post.clone(), pre.clone())
+                OldConditionTerm::int64_signed_less_than(post.clone(), pre.clone())
             }
             (RankingMeasureValue::Integer(post), RankingMeasureValue::Integer(pre)) => {
-                ConditionTerm::integer_less_than(post.clone(), pre.clone())
+                OldConditionTerm::integer_less_than(post.clone(), pre.clone())
             }
             _ => return Err(mixed_ranking_carrier_message(component)),
         },
@@ -2588,16 +2589,16 @@ pub(super) fn ranking_tie_proposition(
         match (post, pre) {
             (RankingMeasureValue::Machine(post), RankingMeasureValue::Machine(pre))
             | (RankingMeasureValue::Unsigned32(post), RankingMeasureValue::Unsigned32(pre)) => {
-                ConditionTerm::equal(post.clone(), pre.clone())
+                OldConditionTerm::equal(post.clone(), pre.clone())
             }
             (RankingMeasureValue::Unsigned64(post), RankingMeasureValue::Unsigned64(pre)) => {
-                ConditionTerm::uint64_equal(post.clone(), pre.clone())
+                OldConditionTerm::uint64_equal(post.clone(), pre.clone())
             }
             (RankingMeasureValue::Signed64(post), RankingMeasureValue::Signed64(pre)) => {
-                ConditionTerm::int64_equal(post.clone(), pre.clone())
+                OldConditionTerm::int64_equal(post.clone(), pre.clone())
             }
             (RankingMeasureValue::Integer(post), RankingMeasureValue::Integer(pre)) => {
-                ConditionTerm::integer_equal(post.clone(), pre.clone())
+                OldConditionTerm::integer_equal(post.clone(), pre.clone())
             }
             _ => return Err(mixed_ranking_carrier_message(component)),
         },
@@ -2721,7 +2722,7 @@ enum RankingMachineType {
 /// comparison take the signedness of that common type.
 struct RankingMachineTerm {
     machine_type: RankingMachineType,
-    term: MachineTerm,
+    term: OldMachineTerm,
 }
 
 impl RankingMachineTerm {
@@ -2732,14 +2733,14 @@ impl RankingMachineTerm {
             ProgramValue::PointerInteger(_) => unreachable!("numeric projection"),
             ProgramValue::Bool(term) => (
                 RankingMachineType::Int32,
-                MachineTerm::bool_word_as(MachineIntegerType::Int32, term),
+                OldMachineTerm::bool_word_as(MachineIntegerType::Int32, term),
             ),
             narrow @ (ProgramValue::Int8(term)
             | ProgramValue::Int16(term)
             | ProgramValue::UInt8(term)
             | ProgramValue::UInt16(term)) => (
                 RankingMachineType::Int32,
-                MachineTerm::machine_integer_cast(
+                OldMachineTerm::machine_integer_cast(
                     MachineIntegerType::from_program_type(narrow.program_type())?,
                     MachineIntegerType::Int32,
                     term.clone(),
@@ -2761,20 +2762,20 @@ impl RankingMachineTerm {
     }
 
     /// This value converted to `target`, as C converts an integer.
-    fn convert(self, target: RankingMachineType) -> MachineTerm {
+    fn convert(self, target: RankingMachineType) -> OldMachineTerm {
         use RankingMachineType::*;
         match (self.machine_type, target) {
             (Int32 | UInt32, Int32 | UInt32) | (UInt64, UInt64) | (Int64, Int64) => self.term,
-            (Int32, UInt64) => MachineTerm::uint64_from_int32(self.term),
-            (UInt32, UInt64) => MachineTerm::uint64_from_32(self.term),
+            (Int32, UInt64) => OldMachineTerm::uint64_from_int32(self.term),
+            (UInt32, UInt64) => OldMachineTerm::uint64_from_32(self.term),
             // Widening to the signed type keeps the value: a signed word is
             // sign-extended and an unsigned one zero-extended.
-            (Int32, Int64) => MachineTerm::int64_from_32(self.term),
-            (UInt32, Int64) => MachineTerm::int64_from_uint32(self.term),
+            (Int32, Int64) => OldMachineTerm::int64_from_32(self.term),
+            (UInt32, Int64) => OldMachineTerm::int64_from_uint32(self.term),
             // Between the two 64-bit types C keeps the bits.
-            (Int64, UInt64) => MachineTerm::uint64_from_int64(self.term),
-            (UInt64, Int64) => MachineTerm::int64_from_uint64_bits(self.term),
-            (UInt64 | Int64, Int32 | UInt32) => MachineTerm::uint32_from_64(self.term),
+            (Int64, UInt64) => OldMachineTerm::uint64_from_int64(self.term),
+            (UInt64, Int64) => OldMachineTerm::int64_from_uint64_bits(self.term),
+            (UInt64 | Int64, Int32 | UInt32) => OldMachineTerm::uint32_from_64(self.term),
         }
     }
 
@@ -2856,7 +2857,7 @@ fn ranking_measure_term_unfolded(
 ) -> Result<RankingMachineTerm, String> {
     use ProgramExpression::*;
     use RankingMachineType::*;
-    type Operation = fn(MachineTerm, MachineTerm) -> MachineTerm;
+    type Operation = fn(OldMachineTerm, OldMachineTerm) -> OldMachineTerm;
     /// One arithmetic operator, as C applies it at each common type.
     fn binary(
         left: &ProgramExpression,
@@ -2978,7 +2979,7 @@ fn ranking_measure_term_unfolded(
             };
             Ok(RankingMachineTerm {
                 machine_type,
-                term: MachineTerm::If {
+                term: OldMachineTerm::If {
                     condition: Box::new(condition),
                     then_term: Box::new(then_term),
                     else_term: Box::new(else_term),
@@ -2991,22 +2992,22 @@ fn ranking_measure_term_unfolded(
             state,
             reader,
             (
-                MachineTerm::add,
-                MachineTerm::add,
-                MachineTerm::uint64_add,
-                MachineTerm::int64_add,
+                OldMachineTerm::add,
+                OldMachineTerm::add,
+                OldMachineTerm::uint64_add,
+                OldMachineTerm::int64_add,
             ),
         ),
         Negate(right) => binary(
-            &Value(ProgramValue::Int32(MachineTerm::constant(0))),
+            &Value(ProgramValue::Int32(OldMachineTerm::constant(0))),
             right,
             state,
             reader,
             (
-                MachineTerm::subtract,
-                MachineTerm::subtract,
-                MachineTerm::uint64_subtract,
-                MachineTerm::int64_subtract,
+                OldMachineTerm::subtract,
+                OldMachineTerm::subtract,
+                OldMachineTerm::uint64_subtract,
+                OldMachineTerm::int64_subtract,
             ),
         ),
         Subtract(left, right) => binary(
@@ -3015,10 +3016,10 @@ fn ranking_measure_term_unfolded(
             state,
             reader,
             (
-                MachineTerm::subtract,
-                MachineTerm::subtract,
-                MachineTerm::uint64_subtract,
-                MachineTerm::int64_subtract,
+                OldMachineTerm::subtract,
+                OldMachineTerm::subtract,
+                OldMachineTerm::uint64_subtract,
+                OldMachineTerm::int64_subtract,
             ),
         ),
         Multiply(left, right) => binary(
@@ -3027,10 +3028,10 @@ fn ranking_measure_term_unfolded(
             state,
             reader,
             (
-                MachineTerm::multiply,
-                MachineTerm::multiply,
-                MachineTerm::uint64_multiply,
-                MachineTerm::int64_multiply,
+                OldMachineTerm::multiply,
+                OldMachineTerm::multiply,
+                OldMachineTerm::uint64_multiply,
+                OldMachineTerm::int64_multiply,
             ),
         ),
         Divide(left, right) => binary(
@@ -3039,10 +3040,10 @@ fn ranking_measure_term_unfolded(
             state,
             reader,
             (
-                MachineTerm::divide,
-                MachineTerm::unsigned_divide,
-                MachineTerm::uint64_divide,
-                MachineTerm::int64_divide,
+                OldMachineTerm::divide,
+                OldMachineTerm::unsigned_divide,
+                OldMachineTerm::uint64_divide,
+                OldMachineTerm::int64_divide,
             ),
         ),
         Remainder(left, right) => binary(
@@ -3051,10 +3052,10 @@ fn ranking_measure_term_unfolded(
             state,
             reader,
             (
-                MachineTerm::remainder,
-                MachineTerm::unsigned_remainder,
-                MachineTerm::uint64_remainder,
-                MachineTerm::int64_remainder,
+                OldMachineTerm::remainder,
+                OldMachineTerm::unsigned_remainder,
+                OldMachineTerm::uint64_remainder,
+                OldMachineTerm::int64_remainder,
             ),
         ),
         RustShiftLeft(..) | RustShiftRight(..) => ranking_measure_read(expression, state, reader),
@@ -3063,7 +3064,7 @@ fn ranking_measure_term_unfolded(
             right,
             state,
             reader,
-            (MachineTerm::shift_left, MachineTerm::shift_left),
+            (OldMachineTerm::shift_left, OldMachineTerm::shift_left),
         ),
         ShiftRight(left, right) => shift(
             left,
@@ -3071,8 +3072,8 @@ fn ranking_measure_term_unfolded(
             state,
             reader,
             (
-                MachineTerm::arithmetic_shift_right,
-                MachineTerm::logical_shift_right,
+                OldMachineTerm::arithmetic_shift_right,
+                OldMachineTerm::logical_shift_right,
             ),
         ),
         BitwiseAnd(left, right) => binary(
@@ -3081,10 +3082,10 @@ fn ranking_measure_term_unfolded(
             state,
             reader,
             (
-                MachineTerm::bitwise_and,
-                MachineTerm::bitwise_and,
-                MachineTerm::uint64_bitwise_and,
-                MachineTerm::uint64_bitwise_and,
+                OldMachineTerm::bitwise_and,
+                OldMachineTerm::bitwise_and,
+                OldMachineTerm::uint64_bitwise_and,
+                OldMachineTerm::uint64_bitwise_and,
             ),
         ),
         BitwiseOr(left, right) => binary(
@@ -3093,10 +3094,10 @@ fn ranking_measure_term_unfolded(
             state,
             reader,
             (
-                MachineTerm::bitwise_or,
-                MachineTerm::bitwise_or,
-                MachineTerm::uint64_bitwise_or,
-                MachineTerm::uint64_bitwise_or,
+                OldMachineTerm::bitwise_or,
+                OldMachineTerm::bitwise_or,
+                OldMachineTerm::uint64_bitwise_or,
+                OldMachineTerm::uint64_bitwise_or,
             ),
         ),
         BitwiseXor(left, right) => binary(
@@ -3105,19 +3106,19 @@ fn ranking_measure_term_unfolded(
             state,
             reader,
             (
-                MachineTerm::bitwise_xor,
-                MachineTerm::bitwise_xor,
-                MachineTerm::uint64_bitwise_xor,
-                MachineTerm::uint64_bitwise_xor,
+                OldMachineTerm::bitwise_xor,
+                OldMachineTerm::bitwise_xor,
+                OldMachineTerm::uint64_bitwise_xor,
+                OldMachineTerm::uint64_bitwise_xor,
             ),
         ),
         BitwiseNot(value) => {
             let value = ranking_measure_term_unfolded(value, state, reader)?;
             let machine_type = value.machine_type;
             let term = if matches!(machine_type, UInt64 | Int64) {
-                MachineTerm::uint64_bitwise_not(value.term)
+                OldMachineTerm::uint64_bitwise_not(value.term)
             } else {
-                MachineTerm::bitwise_not(value.term)
+                OldMachineTerm::bitwise_not(value.term)
             };
             Ok(RankingMachineTerm { machine_type, term })
         }
@@ -3151,7 +3152,7 @@ fn ranking_measure_condition_term(
     expression: &ProgramExpression,
     state: &ExecutionState,
     reader: &mut RankingMeasureReader<'_>,
-) -> Result<(ConditionTerm, bool), String> {
+) -> Result<(OldConditionTerm, bool), String> {
     use ProgramExpression::*;
     use RankingMachineType::*;
     /// The relation `left < right` (or `<=`, or `==`) at the operands' common
@@ -3170,31 +3171,33 @@ fn ranking_measure_condition_term(
         state: &ExecutionState,
         reader: &mut RankingMeasureReader<'_>,
         relation: Relation,
-    ) -> Result<ConditionTerm, String> {
+    ) -> Result<OldConditionTerm, String> {
         let left = ranking_measure_term_unfolded(left, state, reader)?;
         let right = ranking_measure_term_unfolded(right, state, reader)?;
         let machine_type = RankingMachineTerm::common_type(&left, &right);
         let (left, right) = (left.convert(machine_type), right.convert(machine_type));
         Ok(match (machine_type, relation) {
-            (Int32, Relation::Less) => ConditionTerm::signed_less_than(left, right),
-            (Int32, Relation::LessEqual) => ConditionTerm::signed_less_equal(left, right),
-            (Int32, Relation::Greater) => ConditionTerm::signed_greater_than(left, right),
-            (Int32, Relation::GreaterEqual) => ConditionTerm::signed_greater_equal(left, right),
-            (UInt32, Relation::Less) => ConditionTerm::unsigned_less_than(left, right),
-            (UInt32, Relation::LessEqual) => ConditionTerm::unsigned_less_equal(left, right),
-            (UInt32, Relation::Greater) => ConditionTerm::unsigned_less_than(right, left),
-            (UInt32, Relation::GreaterEqual) => ConditionTerm::unsigned_less_equal(right, left),
-            (Int32 | UInt32, Relation::Equal) => ConditionTerm::equal(left, right),
-            (UInt64, Relation::Less) => ConditionTerm::uint64_less_than(left, right),
-            (UInt64, Relation::LessEqual) => ConditionTerm::uint64_less_equal(left, right),
-            (UInt64, Relation::Greater) => ConditionTerm::uint64_less_than(right, left),
-            (UInt64, Relation::GreaterEqual) => ConditionTerm::uint64_less_equal(right, left),
-            (UInt64, Relation::Equal) => ConditionTerm::uint64_equal(left, right),
-            (Int64, Relation::Less) => ConditionTerm::int64_signed_less_than(left, right),
-            (Int64, Relation::LessEqual) => ConditionTerm::int64_signed_less_equal(left, right),
-            (Int64, Relation::Greater) => ConditionTerm::int64_signed_less_than(right, left),
-            (Int64, Relation::GreaterEqual) => ConditionTerm::int64_signed_less_equal(right, left),
-            (Int64, Relation::Equal) => ConditionTerm::int64_equal(left, right),
+            (Int32, Relation::Less) => OldConditionTerm::signed_less_than(left, right),
+            (Int32, Relation::LessEqual) => OldConditionTerm::signed_less_equal(left, right),
+            (Int32, Relation::Greater) => OldConditionTerm::signed_greater_than(left, right),
+            (Int32, Relation::GreaterEqual) => OldConditionTerm::signed_greater_equal(left, right),
+            (UInt32, Relation::Less) => OldConditionTerm::unsigned_less_than(left, right),
+            (UInt32, Relation::LessEqual) => OldConditionTerm::unsigned_less_equal(left, right),
+            (UInt32, Relation::Greater) => OldConditionTerm::unsigned_less_than(right, left),
+            (UInt32, Relation::GreaterEqual) => OldConditionTerm::unsigned_less_equal(right, left),
+            (Int32 | UInt32, Relation::Equal) => OldConditionTerm::equal(left, right),
+            (UInt64, Relation::Less) => OldConditionTerm::uint64_less_than(left, right),
+            (UInt64, Relation::LessEqual) => OldConditionTerm::uint64_less_equal(left, right),
+            (UInt64, Relation::Greater) => OldConditionTerm::uint64_less_than(right, left),
+            (UInt64, Relation::GreaterEqual) => OldConditionTerm::uint64_less_equal(right, left),
+            (UInt64, Relation::Equal) => OldConditionTerm::uint64_equal(left, right),
+            (Int64, Relation::Less) => OldConditionTerm::int64_signed_less_than(left, right),
+            (Int64, Relation::LessEqual) => OldConditionTerm::int64_signed_less_equal(left, right),
+            (Int64, Relation::Greater) => OldConditionTerm::int64_signed_less_than(right, left),
+            (Int64, Relation::GreaterEqual) => {
+                OldConditionTerm::int64_signed_less_equal(right, left)
+            }
+            (Int64, Relation::Equal) => OldConditionTerm::int64_equal(left, right),
         })
     }
     match expression {
@@ -3224,9 +3227,9 @@ fn ranking_measure_condition_term(
             let value = ranking_measure_term_unfolded(expression, state, reader)?;
             Ok((
                 if matches!(value.machine_type, UInt64 | Int64) {
-                    ConditionTerm::uint64_equal(value.term, MachineTerm::uint64_constant(0))
+                    OldConditionTerm::uint64_equal(value.term, OldMachineTerm::uint64_constant(0))
                 } else {
-                    ConditionTerm::equal(value.term, MachineTerm::constant(0))
+                    OldConditionTerm::equal(value.term, OldMachineTerm::constant(0))
                 },
                 false,
             ))
@@ -3784,7 +3787,7 @@ fn verified_loop_ranking_measures(
     (certified, unranked)
 }
 
-fn ranking_affine_form(term: &MachineTerm) -> (BTreeMap<MachineTerm, i64>, i64) {
+fn ranking_affine_form(term: &OldMachineTerm) -> (BTreeMap<OldMachineTerm, i64>, i64) {
     match term {
         bits32_constant!(value) => (BTreeMap::new(), i64::from(constant_u32(*value) as i32)),
         binary_term!(Int32, Add, left, right) => {
@@ -3860,29 +3863,29 @@ fn ranking_affine_form(term: &MachineTerm) -> (BTreeMap<MachineTerm, i64>, i64) 
     }
 }
 
-fn canonical_ranking_term(term: &MachineTerm) -> MachineTerm {
+fn canonical_ranking_term(term: &OldMachineTerm) -> OldMachineTerm {
     let (terms, constant) = ranking_affine_form(term);
-    let mut result = MachineTerm::constant(0);
+    let mut result = OldMachineTerm::constant(0);
     for (term, coefficient) in terms {
         let magnitude = coefficient.unsigned_abs();
         let factor = if magnitude == 1 {
             term
         } else {
-            MachineTerm::multiply(MachineTerm::constant(magnitude as u32), term)
+            OldMachineTerm::multiply(OldMachineTerm::constant(magnitude as u32), term)
         };
         result = if coefficient < 0 {
-            MachineTerm::subtract(result, factor)
+            OldMachineTerm::subtract(result, factor)
         } else {
-            MachineTerm::add(result, factor)
+            OldMachineTerm::add(result, factor)
         };
     }
     if constant < 0 {
-        MachineTerm::subtract(
+        OldMachineTerm::subtract(
             result,
-            MachineTerm::constant(constant.unsigned_abs() as u32),
+            OldMachineTerm::constant(constant.unsigned_abs() as u32),
         )
     } else {
-        MachineTerm::add(result, MachineTerm::constant(constant as u32))
+        OldMachineTerm::add(result, OldMachineTerm::constant(constant as u32))
     }
 }
 
@@ -5240,7 +5243,7 @@ mod address_escape_tests {
 mod ranking_member_tests {
     use super::*;
 
-    fn scalar_state(bindings: &[(&str, MachineTerm)]) -> ExecutionState {
+    fn scalar_state(bindings: &[(&str, OldMachineTerm)]) -> ExecutionState {
         let mut state = ExecutionState::new();
         for (name, value) in bindings {
             state.locals.set_typed(
@@ -5261,7 +5264,7 @@ mod ranking_member_tests {
     /// cannot be read from it, and the refusal says so.
     #[test]
     fn a_measure_may_not_read_a_volatile_object() {
-        let state = scalar_state(&[("i", MachineTerm::Variable(Variable(1)))]);
+        let state = scalar_state(&[("i", OldMachineTerm::Variable(Variable(1)))]);
         let volatile_read = ProgramExpression::TypedLoad {
             pointer: Box::new(ProgramExpression::Variable(("device".to_string()).into())),
             value_type: ProgramType::Int32,
@@ -5290,11 +5293,11 @@ mod ranking_member_tests {
 
     #[test]
     fn ranking_members_are_ordered_and_right_nested() {
-        let outer = MachineTerm::Variable(Variable(1));
-        let inner = MachineTerm::Variable(Variable(2));
+        let outer = OldMachineTerm::Variable(Variable(1));
+        let inner = OldMachineTerm::Variable(Variable(2));
         let entry = scalar_state(&[("i", outer.clone()), ("j", inner.clone())]);
-        let post_outer = MachineTerm::subtract(outer.clone(), MachineTerm::constant(1));
-        let post_inner = MachineTerm::add(inner.clone(), MachineTerm::constant(1));
+        let post_outer = OldMachineTerm::subtract(outer.clone(), OldMachineTerm::constant(1));
+        let post_inner = OldMachineTerm::add(inner.clone(), OldMachineTerm::constant(1));
         let back_edge = scalar_state(&[("i", post_outer.clone()), ("j", post_inner.clone())]);
         let measures = vec![
             RankingComponent::ProgramExpression(ProgramExpression::Variable(
@@ -5322,7 +5325,7 @@ mod ranking_member_tests {
             assert_eq!(
                 obligation.proposition(),
                 &Proposition::condition_is(
-                    ConditionTerm::signed_less_equal(MachineTerm::constant(0), post),
+                    OldConditionTerm::signed_less_equal(OldMachineTerm::constant(0), post),
                     true,
                 )
             );
@@ -5336,16 +5339,16 @@ mod ranking_member_tests {
         }
 
         let pivot_first = Proposition::condition_is(
-            ConditionTerm::signed_less_than(post_outer.clone(), outer.clone()),
+            OldConditionTerm::signed_less_than(post_outer.clone(), outer.clone()),
             true,
         );
         let pivot_second = Proposition::And(
             Box::new(Proposition::condition_is(
-                ConditionTerm::equal(post_outer, outer),
+                OldConditionTerm::equal(post_outer, outer),
                 true,
             )),
             Box::new(Proposition::condition_is(
-                ConditionTerm::signed_less_than(post_inner, inner),
+                OldConditionTerm::signed_less_than(post_inner, inner),
                 true,
             )),
         );
@@ -5359,9 +5362,9 @@ mod ranking_member_tests {
     /// and no equality prefix to choose between.
     #[test]
     fn one_component_takes_a_bare_decrease_member() {
-        let value = MachineTerm::Variable(Variable(7));
+        let value = OldMachineTerm::Variable(Variable(7));
         let entry = scalar_state(&[("n", value.clone())]);
-        let post = MachineTerm::subtract(value.clone(), MachineTerm::constant(1));
+        let post = OldMachineTerm::subtract(value.clone(), OldMachineTerm::constant(1));
         let back_edge = scalar_state(&[("n", post.clone())]);
         let measures = vec![RankingComponent::ProgramExpression(
             ProgramExpression::Variable(("n".to_string()).into()),
@@ -5378,14 +5381,14 @@ mod ranking_member_tests {
         assert_eq!(obligations.len(), 2);
         assert_eq!(
             obligations[1].proposition(),
-            &Proposition::condition_is(ConditionTerm::signed_less_than(post, value), true)
+            &Proposition::condition_is(OldConditionTerm::signed_less_than(post, value), true)
         );
     }
 
     fn int32_cell(name: &str) -> Address {
         Address {
             base: AddressBase::Concrete(name.to_string()),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         }
     }
 
@@ -5409,8 +5412,8 @@ mod ranking_member_tests {
     #[test]
     fn a_pure_component_is_read_at_both_states() {
         let cell = int32_cell("counter");
-        let value = MachineTerm::Variable(Variable(11));
-        let post = MachineTerm::subtract(value.clone(), MachineTerm::constant(1));
+        let value = OldMachineTerm::Variable(Variable(11));
+        let post = OldMachineTerm::subtract(value.clone(), OldMachineTerm::constant(1));
         let mut entry = ExecutionState::new();
         entry.memory =
             SymbolicMemory::new().store(cell.clone(), ProgramValue::Int32(value.clone()));
@@ -5441,14 +5444,14 @@ mod ranking_member_tests {
         assert_eq!(
             resolved(obligations[0].proposition()),
             Proposition::condition_is(
-                ConditionTerm::signed_less_equal(MachineTerm::constant(0), post.clone()),
+                OldConditionTerm::signed_less_equal(OldMachineTerm::constant(0), post.clone()),
                 true,
             ),
             "the nonnegativity member reads the back-edge state"
         );
         assert_eq!(
             resolved(obligations[1].proposition()),
-            Proposition::condition_is(ConditionTerm::signed_less_than(post, value), true),
+            Proposition::condition_is(OldConditionTerm::signed_less_than(post, value), true),
             "the decrease member compares the back edge against the iteration entry"
         );
         // A pure component has no source spelling of its own once lowered, so
@@ -5468,7 +5471,7 @@ mod ranking_member_tests {
         )))
     }
 
-    fn observed_word(value: MachineTerm) -> SharedIntegerTerm {
+    fn observed_word(value: OldMachineTerm) -> SharedIntegerTerm {
         IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             MachineIntegerType::Int32,
             value,
@@ -5483,8 +5486,8 @@ mod ranking_member_tests {
     /// carrier in an Integer comparison.
     #[test]
     fn an_integer_component_builds_integer_members() {
-        let value = MachineTerm::Variable(Variable(13));
-        let post = MachineTerm::subtract(value.clone(), MachineTerm::constant(1));
+        let value = OldMachineTerm::Variable(Variable(13));
+        let post = OldMachineTerm::subtract(value.clone(), OldMachineTerm::constant(1));
         let entry = scalar_state(&[("n", value.clone())]);
         let back_edge = scalar_state(&[("n", post.clone())]);
         let measures = vec![RankingComponent::PureInteger {
@@ -5506,8 +5509,8 @@ mod ranking_member_tests {
         assert_eq!(
             obligations[0].proposition(),
             &Proposition::condition_is(
-                ConditionTerm::IntegerLessEqual(
-                    observed_word(MachineTerm::constant(0)),
+                OldConditionTerm::IntegerLessEqual(
+                    observed_word(OldMachineTerm::constant(0)),
                     observed_word(post.clone())
                 ),
                 true,
@@ -5517,7 +5520,7 @@ mod ranking_member_tests {
         assert_eq!(
             obligations[1].proposition(),
             &Proposition::condition_is(
-                ConditionTerm::IntegerLessThan(
+                OldConditionTerm::IntegerLessThan(
                     observed_word(post.clone()),
                     observed_word(value.clone())
                 ),
@@ -5540,10 +5543,10 @@ mod ranking_member_tests {
     /// int32 observation retains that carrier in an Integer comparison.
     #[test]
     fn a_mixed_tuple_builds_each_member_in_its_own_carrier() {
-        let outer = MachineTerm::Variable(Variable(17));
-        let inner = MachineTerm::Variable(Variable(19));
-        let post_outer = MachineTerm::subtract(outer.clone(), MachineTerm::constant(1));
-        let post_inner = MachineTerm::subtract(inner.clone(), MachineTerm::constant(1));
+        let outer = OldMachineTerm::Variable(Variable(17));
+        let inner = OldMachineTerm::Variable(Variable(19));
+        let post_outer = OldMachineTerm::subtract(outer.clone(), OldMachineTerm::constant(1));
+        let post_inner = OldMachineTerm::subtract(inner.clone(), OldMachineTerm::constant(1));
         let entry = scalar_state(&[("i", outer.clone()), ("n", inner.clone())]);
         let back_edge = scalar_state(&[("i", post_outer.clone()), ("n", post_inner.clone())]);
         let measures = vec![
@@ -5570,31 +5573,34 @@ mod ranking_member_tests {
         assert_eq!(
             obligations[0].proposition(),
             &Proposition::condition_is(
-                ConditionTerm::signed_less_equal(MachineTerm::constant(0), post_outer.clone()),
+                OldConditionTerm::signed_less_equal(
+                    OldMachineTerm::constant(0),
+                    post_outer.clone()
+                ),
                 true,
             )
         );
         assert_eq!(
             obligations[1].proposition(),
             &Proposition::condition_is(
-                ConditionTerm::IntegerLessEqual(
-                    observed_word(MachineTerm::constant(0)),
+                OldConditionTerm::IntegerLessEqual(
+                    observed_word(OldMachineTerm::constant(0)),
                     observed_word(post_inner.clone())
                 ),
                 true,
             )
         );
         let pivot_first = Proposition::condition_is(
-            ConditionTerm::signed_less_than(post_outer.clone(), outer.clone()),
+            OldConditionTerm::signed_less_than(post_outer.clone(), outer.clone()),
             true,
         );
         let pivot_second = Proposition::And(
             Box::new(Proposition::condition_is(
-                ConditionTerm::equal(post_outer, outer),
+                OldConditionTerm::equal(post_outer, outer),
                 true,
             )),
             Box::new(Proposition::condition_is(
-                ConditionTerm::IntegerLessThan(observed_word(post_inner), observed_word(inner)),
+                OldConditionTerm::IntegerLessThan(observed_word(post_inner), observed_word(inner)),
                 true,
             )),
         );
@@ -5669,14 +5675,14 @@ mod ranking_member_tests {
         })
     }
 
-    fn uint32_state(value: MachineTerm) -> ExecutionState {
+    fn uint32_state(value: OldMachineTerm) -> ExecutionState {
         typed_state("x", ProgramValue::UInt32(value), ProgramType::UInt32)
     }
 
     fn four_minus_x() -> ProgramExpression {
         ProgramExpression::Subtract(
             Box::new(ProgramExpression::Value(ProgramValue::Int32(
-                MachineTerm::constant(4),
+                OldMachineTerm::constant(4),
             ))),
             Box::new(ProgramExpression::Variable(("x".to_string()).into())),
         )
@@ -5688,23 +5694,26 @@ mod ranking_member_tests {
     /// comparison of the two wrapped differences.
     #[test]
     fn an_unsigned_component_ranks_by_unsigned_order() {
-        let value = MachineTerm::Variable(Variable(21));
+        let value = OldMachineTerm::Variable(Variable(21));
         let entry = uint32_state(value.clone());
-        let back_edge = uint32_state(MachineTerm::add(value.clone(), MachineTerm::constant(1)));
+        let back_edge = uint32_state(OldMachineTerm::add(
+            value.clone(),
+            OldMachineTerm::constant(1),
+        ));
         let members = ranking_members(&back_edge, &entry, four_minus_x())
             .expect("a uint32 measure reads at both ends");
         assert_eq!(
             members,
             vec![
-                Proposition::condition_is(ConditionTerm::Constant(true), true),
+                Proposition::condition_is(OldConditionTerm::Constant(true), true),
                 Proposition::condition_is(
-                    ConditionTerm::unsigned_less_than(
-                        canonical_ranking_term(&MachineTerm::subtract(
-                            MachineTerm::constant(3),
+                    OldConditionTerm::unsigned_less_than(
+                        canonical_ranking_term(&OldMachineTerm::subtract(
+                            OldMachineTerm::constant(3),
                             value.clone(),
                         )),
-                        canonical_ranking_term(&MachineTerm::subtract(
-                            MachineTerm::constant(4),
+                        canonical_ranking_term(&OldMachineTerm::subtract(
+                            OldMachineTerm::constant(4),
                             value,
                         )),
                     ),
@@ -5723,8 +5732,8 @@ mod ranking_member_tests {
     fn an_unsigned_component_that_wraps_upward_does_not_descend() {
         let decrease = |before: u32, after: u32| {
             ranking_members(
-                &uint32_state(MachineTerm::constant(after)),
-                &uint32_state(MachineTerm::constant(before)),
+                &uint32_state(OldMachineTerm::constant(after)),
+                &uint32_state(OldMachineTerm::constant(before)),
                 four_minus_x(),
             )
             .expect("a uint32 measure reads at both ends")
@@ -5733,11 +5742,11 @@ mod ranking_member_tests {
         };
         assert_eq!(
             decrease(0, 1),
-            Proposition::condition_is(ConditionTerm::Constant(true), true)
+            Proposition::condition_is(OldConditionTerm::Constant(true), true)
         );
         assert_eq!(
             decrease(4, 5),
-            Proposition::condition_is(ConditionTerm::Constant(false), true)
+            Proposition::condition_is(OldConditionTerm::Constant(false), true)
         );
     }
 
@@ -5748,7 +5757,7 @@ mod ranking_member_tests {
         let state = |value: u64| {
             typed_state(
                 "x",
-                ProgramValue::UInt64(MachineTerm::uint64_constant(value)),
+                ProgramValue::UInt64(OldMachineTerm::uint64_constant(value)),
                 ProgramType::UInt64,
             )
         };
@@ -5757,14 +5766,14 @@ mod ranking_member_tests {
         assert_eq!(
             down,
             vec![
-                Proposition::condition_is(ConditionTerm::Constant(true), true),
-                Proposition::condition_is(ConditionTerm::Constant(true), true),
+                Proposition::condition_is(OldConditionTerm::Constant(true), true),
+                Proposition::condition_is(OldConditionTerm::Constant(true), true),
             ]
         );
         let wrapped = ranking_members(&state(u64::MAX), &state(0), x()).expect("uint64 measure");
         assert_eq!(
             wrapped[1],
-            Proposition::condition_is(ConditionTerm::Constant(false), true)
+            Proposition::condition_is(OldConditionTerm::Constant(false), true)
         );
     }
 
@@ -5773,7 +5782,7 @@ mod ranking_member_tests {
     /// widening and owes the signed members.
     #[test]
     fn a_narrow_unsigned_component_is_promoted_to_int32() {
-        let value = MachineTerm::Variable(Variable(22));
+        let value = OldMachineTerm::Variable(Variable(22));
         let state = typed_state("x", ProgramValue::UInt8(value.clone()), ProgramType::UInt8);
         let members = ranking_members(
             &state,
@@ -5784,9 +5793,9 @@ mod ranking_member_tests {
         assert_eq!(
             members[0],
             Proposition::condition_is(
-                ConditionTerm::signed_less_equal(
-                    MachineTerm::constant(0),
-                    MachineTerm::machine_integer_cast(
+                OldConditionTerm::signed_less_equal(
+                    OldMachineTerm::constant(0),
+                    OldMachineTerm::machine_integer_cast(
                         MachineIntegerType::UInt8,
                         MachineIntegerType::Int32,
                         value
@@ -5802,7 +5811,7 @@ mod ranking_member_tests {
     /// value read from a C expression does.
     #[test]
     fn a_pure_uint32_component_ranks_by_unsigned_order() {
-        let value = MachineTerm::Variable(Variable(23));
+        let value = OldMachineTerm::Variable(Variable(23));
         let state = ExecutionState::new();
         let obligations = collect_loop_ranking_obligations(
             &state,
@@ -5818,12 +5827,12 @@ mod ranking_member_tests {
         .expect("a pure uint32 value reads at both ends");
         assert_eq!(
             obligations[0].proposition(),
-            &Proposition::condition_is(ConditionTerm::Constant(true), true)
+            &Proposition::condition_is(OldConditionTerm::Constant(true), true)
         );
         assert_eq!(
             obligations[1].proposition(),
             &Proposition::condition_is(
-                ConditionTerm::unsigned_less_than(value.clone(), value),
+                OldConditionTerm::unsigned_less_than(value.clone(), value),
                 true
             )
         );
@@ -5837,12 +5846,12 @@ mod ranking_member_tests {
         let state = |value: i64| {
             typed_state(
                 "x",
-                ProgramValue::Int64(MachineTerm::int64_constant(value)),
+                ProgramValue::Int64(OldMachineTerm::int64_constant(value)),
                 ProgramType::Int64,
             )
         };
         let x = || ProgramExpression::Variable(("x".to_string()).into());
-        let holds = |value| Proposition::condition_is(ConditionTerm::Constant(value), true);
+        let holds = |value| Proposition::condition_is(OldConditionTerm::Constant(value), true);
         let down = ranking_members(&state(4), &state(5), x()).expect("int64 measure");
         assert_eq!(down, vec![holds(true), holds(true)]);
         let negative = ranking_members(&state(-1), &state(5), x()).expect("int64 measure");
@@ -5862,16 +5871,16 @@ mod ranking_member_tests {
     #[test]
     fn structural_path_refuses_an_obligation_no_exact_route_settles() {
         let left = Proposition::condition_is(
-            ConditionTerm::signed_less_equal(
-                MachineTerm::constant(0),
-                MachineTerm::Variable(Variable(1)),
+            OldConditionTerm::signed_less_equal(
+                OldMachineTerm::constant(0),
+                OldMachineTerm::Variable(Variable(1)),
             ),
             true,
         );
         let right = Proposition::condition_is(
-            ConditionTerm::signed_less_equal(
-                MachineTerm::constant(0),
-                MachineTerm::Variable(Variable(2)),
+            OldConditionTerm::signed_less_equal(
+                OldMachineTerm::constant(0),
+                OldMachineTerm::Variable(Variable(2)),
             ),
             true,
         );
@@ -5912,7 +5921,7 @@ mod local_descent_tests {
         crate::kernel::program_while(
             crate::kernel::program_expression::int32_literal(condition),
             vec![Proposition::condition_is(
-                ConditionTerm::Constant(true),
+                OldConditionTerm::Constant(true),
                 true,
             )],
             ProgramStatement::Skip,
@@ -6972,7 +6981,7 @@ mod local_descent_tests {
                 ),
                 update: None,
                 invariant: vec![Proposition::condition_is(
-                    ConditionTerm::Constant(true),
+                    OldConditionTerm::Constant(true),
                     true,
                 )],
                 invariant_checks: Vec::new(),
@@ -7141,7 +7150,7 @@ mod local_descent_tests {
             peers: Vec::new(),
             structural_entry: None,
             structural_resource: None,
-            measure: vec![RankingMeasureValue::Machine(MachineTerm::constant(7))],
+            measure: vec![RankingMeasureValue::Machine(OldMachineTerm::constant(7))],
             entry_obligations: Vec::new(),
         }
     }

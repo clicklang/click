@@ -2,7 +2,7 @@ use super::*;
 
 fn nonnegative_i() -> SpecProposition {
     SpecProposition::Comparison {
-        left: SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(0))),
+        left: SpecExpression::Value(ProgramValue::Int32(OldMachineTerm::constant(0))),
         operator: ComparisonOperator::LessEqual,
         right: SpecExpression::ProgramExpression(crate::kernel::program_expression::variable("i")),
     }
@@ -16,8 +16,10 @@ fn check(proposition: SpecProposition) -> LoopInvariantCheck {
 /// that left it no context, by position, rather than only `false == true`.
 #[test]
 fn head_refusal_names_the_invariant_that_contradicts_the_ones_before_it() {
-    let state = ExecutionState::new()
-        .with_local("i", ProgramValue::Int32(MachineTerm::Variable(Variable(7))));
+    let state = ExecutionState::new().with_local(
+        "i",
+        ProgramValue::Int32(OldMachineTerm::Variable(Variable(7))),
+    );
     let checks = [
         check(nonnegative_i()),
         check(SpecProposition::Not(Box::new(nonnegative_i()))),

@@ -82,10 +82,11 @@ impl MutexContext {
         else {
             return Ok(None);
         };
-        let held = crate::kernel::loops::condition_is_decided(assumptions, held.native_compat())
-            .ok_or(MutexTransitionError::Refusal(
+        let held = crate::kernel::loops::condition_is_decided(assumptions, held.old_form()).ok_or(
+            MutexTransitionError::Refusal(
                 "Requires the loop resource to determine whether the mutex is held",
-            ))?;
+            ),
+        )?;
         let entry = if held {
             MutexEntry::Locked {
                 initialization: *initialization,
@@ -150,12 +151,12 @@ impl MutexLedger {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::{AddressOffset, MachineTerm, Variable};
+    use crate::kernel::{OldAddressOffset, OldMachineTerm, Variable};
 
     fn mutex(index: usize) -> Address {
         Address {
             base: format!("loop-mutex-{index}").into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         }
     }
     fn initialized(address: &Address) -> MutexContext {
@@ -165,7 +166,8 @@ mod tests {
     }
     fn abstracted(context: &MutexContext, address: &Address, held: bool) -> MutexContext {
         MutexContext::new(
-            abstract_loop_mutex(context.state(), address, ConditionTerm::Constant(held)).unwrap(),
+            abstract_loop_mutex(context.state(), address, OldConditionTerm::Constant(held))
+                .unwrap(),
         )
     }
     fn reveal_guard(context: &MutexContext, address: &Address) -> MutexContext {
@@ -224,8 +226,10 @@ mod tests {
     fn unresolved_heldness_and_stale_receipts_are_rejected() {
         let address = mutex(0);
         let concrete = initialized(&address);
-        let condition =
-            ConditionTerm::signed_less_than(MachineTerm::Variable(Variable(999)), 0u32.into());
+        let condition = OldConditionTerm::signed_less_than(
+            OldMachineTerm::Variable(Variable(999)),
+            0u32.into(),
+        );
         let head =
             MutexContext::new(abstract_loop_mutex(concrete.state(), &address, condition).unwrap());
         let assumptions = PureFactContext::new();
@@ -322,7 +326,7 @@ mod tests {
             abstract_loop_mutex(
                 with_active_borrow.state(),
                 &address,
-                ConditionTerm::Constant(false)
+                OldConditionTerm::Constant(false)
             )
             .is_err()
         );
@@ -330,7 +334,7 @@ mod tests {
             .acquire_using(&address, usage.usage, &PureFactContext::new())
             .unwrap();
         assert!(
-            abstract_loop_mutex(held.state(), &address, ConditionTerm::Constant(true)).is_err()
+            abstract_loop_mutex(held.state(), &address, OldConditionTerm::Constant(true)).is_err()
         );
     }
 
@@ -346,7 +350,7 @@ mod loop_rule_tests {
     use crate::kernel::functions::{loop_instance_guard, rewrite_resource_instance};
     use crate::kernel::loops::{loop_binder_state_components_match_at_back_edge, loop_binders};
     use crate::kernel::{
-        AddressOffset, ComparisonOperator, CompositeResourceDefinition, ProgramExpression,
+        ComparisonOperator, CompositeResourceDefinition, OldAddressOffset, ProgramExpression,
         ProgramType, ProgramValue, ResourceAccessMode, ResourceFamily, ResourceFieldSchema,
         ResourceFieldType, ResourceInstance, ResourceQuantity, ResourceSpec, ResourceStateSource,
         ResourceTerm, ResourceTransferRole, SpecExpression, SpecProposition, Variable, int32,
@@ -355,7 +359,7 @@ mod loop_rule_tests {
     fn address() -> Address {
         Address {
             base: "loop-rule-mutex".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         }
     }
     fn schema() -> ResourceFieldSchema {
@@ -439,7 +443,8 @@ mod loop_rule_tests {
             false,
         )
         .unwrap();
-        let top = abstract_loop_mutex(&folded, &address(), ConditionTerm::Constant(false)).unwrap();
+        let top =
+            abstract_loop_mutex(&folded, &address(), OldConditionTerm::Constant(false)).unwrap();
         let (opened, _) =
             rewrite_resource_instance(&top, &instance(0), &definition, &assumptions, true).unwrap();
         let acquired = MutexContext::new(opened)

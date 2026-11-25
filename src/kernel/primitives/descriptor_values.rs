@@ -7,18 +7,18 @@ use crate::kernel::{ExecutionValue, RetainedProgramValue};
 
 #[derive(Clone)]
 pub struct StoredMachineTerm(RetainedProgramValue);
-impl From<MachineTerm> for StoredMachineTerm {
-    fn from(value: MachineTerm) -> Self {
+impl From<OldMachineTerm> for StoredMachineTerm {
+    fn from(value: OldMachineTerm) -> Self {
         Self::new(MachineIntegerType::Int32, value)
     }
 }
 impl From<u32> for StoredMachineTerm {
     fn from(value: u32) -> Self {
-        MachineTerm::constant(value).into()
+        OldMachineTerm::constant(value).into()
     }
 }
 impl StoredMachineTerm {
-    pub(crate) fn new(ty: MachineIntegerType, value: MachineTerm) -> Self {
+    pub(crate) fn new(ty: MachineIntegerType, value: OldMachineTerm) -> Self {
         let value = match ty {
             MachineIntegerType::Int8 => ProgramValue::Int8(value),
             MachineIntegerType::UInt8 => ProgramValue::UInt8(value),
@@ -57,17 +57,20 @@ impl StoredMachineTerm {
     pub(crate) fn as_const(&self) -> Option<u32> {
         self.operand_view().word32_constant()
     }
-    pub(crate) fn map_native(&self, rewrite: impl FnOnce(&MachineTerm) -> MachineTerm) -> Self {
+    pub(crate) fn map_native(
+        &self,
+        rewrite: impl FnOnce(&OldMachineTerm) -> OldMachineTerm,
+    ) -> Self {
         Self::new(
             MachineIntegerType::from_program_type(self.0.program_type())
                 .expect("machine descriptor"),
-            rewrite(self.native_compat()),
+            rewrite(self.old_form()),
         )
     }
     pub(crate) fn operand_view(&self) -> MachineOperandView<'_> {
         match self.root() {
             Some(root) => MachineOperandView::Shared(root),
-            None => MachineOperandView::Legacy(self.native_compat()),
+            None => MachineOperandView::Old(self.old_form()),
         }
     }
     pub(crate) fn value(&self) -> &ExecutionValue {
@@ -84,8 +87,8 @@ impl StoredMachineTerm {
         key
     }
 
-    pub(crate) fn native_compat(&self) -> &MachineTerm {
-        match self.0.native_compat() {
+    pub(crate) fn old_form(&self) -> &OldMachineTerm {
+        match self.0.old_form() {
             ProgramValue::Bool(v)
             | ProgramValue::Int8(v)
             | ProgramValue::UInt8(v)
@@ -103,7 +106,7 @@ impl StoredMachineTerm {
 }
 impl std::fmt::Debug for StoredMachineTerm {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.native_compat().fmt(f)
+        self.old_form().fmt(f)
     }
 }
 impl PartialEq for StoredMachineTerm {
@@ -120,7 +123,7 @@ impl PartialOrd for StoredMachineTerm {
 impl Ord for StoredMachineTerm {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         match (self.root(), other.root()) {
-            (None, None) => self.native_compat().cmp(other.native_compat()),
+            (None, None) => self.old_form().cmp(other.old_form()),
             (Some(a), Some(b)) if a == b => std::cmp::Ordering::Equal,
             _ => self.storage_key().cmp(other.storage_key()),
         }
@@ -128,7 +131,7 @@ impl Ord for StoredMachineTerm {
 }
 impl std::hash::Hash for StoredMachineTerm {
     fn hash<H: std::hash::Hasher>(&self, h: &mut H) {
-        self.native_compat().hash(h);
+        self.old_form().hash(h);
     }
 }
 
@@ -145,15 +148,15 @@ mod tests {
             h.finish()
         }
         let values = [
-            MachineTerm::constant(7),
-            MachineTerm::uint32_constant(7),
-            MachineTerm::uint64_constant(7),
-            MachineTerm::Variable(Variable(10993613)),
+            OldMachineTerm::constant(7),
+            OldMachineTerm::uint32_constant(7),
+            OldMachineTerm::uint64_constant(7),
+            OldMachineTerm::Variable(Variable(10993613)),
         ];
         for ty in [MachineIntegerType::Int32, MachineIntegerType::UInt64] {
             for value in &values {
                 let stored = StoredMachineTerm::new(ty, value.clone());
-                assert_eq!(stored.native_compat(), value);
+                assert_eq!(stored.old_form(), value);
                 assert_eq!(hash(&stored), hash(value));
                 assert_eq!(format!("{stored:?}"), format!("{value:?}"));
                 for other in &values {
@@ -195,8 +198,8 @@ impl StoredProgramValue {
     pub(crate) fn root(&self) -> Option<&KernelTerm> {
         self.0.root()
     }
-    pub(crate) fn native_compat(&self) -> &ProgramValue {
-        self.0.native_compat()
+    pub(crate) fn old_form(&self) -> &ProgramValue {
+        self.0.old_form()
     }
 }
 
@@ -230,10 +233,10 @@ impl StoredIntegerTerm {
     fn exact_key(&self) -> super::integer::IntegerShallowKey {
         self.root()
             .and_then(KernelTerm::integer_exact_key)
-            .unwrap_or_else(|| self.native_compat().shallow_key())
+            .unwrap_or_else(|| self.old_form().shallow_key())
     }
 
-    pub(crate) fn native_compat(&self) -> &IntegerTerm {
+    pub(crate) fn old_form(&self) -> &IntegerTerm {
         match &self.0 {
             StoredInteger::Input(value) => value,
             StoredInteger::Shared(root) => {
@@ -285,7 +288,7 @@ impl StoredAlgebraicTerm {
                 .expect("algebraic field output"),
         }
     }
-    pub(crate) fn native_compat(&self) -> &AlgebraicTerm {
+    pub(crate) fn old_form(&self) -> &AlgebraicTerm {
         match &self.0 {
             StoredAlgebraic::Input(value) => value,
             StoredAlgebraic::Shared(root) => root
@@ -305,11 +308,11 @@ enum StoredCondition {
     Shared(KernelTerm),
 }
 struct NativeConditionInput {
-    value: ConditionTerm,
+    value: OldConditionTerm,
     connective_key: std::sync::OnceLock<ConditionStorageKey>,
 }
-impl From<ConditionTerm> for StoredConditionTerm {
-    fn from(value: ConditionTerm) -> Self {
+impl From<OldConditionTerm> for StoredConditionTerm {
+    fn from(value: OldConditionTerm) -> Self {
         Self(StoredCondition::Input(Arc::new(NativeConditionInput {
             value,
             connective_key: std::sync::OnceLock::new(),
@@ -320,16 +323,16 @@ impl StoredConditionTerm {
     pub(crate) fn operand_view(&self) -> BooleanOperandView<'_> {
         match self.root() {
             Some(root) => BooleanOperandView::Shared(root),
-            None => BooleanOperandView::Native(self.native_compat()),
+            None => BooleanOperandView::Native(self.old_form()),
         }
     }
     pub(crate) fn from_root(root: KernelTerm) -> Option<Self> {
         (root.ty() == &KernelType::Bool).then(|| Self(StoredCondition::Shared(root)))
     }
     /// Already-evaluated scalar conditions produced by the loop guard checker.
-    pub(crate) fn from_minted(value: ConditionTerm) -> Self {
+    pub(crate) fn from_minted(value: OldConditionTerm) -> Self {
         let root = KernelTermImport::for_exact_field_inputs().condition(&value);
-        root.retain_native_condition_output(value);
+        root.retain_old_condition_output(value);
         Self::from_root(root).expect("logical condition")
     }
     pub(crate) fn root(&self) -> Option<&KernelTerm> {
@@ -338,19 +341,19 @@ impl StoredConditionTerm {
             StoredCondition::Shared(root) => Some(root),
         }
     }
-    pub(crate) fn native_compat(&self) -> &ConditionTerm {
+    pub(crate) fn old_form(&self) -> &OldConditionTerm {
         match &self.0 {
             StoredCondition::Input(input) => &input.value,
             StoredCondition::Shared(root) => {
                 if let KernelTermNode::BoolLiteral(value) = root.node() {
                     return if *value {
-                        &ConditionTerm::Constant(true)
+                        &OldConditionTerm::Constant(true)
                     } else {
-                        &ConditionTerm::Constant(false)
+                        &OldConditionTerm::Constant(false)
                     };
                 }
-                let ProgramValue::Bool(MachineTerm::BoolCast { value, .. }) =
-                    root.boolean_native().expect("logical Bool output")
+                let ProgramValue::Bool(OldMachineTerm::BoolCast { value, .. }) =
+                    root.old_boolean_value().expect("logical Bool output")
                 else {
                     unreachable!("condition output");
                 };
@@ -371,15 +374,15 @@ struct PointerOffsetStorage {
 }
 
 enum PointerOffsetValue {
-    Native(AddressOffset),
+    Native(OldAddressOffset),
     Shared {
         root: SharedAddressOffset,
-        native: OnceLock<AddressOffset>,
+        native: OnceLock<OldAddressOffset>,
     },
 }
 
-impl From<AddressOffset> for StoredPointerOffset {
-    fn from(written: AddressOffset) -> Self {
+impl From<OldAddressOffset> for StoredPointerOffset {
+    fn from(written: OldAddressOffset) -> Self {
         Self::from_input(KernelAddressOffset::try_import(&written), || written)
     }
 }
@@ -401,13 +404,13 @@ impl StoredPointerOffset {
         matches!(&self.0.value, PointerOffsetValue::Shared { native, .. } if native.get().is_some())
     }
 
-    pub(in crate::kernel) fn from_written(written: &AddressOffset) -> Self {
+    pub(in crate::kernel) fn from_written(written: &OldAddressOffset) -> Self {
         Self::from_input(KernelAddressOffset::try_import(written), || written.clone())
     }
 
     fn from_input(
         root: Result<SharedAddressOffset, &'static str>,
-        native: impl FnOnce() -> AddressOffset,
+        native: impl FnOnce() -> OldAddressOffset,
     ) -> Self {
         match root {
             Ok(root) => Self::from_rewritten_root(root),
@@ -422,7 +425,7 @@ impl StoredPointerOffset {
         }
     }
 
-    pub(crate) fn native_compat(&self) -> &AddressOffset {
+    pub(crate) fn old_form(&self) -> &OldAddressOffset {
         match &self.0.value {
             PointerOffsetValue::Native(written) => written,
             PointerOffsetValue::Shared { root, native } => {
@@ -441,7 +444,7 @@ impl StoredPointerOffset {
 
 impl std::fmt::Debug for StoredProgramValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.native_compat().fmt(f)
+        self.old_form().fmt(f)
     }
 }
 impl PartialEq for StoredProgramValue {
@@ -462,12 +465,12 @@ impl Ord for StoredProgramValue {
 }
 impl std::hash::Hash for StoredProgramValue {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.native_compat().hash(state);
+        self.old_form().hash(state);
     }
 }
 impl std::fmt::Debug for StoredIntegerTerm {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.native_compat().fmt(f)
+        self.old_form().fmt(f)
     }
 }
 impl PartialEq for StoredIntegerTerm {
@@ -508,7 +511,7 @@ impl std::hash::Hash for StoredIntegerTerm {
 }
 impl std::fmt::Debug for StoredAlgebraicTerm {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.native_compat().fmt(f)
+        self.old_form().fmt(f)
     }
 }
 impl PartialEq for StoredAlgebraicTerm {
@@ -535,17 +538,17 @@ impl Ord for StoredAlgebraicTerm {
                 return algebraic_for_root(left).cmp(&algebraic_for_root(right));
             }
         }
-        self.native_compat().cmp(other.native_compat())
+        self.old_form().cmp(other.old_form())
     }
 }
 impl std::hash::Hash for StoredAlgebraicTerm {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.native_compat().hash(state);
+        self.old_form().hash(state);
     }
 }
 impl std::fmt::Debug for StoredConditionTerm {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.native_compat().fmt(f)
+        self.old_form().fmt(f)
     }
 }
 impl StoredConditionTerm {
@@ -562,7 +565,7 @@ impl StoredConditionTerm {
             StoredCondition::Input(input)
                 if matches!(
                     input.value,
-                    ConditionTerm::BoolIf { .. } | ConditionTerm::BoolEqual(..)
+                    OldConditionTerm::BoolIf { .. } | OldConditionTerm::BoolEqual(..)
                 ) =>
             {
                 Some(
@@ -595,10 +598,10 @@ impl Ord for StoredConditionTerm {
         }
         match (self.connective_key(), other.connective_key()) {
             (Some(left), Some(right)) => left.cmp(&right),
-            // BoolIf and BoolEqual follow all atomic conditions in ConditionTerm.
+            // BoolIf and BoolEqual follow all atomic conditions in OldConditionTerm.
             (Some(_), None) => Ordering::Greater,
             (None, Some(_)) => Ordering::Less,
-            (None, None) => self.native_compat().cmp(other.native_compat()),
+            (None, None) => self.old_form().cmp(other.old_form()),
         }
     }
 }
@@ -607,13 +610,13 @@ impl std::hash::Hash for StoredConditionTerm {
         if let Some(key) = self.connective_key() {
             key.hash(state);
         } else {
-            self.native_compat().hash(state);
+            self.old_form().hash(state);
         }
     }
 }
 impl std::fmt::Debug for StoredPointerOffset {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.native_compat().fmt(f)
+        self.old_form().fmt(f)
     }
 }
 impl PartialEq for StoredPointerOffset {
@@ -675,10 +678,14 @@ mod protocol_value_tests {
     #[test]
     fn retained_contract_offset_preserves_written_identity_after_input_drops() {
         let _session = crate::kernel::VerificationSession::enter();
-        let first = AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(998981)), 4);
-        let second =
-            AddressOffset::scaled_int64_node(MachineTerm::Variable(Variable(998982)), 8, true);
-        let input = AddressOffset::Add(Box::new(first), Box::new(second));
+        let first =
+            OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(998981)), 4);
+        let second = OldAddressOffset::scaled_int64_node(
+            OldMachineTerm::Variable(Variable(998982)),
+            8,
+            true,
+        );
+        let input = OldAddressOffset::Add(Box::new(first), Box::new(second));
         let expected_debug = format!("{input:?}");
         let stored = StoredPointerOffset::from(input);
         assert!(stored.root().is_some());
@@ -686,16 +693,16 @@ mod protocol_value_tests {
         assert!(!stored.has_cached_native_offset());
         assert_eq!(format!("{stored:?}"), expected_debug);
 
-        let same = StoredPointerOffset::from(stored.native_compat().clone());
-        let distinct = StoredPointerOffset::from(AddressOffset::Add(
-            Box::new(AddressOffset::Constant(0)),
-            Box::new(stored.native_compat().clone()),
+        let same = StoredPointerOffset::from(stored.old_form().clone());
+        let distinct = StoredPointerOffset::from(OldAddressOffset::Add(
+            Box::new(OldAddressOffset::Constant(0)),
+            Box::new(stored.old_form().clone()),
         ));
         assert_eq!(stored, same);
         assert_ne!(stored, distinct);
         assert_eq!(
             stored.cmp(&distinct),
-            stored.native_compat().cmp(distinct.native_compat()),
+            stored.old_form().cmp(distinct.old_form()),
         );
         assert_eq!(hash(&stored), hash(&same));
     }
@@ -705,12 +712,12 @@ mod protocol_value_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let index = SharedMachineIntegerTerm::index(
             MachineIntegerType::Int32,
-            MachineTerm::PureFunctionApplication {
+            OldMachineTerm::PureFunctionApplication {
                 name: "opaque_displacement".into(),
-                arguments: vec![MachineTerm::Variable(Variable(998985))],
+                arguments: vec![OldMachineTerm::Variable(Variable(998985))],
             },
         );
-        let source = AddressOffset::Int32Scaled {
+        let source = OldAddressOffset::Int32Scaled {
             value: index.clone(),
             byte_width: 4,
         };
@@ -722,7 +729,7 @@ mod protocol_value_tests {
             index.structural_value()
         ));
         assert_eq!(first, index);
-        let equal = StoredPointerOffset::from(AddressOffset::Int32Scaled {
+        let equal = StoredPointerOffset::from(OldAddressOffset::Int32Scaled {
             value: SharedMachineIntegerTerm::index(index.ty(), index.structural_value().clone()),
             byte_width: 4,
         });
@@ -733,18 +740,18 @@ mod protocol_value_tests {
         assert_eq!(hash(&equal), hash(&source));
         assert!(!stored.has_cached_native_offset());
         assert!(!equal.has_cached_native_offset());
-        assert_eq!(stored.native_compat(), &source);
+        assert_eq!(stored.old_form(), &source);
     }
 
     #[test]
     fn protocol_native_values_keep_exact_identity_and_scalar_conditions_round_trip() {
         let _session = crate::kernel::VerificationSession::enter();
         let values = [
-            ProgramValue::Int32(MachineTerm::constant(7)),
-            ProgramValue::UInt32(MachineTerm::uint32_constant(7)),
-            ProgramValue::Bool(MachineTerm::constant(2)),
-            ProgramValue::Float32(MachineTerm::uint32_constant(0x7fc00123)),
-            ProgramValue::Float64(MachineTerm::uint64_constant(0x8000000000000000)),
+            ProgramValue::Int32(OldMachineTerm::constant(7)),
+            ProgramValue::UInt32(OldMachineTerm::uint32_constant(7)),
+            ProgramValue::Bool(OldMachineTerm::constant(2)),
+            ProgramValue::Float32(OldMachineTerm::uint32_constant(0x7fc00123)),
+            ProgramValue::Float64(OldMachineTerm::uint64_constant(0x8000000000000000)),
         ];
         for value in &values {
             let stored = StoredProgramValue::from(value.clone());
@@ -757,23 +764,23 @@ mod protocol_value_tests {
             }
         }
         let conditions = [
-            ConditionTerm::Constant(false),
-            ConditionTerm::Constant(true),
-            ConditionTerm::Variable(Variable(10993642)),
-            ConditionTerm::Compare {
+            OldConditionTerm::Constant(false),
+            OldConditionTerm::Constant(true),
+            OldConditionTerm::Variable(Variable(10993642)),
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::Variable(Variable(10993643))),
-                right: Box::new(MachineTerm::constant(1)),
+                left: Box::new(OldMachineTerm::Variable(Variable(10993643))),
+                right: Box::new(OldMachineTerm::constant(1)),
             },
-            ConditionTerm::BoolEqual(
-                Box::new(ConditionTerm::Compare {
+            OldConditionTerm::BoolEqual(
+                Box::new(OldConditionTerm::Compare {
                     format: MachineIntegerType::UInt32,
                     relation: CompareRelation::LessThan,
-                    left: Box::new(MachineTerm::Variable(Variable(10993644))),
-                    right: Box::new(MachineTerm::uint32_constant(1)),
+                    left: Box::new(OldMachineTerm::Variable(Variable(10993644))),
+                    right: Box::new(OldMachineTerm::uint32_constant(1)),
                 }),
-                Box::new(ConditionTerm::Constant(false)),
+                Box::new(OldConditionTerm::Constant(false)),
             ),
         ];
         for value in &conditions {
@@ -781,7 +788,7 @@ mod protocol_value_tests {
                 StoredConditionTerm::from(value.clone()),
                 StoredConditionTerm::from_minted(value.clone()),
             ] {
-                assert_eq!(stored.native_compat(), value);
+                assert_eq!(stored.old_form(), value);
                 assert_eq!(
                     hash(&stored),
                     hash(&StoredConditionTerm::from(value.clone()))
@@ -819,8 +826,9 @@ mod protocol_value_tests {
         assert!(!left.root().unwrap().has_cached_native_argument());
         assert!(!right.root().unwrap().has_cached_native_argument());
 
-        let floats = [0x3f800000, 0x40000000]
-            .map(|bits| MachineTerm::Float32Negate(Box::new(MachineTerm::uint32_constant(bits))));
+        let floats = [0x3f800000, 0x40000000].map(|bits| {
+            OldMachineTerm::Float32Negate(Box::new(OldMachineTerm::uint32_constant(bits)))
+        });
         let [left, right] = floats.each_ref().map(|term| {
             let root = KernelTermImport::default().float(KernelFloatType::Float32, term);
             StoredProgramValue::from(ExecutionValue::Shared(root))
@@ -855,10 +863,10 @@ mod protocol_value_tests {
     #[test]
     fn retained_condition_ordering_keeps_connectives_unboxed() {
         let _session = crate::kernel::VerificationSession::enter();
-        let input = |variable| ConditionTerm::BoolIf {
-            condition: Box::new(ConditionTerm::Variable(variable)),
-            then_condition: Box::new(ConditionTerm::Constant(true)),
-            else_condition: Box::new(ConditionTerm::Constant(false)),
+        let input = |variable| OldConditionTerm::BoolIf {
+            condition: Box::new(OldConditionTerm::Variable(variable)),
+            then_condition: Box::new(OldConditionTerm::Constant(true)),
+            else_condition: Box::new(OldConditionTerm::Constant(false)),
         };
         let values = [input(Variable(10993742)), input(Variable(10993743))];
         let roots = values
@@ -878,21 +886,21 @@ mod protocol_value_tests {
     #[test]
     fn minted_condition_native_views_reuse_the_produced_output_without_exports() {
         let _session = crate::kernel::VerificationSession::enter();
-        let value = MachineTerm::if_then_else(
-            ConditionTerm::Variable(Variable(10993740)),
-            MachineTerm::Variable(Variable(10993741)),
-            MachineTerm::constant(3),
+        let value = OldMachineTerm::if_then_else(
+            OldConditionTerm::Variable(Variable(10993740)),
+            OldMachineTerm::Variable(Variable(10993741)),
+            OldMachineTerm::constant(3),
         );
-        let native = ConditionTerm::Compare {
+        let native = OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessEqual,
             left: Box::new(value),
-            right: Box::new(MachineTerm::constant(9)),
+            right: Box::new(OldMachineTerm::constant(9)),
         };
         let exports = KernelTermExport::machine_export_count();
         let stored = StoredConditionTerm::from_minted(native.clone());
         assert!(stored.root().is_some());
-        assert_eq!(stored.native_compat(), &native);
+        assert_eq!(stored.old_form(), &native);
         assert_eq!(format!("{stored:?}"), format!("{native:?}"));
         let view = BooleanOperandView::Shared(stored.root().unwrap()).native();
         assert!(matches!(&view, std::borrow::Cow::Borrowed(_)));
@@ -904,14 +912,14 @@ mod protocol_value_tests {
     fn condition_proposition_storage_keeps_roots_and_native_fact_identity() {
         let _session = crate::kernel::VerificationSession::enter();
         for condition in [
-            ConditionTerm::Constant(false),
-            ConditionTerm::Constant(true),
-            ConditionTerm::Variable(Variable(10993711)),
-            ConditionTerm::Compare {
+            OldConditionTerm::Constant(false),
+            OldConditionTerm::Constant(true),
+            OldConditionTerm::Variable(Variable(10993711)),
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
-                left: Box::new(MachineTerm::Variable(Variable(10993712))),
-                right: Box::new(MachineTerm::constant(9)),
+                left: Box::new(OldMachineTerm::Variable(Variable(10993712))),
+                right: Box::new(OldMachineTerm::constant(9)),
             },
         ] {
             let root = KernelTermImport::for_exact_field_inputs().condition(&condition);
@@ -930,7 +938,7 @@ mod protocol_value_tests {
                 assert_eq!(shared.cmp(&native), std::cmp::Ordering::Equal);
                 assert_eq!(hash(&shared), hash(&native));
                 assert_eq!(format!("{shared:?}"), format!("{native:?}"));
-                assert_eq!(shared.condition_native(), native.condition_native());
+                assert_eq!(shared.old_condition(), native.old_condition());
             }
         }
     }
@@ -939,11 +947,11 @@ mod protocol_value_tests {
     fn condition_proposition_visitors_keep_shared_substitution_and_native_scope() {
         let _session = crate::kernel::VerificationSession::enter();
         let variable = Variable(10993713);
-        let condition = ConditionTerm::Compare {
+        let condition = OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::Variable(variable)),
-            right: Box::new(MachineTerm::constant(3)),
+            left: Box::new(OldMachineTerm::Variable(variable)),
+            right: Box::new(OldMachineTerm::constant(3)),
         };
         let root = KernelTermImport::for_exact_field_inputs().condition(&condition);
         let native = Proposition::condition_is(condition, false);
@@ -974,7 +982,7 @@ mod protocol_value_tests {
             assert_eq!(actual, expected);
             assert!(actual.contains(&variable));
         }
-        let replacement = MachineTerm::Variable(Variable(10993714));
+        let replacement = OldMachineTerm::Variable(Variable(10993714));
         let expected = crate::kernel::reasoning::substitute_bitvector_variable_in_proposition(
             &native,
             variable,
@@ -1002,7 +1010,7 @@ mod protocol_value_tests {
 // and value visitors retain their common operands.
 #[cfg(test)]
 impl ExpressionOutcome<StoredProgramValue> {
-    pub(crate) fn native_compat(&self) -> ExpressionOutcome {
+    pub(crate) fn old_form(&self) -> ExpressionOutcome {
         self.clone().map_value(Into::into)
     }
 }
@@ -1065,10 +1073,10 @@ mod loadable_count_tests {
         let debug = |value: &dyn std::fmt::Debug| format!("{value:?}");
         for wide in [false, true] {
             for bytes in [
-                MachineTerm::constant(7),
-                MachineTerm::uint32_constant(7),
-                MachineTerm::uint64_constant(7),
-                MachineTerm::Variable(Variable(10993681)),
+                OldMachineTerm::constant(7),
+                OldMachineTerm::uint32_constant(7),
+                OldMachineTerm::uint64_constant(7),
+                OldMachineTerm::Variable(Variable(10993681)),
             ] {
                 let stored = StoredMachineTerm::new(
                     if wide {
@@ -1093,7 +1101,7 @@ mod loadable_count_tests {
                     unreachable!()
                 };
                 assert_eq!(*actual, wide);
-                assert_eq!(stored.native_compat(), &bytes);
+                assert_eq!(stored.old_form(), &bytes);
                 assert_eq!(debug(stored), debug(&bytes));
                 let mut a = std::collections::hash_map::DefaultHasher::new();
                 let mut b = std::collections::hash_map::DefaultHasher::new();
@@ -1146,7 +1154,7 @@ mod term_payload_contract_tests {
                     .root()
                     .is_some_and(KernelTerm::is_mathematical_integer)
             );
-            assert_eq!(stored.native_compat(), value);
+            assert_eq!(stored.old_form(), value);
             assert_eq!(hash(&stored), hash(value));
             assert_eq!(format!("{stored:?}"), format!("{value:?}"));
             for other in &integers {
@@ -1158,7 +1166,7 @@ mod term_payload_contract_tests {
                 KernelTermImport::for_exact_field_inputs().integer(&value.clone().into()),
             )
             .unwrap();
-            assert_eq!(retained.native_compat(), value);
+            assert_eq!(retained.old_form(), value);
             assert_eq!(retained, stored);
             assert_eq!(hash(&retained), hash(value));
             assert_eq!(stored.into_native_compat(), *value);
@@ -1181,13 +1189,13 @@ mod term_payload_contract_tests {
             let retained = StoredAlgebraicTerm::from_root(root).unwrap();
             assert!(input.root().is_none());
             for stored in [&input, &retained] {
-                assert_eq!(stored.native_compat(), value);
+                assert_eq!(stored.old_form(), value);
                 assert_eq!(format!("{stored:?}"), format!("{value:?}"));
                 assert_eq!(hash(stored), hash(value));
                 for other in &values {
                     let other = StoredAlgebraicTerm::from(other.clone());
-                    assert_eq!(stored == &other, value == other.native_compat());
-                    assert_eq!(stored.cmp(&other), value.cmp(other.native_compat()));
+                    assert_eq!(stored == &other, value == other.old_form());
+                    assert_eq!(stored.cmp(&other), value.cmp(other.old_form()));
                 }
             }
             let pointer = |value: &AlgebraicTerm| {
@@ -1199,7 +1207,7 @@ mod term_payload_contract_tests {
                 };
                 pointer.object_class()
             };
-            assert_eq!(pointer(retained.native_compat()), pointer(value));
+            assert_eq!(pointer(retained.old_form()), pointer(value));
         }
     }
 
@@ -1222,14 +1230,14 @@ mod term_payload_contract_tests {
             assert_eq!(stored.clone().root().map(KernelTerm::id), Some(root.id()));
             assert!(!root.has_cached_native_argument());
             assert_eq!(KernelTermExport::machine_export_count(), exports);
-            let native = MachineTerm::Binary {
+            let native = OldMachineTerm::Binary {
                 format,
                 op: MachineBinaryOp::Add,
-                left: Box::new(MachineTerm::Variable(variables[0])),
-                right: Box::new(MachineTerm::Variable(variables[1])),
+                left: Box::new(OldMachineTerm::Variable(variables[0])),
+                right: Box::new(OldMachineTerm::Variable(variables[1])),
             };
             let input = StoredMachineTerm::from(native.clone());
-            assert_eq!(stored.native_compat(), &native);
+            assert_eq!(stored.old_form(), &native);
             assert_eq!(stored, input);
             assert_eq!(hash(&stored), hash(&native));
         }
@@ -1286,21 +1294,18 @@ mod term_payload_contract_tests {
                 exports
             );
             let native = StoredIntegerTerm::from(IntegerTerm::Variable(Variable(991722)));
-            assert!(std::ptr::eq(
-                native.native_compat(),
-                native.clone().native_compat()
-            ));
+            assert!(std::ptr::eq(native.old_form(), native.clone().old_form()));
         }
     }
 
     #[test]
     fn consuming_program_storage_moves_an_owned_native_address_prefix() {
         for size in [16, 64, 256] {
-            let mut offset = AddressOffset::Constant(0);
+            let mut offset = OldAddressOffset::Constant(0);
             for index in 0..size {
-                offset = AddressOffset::Add(
+                offset = OldAddressOffset::Add(
                     Box::new(offset),
-                    Box::new(AddressOffset::Variable(Variable(991730 + index))),
+                    Box::new(OldAddressOffset::Variable(Variable(991730 + index))),
                 );
             }
             let value = ProgramValue::pointer(Address {
@@ -1310,7 +1315,7 @@ mod term_payload_contract_tests {
             let ProgramValue::Pointer(pointer) = &value else {
                 unreachable!()
             };
-            let AddressOffset::Add(left, right) = &pointer.address().offset else {
+            let OldAddressOffset::Add(left, right) = &pointer.address().offset else {
                 unreachable!()
             };
             let allocations = [
@@ -1322,7 +1327,7 @@ mod term_payload_contract_tests {
                 unreachable!()
             };
             let address = pointer.into_pointer();
-            let AddressOffset::Add(left, right) = &address.offset else {
+            let OldAddressOffset::Add(left, right) = &address.offset else {
                 unreachable!()
             };
             assert_eq!(

@@ -14,8 +14,10 @@ fn ownership_footprint_does_not_walk_pointer_aliases() {
                 .with_store_owner(Some(owner));
             for i in 1..=size {
                 let base = if related { pointer(0) } else { pointer(2 * i) };
-                facts = facts
-                    .assume_condition(ConditionTerm::address_equal(base, pointer(2 * i + 1)), true);
+                facts = facts.assume_condition(
+                    OldConditionTerm::address_equal(base, pointer(2 * i + 1)),
+                    true,
+                );
             }
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 for _ in 0..4 {

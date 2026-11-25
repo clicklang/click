@@ -22,12 +22,12 @@ fn exit_disjunct_restates_model_getters_without_replacing_history() {
     let fresh = model(986_101);
     let fact = |model| {
         Proposition::condition_is(
-            ConditionTerm::equal(
-                MachineTerm::ClickFunctionApplication {
+            OldConditionTerm::equal(
+                OldMachineTerm::ClickFunctionApplication {
                     name: "pending".into(),
                     arguments: vec![crate::kernel::PureFunctionArgument::Algebraic(model)],
                 },
-                MachineTerm::constant(0),
+                OldMachineTerm::constant(0),
             ),
             true,
         )
@@ -59,7 +59,7 @@ fn marker_exits(count: usize, ambient: usize) -> Vec<ExecutionState> {
         memory = memory.store(
             Address {
                 base: AddressBase::Concrete("shared".into()),
-                offset: AddressOffset::Constant((index * 4) as i64),
+                offset: OldAddressOffset::Constant((index * 4) as i64),
             },
             int32(index as u32),
         );
@@ -240,10 +240,10 @@ fn numeric_float_equality_does_not_materialize_positive_zero_bits() {
     let _session = crate::kernel::VerificationSession::enter();
     let pointer = Address {
         base: AddressBase::Concrete("shared".into()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let memory = SymbolicMemory::new().with_block("shared", 4);
-    let zero = ProgramValue::Float32(MachineTerm::constant(0));
+    let zero = ProgramValue::Float32(OldMachineTerm::constant(0));
     let load =
         symbolic_storage_cell_value(&memory, None, &pointer, ProgramType::Float32, true).unwrap();
     // This equation also permits a negative-zero representation. Filling
@@ -273,7 +273,7 @@ fn joined_call_epochs_do_not_transport_uncached_loads_or_hide_real_blocks() {
     let (successor, _) = measured_join(&exits);
     let pointer = Address {
         base: AddressBase::Concrete("unknown".into()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let old_load =
         symbolic_storage_cell_value(exits[0].memory(), None, &pointer, ProgramType::Int32, true)
