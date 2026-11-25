@@ -28,6 +28,38 @@ fn guarded_walk(value: &mut i32, n: i32) -> i32 {
             have 0 < n - i by { close() using { 0 <= i; i < n; }; }
             apply(integer::int32_positive_predecessor_is_nonnegative(n - i));
             apply(integer::int32_positive_predecessor_strictly_decreases(n - i));
+            step_until(region(31).entry);
+            have guard.slot == value by { close(); }
+            have guard.saved == old(value[0]) by { close(); }
+            have slot == value by { close(); }
+            have separate(memory(*slot), memory(guard.slot)) by {
+                rewrite(slot, value);
+                close();
+            }
+            have separate(memory(*slot), memory(guard.saved)) by {
+                rewrite(slot, value);
+                close();
+            }
+            mark before_write;
+            step();
+            have separate(region(31).footprint, memory(guard.slot)) by {
+                normalize() using { at(before_write, separate(memory(*slot), memory(guard.slot))); };
+            }
+            have separate(region(31).footprint, memory(guard.saved)) by {
+                normalize() using { at(before_write, separate(memory(*slot), memory(guard.saved))); };
+            }
+            have guard.slot == at(before_write, guard.slot) by {
+                preserve(memory(guard.slot), region(31));
+            }
+            have guard.saved == at(before_write, guard.saved) by close();
+            have guard.slot == value by {
+                rewrite(guard.slot, at(before_write, guard.slot));
+                close();
+            }
+            have guard.saved == old(value[0]) by {
+                rewrite(guard.saved, at(before_write, guard.saved));
+                close();
+            }
             step_until(loop.back_edge);
         }
         owns value[0..1];
