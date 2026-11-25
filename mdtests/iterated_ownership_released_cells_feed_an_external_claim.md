@@ -90,9 +90,10 @@ void recycle(int32* data, int32* occupied, int32 capacity, int32 a, int32 b) {
         close() using { to_integer(a + 1) < to_integer(b); to_integer(a + 1) == to_integer(a) + 1; };
     }
     apply(separation::separate_elements(occupied, a, b));
+    mark write;
     step();
-    have separate(statement(1).footprint, memory(occupied[b])) by {
-        normalize() using { separate(memory(occupied[a]), memory(occupied[b])); };
+    have at(write, separate(statement(1).footprint, memory(occupied[b]))) by {
+        close();
     }
     have occupied[b] == at(statement(1).entry, occupied[b]) by {
         preserve(memory(occupied[b]), statement(1));
