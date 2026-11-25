@@ -3,10 +3,10 @@
 An `Integer`-valued range-fold function over an `int32[]` or `uint8[]` argument is an
 opaque application, and its array argument names a whole-block state. A
 fact about `unmarked(visited, 0, i)` would therefore die at `visited[i] = 1`,
-even though the fold reads only the cells below `i`. Click bridges such a
-store with a kernel-checked read summary of the function's definition and an
-explicit framing rule that consumes it. There is no new source syntax: the
-summary is inferred from the existing definition, for example
+even though the fold reads only the cells below `i`. A proof can bridge such
+a store by preserving the individual reads and applying an induction lemma.
+The kernel also checks read summaries for definitions with a recognized shape,
+for example
 
 ```text
 function unmarked(v: int32[], lo: int32, hi: int32) -> Integer {
@@ -20,7 +20,8 @@ module comment states the soundness argument in full.
 
 ## Status
 
-Checked summaries (step 1) and the explicit framing rule (step 2) have landed.
+Kernel tests cover checked summaries and the fold frame rule.
+The verifier does not use that frame rule for source proofs.
 The written proof in `mdtests/sweep_maintains_a_zero_unmarked_count.md` now uses
 pointwise separation and preservation followed by the existing `unmarked_frame`
 lemma. Its companion, `mdtests/sweep_prefix_survives_its_endpoint_store.md`,

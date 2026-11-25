@@ -375,37 +375,6 @@ pub(super) fn append_execution_effect_facts(
     target.extend_shared(&source.selected(&accepted));
 }
 
-pub(super) fn fact_transport_transition_facts(
-    facts: &(impl ExecutionFactSource + ?Sized),
-    source: &Proposition,
-) -> ExecutionFacts {
-    let source_memories = program_condition_fact_memories(source);
-    let matching_effect = facts.fact_iter().position(|fact| {
-        let before = match fact.proposition() {
-            Proposition::MemoryMutatesOnly { before, .. }
-            | Proposition::MemoryEffectSummary { before, .. }
-            | Proposition::HeapAllocationFreed { before, .. } => before,
-            _ => return false,
-        };
-        source_memories.contains(before)
-    });
-    let Some(start) = matching_effect else {
-        return facts.persistent_facts();
-    };
-    let end = facts
-        .fact_iter()
-        .skip(start + 1)
-        .position(|fact| is_memory_effect_proposition(fact.proposition()))
-        .map(|offset| start + 1 + offset)
-        .unwrap_or(facts.len());
-    facts
-        .fact_iter()
-        .skip(start)
-        .take(end - start)
-        .cloned()
-        .collect()
-}
-
 fn is_memory_effect_proposition(proposition: &Proposition) -> bool {
     matches!(
         proposition,

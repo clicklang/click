@@ -3940,14 +3940,9 @@ fn rejected_transport_prints_checked_reads_and_retains_prefix() {
             .expect_err("a write invalidates the transported value");
         let message = error.message();
         assert!(
-            message.contains("`transport` found no frame evidence"),
+            message.contains("`transport` found no checked proof from its source"),
             "{message}"
         );
-        assert!(
-            message.contains("this is the refusal with the source as the only premise"),
-            "{message}"
-        );
-        assert!(message.contains("at this frontier (10):"), "{message}");
         assert!(message.contains("checked source (holds):"), "{message}");
         assert!(message.contains("checked target (wanted):"), "{message}");
         assert!(message.contains("read<Bits32>"), "{message}");
@@ -3956,10 +3951,6 @@ fn rejected_transport_prints_checked_reads_and_retains_prefix() {
         // value the store left there.
         assert!(
             message.contains("checked target (wanted): int32 =(read<Bits32>"),
-            "{message}"
-        );
-        assert!(
-            !message.contains("additional effect facts omitted"),
             "{message}"
         );
         let trace = accepted_proof_trace(&|_, _| None, &|_, _, _| None, &|_, _, _| false, None)
@@ -4011,7 +4002,7 @@ fn failed_normalize_using_retains_actual_wide_read_resolution() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_21")]
-fn rejected_wide_transport_shows_actual_walk_stop_and_prefix() {
+fn rejected_wide_transport_shows_checked_reads_and_prefix() {
     let c = "void f(uint64 *p) { p[0] = 9; int32 y = 0; return; }";
     let source = r#"verifying "f.c";
         void f(uint64 *p) {
@@ -4027,14 +4018,10 @@ fn rejected_wide_transport_shows_actual_walk_stop_and_prefix() {
             .expect_err("a real write invalidates the old word");
         let message = error.message();
         for expected in [
-            "cell walks performed while checking transport",
-            "address: value#",
-            "width: 8 bytes",
-            "start: state#",
-            "stop: state#",
-            "oldest recorded state reached",
-            "step affects the queried bytes",
-            "transport label definitions",
+            "`transport` found no checked proof from its source",
+            "checked source (holds):",
+            "checked target (wanted):",
+            "label definitions",
             "store",
             "read<Bits64>",
         ] {
@@ -4567,7 +4554,7 @@ test_batches! {
         failed_normalize_using_retains_actual_wide_read_resolution,
     ],
     diagnostic_batch_21: [
-        rejected_wide_transport_shows_actual_walk_stop_and_prefix,
+        rejected_wide_transport_shows_checked_reads_and_prefix,
         have_failure_trace_retains_checked_call_prefix,
         budget_stopped_transport_retains_its_checked_loop_prefix,
     ],

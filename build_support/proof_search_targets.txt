@@ -116,7 +116,6 @@ try_execute_to_exit_descendant
 try_execute_until
 try_execute_until_descendant
 try_execution_fact_transport
-try_execution_fact_transport_or_refusal
 try_execution_signed_arithmetic
 try_fact_transport_from_candidates
 try_finite_forall_enumeration
@@ -207,9 +206,6 @@ try_preserve_selected_fact
 try_signed_definedness_bounds
 try_unsigned_strict_fact
 try_open_for_missing_resource
-apply_planned_fact_transport
-apply_planned_fact_transport_inner
-apply_planned_outcome_fact_transport
 apply_arithmetic_using
 enter_declaration_validation
 execute_enum_match_to_exit
@@ -321,3 +317,4 @@ try_written_field_equalities
 try_unchanged_struct_operand
 try_struct_field_equality
 try_struct_field_store_bridge
+apply_written_fact_transport

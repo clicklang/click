@@ -48,7 +48,6 @@ mod population_access;
 mod population_authority;
 pub(crate) use population_authority::storage_creation::CheckedPopulationAuthorityExchange;
 pub(crate) use population_authority::storage_creation::CheckedPopulationMemberExchange;
-mod quantified_frame;
 pub(crate) mod quantifiers;
 mod resource_description;
 mod thread_confinement;
@@ -134,8 +133,6 @@ pub(crate) use fold_read_summary::registered_fold_read_summary;
 pub use fold_read_summary::{
     CheckedFoldReadSummary, FoldReadDecline, FoldReadDefinition, register_fold_read_definition,
 };
-pub(crate) use fold_read_summary::{FoldFrameRefusal, frame_fold_application_transport};
-pub(crate) use quantified_frame::{QuantifiedFrameRefusal, frame_quantified_transport};
 pub(crate) mod reasoning;
 #[cfg(test)]
 pub(crate) use reasoning::variable_collection::count_cells_collected;

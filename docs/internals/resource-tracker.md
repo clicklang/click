@@ -1371,37 +1371,16 @@ whole `int32[]` argument `left` by its entry state would be false outright
 (a pure function may read `left[n]`). A frame therefore stays a checked fact
 about the reads a guard admits.
 
-`src/kernel/quantified_frame.rs` is that fact. An explicit `transport(P, Q)`
-whose single-fact route refuses walks `P` and `Q` in parallel: each universal
-binder is renamed to a fresh identity, the target's guard is assumed on the
-proving side (an implication's antecedent is proved in the opposite
-direction), and each differing condition leaf is carried by the kernel's
-checked load-history question (`explicit_atomic_equality_from_memory_derivations`
-and the condition bridge's `memory_loads_proven_equal`), read in the querying
-context's own facts rather than only the listed ones, or by the ordinary
-single-fact transport, read in its own listed and certified premises. A
-differing `defined(..)` leaf is carried by that single-fact transport, which
-preserves initialization and lifetime evidence. A source conjunction meets a target
-that is not one by conjunction elimination, so `memset`'s
-`defined(dst[k]) and dst[k] == v` carries its value conjunct alone. So `forall (k) { 0 <= k and k < n and k != cur implies
-at(before, visited[k]) == visited[k] }` crosses the store to `visited[cur]`,
-and `forall (k) { 0 <= k and k < n implies old(left[k]) == left[k] }` crosses
-it and a call whose checked write set is `visited[0..n]`. Every per-read
-decision is the store, call and history rule above; the frame adds only which
-facts a leaf may read, and like the fold read frame its answer enters no name
-and no assumption-free cache. A source that is a reflexive equality under
-binders and guards needs no proof, and `close()` offers `at(label, x) == x` its
-reflexive source as it already offered `old(x) == x`.
+An ordinary quantified proof states which reads survive a write. Introduce
+the binder and its guard, use the guard to establish separation from the
+recorded footprint, and prove the unchanged read with `preserve`. Use that
+equality to rewrite the guarded proposition. Expansion of quantified
+preservation retains those same proof steps.
 
-The attacks are the `mdtests/quantified_frame_rejects_*.md` family: a guard
-that admits the written cell, a guard past a stated separation, a read past
-a separated range (the `visited == left + n` witness), an eight-byte store
-beside the excluded element, an unseparated alias, a global that may be the
-array, a call and a recursive call writing the range, a parameter
-reassigned before the store, both state orders, a second store the guard
-admits, a guard whose own read the store widens, a loop havoc and a release
-by `free`. Each is refused with the leaf it
-had and the leaf it wanted.
+The `mdtests/quantified_frame_rejects_*.md` fixtures verify that this reasoning
+cannot cross a write that the guard admits, a possibly aliased or out-of-range
+read, a changed guard, a call or loop that writes the range, or a release by
+`free`.
 
 ## Iterated guarded ownership
 
