@@ -1332,9 +1332,8 @@ struct OutcomeEvidence {
     checked_leaf_facts: Option<Arc<CheckedLeafFacts>>,
     loop_return: Option<Arc<LoopReturnProof>>,
     /// The checked call edges selected on this terminal path, outermost
-    /// `outcomes` first, with their checked call payloads. A surrounding branch can add
-    /// paths that never visited a call, so this belongs to each outcome
-    /// rather than to the joined frontier as one flat vector.
+    /// `outcomes` first. `true` selects `returned`. A surrounding branch can
+    /// add paths that never visited a call, so routes belong to each outcome.
     call_routes: Vec<bool>,
     branch_decisions: ExecutionBranchDecisions,
     match_arms: OutcomeMatchArms,
@@ -2623,8 +2622,8 @@ pub(in crate::surface::proof) struct OutcomeProofPresentation {
     pub(in crate::surface::proof) requirement_surfaces:
         Arc<PersistentMap<Proposition, SurfaceProposition>>,
     branch_decisions: ExecutionBranchDecisions,
-    /// The checked call edges this outcome took, outermost `outcomes`
-    /// first, with their checked call payloads.
+    /// The checked call edges this outcome took, outermost `outcomes` first.
+    /// `true` selects `returned`.
     pub(in crate::surface::proof) call_routes: Vec<bool>,
     /// The arm each `match` deferred after execution took on this path, by
     /// the match's source occurrence, with that arm's field bindings.
