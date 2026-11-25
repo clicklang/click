@@ -289,6 +289,16 @@ impl SpecElaborationContext {
         }
     }
 
+    /// The type of a name bound to an algebraic value.
+    fn algebraic_binding_click_type<Q: crate::surface::binders::BinderKey + ?Sized>(
+        &self,
+        name: &Q,
+    ) -> Option<ClickType> {
+        self.algebraic_values.get(name).map(|value| {
+            generics::click_type_from_algebraic_value_type(&value.algebraic_type.value_type())
+        })
+    }
+
     /// The pointee type of a name bound to a pointer value.
     fn bound_pointer_pointee_type<Q: crate::surface::binders::BinderKey + ?Sized>(
         &self,
@@ -8679,12 +8689,9 @@ impl AnnotationLowerer<'_> {
                 .map(Some)
                 .ok_or_else(|| "callback argument needs a concrete lambda".into()),
             ClickType::Proposition => Err("proposition parameters are not supported yet".into()),
-            ClickType::Algebraic(_) => {
-                let value = self.lower_contract_algebraic_to_spec(argument, environment)?;
-                Ok(Some(generics::click_type_from_algebraic_value_type(
-                    &value.algebraic_type.value_type(),
-                )))
-            }
+            // The argument's type by the rules lowering it would apply, without
+            // lowering it.
+            ClickType::Algebraic(_) => self.algebraic_argument_click_type(argument, environment),
             // A `T*` parameter binds `T` from the argument's pointer type,
             // as a `T` parameter binds it from the argument's type.
             ClickType::Program(InterfaceType::ParameterPointer(_)) | ClickType::Parameter(_) => {
@@ -8692,6 +8699,69 @@ impl AnnotationLowerer<'_> {
             }
             ClickType::Program(_) | ClickType::CObjectPointer { .. } => Ok(Some(expected.clone())),
             ClickType::Integer => Ok(Some(ClickType::Integer)),
+        }
+    }
+
+    /// The type of an argument passed where an algebraic value is expected,
+    /// by the rules lowering such an argument applies, without lowering it:
+    /// a program value of an enum or library type is that type's algebraic
+    /// value; `old(..)` and `at(..)` type their operand in the scope of the
+    /// point they name; a bare name is an algebraic binding or an error; a
+    /// call is its instance's result; anything else has its synthesized type.
+    /// Over the gate this answered exactly as lowering the argument did,
+    /// errors included.
+    fn algebraic_argument_click_type(
+        &mut self,
+        argument: &SyntaxTerm,
+        environment: &SpecElaborationContext,
+    ) -> Result<Option<ClickType>, String> {
+        let typing = TypingEnvironment::of(environment);
+        if let Some(enum_type) = self.enum_program_value_type(argument, &typing) {
+            return Ok(Some(generics::click_type_from_algebraic_value_type(
+                &enum_type.algebraic_type().value_type(),
+            )));
+        }
+        match argument {
+            // The operand is typed where it is read: a local named in it is
+            // one in scope at that point, as lowering reads it there.
+            SyntaxTerm::Old(inner) => {
+                let old_environment =
+                    environment.old_state(&self.entry_values, &self.entry_state.program_point())?;
+                self.algebraic_argument_click_type(inner, &old_environment)
+            }
+            SyntaxTerm::At {
+                selector,
+                expression,
+            } => {
+                let retained_state =
+                    self.point_environment(selector, environment)?.ok_or_else(|| {
+                        "algebraic values at unresolved program points are not supported in this slice"
+                            .to_string()
+                    })?;
+                self.algebraic_argument_click_type(expression, &retained_state)
+            }
+            // A bare name is an algebraic binding or nothing: an Integer or
+            // program binding of that name does not make it algebraic.
+            SyntaxTerm::Binding(name)
+            | SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
+                crate::kernel::BindingName::Named(name),
+            )) => typing
+                .algebraic_binding_click_type(name)
+                .map(Some)
+                .ok_or_else(|| format!("`{name}` is not an algebraic binding in this scope")),
+            SyntaxTerm::Call { name, arguments } if name != "to_nat" => {
+                let Some(definition) = self.spec_definitions.functions.get(name).cloned() else {
+                    return Ok(None);
+                };
+                let definition =
+                    self.instantiate_click_function_for_call(&definition, arguments, environment)?;
+                Ok(Some(definition.return_type().clone()))
+            }
+            _ => Ok(self.contract_expression_click_type_in_scope(
+                argument,
+                &typing,
+                &mut Vec::new(),
+            )),
         }
     }
 
