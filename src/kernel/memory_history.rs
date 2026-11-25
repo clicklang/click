@@ -7913,8 +7913,10 @@ mod opaque_pointer_frame_tests {
             left: Box::new(Resource::Footprint(footprint)),
             right: Box::new(kept),
         };
-        crate::kernel::proof::preservation::apply(&separation, None, &result, |p| p == &separation)
-            .unwrap();
+        crate::kernel::proof::preservation::apply(&separation, None, &result, None, |p| {
+            p == &separation
+        })
+        .unwrap();
         Some((after_value, result))
     }
 

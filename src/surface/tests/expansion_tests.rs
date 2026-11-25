@@ -4408,6 +4408,22 @@ fn call_field_requirements_substitute_actual_arguments_in_expansion() {
     }
 }
 
+#[test]
+fn pointer_output_definedness_expands_through_return_cleanup() {
+    let (source, sources) =
+        mdtest_sources("mdtests/call_result_assignment_retains_defined_pointer_output.md");
+    let sources = sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c_claim_source_by_label(&source, &sources, "caller.contract")
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    without_implicit_solve_for_claim("caller.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}"));
+}
+
 /// The int64 postcondition's domain is owed only where `result == 1`, and
 /// that guard establishes it from the call's postcondition without a written
 /// step. Its expanded claim contains only simple proof steps.

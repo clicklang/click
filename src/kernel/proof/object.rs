@@ -1403,7 +1403,13 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         let (goal, facts) = self
             .focused_proposition()
             .ok_or("preserve requires a proposition goal")?;
-        super::preservation::apply(separation, field, goal.proposition(), |p| facts.contains(p))?;
+        let return_state = goal.outcome.as_ref().and_then(|outcome| {
+            (outcome.core.publication.is_some() && !outcome.core.is_exceptional)
+                .then_some(&*outcome.core.state)
+        });
+        super::preservation::apply(separation, field, goal.proposition(), return_state, |p| {
+            facts.contains(p)
+        })?;
         Ok(self.closed_focused())
     }
 
