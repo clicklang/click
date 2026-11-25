@@ -213,11 +213,11 @@ int32 owned_string_push(struct owned_string* owner, int32 value) {
     have owner->len == at(region(4).entry, (index + 1));
     step();
     have 0 <= old(owner->len) + 1 by {
-        close() using {
+        normalize() using {
             0 <= old(owner->len);
             old(owner->len) < old(owner->cap);
             old(owner->cap) <= 1073741823;
-        }
+        };
     }
     have owner->data == old(owner->data) by {
         close();
@@ -316,7 +316,7 @@ int32 owned_string_clear(struct owned_string* owner) {
 } by {
     unfold(owned_string(owner));
     have 0 < owner->cap by {
-        close() using { 0 <= owner->len; owner->len < owner->cap; };
+        apply(click::integer::int32_less_equal_less_than_transitive(0, owner->len, owner->cap));
     }
     step();
     step();

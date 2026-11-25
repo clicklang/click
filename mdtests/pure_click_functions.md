@@ -112,6 +112,202 @@ int32 count_three_matches(int32 p[3], int32 x) {
     views p[0..3];
     ensures result_value: result == count3(p, x);
     ensures stdlib_count_value: result == permutation::count(p, 0, 3, x);
+} by {
+    step();
+    step();
+    if at(region(2).entry, p[0]) == at(region(2).entry, x) {
+        step();
+        step();
+        if at(region(5).entry, p[1]) == at(region(5).entry, x) {
+            step();
+            step();
+            if at(region(8).entry, p[2]) == at(region(8).entry, x) {
+                step();
+                step();
+                step();
+                have result == count3(p, x) by {
+                    unfold(count3(p, x));
+                    normalize() using {
+                        at(region(2).entry, p[0]) == at(region(2).entry, x);
+                        at(region(5).entry, p[1]) == at(region(5).entry, x);
+                        at(region(8).entry, p[2]) == at(region(8).entry, x);
+                    };
+                }
+                have result == permutation::count(p, 0, 3, x) by {
+                    unfold(permutation::count(p, 0, 3, x));
+                    normalize() using {
+                        at(region(2).entry, p[0]) == at(region(2).entry, x);
+                        at(region(5).entry, p[1]) == at(region(5).entry, x);
+                        at(region(8).entry, p[2]) == at(region(8).entry, x);
+                    };
+                }
+                close();
+            } else {
+                step();
+                step();
+                step();
+                have result == count3(p, x) by {
+                    unfold(count3(p, x));
+                    normalize() using {
+                        at(region(2).entry, p[0]) == at(region(2).entry, x);
+                        at(region(5).entry, p[1]) == at(region(5).entry, x);
+                        at(region(8).entry, p[2]) != at(region(8).entry, x);
+                    };
+                }
+                have result == permutation::count(p, 0, 3, x) by {
+                    unfold(permutation::count(p, 0, 3, x));
+                    normalize() using {
+                        at(region(2).entry, p[0]) == at(region(2).entry, x);
+                        at(region(5).entry, p[1]) == at(region(5).entry, x);
+                        at(region(8).entry, p[2]) != at(region(8).entry, x);
+                    };
+                }
+                close();
+            }
+        } else {
+            step();
+            step();
+            if at(region(8).entry, p[2]) == at(region(8).entry, x) {
+                step();
+                step();
+                step();
+                have result == count3(p, x) by {
+                    unfold(count3(p, x));
+                    normalize() using {
+                        at(region(2).entry, p[0]) == at(region(2).entry, x);
+                        at(region(5).entry, p[1]) != at(region(5).entry, x);
+                        at(region(8).entry, p[2]) == at(region(8).entry, x);
+                    };
+                }
+                have result == permutation::count(p, 0, 3, x) by {
+                    unfold(permutation::count(p, 0, 3, x));
+                    normalize() using {
+                        at(region(2).entry, p[0]) == at(region(2).entry, x);
+                        at(region(5).entry, p[1]) != at(region(5).entry, x);
+                        at(region(8).entry, p[2]) == at(region(8).entry, x);
+                    };
+                }
+                close();
+            } else {
+                step();
+                step();
+                step();
+                have result == count3(p, x) by {
+                    unfold(count3(p, x));
+                    normalize() using {
+                        at(region(2).entry, p[0]) == at(region(2).entry, x);
+                        at(region(5).entry, p[1]) != at(region(5).entry, x);
+                        at(region(8).entry, p[2]) != at(region(8).entry, x);
+                    };
+                }
+                have result == permutation::count(p, 0, 3, x) by {
+                    unfold(permutation::count(p, 0, 3, x));
+                    normalize() using {
+                        at(region(2).entry, p[0]) == at(region(2).entry, x);
+                        at(region(5).entry, p[1]) != at(region(5).entry, x);
+                        at(region(8).entry, p[2]) != at(region(8).entry, x);
+                    };
+                }
+                close();
+            }
+        }
+    } else {
+        step();
+        step();
+        if at(region(5).entry, p[1]) == at(region(5).entry, x) {
+            step();
+            step();
+            if at(region(8).entry, p[2]) == at(region(8).entry, x) {
+                step();
+                step();
+                step();
+                have result == count3(p, x) by {
+                    unfold(count3(p, x));
+                    normalize() using {
+                        at(region(2).entry, p[0]) != at(region(2).entry, x);
+                        at(region(5).entry, p[1]) == at(region(5).entry, x);
+                        at(region(8).entry, p[2]) == at(region(8).entry, x);
+                    };
+                }
+                have result == permutation::count(p, 0, 3, x) by {
+                    unfold(permutation::count(p, 0, 3, x));
+                    normalize() using {
+                        at(region(2).entry, p[0]) != at(region(2).entry, x);
+                        at(region(5).entry, p[1]) == at(region(5).entry, x);
+                        at(region(8).entry, p[2]) == at(region(8).entry, x);
+                    };
+                }
+                close();
+            } else {
+                step();
+                step();
+                step();
+                have result == count3(p, x) by {
+                    unfold(count3(p, x));
+                    normalize() using {
+                        at(region(2).entry, p[0]) != at(region(2).entry, x);
+                        at(region(5).entry, p[1]) == at(region(5).entry, x);
+                        at(region(8).entry, p[2]) != at(region(8).entry, x);
+                    };
+                }
+                have result == permutation::count(p, 0, 3, x) by {
+                    unfold(permutation::count(p, 0, 3, x));
+                    normalize() using {
+                        at(region(2).entry, p[0]) != at(region(2).entry, x);
+                        at(region(5).entry, p[1]) == at(region(5).entry, x);
+                        at(region(8).entry, p[2]) != at(region(8).entry, x);
+                    };
+                }
+                close();
+            }
+        } else {
+            step();
+            step();
+            if at(region(8).entry, p[2]) == at(region(8).entry, x) {
+                step();
+                step();
+                step();
+                have result == count3(p, x) by {
+                    unfold(count3(p, x));
+                    normalize() using {
+                        at(region(2).entry, p[0]) != at(region(2).entry, x);
+                        at(region(5).entry, p[1]) != at(region(5).entry, x);
+                        at(region(8).entry, p[2]) == at(region(8).entry, x);
+                    };
+                }
+                have result == permutation::count(p, 0, 3, x) by {
+                    unfold(permutation::count(p, 0, 3, x));
+                    normalize() using {
+                        at(region(2).entry, p[0]) != at(region(2).entry, x);
+                        at(region(5).entry, p[1]) != at(region(5).entry, x);
+                        at(region(8).entry, p[2]) == at(region(8).entry, x);
+                    };
+                }
+                close();
+            } else {
+                step();
+                step();
+                step();
+                have result == count3(p, x) by {
+                    unfold(count3(p, x));
+                    normalize() using {
+                        at(region(2).entry, p[0]) != at(region(2).entry, x);
+                        at(region(5).entry, p[1]) != at(region(5).entry, x);
+                        at(region(8).entry, p[2]) != at(region(8).entry, x);
+                    };
+                }
+                have result == permutation::count(p, 0, 3, x) by {
+                    unfold(permutation::count(p, 0, 3, x));
+                    normalize() using {
+                        at(region(2).entry, p[0]) != at(region(2).entry, x);
+                        at(region(5).entry, p[1]) != at(region(5).entry, x);
+                        at(region(8).entry, p[2]) != at(region(8).entry, x);
+                    };
+                }
+                close();
+            }
+        }
+    }
 }
 
 int32 range_helpers() {

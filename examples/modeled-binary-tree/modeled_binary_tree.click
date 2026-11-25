@@ -430,6 +430,13 @@ struct tree_node* tree_rotate_left(struct tree_node* root) {
                         right: right
                     });
                     apply(heap_rotate_left_preserves_inorder(old(t.model)));
+                    have rotated.model == heap_rotate_left(old(t.model)) by {
+                        unfold(heap_rotate_left(old(t.model)));
+                        rewrite(t.model, HeapTree::Node(node, value, left_model, right_model));
+                        rewrite(value, at(region(0).entry, root->value));
+                        rewrite(right_model, HeapTree::Node(pivot_node, pivot_value, middle_model, far_right_model));
+                        normalize() using {};
+                    }
                 },
             }
         },
@@ -467,6 +474,13 @@ struct tree_node* tree_rotate_right(struct tree_node* root) {
                         left: left
                     });
                     apply(heap_rotate_right_preserves_inorder(old(t.model)));
+                    have rotated.model == heap_rotate_right(old(t.model)) by {
+                        unfold(heap_rotate_right(old(t.model)));
+                        rewrite(t.model, HeapTree::Node(node, value, left_model, right_model));
+                        rewrite(value, at(region(0).entry, root->value));
+                        rewrite(left_model, HeapTree::Node(pivot_node, pivot_value, far_left_model, middle_model));
+                        normalize() using {};
+                    }
                 },
             }
         },

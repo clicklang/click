@@ -60,7 +60,10 @@ fn sum(bytes: &[u8]) -> i32 {
                 have iter.len() == at(iteration, iter.len()) - 1u64;
                 have iter.as_slice() == (bytes + (bytes.len() - at(iteration, iter.len()))) + 1u64;
                 apply(pointer_association(bytes, bytes.len() - at(iteration, iter.len()), 1u64));
-                have at(iteration, bytes[(bytes.len() - iter.len())]) == byte;
+                have at(iteration, bytes[(bytes.len() - iter.len())]) == byte by {
+                    rewrite(at(iteration, bytes + (bytes.len() - iter.len())), at(iteration, iter.as_slice()));
+                    normalize() using {};
+                }
                 have defined(total + byte as i32) by {
                     close() using { 0 <= total; to_integer(total) <= 255000; };
                 }

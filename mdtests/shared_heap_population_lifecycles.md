@@ -202,7 +202,7 @@ void child_release(struct child* obj) {
     } else {
         unfold(child_ref(obj));
         have 1 < obj->refs by {
-            close() using { 1 <= obj->refs; obj->refs != 1; };
+            normalize() using { 1 <= obj->refs; obj->refs != 1; };
         }
         have to_integer(obj->refs - 1) >= 1;
         step();
@@ -352,7 +352,7 @@ int32 run_first_destroyed(int32 payload) {
     have exact(first->kid->refs) == exact(kid->refs) by { rewrite(first->kid, kid); close(); }
     have exact(kid->refs) == 2 by { close(); }
     have exact(first->kid->refs) == 2 by { close(); }
-    have exact(first->kid->refs) > 1 by { close() using { exact(first->kid->refs) == 2; }; }
+    have exact(first->kid->refs) > 1 by { rewrite(exact(first->kid->refs), 2); close(); }
     have kid->payload == payload;
     have first->kid->payload == payload by { rewrite(first->kid, kid); close(); }
     mark detaching;
@@ -410,7 +410,8 @@ int32 run_first_destroyed(int32 payload) {
             have at(after_read, exact(second->kid->refs)) == second->kid->refs by { close(); }
             rewrite(exact(second->kid->refs), at(after_read, exact(second->kid->refs)));
             rewrite(at(after_read, exact(second->kid->refs)), second->kid->refs);
-            close() using { second->kid->refs == 1; };
+            rewrite(second->kid->refs, 1);
+            close();
         }
     }
     step(parent_detach, { link: second_link });
@@ -444,7 +445,7 @@ int32 run_second_destroyed(int32 payload) {
     have exact(second->kid->refs) == exact(kid->refs) by { rewrite(second->kid, kid); close(); }
     have exact(kid->refs) == 2 by { close(); }
     have exact(second->kid->refs) == 2 by { close(); }
-    have exact(second->kid->refs) > 1 by { close() using { exact(second->kid->refs) == 2; }; }
+    have exact(second->kid->refs) > 1 by { rewrite(exact(second->kid->refs), 2); close(); }
     have kid->payload == payload;
     have second->kid->payload == payload by { rewrite(second->kid, kid); close(); }
     mark detaching;
@@ -502,7 +503,8 @@ int32 run_second_destroyed(int32 payload) {
             have at(after_read, exact(first->kid->refs)) == first->kid->refs by { close(); }
             rewrite(exact(first->kid->refs), at(after_read, exact(first->kid->refs)));
             rewrite(at(after_read, exact(first->kid->refs)), first->kid->refs);
-            close() using { first->kid->refs == 1; };
+            rewrite(first->kid->refs, 1);
+            close();
         }
     }
     step(parent_detach, { link: first_link });
