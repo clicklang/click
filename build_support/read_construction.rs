@@ -205,21 +205,6 @@ const BASELINE: &[(&str, Form, usize)] = &[
         Form::UnplacedPoint,
         1,
     ),
-];
-
-/// The `ExecutionState` methods that move a state to a new program point.
-const POINT_CREATING_INSTALLS: &[&str] = &[
-    "with_memory",
-    "set_memory",
-    "set_memory_with_checked_stores",
-    "set_memory_directly",
-    "set_memory_continuing",
-    "with_memory_continuing",
-    "set_memory_of",
-    "with_memory_of",
-    "with_call_return",
-    "with_memory_and_resources_continuing",
-    "set_loop_head_memory",
     // Point-creating installs in proof and lowering code. Only C execution
     // creates program points; these are the exceptions, each a state that
     // stands where the code does: function-entry setup (`proof.rs`), a call's
@@ -242,6 +227,21 @@ const POINT_CREATING_INSTALLS: &[&str] = &[
         Form::ProofPointInstall,
         1,
     ),
+];
+
+/// The `ExecutionState` methods that move a state to a new program point.
+const POINT_CREATING_INSTALLS: &[&str] = &[
+    "with_memory",
+    "set_memory",
+    "set_memory_with_checked_stores",
+    "set_memory_directly",
+    "set_memory_continuing",
+    "with_memory_continuing",
+    "set_memory_of",
+    "with_memory_of",
+    "with_call_return",
+    "with_memory_and_resources_continuing",
+    "set_loop_head_memory",
 ];
 
 /// Only C execution creates program points, so point-creating installs are
