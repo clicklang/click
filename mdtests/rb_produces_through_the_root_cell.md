@@ -112,7 +112,11 @@ void rb_set_root(struct rb_node* node, struct rb_root* root) {
             let u = fold(rb_at(root->rb_node), {
                 model: old(t.model),
                 left: l, right: r
-            });
+            }) {
+                requires (address(root->rb_node) & 7u64) == 0u64 by {
+                    normalize() using { at(function.entry, aligned(node, 8)); };
+                }
+            }
             close();
         },
     }
