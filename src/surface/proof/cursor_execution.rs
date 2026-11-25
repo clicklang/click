@@ -2559,11 +2559,6 @@ fn execute_step_from_frontier_position_selecting_path(
                 | ProgramStatement::CallConstruct { .. }
                 | ProgramStatement::CallResult { .. }
         )
-        && matches!(
-            execution.core.frontier.region,
-            ExecutionRegionKind::Function
-        )
-        && execution.core.frontier.continuations.is_empty()
         && transitions.len() == 2
         && transitions
             .iter()
@@ -2582,7 +2577,7 @@ fn execute_step_from_frontier_position_selecting_path(
         return Err(ClickError::new(format!(
             "`{claim_label}` tactic {tactic_index}: `{tactic_name}` reached `{}`, which may throw; its returned and threw successors are separate proof arms. Write `outcomes {{ returned => {{ ... }} threw => {{ ... }} }}` here, or end the script here and let its implicit tail split it",
             describe_statement_head(&step_statement)
-        )));
+        )).with_call_outcomes_split());
     }
     // A statement whose checked successors differ only in their path facts
     // -- a load that may or may not read the cell an earlier store wrote --

@@ -22671,16 +22671,24 @@ fn terminal_throwing_call_requires_a_frontier_split_and_expands() {
     assert!(error.message().contains("which may throw"), "{error}");
     assert!(error.message().contains("Write `outcomes"), "{error}");
 
-    let label = "caller.contract";
-    let expanded = expand_c_claim_source_by_label(&source, &sources, label)
-        .expect("the implicit tail can split the terminal call");
-    let caller = expanded.split_once("int32 caller(").unwrap().1;
-    let (_, body) = caller.split_once("} by {").unwrap();
-    assert!(body.trim_start().starts_with("outcomes {"), "{expanded}");
-    crate::surface::without_implicit_solve_for_claim(label, || {
-        verify_c_sources(&expanded, &sources).map_err(|error| error.to_string())
-    })
-    .expect("the generated frontier split replays without search");
+    let (indirect_source, indirect_sources) =
+        mdtest_sources("mdtests/exceptional_named_contract.md");
+    let indirect_sources = crate::cli::source_refs(&indirect_sources);
+    for (source, sources, label) in [
+        (&source, &sources, "caller.contract"),
+        (&indirect_source, &indirect_sources, "apply.contract"),
+    ] {
+        let expanded = expand_c_claim_source_by_label(source, sources, label)
+            .expect("the implicit tail can split the terminal call");
+        let name = label.strip_suffix(".contract").unwrap();
+        let caller = expanded.split_once(&format!("int32 {name}(")).unwrap().1;
+        let (_, body) = caller.split_once("} by {").unwrap();
+        assert!(body.trim_start().starts_with("outcomes {"), "{expanded}");
+        crate::surface::without_implicit_solve_for_claim(label, || {
+            verify_c_sources(&expanded, sources).map_err(|error| error.to_string())
+        })
+        .expect("the generated frontier split replays without search");
+    }
 }
 
 #[test]
