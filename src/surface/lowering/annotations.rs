@@ -8734,9 +8734,8 @@ impl AnnotationLowerer<'_> {
                 .map(|parameter| parameter.click_type().clone()),
             argument_types,
         )
-        .map_err(|message| {
+        .inspect_err(|message| {
             self.type_inference_failure = Some(message.clone());
-            message
         })?;
         generics::instantiate_function(definition, &substitution)
     }
@@ -8768,9 +8767,8 @@ impl AnnotationLowerer<'_> {
                 .map(|parameter| parameter.click_type().clone()),
             argument_types,
         )
-        .map_err(|message| {
+        .inspect_err(|message| {
             self.type_inference_failure = Some(message.clone());
-            message
         })?;
         generics::instantiate_predicate(definition, &substitution)
     }

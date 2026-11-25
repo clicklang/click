@@ -1587,6 +1587,7 @@ impl ProgramPoint {
     }
 
     /// This point, recording `site`'s read site when it has none of its own.
+    #[cfg(test)]
     pub(crate) fn with_read_site_of(mut self, site: &ProgramPoint) -> Self {
         if self.read_site().is_none()
             && let ReadSelection::Legacy(own) = &mut self.read
