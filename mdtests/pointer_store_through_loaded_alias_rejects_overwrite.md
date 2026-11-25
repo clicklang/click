@@ -33,10 +33,10 @@ void link(struct node* p, struct node* q) {
     have sibling->left == p;
     mark stored;
     step();
-    have q->left == p by { normalize() using { sibling == q; at(stored, sibling->left) == p; }; }
+    have q->left == p by { close() using { sibling == q; at(stored, sibling->left) == p; }; }
 }
 ```
 
 ```expect
-fail: `normalize using` goal did not normalize to true using the listed conditions
+fail: `close() using` could not prove the current goal from only its listed premises
 ```

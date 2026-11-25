@@ -4,11 +4,11 @@
 theorem rounded(x: float) {
     requires x > float32_from_bits(0);
     ensures x + float32_from_bits(0x3f800000) > float32_from_bits(0x3f800000) by {
-        normalize() using { x > float32_from_bits(0); };
+        close() using { x > float32_from_bits(0); };
     }
 }
 ```
 
 ```expect
-fail: did not normalize
+fail: `close() using` could not prove the current goal from only its listed premises
 ```

@@ -21,11 +21,11 @@ void dispose(int32 *data, int32 n) {
     unfold(cell(data, n));
     step();
     have separate(statement(0).footprint, memory(data[0..n])) by {
-        normalize() using {};
+        close() using {};
     }
 }
 ```
 
 ```expect
-fail: goal did not normalize to true
+fail: `close() using` could not prove the current goal from only its listed premises
 ```

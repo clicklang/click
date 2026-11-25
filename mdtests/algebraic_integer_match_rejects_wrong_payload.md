@@ -10,11 +10,11 @@ theorem wrong(b: Box, n: Integer) {
     ensures identity(b) == Box::Box(n + 1) by {
         unfold(identity(b));
         rewrite(b, Box::Box(n));
-        normalize();
+        close();
     }
 }
 ```
 
 ```expect
-fail: `normalize` goal did not normalize to true
+fail: could not establish `match Box::Box(n) { Box::Box(n) => Box::Box(n) } == Box::Box((n + 1))`
 ```

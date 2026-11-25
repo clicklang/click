@@ -547,7 +547,7 @@ fn selected_theorem_definitions(
         return file
             .theorem_definitions()
             .iter()
-            .filter(|definition| definition.name() == name && file.theorem_is_selected(name))
+            .filter(|definition| definition.name() == name && file.theorem_is_selected(definition))
             .map(clone_theorem_definition_iteratively)
             .collect();
     }
@@ -556,7 +556,7 @@ fn selected_theorem_definitions(
     }
     file.theorem_definitions()
         .iter()
-        .filter(|definition| file.theorem_is_selected(definition.name()))
+        .filter(|definition| file.theorem_is_selected(definition))
         .map(clone_theorem_definition_iteratively)
         .collect()
 }
@@ -661,7 +661,13 @@ pub(in crate::surface) fn verify_click_project_theorem_context(
     let file =
         modules::resolve_click_project_with_layouts(project, sources.library_contracts(), layouts)?;
     drop(_timing);
-    if !file.theorem_is_selected(theorem_name) {
+    if let Some(theorem) = file
+        .theorem_definitions()
+        .iter()
+        .find(|theorem| theorem.name() == theorem_name)
+        && !theorem.is_interface_export()
+        && !file.theorem_is_selected(theorem)
+    {
         return Err(ClickError::new(format!(
             "theorem `{theorem_name}` is declared by an imported module, not the selected entry module"
         )));
@@ -683,6 +689,11 @@ fn verify_click_file_theorem_context(
         .iter()
         .find(|definition| definition.name() == theorem_name)
         .ok_or_else(|| ClickError::new(format!("unknown theorem `{theorem_name}`")))?;
+    if theorem.is_interface_export() {
+        return Err(ClickError::new(format!(
+            "theorem `{theorem_name}` is a library interface assumption and has no proof to verify"
+        )));
+    }
     let predicate_definitions = combined_predicate_definitions(&file)?;
     let click_function_definitions = combined_click_function_definitions(&file)?;
     let resource_definitions = combined_resource_definitions(&file)?;
@@ -1358,7 +1369,7 @@ pub fn project_selected_proof_names(
 fn selected_entry_proof_names(file: &ClickFile) -> Vec<String> {
     file.theorem_definitions()
         .iter()
-        .filter(|theorem| file.theorem_is_selected(theorem.name()))
+        .filter(|theorem| file.theorem_is_selected(theorem))
         .map(|theorem| format!("theorem:{}", theorem.name()))
         .chain(
             file.function_blocks()
@@ -1880,14 +1891,13 @@ impl ProgramVerificationSession {
                         .iter()
                         .any(|tactic| tactic.name() == name)
             }
-            VerificationTarget::Theorem(name) => {
-                self.baseline_file.theorem_is_selected(name)
-                    && self
-                        .baseline_file
-                        .theorem_definitions()
-                        .iter()
-                        .any(|theorem| theorem.name() == name)
-            }
+            VerificationTarget::Theorem(name) => self
+                .baseline_file
+                .theorem_definitions()
+                .iter()
+                .any(|theorem| {
+                    theorem.name() == name && self.baseline_file.theorem_is_selected(theorem)
+                }),
             VerificationTarget::Functions(_) => false,
         };
         if !target_exists_in_baseline {
@@ -2405,7 +2415,7 @@ fn verify_program_in_context(
     let entry_theorem_names = file
         .theorem_definitions()
         .iter()
-        .filter(|theorem| file.theorem_is_selected(theorem.name()))
+        .filter(|theorem| file.theorem_is_selected(theorem))
         .map(|theorem| theorem.name().to_string())
         .collect::<Vec<_>>();
     let all_theorem_names = file
@@ -3245,6 +3255,8 @@ pub fn c_external_dependencies(
 pub struct ProjectVerificationSummary {
     /// Each function's assumed library interfaces and `extern` contracts.
     pub assumptions: BTreeMap<String, Vec<ModelAssumption>>,
+    /// Theorem assumptions made available by the loaded library interfaces.
+    pub interface_theorem_assumptions: BTreeSet<String>,
     /// Selected function proofs plus selected theorems.
     pub selected_proof_count: usize,
     /// Every function the sidecar's `verifying` sources define, with the
@@ -3269,6 +3281,13 @@ fn project_verification_summary_file(
         parse_verified_sources_context_with_entry(file, sources, ProgramEntryStorage::Skip)?;
     Ok(ProjectVerificationSummary {
         assumptions: program_assumptions_parsed(file, &parsed_sources, sources.library_models())?,
+        interface_theorem_assumptions: file
+            .theorem_definitions()
+            .iter()
+            .chain(super::validation::file_library(file)?.theorem_definitions())
+            .filter(|theorem| theorem.is_interface_export())
+            .map(|theorem| theorem.name().to_owned())
+            .collect(),
         selected_proof_count: file
             .function_blocks()
             .iter()
@@ -3277,7 +3296,7 @@ fn project_verification_summary_file(
             + file
                 .theorem_definitions()
                 .iter()
-                .filter(|theorem| file.theorem_is_selected(theorem.name()))
+                .filter(|theorem| file.theorem_is_selected(theorem))
                 .count(),
         defined_functions: parsed_sources
             .iter()

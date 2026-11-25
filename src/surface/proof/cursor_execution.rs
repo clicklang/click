@@ -2231,7 +2231,7 @@ fn execute_step_from_frontier_position_selecting_path(
         )?;
         return Ok(Vec::new());
     }
-    let mut step_statement = source_statement;
+    let step_statement = source_statement;
     if function_environment.selected_call_contract.is_some()
         && !statement_contains_call(&step_statement)
     {
@@ -2328,10 +2328,9 @@ fn execute_step_from_frontier_position_selecting_path(
     }
     let transition_label = format!("`{claim_label}` tactic {tactic_index}: `{tactic_name}`");
     let next_opaque_call_before_step = execution.core.next_opaque_call;
-    let next_kernel_variable_before_step = execution.core.kernel_variable_mark();
     // The kernel owns the counter: the step reads a copy, the evaluation
     // advances it, and the checked setter installs the result.
-    let mut stepped_kernel_variable = next_kernel_variable_before_step;
+    let mut stepped_kernel_variable = execution.core.kernel_variable_mark();
     let mut transitions = certified_statement_transitions(
         &current_state,
         available_pure_facts,
@@ -2352,170 +2351,6 @@ fn execute_step_from_frontier_position_selecting_path(
         .map_err(|message| ClickError::new(format!("{transition_label}: {message}")))?;
     if let Some(selected_path_fact) = selected_path_fact {
         transitions.retain(|transition| transition.path_facts.contains(selected_path_fact));
-    }
-    let mut call_outcome_edges = None;
-    let mut terminal_call_payloads = [None, None];
-    // A direct call can have one continuing normal outcome and one terminal
-    // throw. An int32 try/catch can similarly have one continuing normal
-    // outcome and one terminal handler return. If the only continuation is a
-    // return, prove that exact two-node source suffix as one checked statement
-    // theorem family. Keep this constant-size: a step must not scan or
-    // execute an unrelated remainder of the function to discover a join.
-    if selected_path_fact.is_none()
-        && matches!(
-            step_statement,
-            ProgramStatement::Call { .. }
-                | ProgramStatement::CallConstruct { .. }
-                | ProgramStatement::CallResult { .. }
-                | ProgramStatement::TryCatchInt32 { .. }
-        )
-        && matches!(
-            execution.core.frontier.region,
-            ExecutionRegionKind::Function
-        )
-        && execution.core.frontier.continuations.is_empty()
-        && transitions.len() == 2
-        && transitions
-            .iter()
-            .filter(|transition| matches!(transition.outcome, StatementOutcome::Normal(_)))
-            .count()
-            == 1
-        && transitions.iter().any(|transition| {
-            matches!(
-                (&step_statement, &transition.outcome),
-                (
-                    ProgramStatement::Call { .. }
-                        | ProgramStatement::CallConstruct { .. }
-                        | ProgramStatement::CallResult { .. },
-                    StatementOutcome::Throw { .. }
-                ) | (
-                    ProgramStatement::TryCatchInt32 { .. },
-                    StatementOutcome::Return { .. }
-                )
-            )
-        })
-        && let Some(tail @ ProgramStatement::Return(_)) = remaining.as_ref()
-    {
-        let whole_suffix = program_seq(step_statement.clone(), tail.clone());
-        let mut next_opaque_call = next_opaque_call_before_step;
-        let mut next_kernel_variable = next_kernel_variable_before_step;
-        let (suffix_transitions, _) = certified_statement_transitions(
-            &current_state,
-            available_pure_facts,
-            &whole_suffix,
-            function_environment,
-            Some(proof_context.spec_definitions.predicates),
-            ExecutionSemantics::APPLY_VERIFIED_RULES,
-            &transition_label,
-            &mut next_opaque_call,
-            &mut next_kernel_variable,
-            prerequisite_policy,
-            context,
-        )?;
-        if suffix_transitions.len() == 2
-            && suffix_transitions.iter().all(|transition| {
-                matches!(
-                    (&step_statement, &transition.outcome),
-                    (
-                        ProgramStatement::Call { .. }
-                            | ProgramStatement::CallConstruct { .. }
-                            | ProgramStatement::CallResult { .. },
-                        StatementOutcome::Return { .. } | StatementOutcome::Throw { .. }
-                    ) | (
-                        ProgramStatement::TryCatchInt32 { .. },
-                        StatementOutcome::Return { .. }
-                    )
-                )
-            })
-            && (matches!(step_statement, ProgramStatement::TryCatchInt32 { .. })
-                || suffix_transitions
-                    .iter()
-                    .filter(|transition| {
-                        matches!(transition.outcome, StatementOutcome::Throw { .. })
-                    })
-                    .count()
-                    == 1)
-        {
-            if let ProgramStatement::TryCatchInt32 {
-                try_body,
-                binding,
-                handler,
-                ..
-            } = &step_statement
-                && matches!(
-                    try_body.as_ref(),
-                    ProgramStatement::Call { .. }
-                        | ProgramStatement::CallConstruct { .. }
-                        | ProgramStatement::CallResult { .. }
-                )
-                && matches!(handler.as_ref(), ProgramStatement::Return(_))
-            {
-                let edges = transitions
-                    .iter()
-                    .map(|transition| match &transition.outcome {
-                        StatementOutcome::Normal(state) => {
-                            terminal_call_payloads[0] =
-                                checked_returned_call_value(try_body, state);
-                            Some(true)
-                        }
-                        StatementOutcome::Return { state, .. } => {
-                            // The exact handler is one return. Its checked
-                            // state still holds the untouched catch binding.
-                            terminal_call_payloads[1] = state.locals().get(binding).cloned();
-                            Some(false)
-                        }
-                        _ => None,
-                    })
-                    .collect::<Option<Vec<_>>>();
-                // The kernel's Seq evaluator emits each first-statement path
-                // in order, replacing only its continuing path with the tail's
-                // descendants. With one descendant per edge, this order is
-                // unchanged in `suffix_transitions`.
-                call_outcome_edges = edges.filter(|edges| {
-                    edges.len() == 2 && edges.iter().filter(|returned| **returned).count() == 1
-                });
-            } else if matches!(
-                step_statement,
-                ProgramStatement::Call { .. }
-                    | ProgramStatement::CallConstruct { .. }
-                    | ProgramStatement::CallResult { .. }
-            ) {
-                // A direct call's continuing normal edge is its returned
-                // outcome and its terminal throw is the threw outcome, in the
-                // kernel's first-statement path order, as for try/catch above.
-                let edges = transitions
-                    .iter()
-                    .map(|transition| match &transition.outcome {
-                        StatementOutcome::Normal(state) => {
-                            terminal_call_payloads[0] =
-                                checked_returned_call_value(&step_statement, state);
-                            Some(true)
-                        }
-                        StatementOutcome::Throw { value, .. } => {
-                            terminal_call_payloads[1] = Some(value.clone());
-                            Some(false)
-                        }
-                        _ => None,
-                    })
-                    .collect::<Option<Vec<_>>>();
-                call_outcome_edges = edges.filter(|edges| {
-                    edges.len() == 2 && edges.iter().filter(|returned| **returned).count() == 1
-                });
-            }
-            step_statement = whole_suffix;
-            transitions = suffix_transitions;
-            execution.core.next_opaque_call = next_opaque_call;
-            // The suffix evaluation re-ran the step from the counter it had
-            // before, so this is not below what the step above installed only
-            // when the suffix allocated at least as much. Take the higher of
-            // the two: the counter never moves back.
-            execution
-                .core
-                .advance_kernel_variable_mark(
-                    next_kernel_variable.max(execution.core.kernel_variable_mark()),
-                )
-                .map_err(|message| ClickError::new(format!("{transition_label}: {message}")))?;
-        }
     }
     // A summarized loop whose body may `return` has one continuing successor,
     // the join of its guard-false and `break` exits or its natural forward
@@ -2687,8 +2522,6 @@ fn execute_step_from_frontier_position_selecting_path(
                 arguments.to_vec(),
                 completed_outcomes,
             );
-        execution.presentation.call_outcome_edges = call_outcome_edges;
-        execution.presentation.terminal_call_payloads = terminal_call_payloads;
         if let (Some(loop_index), Some(exit_state)) = (loop_index, loop_return_exit_state) {
             record_loop_program_state(
                 &mut execution.presentation.recorded_states,
@@ -2726,11 +2559,6 @@ fn execute_step_from_frontier_position_selecting_path(
                 | ProgramStatement::CallConstruct { .. }
                 | ProgramStatement::CallResult { .. }
         )
-        && matches!(
-            execution.core.frontier.region,
-            ExecutionRegionKind::Function
-        )
-        && execution.core.frontier.continuations.is_empty()
         && transitions.len() == 2
         && transitions
             .iter()
@@ -2749,7 +2577,7 @@ fn execute_step_from_frontier_position_selecting_path(
         return Err(ClickError::new(format!(
             "`{claim_label}` tactic {tactic_index}: `{tactic_name}` reached `{}`, which may throw; its returned and threw successors are separate proof arms. Write `outcomes {{ returned => {{ ... }} threw => {{ ... }} }}` here, or end the script here and let its implicit tail split it",
             describe_statement_head(&step_statement)
-        )));
+        )).with_call_outcomes_split());
     }
     // A statement whose checked successors differ only in their path facts
     // -- a load that may or may not read the cell an earlier store wrote --

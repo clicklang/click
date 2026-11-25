@@ -16,11 +16,11 @@ float* identity(float* p) {
 } by {
     step();
     have result == (p as (uint8 *) as (float *)) by {
-        normalize() using {};
+        close() using {};
     }
 }
 ```
 
 ```expect
-fail: goal did not normalize to true using the listed conditions
+fail: `close() using` could not prove the current goal from only its listed premises
 ```

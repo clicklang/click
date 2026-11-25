@@ -63,7 +63,7 @@ void insert::__rb_change_child(struct rb_node* old, struct rb_node* new,
             have parent == 0 by {
                 rewrite(parent, sized_context_parent(before.model,0));
                 rewrite(before.model, SizedContext::Top);
-                unfold(sized_context_parent(SizedContext::Top,0)); normalize();
+                unfold(sized_context_parent(SizedContext::Top,0)); close();
             }
             let { frames: frames } = unfold(before);
             unfold(frames);
@@ -81,7 +81,7 @@ void insert::__rb_change_child(struct rb_node* old, struct rb_node* new,
             have parent == a by {
                 rewrite(parent, sized_context_parent(before.model,0));
                 rewrite(before.model, SizedContext::Left(a, above, shade, value, sibling_model, up_model));
-                unfold(sized_context_parent(SizedContext::Left(a, above, shade, value, sibling_model, up_model),0)); normalize();
+                unfold(sized_context_parent(SizedContext::Left(a, above, shade, value, sibling_model, up_model),0)); close();
             }
             let { frames: frames } = unfold(before);
             let { metadata: a_size, sibling: sibling, up: up } = unfold(frames);
@@ -113,7 +113,7 @@ void insert::__rb_change_child(struct rb_node* old, struct rb_node* new,
             have parent == a by {
                 rewrite(parent, sized_context_parent(before.model,0));
                 rewrite(before.model, SizedContext::Right(a, above, shade, value, sibling_model, up_model));
-                unfold(sized_context_parent(SizedContext::Right(a, above, shade, value, sibling_model, up_model),0)); normalize();
+                unfold(sized_context_parent(SizedContext::Right(a, above, shade, value, sibling_model, up_model),0)); close();
             }
             let { frames: frames } = unfold(before);
             let { metadata: a_size, sibling: sibling, up: up } = unfold(frames);

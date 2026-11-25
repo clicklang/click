@@ -1,7 +1,7 @@
-# Normalization can query the current equality graph
+# Pointer equality through the current equality graph
 
-After introducing pointer binders and equality assumptions, normalization
-can query their transitive equality without citing either premise.
+After introducing pointer binders and equality assumptions, `close()` checks
+their transitive equality.
 
 ```click
 theorem pointer_transitivity() {
@@ -13,7 +13,7 @@ theorem pointer_transitivity() {
                 intro() {
                     intro() {
                         intro() {
-                            normalize() using { };
+                            close();
                         }
                     }
                 }

@@ -277,6 +277,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     .map(|(proof, record)| Some((proof, record, false)))
             } else {
                 match proof.driver().apply_step(ProofStep::Step) {
+                    Err(error) if error.requires_call_outcomes() => proof
+                        .split_focused_call_outcomes([None, None])?
+                        .map(|(proof, record)| Some((proof, record, true)))
+                        .ok_or(error),
                     Err(error) => Err(error),
                     Ok(_) => return Ok(None),
                 }

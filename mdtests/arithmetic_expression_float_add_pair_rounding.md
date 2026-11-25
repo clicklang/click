@@ -5,7 +5,7 @@ theorem rounded(x: double, y: double) {
     requires x > float64_from_bits(0);
     requires y >= float64_from_bits(0x3ff0000000000000u64);
     ensures x + y > float64_from_bits(0x3ff0000000000000u64) by {
-        normalize() using {
+        close() using {
             x > float64_from_bits(0);
             y >= float64_from_bits(0x3ff0000000000000u64);
         };
@@ -14,5 +14,5 @@ theorem rounded(x: double, y: double) {
 ```
 
 ```expect
-fail: did not normalize
+fail: `close() using` could not prove the current goal from only its listed premises
 ```

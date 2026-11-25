@@ -861,6 +861,18 @@ struct CLibraryValue {
     interface_type: InterfaceType,
     struct_name: Option<String>,
     pointee_constant: bool,
+    linked_value: Option<ProgramValue>,
+}
+
+impl CLibraryValue {
+    fn matches_global(&self, global: &crate::languages::c::syntax::CGlobal) -> bool {
+        global.interface_type() == self.interface_type
+            && global.struct_name() == self.struct_name.as_deref()
+            && global.pointee_is_constant() == self.pointee_constant
+            && global.is_constant()
+            && !global.is_volatile()
+            && !global.pointee_is_volatile()
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1365,11 +1377,18 @@ impl ResourceWitness {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TheoremKind {
+    Proved,
+    /// A built-in axiom about the library's primitive operations.
+    Axiom,
+    /// A claim published by a library for its callers to assume.
+    InterfaceExport,
+}
+
 #[derive(Debug, Eq, PartialEq)]
 pub struct TheoremDefinition {
-    /// A Click library `axiom`: trusted, never proved. Only a library module
-    /// declares one, about the library's primitive operations.
-    axiom: bool,
+    kind: TheoremKind,
     /// `T*` supplies a declared element type, not original-object provenance.
     generic_pointer_parameters: BTreeSet<String>,
     /// Where the parser read this theorem's clauses.
@@ -2895,7 +2914,7 @@ pub(crate) fn clone_theorem_definition_iteratively(
     #[cfg(test)]
     THEOREM_DEFINITION_COPIES.with(|copies| copies.set(copies.get() + 1));
     TheoremDefinition {
-        axiom: theorem.axiom,
+        kind: theorem.kind,
         generic_pointer_parameters: theorem.generic_pointer_parameters.clone(),
         body: theorem.body.clone(),
         name: theorem.name.clone(),
@@ -9025,16 +9044,13 @@ pub struct ClickError {
     /// Report detail few errors carry, shared behind one pointer so the
     /// error stays small enough to return by value.
     report_detail: Option<std::sync::Arc<ReportDetail>>,
-    /// The refused statement or condition has several checked successors
-    /// that are cases told apart by their path facts. A simple tactic does
-    /// not split on them; a planner that can split may take over.
-    /// Inside, the source condition a proof-level case split separates
-    /// those cases on first, when one has a Click spelling.
+    /// The refused operation has several checked successors. A linear step
+    /// reports the split so a planner can route the proof at this frontier.
     path_case_split: Option<std::sync::Arc<PathCaseSplit>>,
     timing_tactic: Option<Box<TimingTacticContext>>,
 }
 
-/// How a proof-level split separates a refusal's path cases.
+/// How to split the checked successors of an operation that refused a linear step.
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum PathCaseSplit {
     /// No split has a Click spelling.
@@ -9044,6 +9060,8 @@ enum PathCaseSplit {
     /// A proof `match` on an enum value, one arm per variant, as a Rust
     /// `match` of a value whose variant is not yet known needs.
     Match(ProofMatch),
+    /// The checked next call has one returned and one threw successor.
+    CallOutcomes,
 }
 
 /// The cause of a refused input or checked proof operation. `Proof` means
@@ -9314,11 +9332,14 @@ impl ClickFile {
         })
     }
 
-    fn theorem_is_selected(&self, name: &str) -> bool {
+    fn theorem_is_selected(&self, theorem: &TheoremDefinition) -> bool {
+        if theorem.is_interface_export() {
+            return false;
+        }
         match &self.entry_module {
             None => true,
             Some(entry) => {
-                self.declaration_owner(&DeclarationIdentity::Theorem(name.to_string()))
+                self.declaration_owner(&DeclarationIdentity::Theorem(theorem.name().to_owned()))
                     == Some(entry.as_str())
             }
         }
@@ -9537,7 +9558,12 @@ impl CompositeResourceBody {
 impl TheoremDefinition {
     /// Whether this is a Click library `axiom`, trusted without proof.
     pub fn is_axiom(&self) -> bool {
-        self.axiom
+        self.kind == TheoremKind::Axiom
+    }
+
+    /// Whether this statement is assumed through a library interface.
+    pub fn is_interface_export(&self) -> bool {
+        self.kind == TheoremKind::InterfaceExport
     }
 
     /// Where the parser read this theorem's clauses.
@@ -11686,7 +11712,19 @@ impl ClickError {
 
     /// Whether this refusal is a simple tactic declining to split path cases.
     pub(crate) fn is_path_case_split(&self) -> bool {
-        self.path_case_split.is_some()
+        self.path_case_split.is_some() && !self.requires_call_outcomes()
+    }
+
+    pub(crate) fn with_call_outcomes_split(mut self) -> Self {
+        self.path_case_split = Some(std::sync::Arc::new(PathCaseSplit::CallOutcomes));
+        self
+    }
+
+    pub(crate) fn requires_call_outcomes(&self) -> bool {
+        matches!(
+            self.path_case_split.as_deref(),
+            Some(PathCaseSplit::CallOutcomes)
+        )
     }
 
     /// Records the condition a proof-level case split separates this

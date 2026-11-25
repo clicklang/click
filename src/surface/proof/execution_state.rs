@@ -516,7 +516,7 @@ pub(super) enum SurfacePathSelector {
     /// The arm of a `cases` split on this disjunction: `true` is its left
     /// side.
     Disjunction(SurfaceProposition),
-    CallOutcome([Option<String>; 2]),
+    CallOutcome,
     /// The arm of a constructor `match`, by its index in the written arms.
     /// The choice's `value` is unused.
     MatchArm(Arc<ProofMatch>, usize),
@@ -731,26 +731,17 @@ fn append_surface_step_to_leaves_ref(steps: &mut Vec<ProofStep>, step: &ProofSte
         append_surface_step_to_certificate(then_proof, step);
         append_surface_step_to_certificate(else_proof, step);
     } else if let Some(ProofStep::CallOutcomes {
-        payload_bindings,
         returned_proof,
         threw_proof,
         ..
     }) = steps.last_mut()
     {
         if let ProofStep::CallOutcomes {
-            payload_bindings: selected_bindings,
             returned_proof: selected_returned,
             threw_proof: selected_threw,
+            ..
         } = step
         {
-            if selected_bindings.iter().any(Option::is_some)
-                && selected_bindings != payload_bindings
-            {
-                // A written exit-time split introduces its own names. Keep
-                // that binding scope after the already-checked live split.
-                push_surface_step(steps, step);
-                return;
-            }
             for next in selected_returned.steps() {
                 append_surface_step_to_certificate(returned_proof, next);
             }
@@ -901,23 +892,6 @@ pub(super) fn append_surface_tactics_by_leaf(
             threw_proof.steps_mut().extend(threw_steps.iter().cloned());
             return Ok(());
         }
-        if !matches!(
-            steps.last(),
-            Some(ProofStep::If { .. } | ProofStep::Match { .. })
-        ) {
-            steps.push(ProofStep::CallOutcomes {
-                payload_bindings: [None, None],
-                returned_proof: Box::new(
-                    ProofCertificate::from_steps(returned_steps.clone())
-                        .map_err(|error| error.raw_summary().to_string())?,
-                ),
-                threw_proof: Box::new(
-                    ProofCertificate::from_steps(threw_steps.clone())
-                        .map_err(|error| error.raw_summary().to_string())?,
-                ),
-            });
-            return Ok(());
-        }
     }
 
     fn append_certificate(
@@ -1062,8 +1036,8 @@ pub(super) fn through_single_arm_matches_mut(
 }
 
 /// Appends a suffix at the one leaf of a surface certificate selected by
-/// `branch_path`, following each terminal surface `if` outermost first. The
-/// leaf takes the suffix the way [`append_surface_step_to_leaves`] would.
+/// `branch_path`, following terminal proof cases and call outcomes outermost
+/// first. The leaf takes the suffix the way [`append_surface_step_to_leaves`] would.
 pub(super) fn append_surface_steps_at_step_branch_path(
     steps: &mut Vec<ProofStep>,
     branch_path: &[bool],
@@ -1071,24 +1045,32 @@ pub(super) fn append_surface_steps_at_step_branch_path(
     keep_scopes: bool,
 ) -> Result<(), String> {
     let mut current = through_single_arm_matches_mut(steps);
-    for selected_then in branch_path {
-        let Some(ProofStep::If {
-            then_proof,
-            else_proof,
-            ..
-        }) = current.last_mut()
-        else {
-            return Err(
-                "execution path selects more surface branches than the certificate has".to_string(),
-            );
+    for selected in branch_path {
+        let (first, second) = match current.last_mut() {
+            Some(ProofStep::If {
+                then_proof,
+                else_proof,
+                ..
+            }) => (then_proof, else_proof),
+            Some(ProofStep::CallOutcomes {
+                returned_proof,
+                threw_proof,
+                ..
+            }) => (returned_proof, threw_proof),
+            _ => {
+                return Err(
+                    "execution path selects more surface branches than the certificate has"
+                        .to_string(),
+                );
+            }
         };
-        current = through_single_arm_matches_mut(if *selected_then {
-            then_proof.steps_mut()
-        } else {
-            else_proof.steps_mut()
-        });
+        let arm = if *selected { first } else { second };
+        current = through_single_arm_matches_mut(arm.steps_mut());
     }
-    if matches!(current.last(), Some(ProofStep::If { .. })) {
+    if matches!(
+        current.last(),
+        Some(ProofStep::If { .. } | ProofStep::CallOutcomes { .. })
+    ) {
         return Err("execution path stops before its surface branch leaf".to_string());
     }
     if keep_scopes {
@@ -1391,13 +1373,7 @@ fn synthesize_surface_cursors(paths: Vec<SurfacePathCursor<'_>>) -> Result<Vec<P
     if paths.len() == 1
         && !paths[0].choices().iter().any(|choice| {
             choice.if_arm_end.is_some_and(|end| end.binds_obtain)
-                || match &choice.selector {
-                    SurfacePathSelector::MatchArm(..) => true,
-                    SurfacePathSelector::CallOutcome(bindings) => {
-                        bindings.iter().any(Option::is_some)
-                    }
-                    _ => false,
-                }
+                || matches!(&choice.selector, SurfacePathSelector::MatchArm(..))
         })
     {
         return Ok(paths[0].steps().to_vec());
@@ -1518,16 +1494,12 @@ fn synthesize_surface_cursors(paths: Vec<SurfacePathCursor<'_>>) -> Result<Vec<P
         return synthesize_scoped_if(prefix, condition, then_paths, else_paths);
     }
 
-    let binds_payload = matches!(
-        &first_choice.selector,
-        SurfacePathSelector::CallOutcome(bindings) if bindings.iter().any(Option::is_some)
-    );
-    if then_paths.is_empty() && !binds_payload {
+    if then_paths.is_empty() {
         let mut tactics = prefix;
         tactics.extend(synthesize_surface_cursors(else_paths)?);
         return Ok(tactics);
     }
-    if else_paths.is_empty() && !binds_payload {
+    if else_paths.is_empty() {
         let mut tactics = prefix;
         tactics.extend(synthesize_surface_cursors(then_paths)?);
         return Ok(tactics);
@@ -1558,11 +1530,9 @@ fn synthesize_surface_cursors(paths: Vec<SurfacePathCursor<'_>>) -> Result<Vec<P
             left_proof: then_proof,
             right_proof: else_proof,
         },
-        SurfacePathSelector::CallOutcome(payload_bindings) => ProofStep::CallOutcomes {
-            payload_bindings,
-            returned_proof: then_proof,
-            threw_proof: else_proof,
-        },
+        SurfacePathSelector::CallOutcome => {
+            return Err("call paths require the retained frontier outcomes arms".to_string());
+        }
         SurfacePathSelector::MatchArm(..) => unreachable!("a match synthesizes above"),
     });
     Ok(steps)
@@ -1690,8 +1660,8 @@ pub(super) enum PostExecutionTactic {
         then_tactics: DeferredArm,
         else_tactics: DeferredArm,
     },
+    /// Route proof operations deferred inside the arms of a checked call split.
     CallOutcomes {
-        payload_bindings: [Option<String>; 2],
         returned_tactics: DeferredArm,
         threw_tactics: DeferredArm,
     },
@@ -1873,15 +1843,18 @@ mod proof_fact_store_tests {
 
     #[test]
     fn call_outcome_closers_keep_independent_certificates() {
-        let mut steps = vec![ProofStep::Step];
+        let mut steps = vec![ProofStep::CallOutcomes {
+            payload_bindings: [None, None],
+            returned_proof: Box::new(ProofCertificate::from_steps(Vec::new()).unwrap()),
+            threw_proof: Box::new(ProofCertificate::from_steps(Vec::new()).unwrap()),
+        }];
         append_surface_tactics_by_leaf(
             &mut steps,
-            &[vec![ProofTactic::Normalize], vec![ProofTactic::Known]],
-            Some(&[true, false]),
+            &[vec![ProofTactic::Known], vec![ProofTactic::Normalize]],
+            Some(&[false, true]),
         )
         .unwrap();
         let [
-            ProofStep::Step,
             ProofStep::CallOutcomes {
                 returned_proof,
                 threw_proof,
@@ -1889,7 +1862,7 @@ mod proof_fact_store_tests {
             },
         ] = steps.as_slice()
         else {
-            panic!("distinct call edges must retain a structured certificate");
+            panic!("distinct call edges must retain the existing call split");
         };
         assert_eq!(returned_proof.steps(), &[ProofStep::Normalize]);
         assert_eq!(threw_proof.steps(), &[ProofStep::Known]);

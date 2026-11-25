@@ -1,5 +1,6 @@
 use click::surface::ProgramInputs;
 use std::cell::RefCell;
+#[cfg(test)]
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::env;
@@ -591,7 +592,7 @@ fn verify_changed_sidecar(
             None,
         )
     })?;
-    print_assumptions(&summary.assumptions, &verified_theorems);
+    print_assumptions(&summary, &verified_theorems);
     if full_rebuild
         && project.modules().len() == 1
         && project.c_profile().is_none()
@@ -1710,7 +1711,7 @@ fn verify_file_within_limits(
         })?;
         println!("{trace}\n");
     }
-    print_assumptions(&summary.assumptions, &verified);
+    print_assumptions(&summary, &verified);
     // The count comes from the summary's resolution of the sources, so
     // reporting it does not parse every source again after verification.
     let selected = if trace_proof.is_some() {
@@ -1822,16 +1823,15 @@ fn verify_location_within_limits(
     } else {
         verify()?
     };
-    print_assumptions(&summary.assumptions, &verified);
+    print_assumptions(&summary, &verified);
     println!("1 selected proof verified");
     Ok(())
 }
 
-/// The one assumption report: each verified function's library interfaces and
-/// `extern` contracts, by family, after the thread runtime the whole
-/// verification assumes.
+/// Reports the loaded theorem exports, the thread runtime, and the library
+/// interfaces and `extern` contracts each verified function uses.
 fn print_assumptions(
-    assumptions: &BTreeMap<String, Vec<click::surface::ModelAssumption>>,
+    summary: &click::surface::ProjectVerificationSummary,
     verified: &[VerifiedProgramTheorem],
 ) {
     if let Some(selection) = verified
@@ -1842,11 +1842,22 @@ fn print_assumptions(
             println!("assumptions: every function -> runtime: {assumption}");
         }
     }
+    if !summary.interface_theorem_assumptions.is_empty() {
+        let names = summary
+            .interface_theorem_assumptions
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        println!(
+            "assumptions: loaded interface theorems -> {}",
+            names.join(", ")
+        );
+    }
     let verified_functions = verified
         .iter()
         .map(|theorem| theorem.function_block.signature().name())
         .collect::<std::collections::BTreeSet<_>>();
-    for (function, assumed) in assumptions {
+    for (function, assumed) in &summary.assumptions {
         if verified_functions.contains(function.as_str()) {
             // An imported name reads as its source language spells it.
             let line = format!("assumptions: {function} -> {}", render_assumptions(assumed));

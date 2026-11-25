@@ -15,11 +15,11 @@ theorem icount_needs_a_range_guard(p: int32[], lo: int32, hi: int32) {
     requires hi >= 0 and viewable(p[lo..hi]);
     ensures 0 <= icount(p, lo, hi) by {
         unfold(icount(p, lo, hi));
-        normalize();
+        close();
     }
 }
 ```
 
 ```expect
-fail: `normalize` goal did not normalize to true
+fail: could not establish `0 <= ((icount(p, lo, (hi - 1)) + to_integer(p[((hi - 1) as int32)])) : Integer)`
 ```
