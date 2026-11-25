@@ -21,11 +21,11 @@ pub(crate) enum IteratedStep {
     /// The named clause supplies the range at the written index.
     UnfoldSlot {
         template: IteratedMemory,
-        index: MachineTerm,
+        index: OldMachineTerm,
     },
     FoldSlot {
         template: IteratedMemory,
-        index: MachineTerm,
+        index: OldMachineTerm,
     },
     /// `fold(resource[..])`: form `template` (a hole-free fact) from the
     /// covering owned range when every guard is known true, or from nothing
@@ -46,7 +46,11 @@ fn proves(assumptions: &PureFactContext, condition: ConditionTerm) -> bool {
     decide(assumptions, condition) == Some(true)
 }
 
-fn terms_equal(assumptions: &PureFactContext, left: &MachineTerm, right: &MachineTerm) -> bool {
+fn terms_equal(
+    assumptions: &PureFactContext,
+    left: &OldMachineTerm,
+    right: &OldMachineTerm,
+) -> bool {
     left == right
         // `2 * index` and `index * 2` are one element offset: their affine
         // forms agree, with no fact consulted.
@@ -57,7 +61,11 @@ fn terms_equal(assumptions: &PureFactContext, left: &MachineTerm, right: &Machin
         )
 }
 
-fn terms_distinct(assumptions: &PureFactContext, left: &MachineTerm, right: &MachineTerm) -> bool {
+fn terms_distinct(
+    assumptions: &PureFactContext,
+    left: &OldMachineTerm,
+    right: &OldMachineTerm,
+) -> bool {
     left != right
         && decide(
             assumptions,
@@ -74,7 +82,7 @@ fn terms_distinct(assumptions: &PureFactContext, left: &MachineTerm, right: &Mac
 fn index_in_range(
     assumptions: &PureFactContext,
     iterated: &IteratedMemory,
-    index: &MachineTerm,
+    index: &OldMachineTerm,
 ) -> bool {
     proves(
         assumptions,
@@ -94,7 +102,7 @@ fn index_in_range(
 fn index_out_of_range(
     assumptions: &PureFactContext,
     iterated: &IteratedMemory,
-    index: &MachineTerm,
+    index: &OldMachineTerm,
 ) -> bool {
     proves(
         assumptions,
@@ -114,7 +122,7 @@ fn index_out_of_range(
 fn guard_holds_for(
     assumptions: &PureFactContext,
     iterated: &IteratedMemory,
-    cell: &MachineTerm,
+    cell: &OldMachineTerm,
 ) -> Option<bool> {
     let equal = decide(
         assumptions,
@@ -135,9 +143,9 @@ fn guard_holds_for(
 fn guard_cell_value(
     state: &ExecutionState,
     iterated: &IteratedMemory,
-    index: &MachineTerm,
+    index: &OldMachineTerm,
     assumptions: &PureFactContext,
-) -> Result<MachineTerm, String> {
+) -> Result<OldMachineTerm, String> {
     // A guard cell holding a value is that value (the read-over-write
     // authority); only an unknown cell is read as a named load.
     let cell = iterated.guard_cell(index);
@@ -193,7 +201,7 @@ fn guard_cell_value(
 pub(crate) fn iterated_guard_at(
     state: &ExecutionState,
     iterated: &IteratedMemory,
-    index: &MachineTerm,
+    index: &OldMachineTerm,
     assumptions: &PureFactContext,
 ) -> Result<Option<bool>, String> {
     let cell = guard_cell_value(state, iterated, index, assumptions)?;
@@ -208,14 +216,14 @@ pub(crate) fn iterated_guard_at(
 pub(crate) fn iterated_holds_element(
     state: &ExecutionState,
     iterated: &IteratedMemory,
-    index: &MachineTerm,
+    index: &OldMachineTerm,
     assumptions: &PureFactContext,
 ) -> Option<bool> {
     if index_out_of_range(assumptions, iterated, index)
         || iterated
             .holes()
             .iter()
-            .any(|hole| terms_equal(assumptions, hole.native_compat(), index))
+            .any(|hole| terms_equal(assumptions, hole.old_form(), index))
     {
         return Some(false);
     }
@@ -227,7 +235,7 @@ pub(crate) fn iterated_holds_element(
                 && iterated
                     .holes()
                     .iter()
-                    .all(|hole| terms_distinct(assumptions, hole.native_compat(), index)) =>
+                    .all(|hole| terms_distinct(assumptions, hole.old_form(), index)) =>
         {
             Some(true)
         }
@@ -251,9 +259,9 @@ pub(crate) fn iterated_separate_from_range(
         // start to the last element's end.
         // IteratedMemory::element_range always constructs signed int32 bounds.
         let first = iterated.element_range(iterated.lower());
-        let last = iterated.element_range(&MachineTerm::subtract(
+        let last = iterated.element_range(&OldMachineTerm::subtract(
             iterated.upper().clone(),
-            MachineTerm::constant(1),
+            OldMachineTerm::constant(1),
         ));
         Some(MemoryRange::new_with_element_width(
             iterated.element_base().clone(),
@@ -285,7 +293,7 @@ fn unfold_slot(
     state: &ExecutionState,
     current: &ResourceFact,
     iterated: &IteratedMemory,
-    index: &MachineTerm,
+    index: &OldMachineTerm,
     assumptions: &PureFactContext,
 ) -> Result<ExecutionState, String> {
     if !index_in_range(assumptions, iterated, index) {
@@ -297,7 +305,7 @@ fn unfold_slot(
     if let Some(hole) = iterated
         .holes()
         .iter()
-        .find(|hole| !terms_distinct(assumptions, hole.native_compat(), index))
+        .find(|hole| !terms_distinct(assumptions, hole.old_form(), index))
     {
         let _ = hole;
         return Err(
@@ -335,7 +343,7 @@ fn fold_slot(
     state: &ExecutionState,
     current: &ResourceFact,
     iterated: &IteratedMemory,
-    index: &MachineTerm,
+    index: &OldMachineTerm,
     assumptions: &PureFactContext,
 ) -> Result<ExecutionState, String> {
     match iterated_guard_at(state, iterated, index, assumptions)? {
@@ -356,7 +364,7 @@ fn fold_slot(
     let Some(position) = iterated
         .holes()
         .iter()
-        .position(|hole| terms_equal(assumptions, hole.native_compat(), index))
+        .position(|hole| terms_equal(assumptions, hole.old_form(), index))
     else {
         return Err(
             "this element was not taken out of the iterated ownership fact; only an element taken out, or whose guard a store just made true, can be given back"
@@ -507,7 +515,7 @@ fn every_guard(
     iterated: &IteratedMemory,
     assumptions: &PureFactContext,
 ) -> Result<Option<bool>, String> {
-    let index = MachineTerm::Variable(ITERATED_GUARD_INDEX);
+    let index = OldMachineTerm::Variable(ITERATED_GUARD_INDEX);
     let hypotheses = assumptions
         .clone()
         .assume_proposition(Proposition::condition_is(
@@ -675,8 +683,8 @@ pub(crate) fn plan_iterated_guard_store(
         // cannot be a guard cell another owned range holds.
         let written = Resource::Memory(MemoryRange::new_with_element_width(
             pointer.clone(),
-            MachineTerm::constant(0),
-            MachineTerm::constant(1),
+            OldMachineTerm::constant(0),
+            OldMachineTerm::constant(1),
             value.byte_width().max(1),
         ));
         if resources.proves_owned_resources_separate(
@@ -710,7 +718,7 @@ pub(crate) fn plan_iterated_guard_store(
         let hole = iterated
             .holes()
             .iter()
-            .position(|hole| terms_equal(assumptions, hole.native_compat(), &index));
+            .position(|hole| terms_equal(assumptions, hole.old_form(), &index));
         let during = match hole {
             // Respell the hole as the stored index so the write's own
             // derivation names it structurally.
@@ -774,7 +782,7 @@ mod tests {
                 cell_type: ProgramType::Int32,
                 cell_width: 4,
                 holds_when_equal: true,
-                value: MachineTerm::constant(1).into(),
+                value: OldMachineTerm::constant(1).into(),
             },
         )
         .expect("one guard per element");
@@ -783,16 +791,16 @@ mod tests {
         let entry = entry.with_function_entry_memory(memory);
         let written = entry.clone().with_memory(entry.memory().clone().store(
             guard.offset_by_bytes(4),
-            ProgramValue::Int32(MachineTerm::constant(7)),
+            ProgramValue::Int32(OldMachineTerm::constant(7)),
         ));
         let read = guard_cell_value(
             &written,
             &iterated,
-            &MachineTerm::constant(0),
+            &OldMachineTerm::constant(0),
             &PureFactContext::new(),
         )
         .expect("ordinary guard load");
-        let MachineTerm::MemoryLoad(point, address, LoadKind::Int32) = read else {
+        let OldMachineTerm::MemoryLoad(point, address, LoadKind::Int32) = read else {
             panic!("expected a symbolic integer guard read");
         };
         assert_eq!(*address, guard);

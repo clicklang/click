@@ -10,7 +10,7 @@ fn common_fold_alpha_keys_scale_with_selected_shared_bodies_without_exports() {
         let fold = |acc| {
             let mut body = KernelTerm::retained_machine_operand(
                 MachineIntegerType::Int32,
-                MachineOperandView::Legacy(&MachineTerm::Variable(Variable(acc))),
+                MachineOperandView::Old(&OldMachineTerm::Variable(Variable(acc))),
             );
             for _ in 0..size {
                 body = KernelTerm::machine_binary_shared(
@@ -21,7 +21,7 @@ fn common_fold_alpha_keys_scale_with_selected_shared_bodies_without_exports() {
             }
             let zero = KernelTerm::retained_machine_operand(
                 MachineIntegerType::Int32,
-                MachineOperandView::Legacy(&MachineTerm::constant(0)),
+                MachineOperandView::Old(&OldMachineTerm::constant(0)),
             );
             KernelFold::new(
                 KernelFoldIndex::Int32,

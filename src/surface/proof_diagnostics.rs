@@ -909,13 +909,13 @@ mod tests {
     #[test]
     fn trace_context_retains_a_refined_integer_goal_without_a_source_spelling() {
         use crate::kernel::{
-            ConditionTerm, IntegerTerm, MachineIntegerType, MachineTerm, Variable,
+            ConditionTerm, IntegerTerm, MachineIntegerType, OldMachineTerm, Variable,
         };
         let goal = Proposition::condition_is(
             ConditionTerm::integer_equal(
                 IntegerTerm::from_machine(
                     MachineIntegerType::Int32,
-                    MachineTerm::Variable(Variable(981_701)),
+                    OldMachineTerm::Variable(Variable(981_701)),
                 )
                 .unwrap(),
                 IntegerTerm::constant_i64(7),
@@ -994,7 +994,7 @@ mod tests {
 
     #[test]
     fn reported_trace_uses_the_goals_state_labels() {
-        use crate::kernel::{Address, AddressBase, AddressOffset, MachineTerm, SymbolicMemory};
+        use crate::kernel::{Address, AddressBase, AddressOffset, OldMachineTerm, SymbolicMemory};
 
         struct TracedState(Proposition);
         impl ProofDiagnosticState for TracedState {
@@ -1041,7 +1041,7 @@ mod tests {
                 base: AddressBase::ExternalArgument,
                 offset: AddressOffset::Constant(0),
             },
-            bytes: (MachineTerm::constant(1)).into(),
+            bytes: (OldMachineTerm::constant(1)).into(),
             wide: false,
         };
         crate::surface::with_proof_trace("f", || {
@@ -1152,8 +1152,8 @@ mod tests {
             crate::kernel::ConditionTerm::Compare {
                 format: crate::kernel::MachineIntegerType::Int32,
                 relation: crate::kernel::CompareRelation::Equal,
-                left: Box::new(crate::kernel::MachineTerm::Variable(variable)),
-                right: Box::new(crate::kernel::MachineTerm::constant(0)),
+                left: Box::new(crate::kernel::OldMachineTerm::Variable(variable)),
+                right: Box::new(crate::kernel::OldMachineTerm::constant(0)),
             },
             true,
         )
@@ -1188,7 +1188,7 @@ mod tests {
 
     #[test]
     fn unspelled_premises_keep_entry_names_after_the_session_unwinds() {
-        use crate::kernel::{MachineTerm, ProgramExpression, ProgramValue, Variable};
+        use crate::kernel::{OldMachineTerm, ProgramExpression, ProgramValue, Variable};
         use crate::languages::interface::{ImportedParameter, InterfaceType};
 
         let variable = Variable(786_901);
@@ -1198,7 +1198,7 @@ mod tests {
             None,
         )];
         let arguments = [ProgramExpression::Value(ProgramValue::Int32(
-            MachineTerm::Variable(variable),
+            OldMachineTerm::Variable(variable),
         ))];
         render::enter_ambient_naming(
             crate::surface::ParameterBinding::new(&parameters, &arguments),

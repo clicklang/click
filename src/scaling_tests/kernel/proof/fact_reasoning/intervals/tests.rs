@@ -5,7 +5,7 @@ fn one_operation_interval_check_ignores_ambient_related_and_unrelated_facts() {
         let samples = [4, 16, 64].map(|size| {
             let mut ambient = bounds.clone();
             for index in 0..size {
-                let subject = observe(MachineTerm::Variable(Variable(if related {
+                let subject = observe(OldMachineTerm::Variable(Variable(if related {
                     987_701
                 } else {
                     988_000 + index
@@ -35,7 +35,7 @@ fn one_operation_interval_work_tracks_only_explicit_premises() {
         for index in 0..size {
             selected.push(le(
                 literal(-100),
-                observe(MachineTerm::Variable(Variable(988_000 + index))),
+                observe(OldMachineTerm::Variable(Variable(988_000 + index))),
             ));
         }
         let facts = PureFactStore::from_ordered(&selected);
@@ -53,7 +53,7 @@ fn one_operation_interval_work_tracks_only_explicit_premises() {
 
 #[test]
 fn paired_endpoints_share_selected_input_work() {
-    let x = observe(MachineTerm::Variable(Variable(989_700)));
+    let x = observe(OldMachineTerm::Variable(Variable(989_700)));
     let exact: SharedIntegerTerm =
         IntegerTerm::add(x.as_ref().clone(), IntegerTerm::constant_i64(1)).into();
     let goal = le(exact.clone(), literal(11));
@@ -63,7 +63,7 @@ fn paired_endpoints_share_selected_input_work() {
         let mut selected = vec![le(literal(0), x.clone()), le(x.clone(), literal(10))];
         for index in 0..size {
             selected.push(le(
-                observe(MachineTerm::Variable(Variable(989_800 + index))),
+                observe(OldMachineTerm::Variable(Variable(989_800 + index))),
                 literal(20),
             ));
         }

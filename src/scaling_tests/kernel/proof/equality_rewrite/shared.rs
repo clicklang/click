@@ -14,14 +14,14 @@ fn exact_rewrite_keeps_cold_and_growing_shared_goals() {
                     let goal = |root: KernelTerm| {
                         let value = if fold {
                             let start =
-                                SharedIntegerRangeEndpoint::intern(MachineTerm::Variable(x))
+                                SharedIntegerRangeEndpoint::intern(OldMachineTerm::Variable(x))
                                     // The endpoint wrapper currently uses an Int32
                                     // observation tag even for UInt64 fold syntax.
                                     .with_shared_operand(
                                         root.with_machine_observation_type(T::Int32),
                                     )
                                     .unwrap();
-                            let end = SharedIntegerRangeEndpoint::intern(MachineTerm::Variable(
+                            let end = SharedIntegerRangeEndpoint::intern(OldMachineTerm::Variable(
                                 Variable(1006303),
                             ));
                             IntegerTerm::RangeFold {
@@ -52,8 +52,8 @@ fn exact_rewrite_keeps_cold_and_growing_shared_goals() {
                         ConditionTerm::Compare {
                             format: if ty == T::Int32 { T::Int32 } else { T::Int64 },
                             relation: CompareRelation::Equal,
-                            left: Box::new(MachineTerm::Variable(x)),
-                            right: Box::new(MachineTerm::Variable(y)),
+                            left: Box::new(OldMachineTerm::Variable(x)),
+                            right: Box::new(OldMachineTerm::Variable(y)),
                         },
                         true,
                     );
@@ -102,11 +102,11 @@ fn opaque_replacement_rewrites_keep_cold_dags_shared() {
             let mut samples = Vec::new();
             for size in [16, 64, 256] {
                 let _session = VerificationSession::enter();
-                let x = MachineTerm::Variable(Variable(1006500));
-                let to = MachineTerm::If {
+                let x = OldMachineTerm::Variable(Variable(1006500));
+                let to = OldMachineTerm::If {
                     condition: ConditionTerm::Variable(Variable(1006501)).into(),
                     then_term: x.clone().into(),
-                    else_term: MachineTerm::Variable(Variable(1006502)).into(),
+                    else_term: OldMachineTerm::Variable(Variable(1006502)).into(),
                 };
                 let mut root = imported(ty, &x);
                 for _ in 0..size {
@@ -160,17 +160,20 @@ fn opaque_sources_match_growing_sources_and_shared_goals_linearly() {
             for size in [16, 64, 256] {
                 let _session = VerificationSession::enter();
                 let ty = T::Int32;
-                let leaf = MachineTerm::If {
+                let leaf = OldMachineTerm::If {
                     condition: ConditionTerm::Variable(Variable(1006700)).into(),
-                    then_term: MachineTerm::Variable(Variable(1006701)).into(),
-                    else_term: MachineTerm::Variable(Variable(1006702)).into(),
+                    then_term: OldMachineTerm::Variable(Variable(1006701)).into(),
+                    else_term: OldMachineTerm::Variable(Variable(1006702)).into(),
                 };
                 let mut source = leaf.clone();
                 for n in 0..size {
-                    source = MachineTerm::add(source, MachineTerm::Variable(Variable(1006800 + n)));
+                    source = OldMachineTerm::add(
+                        source,
+                        OldMachineTerm::Variable(Variable(1006800 + n)),
+                    );
                 }
                 let mut root = retained(ty, if hit { &source } else { &leaf });
-                let to = MachineTerm::Variable(Variable(1006703));
+                let to = OldMachineTerm::Variable(Variable(1006703));
                 let mut expected = if hit { imported(ty, &to) } else { root.clone() };
                 for _ in 0..size {
                     root = KernelTerm::machine_binary_shared(ty, O::Add, [root.clone(), root]);

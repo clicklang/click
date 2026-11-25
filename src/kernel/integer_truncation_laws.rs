@@ -163,7 +163,7 @@ mod tests {
         match p {
             Proposition::Implies(a, b) => !proposition(a, n, d) || proposition(b, n, d),
             Proposition::ConditionIs(c, truth) => {
-                let actual = match c.native_compat() {
+                let actual = match c.old_form() {
                     ConditionTerm::IntegerEqual(a, b) => integer(a, n, d) == integer(b, n, d),
                     ConditionTerm::IntegerNotEqual(a, b) => integer(a, n, d) != integer(b, n, d),
                     ConditionTerm::IntegerLessThan(a, b) => integer(a, n, d) < integer(b, n, d),

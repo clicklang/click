@@ -16,8 +16,8 @@ fn separate(a: &Address, b: &Address) -> Proposition {
 
 fn numeric(a: &Address, b: &Address) -> ConditionTerm {
     ConditionTerm::uint64_equal(
-        MachineTerm::integer_address(a.clone()),
-        MachineTerm::integer_address(b.clone()),
+        OldMachineTerm::integer_address(a.clone()),
+        OldMachineTerm::integer_address(b.clone()),
     )
 }
 fn different(a: &Address, b: &Address) -> Proposition {
@@ -113,7 +113,7 @@ fn empty_unknown_ranges_views_and_pointer_value_inequality_supply_no_address_sep
         left: Box::new(Resource::Memory(MemoryRange::new(
             a.clone(),
             0u32.into(),
-            MachineTerm::Variable(Variable(990_050)),
+            OldMachineTerm::Variable(Variable(990_050)),
         ))),
         right: Box::new(Resource::Memory(range(&b, 0, 1))),
     };

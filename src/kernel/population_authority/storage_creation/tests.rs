@@ -549,7 +549,7 @@ fn observable_unary_import_preserves_arbitrary_count_and_current_custody() {
         .import_observable_contract_population(&description, 1)
         .unwrap();
     let count = entry.observe_symbolic(&description).unwrap();
-    assert!(matches!(count.entry_count, MachineTerm::Variable(_)));
+    assert!(matches!(count.entry_count, OldMachineTerm::Variable(_)));
     assert_eq!(count.entry_owned_members, 1);
     assert_eq!(
         entry
@@ -589,7 +589,10 @@ fn opaque_numeric_batch_composes_with_units_without_fabricating_custody() {
         .unwrap();
     let initial = entry.observe_symbolic(&description).unwrap();
     let empty = PureFactContext::new().assume_condition(
-        crate::kernel::ConditionTerm::equal(initial.entry_count.clone(), MachineTerm::constant(0)),
+        crate::kernel::ConditionTerm::equal(
+            initial.entry_count.clone(),
+            OldMachineTerm::constant(0),
+        ),
         true,
     );
     let exchange = |state: &CreationEvents, produce, amount, facts: &PureFactContext| {
@@ -597,7 +600,7 @@ fn opaque_numeric_batch_composes_with_units_without_fabricating_custody() {
             &AddressBase::ExternalArgument,
             &description,
             produce,
-            &MachineTerm::constant(amount),
+            &OldMachineTerm::constant(amount),
             facts,
         )
     };
@@ -633,7 +636,7 @@ fn opaque_numeric_batch_composes_with_units_without_fabricating_custody() {
         .import_opaque_contract_population_inner(
             &description,
             0,
-            Some(MachineTerm::constant(0)),
+            Some(OldMachineTerm::constant(0)),
             None,
             None,
         )
@@ -659,16 +662,16 @@ fn opaque_numeric_batch_composes_with_units_without_fabricating_custody() {
 #[test]
 fn field_quantity_moves_and_consumes_only_the_owned_numerical_batch() {
     let description = member_description(AddressBase::ExternalArgument);
-    let quantity = MachineTerm::Variable(Variable(940_140));
+    let quantity = OldMachineTerm::Variable(Variable(940_140));
     let facts = PureFactContext::new().assume_condition(
-        ConditionTerm::equal(quantity.clone(), MachineTerm::constant(2)),
+        ConditionTerm::equal(quantity.clone(), OldMachineTerm::constant(2)),
         true,
     );
     let entry = CreationEvents::new()
         .import_opaque_contract_population_inner(
             &description,
             2,
-            Some(MachineTerm::constant(2)),
+            Some(OldMachineTerm::constant(2)),
             None,
             None,
         )
@@ -688,7 +691,7 @@ fn field_quantity_moves_and_consumes_only_the_owned_numerical_batch() {
         CreationRefusal::MissingMembers,
     );
     let wrong = PureFactContext::new().assume_condition(
-        ConditionTerm::equal(quantity.clone(), MachineTerm::constant(3)),
+        ConditionTerm::equal(quantity.clone(), OldMachineTerm::constant(3)),
         true,
     );
     assert_eq!(
@@ -760,16 +763,16 @@ fn field_quantity_moves_and_consumes_only_the_owned_numerical_batch() {
 #[test]
 fn field_quantity_cannot_spend_a_global_count_without_member_custody() {
     let description = member_description(AddressBase::ExternalArgument);
-    let quantity = MachineTerm::Variable(Variable(940_141));
+    let quantity = OldMachineTerm::Variable(Variable(940_141));
     let facts = PureFactContext::new().assume_condition(
-        ConditionTerm::equal(quantity.clone(), MachineTerm::constant(2)),
+        ConditionTerm::equal(quantity.clone(), OldMachineTerm::constant(2)),
         true,
     );
     let authority_only = CreationEvents::new()
         .import_opaque_contract_population_inner(
             &description,
             0,
-            Some(MachineTerm::constant(2)),
+            Some(OldMachineTerm::constant(2)),
             None,
             None,
         )
@@ -805,14 +808,14 @@ fn field_quantity_cannot_spend_a_global_count_without_member_custody() {
 #[test]
 fn field_quantity_batch_work_ignores_quantity_and_unrelated_facts() {
     let description = member_description(AddressBase::ExternalArgument);
-    let quantity = MachineTerm::Variable(Variable(940_142));
+    let quantity = OldMachineTerm::Variable(Variable(940_142));
     let mut work = Vec::new();
     for (amount, unrelated) in [(2, 0), (64, 32), (1024, 256), (65536, 1024)] {
         let entry = CreationEvents::new()
             .import_opaque_contract_population_inner(
                 &description,
                 amount,
-                Some(MachineTerm::constant(amount)),
+                Some(OldMachineTerm::constant(amount)),
                 None,
                 None,
             )
@@ -821,14 +824,14 @@ fn field_quantity_batch_work_ignores_quantity_and_unrelated_facts() {
         for index in 0..unrelated {
             facts = facts.assume_condition(
                 ConditionTerm::equal(
-                    MachineTerm::Variable(Variable(950_000 + index)),
-                    MachineTerm::constant(index as u32),
+                    OldMachineTerm::Variable(Variable(950_000 + index)),
+                    OldMachineTerm::constant(index as u32),
                 ),
                 true,
             );
         }
         facts = facts.assume_condition(
-            ConditionTerm::equal(quantity.clone(), MachineTerm::constant(amount)),
+            ConditionTerm::equal(quantity.clone(), OldMachineTerm::constant(amount)),
             true,
         );
         let (returned, measured) = crate::instrumentation::measure_deterministic_work(|| {
@@ -866,11 +869,11 @@ fn opaque_symbolic_batch_has_one_checked_exchange_and_current_custody() {
     let description = member_description(AddressBase::ExternalArgument);
     // Keep this a genuinely symbolic batch: fixed numerical batches now
     // compose with unit exchanges, covered by the separate numerical test.
-    let quantity = MachineTerm::Variable(Variable(940_120));
+    let quantity = OldMachineTerm::Variable(Variable(940_120));
     let assumptions = PureFactContext::new().assume_condition(
         crate::kernel::ConditionTerm::signed_greater_equal(
             quantity.clone(),
-            MachineTerm::constant(0),
+            OldMachineTerm::constant(0),
         ),
         true,
     );
@@ -913,7 +916,7 @@ fn opaque_symbolic_batch_has_one_checked_exchange_and_current_custody() {
         .import_opaque_contract_population_inner(
             &description,
             0,
-            Some(MachineTerm::constant(0)),
+            Some(OldMachineTerm::constant(0)),
             None,
             None,
         )
@@ -937,11 +940,11 @@ fn opaque_symbolic_batch_has_one_checked_exchange_and_current_custody() {
 #[test]
 fn opaque_symbolic_batch_call_custody_roundtrips_independently_of_authority() {
     let description = member_description(AddressBase::ExternalArgument);
-    let quantity = MachineTerm::Variable(Variable(940_130));
+    let quantity = OldMachineTerm::Variable(Variable(940_130));
     let assumptions = PureFactContext::new().assume_condition(
         crate::kernel::ConditionTerm::signed_greater_equal(
             quantity.clone(),
-            MachineTerm::constant(0),
+            OldMachineTerm::constant(0),
         ),
         true,
     );
@@ -961,7 +964,7 @@ fn opaque_symbolic_batch_call_custody_roundtrips_independently_of_authority() {
             &child,
             &description,
             false,
-            &MachineTerm::constant(0),
+            &OldMachineTerm::constant(0),
             &assumptions,
         )
         .unwrap();
@@ -995,7 +998,7 @@ fn opaque_symbolic_batch_call_custody_roundtrips_independently_of_authority() {
             .return_to(&entry)
             .owns_population_member(&description)
     );
-    let wrong = MachineTerm::add(quantity.clone(), MachineTerm::constant(1));
+    let wrong = OldMachineTerm::add(quantity.clone(), OldMachineTerm::constant(1));
     assert_eq!(
         authority_only
             .transfer_call_fact_quantity(&entry, &child, &description, false, &wrong, &assumptions,)
@@ -1076,11 +1079,11 @@ fn opaque_symbolic_batch_call_custody_roundtrips_independently_of_authority() {
 #[test]
 fn opaque_symbolic_birth_returns_exact_batch_without_moving_framed_population() {
     let description = member_description(AddressBase::ExternalArgument);
-    let entry_count = MachineTerm::Variable(Variable(940_132));
-    let quantity = MachineTerm::Variable(Variable(940_133));
+    let entry_count = OldMachineTerm::Variable(Variable(940_132));
+    let quantity = OldMachineTerm::Variable(Variable(940_133));
     let assumptions = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::signed_greater_equal(quantity.clone(), MachineTerm::constant(0)),
+            ConditionTerm::signed_greater_equal(quantity.clone(), OldMachineTerm::constant(0)),
             true,
         )
         .assume_condition(
@@ -1110,7 +1113,7 @@ fn opaque_symbolic_birth_returns_exact_batch_without_moving_framed_population() 
         )
         .unwrap();
     assert!(born.owns_population_member(&description));
-    let wrong = MachineTerm::add(quantity.clone(), MachineTerm::constant(1));
+    let wrong = OldMachineTerm::add(quantity.clone(), OldMachineTerm::constant(1));
     assert_eq!(born.transfer_call_fact_quantity(
         &child, &entry, &description, false, &wrong, &assumptions,
     ).unwrap_err(), CreationRefusal::InvalidQuantity);
@@ -1160,13 +1163,13 @@ fn independent_opaque_symbolic_populations_keep_their_own_counts_and_members() {
         first.arguments().to_vec().into(),
         ResourceFieldSchema::new(vec![]).unwrap(),
     );
-    let first_quantity = MachineTerm::constant(3);
-    let second_quantity = MachineTerm::constant(5);
+    let first_quantity = OldMachineTerm::constant(3);
+    let second_quantity = OldMachineTerm::constant(5);
     let entry = CreationEvents::new()
         .import_opaque_contract_population_inner(
             &first,
             0,
-            Some(MachineTerm::constant(7)),
+            Some(OldMachineTerm::constant(7)),
             Some(first_quantity.clone()),
             None,
         )
@@ -1174,7 +1177,7 @@ fn independent_opaque_symbolic_populations_keep_their_own_counts_and_members() {
         .import_opaque_contract_population_inner(
             &second,
             0,
-            Some(MachineTerm::constant(11)),
+            Some(OldMachineTerm::constant(11)),
             Some(second_quantity.clone()),
             None,
         )
@@ -1576,7 +1579,7 @@ fn checked_control_import_observes_only_its_exact_entry_population() {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(spent.observe_symbolic(&description).unwrap().entry_count),
-                right: Box::new(MachineTerm::constant(1)),
+                right: Box::new(OldMachineTerm::constant(1)),
             },
             true,
         ));
@@ -1592,7 +1595,7 @@ fn checked_control_import_observes_only_its_exact_entry_population() {
     assert_eq!(observed.delta, 0);
     assert_eq!(observed.entry_owned_members, 0);
     assert!(
-        matches!(observed.entry_count, MachineTerm::MemoryLoad(_, loaded, _) if *loaded == pointer)
+        matches!(observed.entry_count, OldMachineTerm::MemoryLoad(_, loaded, _) if *loaded == pointer)
     );
     let count_expression = SpecExpression::CountedResourceCount {
         name: "reference".into(),
@@ -1697,7 +1700,7 @@ fn checked_control_import_observes_only_its_exact_entry_population() {
             .value
             .clone()
             .into_native(),
-        ProgramValue::Int32(MachineTerm::constant(0))
+        ProgramValue::Int32(OldMachineTerm::constant(0))
     );
     let mut nested_control = folded.clone();
     Arc::make_mut(&mut nested_control.population_effects).creation = Some(imported.enter_call());
@@ -1723,7 +1726,7 @@ fn checked_control_import_observes_only_its_exact_entry_population() {
     assert_eq!(paths.len(), 1);
     assert!(matches!(
         paths[0].value.clone().into_native(),
-        ProgramValue::Int32(MachineTerm::MemoryLoad(_, _, _))
+        ProgramValue::Int32(OldMachineTerm::MemoryLoad(_, _, _))
     ));
     // A population entry in the ledger is insufficient without current
     // ownership. Preserve the same ledger while changing only custody.
@@ -1755,7 +1758,7 @@ fn checked_control_import_observes_only_its_exact_entry_population() {
             .value
             .clone()
             .into_native(),
-        ProgramValue::Int32(MachineTerm::constant(0))
+        ProgramValue::Int32(OldMachineTerm::constant(0))
     );
     assert!(
         evaluate_count(&state).is_err(),
@@ -1796,8 +1799,8 @@ fn checked_control_import_observes_only_its_exact_entry_population() {
         .observe_symbolic(&description)
         .unwrap()
         .entry_count;
-    assert!(matches!(arbitrary_count, MachineTerm::Variable(_)));
-    assert_ne!(arbitrary_count, MachineTerm::constant(0));
+    assert!(matches!(arbitrary_count, OldMachineTerm::Variable(_)));
+    assert_ne!(arbitrary_count, OldMachineTerm::constant(0));
     assert_eq!(
         arbitrary_count,
         entry
@@ -2096,8 +2099,8 @@ fn opaque_symbolic_nested_transfer_refuses_splitting_and_preserves_global_total(
         .import_opaque_contract_population_inner(
             &description,
             0,
-            Some(MachineTerm::constant(7)),
-            Some(MachineTerm::constant(3)),
+            Some(OldMachineTerm::constant(7)),
+            Some(OldMachineTerm::constant(3)),
             None,
         )
         .unwrap();
@@ -2111,7 +2114,7 @@ fn opaque_symbolic_nested_transfer_refuses_splitting_and_preserves_global_total(
             &child,
             &description,
             false,
-            &MachineTerm::constant(1),
+            &OldMachineTerm::constant(1),
             &PureFactContext::new()
         ),
         Err(CreationRefusal::InvalidQuantity)
@@ -2122,14 +2125,14 @@ fn opaque_symbolic_nested_transfer_refuses_splitting_and_preserves_global_total(
             &child,
             &description,
             false,
-            &MachineTerm::constant(3),
+            &OldMachineTerm::constant(3),
             &PureFactContext::new(),
         )
         .unwrap();
     assert!(both.owns_population_member(&description));
     assert_eq!(
         both.observe_symbolic(&description).unwrap().entry_count,
-        MachineTerm::constant(7)
+        OldMachineTerm::constant(7)
     );
 }
 
@@ -2194,7 +2197,7 @@ fn checked_empty_retirement_survives_free_but_not_a_new_lifetime() {
 #[test]
 fn opaque_retirement_requires_global_count_proof_not_local_exhaustion() {
     let description = member_description(AddressBase::ExternalArgument);
-    let entry_count = MachineTerm::Variable(Variable(980_200));
+    let entry_count = OldMachineTerm::Variable(Variable(980_200));
     let entry = CreationEvents::new()
         .import_opaque_contract_population_inner(
             &description,
@@ -2219,7 +2222,7 @@ fn opaque_retirement_requires_global_count_proof_not_local_exhaustion() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(entry_count.clone()),
-            right: Box::new(MachineTerm::constant(2)),
+            right: Box::new(OldMachineTerm::constant(2)),
         },
         true,
     ));
@@ -2233,7 +2236,7 @@ fn opaque_retirement_requires_global_count_proof_not_local_exhaustion() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(entry_count),
-            right: Box::new(MachineTerm::constant(1)),
+            right: Box::new(OldMachineTerm::constant(1)),
         },
         true,
     ));
@@ -2252,7 +2255,7 @@ fn imported_retirement_supports_empty_and_complete_numeric_populations() {
             .import_opaque_contract_population_inner(
                 &description,
                 quantity,
-                Some(MachineTerm::constant(quantity)),
+                Some(OldMachineTerm::constant(quantity)),
                 None,
                 None,
             )
@@ -2265,7 +2268,7 @@ fn imported_retirement_supports_empty_and_complete_numeric_populations() {
                     &AddressBase::ExternalArgument,
                     &description,
                     false,
-                    &MachineTerm::constant(quantity),
+                    &OldMachineTerm::constant(quantity),
                     &PureFactContext::new(),
                 )
                 .unwrap()
@@ -2282,12 +2285,12 @@ fn imported_retirement_supports_empty_and_complete_numeric_populations() {
 #[test]
 fn imported_symbolic_retirement_requires_spent_custody_and_global_zero() {
     let description = member_description(AddressBase::ExternalArgument);
-    let quantity = MachineTerm::Variable(Variable(980_210));
-    let total = MachineTerm::Variable(Variable(980_211));
+    let quantity = OldMachineTerm::Variable(Variable(980_210));
+    let total = OldMachineTerm::Variable(Variable(980_211));
     let assumptions = PureFactContext::new().assume_condition(
         crate::kernel::ConditionTerm::signed_greater_equal(
             quantity.clone(),
-            MachineTerm::constant(0),
+            OldMachineTerm::constant(0),
         ),
         true,
     );
@@ -2305,7 +2308,7 @@ fn imported_symbolic_retirement_requires_spent_custody_and_global_zero() {
             format: crate::kernel::MachineIntegerType::Int32,
             relation: crate::kernel::CompareRelation::Equal,
             left: Box::new(total.clone()),
-            right: Box::new(MachineTerm::constant(0)),
+            right: Box::new(OldMachineTerm::constant(0)),
         },
         true,
     );
@@ -2352,7 +2355,7 @@ fn imported_symbolic_retirement_requires_spent_custody_and_global_zero() {
                 &AddressBase::ExternalArgument,
                 &description,
                 true,
-                &MachineTerm::constant(1),
+                &OldMachineTerm::constant(1),
                 &all_owned,
             )
             .is_err()
@@ -2371,7 +2374,7 @@ fn opaque_numeric_count_keeps_multiple_births_and_deaths() {
         .import_opaque_contract_population_inner(
             &description,
             2,
-            Some(MachineTerm::constant(7)),
+            Some(OldMachineTerm::constant(7)),
             None,
             None,
         )
@@ -2419,7 +2422,7 @@ fn opaque_numeric_count_delta_survives_exact_call_custody() {
         .import_opaque_contract_population_inner(
             &description,
             1,
-            Some(MachineTerm::constant(7)),
+            Some(OldMachineTerm::constant(7)),
             None,
             None,
         )
@@ -2483,7 +2486,7 @@ fn opaque_numeric_count_observation_uses_exact_magnitude_and_overflow_guard() {
             .import_opaque_contract_population_inner(
                 &description,
                 2,
-                Some(MachineTerm::constant(entry_count)),
+                Some(OldMachineTerm::constant(entry_count)),
                 None,
                 None,
             )
@@ -2503,11 +2506,11 @@ fn opaque_numeric_count_observation_uses_exact_magnitude_and_overflow_guard() {
     }
     assert_eq!(
         evaluate(born)[0].value.clone().into_native(),
-        ProgramValue::Int32(MachineTerm::constant(9))
+        ProgramValue::Int32(OldMachineTerm::constant(9))
     );
     assert_eq!(
         evaluate(spent)[0].value.clone().into_native(),
-        ProgramValue::Int32(MachineTerm::constant(5))
+        ProgramValue::Int32(OldMachineTerm::constant(5))
     );
     let mut overflow = import((i32::MAX - 1) as u32);
     for _ in 0..2 {
@@ -2534,7 +2537,7 @@ fn count_uses_its_written_anchor_not_a_proven_alias() {
     };
     let alias = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(9_850_100)), 4),
+        offset: AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(9_850_100)), 4),
     };
     let count_of = |pointer: OldPointer| SpecExpression::CountedResourceCount {
         name: "reference".into(),
@@ -2546,7 +2549,7 @@ fn count_uses_its_written_anchor_not_a_proven_alias() {
         .import_opaque_contract_population_inner(
             &description,
             2,
-            Some(MachineTerm::constant(7)),
+            Some(OldMachineTerm::constant(7)),
             None,
             None,
         )
@@ -2581,7 +2584,7 @@ fn count_uses_its_written_anchor_not_a_proven_alias() {
             .value
             .clone()
             .into_native(),
-        ProgramValue::Int32(MachineTerm::constant(7))
+        ProgramValue::Int32(OldMachineTerm::constant(7))
     );
     assert!(
         evaluate(&state, &alias_count, &equal).is_err(),
@@ -2728,7 +2731,7 @@ mod wildcard_scope_tests {
             .import_opaque_wildcard_population(&scope, &member)
             .unwrap();
         let total = imported.observe_symbolic(&scope).unwrap().entry_count;
-        assert!(matches!(total, MachineTerm::Variable(_)));
+        assert!(matches!(total, OldMachineTerm::Variable(_)));
         assert!(imported.owns_imported_population_member(&member));
         assert!(!imported.owns_imported_population_member(&scope));
         assert_eq!(
@@ -2803,7 +2806,7 @@ mod wildcard_scope_tests {
             .import_opaque_wildcard_population(&scope, &member)
             .unwrap();
         let count = entry.observe_symbolic(&scope).unwrap();
-        assert!(matches!(count.entry_count, MachineTerm::Variable(_)));
+        assert!(matches!(count.entry_count, OldMachineTerm::Variable(_)));
         assert_eq!(count.entry_owned_members, 1);
         let death = |events: &CreationEvents, candidate: &ResourceDescription| {
             events.checked_member_exchange(&AddressBase::ExternalArgument, candidate, false)
@@ -2833,7 +2836,7 @@ mod wildcard_scope_tests {
         assert_eq!(after.delta, -1);
         assert_eq!(
             spent.imported_member_delta_since_entry(&member),
-            Some((false, MachineTerm::constant(1)))
+            Some((false, OldMachineTerm::constant(1)))
         );
         assert!(
             spent
@@ -2864,7 +2867,7 @@ mod wildcard_scope_tests {
         // proof derives `0` from an empty total with the
         // `population_member_count_zero` law.
         let exact = entry.observe_exact_member(&member).unwrap().entry_count;
-        assert!(matches!(exact, MachineTerm::Variable(_)));
+        assert!(matches!(exact, OldMachineTerm::Variable(_)));
         assert_ne!(exact, total);
         let child = entry.enter_call();
         let away = entry
@@ -2879,7 +2882,7 @@ mod wildcard_scope_tests {
         let imported = CreationEvents::new()
             .import_opaque_wildcard_population(&scope, &member)
             .unwrap();
-        let key = MachineTerm::Variable(Variable(9_870_001));
+        let key = OldMachineTerm::Variable(Variable(9_870_001));
         let mut arguments = member.arguments().to_vec();
         arguments[1] = AlgebraicValue::Program(ProgramValue::Int32(key));
         let aliased = ResourceDescription::new(
@@ -2913,7 +2916,10 @@ mod wildcard_scope_tests {
             .unwrap();
         let count = entry.observe_symbolic(&scope).unwrap().entry_count;
         let bounds = PureFactContext::new().assume_condition(
-            ConditionTerm::signed_greater_equal(MachineTerm::constant(i32::MAX as u32 - 3), count),
+            ConditionTerm::signed_greater_equal(
+                OldMachineTerm::constant(i32::MAX as u32 - 3),
+                count,
+            ),
             true,
         );
         let birth = |events: &CreationEvents, member: &ResourceDescription| {
@@ -2922,7 +2928,7 @@ mod wildcard_scope_tests {
                     &AddressBase::ExternalArgument,
                     member,
                     true,
-                    &MachineTerm::constant(1),
+                    &OldMachineTerm::constant(1),
                     &bounds,
                 )
                 .unwrap()
@@ -2941,7 +2947,7 @@ mod wildcard_scope_tests {
         assert!(two.observe_exact_member(&wrong).is_err());
         assert_eq!(
             two.observe_exact_member(&first).unwrap().entry_count,
-            MachineTerm::constant(1)
+            OldMachineTerm::constant(1)
         );
         let child = two.enter_call();
         let sent_first = child
@@ -2984,7 +2990,7 @@ mod wildcard_scope_tests {
         assert_eq!(returned.observe_symbolic(&scope).unwrap().delta, 1);
         assert_eq!(
             returned.observe_exact_member(&first).unwrap().entry_count,
-            MachineTerm::constant(0)
+            OldMachineTerm::constant(0)
         );
         let three = birth(&returned, &wrong);
         assert!(
@@ -2993,7 +2999,7 @@ mod wildcard_scope_tests {
         );
         assert_eq!(
             three.observe_exact_member(&second).unwrap().entry_count,
-            MachineTerm::constant(1)
+            OldMachineTerm::constant(1)
         );
     }
 
@@ -3004,13 +3010,13 @@ mod wildcard_scope_tests {
             .import_opaque_wildcard_authority(&scope)
             .unwrap();
         let count = entry.observe_symbolic(&scope).unwrap();
-        assert!(matches!(count.entry_count, MachineTerm::Variable(_)));
+        assert!(matches!(count.entry_count, OldMachineTerm::Variable(_)));
         assert_eq!(count.entry_owned_members, 0);
         assert!(!entry.owns_imported_population_member(&member));
         let bounded = PureFactContext::new().assume_condition(
             crate::kernel::ConditionTerm::signed_add_overflows(
                 count.entry_count.clone(),
-                MachineTerm::constant(1),
+                OldMachineTerm::constant(1),
             ),
             false,
         );
@@ -3021,16 +3027,16 @@ mod wildcard_scope_tests {
                 &AddressBase::ExternalArgument,
                 candidate,
                 true,
-                &MachineTerm::constant(1),
+                &OldMachineTerm::constant(1),
                 assumptions,
             )
         };
         assert!(birth(&entry, &member, &PureFactContext::new()).is_err());
-        let counter = MachineTerm::Variable(Variable(960_720));
+        let counter = OldMachineTerm::Variable(Variable(960_720));
         let counter_bound = PureFactContext::new().assume_condition(
             ConditionTerm::signed_less_than(
                 counter.clone(),
-                MachineTerm::constant(i32::MAX as u32),
+                OldMachineTerm::constant(i32::MAX as u32),
             ),
             true,
         );
@@ -3045,7 +3051,7 @@ mod wildcard_scope_tests {
         let at_max = PureFactContext::new().assume_condition(
             ConditionTerm::equal(
                 count.entry_count.clone(),
-                MachineTerm::constant(i32::MAX as u32),
+                OldMachineTerm::constant(i32::MAX as u32),
             ),
             true,
         );
@@ -3063,7 +3069,7 @@ mod wildcard_scope_tests {
         assert!(issued.owns_imported_population_member(&member));
         assert_eq!(
             issued.imported_member_delta_since_entry(&member),
-            Some((true, MachineTerm::constant(1)))
+            Some((true, OldMachineTerm::constant(1)))
         );
         assert!(
             issued
@@ -3124,7 +3130,7 @@ mod wildcard_scope_tests {
                 &pool,
                 &selected,
                 true,
-                &MachineTerm::constant(3),
+                &OldMachineTerm::constant(3),
                 &facts,
             )
             .unwrap()
@@ -3134,7 +3140,7 @@ mod wildcard_scope_tests {
                 &pool,
                 &selected,
                 false,
-                &MachineTerm::constant(2),
+                &OldMachineTerm::constant(2),
                 &facts,
             )
             .unwrap()
@@ -3142,11 +3148,11 @@ mod wildcard_scope_tests {
         assert_eq!(spent.observe(&pool, scope.family()), Ok(1));
         assert_eq!(
             spent.observe_exact_member(&selected).unwrap().entry_count,
-            MachineTerm::constant(1)
+            OldMachineTerm::constant(1)
         );
         assert_eq!(
             spent.observe_exact_member(&other).unwrap().entry_count,
-            MachineTerm::constant(0)
+            OldMachineTerm::constant(0)
         );
         assert!(
             spent
@@ -3154,7 +3160,7 @@ mod wildcard_scope_tests {
                     &pool,
                     &other,
                     false,
-                    &MachineTerm::constant(1),
+                    &OldMachineTerm::constant(1),
                     &facts,
                 )
                 .is_err()
@@ -3174,22 +3180,22 @@ mod wildcard_scope_tests {
         let count = |events: &CreationEvents, member: &ResourceDescription| {
             events.observe_exact_member(member).unwrap().entry_count
         };
-        assert_eq!(count(&empty, &first), MachineTerm::constant(0));
+        assert_eq!(count(&empty, &first), OldMachineTerm::constant(0));
         let (one, _) = empty.checked_member_exchange(&pool, &first, true).unwrap();
         let (two, _) = one.checked_member_exchange(&pool, &first, true).unwrap();
         let (three, _) = two.checked_member_exchange(&pool, &second, true).unwrap();
-        assert_eq!(count(&three, &first), MachineTerm::constant(2));
-        assert_eq!(count(&three, &second), MachineTerm::constant(1));
+        assert_eq!(count(&three, &first), OldMachineTerm::constant(2));
+        assert_eq!(count(&three, &second), OldMachineTerm::constant(1));
         let (spent, _) = three.checked_member_exchange(&pool, &first, false).unwrap();
-        assert_eq!(count(&spent, &first), MachineTerm::constant(1));
-        assert_eq!(count(&spent, &second), MachineTerm::constant(1));
+        assert_eq!(count(&spent, &first), OldMachineTerm::constant(1));
+        assert_eq!(count(&spent, &second), OldMachineTerm::constant(1));
         let helper = spent.enter_call();
         let transferred = spent
             .transfer_call_fact(&spent, &helper, &scope, true)
             .unwrap();
         assert!(transferred.observe_exact_member(&first).is_err());
         let held = transferred.return_to(&helper);
-        assert_eq!(count(&held, &first), MachineTerm::constant(1));
+        assert_eq!(count(&held, &first), OldMachineTerm::constant(1));
     }
 
     #[test]
@@ -3200,7 +3206,7 @@ mod wildcard_scope_tests {
             .unwrap();
         let exact = entry.observe_exact_member(&member).unwrap();
         let total = entry.observe_symbolic(&scope).unwrap();
-        assert!(matches!(exact.entry_count, MachineTerm::Variable(_)));
+        assert!(matches!(exact.entry_count, OldMachineTerm::Variable(_)));
         assert_ne!(exact.entry_count, total.entry_count);
         assert_eq!(exact.entry_owned_members, 1);
         assert_eq!(exact.delta, 0);
@@ -3225,7 +3231,7 @@ mod wildcard_scope_tests {
             .unwrap();
         let known = description(&pool, &[7]);
         let mut arguments = known.arguments().to_vec();
-        arguments[1] = AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(
+        arguments[1] = AlgebraicValue::Program(ProgramValue::Int32(OldMachineTerm::Variable(
             Variable::allocate_fresh().unwrap(),
         )));
         let unknown =
@@ -3237,7 +3243,7 @@ mod wildcard_scope_tests {
         let (zero, _) = one.checked_member_exchange(&pool, &unknown, false).unwrap();
         assert_eq!(
             zero.observe_exact_member(&known).unwrap().entry_count,
-            MachineTerm::constant(0)
+            OldMachineTerm::constant(0)
         );
     }
 
@@ -3269,12 +3275,12 @@ mod wildcard_scope_tests {
             ResourceDescription::new("slot".into(), arguments.into(), scope.schema().clone());
         assert_eq!(
             one.observe_exact_member(&cast).unwrap().entry_count,
-            MachineTerm::constant(1)
+            OldMachineTerm::constant(1)
         );
         let (zero, _) = one.checked_member_exchange(&pool, &cast, false).unwrap();
         assert_eq!(
             zero.observe_exact_member(&member).unwrap().entry_count,
-            MachineTerm::constant(0)
+            OldMachineTerm::constant(0)
         );
     }
 
@@ -3287,16 +3293,16 @@ mod wildcard_scope_tests {
             .checked_establish(&pool, &scope)
             .unwrap();
         let member = description(&pool, &[7]);
-        let quantity = MachineTerm::Variable(Variable::allocate_fresh().unwrap());
+        let quantity = OldMachineTerm::Variable(Variable::allocate_fresh().unwrap());
         let facts = PureFactContext::new()
             .assume_condition(
-                ConditionTerm::signed_greater_equal(quantity.clone(), MachineTerm::constant(0)),
+                ConditionTerm::signed_greater_equal(quantity.clone(), OldMachineTerm::constant(0)),
                 true,
             )
             .assume_condition(
                 ConditionTerm::signed_less_equal(
                     quantity.clone(),
-                    MachineTerm::constant(i32::MAX as u32),
+                    OldMachineTerm::constant(i32::MAX as u32),
                 ),
                 true,
             );
@@ -3323,7 +3329,7 @@ mod wildcard_scope_tests {
         let (two, _) = one.checked_member_exchange(&pool, &second, true).unwrap();
         assert_eq!(
             two.observe_term(&pool, "slot").unwrap(),
-            MachineTerm::constant(2)
+            OldMachineTerm::constant(2)
         );
         assert_eq!(two.governing_authority(&first), Some(authority.clone()));
         assert!(two.checked_establish(&pool, &authority).is_err());
@@ -3361,11 +3367,11 @@ mod wildcard_scope_tests {
 #[test]
 fn retired_symbolic_batch_receipt_survives_helper_return_without_live_rights() {
     let description = member_description(AddressBase::ExternalArgument);
-    let quantity = MachineTerm::Variable(Variable(980_220));
+    let quantity = OldMachineTerm::Variable(Variable(980_220));
     let assumptions = PureFactContext::new().assume_condition(
         crate::kernel::ConditionTerm::signed_greater_equal(
             quantity.clone(),
-            MachineTerm::constant(0),
+            OldMachineTerm::constant(0),
         ),
         true,
     );
@@ -3419,7 +3425,7 @@ fn retired_symbolic_batch_receipt_survives_helper_return_without_live_rights() {
                 &AddressBase::ExternalArgument,
                 &description,
                 true,
-                &MachineTerm::constant(1),
+                &OldMachineTerm::constant(1),
                 &assumptions
             )
             .is_err()
@@ -3448,7 +3454,7 @@ fn helper_cleanup_must_retire_each_control_population_at_global_zero() {
             .import_opaque_contract_population_inner(
                 &slots,
                 3,
-                Some(MachineTerm::constant(3)),
+                Some(OldMachineTerm::constant(3)),
                 None,
                 None,
             )
@@ -3456,7 +3462,7 @@ fn helper_cleanup_must_retire_each_control_population_at_global_zero() {
             .import_opaque_contract_population_with_member(
                 &private,
                 0,
-                Some(MachineTerm::constant(private_total)),
+                Some(OldMachineTerm::constant(private_total)),
                 None,
                 None,
                 OpaqueMemberInputs::Quantity(None),
@@ -3473,7 +3479,7 @@ fn helper_cleanup_must_retire_each_control_population_at_global_zero() {
                 &child,
                 &slots,
                 false,
-                &MachineTerm::constant(3),
+                &OldMachineTerm::constant(3),
                 &assumptions,
             )
             .unwrap();
@@ -3482,7 +3488,7 @@ fn helper_cleanup_must_retire_each_control_population_at_global_zero() {
                 &AddressBase::ExternalArgument,
                 &slots,
                 false,
-                &MachineTerm::constant(3),
+                &OldMachineTerm::constant(3),
                 &assumptions,
             )
             .unwrap()
@@ -3584,7 +3590,7 @@ fn local_numeric_batch_splits_and_requires_owned_authority() {
             &block,
             &description,
             produce,
-            &MachineTerm::constant(amount),
+            &OldMachineTerm::constant(amount),
             &PureFactContext::new(),
         )
     };
@@ -3628,7 +3634,7 @@ fn local_numeric_batch_work_does_not_grow_with_quantity() {
                     &block,
                     &description,
                     true,
-                    &MachineTerm::constant(amount),
+                    &OldMachineTerm::constant(amount),
                     &PureFactContext::new(),
                 )
                 .unwrap()
@@ -3641,7 +3647,7 @@ fn local_numeric_batch_work_does_not_grow_with_quantity() {
                     &block,
                     &description,
                     false,
-                    &MachineTerm::constant(amount),
+                    &OldMachineTerm::constant(amount),
                     &PureFactContext::new(),
                 )
                 .unwrap()
@@ -3749,13 +3755,13 @@ fn authority_contract_entry_retains_only_authenticated_member_bounds() {
         let lower_bound = Proposition::condition_is(
             // `states` is an exact lookup. Match the count evaluator's
             // canonical orientation, rather than asking it to prove `1 <= n`.
-            ConditionTerm::signed_greater_equal(count.clone(), MachineTerm::constant(1)),
+            ConditionTerm::signed_greater_equal(count.clone(), OldMachineTerm::constant(1)),
             true,
         );
         assert_eq!(entry.states(&lower_bound), tracked_quantity == 1);
         assert!(
             !entry.states(&Proposition::condition_is(
-                ConditionTerm::equal(count.clone(), MachineTerm::constant(1)),
+                ConditionTerm::equal(count.clone(), OldMachineTerm::constant(1)),
                 true
             )),
             "one locally owned member does not imply an exact global count"
@@ -3852,7 +3858,7 @@ fn check_named_authority_import(arity: Option<usize>) {
     );
     let doubled = ResourceFact::own_quantity(
         Resource::PopulationAuthority(description.clone()),
-        MachineTerm::constant(2),
+        OldMachineTerm::constant(2),
     );
     assert!(
         state
@@ -3915,7 +3921,7 @@ fn check_named_authority_import(arity: Option<usize>) {
         );
         let exact_count = arity.map(|_| {
             let observed = entry.observe_exact_member(&exact).unwrap();
-            assert!(matches!(observed.entry_count, MachineTerm::Variable(_)));
+            assert!(matches!(observed.entry_count, OldMachineTerm::Variable(_)));
             assert_eq!(observed.delta, 0);
             assert_eq!(observed.entry_owned_members, 0);
             assert_eq!(
@@ -3925,7 +3931,7 @@ fn check_named_authority_import(arity: Option<usize>) {
             observed.entry_count
         });
         let count = entry.observe_symbolic(&description).unwrap();
-        assert!(matches!(count.entry_count, MachineTerm::Variable(_)));
+        assert!(matches!(count.entry_count, OldMachineTerm::Variable(_)));
         assert_eq!(count.entry_owned_members, 0);
         assert_eq!(count.delta, 0);
         assert!(!entry.owns_population_member(&description));
@@ -3950,7 +3956,7 @@ fn check_named_authority_import(arity: Option<usize>) {
                         &AddressBase::ExternalArgument,
                         &description,
                         produce,
-                        &MachineTerm::constant(1),
+                        &OldMachineTerm::constant(1),
                         &PureFactContext::new(),
                     )
                     .err(),
@@ -4027,23 +4033,23 @@ fn check_named_authority_import(arity: Option<usize>) {
 fn exact_symbolic_birth_does_not_infer_custody_from_bounds() {
     let block = AddressBase::ExternalArgument;
     let description = member_description(block.clone());
-    let quantity = MachineTerm::Variable(Variable(990_002));
+    let quantity = OldMachineTerm::Variable(Variable(990_002));
     let entry = CreationEvents::new()
         .import_opaque_contract_population_inner(
             &description,
             0,
-            Some(MachineTerm::constant(0)),
+            Some(OldMachineTerm::constant(0)),
             None,
             None,
         )
         .unwrap();
     let bounds = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::signed_greater_equal(quantity.clone(), MachineTerm::constant(0)),
+            ConditionTerm::signed_greater_equal(quantity.clone(), OldMachineTerm::constant(0)),
             true,
         )
         .assume_condition(
-            ConditionTerm::signed_greater_equal(MachineTerm::constant(10), quantity.clone()),
+            ConditionTerm::signed_greater_equal(OldMachineTerm::constant(10), quantity.clone()),
             true,
         );
     let first = entry
@@ -4066,7 +4072,7 @@ fn exact_symbolic_birth_does_not_infer_custody_from_bounds() {
         CreationRefusal::InvalidQuantity
     );
     let negative = PureFactContext::new().assume_condition(
-        ConditionTerm::equal(quantity.clone(), MachineTerm::constant(u32::MAX)),
+        ConditionTerm::equal(quantity.clone(), OldMachineTerm::constant(u32::MAX)),
         true,
     );
     assert!(
@@ -4084,7 +4090,7 @@ fn numeric_member_birth_overflow_is_not_missing_custody() {
         .import_opaque_contract_population_inner(
             &description,
             i32::MAX as u32,
-            Some(MachineTerm::constant(i32::MAX as u32)),
+            Some(OldMachineTerm::constant(i32::MAX as u32)),
             None,
             None,
         )
@@ -4094,7 +4100,7 @@ fn numeric_member_birth_overflow_is_not_missing_custody() {
             &block,
             &description,
             true,
-            &MachineTerm::constant(1),
+            &OldMachineTerm::constant(1),
             &PureFactContext::new(),
         )
         .unwrap_err(),
@@ -4103,7 +4109,7 @@ fn numeric_member_birth_overflow_is_not_missing_custody() {
     assert!(full.owns_population_member(&description));
     assert_eq!(
         full.observe_symbolic(&description).unwrap().entry_count,
-        MachineTerm::constant(i32::MAX as u32)
+        OldMachineTerm::constant(i32::MAX as u32)
     );
 }
 
@@ -4131,7 +4137,7 @@ fn imported_named_exact_counts_refuse_unresolved_neighbor_effects() {
             "ticket".into(),
             vec![
                 anchor.clone().into(),
-                ProgramValue::Int32(MachineTerm::Variable(Variable(tag))).into(),
+                ProgramValue::Int32(OldMachineTerm::Variable(Variable(tag))).into(),
             ]
             .into(),
             schema.clone(),
@@ -4158,7 +4164,7 @@ fn imported_named_exact_counts_refuse_unresolved_neighbor_effects() {
     let two = one.checked_imported_instance_consumption(&second).unwrap();
     assert_eq!(
         two.observe_symbolic(&scope).unwrap().combined_delta(),
-        Some((false, MachineTerm::constant(2)))
+        Some((false, OldMachineTerm::constant(2)))
     );
     assert!(
         two.observe_exact_member(&ResourceDescription::from_instance(&first))

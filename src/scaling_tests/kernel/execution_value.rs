@@ -142,7 +142,7 @@ fn pointer_local_bindings_preserve_prepared_dags_at_constant_work() {
         for n in 0..unrelated {
             state.locals.set_typed(
                 format!("unrelated_{n}"),
-                ProgramValue::Int32(MachineTerm::constant(n)),
+                ProgramValue::Int32(OldMachineTerm::constant(n)),
                 ProgramType::Int32,
             );
         }
@@ -208,7 +208,7 @@ fn retained_pointer_cells_do_not_export_prepared_dags_or_scan_sibling_cells() {
         for n in 0..unrelated {
             memory = memory.store(
                 SymbolicMemory::local_pointer(format!("unrelated_pointer_cell_{n}")),
-                ProgramValue::Int32(MachineTerm::constant(n)),
+                ProgramValue::Int32(OldMachineTerm::constant(n)),
             );
         }
         for size in [16, 64, 256] {
@@ -715,7 +715,7 @@ fn pointer_storage_comparison_visits_shared_offset_pairs_once() {
         let _session = crate::kernel::VerificationSession::enter();
         let natives = [CScalarClass::Int, CScalarClass::Char].map(|class| {
             AddressOffset::scaled_int64_node(
-                MachineTerm::IntegerAddress(
+                OldMachineTerm::IntegerAddress(
                     Box::new(Address::symbolic(Variable(998765))),
                     crate::kernel::AddressObjectClass::new(Some(CAccessClass::Scalar(class))),
                 ),

@@ -5,8 +5,8 @@ use crate::kernel::binary_term;
 pub(in crate::surface) struct EvaluatedContractSegment {
     pub(in crate::surface) source: ContractSegment,
     pub(in crate::surface) base: Address,
-    pub(in crate::surface) start: MachineTerm,
-    pub(in crate::surface) end: MachineTerm,
+    pub(in crate::surface) start: OldMachineTerm,
+    pub(in crate::surface) end: OldMachineTerm,
     pub(in crate::surface) element_width: u32,
 }
 
@@ -138,7 +138,7 @@ pub(in crate::surface) fn pointer_element_index_from_base(
     pointer: &Address,
     base: &Address,
     assumptions: &PureFactContext,
-) -> Option<MachineTerm> {
+) -> Option<OldMachineTerm> {
     pointer_element_index_from_base_with_width(pointer, base, 4, assumptions)
 }
 
@@ -147,7 +147,7 @@ fn pointer_element_index_from_base_with_width(
     base: &Address,
     element_width: u32,
     assumptions: &PureFactContext,
-) -> Option<MachineTerm> {
+) -> Option<OldMachineTerm> {
     if pointer.base != base.base {
         return None;
     }
@@ -155,7 +155,7 @@ fn pointer_element_index_from_base_with_width(
     if pointer.offset == base.offset
         || pointer_offsets_equal_for_effect(&pointer.offset, &base.offset, assumptions)
     {
-        return Some(MachineTerm::constant(0));
+        return Some(OldMachineTerm::constant(0));
     }
 
     if base.offset == AddressOffset::Constant(0) {
@@ -199,7 +199,7 @@ fn pointer_offsets_equal_for_effect(
 fn element_index_from_pointer_offset(
     offset: &AddressOffset,
     element_width: u32,
-) -> Option<MachineTerm> {
+) -> Option<OldMachineTerm> {
     if element_width == 0 {
         return None;
     }
@@ -208,7 +208,7 @@ fn element_index_from_pointer_offset(
             let index = offset / i64::from(element_width);
             (i32::MIN as i64..=i32::MAX as i64)
                 .contains(&index)
-                .then_some(MachineTerm::constant((index as i32) as u32))
+                .then_some(OldMachineTerm::constant((index as i32) as u32))
         }
         AddressOffset::Int32Scaled { value, byte_width }
             if *byte_width == i64::from(element_width) =>
@@ -232,11 +232,11 @@ fn element_index_from_pointer_offset(
     }
 }
 fn bitvector_index_relative_to_base(
-    pointer_index: MachineTerm,
-    base_index: MachineTerm,
-) -> MachineTerm {
+    pointer_index: OldMachineTerm,
+    base_index: OldMachineTerm,
+) -> OldMachineTerm {
     if pointer_index == base_index {
-        return MachineTerm::constant(0);
+        return OldMachineTerm::constant(0);
     }
     if let binary_term!(Int32, Add, left, right) = &pointer_index {
         if left.as_ref() == &base_index {

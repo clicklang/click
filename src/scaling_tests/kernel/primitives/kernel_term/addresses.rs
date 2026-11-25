@@ -97,7 +97,7 @@ fn raw_pointer_conditions_keep_shared_displacements_through_rewrites_and_transpo
                     crate::kernel::reasoning::substitute_bitvector_variable_in_common_condition(
                         &source,
                         Variable(999702),
-                        &MachineTerm::constant(1),
+                        &OldMachineTerm::constant(1),
                     )
                     .unwrap();
                 let pointers =
@@ -159,15 +159,15 @@ fn complete_pointer_conditions_keep_shared_domains_through_rewrites_and_observat
         });
         let root = KernelTerm::pointer_equal_raw(values.clone());
         let one = KernelTermImport::default()
-            .machine(MachineIntegerType::Int32, &MachineTerm::constant(1));
+            .machine(MachineIntegerType::Int32, &OldMachineTerm::constant(1));
         let zero = KernelTermImport::default()
-            .machine(MachineIntegerType::Int32, &MachineTerm::constant(0));
+            .machine(MachineIntegerType::Int32, &OldMachineTerm::constant(0));
         let exports = KernelTermExport::machine_export_count();
         let ((bits, pointers), work) = crate::instrumentation::measure_deterministic_work(|| {
             let bits = crate::kernel::reasoning::substitute_bitvector_variable_in_common_condition(
                 &root,
                 Variable(999809),
-                &MachineTerm::constant(1),
+                &OldMachineTerm::constant(1),
             )
             .unwrap();
             let pointers =

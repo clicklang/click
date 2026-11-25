@@ -77,7 +77,7 @@ pub(in crate::kernel) fn apply_spec_machine_arithmetic(
                 .with_context("arithmetic expression is defined"),
         );
     }
-    let term = MachineTerm::logical_machine_binary(format, op, left, right);
+    let term = OldMachineTerm::logical_machine_binary(format, op, left, right);
     Some(ExpressionPath {
         outcome: ExpressionOutcome::Value(match width {
             ScalarWidth::Int32 => ProgramValue::Int32(term),
@@ -163,9 +163,9 @@ fn apply_spec_shift_with_count_width(
     let wide = matches!(width, ScalarWidth::Int64 | ScalarWidth::UInt64);
     let count = if wide && !right_is_wide {
         if unsigned_count {
-            MachineTerm::uint64_from_32(right)
+            OldMachineTerm::uint64_from_32(right)
         } else {
-            MachineTerm::int64_from_32(right)
+            OldMachineTerm::int64_from_32(right)
         }
     } else {
         right
@@ -205,7 +205,7 @@ fn apply_spec_shift_with_count_width(
         ),
     ));
     let count = if !wide && right_is_wide {
-        MachineTerm::uint32_from_64(count)
+        OldMachineTerm::uint32_from_64(count)
     } else {
         count
     };
@@ -232,7 +232,7 @@ fn apply_spec_shift_with_count_width(
             ProofObligation::evaluation_domain(domain).with_context("shift expression is defined"),
         );
     }
-    let term = MachineTerm::logical_machine_binary(width.format(), op, left, count);
+    let term = OldMachineTerm::logical_machine_binary(width.format(), op, left, count);
     Some(ExpressionPath {
         outcome: ExpressionOutcome::Value(match width {
             ScalarWidth::Int32 => ProgramValue::Int32(term),
@@ -251,10 +251,10 @@ mod tests {
 
     #[test]
     fn rust_shift_carrier_discharges_only_established_count_domains() {
-        let left = ProgramValue::Int8(MachineTerm::Variable(Variable(991_500)));
-        let count = MachineTerm::Variable(Variable(991_501));
+        let left = ProgramValue::Int8(OldMachineTerm::Variable(Variable(991_500)));
+        let count = OldMachineTerm::Variable(Variable(991_501));
         let right = uint32(count.clone());
-        let bound = ConditionTerm::unsigned_less_than(count, MachineTerm::uint32_constant(8));
+        let bound = ConditionTerm::unsigned_less_than(count, OldMachineTerm::uint32_constant(8));
         let empty = PureFactContext::new();
         let defined = empty.clone().assume_condition(bound.clone(), true);
         let invalid = empty.clone().assume_condition(bound, false);
@@ -305,14 +305,14 @@ mod tests {
             (int32(u32::MAX), int32(1), MachineBinaryOp::ShiftLeft),
             (int32(i32::MAX as u32), int32(1), MachineBinaryOp::ShiftLeft),
             (
-                ProgramValue::UInt64(MachineTerm::uint64_constant(1)),
+                ProgramValue::UInt64(OldMachineTerm::uint64_constant(1)),
                 int32(64),
                 MachineBinaryOp::ShiftLeft,
             ),
             // Narrowing the count first would silently turn this into zero.
             (
                 int32(1),
-                ProgramValue::UInt64(MachineTerm::uint64_constant(1 << 32)),
+                ProgramValue::UInt64(OldMachineTerm::uint64_constant(1 << 32)),
                 MachineBinaryOp::ShiftRight,
             ),
         ] {
@@ -343,16 +343,16 @@ mod tests {
     #[test]
     fn logical_shift_value_agrees_with_program_for_defined_mixed_width_operands() {
         let values = [
-            ProgramValue::Int32(MachineTerm::constant(8)),
-            ProgramValue::UInt32(MachineTerm::uint32_constant(8)),
-            ProgramValue::Int64(MachineTerm::int64_constant(8)),
-            ProgramValue::UInt64(MachineTerm::uint64_constant(8)),
+            ProgramValue::Int32(OldMachineTerm::constant(8)),
+            ProgramValue::UInt32(OldMachineTerm::uint32_constant(8)),
+            ProgramValue::Int64(OldMachineTerm::int64_constant(8)),
+            ProgramValue::UInt64(OldMachineTerm::uint64_constant(8)),
         ];
         let counts = [
-            ProgramValue::Int32(MachineTerm::constant(2)),
-            ProgramValue::UInt32(MachineTerm::uint32_constant(2)),
-            ProgramValue::Int64(MachineTerm::int64_constant(2)),
-            ProgramValue::UInt64(MachineTerm::uint64_constant(2)),
+            ProgramValue::Int32(OldMachineTerm::constant(2)),
+            ProgramValue::UInt32(OldMachineTerm::uint32_constant(2)),
+            ProgramValue::Int64(OldMachineTerm::int64_constant(2)),
+            ProgramValue::UInt64(OldMachineTerm::uint64_constant(2)),
         ];
         for left in &values {
             for right in &counts {
@@ -410,8 +410,8 @@ mod tests {
                     MachineIntegerType::UInt64 => ProgramValue::UInt64(term),
                     _ => unreachable!(),
                 };
-                let left = MachineTerm::Variable(Variable(991_000));
-                let right = MachineTerm::Variable(Variable(991_001));
+                let left = OldMachineTerm::Variable(Variable(991_000));
+                let right = OldMachineTerm::Variable(Variable(991_001));
                 for mode in [SpecDivision::Total, SpecDivision::CDefined] {
                     let path = apply_spec_machine_arithmetic(
                         op,
@@ -424,7 +424,7 @@ mod tests {
                     .unwrap();
                     assert_eq!(
                         path.outcome,
-                        ExpressionOutcome::Value(wrap(MachineTerm::machine_binary(
+                        ExpressionOutcome::Value(wrap(OldMachineTerm::machine_binary(
                             format,
                             op,
                             left.clone(),
@@ -456,9 +456,9 @@ mod tests {
 
     #[test]
     fn symbolic_arithmetic_retains_cancellation_and_identity_nodes() {
-        let x = MachineTerm::Variable(Variable(991_100));
-        let one = MachineTerm::constant(1);
-        let sum = MachineTerm::logical_machine_binary(
+        let x = OldMachineTerm::Variable(Variable(991_100));
+        let one = OldMachineTerm::constant(1);
+        let sum = OldMachineTerm::logical_machine_binary(
             MachineIntegerType::Int32,
             MachineBinaryOp::Add,
             x.clone(),
@@ -467,11 +467,11 @@ mod tests {
         for (op, left, right) in [
             (MachineBinaryOp::Subtract, sum, x.clone()),
             (MachineBinaryOp::Subtract, x.clone(), x.clone()),
-            (MachineBinaryOp::Add, x.clone(), MachineTerm::constant(0)),
+            (MachineBinaryOp::Add, x.clone(), OldMachineTerm::constant(0)),
             (
                 MachineBinaryOp::Multiply,
                 x.clone(),
-                MachineTerm::constant(0),
+                OldMachineTerm::constant(0),
             ),
             (MachineBinaryOp::Divide, x, one),
         ] {
@@ -486,7 +486,7 @@ mod tests {
             .unwrap();
             assert_eq!(
                 path.outcome,
-                ExpressionOutcome::Value(ProgramValue::Int32(MachineTerm::Binary {
+                ExpressionOutcome::Value(ProgramValue::Int32(OldMachineTerm::Binary {
                     format: MachineIntegerType::Int32,
                     op,
                     left: Box::new(left),
@@ -555,7 +555,7 @@ mod tests {
                 // No value is chosen: the quotient stays an operation node.
                 assert_eq!(
                     total.outcome,
-                    ExpressionOutcome::Value(wrap(MachineTerm::Binary {
+                    ExpressionOutcome::Value(wrap(OldMachineTerm::Binary {
                         format,
                         op,
                         left: Box::new(left.clone()),

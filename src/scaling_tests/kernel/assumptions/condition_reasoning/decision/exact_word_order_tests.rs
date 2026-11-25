@@ -19,8 +19,8 @@ fn adjacent_bound_queries_retain_shared_prefixes_in_changing_contexts() {
                 );
                 context = context.assume_condition(
                     ConditionTerm::equal(
-                        MachineTerm::Variable(Variable(189330 + n as u64)),
-                        MachineTerm::constant(n as u32),
+                        OldMachineTerm::Variable(Variable(189330 + n as u64)),
+                        OldMachineTerm::constant(n as u32),
                     ),
                     true,
                 );

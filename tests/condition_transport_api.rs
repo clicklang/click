@@ -28,8 +28,8 @@ fn consistent_context_retains_its_symbolic_premise() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::Variable(Variable(777))),
-            right: Box::new(MachineTerm::constant(0)),
+            left: Box::new(OldMachineTerm::Variable(Variable(777))),
+            right: Box::new(OldMachineTerm::constant(0)),
         },
         true,
     );
@@ -61,12 +61,12 @@ fn context_free_disjoint_store_transport_stays_closed() {
         offset: AddressOffset::Constant(4),
     };
     let after = before.clone().store(written, int32(7));
-    let old_load = MachineTerm::memory_read(
+    let old_load = OldMachineTerm::memory_read(
         click::kernel::intern_memory(before),
         preserved.clone(),
         LoadKind::Int32,
     );
-    let new_load = MachineTerm::memory_read(
+    let new_load = OldMachineTerm::memory_read(
         click::kernel::intern_memory(after),
         preserved,
         LoadKind::Int32,
@@ -106,8 +106,8 @@ fn retained_premises_ignore_unrelated_ambient_context_at_scale() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::Variable(Variable(777))),
-            right: Box::new(MachineTerm::constant(0)),
+            left: Box::new(OldMachineTerm::Variable(Variable(777))),
+            right: Box::new(OldMachineTerm::constant(0)),
         },
         true,
     );

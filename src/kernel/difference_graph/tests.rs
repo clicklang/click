@@ -4,7 +4,7 @@ use crate::kernel::MachineIntegerType;
 use crate::kernel::binary_node;
 use crate::kernel::binary_term;
 use crate::kernel::{CompareRelation, OverflowOperation};
-use crate::kernel::{MachineCastSpelling, MachineTerm};
+use crate::kernel::{MachineCastSpelling, OldMachineTerm};
 use crate::kernel::{PureFactContext, Variable};
 use crate::kernel::{constant_u32, int32_constant};
 
@@ -18,15 +18,15 @@ fn graph_work<R>(operation: impl FnOnce() -> R) -> (R, usize) {
     (result, GRAPH_WORK.with(std::cell::Cell::get))
 }
 
-fn variable(id: u64) -> MachineTerm {
-    MachineTerm::Variable(Variable(91_000 + id))
+fn variable(id: u64) -> OldMachineTerm {
+    OldMachineTerm::Variable(Variable(91_000 + id))
 }
 
-fn constant(value: i32) -> MachineTerm {
-    MachineTerm::constant(value as u32)
+fn constant(value: i32) -> OldMachineTerm {
+    OldMachineTerm::constant(value as u32)
 }
 
-fn plus(term: &MachineTerm, value: i32) -> MachineTerm {
+fn plus(term: &OldMachineTerm, value: i32) -> OldMachineTerm {
     binary_node!(
         Int32,
         Add,
@@ -35,15 +35,15 @@ fn plus(term: &MachineTerm, value: i32) -> MachineTerm {
     )
 }
 
-fn lt(a: &MachineTerm, b: &MachineTerm) -> ConditionTerm {
+fn lt(a: &OldMachineTerm, b: &OldMachineTerm) -> ConditionTerm {
     ConditionTerm::signed_less_than(a.clone(), b.clone())
 }
 
-fn le(a: &MachineTerm, b: &MachineTerm) -> ConditionTerm {
+fn le(a: &OldMachineTerm, b: &OldMachineTerm) -> ConditionTerm {
     ConditionTerm::signed_less_equal(a.clone(), b.clone())
 }
 
-fn add_overflows(a: &MachineTerm, b: &MachineTerm) -> ConditionTerm {
+fn add_overflows(a: &OldMachineTerm, b: &OldMachineTerm) -> ConditionTerm {
     ConditionTerm::Overflows {
         format: MachineIntegerType::Int32,
         op: OverflowOperation::Add,
@@ -128,7 +128,7 @@ fn overflow_is_decided_at_the_edges_of_the_range() {
 #[test]
 fn unsigned_conversion_keeps_a_nonnegative_value() {
     let i = variable(0);
-    let wide = MachineTerm::legacy_cast(MachineCastSpelling::UInt64From32, Box::new(i.clone()));
+    let wide = OldMachineTerm::legacy_cast(MachineCastSpelling::UInt64From32, Box::new(i.clone()));
     let length = variable(1);
     let below = ConditionTerm::Compare {
         format: MachineIntegerType::UInt64,
@@ -140,7 +140,7 @@ fn unsigned_conversion_keeps_a_nonnegative_value() {
     let length_positive = ConditionTerm::Compare {
         format: MachineIntegerType::UInt64,
         relation: CompareRelation::LessThan,
-        left: Box::new(MachineTerm::uint64_constant(0)),
+        left: Box::new(OldMachineTerm::uint64_constant(0)),
         right: Box::new(length),
     };
     assert_eq!(graph.decide(&length_positive), Some(true));
@@ -181,7 +181,7 @@ fn decisions_hold_in_every_model_and_are_complete() {
     pool.push(plus(&variables[0], 1));
     pool.push(plus(&variables[1], -2));
     pool.extend([-2, 0, 3].map(constant));
-    let value = |term: &MachineTerm, model: &[i128]| -> i128 {
+    let value = |term: &OldMachineTerm, model: &[i128]| -> i128 {
         match term {
             int32_constant!(value) => i128::from(constant_u32(*value) as i32),
             binary_term!(Int32, Add, base, offset) => {
@@ -337,7 +337,7 @@ fn arithmetic_decisions_hold_in_every_model_over_every_case() {
 }
 
 fn check_arithmetic_decisions_in_every_model(cases: usize) {
-    fn value(term: &MachineTerm, variables: &[MachineTerm], model: &[i32]) -> i32 {
+    fn value(term: &OldMachineTerm, variables: &[OldMachineTerm], model: &[i32]) -> i32 {
         match term {
             int32_constant!(value) => constant_u32(*value) as i32,
             binary_term!(Int32, Add, a, b) => {
@@ -361,7 +361,7 @@ fn check_arithmetic_decisions_in_every_model(cases: usize) {
     }
     let values = [i32::MIN, i32::MIN + 1, -1, 0, 1, i32::MAX - 1, i32::MAX];
     let variables = (0..3).map(variable).collect::<Vec<_>>();
-    let boxed = |term: &MachineTerm| Box::new(term.clone());
+    let boxed = |term: &OldMachineTerm| Box::new(term.clone());
     let mut pool = variables.clone();
     pool.push(plus(&variables[0], 1));
     pool.push(binary_node!(
@@ -421,7 +421,7 @@ fn check_arithmetic_decisions_in_every_model(cases: usize) {
     ));
     let constants = [i32::MIN, -1, 0, 1, i32::MAX].map(constant);
     let holds = |condition: &ConditionTerm, model: &[i32]| -> bool {
-        let v = |term: &MachineTerm| value(term, &variables, model);
+        let v = |term: &OldMachineTerm| value(term, &variables, model);
         match condition {
             ConditionTerm::Constant(value) => *value,
             ConditionTerm::Compare {
@@ -686,7 +686,7 @@ fn check_arithmetic_decisions_in_every_model(cases: usize) {
 #[test]
 fn a_disequality_at_a_range_end_tightens_it() {
     let (x, y) = (variable(0), variable(1));
-    let boxed = |term: &MachineTerm| Box::new(term.clone());
+    let boxed = |term: &OldMachineTerm| Box::new(term.clone());
     let divide = ConditionTerm::Overflows {
         format: MachineIntegerType::Int32,
         op: OverflowOperation::Divide,
@@ -765,7 +765,7 @@ fn tightening_bounds_skips_exclusion_runs_in_each_fork() {
 #[test]
 fn a_named_compound_term_keeps_its_operands_bounds() {
     let (x, y) = (variable(0), variable(1));
-    let boxed = |term: &MachineTerm| Box::new(term.clone());
+    let boxed = |term: &OldMachineTerm| Box::new(term.clone());
     let difference = binary_node!(Int32, Subtract, boxed(&y), boxed(&x));
     let less_one = binary_node!(Int32, Subtract, boxed(&difference), boxed(&constant(1)));
     let graph = graph(&[
@@ -790,7 +790,7 @@ fn a_named_compound_term_keeps_its_operands_bounds() {
 #[test]
 fn overflow_facts_shifts_and_products_are_read() {
     let (x, y) = (variable(0), variable(1));
-    let boxed = |term: &MachineTerm| Box::new(term.clone());
+    let boxed = |term: &OldMachineTerm| Box::new(term.clone());
     let recorded = graph(&[(
         ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
@@ -886,7 +886,7 @@ fn an_unsigned_order_bounds_both_readings() {
     );
 }
 
-fn graph_of_negative(term: &MachineTerm) -> DifferenceGraph {
+fn graph_of_negative(term: &OldMachineTerm) -> DifferenceGraph {
     graph(&[(lt(term, &constant(0)), true)])
 }
 
@@ -896,7 +896,7 @@ fn graph_of_negative(term: &MachineTerm) -> DifferenceGraph {
 #[test]
 fn a_remainder_by_a_constant_is_bounded() {
     let x = variable(0);
-    let boxed = |term: &MachineTerm| Box::new(term.clone());
+    let boxed = |term: &OldMachineTerm| Box::new(term.clone());
     let remainder = |k: i32| binary_node!(Int32, Remainder, boxed(&x), boxed(&constant(k)));
     let zero = graph(&[(ConditionTerm::equal(x.clone(), constant(0)), true)]);
     assert_eq!(
@@ -928,7 +928,7 @@ fn a_remainder_by_a_constant_is_bounded() {
 #[test]
 fn an_int64_division_guard_needs_a_nonzero_divisor() {
     let (n, d) = (variable(0), variable(1));
-    let int64 = MachineTerm::int64_constant;
+    let int64 = OldMachineTerm::int64_constant;
     let nonnegative = graph(&[(
         ConditionTerm::int64_signed_less_equal(int64(0), d.clone()),
         true,
@@ -978,7 +978,7 @@ fn a_load_spelled_as_itself_reads_facts_about_its_load_variable() {
         offset: crate::kernel::AddressOffset::Constant(0),
     };
     let memory = crate::kernel::SymbolicMemory::new().with_block("difference-graph-cell", 4);
-    let load = MachineTerm::read_named(
+    let load = OldMachineTerm::read_named(
         crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
         Box::new(pointer),
         crate::kernel::LoadKind::Int32,
@@ -1004,7 +1004,7 @@ fn a_load_spelled_as_itself_reads_facts_about_its_load_variable() {
 fn pointer_offsets_of_int32_elements_compare_as_indices() {
     use crate::kernel::AddressOffset as O;
     let (i, j) = (variable(0), variable(1));
-    let scaled = |value: &MachineTerm| O::scaled_int32_node(value.clone(), 4);
+    let scaled = |value: &OldMachineTerm| O::scaled_int32_node(value.clone(), 4);
     let offsets_equal = |a: O, b: O| ConditionTerm::AddressOffsetEqual(Box::new(a), Box::new(b));
     let ordered = graph(&[(lt(&i, &j), true)]);
     assert_eq!(
@@ -1041,19 +1041,19 @@ fn pointer_offsets_of_int32_elements_compare_as_indices() {
 /// operands' bounds, and it lies in `[0, 2^32)` whatever `x`'s sign.
 #[test]
 fn a_zero_extension_reads_its_operands_bounds() {
-    use MachineTerm as T;
+    use OldMachineTerm as T;
     let (x, y) = (variable(0), variable(1));
-    let boxed = |term: &MachineTerm| Box::new(term.clone());
-    let wide = |term: &MachineTerm| {
-        MachineTerm::legacy_cast(MachineCastSpelling::Int64FromUInt32, boxed(term))
+    let boxed = |term: &OldMachineTerm| Box::new(term.clone());
+    let wide = |term: &OldMachineTerm| {
+        OldMachineTerm::legacy_cast(MachineCastSpelling::Int64FromUInt32, boxed(term))
     };
-    let sum = |a: &MachineTerm, b: &MachineTerm| T::Binary {
+    let sum = |a: &OldMachineTerm, b: &OldMachineTerm| T::Binary {
         format: MachineIntegerType::Int64,
         op: MachineBinaryOp::Add,
         left: boxed(a),
         right: boxed(b),
     };
-    let at_most = |a: &MachineTerm, k: i64| ConditionTerm::Compare {
+    let at_most = |a: &OldMachineTerm, k: i64| ConditionTerm::Compare {
         format: MachineIntegerType::Int64,
         relation: CompareRelation::LessEqual,
         left: boxed(a),
@@ -1098,9 +1098,9 @@ fn a_zero_extension_reads_its_operands_bounds() {
 /// intervals: Rust's checked `x * y` asks `x <= u64::MAX / y`.
 #[test]
 fn an_unsigned_quotient_by_a_positive_divisor_is_bounded() {
-    use MachineTerm as T;
+    use OldMachineTerm as T;
     let (x, y) = (variable(0), variable(1));
-    let boxed = |term: &MachineTerm| Box::new(term.clone());
+    let boxed = |term: &OldMachineTerm| Box::new(term.clone());
     let quotient = T::Binary {
         format: MachineIntegerType::UInt64,
         op: MachineBinaryOp::Divide,
@@ -1164,9 +1164,9 @@ fn an_unsigned_quotient_by_a_positive_divisor_is_bounded() {
 /// `(adler & 65535) >= 65521`.
 #[test]
 fn a_constant_mask_bounds_an_unsigned_value() {
-    use MachineTerm as T;
+    use OldMachineTerm as T;
     let x = variable(0);
-    let boxed = |term: &MachineTerm| Box::new(term.clone());
+    let boxed = |term: &OldMachineTerm| Box::new(term.clone());
     let low_half = T::Binary {
         format: MachineIntegerType::UInt64,
         op: MachineBinaryOp::BitwiseAnd,
@@ -1203,9 +1203,9 @@ fn a_constant_mask_bounds_an_unsigned_value() {
 #[test]
 fn signed_and_unsigned_readings_of_a_word_bound_each_other() {
     use crate::kernel::MachineIntegerType as M;
-    use MachineTerm as T;
+    use OldMachineTerm as T;
     let x = variable(0);
-    let boxed = |term: &MachineTerm| Box::new(term.clone());
+    let boxed = |term: &OldMachineTerm| Box::new(term.clone());
     let all_ones = graph(&[(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int64,
@@ -1215,7 +1215,7 @@ fn signed_and_unsigned_readings_of_a_word_bound_each_other() {
         },
         true,
     )]);
-    let increment_overflows = |value: &MachineTerm| ConditionTerm::Overflows {
+    let increment_overflows = |value: &OldMachineTerm| ConditionTerm::Overflows {
         format: MachineIntegerType::Int64,
         op: OverflowOperation::Add,
         left: Box::new(value.clone()),
@@ -1249,9 +1249,9 @@ fn signed_and_unsigned_readings_of_a_word_bound_each_other() {
 /// `n / d + 1` cannot overflow.
 #[test]
 fn quotients_remainders_and_conditionals_are_bounded_by_their_operands() {
-    use MachineTerm as T;
+    use OldMachineTerm as T;
     let (n, d) = (variable(0), variable(1));
-    let boxed = |term: &MachineTerm| Box::new(term.clone());
+    let boxed = |term: &OldMachineTerm| Box::new(term.clone());
     let pinned = graph(&[
         (
             ConditionTerm::Compare {
@@ -1272,8 +1272,8 @@ fn quotients_remainders_and_conditionals_are_bounded_by_their_operands() {
             true,
         ),
     ]);
-    let divisor = MachineTerm::legacy_cast(MachineCastSpelling::Int64From32, boxed(&d));
-    let remainder = MachineTerm::legacy_cast(
+    let divisor = OldMachineTerm::legacy_cast(MachineCastSpelling::Int64From32, boxed(&d));
+    let remainder = OldMachineTerm::legacy_cast(
         MachineCastSpelling::UInt32From64,
         Box::new(T::Binary {
             format: MachineIntegerType::Int64,
@@ -1325,7 +1325,7 @@ fn quotients_remainders_and_conditionals_are_bounded_by_their_operands() {
         format: MachineIntegerType::Int64,
         op: MachineBinaryOp::Divide,
         left: boxed(&n),
-        right: Box::new(MachineTerm::legacy_cast(
+        right: Box::new(OldMachineTerm::legacy_cast(
             MachineCastSpelling::Int64From32,
             boxed(&d),
         )),
@@ -1368,9 +1368,9 @@ fn quotients_remainders_and_conditionals_are_bounded_by_their_operands() {
 /// `x` down to a multiple of 4: with `x >= 4` it is at least 4.
 #[test]
 fn an_unsigned_value_rounded_down_to_a_multiple_stays_in_range() {
-    use MachineTerm as T;
+    use OldMachineTerm as T;
     let x = variable(0);
-    let boxed = |term: &MachineTerm| Box::new(term.clone());
+    let boxed = |term: &OldMachineTerm| Box::new(term.clone());
     let remainder = T::Binary {
         format: MachineIntegerType::UInt64,
         op: MachineBinaryOp::Remainder,
@@ -1430,7 +1430,7 @@ fn an_unsigned_value_rounded_down_to_a_multiple_stays_in_range() {
         true,
     )]);
     assert_eq!(positive.decide(&dividend_bound), Some(true));
-    let at_least_four = |rounded: &MachineTerm| ConditionTerm::Compare {
+    let at_least_four = |rounded: &OldMachineTerm| ConditionTerm::Compare {
         format: MachineIntegerType::UInt64,
         relation: CompareRelation::LessEqual,
         left: Box::new(T::uint64_constant(4)),
@@ -1464,9 +1464,9 @@ fn an_unsigned_value_rounded_down_to_a_multiple_stays_in_range() {
 /// when `a - b >= 0`.
 #[test]
 fn a_sign_flip_of_known_sign_is_bounded() {
-    use MachineTerm as T;
+    use OldMachineTerm as T;
     let (a, b) = (variable(0), variable(1));
-    let boxed = |term: &MachineTerm| Box::new(term.clone());
+    let boxed = |term: &OldMachineTerm| Box::new(term.clone());
     let flipped = binary_node!(
         Int32,
         BitwiseXor,
@@ -1508,10 +1508,10 @@ fn a_sign_flip_of_known_sign_is_bounded() {
 /// order of sign-flipped words.
 #[test]
 fn an_unsigned_quotient_of_words_is_bounded() {
-    use MachineTerm as T;
+    use OldMachineTerm as T;
     let (x, y) = (variable(0), variable(1));
-    let boxed = |term: &MachineTerm| Box::new(term.clone());
-    let flip = |term: MachineTerm| {
+    let boxed = |term: &OldMachineTerm| Box::new(term.clone());
+    let flip = |term: OldMachineTerm| {
         binary_node!(
             Int32,
             BitwiseXor,
@@ -1703,7 +1703,7 @@ fn a_narrow_cast_with_a_known_value_names_its_operand() {
     let mut decided = 0;
     for (source, destination) in [(M::UInt8, M::Int8), (M::Int8, M::UInt8), (M::Int8, M::Int8)] {
         let (low, high) = range(source);
-        let cast = MachineTerm::Cast {
+        let cast = OldMachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             value: Box::new(v.clone()),
             from: source,
@@ -1745,7 +1745,7 @@ fn a_narrow_cast_with_a_known_value_names_its_operand() {
         (le(&v, &constant(255)), true),
         (
             ConditionTerm::equal(
-                MachineTerm::Cast {
+                OldMachineTerm::Cast {
                     spelling: MachineCastSpelling::Generic,
                     value: Box::new(v.clone()),
                     from: M::UInt8,
@@ -1763,7 +1763,7 @@ fn a_narrow_cast_with_a_known_value_names_its_operand() {
     // Without the operand's range, the cast says nothing about it.
     let unbounded = graph(&[(
         ConditionTerm::equal(
-            MachineTerm::Cast {
+            OldMachineTerm::Cast {
                 spelling: MachineCastSpelling::Generic,
                 value: Box::new(v.clone()),
                 from: M::UInt8,
@@ -1784,9 +1784,9 @@ fn a_narrow_cast_with_a_known_value_names_its_operand() {
 /// suffix `p + (n - k)` of `n` elements checks.
 #[test]
 fn an_unsigned_difference_that_cannot_wrap_is_at_most_its_minuend() {
-    use MachineTerm as T;
+    use OldMachineTerm as T;
     let (a, b) = (variable(0), variable(1));
-    let boxed = |term: &MachineTerm| Box::new(term.clone());
+    let boxed = |term: &OldMachineTerm| Box::new(term.clone());
     let difference = T::Binary {
         format: MachineIntegerType::UInt64,
         op: MachineBinaryOp::Subtract,
@@ -1850,9 +1850,9 @@ fn an_unsigned_difference_that_cannot_wrap_is_at_most_its_minuend() {
 #[test]
 fn low_bits_from_alignment_survive_tagged_word_arithmetic() {
     use crate::kernel::{Address, AddressOffset as O};
-    use MachineTerm as T;
+    use OldMachineTerm as T;
     let u = T::uint64_constant;
-    let boxed = |term: &MachineTerm| Box::new(term.clone());
+    let boxed = |term: &OldMachineTerm| Box::new(term.clone());
     let pointer = |offset| Address {
         base: crate::kernel::AddressBase::ExternalArgument,
         offset,
@@ -1861,19 +1861,19 @@ fn low_bits_from_alignment_survive_tagged_word_arithmetic() {
     let address = |pointer: Address| {
         T::IntegerAddress(Box::new(pointer), crate::kernel::AddressObjectClass::NONE)
     };
-    let and = |a: &MachineTerm, mask| T::Binary {
+    let and = |a: &OldMachineTerm, mask| T::Binary {
         format: MachineIntegerType::UInt64,
         op: MachineBinaryOp::BitwiseAnd,
         left: boxed(a),
         right: Box::new(u(mask)),
     };
-    let add = |a: &MachineTerm, b: &MachineTerm| T::Binary {
+    let add = |a: &OldMachineTerm, b: &OldMachineTerm| T::Binary {
         format: MachineIntegerType::UInt64,
         op: MachineBinaryOp::Add,
         left: boxed(a),
         right: boxed(b),
     };
-    let equal = |a: &MachineTerm, b: &MachineTerm| ConditionTerm::Compare {
+    let equal = |a: &OldMachineTerm, b: &OldMachineTerm| ConditionTerm::Compare {
         format: MachineIntegerType::Int64,
         relation: CompareRelation::Equal,
         left: boxed(a),
@@ -1883,7 +1883,7 @@ fn low_bits_from_alignment_survive_tagged_word_arithmetic() {
         address(pointer(scaled(0, 4))),
         address(pointer(scaled(1, 4))),
     );
-    let aligned = |a: &MachineTerm| (equal(&and(a, 7), &u(0)), true);
+    let aligned = |a: &OldMachineTerm| (equal(&and(a, 7), &u(0)), true);
     let graph = super::tests::graph(&[aligned(&p), aligned(&q)]);
     let tagged = add(&p, &u(1));
     assert_eq!(graph.decide(&equal(&and(&tagged, 3), &u(1))), Some(true));
@@ -1918,9 +1918,9 @@ fn low_bits_from_alignment_survive_tagged_word_arithmetic() {
 #[test]
 fn a_no_overflow_fact_answers_its_operands_under_other_names() {
     let (l, r, v) = (variable(0), variable(1), variable(2));
-    let boxed = |term: &MachineTerm| Box::new(term.clone());
-    let one_more = |x: &MachineTerm| binary_node!(Int32, Add, boxed(&constant(1)), boxed(x));
-    let overflows = |x: &MachineTerm| ConditionTerm::Overflows {
+    let boxed = |term: &OldMachineTerm| Box::new(term.clone());
+    let one_more = |x: &OldMachineTerm| binary_node!(Int32, Add, boxed(&constant(1)), boxed(x));
+    let overflows = |x: &OldMachineTerm| ConditionTerm::Overflows {
         format: MachineIntegerType::Int32,
         op: OverflowOperation::Add,
         left: Box::new(one_more(x)),
@@ -1934,8 +1934,8 @@ fn a_no_overflow_fact_answers_its_operands_under_other_names() {
     let other = graph_of_other(&l, &r);
     assert_eq!(other.decide(&overflows(&v)), None);
 
-    fn graph_of_other(l: &MachineTerm, r: &MachineTerm) -> DifferenceGraph {
-        let boxed = |term: &MachineTerm| Box::new(term.clone());
+    fn graph_of_other(l: &OldMachineTerm, r: &OldMachineTerm) -> DifferenceGraph {
+        let boxed = |term: &OldMachineTerm| Box::new(term.clone());
         // `1 + l` with `l` unrelated to `v`.
         super::tests::graph(&[(
             ConditionTerm::Overflows {
@@ -1957,7 +1957,7 @@ mod scaling_tests {
 #[test]
 fn direct_order_fact_survives_a_high_degree_source() {
     let n = variable(0);
-    let less = |left: MachineTerm, right: MachineTerm| ConditionTerm::Compare {
+    let less = |left: OldMachineTerm, right: OldMachineTerm| ConditionTerm::Compare {
         format: MachineIntegerType::UInt64,
         relation: CompareRelation::LessThan,
         left: Box::new(left),
@@ -1993,7 +1993,7 @@ fn word_equality_uses_unsigned_strict_bounds_without_losing_signed_evidence() {
     ]);
     for format in [MachineIntegerType::Int32, MachineIntegerType::UInt32] {
         for reversed in [false, true] {
-            let equal_to = |other: MachineTerm| {
+            let equal_to = |other: OldMachineTerm| {
                 let (left, right) = if reversed {
                     (other, divisor.clone())
                 } else {
@@ -2024,19 +2024,19 @@ fn wide_offset_equalities_retain_the_full_index_in_both_polarities() {
     use crate::kernel::AddressOffset as O;
     let i = variable(989_980);
     for unsigned in [false, true] {
-        let scaled = |value: MachineTerm| O::scaled_int64_node(value, 8, unsigned);
+        let scaled = |value: OldMachineTerm| O::scaled_int64_node(value, 8, unsigned);
         let equal = ConditionTerm::address_offset_equal(scaled(i.clone()), O::Constant(8));
         for polarity in [false, true] {
             let facts = graph(&[(equal.clone(), polarity)]);
             assert_eq!(
                 facts.decide(&ConditionTerm::int64_equal(
                     i.clone(),
-                    MachineTerm::uint64_constant(1)
+                    OldMachineTerm::uint64_constant(1)
                 )),
                 Some(polarity)
             );
         }
-        let high = MachineTerm::uint64_constant((1u64 << 32) + 1);
+        let high = OldMachineTerm::uint64_constant((1u64 << 32) + 1);
         let facts = graph(&[(ConditionTerm::int64_equal(i.clone(), high), true)]);
         assert_eq!(facts.decide(&equal), Some(false));
         assert_eq!(
@@ -2052,11 +2052,11 @@ fn wide_offset_equalities_retain_the_full_index_in_both_polarities() {
 #[test]
 fn excluding_one_masked_wide_table_slot_selects_the_other() {
     use crate::kernel::AddressOffset as O;
-    let index = MachineTerm::uint64_from_32(MachineTerm::Binary {
+    let index = OldMachineTerm::uint64_from_32(OldMachineTerm::Binary {
         format: MachineIntegerType::UInt32,
         op: MachineBinaryOp::BitwiseAnd,
         left: Box::new(variable(989_981)),
-        right: Box::new(MachineTerm::uint32_constant(1)),
+        right: Box::new(OldMachineTerm::uint32_constant(1)),
     });
     let offset = O::scaled_int64_node(index, 8, true);
     for first in [0, 8] {
@@ -2104,13 +2104,13 @@ fn cached_context_graph_tracks_shared_order_addition() {
             let native = ConditionTerm::machine_compare(
                 format,
                 relation,
-                MachineTerm::Binary {
+                OldMachineTerm::Binary {
                     format,
                     op: MachineBinaryOp::Multiply,
-                    left: Box::new(MachineTerm::Variable(Variable(993221))),
-                    right: Box::new(MachineTerm::Variable(Variable(993221))),
+                    left: Box::new(OldMachineTerm::Variable(Variable(993221))),
+                    right: Box::new(OldMachineTerm::Variable(Variable(993221))),
                 },
-                MachineTerm::Variable(Variable(993222)),
+                OldMachineTerm::Variable(Variable(993222)),
             );
 
             for truth in [false, true] {
@@ -2151,16 +2151,16 @@ fn retained_equalities_exclusions_and_aliases_follow_context_updates() {
         let root =
             KernelTerm::machine_binary_shared(format, MachineBinaryOp::Multiply, [x.clone(), x]);
         let seven = if format.format().bits() == 32 {
-            MachineTerm::constant(7)
+            OldMachineTerm::constant(7)
         } else if format == MachineIntegerType::Int64 {
-            MachineTerm::int64_constant(7)
+            OldMachineTerm::int64_constant(7)
         } else {
-            MachineTerm::uint64_constant(7)
+            OldMachineTerm::uint64_constant(7)
         };
         let query = condition_for_operand_views(
             format,
             CompareRelation::Equal,
-            [V::Shared(&root), V::Legacy(&seven)],
+            [V::Shared(&root), V::Old(&seven)],
         );
         for truth in [false, true] {
             let parent = ContextDifferenceGraph::default();
@@ -2176,11 +2176,11 @@ fn retained_equalities_exclusions_and_aliases_follow_context_updates() {
             assert_eq!(parent.built().unwrap().decide(&query), None);
             assert_eq!(KernelTermExport::machine_export_count(), exports);
         }
-        let y = MachineTerm::Variable(Variable(993232));
+        let y = OldMachineTerm::Variable(Variable(993232));
         let alias = condition_for_operand_views(
             format,
             CompareRelation::Equal,
-            [V::Shared(&root), V::Legacy(&y)],
+            [V::Shared(&root), V::Old(&y)],
         );
         let exports = KernelTermExport::machine_export_count();
         let mut facts = DifferenceGraph::new();
@@ -2191,7 +2191,7 @@ fn retained_equalities_exclusions_and_aliases_follow_context_updates() {
             &condition_for_operand_views(
                 format,
                 CompareRelation::Equal,
-                [V::Legacy(&y), V::Legacy(&seven)],
+                [V::Old(&y), V::Old(&seven)],
             ),
             true,
         );
@@ -2215,9 +2215,9 @@ fn retained_wide_residues_keep_wrapping_low_bits_and_require_sources() {
         );
         let native_literal = |value| {
             if format == MachineIntegerType::Int64 {
-                MachineTerm::int64_constant(value as i64)
+                OldMachineTerm::int64_constant(value as i64)
             } else {
-                MachineTerm::uint64_constant(value)
+                OldMachineTerm::uint64_constant(value)
             }
         };
         let literal = |value| {
@@ -2234,7 +2234,7 @@ fn retained_wide_residues_keep_wrapping_low_bits_and_require_sources() {
         let source = condition_for_operand_views(
             format,
             CompareRelation::Equal,
-            [V::Shared(&masked), V::Legacy(&zero)],
+            [V::Shared(&masked), V::Old(&zero)],
         );
         let plus =
             KernelTerm::machine_binary_shared(format, MachineBinaryOp::Add, [root, literal(1)]);
@@ -2249,7 +2249,7 @@ fn retained_wide_residues_keep_wrapping_low_bits_and_require_sources() {
             let query = condition_for_operand_views(
                 format,
                 CompareRelation::Equal,
-                [V::Shared(&low), V::Legacy(&constant)],
+                [V::Shared(&low), V::Old(&constant)],
             );
             assert_eq!(DifferenceGraph::new().decide(&query), None);
             let mut facts = DifferenceGraph::new();
@@ -2275,20 +2275,20 @@ fn native_equality_after_shared_admission_keeps_existing_bounds() {
         let root =
             KernelTerm::machine_binary_shared(format, MachineBinaryOp::Multiply, [x.clone(), x]);
         let five = if format.format().bits() == 32 {
-            MachineTerm::constant(5)
+            OldMachineTerm::constant(5)
         } else {
-            MachineTerm::int64_constant(5)
+            OldMachineTerm::int64_constant(5)
         };
         let bound = condition_for_operand_views(
             format,
             CompareRelation::LessEqual,
-            [V::Shared(&root), V::Legacy(&five)],
+            [V::Shared(&root), V::Old(&five)],
         );
-        let native_root = MachineTerm::Binary {
+        let native_root = OldMachineTerm::Binary {
             format,
             op: MachineBinaryOp::Multiply,
-            left: Box::new(MachineTerm::Variable(Variable(993261))),
-            right: Box::new(MachineTerm::Variable(Variable(993261))),
+            left: Box::new(OldMachineTerm::Variable(Variable(993261))),
+            right: Box::new(OldMachineTerm::Variable(Variable(993261))),
         };
         let y = variable(993262);
         let native_alias =
@@ -2323,9 +2323,9 @@ fn shared_narrow_sources_widen_without_export_and_follow_context_changes() {
         let x = KernelTerm::variable(KernelType::Program(format.program_type()), Variable(993281));
         let root =
             KernelTerm::machine_binary_shared(format, MachineBinaryOp::Multiply, [x.clone(), x]);
-        let seven = MachineTerm::narrow_constant(format, 7);
-        let native_x = MachineTerm::Variable(Variable(993281));
-        let native_root = MachineTerm::machine_binary(
+        let seven = OldMachineTerm::narrow_constant(format, 7);
+        let native_x = OldMachineTerm::Variable(Variable(993281));
+        let native_root = OldMachineTerm::machine_binary(
             format,
             MachineBinaryOp::Multiply,
             native_x.clone(),
@@ -2336,11 +2336,8 @@ fn shared_narrow_sources_widen_without_export_and_follow_context_changes() {
             CompareRelation::LessThan,
             CompareRelation::LessEqual,
         ] {
-            let query = condition_for_operand_views(
-                format,
-                relation,
-                [V::Shared(&root), V::Legacy(&seven)],
-            );
+            let query =
+                condition_for_operand_views(format, relation, [V::Shared(&root), V::Old(&seven)]);
             let native_query = ConditionTerm::machine_compare(
                 format,
                 relation,
@@ -2381,17 +2378,17 @@ fn shared_narrow_sources_widen_without_export_and_follow_context_changes() {
         }
         let word =
             KernelTerm::variable(KernelType::Program(format.program_type()), Variable(993282));
-        let ones = MachineTerm::narrow_constant(format, u128::MAX);
-        let zero = MachineTerm::narrow_constant(format, 0);
+        let ones = OldMachineTerm::narrow_constant(format, u128::MAX);
+        let zero = OldMachineTerm::narrow_constant(format, 0);
         let equality = condition_for_operand_views(
             format,
             CompareRelation::Equal,
-            [V::Shared(&word), V::Legacy(&ones)],
+            [V::Shared(&word), V::Old(&ones)],
         );
         let negative = condition_for_operand_views(
             format,
             CompareRelation::LessThan,
-            [V::Shared(&word), V::Legacy(&zero)],
+            [V::Shared(&word), V::Old(&zero)],
         );
         let exports = KernelTermExport::machine_export_count();
         let facts = graph(&[(equality, true)]);
@@ -2410,7 +2407,7 @@ fn shared_narrow_sources_widen_without_export_and_follow_context_changes() {
 /// nested roundings, and not for a divisor that may be zero.
 #[test]
 fn a_rounded_down_value_stays_below_the_bound_of_its_dividend() {
-    use MachineTerm as T;
+    use OldMachineTerm as T;
     let round = |value: T, divisor: T| T::Binary {
         format: MachineIntegerType::UInt64,
         op: MachineBinaryOp::Subtract,
@@ -2462,7 +2459,10 @@ fn offset_sources_retain_shared_indices_and_full_width() {
         let offset = |term| {
             if wide {
                 AddressOffset::Int64Scaled {
-                    value: S::index(MachineIntegerType::Int64, MachineTerm::int64_from_32(term)),
+                    value: S::index(
+                        MachineIntegerType::Int64,
+                        OldMachineTerm::int64_from_32(term),
+                    ),
                     byte_width: 4,
                     unsigned: false,
                 }
@@ -2504,15 +2504,15 @@ fn offset_sources_retain_shared_indices_and_full_width() {
 fn nested_rounding_bounds_do_not_imply_a_strict_bound() {
     let _session = crate::kernel::VerificationSession::enter();
     let length = variable(1018401);
-    let round = |value: MachineTerm| {
-        MachineTerm::uint64_subtract(
+    let round = |value: OldMachineTerm| {
+        OldMachineTerm::uint64_subtract(
             value.clone(),
-            MachineTerm::uint64_remainder(value, MachineTerm::uint64_constant(4)),
+            OldMachineTerm::uint64_remainder(value, OldMachineTerm::uint64_constant(4)),
         )
     };
     let nested = round(round(length.clone()));
     let facts = graph(&[(
-        ConditionTerm::uint64_equal(length.clone(), MachineTerm::uint64_constant(8)),
+        ConditionTerm::uint64_equal(length.clone(), OldMachineTerm::uint64_constant(8)),
         true,
     )]);
     // Both roundings of eight by four are eight, not strictly below eight.
@@ -2531,7 +2531,7 @@ fn nested_rounding_bounds_do_not_imply_a_strict_bound() {
         CompareRelation::LessThan,
         [
             crate::kernel::MachineOperandView::Shared(&root),
-            crate::kernel::MachineOperandView::Legacy(&length),
+            crate::kernel::MachineOperandView::Old(&length),
         ],
     );
     assert_ne!(facts.decide(&shared), Some(true));
@@ -2543,15 +2543,18 @@ fn shared_nested_rounding_preserves_unsigned_bounds() {
     let _session = crate::kernel::VerificationSession::enter();
     let length = variable(1018402);
     let divisor = variable(1018403);
-    let round = |value: MachineTerm, divisor: MachineTerm| {
-        MachineTerm::uint64_subtract(value.clone(), MachineTerm::uint64_remainder(value, divisor))
+    let round = |value: OldMachineTerm, divisor: OldMachineTerm| {
+        OldMachineTerm::uint64_subtract(
+            value.clone(),
+            OldMachineTerm::uint64_remainder(value, divisor),
+        )
     };
     let nested = round(
-        round(length.clone(), MachineTerm::uint64_constant(4)),
+        round(length.clone(), OldMachineTerm::uint64_constant(4)),
         divisor.clone(),
     );
     let positive = graph(&[(
-        ConditionTerm::uint64_less_than(MachineTerm::uint64_constant(0), divisor.clone()),
+        ConditionTerm::uint64_less_than(OldMachineTerm::uint64_constant(0), divisor.clone()),
         true,
     )]);
     let native = ConditionTerm::uint64_less_equal(nested.clone(), length.clone());
@@ -2562,13 +2565,13 @@ fn shared_nested_rounding_preserves_unsigned_bounds() {
     let shared = crate::kernel::machine_integer::comparison::condition_for_operand_views(
         MachineIntegerType::UInt64,
         CompareRelation::LessEqual,
-        [V::Shared(&root), V::Legacy(&length)],
+        [V::Shared(&root), V::Old(&length)],
     );
     let exports = KernelTermExport::machine_export_count();
     assert_eq!(positive.decide(&shared), Some(true));
     assert_eq!(graph(&[]).decide(&shared), None);
     let zero = graph(&[(
-        ConditionTerm::uint64_equal(divisor, MachineTerm::uint64_constant(0)),
+        ConditionTerm::uint64_equal(divisor, OldMachineTerm::uint64_constant(0)),
         true,
     )]);
     assert_ne!(zero.decide(&shared), Some(true));

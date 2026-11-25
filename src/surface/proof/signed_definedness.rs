@@ -16,7 +16,7 @@ use crate::kernel::proof::arithmetic_special::{
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
 impl<'a> Proof<'a> {
-    fn synthesize_machine_term_here(&self, term: &MachineTerm) -> Option<SyntaxTerm> {
+    fn synthesize_machine_term_here(&self, term: &OldMachineTerm) -> Option<SyntaxTerm> {
         match self.context.as_ref() {
             ProofContext::Pure(_) => None,
             ProofContext::FixedState(context) => synthesize_surface_machine_expression(
@@ -53,14 +53,14 @@ impl<'a> Proof<'a> {
 fn spell_signed_bound(
     width: SignedDefinedWidth,
     fact: &Proposition,
-    term: &MachineTerm,
+    term: &OldMachineTerm,
     surface: &SyntaxTerm,
 ) -> Option<SyntaxProposition> {
     let Proposition::ConditionIs(condition, value) = fact else {
         return None;
     };
     use crate::kernel::machine_integer::comparison::structural_comparison_view;
-    let view = structural_comparison_view(condition.native_compat())?;
+    let view = structural_comparison_view(condition.old_form())?;
     let format = match width {
         SignedDefinedWidth::Int32 => MachineIntegerType::Int32,
         SignedDefinedWidth::Int64 => MachineIntegerType::Int64,
@@ -94,7 +94,7 @@ fn spell_signed_bound(
                 SignedDefinedWidth::Int32 => signed_literal(value),
                 SignedDefinedWidth::Int64 => {
                     SyntaxTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Int64(
-                        MachineTerm::int64_constant(value),
+                        OldMachineTerm::int64_constant(value),
                     )))
                 }
             })
@@ -129,7 +129,7 @@ fn signed_literal(value: i64) -> SyntaxTerm {
 fn exact_constant_of(
     width: SignedDefinedWidth,
     fact: &Proposition,
-    term: &MachineTerm,
+    term: &OldMachineTerm,
 ) -> Option<i64> {
     let Some((
         ConditionTerm::Compare {
@@ -162,10 +162,10 @@ fn exact_constant_of(
 /// fixes to zero removed, or `None` when no summand is removed.
 fn substitute_constant_summands(
     width: SignedDefinedWidth,
-    term: &MachineTerm,
-    constant: &dyn Fn(&MachineTerm) -> Option<i64>,
-) -> Option<MachineTerm> {
-    let zero = |summand: &MachineTerm| {
+    term: &OldMachineTerm,
+    constant: &dyn Fn(&OldMachineTerm) -> Option<i64>,
+) -> Option<OldMachineTerm> {
+    let zero = |summand: &OldMachineTerm| {
         signed_width_constant(width, summand).is_none() && constant(summand) == Some(0)
     };
     match term {
@@ -217,10 +217,15 @@ fn substitute_constant_summands(
 /// written expression's outermost operation.
 fn outermost_overflow_conjuncts(
     goal: &Proposition,
-) -> Vec<(SignedDefinedWidth, &MachineTerm, &MachineTerm)> {
+) -> Vec<(SignedDefinedWidth, &OldMachineTerm, &OldMachineTerm)> {
     fn collect<'a>(
         proposition: &'a Proposition,
-        out: &mut Vec<(SignedDefinedWidth, &'a MachineTerm, &'a MachineTerm, bool)>,
+        out: &mut Vec<(
+            SignedDefinedWidth,
+            &'a OldMachineTerm,
+            &'a OldMachineTerm,
+            bool,
+        )>,
     ) {
         match proposition {
             Proposition::And(left, right) => {
@@ -235,7 +240,7 @@ fn outermost_overflow_conjuncts(
     };
     let mut conjuncts = Vec::new();
     collect(goal, &mut conjuncts);
-    let operation = |left: &MachineTerm, right: &MachineTerm, subtract: bool| {
+    let operation = |left: &OldMachineTerm, right: &OldMachineTerm, subtract: bool| {
         let (left, right) = (Box::new(left.clone()), Box::new(right.clone()));
         if subtract {
             binary_node!(Int32, Subtract, left, right)

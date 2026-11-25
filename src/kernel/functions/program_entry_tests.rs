@@ -13,8 +13,8 @@ fn storage_function(name: &str, globals: Vec<Global>) -> ProgramFunction {
 fn scalar_ownership(name: &str) -> ResourceFact {
     ResourceFact::own_memory(MemoryRange::new(
         SymbolicMemory::global_pointer(name),
-        MachineTerm::constant(0),
-        MachineTerm::constant(1),
+        OldMachineTerm::constant(0),
+        OldMachineTerm::constant(1),
     ))
 }
 
@@ -258,8 +258,8 @@ fn startup_includes_uncalled_local_statics_and_typed_arrays() {
     );
     let owned = ResourceFact::own_memory(MemoryRange::new_with_element_width(
         SymbolicMemory::global_pointer("values"),
-        MachineTerm::constant(0),
-        MachineTerm::constant(2),
+        OldMachineTerm::constant(0),
+        OldMachineTerm::constant(2),
         2,
     ));
     assert!(
@@ -279,8 +279,8 @@ fn zero_element(element_type: ProgramType) -> ProgramValue {
         ProgramType::UInt8 => uint8(0),
         ProgramType::UInt16 => uint16(0),
         ProgramType::UInt32 => uint32(0),
-        ProgramType::Int64 => ProgramValue::Int64(MachineTerm::int64_constant(0)),
-        ProgramType::UInt64 => ProgramValue::UInt64(MachineTerm::uint64_constant(0)),
+        ProgramType::Int64 => ProgramValue::Int64(OldMachineTerm::int64_constant(0)),
+        ProgramType::UInt64 => ProgramValue::UInt64(OldMachineTerm::uint64_constant(0)),
         pointer => ProgramValue::typed_pointer(Address::null(), pointer),
     }
 }

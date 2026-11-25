@@ -396,8 +396,8 @@ fn offset_queries_retain_typed_read_definitions_and_keep_blocks_distinct() {
     };
     let xv = variable(&p);
     let yv = variable(&q);
-    let x = Address::loaded(&MachineTerm::Variable(xv)).unwrap();
-    let y = Address::loaded(&MachineTerm::Variable(yv)).unwrap();
+    let x = Address::loaded(&OldMachineTerm::Variable(xv)).unwrap();
+    let y = Address::loaded(&OldMachineTerm::Variable(yv)).unwrap();
     // A typed read is named by its defining state and address, not by
     // its storage block or a scaled offset.
     for (value, address) in [(&x, &p), (&y, &q)] {
@@ -425,7 +425,7 @@ fn offset_queries_retain_typed_read_definitions_and_keep_blocks_distinct() {
         &x,
         &Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(MachineTerm::Variable(yv), 4),
+            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(yv), 4),
         }
     ));
     // New unrelated definitions must not make rediscovery visit more than
@@ -478,7 +478,7 @@ fn load_congruence_work_ignores_classed_loads_of_other_states() {
                     .with_block(symbolic(70_000 + index), 16)
                     .store(
                         at(symbolic(70_000 + index), 0),
-                        ProgramValue::Int32(MachineTerm::constant(index as u32)),
+                        ProgramValue::Int32(OldMachineTerm::constant(index as u32)),
                     ),
             );
             let loaded = name(&memory, at(symbolic(70_000 + index), 0));
@@ -570,7 +570,7 @@ fn late_typed_load_merges_scale_with_existing_storage_relative_bridges() {
                 let p = at(symbolic(810_000 + i), 0);
                 let q = at(symbolic(820_000 + i), 0);
                 let old_value = |address: &Address| {
-                    Address::loaded(&MachineTerm::Variable(
+                    Address::loaded(&OldMachineTerm::Variable(
                         crate::kernel::load_variable_for_cell_with_origin(
                             &memory,
                             address,
@@ -726,7 +726,7 @@ fn shifted_raw_read_dependency_lookup_ignores_unrelated_definitions() {
         };
         graph.add_equality(&Address::loaded_value(&memory, &address), &model);
         let read = |pointer: &Address| {
-            MachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
+            OldMachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
                 &memory,
                 pointer,
                 crate::kernel::LoadKind::Int32,
@@ -735,7 +735,7 @@ fn shifted_raw_read_dependency_lookup_ignores_unrelated_definitions() {
         };
         let source = read(&raw.address().offset_by_bytes(24));
         let target = read(&model.offset_by_bytes(24));
-        let expected = MachineTerm::constant(7);
+        let expected = OldMachineTerm::constant(7);
         let (equal, work) = crate::instrumentation::measure_deterministic_work(|| {
             graph.add_int32_equality(&source, &expected);
             graph.are_int32_equal(&target, &expected)
@@ -764,8 +764,8 @@ fn pointer_fact_source_order_queries_ignore_unrelated_admissions() {
                 domain
                     .opaque_coverage_fact(&crate::kernel::MemoryRange::new(
                         at(symbolic(987_100 + id), 0),
-                        MachineTerm::constant(0),
-                        MachineTerm::constant(1),
+                        OldMachineTerm::constant(0),
+                        OldMachineTerm::constant(1),
                     ))
                     .expect("coverage names the opaque domain"),
             ));
@@ -816,7 +816,7 @@ fn wide_read_metadata_does_not_publish_a_value_without_an_equation() {
                     8,
                     &named,
                 );
-                let value = MachineTerm::Variable(variable);
+                let value = OldMachineTerm::Variable(variable);
                 let observed = intern_memory(
                     named
                         .memory()
@@ -839,11 +839,11 @@ fn wide_read_metadata_does_not_publish_a_value_without_an_equation() {
                         &observed,
                     )
                 );
-                assert!(!graph.are_uint64_equal(&value, &MachineTerm::uint64_constant(0)));
+                assert!(!graph.are_uint64_equal(&value, &OldMachineTerm::uint64_constant(0)));
                 // Changing cached metadata does not publish a value equality.
                 let resolved = intern_memory(named.memory().clone().materialize_named_cell(
                     address.clone(),
-                    ProgramValue::UInt64(MachineTerm::uint64_constant(17)),
+                    ProgramValue::UInt64(OldMachineTerm::uint64_constant(17)),
                 ));
                 crate::kernel::eval::begin_load_origin_epoch();
                 assert_eq!(
@@ -856,16 +856,16 @@ fn wide_read_metadata_does_not_publish_a_value_without_an_equation() {
                         &resolved,
                     )
                 );
-                assert!(!graph.are_uint64_equal(&value, &MachineTerm::uint64_constant(17)));
-                graph.add_uint64_equality(&value, &MachineTerm::uint64_constant(17));
-                assert!(graph.are_uint64_equal(&value, &MachineTerm::uint64_constant(17)));
-                assert!(!graph.are_uint64_equal(&value, &MachineTerm::uint64_constant(0)));
+                assert!(!graph.are_uint64_equal(&value, &OldMachineTerm::uint64_constant(17)));
+                graph.add_uint64_equality(&value, &OldMachineTerm::uint64_constant(17));
+                assert!(graph.are_uint64_equal(&value, &OldMachineTerm::uint64_constant(17)));
+                assert!(!graph.are_uint64_equal(&value, &OldMachineTerm::uint64_constant(0)));
                 reads.push(value);
             }
         });
         let ((), queries) = crate::instrumentation::measure_deterministic_work(|| {
             for read in reads {
-                assert!(!graph.are_uint64_equal(&read, &MachineTerm::uint64_constant(0)));
+                assert!(!graph.are_uint64_equal(&read, &OldMachineTerm::uint64_constant(0)));
             }
         });
         assert!(production < 500 * size as usize, "{size}: {production}");

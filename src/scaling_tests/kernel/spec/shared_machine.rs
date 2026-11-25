@@ -8,13 +8,13 @@ fn unsigned_production_and_single_export_are_linear_beside_unrelated_terms() {
             .collect::<Vec<_>>();
         for size in [16, 64, 256] {
             let mut expression = SpecExpression::Value(ProgramValue::UInt64(
-                MachineTerm::Variable(Variable(981000)),
+                OldMachineTerm::Variable(Variable(981000)),
             ));
             for _ in 0..size {
                 expression = SpecExpression::Add(
                     Box::new(expression),
                     Box::new(SpecExpression::Value(ProgramValue::UInt64(
-                        MachineTerm::uint64_constant(1),
+                        OldMachineTerm::uint64_constant(1),
                     ))),
                 );
             }
@@ -67,19 +67,19 @@ fn signed_available_operand_production_is_linear_beside_unrelated_terms() {
             .map(|i| KernelTerm::variable(KernelType::Integer, Variable(984000 + i)))
             .collect::<Vec<_>>();
         for size in [16, 64, 256] {
-            let mut operand = MachineTerm::Variable(Variable(985000));
+            let mut operand = OldMachineTerm::Variable(Variable(985000));
             for _ in 0..size {
-                operand = MachineTerm::Binary {
+                operand = OldMachineTerm::Binary {
                     format: MachineIntegerType::Int64,
                     op: MachineBinaryOp::Add,
                     left: Box::new(operand),
-                    right: Box::new(MachineTerm::int64_constant(1)),
+                    right: Box::new(OldMachineTerm::int64_constant(1)),
                 };
             }
             let expression = SpecExpression::Add(
                 Box::new(SpecExpression::Value(ProgramValue::Int64(operand))),
                 Box::new(SpecExpression::Value(ProgramValue::Int64(
-                    MachineTerm::int64_constant(1),
+                    OldMachineTerm::int64_constant(1),
                 ))),
             );
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -107,7 +107,7 @@ fn nested_signed_preparation_retains_obligations_without_prefix_exports() {
         for size in [16, 64, 256] {
             let _session = crate::kernel::VerificationSession::enter();
             let leaf =
-                || SpecExpression::Value(wrap(format, MachineTerm::Variable(Variable(986000))));
+                || SpecExpression::Value(wrap(format, OldMachineTerm::Variable(Variable(986000))));
             let mut expression = leaf();
             for _ in 0..size {
                 expression = SpecExpression::Add(Box::new(expression), Box::new(leaf()));
@@ -135,14 +135,14 @@ fn nested_signed_preparation_retains_obligations_without_prefix_exports() {
 #[test]
 fn a_deferred_operand_rejects_one_preparation_without_importing_prefixes() {
     for size in [16, 64, 256] {
-        let mut expression = SpecExpression::Value(ProgramValue::UInt64(MachineTerm::Variable(
+        let mut expression = SpecExpression::Value(ProgramValue::UInt64(OldMachineTerm::Variable(
             Variable(983000),
         )));
         for _ in 0..size {
             expression = SpecExpression::Add(
                 Box::new(expression),
                 Box::new(SpecExpression::Value(ProgramValue::UInt64(
-                    MachineTerm::uint64_constant(1),
+                    OldMachineTerm::uint64_constant(1),
                 ))),
             );
         }
@@ -168,13 +168,14 @@ fn partial_division_production_retains_prefixes_and_debts() {
         let mut costs = Vec::new();
         for size in [16, 64, 256] {
             let _session = crate::kernel::VerificationSession::enter();
-            let mut expression =
-                SpecExpression::Value(ProgramValue::Int64(MachineTerm::Variable(Variable(991910))));
+            let mut expression = SpecExpression::Value(ProgramValue::Int64(
+                OldMachineTerm::Variable(Variable(991910)),
+            ));
             for _ in 0..size {
                 expression = SpecExpression::Divide(
                     Box::new(expression),
                     Box::new(SpecExpression::Value(ProgramValue::Int64(
-                        MachineTerm::Variable(Variable(991911)),
+                        OldMachineTerm::Variable(Variable(991911)),
                     ))),
                 );
             }
@@ -199,13 +200,14 @@ fn signed_shift_production_retains_prefixes_and_debts() {
     let mut costs = Vec::new();
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
-        let mut expression =
-            SpecExpression::Value(ProgramValue::Int64(MachineTerm::Variable(Variable(991920))));
+        let mut expression = SpecExpression::Value(ProgramValue::Int64(OldMachineTerm::Variable(
+            Variable(991920),
+        )));
         for _ in 0..size {
             expression = SpecExpression::ShiftLeft(
                 Box::new(expression),
                 Box::new(SpecExpression::Value(ProgramValue::Int64(
-                    MachineTerm::Variable(Variable(991921)),
+                    OldMachineTerm::Variable(Variable(991921)),
                 ))),
             );
         }
@@ -231,7 +233,7 @@ fn deferred_results_and_integer_observations_retain_growing_prefixes() {
         let _session = crate::kernel::VerificationSession::enter();
         let state = ExecutionState::new().with_local(
             "x",
-            ProgramValue::UInt64(MachineTerm::Variable(Variable(992200))),
+            ProgramValue::UInt64(OldMachineTerm::Variable(Variable(992200))),
         );
         let mut expression =
             SpecExpression::ProgramExpression(ProgramExpression::Variable("x".into()));
@@ -239,7 +241,7 @@ fn deferred_results_and_integer_observations_retain_growing_prefixes() {
             expression = SpecExpression::Add(
                 Box::new(expression),
                 Box::new(SpecExpression::Value(ProgramValue::UInt64(
-                    MachineTerm::uint64_constant(1),
+                    OldMachineTerm::uint64_constant(1),
                 ))),
             );
         }
@@ -275,13 +277,15 @@ fn opaque_results_observe_and_compare_without_expanding_prefixes() {
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::UInt64;
-        let leaf = MachineTerm::opaque_conversion(
+        let leaf = OldMachineTerm::opaque_conversion(
             "retained_opaque",
-            MachineTerm::Variable(Variable(992230)),
+            OldMachineTerm::Variable(Variable(992230)),
         );
         let mut root = KernelTerm::retained_native_machine_operand(format, &leaf);
-        let one =
-            KernelTerm::retained_native_machine_operand(format, &MachineTerm::uint64_constant(1));
+        let one = KernelTerm::retained_native_machine_operand(
+            format,
+            &OldMachineTerm::uint64_constant(1),
+        );
         let exports = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..size {
@@ -319,15 +323,15 @@ fn deferred_opaque_shift_domains_keep_shared_prefixes() {
         for size in [16, 64, 256] {
             let _session = crate::kernel::VerificationSession::enter();
             let format = MachineIntegerType::UInt64;
-            let leaf = MachineTerm::opaque_conversion(
+            let leaf = OldMachineTerm::opaque_conversion(
                 "deferred_domain",
-                MachineTerm::Variable(Variable(992240)),
+                OldMachineTerm::Variable(Variable(992240)),
             );
             let mut value =
                 SpecValue::Shared(KernelTerm::retained_native_machine_operand(format, &leaf));
-            let right = SpecValue::Native(ProgramValue::UInt64(MachineTerm::Variable(Variable(
-                992241,
-            ))));
+            let right = SpecValue::Native(ProgramValue::UInt64(OldMachineTerm::Variable(
+                Variable(992241),
+            )));
             let mut execution = ExecutionBudget::new();
             let mut budget = SpecEvaluation::logical(&mut execution);
             budget.program_definedness = true;
@@ -359,7 +363,7 @@ fn same_format_casts_keep_deferred_prefixes_and_obligations() {
         let _session = crate::kernel::VerificationSession::enter();
         let state = ExecutionState::new().with_local(
             "x",
-            ProgramValue::UInt64(MachineTerm::Variable(Variable(992200))),
+            ProgramValue::UInt64(OldMachineTerm::Variable(Variable(992200))),
         );
         let mut expression =
             SpecExpression::ProgramExpression(ProgramExpression::Variable("x".into()));
@@ -368,7 +372,7 @@ fn same_format_casts_keep_deferred_prefixes_and_obligations() {
                 Box::new(SpecExpression::Add(
                     Box::new(expression),
                     Box::new(SpecExpression::Value(ProgramValue::UInt64(
-                        MachineTerm::uint64_constant(1),
+                        OldMachineTerm::uint64_constant(1),
                     ))),
                 )),
                 ProgramType::UInt64,
@@ -417,8 +421,8 @@ fn closed_order_lowering_ignores_unrelated_state_and_facts() {
                 state = state.with_local(format!("unused{index}"), int32(index));
                 facts = facts.assume_proposition(Proposition::condition_is(
                     ConditionTerm::signed_less_equal(
-                        MachineTerm::Variable(Variable(999800 + index as u64)),
-                        MachineTerm::constant(100),
+                        OldMachineTerm::Variable(Variable(999800 + index as u64)),
+                        OldMachineTerm::constant(100),
                     ),
                     true,
                 ));

@@ -43,11 +43,11 @@ fn specialized_normalization_uses_only_selected_inputs_as_related_and_unrelated_
 
 #[test]
 fn shifted_one_uses_one_cited_bound_as_related_and_unrelated_bounds_grow() {
-    let word = |index| MachineTerm::Variable(crate::kernel::Variable(index));
+    let word = |index| OldMachineTerm::Variable(crate::kernel::Variable(index));
     let count = word(879001);
     let bound = |value, limit| {
         Proposition::condition_is(
-            ConditionTerm::unsigned_less_than(value, MachineTerm::constant(limit)),
+            ConditionTerm::unsigned_less_than(value, OldMachineTerm::constant(limit)),
             true,
         )
     };
@@ -55,8 +55,8 @@ fn shifted_one_uses_one_cited_bound_as_related_and_unrelated_bounds_grow() {
         ConditionTerm::machine_compare(
             MachineIntegerType::UInt32,
             CompareRelation::Equal,
-            MachineTerm::uint32_shift_left(MachineTerm::constant(1), count.clone()),
-            MachineTerm::constant(0),
+            OldMachineTerm::uint32_shift_left(OldMachineTerm::constant(1), count.clone()),
+            OldMachineTerm::constant(0),
         ),
         false,
     );
@@ -97,12 +97,12 @@ fn shifted_one_uses_one_cited_bound_as_related_and_unrelated_bounds_grow() {
 fn float_literal_operations_check_one_cited_bound_as_ambient_bounds_grow() {
     use crate::kernel::{FloatBinaryOperator, Variable};
 
-    let x = MachineTerm::var(Variable(880001));
+    let x = OldMachineTerm::var(Variable(880001));
     let bound = |value, limit: f32| {
         Proposition::condition_is(
             ConditionTerm::float32_compare(
                 value,
-                MachineTerm::constant(limit.to_bits()),
+                OldMachineTerm::constant(limit.to_bits()),
                 ComparisonOperator::GreaterEqual,
             ),
             true,
@@ -115,9 +115,9 @@ fn float_literal_operations_check_one_cited_bound_as_ambient_bounds_grow() {
         (FloatBinaryOperator::Subtract, 2.0f32, -12.0),
     ]
     .map(|(operation, literal, endpoint)| {
-        let result = MachineTerm::float32_binary(
+        let result = OldMachineTerm::float32_binary(
             x.clone(),
-            MachineTerm::constant(literal.to_bits()),
+            OldMachineTerm::constant(literal.to_bits()),
             operation,
         );
         bound(result, endpoint)
@@ -132,7 +132,7 @@ fn float_literal_operations_check_one_cited_bound_as_ambient_bounds_grow() {
                     let value = if related {
                         x.clone()
                     } else {
-                        MachineTerm::var(Variable(880010 + index))
+                        OldMachineTerm::var(Variable(880010 + index))
                     };
                     ambient.push(bound(value, -20.0 - index as f32));
                 }
@@ -161,13 +161,13 @@ fn float_literal_operations_check_one_cited_bound_as_ambient_bounds_grow() {
 fn float_pair_checks_two_cited_bounds_as_ambient_bounds_grow() {
     use crate::kernel::{FloatBinaryOperator, Variable};
 
-    let x = MachineTerm::var(Variable(880401));
-    let y = MachineTerm::var(Variable(880402));
+    let x = OldMachineTerm::var(Variable(880401));
+    let y = OldMachineTerm::var(Variable(880402));
     let bound = |value, endpoint: f32, operator| {
         Proposition::condition_is(
             ConditionTerm::float32_compare(
                 value,
-                MachineTerm::constant(endpoint.to_bits()),
+                OldMachineTerm::constant(endpoint.to_bits()),
                 operator,
             ),
             true,
@@ -180,7 +180,7 @@ fn float_pair_checks_two_cited_bounds_as_ambient_bounds_grow() {
         (FloatBinaryOperator::Subtract, le, -10.0, -9.0),
     ] {
         let goal = bound(
-            MachineTerm::float32_binary(x.clone(), y.clone(), operator),
+            OldMachineTerm::float32_binary(x.clone(), y.clone(), operator),
             0.0,
             ge,
         );
@@ -195,7 +195,7 @@ fn float_pair_checks_two_cited_bounds_as_ambient_bounds_grow() {
                     let value = if related {
                         x.clone()
                     } else {
-                        MachineTerm::var(Variable(880410 + index))
+                        OldMachineTerm::var(Variable(880410 + index))
                     };
                     ambient.push(bound(value, -20.0 - index as f32, ge));
                 }
@@ -224,12 +224,12 @@ fn float_pair_checks_two_cited_bounds_as_ambient_bounds_grow() {
 fn float_narrowing_checks_one_cited_bound_as_ambient_bounds_grow() {
     use crate::kernel::Variable;
 
-    let x = MachineTerm::var(Variable(880501));
+    let x = OldMachineTerm::var(Variable(880501));
     let source = |value, endpoint: f64| {
         Proposition::condition_is(
             ConditionTerm::float64_compare(
                 value,
-                MachineTerm::uint64_constant(endpoint.to_bits()),
+                OldMachineTerm::uint64_constant(endpoint.to_bits()),
                 ComparisonOperator::LessEqual,
             ),
             true,
@@ -237,8 +237,8 @@ fn float_narrowing_checks_one_cited_bound_as_ambient_bounds_grow() {
     };
     let goal = Proposition::condition_is(
         ConditionTerm::float32_compare(
-            MachineTerm::opaque_conversion("c_float64_to_float32", x.clone()),
-            MachineTerm::constant(1f32.to_bits()),
+            OldMachineTerm::opaque_conversion("c_float64_to_float32", x.clone()),
+            OldMachineTerm::constant(1f32.to_bits()),
             ComparisonOperator::LessEqual,
         ),
         true,
@@ -252,7 +252,7 @@ fn float_narrowing_checks_one_cited_bound_as_ambient_bounds_grow() {
                 let value = if related {
                     x.clone()
                 } else {
-                    MachineTerm::var(Variable(880510 + index))
+                    OldMachineTerm::var(Variable(880510 + index))
                 };
                 ambient.push(source(value, 3.0 + index as f64));
             }
@@ -280,10 +280,10 @@ fn float_narrowing_checks_one_cited_bound_as_ambient_bounds_grow() {
 fn negative_product_guard_checks_only_cited_signs_and_quotient() {
     let ty = MachineIntegerType::Int32;
     let observe = |term| IntegerTerm::from_machine(ty, term).unwrap();
-    let x = MachineTerm::var(crate::kernel::Variable(880601));
-    let y = MachineTerm::var(crate::kernel::Variable(880602));
-    let max = MachineTerm::constant(i32::MAX as u32);
-    let quotient = observe(MachineTerm::machine_binary(
+    let x = OldMachineTerm::var(crate::kernel::Variable(880601));
+    let y = OldMachineTerm::var(crate::kernel::Variable(880602));
+    let max = OldMachineTerm::constant(i32::MAX as u32);
+    let quotient = observe(OldMachineTerm::machine_binary(
         ty,
         MachineBinaryOp::Divide,
         max.clone(),
@@ -309,7 +309,7 @@ fn negative_product_guard_checks_only_cited_signs_and_quotient() {
                 let value = if related {
                     x.clone()
                 } else {
-                    observe(MachineTerm::var(crate::kernel::Variable(880610 + index)))
+                    observe(OldMachineTerm::var(crate::kernel::Variable(880610 + index)))
                 };
                 ambient.push(fact(ConditionTerm::integer_greater_equal(
                     value,
@@ -340,13 +340,13 @@ fn negative_product_guard_checks_only_cited_signs_and_quotient() {
 fn float_quotient_range_checks_only_four_cited_endpoints() {
     use crate::kernel::{FloatBinaryOperator, Variable};
 
-    let x = MachineTerm::var(Variable(880701));
-    let y = MachineTerm::var(Variable(880702));
+    let x = OldMachineTerm::var(Variable(880701));
+    let y = OldMachineTerm::var(Variable(880702));
     let bound = |word, endpoint: f32, relation| {
         Proposition::condition_is(
             ConditionTerm::float32_compare(
                 word,
-                MachineTerm::constant(endpoint.to_bits()),
+                OldMachineTerm::constant(endpoint.to_bits()),
                 relation,
             ),
             true,
@@ -355,7 +355,7 @@ fn float_quotient_range_checks_only_four_cited_endpoints() {
     let ge = ComparisonOperator::GreaterEqual;
     let le = ComparisonOperator::LessEqual;
     let goal = bound(
-        MachineTerm::float32_binary(x.clone(), y.clone(), FloatBinaryOperator::Divide),
+        OldMachineTerm::float32_binary(x.clone(), y.clone(), FloatBinaryOperator::Divide),
         0.0,
         le,
     );
@@ -372,7 +372,7 @@ fn float_quotient_range_checks_only_four_cited_endpoints() {
                 let value = if related {
                     x.clone()
                 } else {
-                    MachineTerm::var(Variable(880710 + index))
+                    OldMachineTerm::var(Variable(880710 + index))
                 };
                 ambient.push(bound(value, 3.0 + index as f32, le));
             }
@@ -398,18 +398,18 @@ fn float_quotient_range_checks_only_four_cited_endpoints() {
 
 #[test]
 fn rounded_integer_float_bound_checks_only_the_cited_integer_endpoint() {
-    let x = MachineTerm::var(crate::kernel::Variable(880801));
+    let x = OldMachineTerm::var(crate::kernel::Variable(880801));
     let goal = Proposition::condition_is(
         ConditionTerm::float32_compare(
-            MachineTerm::opaque_conversion("c_int32_to_float32", x.clone()),
-            MachineTerm::constant(0x4f000000),
+            OldMachineTerm::opaque_conversion("c_int32_to_float32", x.clone()),
+            OldMachineTerm::constant(0x4f000000),
             ComparisonOperator::LessThan,
         ),
         true,
     );
     let bound = |word, upper| {
         Proposition::condition_is(
-            ConditionTerm::signed_less_equal(word, MachineTerm::constant(upper)),
+            ConditionTerm::signed_less_equal(word, OldMachineTerm::constant(upper)),
             true,
         )
     };
@@ -422,7 +422,7 @@ fn rounded_integer_float_bound_checks_only_the_cited_integer_endpoint() {
                 let value = if related {
                     x.clone()
                 } else {
-                    MachineTerm::var(crate::kernel::Variable(880820 + u64::from(index)))
+                    OldMachineTerm::var(crate::kernel::Variable(880820 + u64::from(index)))
                 };
                 ambient.push(bound(value, 2147483600 + index));
             }
@@ -449,12 +449,12 @@ fn rounded_integer_float_bound_checks_only_the_cited_integer_endpoint() {
 fn finite_float_checks_two_cited_endpoints_as_ambient_bounds_grow() {
     use crate::kernel::{FloatClassification, Variable};
 
-    let x = MachineTerm::var(Variable(881001));
+    let x = OldMachineTerm::var(Variable(881001));
     let bound = |value, endpoint: f32, operator| {
         Proposition::condition_is(
             ConditionTerm::float32_compare(
                 value,
-                MachineTerm::constant(endpoint.to_bits()),
+                OldMachineTerm::constant(endpoint.to_bits()),
                 operator,
             ),
             true,
@@ -477,7 +477,7 @@ fn finite_float_checks_two_cited_endpoints_as_ambient_bounds_grow() {
                 let operand = if related {
                     x.clone()
                 } else {
-                    MachineTerm::var(Variable(881010 + index))
+                    OldMachineTerm::var(Variable(881010 + index))
                 };
                 ambient.push(bound(
                     operand,

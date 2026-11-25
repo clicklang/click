@@ -178,7 +178,7 @@ fn bounded(proposition: &Proposition) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::{ConditionTerm, MachineTerm, Variable};
+    use crate::kernel::{ConditionTerm, OldMachineTerm, Variable};
 
     #[test]
     fn a_proposition_lowered_without_consulting_facts_is_stable() {
@@ -216,7 +216,7 @@ int32 id(int32 x) {
                         crate::kernel::ProgramType::Int32,
                     ),
                     base: crate::kernel::Address::symbolic(Variable(700)),
-                    bytes: (MachineTerm::Variable(var)).into(),
+                    bytes: (OldMachineTerm::Variable(var)).into(),
                     wide: false,
                 },
             )
@@ -245,8 +245,8 @@ int32 id(int32 x) {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::Variable(Variable(7))),
-                right: Box::new(MachineTerm::constant(0)),
+                left: Box::new(OldMachineTerm::Variable(Variable(7))),
+                right: Box::new(OldMachineTerm::constant(0)),
             },
             true,
         );

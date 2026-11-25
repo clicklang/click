@@ -39,7 +39,7 @@ fn an_index_sum_offset_reads_only_the_cited_premise_and_its_own_terms() {
     // `normalize using` tries first on the same goal has its own curve.
     let mut selected = PureFactContext::new();
     if let Proposition::ConditionIs(condition, value) = &cited {
-        selected = selected.assume_condition((condition.clone()).native_compat().clone(), *value);
+        selected = selected.assume_condition((condition.clone()).old_form().clone(), *value);
     }
     let mut shared = Vec::new();
     for size in [4, 16, 64] {
@@ -66,7 +66,7 @@ fn offset_equality_work_is_linear_in_shared_offset_terms() {
     let _session = VerificationSession::enter();
     let mut selected = PureFactContext::new();
     if let Proposition::ConditionIs(condition, value) = exact_sum() {
-        selected = selected.assume_condition(condition.native_compat().clone(), value);
+        selected = selected.assume_condition(condition.old_form().clone(), value);
     }
     // The pair the general check leaves open, and an unequal one: the same
     // sums with a constant byte added to one side.

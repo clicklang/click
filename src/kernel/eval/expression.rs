@@ -33,8 +33,10 @@ fn integer_to_float_value(value: ProgramValue, target_type: ProgramType) -> Opti
         ProgramType::Float64 => "float64",
         _ => return None,
     };
-    let term =
-        MachineTerm::opaque_conversion(format!("c_{source_name}_to_{target_name}"), term.clone());
+    let term = OldMachineTerm::opaque_conversion(
+        format!("c_{source_name}_to_{target_name}"),
+        term.clone(),
+    );
     Some(match target_type {
         ProgramType::Float32 => ProgramValue::Float32(term),
         ProgramType::Float64 => ProgramValue::Float64(term),
@@ -43,7 +45,7 @@ fn integer_to_float_value(value: ProgramValue, target_type: ProgramType) -> Opti
 }
 
 fn add_float_to_integer_obligations(
-    value: &MachineTerm,
+    value: &OldMachineTerm,
     source_type: ProgramType,
     target_type: ProgramType,
     obligations: &mut Vec<ProofObligation>,
@@ -70,12 +72,12 @@ fn add_float_to_integer_obligations(
         let condition = match source_type {
             ProgramType::Float32 => ConditionTerm::float32_compare(
                 value.clone(),
-                MachineTerm::constant(integer_to_float32_bits(negative, magnitude)),
+                OldMachineTerm::constant(integer_to_float32_bits(negative, magnitude)),
                 operator,
             ),
             ProgramType::Float64 => ConditionTerm::float64_compare(
                 value.clone(),
-                MachineTerm::uint64_constant(integer_to_float64_bits(negative, magnitude)),
+                OldMachineTerm::uint64_constant(integer_to_float64_bits(negative, magnitude)),
                 operator,
             ),
             _ => unreachable!(),
@@ -119,7 +121,7 @@ fn add_float_to_integer_obligations(
 }
 
 fn float_to_integer_conversion_value(
-    value: MachineTerm,
+    value: OldMachineTerm,
     source_type: ProgramType,
     target_type: ProgramType,
     obligations: &mut Vec<ProofObligation>,
@@ -142,7 +144,8 @@ fn float_to_integer_conversion_value(
         ProgramType::UInt64 => "uint64",
         _ => return None,
     };
-    let term = MachineTerm::opaque_conversion(format!("c_{source_name}_to_{target_name}"), value);
+    let term =
+        OldMachineTerm::opaque_conversion(format!("c_{source_name}_to_{target_name}"), value);
     Some(match target_type {
         ProgramType::Int8 => ProgramValue::Int8(term),
         ProgramType::Int16 => ProgramValue::Int16(term),
@@ -312,12 +315,13 @@ pub(in crate::kernel) fn add_narrow_integer_range_execution_pure_facts(
 pub(in crate::kernel) fn promote_program_path_value(
     value: ProgramValue,
     destination: MachineIntegerType,
-) -> Option<MachineTerm> {
+) -> Option<OldMachineTerm> {
     let value = value.numeric_value().clone();
     let to = destination.format();
     // Rule C1: a promoted `Bool` is its cast at the operation's format.
     if let ProgramValue::Bool(word) = value {
-        return matches!(to.bits(), 32 | 64).then(|| MachineTerm::bool_word_as(destination, &word));
+        return matches!(to.bits(), 32 | 64)
+            .then(|| OldMachineTerm::bool_word_as(destination, &word));
     }
     let source = MachineIntegerType::from_program_type(value.program_type())?;
     let from = source.format();
@@ -444,7 +448,7 @@ pub(in crate::kernel) fn coerce_program_value_to_type_as(
             let destination = MachineIntegerType::from_program_type(target_type)?;
             return ProgramValue::from_bitvector_term(
                 target_type,
-                MachineTerm::bool_word_as(destination, word),
+                OldMachineTerm::bool_word_as(destination, word),
             );
         }
         let source = MachineIntegerType::from_program_type(value.program_type())?;
@@ -531,26 +535,26 @@ pub(in crate::kernel) fn coerce_program_value_to_type_as(
             ProgramValue::Bool(word),
         ) => ProgramValue::from_bitvector_term(
             target,
-            MachineTerm::bool_word_as(MachineIntegerType::from_program_type(target)?, &word),
+            OldMachineTerm::bool_word_as(MachineIntegerType::from_program_type(target)?, &word),
         ),
         // C's widening between narrow formats is a conversion node of the
         // destination's width, as the source writes it.
         (ProgramType::Int16, ProgramValue::Int8(value)) => {
-            Some(ProgramValue::Int16(MachineTerm::machine_integer_cast(
+            Some(ProgramValue::Int16(OldMachineTerm::machine_integer_cast(
                 MachineIntegerType::Int8,
                 MachineIntegerType::Int16,
                 value,
             )))
         }
         (ProgramType::Int16, ProgramValue::UInt8(value)) => {
-            Some(ProgramValue::Int16(MachineTerm::machine_integer_cast(
+            Some(ProgramValue::Int16(OldMachineTerm::machine_integer_cast(
                 MachineIntegerType::UInt8,
                 MachineIntegerType::Int16,
                 value,
             )))
         }
         (ProgramType::UInt16, ProgramValue::UInt8(value)) => {
-            Some(ProgramValue::UInt16(MachineTerm::machine_integer_cast(
+            Some(ProgramValue::UInt16(OldMachineTerm::machine_integer_cast(
                 MachineIntegerType::UInt8,
                 MachineIntegerType::UInt16,
                 value,
@@ -571,18 +575,18 @@ pub(in crate::kernel) fn coerce_program_value_to_type_as(
         (ProgramType::Float32, ProgramValue::Float64(value)) => {
             let operand = value
                 .float64_as_const()
-                .map(MachineTerm::uint64_constant)
+                .map(OldMachineTerm::uint64_constant)
                 .unwrap_or(value);
-            let converted = MachineTerm::opaque_conversion("c_float64_to_float32", operand);
+            let converted = OldMachineTerm::opaque_conversion("c_float64_to_float32", operand);
             Some(ProgramValue::Float32(converted))
         }
         (ProgramType::Float64, ProgramValue::Float64(value)) => Some(ProgramValue::Float64(value)),
         (ProgramType::Float64, ProgramValue::Float32(value)) => {
             let operand = value
                 .float32_as_const()
-                .map(MachineTerm::constant)
+                .map(OldMachineTerm::constant)
                 .unwrap_or(value);
-            let converted = MachineTerm::opaque_conversion("c_float32_to_float64", operand);
+            let converted = OldMachineTerm::opaque_conversion("c_float32_to_float64", operand);
             Some(ProgramValue::Float64(converted))
         }
         (
@@ -652,7 +656,7 @@ pub(in crate::kernel) fn coerce_program_value_to_type_as(
 /// its operand: the reasoning layer replaces it by the operand's carrier
 /// once the context proves the range (`narrowed_cast_identity`), in search
 /// and checker alike. A byte converted from an unsigned byte is the
-/// one-byte-one-name signed read of that byte, `MachineTerm::signed_byte`.
+/// one-byte-one-name signed read of that byte, `OldMachineTerm::signed_byte`.
 /// Into `int32` the low word already is the value modulo 2^32, and into
 /// `int64` the same 64 bits read as signed.
 ///
@@ -686,7 +690,7 @@ fn narrow_integer(
                             format: MachineIntegerType::UInt64,
                             relation: CompareRelation::LessEqual,
                             left: term.clone().into(),
-                            right: MachineTerm::uint64_constant(i32::MAX as u64).into(),
+                            right: OldMachineTerm::uint64_constant(i32::MAX as u64).into(),
                         },
                         "int32 narrowing upper bound",
                     )]
@@ -697,7 +701,7 @@ fn narrow_integer(
                                 format: MachineIntegerType::Int64,
                                 relation: CompareRelation::GreaterEqual,
                                 left: term.clone().into(),
-                                right: MachineTerm::int64_constant(i64::from(i32::MIN)).into(),
+                                right: OldMachineTerm::int64_constant(i64::from(i32::MIN)).into(),
                             },
                             "int32 narrowing lower bound",
                         ),
@@ -706,7 +710,7 @@ fn narrow_integer(
                                 format: MachineIntegerType::Int64,
                                 relation: CompareRelation::LessEqual,
                                 left: term.clone().into(),
-                                right: MachineTerm::int64_constant(i64::from(i32::MAX)).into(),
+                                right: OldMachineTerm::int64_constant(i64::from(i32::MAX)).into(),
                             },
                             "int32 narrowing upper bound",
                         ),
@@ -731,7 +735,7 @@ fn narrow_integer(
                         format: MachineIntegerType::UInt64,
                         relation: CompareRelation::LessEqual,
                         left: term.clone().into(),
-                        right: MachineTerm::uint64_constant(i64::MAX as u64).into(),
+                        right: OldMachineTerm::uint64_constant(i64::MAX as u64).into(),
                     },
                     "int64 narrowing upper bound",
                 )?;
@@ -803,7 +807,7 @@ fn checked_narrowing_identity_readings(
         _ => return None,
     };
     let converted = converted_term(converted)?;
-    let MachineTerm::Cast {
+    let OldMachineTerm::Cast {
         spelling: MachineCastSpelling::Generic,
         value,
         from: cast_source,
@@ -826,9 +830,9 @@ fn checked_narrowing_identity_readings(
     if source_type.format().bits() <= 32 {
         // The narrow result is a value of its own width; its widening is the
         // operand's word, itself widened when the operand is narrow too.
-        let word = |ty: MachineIntegerType, term: &MachineTerm| {
+        let word = |ty: MachineIntegerType, term: &OldMachineTerm| {
             if ty.format().bits() < 32 {
-                MachineTerm::machine_integer_cast(ty, MachineIntegerType::Int32, term.clone())
+                OldMachineTerm::machine_integer_cast(ty, MachineIntegerType::Int32, term.clone())
             } else {
                 term.clone()
             }
@@ -841,7 +845,7 @@ fn checked_narrowing_identity_readings(
     Some(identities)
 }
 
-fn converted_term(value: &ProgramValue) -> Option<&MachineTerm> {
+fn converted_term(value: &ProgramValue) -> Option<&OldMachineTerm> {
     match value {
         ProgramValue::Int8(term)
         | ProgramValue::UInt8(term)
@@ -1040,7 +1044,7 @@ fn cast_program_value_to_type_with_integer_origin(
                 if term.uint64_as_const() == Some(0)
                     || assumptions.decide(&ConditionTerm::uint64_equal(
                         term.clone(),
-                        MachineTerm::uint64_constant(0),
+                        OldMachineTerm::uint64_constant(0),
                     )) == Some(true)
                 {
                     return Ok(ProgramValue::typed_pointer(Address::null(), target_type));
@@ -1095,8 +1099,10 @@ fn cast_program_value_to_type_with_integer_origin(
                 "function addresses do not convert to integers".to_string(),
             ));
         }
-        let address =
-            MachineTerm::object_pointer_address(pointer.address().clone(), pointer.object_class());
+        let address = OldMachineTerm::object_pointer_address(
+            pointer.address().clone(),
+            pointer.object_class(),
+        );
         let numeric = match target_type {
             ProgramType::UInt64 => ProgramValue::UInt64(address),
             _ => ProgramValue::Int64(address),
@@ -1458,7 +1464,7 @@ pub(super) fn evaluate_native_expression_paths(
                     if !assumptions.proves_memory_loadable(
                         state.memory(),
                         pointer.address(),
-                        &MachineTerm::constant(width),
+                        &OldMachineTerm::constant(width),
                     ) && state.resources().permits_memory_read(
                         pointer.address(),
                         width,
@@ -1472,7 +1478,7 @@ pub(super) fn evaluate_native_expression_paths(
                         Proposition::MemoryLoadable {
                             memory: state.memory().clone(),
                             base: pointer.address().clone(),
-                            bytes: (MachineTerm::constant(width)).into(),
+                            bytes: (OldMachineTerm::constant(width)).into(),
                             wide: false,
                         },
                         Some("reference binding requires live storage for the complete referent"),
@@ -2025,7 +2031,7 @@ fn evaluate_program_cast_paths(
                         bits.uint64_as_const() != Some(0)
                             && effective_assumptions.decide(&ConditionTerm::uint64_equal(
                                 bits.clone(),
-                                MachineTerm::uint64_constant(0),
+                                OldMachineTerm::uint64_constant(0),
                             )) != Some(true)
                     }
                     _ => false,
@@ -2115,7 +2121,7 @@ fn evaluate_program_cast_paths(
                 } else if integer_mode == IntegerCastMode::UInt64BitsToInt64 {
                     match (target_type, value.numeric_value().clone()) {
                         (ProgramType::Int64, ProgramValue::UInt64(bits)) => Ok(
-                            ProgramValue::Int64(MachineTerm::int64_from_uint64_bits(bits)),
+                            ProgramValue::Int64(OldMachineTerm::int64_from_uint64_bits(bits)),
                         ),
                         _ => Err(RuntimeError::TypeMismatch),
                     }
@@ -2184,7 +2190,7 @@ fn evaluate_program_cast_paths(
                     };
                     if effective_assumptions.decide(&ConditionTerm::uint64_equal(
                         bits.clone(),
-                        MachineTerm::uint64_constant(0),
+                        OldMachineTerm::uint64_constant(0),
                     )) == Some(true)
                     {
                         return Ok(ProgramValue::typed_pointer(Address::null(), target_type));
@@ -2223,7 +2229,7 @@ fn evaluate_program_cast_paths(
                     && matches!(
                         crate::kernel::program_narrow_integer_range(value),
                         Some((
-                            MachineTerm::Cast {
+                            OldMachineTerm::Cast {
                                 spelling: MachineCastSpelling::Generic,
                                 ..
                             },
@@ -2332,12 +2338,12 @@ fn evaluate_program_float_negate_paths(
             obligations,
         } = path;
         let outcome = match outcome {
-            ExpressionOutcome::Value(ProgramValue::Float32(value)) => {
-                ExpressionOutcome::Value(ProgramValue::Float32(MachineTerm::float32_negate(value)))
-            }
-            ExpressionOutcome::Value(ProgramValue::Float64(value)) => {
-                ExpressionOutcome::Value(ProgramValue::Float64(MachineTerm::float64_negate(value)))
-            }
+            ExpressionOutcome::Value(ProgramValue::Float32(value)) => ExpressionOutcome::Value(
+                ProgramValue::Float32(OldMachineTerm::float32_negate(value)),
+            ),
+            ExpressionOutcome::Value(ProgramValue::Float64(value)) => ExpressionOutcome::Value(
+                ProgramValue::Float64(OldMachineTerm::float64_negate(value)),
+            ),
             ExpressionOutcome::Value(_) => {
                 ExpressionOutcome::RuntimeError(RuntimeError::TypeMismatch)
             }
@@ -2592,13 +2598,10 @@ pub(in crate::kernel) fn known_enum_constructor(
         .fact_iter()
         .find_map(|fact| match fact.proposition() {
             Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right))
-                if left.native_compat() == term
-                    && matches!(
-                        right.native_compat().node,
-                        AlgebraicTermNode::Constructor { .. }
-                    ) =>
+                if left.old_form() == term
+                    && matches!(right.old_form().node, AlgebraicTermNode::Constructor { .. }) =>
             {
-                Some(right.native_compat().clone())
+                Some(right.old_form().clone())
             }
             _ => None,
         })
@@ -3583,8 +3586,8 @@ fn read_retained_lvalue_paths_without_ranges(
                             resource: Box::new(ResourceFact::view_memory(
                                 MemoryRange::new_with_element_width(
                                     pointer.clone(),
-                                    MachineTerm::constant(0),
-                                    MachineTerm::constant(1),
+                                    OldMachineTerm::constant(0),
+                                    OldMachineTerm::constant(1),
                                     // The element the permission check
                                     // counts: a loaded pointer is one
                                     // four-byte logical field.
@@ -4115,7 +4118,7 @@ pub(in crate::kernel) fn condition_as_program_int32_paths_valued(
         }],
         // A Rust `Bool` value (decision D5) is the condition, as its cast.
         None if ConditionValueScope::is_active() => vec![ExpressionPath {
-            outcome: ExpressionOutcome::Value(ProgramValue::Int32(MachineTerm::bool_cast(
+            outcome: ExpressionOutcome::Value(ProgramValue::Int32(OldMachineTerm::bool_cast(
                 MachineIntegerType::Int32,
                 if negated {
                     ConditionTerm::bool_not(condition)
@@ -4165,8 +4168,8 @@ fn checked_max_minus_comparison(
     use crate::kernel::{CompareRelation as R, MachineOperandView as View};
     let view = structural_comparison_view(condition)?;
     let (maximum, zero) = match view.format {
-        MachineIntegerType::Int32 => (i64::from(i32::MAX), MachineTerm::constant(0)),
-        MachineIntegerType::Int64 => (i64::MAX, MachineTerm::int64_constant(0)),
+        MachineIntegerType::Int32 => (i64::from(i32::MAX), OldMachineTerm::constant(0)),
+        MachineIntegerType::Int64 => (i64::MAX, OldMachineTerm::int64_constant(0)),
         _ => return None,
     };
     if view.negated {
@@ -4183,7 +4186,7 @@ fn checked_max_minus_comparison(
             return None;
         }
         let nonnegative =
-            condition_for_operand_views(format, R::GreaterEqual, [subtracted, View::Legacy(&zero)]);
+            condition_for_operand_views(format, R::GreaterEqual, [subtracted, View::Old(&zero)]);
         if assumptions.known_condition_value(&nonnegative) != Some(true)
             && !assumptions.proves_exact(&Proposition::condition_is(nonnegative, true))
         {
@@ -4240,7 +4243,7 @@ pub(in crate::kernel) fn program_truthiness_paths(
             else {
                 unreachable!("a truth claim is a condition claim");
             };
-            match decide_with_facts(assumptions, &facts, condition.native_compat()) {
+            match decide_with_facts(assumptions, &facts, condition.old_form()) {
                 Some(value) => vec![TruthinessPath {
                     is_true: value == holds,
                     facts,
@@ -4251,7 +4254,7 @@ pub(in crate::kernel) fn program_truthiness_paths(
                     add_condition_path_fact(
                         &mut true_facts,
                         assumptions,
-                        (condition.clone()).native_compat().clone(),
+                        (condition.clone()).old_form().clone(),
                         holds,
                     )
                     .expect("unknown bool truthiness fact should be consistent");
@@ -4259,7 +4262,7 @@ pub(in crate::kernel) fn program_truthiness_paths(
                     add_condition_path_fact(
                         &mut false_facts,
                         assumptions,
-                        condition.native_compat().clone(),
+                        condition.old_form().clone(),
                         !holds,
                     )
                     .expect("unknown bool truthiness fact should be consistent");
@@ -4279,7 +4282,7 @@ pub(in crate::kernel) fn program_truthiness_paths(
             }
         }
         ProgramValue::Int8(bits) => {
-            let is_zero = ConditionTerm::equal(bits, MachineTerm::constant(0));
+            let is_zero = ConditionTerm::equal(bits, OldMachineTerm::constant(0));
             match decide_with_facts(assumptions, &facts, &is_zero) {
                 Some(true) => vec![TruthinessPath {
                     is_true: false,
@@ -4320,7 +4323,7 @@ pub(in crate::kernel) fn program_truthiness_paths(
         | ProgramValue::UInt8(bits)
         | ProgramValue::UInt16(bits)
         | ProgramValue::UInt32(bits) => {
-            let is_zero = ConditionTerm::equal(bits, MachineTerm::constant(0));
+            let is_zero = ConditionTerm::equal(bits, OldMachineTerm::constant(0));
             match decide_with_facts(assumptions, &facts, &is_zero) {
                 Some(true) => vec![TruthinessPath {
                     is_true: false,
@@ -4357,7 +4360,7 @@ pub(in crate::kernel) fn program_truthiness_paths(
             }
         }
         ProgramValue::Int64(bits) => {
-            let is_zero = ConditionTerm::int64_equal(bits, MachineTerm::int64_constant(0));
+            let is_zero = ConditionTerm::int64_equal(bits, OldMachineTerm::int64_constant(0));
             match decide_with_facts(assumptions, &facts, &is_zero) {
                 Some(is_zero) => vec![TruthinessPath {
                     is_true: !is_zero,
@@ -4387,7 +4390,7 @@ pub(in crate::kernel) fn program_truthiness_paths(
             }
         }
         ProgramValue::UInt64(bits) => {
-            let is_zero = ConditionTerm::uint64_equal(bits, MachineTerm::uint64_constant(0));
+            let is_zero = ConditionTerm::uint64_equal(bits, OldMachineTerm::uint64_constant(0));
             match decide_with_facts(assumptions, &facts, &is_zero) {
                 Some(is_zero) => vec![TruthinessPath {
                     is_true: !is_zero,
@@ -4685,7 +4688,7 @@ mod pointer_integer_tests {
             cast(member_word.clone(), ProgramType::VoidPointer, &context).unwrap(),
             ProgramValue::Pointer(member.with_type(ProgramType::VoidPointer))
         );
-        let variable = MachineTerm::Variable(Variable(991_003));
+        let variable = OldMachineTerm::Variable(Variable(991_003));
         let context = context.assume_condition(
             ConditionTerm::uint64_equal(
                 variable.clone(),
@@ -4749,7 +4752,7 @@ mod pointer_integer_cast_identity_tests {
             Address::symbolic(Variable(997_001)),
             ProgramType::Int32Pointer,
         );
-        let bits = MachineTerm::integer_address(source.address().clone());
+        let bits = OldMachineTerm::integer_address(source.address().clone());
         let context = PureFactContext::new();
         let cast = |origin| {
             cast_program_value_to_type_with_integer_origin(
@@ -4804,21 +4807,21 @@ mod packed_word_contract_tests {
 
     #[test]
     fn modulo_conversion_observes_bits_and_discards_the_word_carrier() {
-        let word = ProgramValue::UInt64(MachineTerm::uint64_constant(4_294_967_297))
+        let word = ProgramValue::UInt64(OldMachineTerm::uint64_constant(4_294_967_297))
             .complete_word(Address::symbolic(Variable(997_030)));
         assert_eq!(
             crate::kernel::machine_integer::conversion::convert_value(
                 word.clone(),
                 MachineIntegerType::UInt32
             ),
-            Some(ProgramValue::UInt32(MachineTerm::uint32_constant(1)))
+            Some(ProgramValue::UInt32(OldMachineTerm::uint32_constant(1)))
         );
         assert_eq!(
             crate::kernel::machine_integer::conversion::convert_value(
                 word,
                 MachineIntegerType::UInt64
             ),
-            Some(ProgramValue::UInt64(MachineTerm::uint64_constant(
+            Some(ProgramValue::UInt64(OldMachineTerm::uint64_constant(
                 4_294_967_297
             )))
         );
@@ -4826,9 +4829,9 @@ mod packed_word_contract_tests {
 
     #[test]
     fn complete_word_narrowing_uses_its_numeric_equality() {
-        let bits = MachineTerm::Variable(Variable(997_020));
+        let bits = OldMachineTerm::Variable(Variable(997_020));
         let context = PureFactContext::new().assume_condition(
-            ConditionTerm::uint64_equal(bits.clone(), MachineTerm::uint64_constant(41)),
+            ConditionTerm::uint64_equal(bits.clone(), OldMachineTerm::uint64_constant(41)),
             true,
         );
         let word = ProgramValue::UInt64(bits).complete_word(Address::symbolic(Variable(997_021)));
@@ -4837,7 +4840,7 @@ mod packed_word_contract_tests {
                 .unwrap();
         let term = crate::kernel::spec::program_value_bitvector_term(&narrowed).unwrap();
         assert_eq!(
-            context.decide(&ConditionTerm::equal(term, MachineTerm::constant(41))),
+            context.decide(&ConditionTerm::equal(term, OldMachineTerm::constant(41))),
             Some(true)
         );
     }
@@ -4845,7 +4848,7 @@ mod packed_word_contract_tests {
     #[test]
     fn incoming_word_carriers_need_full_equality() {
         let _session = crate::kernel::VerificationSession::enter();
-        let bits = MachineTerm::Variable(Variable(997_001));
+        let bits = OldMachineTerm::Variable(Variable(997_001));
         let word =
             ProgramValue::UInt64(bits.clone()).complete_word(Address::symbolic(Variable(997_002)));
         let other = ProgramValue::UInt64(bits).complete_word(Address::symbolic(Variable(997_003)));
@@ -4880,7 +4883,7 @@ mod packed_word_contract_tests {
     fn modified_incoming_word_tag_bits_must_be_cleared_before_casting() {
         let _session = crate::kernel::VerificationSession::enter();
         let context = PureFactContext::new();
-        let word = ProgramValue::UInt64(MachineTerm::Variable(Variable(997_010)))
+        let word = ProgramValue::UInt64(OldMachineTerm::Variable(Variable(997_010)))
             .complete_word(Address::symbolic(Variable(997_011)));
         let original = cast(word.clone(), &context);
         let value_of = |paths: Vec<ExpressionPath>| {
@@ -4894,7 +4897,7 @@ mod packed_word_contract_tests {
         };
         let tagged = value_of(super::super::operators::apply_program_bitwise_binary(
             word,
-            ProgramValue::Int32(MachineTerm::constant(1)),
+            ProgramValue::Int32(OldMachineTerm::constant(1)),
             ExecutionFacts::new(),
             Vec::new(),
             &context,
@@ -4912,7 +4915,7 @@ mod packed_word_contract_tests {
         );
         let cleared = value_of(super::super::operators::apply_program_bitwise_binary(
             tagged,
-            ProgramValue::Int32(MachineTerm::constant(!1)),
+            ProgramValue::Int32(OldMachineTerm::constant(!1)),
             ExecutionFacts::new(),
             Vec::new(),
             &context,

@@ -263,14 +263,14 @@ pub(in crate::surface) fn program_value_matches_allocation_size(value: &ProgramV
 #[cfg(test)]
 pub(in crate::surface) fn offset_pointer_by_int32_elements(
     pointer: Address,
-    elements: MachineTerm,
+    elements: OldMachineTerm,
 ) -> Address {
     offset_pointer_by_elements(pointer, elements, 4)
 }
 
 pub(in crate::surface) fn offset_pointer_by_elements(
     pointer: Address,
-    elements: MachineTerm,
+    elements: OldMachineTerm,
     element_width: u32,
 ) -> Address {
     // Contract and execution indices retain the same shared structure,
@@ -301,7 +301,10 @@ pub(in crate::surface) fn add_pointer_offset(
     }
 }
 
-pub(in crate::surface) fn scale_int32_offset(value: MachineTerm, byte_width: i64) -> AddressOffset {
+pub(in crate::surface) fn scale_int32_offset(
+    value: OldMachineTerm,
+    byte_width: i64,
+) -> AddressOffset {
     match value {
         bits32_constant!(value) => {
             AddressOffset::Constant((constant_u32(value) as i32 as i64) * byte_width)
@@ -406,8 +409,8 @@ mod tests {
 
     #[test]
     fn float_argument_types_preserve_their_width() {
-        let single = ProgramValue::Float32(MachineTerm::Variable(Variable(41501)));
-        let double = ProgramValue::Float64(MachineTerm::Variable(Variable(41502)));
+        let single = ProgramValue::Float32(OldMachineTerm::Variable(Variable(41501)));
+        let double = ProgramValue::Float64(OldMachineTerm::Variable(Variable(41502)));
         assert!(program_value_matches_click_type(
             &single,
             InterfaceType::Float32

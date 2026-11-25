@@ -11,7 +11,7 @@ fn widening_casts_retain_growing_arithmetic_prefixes_without_exports() {
             for size in [16, 64, 256] {
                 let _session = VerificationSession::enter();
                 let mut root = KernelTermImport::default()
-                    .machine(source, &MachineTerm::Variable(Variable(995432)));
+                    .machine(source, &OldMachineTerm::Variable(Variable(995432)));
                 let one = crate::kernel::machine_integer::range::constant_word(source, &1.into())
                     .unwrap();
                 let one = KernelTermImport::default().machine(source, &one);

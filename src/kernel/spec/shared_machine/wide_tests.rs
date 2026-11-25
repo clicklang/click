@@ -14,11 +14,11 @@ const FORMATS: [MachineIntegerType; 10] = [
     MachineIntegerType::UInt128,
 ];
 
-fn word(format: MachineIntegerType, n: num_bigint::BigInt) -> MachineTerm {
+fn word(format: MachineIntegerType, n: num_bigint::BigInt) -> OldMachineTerm {
     crate::kernel::machine_integer::range::constant_word(format, &n).unwrap()
 }
-fn root(format: MachineIntegerType, value: &MachineTerm) -> KernelTerm {
-    KernelTerm::retained_machine_operand(format, MachineOperandView::Legacy(value))
+fn root(format: MachineIntegerType, value: &OldMachineTerm) -> KernelTerm {
+    KernelTerm::retained_machine_operand(format, MachineOperandView::Old(value))
 }
 fn integer(value: &SharedIntegerTerm) -> IntegerTerm {
     use IntegerTerm as I;
@@ -32,9 +32,9 @@ fn integer(value: &SharedIntegerTerm) -> IntegerTerm {
         value => value.clone(),
     }
 }
-fn native_term(term: &MachineTerm) -> MachineTerm {
+fn native_term(term: &OldMachineTerm) -> OldMachineTerm {
     match term {
-        MachineTerm::IntegerToMachine { value, destination } => MachineTerm::IntegerToMachine {
+        OldMachineTerm::IntegerToMachine { value, destination } => OldMachineTerm::IntegerToMachine {
             value: integer(value).into(),
             destination: *destination,
         },
@@ -46,7 +46,7 @@ fn domain(value: &Proposition) -> Proposition {
         Proposition::And(a, b) => Proposition::And(Box::new(domain(a)), Box::new(domain(b))),
         Proposition::Or(a, b) => Proposition::Or(Box::new(domain(a)), Box::new(domain(b))),
         Proposition::ConditionIs(c, t) => Proposition::condition_is(
-            match c.native_compat() {
+            match c.old_form() {
                 ConditionTerm::IntegerEqual(a, b) => {
                     ConditionTerm::integer_equal(integer(a), integer(b))
                 }
@@ -74,18 +74,18 @@ fn wide_casts_match_all_existing_integer_directions() {
             }
             let (min, max) = source.format().bounds();
             let mut leaves = vec![
-                MachineTerm::Variable(Variable(995700)),
+                OldMachineTerm::Variable(Variable(995700)),
                 word(source, 0.into()),
                 word(source, min),
                 word(source, max),
             ];
             if source.format().bits() <= 64 {
-                leaves.push(MachineTerm::opaque_conversion(
+                leaves.push(OldMachineTerm::opaque_conversion(
                     "wide_cast",
-                    MachineTerm::Variable(Variable(995701)),
+                    OldMachineTerm::Variable(Variable(995701)),
                 ));
             }
-            leaves.push(MachineTerm::IntegerToMachine {
+            leaves.push(OldMachineTerm::IntegerToMachine {
                 destination: source,
                 value: IntegerTerm::constant_i64(7).into(),
             });
@@ -95,7 +95,7 @@ fn wide_casts_match_all_existing_integer_directions() {
                     destination,
                 );
             }
-            let initial = root(source, &MachineTerm::Variable(Variable(995702)));
+            let initial = root(source, &OldMachineTerm::Variable(Variable(995702)));
             let intermediate = if source == destination {
                 initial
             } else {
@@ -119,7 +119,7 @@ fn wide_reads_keep_type_and_state_in_casts_and_observations() {
         let roots = [before.clone(), after.clone()].map(|memory| {
             KernelTermImport::default().machine(
                 format,
-                &MachineTerm::read_named(
+                &OldMachineTerm::read_named(
                     ProgramPoint::at(&memory),
                     Box::new(address.clone()),
                     kind,
@@ -141,7 +141,7 @@ fn wide_reads_keep_type_and_state_in_casts_and_observations() {
         }
         let bad = KernelTermImport::default().machine(
             format,
-            &MachineTerm::read_named(
+            &OldMachineTerm::read_named(
                 ProgramPoint::at(&before),
                 Box::new(address.clone()),
                 crate::kernel::LoadKind::Int32,
@@ -171,16 +171,16 @@ fn supported_wide_arithmetic_matches_native_values_and_domains() {
                     budget.program_definedness = defined;
                     for case in 0..6 {
                         let operand = |format: MachineIntegerType, id| match case {
-                            0 => MachineTerm::Variable(Variable(id)),
+                            0 => OldMachineTerm::Variable(Variable(id)),
                             1 => word(format, 0.into()),
                             2 => word(format, format.format().bounds().1),
                             3 if id == 995710 => word(format, format.format().bounds().0),
                             3 if format.format().is_signed() => word(format, (-1).into()),
-                            5 if format.format().bits() <= 64 => MachineTerm::opaque_conversion(
+                            5 if format.format().bits() <= 64 => OldMachineTerm::opaque_conversion(
                                 "wide_operand",
-                                MachineTerm::Variable(Variable(id)),
+                                OldMachineTerm::Variable(Variable(id)),
                             ),
-                            5 => MachineTerm::read_named(
+                            5 => OldMachineTerm::read_named(
                                 ProgramPoint::at(
                                     &(crate::kernel::intern_memory(SymbolicMemory::new())),
                                 ),
@@ -205,7 +205,7 @@ fn supported_wide_arithmetic_matches_native_values_and_domains() {
                         );
                         for (ls, rs) in [(false, false), (true, false), (false, true), (true, true)]
                         {
-                            let make = |format, term: &MachineTerm, shared| {
+                            let make = |format, term: &OldMachineTerm, shared| {
                                 if shared {
                                     SpecValue::Shared(root(format, term))
                                 } else {
@@ -272,7 +272,7 @@ fn wide_producer_keeps_unsupported_operators_and_untyped_words_out() {
     let mut execution = ExecutionBudget::new();
     let budget = SpecEvaluation::logical(&mut execution);
     for format in [MachineIntegerType::Int128, MachineIntegerType::UInt128] {
-        let value: SpecValue = root(format, &MachineTerm::Variable(Variable(995712))).into();
+        let value: SpecValue = root(format, &OldMachineTerm::Variable(Variable(995712))).into();
         for op in [
             MachineBinaryOp::Add,
             MachineBinaryOp::Subtract,
@@ -289,8 +289,8 @@ fn wide_producer_keeps_unsupported_operators_and_untyped_words_out() {
             format,
             MachineBinaryOp::Add,
             [
-                root(format, &MachineTerm::Variable(Variable(995713))),
-                root(format, &MachineTerm::Variable(Variable(995714))),
+                root(format, &OldMachineTerm::Variable(Variable(995713))),
+                root(format, &OldMachineTerm::Variable(Variable(995714))),
             ],
         );
         assert!(cast(&invalid.clone().into(), ProgramType::Int32).is_none());
@@ -311,7 +311,7 @@ fn nested_wide_evaluation_retains_results_and_inherited_debts() {
     let _session = VerificationSession::enter();
     let leaf = |id| {
         Box::new(SpecExpression::Value(ProgramValue::Int128(
-            MachineTerm::Variable(Variable(id)),
+            OldMachineTerm::Variable(Variable(id)),
         )))
     };
     let expression = SpecExpression::Remainder(

@@ -75,7 +75,7 @@ pub(in crate::kernel) fn initialized_scalar_range_fact(
     crate::instrumentation::record_deterministic_work(1);
     // The body holds no quantifier, so use the innermost binder directly.
     let binder = crate::kernel::quantifiers::innermost_binder();
-    let index = MachineTerm::Variable(*binder);
+    let index = OldMachineTerm::Variable(*binder);
     let (format, sort, lo, hi) = match range.wide_bounds() {
         Some((lo, hi)) => (
             MachineIntegerType::UInt64,

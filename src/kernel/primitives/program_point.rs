@@ -16,7 +16,7 @@ use crate::persistent::{PersistentMap, PersistentSet};
 
 use super::cell_version_intervals::CellVersionIntervals;
 use super::{
-    Address, AddressBase, AddressOffset, LoadKind, MachineTerm, MemoryDerivation, MemoryRange,
+    Address, AddressBase, AddressOffset, LoadKind, MemoryDerivation, MemoryRange, OldMachineTerm,
     ProgramType, ProgramValue, SharedMemory, StoredMemoryValue, SymbolicMemory, intern_memory,
     intern_memory_ref,
 };
@@ -1373,7 +1373,7 @@ fn clear_overlapping_cells(cells: &mut PointReadCells, start: i64, end: i64) {
     }
 }
 
-fn integer_store_bits(step: &MemoryDerivation) -> Option<(LoadKind, &MachineTerm)> {
+fn integer_store_bits(step: &MemoryDerivation) -> Option<(LoadKind, &OldMachineTerm)> {
     let MemoryDerivation::Store { value, .. } = step else {
         return None;
     };
@@ -2406,7 +2406,7 @@ impl ProgramPoint {
     }
 
     /// The recorded value of this indexed read's defining store.
-    pub(crate) fn indexed_integer_store_bits(&self) -> Option<&MachineTerm> {
+    pub(crate) fn indexed_integer_store_bits(&self) -> Option<&OldMachineTerm> {
         integer_store_bits(self.indexed_write()?).map(|(_, bits)| bits)
     }
 
@@ -2472,7 +2472,7 @@ mod tests {
         };
         SymbolicMemory::new()
             .with_block(block, 4)
-            .store(slot, ProgramValue::Int32(MachineTerm::constant(value)))
+            .store(slot, ProgramValue::Int32(OldMachineTerm::constant(value)))
     }
 
     fn slot() -> Address {
@@ -2486,7 +2486,7 @@ mod tests {
         let memory = state
             .memory()
             .clone()
-            .store(slot(), ProgramValue::Int32(MachineTerm::constant(value)));
+            .store(slot(), ProgramValue::Int32(OldMachineTerm::constant(value)));
         state.clone().with_memory(memory)
     }
 
@@ -2566,8 +2566,8 @@ mod tests {
         assert_eq!(sited.read_key(), bare.read_key());
         assert_eq!(sited, bare);
         assert_eq!(
-            MachineTerm::read_named(sited.clone(), slot(), LoadKind::Int32),
-            MachineTerm::read_named(bare.clone(), slot(), LoadKind::Int32)
+            OldMachineTerm::read_named(sited.clone(), slot(), LoadKind::Int32),
+            OldMachineTerm::read_named(bare.clone(), slot(), LoadKind::Int32)
         );
         let rebuilt = ProgramPoint::read_at(&memory, &sited);
         assert!(
@@ -2658,7 +2658,7 @@ mod tests {
             entry
                 .memory()
                 .clone()
-                .store(cell, ProgramValue::Int32(MachineTerm::constant(7))),
+                .store(cell, ProgramValue::Int32(OldMachineTerm::constant(7))),
         );
         let mut joined = effect.clone();
         joined.join_loop_exit_program_points(&[&effect]);
@@ -2709,13 +2709,13 @@ mod tests {
                 .clone()
                 .with_memory(after_local_store.memory().clone().store(
                     pointer.clone(),
-                    ProgramValue::Int32(MachineTerm::constant(7)),
+                    ProgramValue::Int32(OldMachineTerm::constant(7)),
                 ));
         let new_version = select(&overwritten).expect("the defining store is indexed");
         assert_ne!(new_version, version);
         assert_eq!(
             new_version.indexed_integer_store_bits(),
-            Some(&MachineTerm::constant(7))
+            Some(&OldMachineTerm::constant(7))
         );
         let detached = ProgramPoint::at(new_version.shared_memory());
         assert!(new_version.names_detached_store_read(&detached, &pointer, LoadKind::Int32));
@@ -2753,12 +2753,13 @@ mod tests {
         };
         assert_eq!(select(&after_local_store), entry.program_point().id());
 
-        let after_external_store = after_local_store.clone().with_memory(
+        let after_external_store =
             after_local_store
-                .memory()
                 .clone()
-                .store(pointer_slot, ProgramValue::Int32(MachineTerm::constant(7))),
-        );
+                .with_memory(after_local_store.memory().clone().store(
+                    pointer_slot,
+                    ProgramValue::Int32(OldMachineTerm::constant(7)),
+                ));
         assert_eq!(select(&after_external_store), None);
     }
 
@@ -2856,7 +2857,7 @@ mod tests {
 
         let changed = second.clone().with_memory(second.memory().clone().store(
             pointer.clone(),
-            ProgramValue::Int32(MachineTerm::constant(3)),
+            ProgramValue::Int32(OldMachineTerm::constant(3)),
         ));
         assert!(
             join(&first, &changed)
@@ -2876,7 +2877,7 @@ mod tests {
         let write = |state: &ExecutionState, address: &Address, bits| {
             state.clone().with_memory(state.memory().clone().store(
                 address.clone(),
-                ProgramValue::Int32(MachineTerm::constant(bits)),
+                ProgramValue::Int32(OldMachineTerm::constant(bits)),
             ))
         };
         let version = |point: &ProgramPoint, address: &Address| {
@@ -2939,7 +2940,7 @@ mod tests {
                 state
                     .memory()
                     .clone()
-                    .store(address, ProgramValue::Int32(MachineTerm::constant(bits))),
+                    .store(address, ProgramValue::Int32(OldMachineTerm::constant(bits))),
             )
         };
         let written = store_word(&start, right.clone(), 7);
@@ -2963,7 +2964,10 @@ mod tests {
 
         let overlapping = store_word(&sibling, left.offset_by_bytes(2), 0);
         assert_eq!(version(&overlapping), None);
-        let byte = ProgramValue::UInt8(MachineTerm::narrow_constant(MachineIntegerType::UInt8, 0));
+        let byte = ProgramValue::UInt8(OldMachineTerm::narrow_constant(
+            MachineIntegerType::UInt8,
+            0,
+        ));
         let middle_byte = sibling.clone().with_memory(
             sibling
                 .memory()
@@ -2973,10 +2977,10 @@ mod tests {
         assert_eq!(version(&middle_byte), None);
         assert_eq!(version(&sibling), written.program_point_id());
 
-        let replacement = sibling
-            .memory()
-            .clone()
-            .store(right.clone(), ProgramValue::Int32(MachineTerm::constant(9)));
+        let replacement = sibling.memory().clone().store(
+            right.clone(),
+            ProgramValue::Int32(OldMachineTerm::constant(9)),
+        );
         let unlogged = sibling
             .clone()
             .with_materialized_memory_at_current_point(replacement);
@@ -2996,7 +3000,7 @@ mod tests {
         let write_sibling = |value| {
             split.clone().with_memory(split.memory().clone().store(
                 other.clone(),
-                ProgramValue::Int32(MachineTerm::constant(value)),
+                ProgramValue::Int32(OldMachineTerm::constant(value)),
             ))
         };
         let left = write_sibling(2);
@@ -3041,12 +3045,10 @@ mod tests {
                 .with_block(other.base.clone(), 4),
         );
         let written = stored(&start, 7);
-        let written = written.clone().with_memory(
-            written
-                .memory()
-                .clone()
-                .store(other.clone(), ProgramValue::Int32(MachineTerm::constant(2))),
-        );
+        let written = written.clone().with_memory(written.memory().clone().store(
+            other.clone(),
+            ProgramValue::Int32(OldMachineTerm::constant(2)),
+        ));
         let version = |state: &ExecutionState, pointer: &Address| {
             state
                 .program_point()
@@ -3079,7 +3081,7 @@ mod tests {
         let mut head = written.clone();
         head.replace_loop_head_local_cell(
             other.clone(),
-            ProgramValue::Int32(MachineTerm::constant(3)),
+            ProgramValue::Int32(OldMachineTerm::constant(3)),
         );
         let memory = head
             .memory()
@@ -3110,7 +3112,7 @@ mod tests {
         let second = first.offset_by_bytes(4);
         let start = ExecutionState::new()
             .with_memory(SymbolicMemory::new().with_block(first.base.clone(), 8));
-        let store = |place, value| (place, ProgramValue::Int32(MachineTerm::constant(value)));
+        let store = |place, value| (place, ProgramValue::Int32(OldMachineTerm::constant(value)));
         let (address, value) = store(first.clone(), 7);
         let initial = start.memory().clone().store(address, value);
         let (address, value) = store(second.clone(), 8);
@@ -3121,14 +3123,17 @@ mod tests {
         };
         let overlap = start.clone().with_memory(batch.store(
             first.offset_by_bytes(2),
-            ProgramValue::UInt8(MachineTerm::narrow_constant(MachineIntegerType::UInt8, 0)),
+            ProgramValue::UInt8(OldMachineTerm::narrow_constant(
+                MachineIntegerType::UInt8,
+                0,
+            )),
         ));
         assert!(version(&overlap, &first).is_none());
         assert_eq!(
             version(&overlap, &second)
                 .unwrap()
                 .indexed_integer_store_bits(),
-            Some(&MachineTerm::constant(8))
+            Some(&OldMachineTerm::constant(8))
         );
 
         let gap = initial.with_uninitialized_object(Address::symbolic(Variable(38_130)), 4);
@@ -3156,7 +3161,7 @@ mod tests {
             for index in 0..count {
                 memory = memory.materialize_named_cell(
                     external.offset_by_bytes(4 * index),
-                    ProgramValue::Int32(MachineTerm::constant(index)),
+                    ProgramValue::Int32(OldMachineTerm::constant(index)),
                 );
             }
             let (named, used) = crate::instrumentation::measure_deterministic_work(|| {
@@ -3176,13 +3181,13 @@ mod tests {
             start
                 .memory()
                 .clone()
-                .store(slot(), ProgramValue::Int32(MachineTerm::constant(11))),
+                .store(slot(), ProgramValue::Int32(OldMachineTerm::constant(11))),
         );
         let point = pending.program_point().id();
         let named = pending.clone().with_materialized_memory_at_current_point(
             pending.memory().clone().materialize_named_cell(
                 Address::symbolic(Variable(38_128)),
-                ProgramValue::Int32(MachineTerm::constant(42)),
+                ProgramValue::Int32(OldMachineTerm::constant(42)),
             ),
         );
         assert_eq!(version(&named), point);
@@ -3192,7 +3197,7 @@ mod tests {
         let same_contents = written
             .memory()
             .clone()
-            .store(slot(), ProgramValue::Int32(MachineTerm::constant(7)));
+            .store(slot(), ProgramValue::Int32(OldMachineTerm::constant(7)));
         assert_eq!(&same_contents, written.memory());
         let rejected = written
             .clone()
@@ -3201,14 +3206,14 @@ mod tests {
         let next = written
             .memory()
             .clone()
-            .store(slot(), ProgramValue::Int32(MachineTerm::constant(13)));
+            .store(slot(), ProgramValue::Int32(OldMachineTerm::constant(13)));
         let indexed = written.clone().with_materialized_memory(next.clone());
         assert_eq!(version(&indexed), indexed.program_point().id());
         assert_eq!(version(&rejected.with_materialized_memory(next)), None);
         let unlogged = written.clone().with_materialized_memory_at_current_point(
             same_contents.materialize_named_cell(
                 Address::symbolic(Variable(38_129)),
-                ProgramValue::Int32(MachineTerm::constant(99)),
+                ProgramValue::Int32(OldMachineTerm::constant(99)),
             ),
         );
         assert_eq!(version(&unlogged), None);
@@ -3223,12 +3228,13 @@ mod tests {
         let declared = entry
             .clone()
             .with_function_entry_memory(entry.memory().clone().with_block(slot.base.clone(), 4));
-        let initialized = declared.clone().with_function_entry_memory(
+        let initialized =
             declared
-                .memory()
                 .clone()
-                .store(slot.clone(), ProgramValue::Int32(MachineTerm::constant(7))),
-        );
+                .with_function_entry_memory(declared.memory().clone().store(
+                    slot.clone(),
+                    ProgramValue::Int32(OldMachineTerm::constant(7)),
+                ));
         for view in [&declared, &initialized] {
             assert_eq!(view.observation_point_id(), Some(root));
             assert!(view.path_link().steps().is_none());
@@ -3253,7 +3259,7 @@ mod tests {
         let memory = start
             .memory()
             .clone()
-            .store(slot(), ProgramValue::Int32(MachineTerm::constant(5)));
+            .store(slot(), ProgramValue::Int32(OldMachineTerm::constant(5)));
         assert!(memory.pending_steps.is_some());
         assert!(intern_memory_ref(&memory).memory().pending_steps.is_none());
     }
@@ -3268,7 +3274,7 @@ mod tests {
             start
                 .memory()
                 .clone()
-                .store(slot(), ProgramValue::Int32(MachineTerm::constant(7))),
+                .store(slot(), ProgramValue::Int32(OldMachineTerm::constant(7))),
         );
         let point = moved.program_point();
         assert_ne!(point.id(), start.program_point().id());
@@ -3293,8 +3299,8 @@ mod tests {
         let memory = start
             .memory()
             .clone()
-            .store(slot(), ProgramValue::Int32(MachineTerm::constant(1)))
-            .store(slot(), ProgramValue::Int32(MachineTerm::constant(0)));
+            .store(slot(), ProgramValue::Int32(OldMachineTerm::constant(1)))
+            .store(slot(), ProgramValue::Int32(OldMachineTerm::constant(0)));
         assert!(memory.pending_steps.is_some());
         let moved = start.clone().with_materialized_memory(memory);
         assert_eq!(start.memory(), moved.memory());
@@ -3326,7 +3332,7 @@ mod tests {
         let taken = elsewhere
             .memory()
             .clone()
-            .store(slot(), ProgramValue::Int32(MachineTerm::constant(2)));
+            .store(slot(), ProgramValue::Int32(OldMachineTerm::constant(2)));
         let mut here = start.clone();
         here.set_memory_continuing(&elsewhere, taken);
         assert_eq!(
@@ -3412,7 +3418,7 @@ mod tests {
             observe(&selected);
             observe(&selected);
             let bare = ProgramPoint::at(selected.shared_memory());
-            let _read = MachineTerm::read_named(bare.clone(), cell.clone(), LoadKind::Int32);
+            let _read = OldMachineTerm::read_named(bare.clone(), cell.clone(), LoadKind::Int32);
             observe(&bare);
             observe(&bare);
         });

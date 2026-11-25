@@ -17,7 +17,7 @@ fn outcome(state: &ExecutionState, expression: ProgramExpression) -> ExpressionO
     let Proposition::ProgramExpressionEvaluates { outcome, .. } = theorem.proposition() else {
         unreachable!()
     };
-    let native_outcome = outcome.native_compat();
+    let native_outcome = outcome.old_form();
     let outcome = &native_outcome;
     outcome.clone().map_value(Into::into)
 }

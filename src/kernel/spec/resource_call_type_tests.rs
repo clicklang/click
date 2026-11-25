@@ -26,7 +26,7 @@ fn clause(value: ProgramValue) -> SpecProposition {
             }],
         },
         operator: ComparisonOperator::Equal,
-        right: SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(1))),
+        right: SpecExpression::Value(ProgramValue::Int32(OldMachineTerm::constant(1))),
     }
 }
 fn lower(

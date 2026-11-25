@@ -103,14 +103,14 @@ fn rule_c1_links_cost_constant_work_per_cast() {
         let (context, assumed) = crate::instrumentation::measure_deterministic_work(|| {
             let mut context = PureFactContext::new();
             for link in 0..size {
-                let cast = MachineTerm::bool_cast(
+                let cast = OldMachineTerm::bool_cast(
                     MachineIntegerType::Int32,
                     applied("member", 520_000 + link),
                 );
                 context = context
                     .assume_condition(ConditionTerm::equal(word(521_000 + link), cast), true)
                     .assume_condition(
-                        ConditionTerm::equal(word(521_000 + link), MachineTerm::constant(0)),
+                        ConditionTerm::equal(word(521_000 + link), OldMachineTerm::constant(0)),
                         true,
                     );
             }

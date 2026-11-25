@@ -1,8 +1,8 @@
 use super::*;
 use crate::kernel::MachineCastSpelling;
 use crate::kernel::binary_node;
-fn var(id: u64) -> MachineTerm {
-    MachineTerm::Variable(Variable(id))
+fn var(id: u64) -> OldMachineTerm {
+    OldMachineTerm::Variable(Variable(id))
 }
 fn address(id: u64) -> Address {
     Address {
@@ -10,8 +10,8 @@ fn address(id: u64) -> Address {
         offset: AddressOffset::scale_int32(var(id), 4),
     }
 }
-fn load(memory: &SharedMemory, pointer: &Address, bytes: u32) -> MachineTerm {
-    MachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
+fn load(memory: &SharedMemory, pointer: &Address, bytes: u32) -> OldMachineTerm {
+    OldMachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
         memory,
         pointer,
         crate::kernel::LoadKind::Int32,
@@ -53,7 +53,7 @@ fn shallow_scalar_decision_uses_only_registered_loads_in_one_state() {
         before
             .memory()
             .clone()
-            .store(address(1), ProgramValue::Int32(MachineTerm::constant(9))),
+            .store(address(1), ProgramValue::Int32(OldMachineTerm::constant(9))),
     );
     let changed = load(&after, &address(2), 4);
     let context =
@@ -86,7 +86,7 @@ fn int32_load_congruence_keeps_states_blocks_and_widths_distinct() {
         memory
             .memory()
             .clone()
-            .store(address(1), ProgramValue::Int32(MachineTerm::constant(9))),
+            .store(address(1), ProgramValue::Int32(OldMachineTerm::constant(9))),
     );
     let changed = load(&after, &address(2), 4);
     let mut other_block = address(2);
@@ -102,7 +102,7 @@ fn int32_load_congruence_keeps_states_blocks_and_widths_distinct() {
     for unknown in [changed, other, narrow, wide] {
         assert!(!graph.are_int32_equal(&left, &unknown));
     }
-    assert!(!graph.are_int32_equal(&left, &MachineTerm::constant(9)));
+    assert!(!graph.are_int32_equal(&left, &OldMachineTerm::constant(9)));
 }
 
 #[test]
@@ -135,9 +135,9 @@ fn int32_load_defining_state_is_independent_of_live_origin() {
         before
             .memory()
             .clone()
-            .store(address(1), ProgramValue::Int32(MachineTerm::constant(9))),
+            .store(address(1), ProgramValue::Int32(OldMachineTerm::constant(9))),
     );
-    let left = MachineTerm::Variable(crate::kernel::load_variable_for_cell_with_origin(
+    let left = OldMachineTerm::Variable(crate::kernel::load_variable_for_cell_with_origin(
         &before,
         &address(1),
         crate::kernel::LoadKind::Int32,
@@ -146,7 +146,7 @@ fn int32_load_defining_state_is_independent_of_live_origin() {
     ));
     crate::kernel::eval::begin_load_origin_epoch();
     // Change the mutable origin while retaining the exact defining state.
-    let renamed = MachineTerm::Variable(crate::kernel::load_variable_for_cell_with_origin(
+    let renamed = OldMachineTerm::Variable(crate::kernel::load_variable_for_cell_with_origin(
         &before,
         &address(1),
         crate::kernel::LoadKind::Int32,
@@ -156,7 +156,7 @@ fn int32_load_defining_state_is_independent_of_live_origin() {
     assert_eq!(left, renamed);
     let right = load(&after, &address(2), 4);
     for term in [&left, &right] {
-        let MachineTerm::Variable(variable) = term else {
+        let OldMachineTerm::Variable(variable) = term else {
             panic!("registered load")
         };
         assert_eq!(
@@ -171,7 +171,7 @@ fn int32_load_defining_state_is_independent_of_live_origin() {
     graph.add_int32_equality(&var(1), &var(2));
     assert!(!graph.are_int32_equal(&left, &right));
     let raw = |m: &SharedMemory| {
-        MachineTerm::read_named(
+        OldMachineTerm::read_named(
             ProgramPoint::at(m),
             Box::new(address(1)),
             crate::kernel::LoadKind::Int32,
@@ -202,7 +202,7 @@ fn explicit_cross_state_load_equality_composes_without_merging_states() {
         before
             .memory()
             .clone()
-            .store(address(3), ProgramValue::Int32(MachineTerm::constant(9))),
+            .store(address(3), ProgramValue::Int32(OldMachineTerm::constant(9))),
     );
     let old_i = load(&before, &address(1), 4);
     let new_i = load(&after, &address(1), 4);
@@ -244,13 +244,11 @@ fn reads_at_equal_addresses_are_equal_without_equal_pointers() {
         base: block.into(),
         offset: AddressOffset::Constant(bytes),
     };
-    let address_of = |pointer: Address| MachineTerm::integer_address(pointer);
-    let after = intern_memory(
-        memory
-            .memory()
-            .clone()
-            .store(at("left", 8), ProgramValue::Int32(MachineTerm::constant(9))),
-    );
+    let address_of = |pointer: Address| OldMachineTerm::integer_address(pointer);
+    let after = intern_memory(memory.memory().clone().store(
+        at("left", 8),
+        ProgramValue::Int32(OldMachineTerm::constant(9)),
+    ));
     for field in [0, 8] {
         let left = load(&memory, &at("left", field), 4);
         let right = load(&memory, &at("right", field), 4);
@@ -324,13 +322,13 @@ fn int32_load_congruence_connects_base_reads_to_early_and_late_zero_offsets() {
     for early in [false, true] {
         let mut graph = EqualityGraph::default();
         if early {
-            graph.add_int32_equality(&offset, &MachineTerm::constant(0));
+            graph.add_int32_equality(&offset, &OldMachineTerm::constant(0));
         }
         graph.add_int32_equality(&direct, &var(940_083));
         graph.add_int32_equality(&indexed, &var(940_084));
         if !early {
             assert!(!graph.are_int32_equal(&var(940_083), &var(940_084)));
-            graph.add_int32_equality(&offset, &MachineTerm::constant(0));
+            graph.add_int32_equality(&offset, &OldMachineTerm::constant(0));
         }
         assert!(
             graph.are_int32_equal(&var(940_083), &var(940_084)),
@@ -349,7 +347,7 @@ fn a_late_zero_index_alias_transfers_an_admitted_read_order() {
     let indexed = load(&memory, &base.offset_by_elements(index.clone(), 4), 4);
     let next = load(
         &memory,
-        &base.offset_by_elements(MachineTerm::add(index.clone(), 1u32.into()), 4),
+        &base.offset_by_elements(OldMachineTerm::add(index.clone(), 1u32.into()), 4),
         4,
     );
     let known = ConditionTerm::signed_less_than(next.clone(), indexed);
@@ -375,7 +373,7 @@ fn reads_of_one_cell_at_both_signednesses_are_related() {
     let _session = crate::kernel::VerificationSession::enter();
     let memory = memory();
     let read = |pointer: &Address, kind| {
-        MachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
+        OldMachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
             &memory, pointer, kind, 4,
         ))
     };
@@ -383,7 +381,7 @@ fn reads_of_one_cell_at_both_signednesses_are_related() {
     let unsigned = read(&address(1), crate::kernel::LoadKind::UInt32);
     let other = read(&address(2), crate::kernel::LoadKind::UInt32);
     let sigma = |value| {
-        MachineTerm::sign_cast32(
+        OldMachineTerm::sign_cast32(
             crate::kernel::MachineIntegerType::Int32,
             crate::kernel::MachineIntegerType::UInt32,
             value,
@@ -436,7 +434,7 @@ fn signed_16_and_128_bit_reads_are_the_sign_cast_of_their_unsigned_reads() {
         let _session = crate::kernel::VerificationSession::enter();
         let memory = memory();
         let read = |pointer: &Address, kind| {
-            MachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
+            OldMachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
                 &memory, pointer, kind, bytes,
             ))
         };
@@ -444,11 +442,13 @@ fn signed_16_and_128_bit_reads_are_the_sign_cast_of_their_unsigned_reads() {
         let unsigned = read(&address(1), unsigned_kind);
         let other = read(&address(2), unsigned_kind);
         assert_ne!(signed, unsigned, "each read is its own load");
-        let cast = |value| MachineTerm::machine_integer_cast(from, to, value);
+        let cast = |value| OldMachineTerm::machine_integer_cast(from, to, value);
         // A 128-bit equality is decided in its Integer reading
         // (`representation::spells_comparison_natively`); a 16-bit one by its
         // native comparison.
-        let equal = |terms: &mut terms::TermClasses, left: MachineTerm, right: &MachineTerm| {
+        let equal = |terms: &mut terms::TermClasses,
+                     left: OldMachineTerm,
+                     right: &OldMachineTerm| {
             if width == W::Bits128 {
                 let reading = |value| crate::kernel::IntegerTerm::from_machine(to, value).unwrap();
                 terms.are_integer_equal(&reading(left), &reading(right.clone()))
@@ -496,7 +496,7 @@ fn a_16_bit_constant_decides_the_other_read_of_its_cell() {
     let _session = crate::kernel::VerificationSession::enter();
     let memory = memory();
     let read = |kind| {
-        MachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
+        OldMachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
             &memory,
             &address(1),
             kind,
@@ -504,11 +504,14 @@ fn a_16_bit_constant_decides_the_other_read_of_its_cell() {
         ))
     };
     let (signed, unsigned) = (read(K::Int16), read(K::UInt16));
-    let equal = |format, left: &MachineTerm, value: i64| ConditionTerm::Compare {
+    let equal = |format, left: &OldMachineTerm, value: i64| ConditionTerm::Compare {
         format,
         relation: CompareRelation::Equal,
         left: Box::new(left.clone()),
-        right: Box::new(MachineTerm::narrow_constant(format, value as u16 as u128)),
+        right: Box::new(OldMachineTerm::narrow_constant(
+            format,
+            value as u16 as u128,
+        )),
     };
     for (signed_value, unsigned_value) in [
         (0, 0),
@@ -548,14 +551,14 @@ fn widening_chains_are_related_with_constant_work_per_widening() {
     let _session = crate::kernel::VerificationSession::enter();
     let memory = memory();
     let read = |index: u64| {
-        MachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
+        OldMachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
             &memory,
             &address(10_000 + index),
             crate::kernel::LoadKind::UInt8,
             1,
         ))
     };
-    let widen = |value: MachineTerm| MachineTerm::Cast {
+    let widen = |value: OldMachineTerm| OldMachineTerm::Cast {
         spelling: MachineCastSpelling::Generic,
         value: Box::new(value),
         from: MachineIntegerType::UInt8,
@@ -568,7 +571,7 @@ fn widening_chains_are_related_with_constant_work_per_widening() {
         crate::kernel::eval::restore_load_variable_registry(&cold_reads);
         // Keep descriptor caches and term-bridge imports cold at every sample size.
         crate::kernel::clear_machine_observation_memo();
-        let word = |value: MachineTerm| MachineTerm::Cast {
+        let word = |value: OldMachineTerm| OldMachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             value: Box::new(value),
             from: MachineIntegerType::UInt8,
@@ -580,8 +583,11 @@ fn widening_chains_are_related_with_constant_work_per_widening() {
             widened = binary_node!(Int32, Add, Box::new(widened), Box::new(widen(read(index))));
             words = binary_node!(UInt32, Add, Box::new(words), Box::new(word(read(index))));
         }
-        let words =
-            MachineTerm::sign_cast32(MachineIntegerType::UInt32, MachineIntegerType::Int32, words);
+        let words = OldMachineTerm::sign_cast32(
+            MachineIntegerType::UInt32,
+            MachineIntegerType::Int32,
+            words,
+        );
         let mut graph = EqualityGraph::default();
         let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
             graph.add_int32_equality(&widened, &var(900_000 + size));
@@ -615,7 +621,7 @@ fn structural_read_graph_registration_keeps_native_version_identity() {
         },
         ProgramValue::Int32(var(993182)),
     ));
-    let raw = MachineTerm::read_named(
+    let raw = OldMachineTerm::read_named(
         ProgramPoint::at(&beside),
         Box::new(pointer.clone()),
         LoadKind::Int32,
@@ -633,7 +639,7 @@ fn structural_read_graph_registration_keeps_native_version_identity() {
         native
     );
     assert_eq!(root.machine_read_leaf(), Some(&raw));
-    let changed = MachineTerm::read_named(
+    let changed = OldMachineTerm::read_named(
         ProgramPoint::at(
             &(intern_memory(
                 before
@@ -657,7 +663,7 @@ fn structural_read_graph_registration_keeps_native_version_identity() {
 fn structural_word_read_requires_its_explicit_store_equation() {
     use crate::kernel::{KernelTermImport, MachineIntegerType, MachineOperandView as V};
     let _session = crate::kernel::VerificationSession::enter();
-    let value = MachineTerm::PureFunctionApplication {
+    let value = OldMachineTerm::PureFunctionApplication {
         name: "opaque_read_value".into(),
         arguments: vec![var(993184)],
     };
@@ -670,7 +676,7 @@ fn structural_word_read_requires_its_explicit_store_equation() {
     );
     // The typed word producer supplies its access width before graph queries.
     crate::kernel::eval::record_load_access_width(retained_state.memory(), &pointer, 4);
-    let read = MachineTerm::read_named(
+    let read = OldMachineTerm::read_named(
         ProgramPoint::at(&retained_state),
         Box::new(pointer),
         LoadKind::Int32,
@@ -682,7 +688,7 @@ fn structural_word_read_requires_its_explicit_store_equation() {
     assert!(
         !empty
             .equality_graph
-            .are_int32_equal_views(V::Shared(&shared), V::Legacy(&value)),
+            .are_int32_equal_views(V::Shared(&shared), V::Old(&value)),
         "registering a read must not import its cached value"
     );
     assert!(!empty.equality_graph.are_int32_equal(&read, &value));
@@ -696,12 +702,12 @@ fn structural_word_read_requires_its_explicit_store_equation() {
     assert!(
         established
             .equality_graph
-            .are_int32_equal_views(V::Shared(&shared), V::Legacy(&value))
+            .are_int32_equal_views(V::Shared(&shared), V::Old(&value))
     );
     assert!(
         !empty
             .equality_graph
-            .are_int32_equal_views(V::Shared(&shared), V::Legacy(&value))
+            .are_int32_equal_views(V::Shared(&shared), V::Old(&value))
     );
     assert_eq!(shared.machine_read_leaf(), Some(&read));
 }

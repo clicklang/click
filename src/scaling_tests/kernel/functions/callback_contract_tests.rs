@@ -80,8 +80,8 @@ fn authoritative_memory_projection_scales_with_used_members_not_unrelated_frames
     let checked_resources = [CheckedResourceFact {
         fact: ResourceFact::own_memory(MemoryRange::new(
             pointer,
-            MachineTerm::constant(0),
-            MachineTerm::constant(1),
+            OldMachineTerm::constant(0),
+            OldMachineTerm::constant(1),
         )),
         role: ResourceTransferRole::Consume,
         state_source: ResourceStateSource::Entry,
@@ -128,8 +128,8 @@ fn checked_transition_projection_ignores_unrelated_caller_frame() {
                 .map(|index| {
                     ResourceFact::own_memory(MemoryRange::new(
                         pointer.clone(),
-                        MachineTerm::constant(index as u32),
-                        MachineTerm::constant(index as u32 + 1),
+                        OldMachineTerm::constant(index as u32),
+                        OldMachineTerm::constant(index as u32 + 1),
                     ))
                 })
                 .chain((0..unrelated).map(|index| {
@@ -368,10 +368,10 @@ fn callback_fact_lookup_scales_with_calls_not_unrelated_supported_facts() {
 /// `Integer` facts grow beside it.
 #[test]
 fn contract_refinement_work_is_flat_in_unrelated_facts() {
-    let variable = |index| MachineTerm::Variable(Variable(index));
-    let bound = ConditionTerm::signed_less_than(variable(70_001), MachineTerm::constant(10));
+    let variable = |index| OldMachineTerm::Variable(Variable(index));
+    let bound = ConditionTerm::signed_less_than(variable(70_001), OldMachineTerm::constant(10));
     let equality = ConditionTerm::equal(variable(70_002), variable(70_003));
-    let refuted = ConditionTerm::signed_less_than(variable(70_005), MachineTerm::constant(0));
+    let refuted = ConditionTerm::signed_less_than(variable(70_005), OldMachineTerm::constant(0));
     let integer = |index| IntegerTerm::Variable(Variable(index));
     let size_invariant = ConditionTerm::integer_equal(integer(70_010), integer(70_011));
     let unrelated_size = ConditionTerm::integer_equal(integer(70_012), integer(70_013));
@@ -418,8 +418,8 @@ fn contract_refinement_work_is_flat_in_unrelated_facts() {
                 );
                 assumptions = assumptions.assume_condition(
                     ConditionTerm::signed_less_than(
-                        MachineTerm::Variable(Variable(71_000 + index as u64)),
-                        MachineTerm::constant(index as u32 + 1),
+                        OldMachineTerm::Variable(Variable(71_000 + index as u64)),
+                        OldMachineTerm::constant(index as u32 + 1),
                     ),
                     true,
                 );

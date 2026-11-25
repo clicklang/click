@@ -87,7 +87,7 @@ impl ExecutionValue {
     pub(in crate::kernel) fn retain_native(value: ProgramValue) -> Self {
         if let Some(view) = FloatOperandView::from_value(&value) {
             return KernelTermImport::default()
-                .float(view.format(), view.native_compat().expect("native float"))
+                .float(view.format(), view.old_form().expect("native float"))
                 .into();
         }
         if let ProgramValue::Parameter(term) = &value {
@@ -103,7 +103,7 @@ impl ExecutionValue {
             // existing cheap reading, including condition truth values.
             if matches!(
                 term,
-                MachineTerm::Constant { .. } | MachineTerm::Variable(_)
+                OldMachineTerm::Constant { .. } | OldMachineTerm::Variable(_)
             ) {
                 return Self::Native(value);
             }
@@ -325,7 +325,7 @@ impl ExecutionValue {
                 let (crate::kernel::integer_c_value!(term)) = value else {
                     return None;
                 };
-                Some((format, MachineOperandView::Legacy(term)))
+                Some((format, MachineOperandView::Old(term)))
             }
             Self::Shared(term) => Some((format, MachineOperandView::Shared(term))),
         }
@@ -451,10 +451,10 @@ impl std::hash::Hash for StoredMemoryValue {
             self.value()
             && matches!(
                 word,
-                MachineTerm::Constant { .. }
-                    | MachineTerm::Variable(_)
-                    | MachineTerm::MemoryLoad(..)
-                    | MachineTerm::ThreadHandle(_)
+                OldMachineTerm::Constant { .. }
+                    | OldMachineTerm::Variable(_)
+                    | OldMachineTerm::MemoryLoad(..)
+                    | OldMachineTerm::ThreadHandle(_)
             )
         {
             return std::hash::Hash::hash(value, state);
@@ -542,9 +542,7 @@ impl StoredKey {
                 SharedMachineIntegerTerm::observe_shared(format, root.clone())
                     .expect("retained machine storage")
             }
-            MachineOperandView::Legacy(term) => {
-                SharedMachineIntegerTerm::intern(format, term.clone())
-            }
+            MachineOperandView::Old(term) => SharedMachineIntegerTerm::intern(format, term.clone()),
         })
     }
 }
@@ -729,7 +727,7 @@ mod tests {
             assert_eq!(hash(&cell), hash(&StoredMemoryValue::from(native.clone())));
             for other in [
                 ProgramValue::Void,
-                ProgramValue::Bool(MachineTerm::Constant {
+                ProgramValue::Bool(OldMachineTerm::Constant {
                     format: MachineIntegerType::UInt8,
                     bits: 2,
                 }),
@@ -759,7 +757,7 @@ mod tests {
                 root.boolean_native().unwrap()
             ));
         }
-        let raw = ProgramValue::Bool(MachineTerm::Constant {
+        let raw = ProgramValue::Bool(OldMachineTerm::Constant {
             format: MachineIntegerType::UInt8,
             bits: 2,
         });
@@ -771,9 +769,9 @@ mod tests {
     #[test]
     fn exact_native_value_comparison_does_not_use_machine_storage_equivalence() {
         let _session = crate::kernel::VerificationSession::enter();
-        let argument = MachineTerm::Variable(Variable(998319));
+        let argument = OldMachineTerm::Variable(Variable(998319));
         let call = |argument| {
-            ProgramValue::UInt32(MachineTerm::ClickFunctionApplication {
+            ProgramValue::UInt32(OldMachineTerm::ClickFunctionApplication {
                 name: "payload_identity".into(),
                 arguments: vec![argument],
             })
@@ -812,11 +810,11 @@ mod tests {
     #[test]
     fn local_storage_identity_matches_native_without_changing_producer_equality() {
         let _session = crate::kernel::VerificationSession::enter();
-        let term = MachineTerm::machine_binary(
+        let term = OldMachineTerm::machine_binary(
             MachineIntegerType::UInt32,
             MachineBinaryOp::Multiply,
-            MachineTerm::Variable(Variable(998320)),
-            MachineTerm::uint32_constant(3),
+            OldMachineTerm::Variable(Variable(998320)),
+            OldMachineTerm::uint32_constant(3),
         );
         let native = ExecutionValue::from(ProgramValue::UInt32(term.clone()));
         let root = KernelTermImport::default().machine(MachineIntegerType::UInt32, &term);
@@ -992,7 +990,7 @@ mod tests {
 
     #[test]
     fn execution_outcomes_preserve_native_values_and_refusals() {
-        let value = ProgramValue::Int32(MachineTerm::constant(7));
+        let value = ProgramValue::Int32(OldMachineTerm::constant(7));
         let outcome = ExpressionOutcome::Value(value.clone()).map_value(ExecutionValue::from);
         assert_eq!(
             outcome.map_value(ExecutionValue::into_native),
@@ -1033,9 +1031,9 @@ mod float_handoff_tests {
                 KernelTermImport::default().float(
                     format,
                     &match format {
-                        KernelFloatType::Float32 => MachineTerm::uint32_constant(0x7fc00123),
+                        KernelFloatType::Float32 => OldMachineTerm::uint32_constant(0x7fc00123),
                         KernelFloatType::Float64 => {
-                            MachineTerm::uint64_constant(0x8000000000000000)
+                            OldMachineTerm::uint64_constant(0x8000000000000000)
                         }
                     },
                 ),
@@ -1080,9 +1078,9 @@ mod float_cell_key_tests {
                 KernelTermImport::default().float(
                     format,
                     &match format {
-                        KernelFloatType::Float32 => MachineTerm::uint32_constant(0x7fc00123),
+                        KernelFloatType::Float32 => OldMachineTerm::uint32_constant(0x7fc00123),
                         KernelFloatType::Float64 => {
-                            MachineTerm::uint64_constant(0x8000000000000000)
+                            OldMachineTerm::uint64_constant(0x8000000000000000)
                         }
                     },
                 ),
@@ -1097,7 +1095,7 @@ mod float_cell_key_tests {
                 for other in [
                     ProgramValue::Void,
                     native.clone(),
-                    ProgramValue::Float64(MachineTerm::uint64_constant(0)),
+                    ProgramValue::Float64(OldMachineTerm::uint64_constant(0)),
                 ] {
                     let expected = native.cmp(&other);
                     let other = StoredMemoryValue::from(other);
@@ -1164,7 +1162,7 @@ impl RetainedProgramValue {
         }
     }
 
-    pub(crate) fn native_compat(&self) -> &ProgramValue {
+    pub(crate) fn old_form(&self) -> &ProgramValue {
         match self.value() {
             ExecutionValue::Native(value) => value,
             ExecutionValue::Shared(root) => root

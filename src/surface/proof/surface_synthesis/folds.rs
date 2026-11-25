@@ -118,7 +118,7 @@ pub(in crate::surface::proof) fn raise_fold(
 }
 
 pub(in crate::surface::proof) fn raise_machine_fold(
-    term: &MachineTerm,
+    term: &OldMachineTerm,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,

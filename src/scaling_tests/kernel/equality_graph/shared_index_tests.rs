@@ -8,7 +8,7 @@ fn shared_address_queries_reuse_growing_index_dags() {
         let base = Address::symbolic(Variable(991411));
         let ty = MachineIntegerType::Int32;
         let mut root = KernelTermImport::default()
-            .machine_arithmetic(ty, &MachineTerm::Variable(Variable(991412)))
+            .machine_arithmetic(ty, &OldMachineTerm::Variable(Variable(991412)))
             .unwrap();
         let exports = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {

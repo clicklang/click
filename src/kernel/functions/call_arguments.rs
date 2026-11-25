@@ -106,8 +106,8 @@ fn contract_interface_argument_views(
                 .unchecked_with_fact(ResourceFact::view_memory(
                     MemoryRange::new_with_element_width(
                         pointer.address().clone(),
-                        MachineTerm::constant(0),
-                        MachineTerm::constant(i32::MAX as u32),
+                        OldMachineTerm::constant(0),
+                        OldMachineTerm::constant(i32::MAX as u32),
                         element_width,
                     ),
                 ));
@@ -508,18 +508,18 @@ pub(crate) fn symbolic_call_result(program_type: ProgramType, variable: Variable
         ProgramType::VoidPointer | ProgramType::VoidPointerPointer | ProgramType::Pointer => {
             ProgramValue::typed_pointer(Address::symbolic(variable), program_type)
         }
-        ProgramType::Int8 => ProgramValue::Int8(MachineTerm::Variable(variable)),
-        ProgramType::Int16 => ProgramValue::Int16(MachineTerm::Variable(variable)),
-        ProgramType::Int32 => ProgramValue::Int32(MachineTerm::Variable(variable)),
-        ProgramType::UInt8 => ProgramValue::UInt8(MachineTerm::Variable(variable)),
-        ProgramType::UInt16 => ProgramValue::UInt16(MachineTerm::Variable(variable)),
-        ProgramType::UInt32 => ProgramValue::UInt32(MachineTerm::Variable(variable)),
-        ProgramType::Int64 => ProgramValue::Int64(MachineTerm::Variable(variable)),
-        ProgramType::UInt64 => ProgramValue::UInt64(MachineTerm::Variable(variable)),
-        ProgramType::Int128 => ProgramValue::Int128(MachineTerm::Variable(variable)),
-        ProgramType::UInt128 => ProgramValue::UInt128(MachineTerm::Variable(variable)),
-        ProgramType::Float32 => ProgramValue::Float32(MachineTerm::Variable(variable)),
-        ProgramType::Float64 => ProgramValue::Float64(MachineTerm::Variable(variable)),
+        ProgramType::Int8 => ProgramValue::Int8(OldMachineTerm::Variable(variable)),
+        ProgramType::Int16 => ProgramValue::Int16(OldMachineTerm::Variable(variable)),
+        ProgramType::Int32 => ProgramValue::Int32(OldMachineTerm::Variable(variable)),
+        ProgramType::UInt8 => ProgramValue::UInt8(OldMachineTerm::Variable(variable)),
+        ProgramType::UInt16 => ProgramValue::UInt16(OldMachineTerm::Variable(variable)),
+        ProgramType::UInt32 => ProgramValue::UInt32(OldMachineTerm::Variable(variable)),
+        ProgramType::Int64 => ProgramValue::Int64(OldMachineTerm::Variable(variable)),
+        ProgramType::UInt64 => ProgramValue::UInt64(OldMachineTerm::Variable(variable)),
+        ProgramType::Int128 => ProgramValue::Int128(OldMachineTerm::Variable(variable)),
+        ProgramType::UInt128 => ProgramValue::UInt128(OldMachineTerm::Variable(variable)),
+        ProgramType::Float32 => ProgramValue::Float32(OldMachineTerm::Variable(variable)),
+        ProgramType::Float64 => ProgramValue::Float64(OldMachineTerm::Variable(variable)),
         ProgramType::Int8Pointer | ProgramType::Int8PointerPointer => {
             ProgramValue::typed_pointer(Address::symbolic(variable), program_type)
         }
@@ -801,7 +801,7 @@ pub(super) fn append_string_literal_loadable_facts(
         let proposition = Proposition::MemoryLoadable {
             memory: state.memory.clone(),
             base,
-            bytes: (MachineTerm::constant(literal.bytes().len() as u32)).into(),
+            bytes: (OldMachineTerm::constant(literal.bytes().len() as u32)).into(),
             wide: false,
         };
         if !facts.iter().any(|fact| fact.proposition() == &proposition) {
@@ -1523,7 +1523,7 @@ mod pointer_argument_tests {
         .unwrap();
         assert_eq!(caller.locals.get("received").unwrap().shared(), Some(&root));
         // Changed-type coercion uses the existing native conversion result.
-        let converted = ProgramValue::Int32(MachineTerm::bool_cast(
+        let converted = ProgramValue::Int32(OldMachineTerm::bool_cast(
             MachineIntegerType::Int32,
             ConditionTerm::Constant(true),
         ));
@@ -1533,7 +1533,7 @@ mod pointer_argument_tests {
                 .into_native(),
             converted
         );
-        let raw = ProgramValue::Bool(MachineTerm::Constant {
+        let raw = ProgramValue::Bool(OldMachineTerm::Constant {
             format: MachineIntegerType::UInt8,
             bits: 2,
         });

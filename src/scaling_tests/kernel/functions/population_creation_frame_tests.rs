@@ -198,8 +198,8 @@ fn control_read_body_retains_its_held_frame_as_owners_and_aliases_grow() {
                 } else {
                     let owner = ResourceFact::own_memory(MemoryRange::new_with_element_width(
                         other,
-                        MachineTerm::constant(0),
-                        MachineTerm::constant(1),
+                        OldMachineTerm::constant(0),
+                        OldMachineTerm::constant(1),
                         4,
                     ));
                     resources = resources.unchecked_with_fact(owner.clone());
@@ -239,8 +239,8 @@ fn control_read_body_retains_its_held_frame_as_owners_and_aliases_grow() {
                     .contains_exact_representation(&ResourceFact::own_memory(
                         MemoryRange::new_with_element_width(
                             pointer,
-                            MachineTerm::constant(0),
-                            MachineTerm::constant(1),
+                            OldMachineTerm::constant(0),
+                            OldMachineTerm::constant(1),
                             4
                         ),
                     ))

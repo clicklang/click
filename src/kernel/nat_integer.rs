@@ -96,12 +96,12 @@ pub(crate) fn check_nat_integer_law(name: &str, proposition: &Proposition) -> Op
             right.as_ref() == z && guard == Some(&nonnegative(z.clone()))
         }
         ("click::nat::to_nat_to_integer", Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right))) => {
-            guard.is_none() && observed_nat(converted_integer(left.native_compat())?) == Some(right.native_compat())
+            guard.is_none() && observed_nat(converted_integer(left.old_form())?) == Some(right.old_form())
         }
         ("click::nat::to_nat_zero", Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right))) => {
-            guard.is_none() && converted_integer(left.native_compat()) == Some(&IntegerTerm::constant_i64(0))
-                && right.native_compat().algebraic_type == left.native_compat().algebraic_type
-                && matches!(&right.native_compat().node, AlgebraicTermNode::Constructor { variant, fields } if variant == "Zero" && fields.is_empty())
+            guard.is_none() && converted_integer(left.old_form()) == Some(&IntegerTerm::constant_i64(0))
+                && right.old_form().algebraic_type == left.old_form().algebraic_type
+                && matches!(&right.old_form().node, AlgebraicTermNode::Constructor { variant, fields } if variant == "Zero" && fields.is_empty())
         }
         _ => false,
     };
@@ -233,7 +233,7 @@ mod tests {
                 eval_integer(a) >= eval_integer(b)
             }
             Proposition::Equal(Term::Algebraic(a), Term::Algebraic(b)) => {
-                eval_nat(a.native_compat()) == eval_nat(b.native_compat())
+                eval_nat(a.old_form()) == eval_nat(b.old_form())
             }
             _ => panic!("unexpected model proposition"),
         }

@@ -1,7 +1,7 @@
 use super::*;
 
-fn scalar(id: u64) -> MachineTerm {
-    MachineTerm::Variable(Variable(id))
+fn scalar(id: u64) -> OldMachineTerm {
+    OldMachineTerm::Variable(Variable(id))
 }
 fn offset(id: u64) -> AddressOffset {
     AddressOffset::Variable(Variable(id))
@@ -49,7 +49,7 @@ fn scaled_int32_literals_join_folded_constants_without_overflow() {
     for value in [0, 1, u32::MAX, i32::MIN as u32] {
         for early in [false, true] {
             let mut graph = EqualityGraph::default();
-            let literal = MachineTerm::constant(value);
+            let literal = OldMachineTerm::constant(value);
             if early {
                 graph.add_int32_equality(&scalar(1), &literal);
             }
@@ -64,7 +64,7 @@ fn scaled_int32_literals_join_folded_constants_without_overflow() {
         }
     }
     let mut graph = EqualityGraph::default();
-    graph.add_int32_equality(&scalar(1), &MachineTerm::constant(2));
+    graph.add_int32_equality(&scalar(1), &OldMachineTerm::constant(2));
     assert!(!graph.are_offsets_equal(&scaled(1, i64::MAX), &AddressOffset::Constant(-2)));
 }
 
@@ -97,18 +97,18 @@ fn scaled_int32_restriction_removes_only_unsupported_consequences() {
 /// keeps when it is formed.
 fn byte_product(id: u64, stride: u32, product_first: bool) -> AddressOffset {
     let (left, right) = if product_first {
-        (scalar(id), MachineTerm::constant(stride))
+        (scalar(id), OldMachineTerm::constant(stride))
     } else {
-        (MachineTerm::constant(stride), scalar(id))
+        (OldMachineTerm::constant(stride), scalar(id))
     };
-    AddressOffset::scale_int32(MachineTerm::multiply(left, right), 1)
+    AddressOffset::scale_int32(OldMachineTerm::multiply(left, right), 1)
 }
 
 fn no_overflow(id: u64, stride: u32, product_first: bool) -> ConditionTerm {
     if product_first {
-        ConditionTerm::signed_multiply_overflows(scalar(id), MachineTerm::constant(stride))
+        ConditionTerm::signed_multiply_overflows(scalar(id), OldMachineTerm::constant(stride))
     } else {
-        ConditionTerm::signed_multiply_overflows(MachineTerm::constant(stride), scalar(id))
+        ConditionTerm::signed_multiply_overflows(OldMachineTerm::constant(stride), scalar(id))
     }
 }
 

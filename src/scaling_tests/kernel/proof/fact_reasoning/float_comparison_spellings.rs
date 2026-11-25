@@ -1,8 +1,8 @@
 #[test]
 fn mirrored_float_spellings_use_exact_indexes_and_preserve_nan_polarity() {
-    let left = MachineTerm::Variable(Variable(991701));
-    let right = MachineTerm::Variable(Variable(991702));
-    let comparison = |wide, operator, a: &MachineTerm, b: &MachineTerm, value| {
+    let left = OldMachineTerm::Variable(Variable(991701));
+    let right = OldMachineTerm::Variable(Variable(991702));
+    let comparison = |wide, operator, a: &OldMachineTerm, b: &OldMachineTerm, value| {
         let condition = FloatCondition::Comparison {
             operator,
             left: Box::new(a.clone()),

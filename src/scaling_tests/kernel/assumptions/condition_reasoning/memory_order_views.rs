@@ -7,7 +7,7 @@ fn memory_order_queries_scale_across_growing_prefixes_and_fact_contexts() {
         let mut root =
             KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(993211));
         let target =
-            IntegerTerm::from_machine(format, MachineTerm::Variable(Variable(993212))).unwrap();
+            IntegerTerm::from_machine(format, OldMachineTerm::Variable(Variable(993212))).unwrap();
         let mut facts = PureFactContext::new();
         let exports = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -15,7 +15,7 @@ fn memory_order_queries_scale_across_growing_prefixes_and_fact_contexts() {
                 facts = facts.assume_condition(
                     ConditionTerm::signed_less_equal(
                         0u32.into(),
-                        MachineTerm::Variable(Variable(994000 + index)),
+                        OldMachineTerm::Variable(Variable(994000 + index)),
                     ),
                     true,
                 );
@@ -65,7 +65,7 @@ fn shared_read_order_bucket_ignores_unrelated_addresses() {
             let memory = crate::kernel::intern_memory(
                 SymbolicMemory::new().with_block(format!("order-retained_state-{index}"), 0),
             );
-            let read = MachineTerm::read_named(
+            let read = OldMachineTerm::read_named(
                 ProgramPoint::at(&memory),
                 Box::new(address),
                 LoadKind::Int32,
@@ -73,13 +73,13 @@ fn shared_read_order_bucket_ignores_unrelated_addresses() {
             let shared = KernelTermImport::default()
                 .machine_arithmetic(MachineIntegerType::Int32, &read)
                 .unwrap();
-            let upper = MachineTerm::constant(20);
+            let upper = OldMachineTerm::constant(20);
             let condition = crate::kernel::machine_integer::comparison::condition_for_operand_views(
                 MachineIntegerType::Int32,
                 CompareRelation::LessThan,
                 [
                     MachineOperandView::Shared(&shared),
-                    MachineOperandView::Legacy(&upper),
+                    MachineOperandView::Old(&upper),
                 ],
             );
             context = context.assume_condition(condition, true);
@@ -105,14 +105,17 @@ fn aligned_shared_sums_check_selected_read_authority_in_linear_work() {
     fn sample(size: usize, unrelated: usize) -> usize {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::Int32;
-        let write_index = MachineTerm::Variable(Variable(996_001));
+        let write_index = OldMachineTerm::Variable(Variable(996_001));
         let base = Address {
             base: "framed-sums".into(),
             offset: AddressOffset::Constant(0),
         };
         let pointers: Vec<_> = (0..size)
             .map(|index| {
-                base.offset_by_elements(MachineTerm::Variable(Variable(996_100 + index as u64)), 4)
+                base.offset_by_elements(
+                    OldMachineTerm::Variable(Variable(996_100 + index as u64)),
+                    4,
+                )
             })
             .collect();
         let mut context = PureFactContext::new();
@@ -126,7 +129,7 @@ fn aligned_shared_sums_check_selected_read_authority_in_linear_work() {
         for index in 0..size {
             context = context.assume_condition(
                 ConditionTerm::signed_less_than(
-                    MachineTerm::Variable(Variable(996_100 + index as u64)),
+                    OldMachineTerm::Variable(Variable(996_100 + index as u64)),
                     write_index.clone(),
                 ),
                 true,
@@ -135,13 +138,13 @@ fn aligned_shared_sums_check_selected_read_authority_in_linear_work() {
         let before = SymbolicMemory::new().with_block("framed-sums", 1024);
         let after = before.clone().store_with_context(
             base.offset_by_elements(write_index, 4),
-            ProgramValue::Int32(MachineTerm::constant(9)),
+            ProgramValue::Int32(OldMachineTerm::constant(9)),
             &context,
         );
         let before = crate::kernel::intern_memory(before);
         let after = crate::kernel::intern_memory(after);
         let zero = KernelTermImport::default()
-            .machine_arithmetic(format, &MachineTerm::constant(0))
+            .machine_arithmetic(format, &OldMachineTerm::constant(0))
             .unwrap();
         let (mut left, mut right) = (zero.clone(), zero);
         for pointer in pointers {
@@ -154,7 +157,7 @@ fn aligned_shared_sums_check_selected_read_authority_in_linear_work() {
                     4,
                 );
                 KernelTermImport::default()
-                    .machine_arithmetic(format, &MachineTerm::Variable(name))
+                    .machine_arithmetic(format, &OldMachineTerm::Variable(name))
                     .unwrap()
             };
             left = KernelTerm::machine_binary_shared(

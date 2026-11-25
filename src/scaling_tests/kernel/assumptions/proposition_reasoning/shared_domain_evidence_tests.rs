@@ -32,8 +32,8 @@ fn domain_source_selection_ignores_unrelated_prefix_and_preserves_branches() {
         for i in 0..size {
             base = base.assume_condition(
                 ConditionTerm::signed_less_than(
-                    MachineTerm::Variable(Variable(980000 + i)),
-                    MachineTerm::constant(i as u32),
+                    OldMachineTerm::Variable(Variable(980000 + i)),
+                    OldMachineTerm::constant(i as u32),
                 ),
                 true,
             );

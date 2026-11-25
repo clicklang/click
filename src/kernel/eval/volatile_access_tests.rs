@@ -6,7 +6,7 @@ fn access(budget: &mut ExecutionBudget, kind: VolatileAccessKind) -> ExecutionPu
         kind,
         Address::symbolic(Variable(800_001)),
         ProgramType::Int32,
-        ProgramValue::Int32(MachineTerm::Variable(Variable(800_002))),
+        ProgramValue::Int32(OldMachineTerm::Variable(Variable(800_002))),
     )
     .unwrap()
 }
@@ -38,7 +38,7 @@ fn predicate_spelling_and_uncertified_records_do_not_supply_read_results() {
             Term::ProgramValue(
                 (ProgramValue::pointer(Address::symbolic(Variable(800_001)))).into(),
             ),
-            Term::ProgramValue((ProgramValue::Int32(MachineTerm::constant(7))).into()),
+            Term::ProgramValue((ProgramValue::Int32(OldMachineTerm::constant(7))).into()),
         ],
     });
     assert!(legacy.volatile_read_result().is_none());
@@ -63,7 +63,7 @@ fn substitution_reaches_operands_and_preserves_event_identity() {
     let mapped = substitute_bitvector_variable_in_proposition(
         fact.proposition(),
         Variable(800_002),
-        &MachineTerm::constant(9),
+        &OldMachineTerm::constant(9),
     );
     let mapped = substitute_pointer_variable_in_proposition(
         &mapped,
@@ -77,8 +77,8 @@ fn substitution_reaches_operands_and_preserves_event_identity() {
     assert_eq!(mapped.kind, original.kind);
     assert_eq!(mapped.pointer, Address::symbolic(Variable(800_003)));
     assert_eq!(
-        mapped.value.native_compat(),
-        &ProgramValue::Int32(MachineTerm::constant(9))
+        mapped.value.old_form(),
+        &ProgramValue::Int32(OldMachineTerm::constant(9))
     );
 }
 
@@ -98,7 +98,7 @@ fn volatile_local_write_retains_the_evaluated_value_root() {
     let state = crate::kernel::functions::bind_program_function_arguments(
         &ExecutionState::new(),
         &function,
-        &[ProgramValue::Int32(MachineTerm::constant(0))],
+        &[ProgramValue::Int32(OldMachineTerm::constant(0))],
     )
     .unwrap()
     .with_retained_local("src", root.clone().into());

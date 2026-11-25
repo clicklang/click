@@ -1907,7 +1907,7 @@ mod aggregate_binding_tests;
 #[cfg(test)]
 mod retained_capture_tests {
     use super::*;
-    use crate::kernel::{ExecutionValue, KernelTerm, KernelTermExport, MachineTerm, Variable};
+    use crate::kernel::{ExecutionValue, KernelTerm, KernelTermExport, OldMachineTerm, Variable};
 
     fn capture(expression: &SyntaxTerm) -> Result<(KernelTerm, Vec<Proposition>), String> {
         let state = ExecutionState::new();
@@ -1931,9 +1931,9 @@ mod retained_capture_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let values = [
             crate::kernel::int32(7),
-            ProgramValue::UInt64(MachineTerm::Variable(Variable(997001))),
-            ProgramValue::Bool(MachineTerm::constant(1)),
-            ProgramValue::Float64(MachineTerm::Variable(Variable(997002))),
+            ProgramValue::UInt64(OldMachineTerm::Variable(Variable(997001))),
+            ProgramValue::Bool(OldMachineTerm::constant(1)),
+            ProgramValue::Float64(OldMachineTerm::Variable(Variable(997002))),
             ProgramValue::Pointer(crate::kernel::OldPointer::new(
                 crate::kernel::Address::symbolic(Variable(997003)),
                 ProgramType::Int32Pointer,

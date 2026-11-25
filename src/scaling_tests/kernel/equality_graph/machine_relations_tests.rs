@@ -24,23 +24,23 @@ fn assert_linear(name: &str, work: &[usize], slope: usize) {
 
 /// A chain of `size` 64-bit signed operations under its unsigned reading,
 /// and the unsigned chain over the operands' readings.
-fn reinterpreted_chain(size: u64) -> (MachineTerm, MachineTerm) {
+fn reinterpreted_chain(size: u64) -> (OldMachineTerm, OldMachineTerm) {
     use crate::kernel::MachineBinaryOp as Op;
     let ops = [Op::Add, Op::Multiply, Op::BitwiseXor, Op::Subtract];
     let mut signed = var(182_000);
-    let mut unsigned = MachineTerm::uint64_from_int64(var(182_000));
+    let mut unsigned = OldMachineTerm::uint64_from_int64(var(182_000));
     for index in 0..size {
         let op = ops[index as usize % ops.len()];
         let operand = var(182_001 + index);
-        signed = MachineTerm::machine_binary(Ty::Int64, op, signed, operand.clone());
-        unsigned = MachineTerm::machine_binary(
+        signed = OldMachineTerm::machine_binary(Ty::Int64, op, signed, operand.clone());
+        unsigned = OldMachineTerm::machine_binary(
             Ty::UInt64,
             op,
             unsigned,
-            MachineTerm::uint64_from_int64(operand),
+            OldMachineTerm::uint64_from_int64(operand),
         );
     }
-    (MachineTerm::uint64_from_int64(signed), unsigned)
+    (OldMachineTerm::uint64_from_int64(signed), unsigned)
 }
 
 /// σ over a chain of `n` operations distributes in work linear in `n`:
@@ -73,18 +73,18 @@ fn class_triggered_distribution_scales_with_merges() {
             let mut graph = EqualityGraph::default();
             let value = |index: u64, slot: u64| var(183_000 + 3 * index + slot);
             for index in 0..size {
-                let low = MachineTerm::uint32_from_64(value(index, 0));
+                let low = OldMachineTerm::uint32_from_64(value(index, 0));
                 assert!(!graph.are_int32_equal(&low, &value(index, 1)));
             }
             for index in 0..size {
-                let sum = MachineTerm::uint64_add(value(index, 1), value(index, 2));
+                let sum = OldMachineTerm::uint64_add(value(index, 1), value(index, 2));
                 graph.add_uint64_equality(&value(index, 0), &sum);
             }
             for index in 0..size {
-                let low = MachineTerm::uint32_from_64(value(index, 0));
-                let sum = MachineTerm::add(
-                    MachineTerm::uint32_from_64(value(index, 1)),
-                    MachineTerm::uint32_from_64(value(index, 2)),
+                let low = OldMachineTerm::uint32_from_64(value(index, 0));
+                let sum = OldMachineTerm::add(
+                    OldMachineTerm::uint32_from_64(value(index, 1)),
+                    OldMachineTerm::uint32_from_64(value(index, 2)),
                 );
                 assert!(graph.are_int32_equal(&low, &sum), "size {size}, {index}");
             }
@@ -110,11 +110,11 @@ fn truncation_of_promoted_arithmetic_is_linear() {
     let mut work = Vec::new();
     for size in SIZES {
         let _session = VerificationSession::enter();
-        let chain = |base: MachineTerm| {
+        let chain = |base: OldMachineTerm| {
             let mut term = base;
             for index in 0..size {
                 let op = ops[index as usize % ops.len()];
-                term = MachineTerm::machine_binary(Ty::Int32, op, term, var(184_010 + index));
+                term = OldMachineTerm::machine_binary(Ty::Int32, op, term, var(184_010 + index));
             }
             cast(Ty::UInt32, Ty::UInt8, term)
         };
@@ -177,7 +177,7 @@ fn wide_cast_composition_scales_with_selected_chain_not_unrelated_classes() {
 
 /// A chain of `size` native `uint8` operations, and C's spelling of the same
 /// chain: each step promoted to `int32` and narrowed back.
-fn narrow_chain(size: u64) -> (MachineTerm, MachineTerm) {
+fn narrow_chain(size: u64) -> (OldMachineTerm, OldMachineTerm) {
     use crate::kernel::MachineBinaryOp as Op;
     // Not `^`: the 32-bit constructor flattens and orders an exclusive-or
     // chain, so C's spelling of a chain is not the narrow chain's shape.
@@ -187,11 +187,11 @@ fn narrow_chain(size: u64) -> (MachineTerm, MachineTerm) {
     for index in 0..size {
         let op = ops[index as usize % ops.len()];
         let operand = var(184_001 + index);
-        native = MachineTerm::machine_binary(Ty::UInt8, op, native, operand.clone());
+        native = OldMachineTerm::machine_binary(Ty::UInt8, op, native, operand.clone());
         promoted = cast(
             Ty::Int32,
             Ty::UInt8,
-            MachineTerm::machine_binary(
+            OldMachineTerm::machine_binary(
                 Ty::Int32,
                 op,
                 cast(Ty::UInt8, Ty::Int32, promoted),
@@ -235,19 +235,19 @@ fn widened_native_narrow_operators_are_linear() {
     let mut work = Vec::new();
     for size in SIZES {
         let _session = VerificationSession::enter();
-        let widen = |term: MachineTerm| cast(Ty::UInt8, Ty::Int32, term);
+        let widen = |term: OldMachineTerm| cast(Ty::UInt8, Ty::Int32, term);
         let ((), units) = crate::instrumentation::measure_deterministic_work(|| {
             let graph = EqualityGraph::default();
             for index in 0..size {
                 let op = ops[index as usize % ops.len()];
                 let (a, b) = (var(185_000 + 2 * index), var(185_001 + 2 * index));
-                let native = MachineTerm::machine_binary(Ty::UInt8, op, a.clone(), b.clone());
+                let native = OldMachineTerm::machine_binary(Ty::UInt8, op, a.clone(), b.clone());
                 let right = if op == Op::ShiftLeft { b } else { widen(b) };
-                let masked = MachineTerm::machine_binary(
+                let masked = OldMachineTerm::machine_binary(
                     Ty::Int32,
                     Op::BitwiseAnd,
-                    MachineTerm::machine_binary(Ty::Int32, op, widen(a), right),
-                    MachineTerm::constant(255),
+                    OldMachineTerm::machine_binary(Ty::Int32, op, widen(a), right),
+                    OldMachineTerm::constant(255),
                 );
                 assert!(
                     graph.are_int32_equal(&widen(native), &masked),
@@ -262,17 +262,17 @@ fn widened_native_narrow_operators_are_linear() {
 
 /// A chain of `size` 32-bit operations over `int32` operands and the same
 /// chain at `uint32` over the operands' σ: σ of the first is the second.
-fn sign_cast32_chain(size: u64) -> (MachineTerm, MachineTerm) {
+fn sign_cast32_chain(size: u64) -> (OldMachineTerm, OldMachineTerm) {
     use crate::kernel::MachineBinaryOp as Op;
     let ops = [Op::Add, Op::Multiply, Op::BitwiseAnd, Op::Subtract];
-    let sigma = |value| MachineTerm::sign_cast32(Ty::Int32, Ty::UInt32, value);
+    let sigma = |value| OldMachineTerm::sign_cast32(Ty::Int32, Ty::UInt32, value);
     let mut signed = var(186_000);
     let mut unsigned = sigma(var(186_000));
     for index in 0..size {
         let op = ops[index as usize % ops.len()];
         let operand = var(186_001 + index);
-        signed = MachineTerm::machine_binary(Ty::Int32, op, signed, operand.clone());
-        unsigned = MachineTerm::machine_binary(Ty::UInt32, op, unsigned, sigma(operand));
+        signed = OldMachineTerm::machine_binary(Ty::Int32, op, signed, operand.clone());
+        unsigned = OldMachineTerm::machine_binary(Ty::UInt32, op, unsigned, sigma(operand));
     }
     (sigma(signed), unsigned)
 }
@@ -310,8 +310,9 @@ fn sign_cast32_distribution_is_linear_in_the_operation_chain() {
 /// constant per pair bounded by a few times the cost of the facts alone.
 #[test]
 fn sign_cast32_inverse_is_constant_work_per_cast() {
-    let sigma =
-        |source: Ty, destination: Ty, value| MachineTerm::sign_cast32(source, destination, value);
+    let sigma = |source: Ty, destination: Ty, value| {
+        OldMachineTerm::sign_cast32(source, destination, value)
+    };
     let mut work = Vec::new();
     for size in SIZES {
         let _session = VerificationSession::enter();
@@ -363,11 +364,11 @@ fn uint32_and_int32_chains_cost_alike() {
         let mut units_at = Vec::new();
         for format in [Ty::Int32, Ty::UInt32] {
             let _session = VerificationSession::enter();
-            let chain = |base: MachineTerm| {
+            let chain = |base: OldMachineTerm| {
                 let mut term = base;
                 for index in 0..size {
                     let op = ops[index as usize % ops.len()];
-                    term = MachineTerm::machine_binary(format, op, term, var(188_010 + index));
+                    term = OldMachineTerm::machine_binary(format, op, term, var(188_010 + index));
                 }
                 term
             };

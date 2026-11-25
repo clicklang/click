@@ -45,8 +45,8 @@ fn full_pointer_fact_transport_checks_provenance_and_the_whole_read() {
         for index in 0..size {
             facts = facts.with_fact(Proposition::condition_is(
                 ConditionTerm::equal(
-                    MachineTerm::Variable(Variable(992_100 + index)),
-                    MachineTerm::constant(7),
+                    OldMachineTerm::Variable(Variable(992_100 + index)),
+                    OldMachineTerm::constant(7),
                 ),
                 true,
             ));
@@ -54,7 +54,7 @@ fn full_pointer_fact_transport_checks_provenance_and_the_whole_read() {
         for index in 0..size {
             let selected = pointer(&before).with_bounds(Some(SubobjectBounds {
                 start: cell.clone(),
-                width: MachineTerm::constant(u32::try_from(index + 1).unwrap()),
+                width: OldMachineTerm::constant(u32::try_from(index + 1).unwrap()),
             }));
             facts = facts.with_fact(Proposition::condition_is(
                 ConditionTerm::PointerEqual(Box::new(selected.clone()), Box::new(selected)),

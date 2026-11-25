@@ -8,21 +8,21 @@
 use super::{Operation, comparison, range, representation};
 use crate::kernel::{
     CompareRelation, ConditionTerm, IntegerTerm, KernelTerm, MachineIntegerType,
-    MachineOperandView, MachineTerm,
+    MachineOperandView, OldMachineTerm,
 };
 use num_bigint::BigInt;
 
 // Native inputs remain native; a shared observation never crosses the boxed
 // boundary merely to construct its residue.
 enum Residue {
-    Native(MachineTerm),
+    Native(OldMachineTerm),
     Shared(KernelTerm),
 }
 
 impl Residue {
     fn view(&self) -> MachineOperandView<'_> {
         match self {
-            Self::Native(value) => MachineOperandView::Legacy(value),
+            Self::Native(value) => MachineOperandView::Old(value),
             Self::Shared(value) => MachineOperandView::Shared(value),
         }
     }
@@ -41,7 +41,7 @@ impl Residue {
         let retain = |value: Self| match value {
             Self::Shared(value) => value,
             Self::Native(value) => {
-                KernelTerm::retained_machine_operand(format, MachineOperandView::Legacy(&value))
+                KernelTerm::retained_machine_operand(format, MachineOperandView::Old(&value))
             }
         };
         let (left, right) = (retain(left), retain(right));
@@ -237,10 +237,10 @@ mod tests {
                     a.clone(),
                     IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                         ty,
-                        MachineTerm::If {
+                        OldMachineTerm::If {
                             condition: ConditionTerm::Variable(Variable(1007101)).into(),
-                            then_term: MachineTerm::Variable(Variable(1007102)).into(),
-                            else_term: MachineTerm::Variable(Variable(1007103)).into(),
+                            then_term: OldMachineTerm::Variable(Variable(1007102)).into(),
+                            else_term: OldMachineTerm::Variable(Variable(1007103)).into(),
                         },
                     )),
                 ] {
@@ -330,7 +330,7 @@ mod tests {
         if representation::word_bits(modulus) != Some(width) {
             return None;
         }
-        let reduce = |constant: &BigInt| -> Option<MachineTerm> {
+        let reduce = |constant: &BigInt| -> Option<OldMachineTerm> {
             let modulo = BigInt::from(1) << width;
             let residue = ((constant % &modulo) + &modulo) % &modulo;
             range::constant_word(modulus, &residue)
@@ -340,10 +340,10 @@ mod tests {
                 term: &IntegerTerm,
                 modulus: MachineIntegerType,
                 width: u32,
-                reduce: &dyn Fn(&BigInt) -> Option<MachineTerm>,
+                reduce: &dyn Fn(&BigInt) -> Option<OldMachineTerm>,
                 nodes: &mut usize,
                 observed: &mut bool,
-            ) -> Option<MachineTerm> {
+            ) -> Option<OldMachineTerm> {
                 *nodes += 1;
                 if *nodes > 64 {
                     return None;

@@ -270,7 +270,7 @@ fn simple_statement_transition_does_not_transport_facts_automatically() {
         base: "arg-memory".into(),
         offset: AddressOffset::Constant(4),
     };
-    let first_value = MachineTerm::read_named(
+    let first_value = OldMachineTerm::read_named(
         crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(base_memory.clone()))),
         Box::new(first.clone()),
         crate::kernel::LoadKind::Int32,
@@ -280,7 +280,7 @@ fn simple_statement_transition_does_not_transport_facts_automatically() {
         .store(first.clone(), int32(first_value.clone()))
         .store(
             second.clone(),
-            int32(MachineTerm::read_named(
+            int32(OldMachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(
                     &(crate::kernel::intern_memory(base_memory.clone())),
                 ),
@@ -293,8 +293,8 @@ fn simple_statement_transition_does_not_transport_facts_automatically() {
         .with_resource_context(ResourceContext::new().unchecked_with_fact(
             ResourceFact::own_memory(MemoryRange::new(
                 first.clone(),
-                MachineTerm::constant(0),
-                MachineTerm::constant(2),
+                OldMachineTerm::constant(0),
+                OldMachineTerm::constant(2),
             )),
         ));
     let fact = Proposition::condition_is(
@@ -302,7 +302,7 @@ fn simple_statement_transition_does_not_transport_facts_automatically() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(first_value),
-            right: Box::new(MachineTerm::constant(7)),
+            right: Box::new(OldMachineTerm::constant(7)),
         },
         true,
     );
@@ -343,14 +343,14 @@ fn simple_statement_transition_does_not_transport_facts_automatically() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::read_named(
+            left: Box::new(OldMachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(
                     &(crate::kernel::intern_memory(post_state.memory().clone())),
                 ),
                 Box::new(first),
                 crate::kernel::LoadKind::Int32,
             )),
-            right: Box::new(MachineTerm::constant(7)),
+            right: Box::new(OldMachineTerm::constant(7)),
         },
         true,
     );
@@ -1107,11 +1107,11 @@ fn execute_step_expands_call_assign_fact_from_internal_state() {
 fn synthesizes_loaded_pointer_equality_as_pointer_comparison() {
     let owner = Address {
         base: "arg-memory".into(),
-        offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(41)), 4),
+        offset: AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(41)), 4),
     };
     let data = Address {
         base: "arg-memory".into(),
-        offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(42)), 4),
+        offset: AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(42)), 4),
     };
     let read = Address::loaded_value(&crate::kernel::intern_memory(SymbolicMemory::new()), &owner);
     let proposition = Proposition::condition_is(
@@ -1169,7 +1169,7 @@ fn synthesizes_loaded_pointer_equality_as_pointer_comparison() {
 fn synthesizes_a_reassigned_pointer_parameter_at_entry() {
     let passed = Address {
         base: "arg-memory".into(),
-        offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(43)), 4),
+        offset: AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(43)), 4),
     };
     let current = Address::symbolic(Variable(44));
     let proposition = Proposition::condition_is(
@@ -1207,9 +1207,9 @@ fn synthesizes_a_reassigned_pointer_parameter_at_entry() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by statement_steps_batch_05")]
 fn synthesizes_dynamically_indexed_pointer_offset_equality() {
-    let owner_offset = AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(41)), 4);
-    let data_offset = AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(42)), 4);
-    let index = MachineTerm::Variable(Variable(43));
+    let owner_offset = AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(41)), 4);
+    let data_offset = AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(42)), 4);
+    let index = OldMachineTerm::Variable(Variable(43));
     let proposition = Proposition::condition_is(
         ConditionTerm::AddressOffsetEqual(
             Box::new(AddressOffset::Add(

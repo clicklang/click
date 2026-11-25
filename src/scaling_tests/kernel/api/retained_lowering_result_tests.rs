@@ -2,14 +2,14 @@
 fn common_lowering_capture_keeps_growing_arithmetic_shared() {
     for size in [8, 32, 128] {
         let _session = VerificationSession::enter();
-        let mut expression = SpecExpression::Value(ProgramValue::UInt32(MachineTerm::Variable(
+        let mut expression = SpecExpression::Value(ProgramValue::UInt32(OldMachineTerm::Variable(
             Variable(999994),
         )));
         for _ in 0..size {
             expression = SpecExpression::Add(
                 Box::new(expression),
                 Box::new(SpecExpression::Value(ProgramValue::UInt32(
-                    MachineTerm::uint32_constant(1),
+                    OldMachineTerm::uint32_constant(1),
                 ))),
             );
         }

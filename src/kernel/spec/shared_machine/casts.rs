@@ -30,10 +30,10 @@ fn float_producing_cast(value: &SpecValue, target: ProgramType) -> Option<Kernel
         }
         if let Some(bits) = float.constant_bits() {
             let literal = match float.format() {
-                KernelFloatType::Float32 => MachineTerm::constant(bits as u32),
-                KernelFloatType::Float64 => MachineTerm::uint64_constant(bits),
+                KernelFloatType::Float32 => OldMachineTerm::constant(bits as u32),
+                KernelFloatType::Float64 => OldMachineTerm::uint64_constant(bits),
             };
-            let native = MachineTerm::opaque_conversion(
+            let native = OldMachineTerm::opaque_conversion(
                 format!(
                     "c_{}_to_{}",
                     crate::kernel::program_type_spelling(source),
@@ -128,7 +128,7 @@ fn cast_root(
         KernelTermNode::MachineObservationInput { .. } | KernelTermNode::WrittenMachine(_) => {
             root.machine_conversion_leaf().cloned()
         }
-        KernelTermNode::MachineLiteral(literal) => Some(literal.legacy_term()),
+        KernelTermNode::MachineLiteral(literal) => Some(literal.old_term()),
         _ => None,
     };
     if let Some(native) = native {
@@ -136,7 +136,7 @@ fn cast_root(
             crate::kernel::machine_integer::conversion::convert_term(source, destination, native);
         return KernelTerm::retained_machine_operand(
             destination,
-            crate::kernel::MachineOperandView::Legacy(&converted),
+            crate::kernel::MachineOperandView::Old(&converted),
         );
     }
     let result = if source.format().bits() < 64 {
@@ -197,7 +197,7 @@ fn cast_wide(value: &SpecValue, target: ProgramType) -> Option<KernelTerm> {
         );
         return Some(KernelTerm::retained_machine_operand(
             destination,
-            MachineOperandView::Legacy(&converted),
+            MachineOperandView::Old(&converted),
         ));
     }
     Some(root.checking_machine_cast_preserving_sign_pairs(source, destination))

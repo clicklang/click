@@ -109,7 +109,7 @@ fn offset_condition_rewrites_preserve_shared_offset_dags() {
                     crate::kernel::reasoning::substitute_bitvector_variable_in_common_condition(
                         &source,
                         Variable(998201),
-                        &MachineTerm::constant(1),
+                        &OldMachineTerm::constant(1),
                     )
                     .unwrap();
                 let transported = crate::kernel::memory_history::transport_framed_common_condition(
@@ -139,7 +139,7 @@ fn growing_offset_guards_reuse_observation_normalization() {
         .unwrap();
         let zero = KernelAddressOffset::Constant(0).into_shared().unwrap();
         let word = KernelTermImport::default()
-            .machine(MachineIntegerType::Int32, &MachineTerm::constant(1));
+            .machine(MachineIntegerType::Int32, &OldMachineTerm::constant(1));
         let exports = KernelTermExport::machine_export_count();
         let mut retained = Vec::new();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {

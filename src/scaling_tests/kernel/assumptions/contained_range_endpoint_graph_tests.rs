@@ -87,12 +87,12 @@ fn retained_memory_bound_candidates_do_not_export_shared_endpoints() {
         let source = condition_for_operand_views(
             MachineIntegerType::Int32,
             CompareRelation::LessEqual,
-            [V::Shared(&retained), V::Legacy(&upper)],
+            [V::Shared(&retained), V::Old(&upper)],
         );
         let mut context = PureFactContext::new().assume_condition(source, true);
         for n in 0..size {
             context = context.assume_condition(
-                ConditionTerm::equal(variable(9_340_000 + n), MachineTerm::constant(n as u32)),
+                ConditionTerm::equal(variable(9_340_000 + n), OldMachineTerm::constant(n as u32)),
                 true,
             );
         }
@@ -104,7 +104,7 @@ fn retained_memory_bound_candidates_do_not_export_shared_endpoints() {
             assert!(candidates.iter().any(|(l, _, _)| {
                 crate::kernel::reasoning::int32_operand_values_equal_for_memory_resolution(
                     *l,
-                    V::Legacy(&lower),
+                    V::Old(&lower),
                     &context,
                 )
             }));

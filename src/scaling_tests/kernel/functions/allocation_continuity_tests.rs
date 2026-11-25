@@ -33,7 +33,7 @@ fn allocating_call_does_not_expand_the_callers_kept_objects() {
         base: AddressBase::Heap(id),
         offset: AddressOffset::Constant(0),
     };
-    let bytes = MachineTerm::constant(4);
+    let bytes = OldMachineTerm::constant(4);
     let samples = [16, 64, 256]
         .into_iter()
         .map(|size| {
@@ -124,7 +124,7 @@ fn consuming_call_does_not_expand_unrelated_folded_allocations() {
         offset: AddressOffset::Constant(0),
     };
     let consumed = heap(933_000);
-    let bytes = MachineTerm::constant(4);
+    let bytes = OldMachineTerm::constant(4);
     let input = ResourceContext::new().unchecked_with_fact(ResourceFact::own_allocation(
         consumed.clone(),
         bytes.clone(),
@@ -193,8 +193,8 @@ fn consuming_call_does_not_expand_unrelated_folded_allocations() {
 fn allocation_size_graph_queries_scale_without_fact_index() {
     for size in [16u64, 64, 256, 512] {
         let _session = crate::kernel::VerificationSession::enter();
-        let var = |id| MachineTerm::Variable(Variable(id));
-        let offset = |value| MachineTerm::add(value, MachineTerm::constant(1));
+        let var = |id| OldMachineTerm::Variable(Variable(id));
+        let offset = |value| OldMachineTerm::add(value, OldMachineTerm::constant(1));
         let base = external_pointer(930_020);
         let input_size = offset(var(0));
         let mut context = PureFactContext::new();
@@ -232,10 +232,10 @@ fn allocation_size_graph_queries_scale_without_fact_index() {
 fn uint64_allocation_size_graph_queries_scale_without_fact_index() {
     for size in [16u64, 64, 256, 512] {
         let _session = crate::kernel::VerificationSession::enter();
-        let var = |id| MachineTerm::Variable(Variable(id));
+        let var = |id| OldMachineTerm::Variable(Variable(id));
         let allocation_size = |value| {
             AllocationSize::new(
-                MachineTerm::uint64_add(value, MachineTerm::uint64_constant(1)),
+                OldMachineTerm::uint64_add(value, OldMachineTerm::uint64_constant(1)),
                 AllocationSizeKind::UInt64,
             )
         };

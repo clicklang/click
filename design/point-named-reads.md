@@ -79,10 +79,10 @@ non-test sites in 26 files, and the mixed-name census could attribute a read
 only to the first code that built a bare point for its memory, which is not
 always the code that built the read. The census now records the producer at
 the constructor. Every integer read term is now built by
-`MachineTerm::read_named(point, pointer, kind)`, or by
-`MachineTerm::memory_read(memory, ..)` for the legacy memory name.
+`OldMachineTerm::read_named(point, pointer, kind)`, or by
+`OldMachineTerm::memory_read(memory, ..)` for the legacy memory name.
 `build_support/read_construction.rs` holds other direct
-`MachineTerm::MemoryLoad(..)` constructions outside test code to zero, so the
+`OldMachineTerm::MemoryLoad(..)` constructions outside test code to zero, so the
 rule cannot erode. Both constructors take `#[track_caller]` in test builds:
 the census can name the producer exactly, and a change to how reads are named
 has one place to go. The other read representations

@@ -21,15 +21,15 @@ fn retained_widening_casts_match_native_terms_at_every_supported_width() {
             if source.format().bits() >= destination.format().bits() {
                 continue;
             }
-            let variable = MachineTerm::Variable(Variable(995430));
+            let variable = OldMachineTerm::Variable(Variable(995430));
             let one =
                 crate::kernel::machine_integer::range::constant_word(source, &1.into()).unwrap();
             let high = num_bigint::BigInt::from(1u8)
                 << (source.format().bits() - u32::from(source.format().is_signed())) as usize;
             let mut operands = vec![
                 variable.clone(),
-                MachineTerm::opaque_conversion("widen_boundary", variable.clone()),
-                MachineTerm::Binary {
+                OldMachineTerm::opaque_conversion("widen_boundary", variable.clone()),
+                OldMachineTerm::Binary {
                     format: source,
                     op: MachineBinaryOp::Add,
                     left: Box::new(variable.clone()),
@@ -59,10 +59,8 @@ fn retained_widening_casts_match_native_terms_at_every_supported_width() {
                 ));
             }
             for operand in operands {
-                let root = KernelTerm::retained_machine_operand(
-                    source,
-                    MachineOperandView::Legacy(&operand),
-                );
+                let root =
+                    KernelTerm::retained_machine_operand(source, MachineOperandView::Old(&operand));
                 check_native_parity(root, destination);
             }
         }
@@ -72,11 +70,13 @@ fn retained_widening_casts_match_native_terms_at_every_supported_width() {
 #[test]
 fn widening_producer_keeps_other_boundaries_outside_its_slice() {
     let _session = VerificationSession::enter();
-    let native = SpecValue::Native(ProgramValue::Int32(MachineTerm::Variable(Variable(995431))));
+    let native = SpecValue::Native(ProgramValue::Int32(OldMachineTerm::Variable(Variable(
+        995431,
+    ))));
     assert!(shared_machine::cast_widening(&native, ProgramType::Int64).is_none());
     let root = KernelTermImport::default().machine(
         MachineIntegerType::Int32,
-        &MachineTerm::Variable(Variable(995431)),
+        &OldMachineTerm::Variable(Variable(995431)),
     );
     for target in [
         ProgramType::Int8,
@@ -90,9 +90,9 @@ fn widening_producer_keeps_other_boundaries_outside_its_slice() {
     }
     let call = KernelTermImport::default().machine(
         MachineIntegerType::Int32,
-        &MachineTerm::opaque_conversion(
+        &OldMachineTerm::opaque_conversion(
             "unmigrated_widen",
-            MachineTerm::Variable(Variable(995431)),
+            OldMachineTerm::Variable(Variable(995431)),
         ),
     );
     assert!(shared_machine::cast_widening(&SpecValue::Shared(call), ProgramType::Int64).is_none());

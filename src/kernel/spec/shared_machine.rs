@@ -178,12 +178,12 @@ pub(super) fn bitwise_not(
 fn retained_operand(format: MachineIntegerType, value: MachineOperandView<'_>) -> KernelTerm {
     match value {
         MachineOperandView::Shared(value) => value.with_machine_observation_type(format),
-        MachineOperandView::Legacy(value) => {
+        MachineOperandView::Old(value) => {
             // Native 32-bit operators read the low word and use the result
             // format's literal spelling. Normalize at this input boundary,
             // never by exporting a previously produced shared prefix.
             let value = if format.format().bits() == 32 {
-                MachineTerm::operand32(format, value.clone())
+                OldMachineTerm::operand32(format, value.clone())
             } else {
                 value.clone()
             };
@@ -201,7 +201,7 @@ pub(super) fn prepare(
         Binary(MachineBinaryOp),
     }
     enum Prepared<'a> {
-        Value(MachineIntegerType, &'a MachineTerm),
+        Value(MachineIntegerType, &'a OldMachineTerm),
         Binary(MachineIntegerType, MachineBinaryOp),
     }
     // Select the fragment once before importing any legacy payload. A rejected
@@ -273,7 +273,7 @@ pub(super) fn prepare(
         budget.consume_expression_step()?;
         match step {
             Prepared::Value(format, value) => {
-                values.push(retained_operand(format, MachineOperandView::Legacy(value)));
+                values.push(retained_operand(format, MachineOperandView::Old(value)));
             }
             Prepared::Binary(format, op) => {
                 let right = values.pop().unwrap();
@@ -311,7 +311,7 @@ pub(super) fn apply(
             crate::kernel::machine_integer::comparison::condition_for_operand_views(
                 format,
                 relation,
-                [value, MachineOperandView::Legacy(&constant(n))],
+                [value, MachineOperandView::Old(&constant(n))],
             )
         };
         let mut require_false = |condition| {
@@ -342,7 +342,7 @@ pub(super) fn apply(
                 crate::kernel::machine_integer::comparison::condition_for_operand_views(
                     format,
                     CompareRelation::Equal,
-                    [right_view, MachineOperandView::Legacy(&zero)],
+                    [right_view, MachineOperandView::Old(&zero)],
                 ),
                 false,
             ));
@@ -383,15 +383,14 @@ fn logical_binary(
     if let (KernelTermNode::MachineLiteral(a), KernelTermNode::MachineLiteral(b)) =
         (left.node(), right.node())
     {
-        let value =
-            MachineTerm::logical_machine_binary(format, op, a.legacy_term(), b.legacy_term());
+        let value = OldMachineTerm::logical_machine_binary(format, op, a.old_term(), b.old_term());
         KernelTermImport::default().argument(&PureFunctionArgument::Value(wrap(format, value)))
     } else {
         let operand = |root: KernelTerm| {
             if format.format().bits() == 32
                 && let KernelTermNode::MachineLiteral(literal) = root.node()
             {
-                let word = MachineTerm::operand32(format, literal.legacy_term());
+                let word = OldMachineTerm::operand32(format, literal.old_term());
                 return KernelTerm::retained_native_machine_operand(format, &word);
             }
             // Native import gives both children the operator's reading.
@@ -402,7 +401,7 @@ fn logical_binary(
     }
 }
 
-fn wrap(format: MachineIntegerType, value: MachineTerm) -> ProgramValue {
+fn wrap(format: MachineIntegerType, value: OldMachineTerm) -> ProgramValue {
     match format {
         MachineIntegerType::Int32 => ProgramValue::Int32(value),
         MachineIntegerType::Int64 => ProgramValue::Int64(value),
@@ -438,7 +437,7 @@ mod tests {
         match value {
             Proposition::And(a, b) => Proposition::And(Box::new(boxed_domain(a)), Box::new(boxed_domain(b))),
             Proposition::ConditionIs(condition, truth) => {
-                crate::kernel::machine_integer::comparison::structural_native_comparison_of_integer_observation(condition.native_compat(), *truth)
+                crate::kernel::machine_integer::comparison::structural_native_comparison_of_integer_observation(condition.old_form(), *truth)
                     .map(|(condition, truth)| Proposition::condition_is(condition, truth))
                     .unwrap_or_else(|| value.clone())
             }
@@ -492,9 +491,9 @@ mod tests {
                 crate::kernel::machine_integer::range::constant_word(format, &n.into())
                     .unwrap_or_else(|| {
                         if format.format().bits() == 32 {
-                            MachineTerm::constant(n as u32)
+                            OldMachineTerm::constant(n as u32)
                         } else {
-                            MachineTerm::uint64_constant(n as u64)
+                            OldMachineTerm::uint64_constant(n as u64)
                         }
                     })
             };
@@ -504,7 +503,7 @@ mod tests {
                 i64::MIN
             };
             for (a, b) in [
-                (MachineTerm::Variable(Variable(991901)), constant(2)),
+                (OldMachineTerm::Variable(Variable(991901)), constant(2)),
                 (constant(min), constant(-1)),
                 (constant(3), constant(0)),
             ] {
@@ -576,11 +575,11 @@ mod tests {
                     (constant(1), constant(0)),
                     (constant(1), constant(1)),
                     (constant(1), constant(u64::from(format.format().bits()))),
-                    (MachineTerm::Variable(Variable(991902)), constant(1)),
-                    (constant(1), MachineTerm::Variable(Variable(991903))),
+                    (OldMachineTerm::Variable(Variable(991902)), constant(1)),
+                    (constant(1), OldMachineTerm::Variable(Variable(991903))),
                     (
-                        MachineTerm::Variable(Variable(991902)),
-                        MachineTerm::Variable(Variable(991903)),
+                        OldMachineTerm::Variable(Variable(991902)),
+                        OldMachineTerm::Variable(Variable(991903)),
                     ),
                 ] {
                     let left = Box::new(SpecExpression::Value(wrap(format, left)));
@@ -612,9 +611,9 @@ mod tests {
             };
             let constant = |n: i64| {
                 if format == MachineIntegerType::Int32 {
-                    MachineTerm::constant(n as u32)
+                    OldMachineTerm::constant(n as u32)
                 } else {
-                    MachineTerm::int64_constant(n)
+                    OldMachineTerm::int64_constant(n)
                 }
             };
             let maximum = if format == MachineIntegerType::Int32 {
@@ -623,7 +622,7 @@ mod tests {
                 i64::MAX
             };
             let minimum = -maximum - 1;
-            let variable = MachineTerm::Variable(Variable(990004));
+            let variable = OldMachineTerm::Variable(Variable(990004));
             for (left, right) in [
                 (variable.clone(), variable.clone()),
                 (variable.clone(), constant(0)),
@@ -675,7 +674,7 @@ mod tests {
             let leaf = |n| {
                 Box::new(SpecExpression::Value(wrap(
                     format,
-                    MachineTerm::Variable(Variable(n)),
+                    OldMachineTerm::Variable(Variable(n)),
                 )))
             };
             for expression in [
@@ -691,19 +690,19 @@ mod tests {
                 assert_eq!(evaluate(&expression, false), evaluate(&expression, true));
             }
             let maximum = if format == MachineIntegerType::Int32 {
-                MachineTerm::constant(i32::MAX as u32)
+                OldMachineTerm::constant(i32::MAX as u32)
             } else {
-                MachineTerm::int64_constant(i64::MAX)
+                OldMachineTerm::int64_constant(i64::MAX)
             };
             let one = if format == MachineIntegerType::Int32 {
-                MachineTerm::constant(1)
+                OldMachineTerm::constant(1)
             } else {
-                MachineTerm::int64_constant(1)
+                OldMachineTerm::int64_constant(1)
             };
             let zero = if format == MachineIntegerType::Int32 {
-                MachineTerm::constant(0)
+                OldMachineTerm::constant(0)
             } else {
-                MachineTerm::int64_constant(0)
+                OldMachineTerm::int64_constant(0)
             };
             let expression = SpecExpression::Multiply(
                 Box::new(SpecExpression::Add(
@@ -748,7 +747,7 @@ mod tests {
                 }
                 (Proposition::ConditionIs(a, av), Proposition::ConditionIs(b, bv)) => {
                     assert_eq!(av, bv);
-                    match (a.native_compat(), b.native_compat()) {
+                    match (a.old_form(), b.old_form()) {
                         (
                             ConditionTerm::IntegerLessEqual(a, b),
                             ConditionTerm::IntegerLessEqual(c, d),
@@ -767,11 +766,11 @@ mod tests {
             }
         }
         for format in [MachineIntegerType::Int32, MachineIntegerType::Int64] {
-            let opaque = MachineTerm::BoolCast {
+            let opaque = OldMachineTerm::BoolCast {
                 to: format,
                 value: Box::new(ConditionTerm::signed_less_than(
-                    MachineTerm::Variable(Variable(990020)),
-                    MachineTerm::constant(0),
+                    OldMachineTerm::Variable(Variable(990020)),
+                    OldMachineTerm::constant(0),
                 )),
             };
             let leaf = || Box::new(SpecExpression::Value(wrap(format, opaque.clone())));
@@ -802,7 +801,7 @@ mod tests {
     fn shared_signed_domains_retain_held_resource_metadata() {
         let operand = || {
             Box::new(SpecExpression::Value(ProgramValue::Int32(
-                MachineTerm::Variable(Variable(990005)),
+                OldMachineTerm::Variable(Variable(990005)),
             )))
         };
         let expression = SpecExpression::Add(operand(), operand());
@@ -835,16 +834,16 @@ mod tests {
                 }
             };
             let one = if format == MachineIntegerType::UInt32 {
-                MachineTerm::constant(1)
+                OldMachineTerm::constant(1)
             } else {
-                MachineTerm::uint64_constant(1)
+                OldMachineTerm::uint64_constant(1)
             };
             let maximum = if format == MachineIntegerType::UInt32 {
-                MachineTerm::constant(u32::MAX)
+                OldMachineTerm::constant(u32::MAX)
             } else {
-                MachineTerm::uint64_constant(u64::MAX)
+                OldMachineTerm::uint64_constant(u64::MAX)
             };
-            for left in [MachineTerm::Variable(Variable(990001)), maximum] {
+            for left in [OldMachineTerm::Variable(Variable(990001)), maximum] {
                 for operator in [
                     MachineBinaryOp::Add,
                     MachineBinaryOp::Subtract,
@@ -867,9 +866,9 @@ mod tests {
     #[test]
     fn result_observations_preserve_opaque_native_identity() {
         for format in [MachineIntegerType::Int32, MachineIntegerType::UInt64] {
-            let leaf = MachineTerm::opaque_conversion(
+            let leaf = OldMachineTerm::opaque_conversion(
                 "result_identity",
-                MachineTerm::Variable(Variable(992220)),
+                OldMachineTerm::Variable(Variable(992220)),
             );
             let expression = SpecExpression::Subtract(
                 Box::new(SpecExpression::Value(wrap(format, leaf))),
@@ -895,9 +894,9 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let make = |id| {
             let format = MachineIntegerType::UInt64;
-            let leaf = MachineTerm::opaque_conversion(
+            let leaf = OldMachineTerm::opaque_conversion(
                 "observation_owner",
-                MachineTerm::Variable(Variable(id)),
+                OldMachineTerm::Variable(Variable(id)),
             );
             SpecValue::Shared(KernelTerm::machine_binary_shared(
                 format,
@@ -906,7 +905,7 @@ mod tests {
                     KernelTerm::retained_native_machine_operand(format, &leaf),
                     KernelTerm::retained_native_machine_operand(
                         format,
-                        &MachineTerm::uint64_constant(1),
+                        &OldMachineTerm::uint64_constant(1),
                     ),
                 ],
             ))
@@ -931,7 +930,7 @@ mod tests {
                     requirement: Box::new(SpecProposition::Comparison {
                         left: SpecExpression::Value(wrap(
                             format,
-                            MachineTerm::Variable(Variable(id)),
+                            OldMachineTerm::Variable(Variable(id)),
                         )),
                         operator: ComparisonOperator::NotEqual,
                         right: SpecExpression::Value(wrap(
@@ -942,7 +941,7 @@ mod tests {
                     }),
                     value: Box::new(SpecExpression::Value(wrap(
                         format,
-                        MachineTerm::Variable(Variable(id)),
+                        OldMachineTerm::Variable(Variable(id)),
                     ))),
                 })
             };
@@ -1008,12 +1007,12 @@ mod tests {
     fn partial_and_deferred_arithmetic_keeps_its_obligations() {
         let signed = || {
             Box::new(SpecExpression::Value(ProgramValue::Int32(
-                MachineTerm::Variable(Variable(990002)),
+                OldMachineTerm::Variable(Variable(990002)),
             )))
         };
         let unsigned = || {
             Box::new(SpecExpression::Value(ProgramValue::UInt64(
-                MachineTerm::Variable(Variable(990003)),
+                OldMachineTerm::Variable(Variable(990003)),
             )))
         };
         for expression in [
@@ -1029,7 +1028,7 @@ mod tests {
         assert!(!evaluate(&signed_sum, false)[0].obligations.is_empty());
         let zero = || {
             Box::new(SpecExpression::Value(ProgramValue::UInt64(
-                MachineTerm::uint64_constant(0),
+                OldMachineTerm::uint64_constant(0),
             )))
         };
         // A zero factor does not erase an inner shift's count domain. (A

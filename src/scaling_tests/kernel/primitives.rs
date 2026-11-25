@@ -5,14 +5,14 @@
 use super::*;
 
 /// A `uint8` value `depth` additions deep over one variable.
-fn deep_uint8_value(depth: u64) -> MachineTerm {
-    let mut value = MachineTerm::Variable(Variable(930_000));
+fn deep_uint8_value(depth: u64) -> OldMachineTerm {
+    let mut value = OldMachineTerm::Variable(Variable(930_000));
     for _ in 0..depth {
-        value = MachineTerm::Binary {
+        value = OldMachineTerm::Binary {
             format: MachineIntegerType::UInt8,
             op: MachineBinaryOp::Add,
             left: Box::new(value),
-            right: Box::new(MachineTerm::machine_constant(
+            right: Box::new(OldMachineTerm::machine_constant(
                 MachineIntegerConstant::from_signed(MachineIntegerType::UInt8.format(), 1)
                     .expect("1 is a uint8 value"),
             )),
@@ -33,7 +33,7 @@ fn narrow_comparison_identity_is_constant_in_operand_size() {
         condition.hash(&mut state);
         state.finish()
     };
-    let seven = MachineTerm::machine_constant(
+    let seven = OldMachineTerm::machine_constant(
         MachineIntegerConstant::from_signed(MachineIntegerType::UInt8.format(), 7)
             .expect("7 is a uint8 value"),
     );
@@ -113,7 +113,7 @@ fn structural_type_lookup_and_algebraic_stand_in_do_not_scan_registered_types() 
         });
         assert!(matches!(
             stand_in,
-            MachineTerm::MemoryLoad(_, _, LoadKind::Algebraic(name)) if name == target_name
+            OldMachineTerm::MemoryLoad(_, _, LoadKind::Algebraic(name)) if name == target_name
         ));
         counts.push(work);
     }

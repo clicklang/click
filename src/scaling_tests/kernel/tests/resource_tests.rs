@@ -65,8 +65,13 @@ fn aliased_memory_consumption_does_not_walk_the_pointer_class() {
     let mut samples = Vec::new();
     for size in [16_u64, 64, 256] {
         let pointer = |i| Address::symbolic(Variable(800_000 + i));
-        let cell =
-            |base| MemoryRange::new(base, MachineTerm::constant(0), MachineTerm::constant(1));
+        let cell = |base| {
+            MemoryRange::new(
+                base,
+                OldMachineTerm::constant(0),
+                OldMachineTerm::constant(1),
+            )
+        };
         let mut assumptions = PureFactContext::new();
         let mut resources = ResourceContext::new()
             .unchecked_with_fact(ResourceFact::own_memory(cell(pointer(size))));
@@ -106,8 +111,8 @@ fn paired_memory_index_updates_move_the_smaller_resource_payload() {
                     base: root.base.clone(),
                     offset: AddressOffset::Constant(i as i64 * 4),
                 },
-                MachineTerm::constant(0),
-                MachineTerm::constant(1),
+                OldMachineTerm::constant(0),
+                OldMachineTerm::constant(1),
             )));
         }
         let mut assumptions = PureFactContext::new();
@@ -127,8 +132,8 @@ fn paired_memory_index_updates_move_the_smaller_resource_payload() {
         });
         let required = ResourceFact::own_memory(MemoryRange::new(
             Address::symbolic(Variable(820_000 + size)),
-            MachineTerm::constant(0),
-            MachineTerm::constant(1),
+            OldMachineTerm::constant(0),
+            OldMachineTerm::constant(1),
         ));
         let (remaining, query_work) = crate::instrumentation::measure_deterministic_work(|| {
             resources.without_fact_incrementally(&required, &assumptions)
@@ -158,8 +163,8 @@ fn paired_memory_consumption_indexes_disjoint_spans_at_one_base() {
         for i in 0..size {
             resources = resources.unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
                 owner.clone(),
-                MachineTerm::constant(i as u32 * 2),
-                MachineTerm::constant(i as u32 * 2 + 1),
+                OldMachineTerm::constant(i as u32 * 2),
+                OldMachineTerm::constant(i as u32 * 2 + 1),
             )));
         }
         let assumptions = PureFactContext::new()
@@ -167,8 +172,8 @@ fn paired_memory_consumption_indexes_disjoint_spans_at_one_base() {
         resources.synchronize_memory_equalities(&assumptions);
         let required = ResourceFact::own_memory(MemoryRange::new(
             alias,
-            MachineTerm::constant(size as u32),
-            MachineTerm::constant(size as u32 + 1),
+            OldMachineTerm::constant(size as u32),
+            OldMachineTerm::constant(size as u32 + 1),
         ));
         let ((remaining, work), map_work) = crate::persistent::measure_persistent_work(|| {
             crate::instrumentation::measure_deterministic_work(|| {
@@ -206,8 +211,8 @@ fn indexed_memory_lookup_ignores_unrelated_pointer_parameters() {
                 1u32.into(),
             )));
         }
-        let limit = MachineTerm::Variable(Variable(871_100));
-        let index = MachineTerm::Variable(Variable(869_000));
+        let limit = OldMachineTerm::Variable(Variable(871_100));
+        let index = OldMachineTerm::Variable(Variable(869_000));
         let symbolic = resources
             .clone()
             .unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
@@ -315,7 +320,7 @@ fn owned_fragment_reservation_scales_with_fragments_not_ambient_memory() {
         Address::symbolic(Variable(862_010)),
         Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(862_011)), 4),
+            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(862_011)), 4),
         },
     ] {
         let fact = |start: u32, end: u32| {
@@ -384,8 +389,8 @@ fn specification_read_candidates_do_not_scan_unrelated_memory_ranges() {
         for i in 0..size {
             resources = resources.unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
                 owner.clone(),
-                MachineTerm::constant(i as u32 * 2),
-                MachineTerm::constant(i as u32 * 2 + 1),
+                OldMachineTerm::constant(i as u32 * 2),
+                OldMachineTerm::constant(i as u32 * 2 + 1),
             )));
         }
         let facts = PureFactContext::new();
@@ -543,14 +548,14 @@ fn stored_child_arguments_require_owned_memory() {
         for i in 0..size {
             let other = Address {
                 base: AddressBase::ExternalArgument,
-                offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(1000 + i)), 4),
+                offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(1000 + i)), 4),
             };
             framed.resources = framed
                 .resources
                 .unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
                     other,
-                    MachineTerm::constant(0),
-                    MachineTerm::constant(1),
+                    OldMachineTerm::constant(0),
+                    OldMachineTerm::constant(1),
                 )));
         }
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -595,8 +600,8 @@ fn instance_fold_preserves_memory_pieces_without_scanning_unrelated_resources() 
         .map(|i| {
             ResourceFact::own_memory(MemoryRange::new(
                 pointer.clone(),
-                MachineTerm::constant(i),
-                MachineTerm::constant(i + 1),
+                OldMachineTerm::constant(i),
+                OldMachineTerm::constant(i + 1),
             ))
         })
         .collect::<Vec<_>>();
@@ -607,12 +612,12 @@ fn instance_fold_preserves_memory_pieces_without_scanning_unrelated_resources() 
         for i in 0..size {
             let other = Address {
                 base: AddressBase::ExternalArgument,
-                offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(1000 + i)), 4),
+                offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(1000 + i)), 4),
             };
             resources = resources.unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
                 other,
-                MachineTerm::constant(0),
-                MachineTerm::constant(1),
+                OldMachineTerm::constant(0),
+                OldMachineTerm::constant(1),
             )));
         }
         let state = ExecutionState::new().with_resource_context(resources);
@@ -962,11 +967,11 @@ fn symbolic_resource_indices_exact_transfer_scales_with_same_family_indices() {
 
 #[test]
 fn zero_resource_identity_ignores_unrelated_resources() {
-    let quantity = MachineTerm::Variable(Variable(911_000));
-    let intermediate = MachineTerm::Variable(Variable(911_001));
+    let quantity = OldMachineTerm::Variable(Variable(911_000));
+    let intermediate = OldMachineTerm::Variable(Variable(911_001));
     let assumptions = PureFactContext::new()
         .assume_proposition(equality(quantity.clone(), intermediate.clone()))
-        .assume_proposition(equality(intermediate, MachineTerm::constant(0)));
+        .assume_proposition(equality(intermediate, OldMachineTerm::constant(0)));
     let required = ResourceFact::own_quantity(
         Resource::Token {
             name: "empty".to_string(),
@@ -1411,8 +1416,8 @@ fn native_large_coordinate_insertion_uses_interval_neighbors() {
             let owned = |start, end| {
                 ResourceFact::own_memory(MemoryRange::new_wide(
                     base.clone(),
-                    MachineTerm::uint64_constant(start),
-                    MachineTerm::uint64_constant(end),
+                    OldMachineTerm::uint64_constant(start),
+                    OldMachineTerm::uint64_constant(end),
                     width,
                 ))
             };
@@ -1486,8 +1491,8 @@ fn translated_owner_insertion_uses_interval_neighbors() {
                     ResourceFact::own_memory(if native {
                         MemoryRange::new_wide(
                             base,
-                            MachineTerm::uint64_constant(0),
-                            MachineTerm::uint64_constant(1),
+                            OldMachineTerm::uint64_constant(0),
+                            OldMachineTerm::uint64_constant(1),
                             4,
                         )
                     } else {
@@ -1554,8 +1559,8 @@ fn constant_neighbor_overlap_checks_do_not_walk_pointer_alias_pairs() {
                 ResourceFact::own_memory(if native {
                     MemoryRange::new_wide(
                         p.clone(),
-                        MachineTerm::uint64_constant(u64::from(start)),
-                        MachineTerm::uint64_constant(u64::from(start + 1)),
+                        OldMachineTerm::uint64_constant(u64::from(start)),
+                        OldMachineTerm::uint64_constant(u64::from(start + 1)),
                         4,
                     )
                 } else {
@@ -1667,8 +1672,8 @@ fn ownership_alias_checks_do_not_filter_read_only_views() {
             let _session = crate::kernel::VerificationSession::enter();
             let p = Address::symbolic(Variable(995_700));
             let q = Address::symbolic(Variable(995_701));
-            let index = MachineTerm::var(Variable(995_702));
-            let end = MachineTerm::add(index.clone(), 1u32.into());
+            let index = OldMachineTerm::var(Variable(995_702));
+            let end = OldMachineTerm::add(index.clone(), 1u32.into());
             let assumptions = PureFactContext::new()
                 .assume_condition(ConditionTerm::address_equal(p.clone(), q.clone()), true)
                 .assume_condition(
@@ -1739,8 +1744,8 @@ fn exact_pointer_alias_ownership_checks_select_interval_neighbors() {
                 ResourceFact::own_memory(if native {
                     MemoryRange::new_wide(
                         base,
-                        MachineTerm::uint64_constant(u64::from(start)),
-                        MachineTerm::uint64_constant(u64::from(start + 1)),
+                        OldMachineTerm::uint64_constant(u64::from(start)),
+                        OldMachineTerm::uint64_constant(u64::from(start + 1)),
                         4,
                     )
                 } else {
@@ -1792,15 +1797,15 @@ fn unrelated_origin_does_not_disable_owned_interval_neighbors() {
                 let base = Address {
                     base: AddressBase::ExternalArgument,
                     offset: AddressOffset::add(
-                        AddressOffset::scale_int32(MachineTerm::var(Variable(variable)), 1),
+                        AddressOffset::scale_int32(OldMachineTerm::var(Variable(variable)), 1),
                         AddressOffset::Constant(displacement),
                     ),
                 };
                 ResourceFact::own_memory(if native {
                     MemoryRange::new_wide(
                         base,
-                        MachineTerm::uint64_constant(0),
-                        MachineTerm::uint64_constant(1),
+                        OldMachineTerm::uint64_constant(0),
+                        OldMachineTerm::uint64_constant(1),
                         4,
                     )
                 } else {
@@ -1961,10 +1966,10 @@ fn incremental_quantity_consumption_normalizes_only_the_exact_resource_bucket() 
         };
         let unit = ResourceFact::Own(
             target_resource.clone(),
-            Box::new(MachineTerm::constant(1).into()),
+            Box::new(OldMachineTerm::constant(1).into()),
         );
         let required =
-            ResourceFact::own_quantity(target_resource.clone(), MachineTerm::constant(2));
+            ResourceFact::own_quantity(target_resource.clone(), OldMachineTerm::constant(2));
         let context = ResourceContext::new()
             .unchecked_with_facts((0..size).map(|index| {
                 ResourceFact::own_token("shared_name".to_string(), vec![int32(index)])
@@ -2030,7 +2035,7 @@ fn incremental_quantity_consumption_normalizes_only_the_exact_resource_bucket() 
             name: "target".to_string(),
             arguments: Vec::new().into(),
         },
-        MachineTerm::constant(3),
+        OldMachineTerm::constant(3),
     );
     assert!(
         context
@@ -2101,7 +2106,7 @@ fn symbolic_same_block_ranges_emit_no_pairs_with_near_linear_work() {
                 offset: AddressOffset::Constant(0),
             };
             let endpoints = (0..=size)
-                .map(|index| MachineTerm::Variable(Variable(94_000 + index as u64)))
+                .map(|index| OldMachineTerm::Variable(Variable(94_000 + index as u64)))
                 .collect::<Vec<_>>();
             let context = ResourceContext::new().unchecked_with_facts((0..size).map(|index| {
                 ResourceFact::own_memory(MemoryRange::new(
@@ -2165,7 +2170,7 @@ fn composite_exposure_finds_held_cells_by_structure_near_linearly() {
     );
     let pointer = |index: u64| Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(900_000 + index)), 4),
+        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(900_000 + index)), 4),
     };
     let samples = [4_u64, 8, 16, 32]
         .into_iter()
@@ -2180,8 +2185,8 @@ fn composite_exposure_finds_held_cells_by_structure_near_linearly() {
             for index in 0..size - 1 {
                 assumptions = assumptions.assume_proposition(Proposition::condition_is(
                     ConditionTerm::signed_less_than(
-                        MachineTerm::Variable(Variable(900_000 + index)),
-                        MachineTerm::Variable(Variable(900_000 + index + 1)),
+                        OldMachineTerm::Variable(Variable(900_000 + index)),
+                        OldMachineTerm::Variable(Variable(900_000 + index + 1)),
                     ),
                     true,
                 ));
@@ -2220,12 +2225,12 @@ fn composite_exposure_finds_held_cells_by_structure_near_linearly() {
 /// singleton substitution, so its work grew with `size`.
 #[test]
 fn quantity_relations_ignore_unrelated_facts() {
-    let count = MachineTerm::Variable(Variable(960_001));
+    let count = OldMachineTerm::Variable(Variable(960_001));
     let samples = [16, 32, 64, 128]
         .into_iter()
         .map(|size| {
             let assumptions = unrelated_order_fact_context(size).assume_condition(
-                ConditionTerm::equal(count.clone(), MachineTerm::constant(3)),
+                ConditionTerm::equal(count.clone(), OldMachineTerm::constant(3)),
                 true,
             );
             let (decided, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -2233,26 +2238,29 @@ fn quantity_relations_ignore_unrelated_facts() {
                     // `resource_quantity_is_positive`
                     quantity_condition_holds(
                         &assumptions,
-                        ConditionTerm::signed_greater_than(count.clone(), MachineTerm::constant(0)),
+                        ConditionTerm::signed_greater_than(
+                            count.clone(),
+                            OldMachineTerm::constant(0),
+                        ),
                     ),
                     // `resource_quantity_at_least`
                     quantity_condition_holds(
                         &assumptions,
                         ConditionTerm::signed_greater_equal(
                             count.clone(),
-                            MachineTerm::constant(2),
+                            OldMachineTerm::constant(2),
                         ),
                     ),
                     // An exact quantity equality
                     quantity_condition_holds(
                         &assumptions,
-                        ConditionTerm::equal(count.clone(), MachineTerm::constant(3)),
+                        ConditionTerm::equal(count.clone(), OldMachineTerm::constant(3)),
                     ),
                     // A relation that does not follow: the miss must also be
                     // flat, and must not be repaired by a broader search.
                     quantity_condition_holds(
                         &assumptions,
-                        ConditionTerm::equal(count.clone(), MachineTerm::constant(4)),
+                        ConditionTerm::equal(count.clone(), OldMachineTerm::constant(4)),
                     ),
                 ]
             });
@@ -2280,15 +2288,15 @@ fn quantity_relations_ignore_unrelated_facts() {
 /// (`resource_quantity_is_positive`).
 #[test]
 fn symbolic_quantity_consumption_ignores_unrelated_facts() {
-    let available_quantity = MachineTerm::Variable(Variable(960_011));
-    let required_quantity = MachineTerm::Variable(Variable(960_012));
+    let available_quantity = OldMachineTerm::Variable(Variable(960_011));
+    let required_quantity = OldMachineTerm::Variable(Variable(960_012));
     let resource = Resource::Token {
         name: "counted".to_string(),
         arguments: vec![int32(7).into()].into(),
     };
     let available = ResourceFact::own_quantity(resource.clone(), available_quantity.clone());
     let required = ResourceFact::own_quantity(resource.clone(), required_quantity.clone());
-    let empty_quantity = MachineTerm::Variable(Variable(960_014));
+    let empty_quantity = OldMachineTerm::Variable(Variable(960_014));
     let empty_core = ResourceFact::own_quantity(resource, empty_quantity.clone());
     let samples = [16, 32, 64, 128]
         .into_iter()
@@ -2304,12 +2312,12 @@ fn symbolic_quantity_consumption_ignores_unrelated_facts() {
                 .assume_condition(
                     ConditionTerm::signed_greater_than(
                         available_quantity.clone(),
-                        MachineTerm::constant(0),
+                        OldMachineTerm::constant(0),
                     ),
                     true,
                 )
                 .assume_condition(
-                    ConditionTerm::equal(empty_quantity.clone(), MachineTerm::constant(0)),
+                    ConditionTerm::equal(empty_quantity.clone(), OldMachineTerm::constant(0)),
                     true,
                 );
             let context = ResourceContext::new().unchecked_with_fact(available.clone());
@@ -2360,7 +2368,7 @@ fn allocation_separation_ignores_unrelated_facts() {
         8,
     );
     let overlapping = own_memory_fact(allocation_base.clone(), 0, 8);
-    let bytes = MachineTerm::constant(16);
+    let bytes = OldMachineTerm::constant(16);
     let samples = [16, 32, 64, 128]
         .into_iter()
         .map(|size| {
@@ -2424,7 +2432,7 @@ fn satisfies_fact_miss_ignores_unrelated_facts() {
     };
     let held = own_memory_fact(base.clone(), 0, 8);
     let adjacent = own_memory_fact(base.clone(), 8, 16);
-    let symbolic_end = MachineTerm::Variable(Variable(970_001));
+    let symbolic_end = OldMachineTerm::Variable(Variable(970_001));
     // A miss whose end is symbolic: the shape that reaches the proof-aware
     // containment layers instead of being refused by constant bounds.
     let missing = own_memory_fact(base.clone(), 0, symbolic_end);
@@ -2623,8 +2631,8 @@ fn memory_invalidation_scales_with_affected_intervals_and_barrier_output() {
                 base: "curve-block".into(),
                 offset: AddressOffset::Constant(0),
             },
-            MachineTerm::constant(0),
-            MachineTerm::constant(1),
+            OldMachineTerm::constant(0),
+            OldMachineTerm::constant(1),
         ));
         let memory =
             SymbolicMemory::new().with_block("curve-block", (8 * unrelated_count + 8) as u32);
@@ -2647,8 +2655,8 @@ fn memory_invalidation_scales_with_affected_intervals_and_barrier_output() {
                     base: "curve-block".into(),
                     offset: AddressOffset::Constant((8 + index * 8) as i64),
                 },
-                MachineTerm::constant(0),
-                MachineTerm::constant(1),
+                OldMachineTerm::constant(0),
+                OldMachineTerm::constant(1),
             ));
             resources = resources.unchecked_with_supported_facts_from_occurrence_with_memory(
                 occurrence,
@@ -2768,27 +2776,27 @@ fn returned_scalar_and_bytewise_padding_rejoin_over_symbolic_objects() {
             let base = Address {
                 base: AddressBase::ExternalArgument,
                 offset: AddressOffset::scale_int32(
-                    MachineTerm::Variable(Variable(88_300 + index as u64)),
+                    OldMachineTerm::Variable(Variable(88_300 + index as u64)),
                     4,
                 ),
             };
             pieces.push(ResourceFact::own_memory(MemoryRange::new(
                 base.offset_by_bytes(8),
-                MachineTerm::constant(0),
-                MachineTerm::constant(1),
+                OldMachineTerm::constant(0),
+                OldMachineTerm::constant(1),
             )));
             pieces.push(ResourceFact::own_memory(
                 MemoryRange::new_with_element_width(
                     base.clone(),
-                    MachineTerm::constant(12),
-                    MachineTerm::constant(16),
+                    OldMachineTerm::constant(12),
+                    OldMachineTerm::constant(16),
                     1,
                 ),
             ));
             expected.push(ResourceFact::own_memory(MemoryRange::new(
                 base,
-                MachineTerm::constant(2),
-                MachineTerm::constant(4),
+                OldMachineTerm::constant(2),
+                OldMachineTerm::constant(4),
             )));
         }
         let context = ResourceContext::new().unchecked_with_facts(pieces);
@@ -2937,7 +2945,7 @@ fn frame_queries_ignore_folded_compositions_until_explicitly_opened() {
 fn first_pass_resource_section_does_not_expand_the_frame() {
     let pointer = |index: u64| Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(915_000 + index)), 4),
+        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(915_000 + index)), 4),
     };
     let cell = CompositeResourceDefinition::new(
         "cell",
@@ -3004,13 +3012,13 @@ fn returned_resource_prefix_consumes_only_selected_padded_field_fragments() {
         for size in [8usize, 32, 128, 512] {
             let base = Address {
                 base: AddressBase::ExternalArgument,
-                offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(89_000)), 4),
+                offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(89_000)), 4),
             };
             let owned = |base, start, end, width| {
                 ResourceFact::own_memory(MemoryRange::new_with_element_width(
                     base,
-                    MachineTerm::constant(start),
-                    MachineTerm::constant(end),
+                    OldMachineTerm::constant(start),
+                    OldMachineTerm::constant(end),
                     width,
                 ))
             };
@@ -3132,11 +3140,11 @@ fn known_resource_constructor_skips_predicate_refutation_work() {
         for index in 0..size {
             assumptions = assumptions.assume_proposition(Proposition::condition_is(
                 ConditionTerm::equal(
-                    MachineTerm::ClickFunctionApplication {
+                    OldMachineTerm::ClickFunctionApplication {
                         name: format!("predicate{index}"),
                         arguments: vec![PureFunctionArgument::Algebraic(model.clone())],
                     },
-                    MachineTerm::constant(1),
+                    OldMachineTerm::constant(1),
                 ),
                 true,
             ));
@@ -3234,11 +3242,11 @@ fn known_exclusion_skips_refutation_of_unpublishable_arms() {
         for index in 0..size {
             assumptions = assumptions.assume_proposition(Proposition::condition_is(
                 ConditionTerm::equal(
-                    MachineTerm::ClickFunctionApplication {
+                    OldMachineTerm::ClickFunctionApplication {
                         name: format!("predicate{index}"),
                         arguments: vec![PureFunctionArgument::Algebraic(model.clone())],
                     },
-                    MachineTerm::constant(1),
+                    OldMachineTerm::constant(1),
                 ),
                 true,
             ));
@@ -3374,7 +3382,7 @@ fn observable_projection_with_one_owner_and_borrow_does_not_scan_views() {
 fn owned_range_validity_is_linear_in_stated_aliases_of_its_base() {
     let parameter = |id: u64| Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(id)), 4),
+        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(id)), 4),
     };
     let samples = [16, 64, 256]
         .into_iter()
@@ -3604,8 +3612,8 @@ fn memory_owned_support_ignores_symbolic_range_bucket() {
         let range = |i: usize| {
             MemoryRange::new(
                 base.clone(),
-                MachineTerm::Variable(Variable(995_100 + i as u64)),
-                MachineTerm::Variable(Variable(995_101 + i as u64)),
+                OldMachineTerm::Variable(Variable(995_100 + i as u64)),
+                OldMachineTerm::Variable(Variable(995_101 + i as u64)),
             )
         };
         let assumptions = PureFactContext::new();
@@ -3655,8 +3663,8 @@ fn memory_owned_support_miss_ignores_fragment_frontier() {
         let range = |i: usize| {
             MemoryRange::new(
                 base.clone(),
-                MachineTerm::constant(i as u32),
-                MachineTerm::constant(i as u32 + 1),
+                OldMachineTerm::constant(i as u32),
+                OldMachineTerm::constant(i as u32 + 1),
             )
         };
         let assumptions = PureFactContext::new();
@@ -3710,8 +3718,8 @@ fn memory_direct_support_miss_ignores_fragment_frontier() {
         let range = |i: usize| {
             MemoryRange::new(
                 base.clone(),
-                MachineTerm::constant(i as u32),
-                MachineTerm::constant(i as u32 + 1),
+                OldMachineTerm::constant(i as u32),
+                OldMachineTerm::constant(i as u32 + 1),
             )
         };
         let assumptions = PureFactContext::new();
@@ -3763,8 +3771,8 @@ fn memory_view_query_miss_ignores_fragment_frontier() {
             let range = |i: usize| {
                 MemoryRange::new(
                     base.clone(),
-                    MachineTerm::constant(i as u32),
-                    MachineTerm::constant(i as u32 + 1),
+                    OldMachineTerm::constant(i as u32),
+                    OldMachineTerm::constant(i as u32 + 1),
                 )
             };
             let assumptions = PureFactContext::new();
@@ -3823,8 +3831,8 @@ fn memory_view_consumption_miss_ignores_fragment_frontier() {
             let range = |i: usize| {
                 MemoryRange::new(
                     base.clone(),
-                    MachineTerm::constant(i as u32),
-                    MachineTerm::constant(i as u32 + 1),
+                    OldMachineTerm::constant(i as u32),
+                    OldMachineTerm::constant(i as u32 + 1),
                 )
             };
             let assumptions = PureFactContext::new();
@@ -3884,9 +3892,9 @@ fn memory_split_origin_ignores_incident_bounds() {
     for count in [4u32, 16, 64] {
         let _session = crate::kernel::VerificationSession::enter();
         let base = Address::symbolic(Variable(996_000));
-        let i = MachineTerm::Variable(Variable(996_001));
+        let i = OldMachineTerm::Variable(Variable(996_001));
         let range =
-            |start: MachineTerm, end: MachineTerm| MemoryRange::new(base.clone(), start, end);
+            |start: OldMachineTerm, end: OldMachineTerm| MemoryRange::new(base.clone(), start, end);
         let slice = |start: u32, end: u32| {
             MemoryRange::new(
                 base.offset_by_elements(i.clone(), 4),
@@ -3974,8 +3982,8 @@ fn explicit_constant_fold_stops_at_a_gap_and_joins_mixed_width_pieces() {
                 let range = if native && width == 4 {
                     MemoryRange::new_wide(
                         value.address().clone(),
-                        MachineTerm::uint64_constant(u64::from(start)),
-                        MachineTerm::uint64_constant(u64::from(end)),
+                        OldMachineTerm::uint64_constant(u64::from(start)),
+                        OldMachineTerm::uint64_constant(u64::from(end)),
                         width,
                     )
                 } else {
@@ -4058,8 +4066,9 @@ fn native_fold_rejection_ignores_fragments_beyond_a_gap() {
         for count in [4u32, 16, 64, 256] {
             let _session = crate::kernel::VerificationSession::enter();
             let (instance, mut definition, _) = instance_memory_fixture();
-            let bound =
-                |n| ProgramExpression::Value(ProgramValue::UInt64(MachineTerm::uint64_constant(n)));
+            let bound = |n| {
+                ProgramExpression::Value(ProgramValue::UInt64(OldMachineTerm::uint64_constant(n)))
+            };
             definition.contains = vec![ResourceSpec::owned_memory(MemorySegment {
                 base: crate::kernel::program_expression::variable("p"),
                 start: bound(0),
@@ -4081,8 +4090,8 @@ fn native_fold_rejection_ignores_fragments_beyond_a_gap() {
             let piece = |start, end| {
                 ResourceFact::own_memory(MemoryRange::new_wide(
                     value.address().clone(),
-                    MachineTerm::uint64_constant(start),
-                    MachineTerm::uint64_constant(end),
+                    OldMachineTerm::uint64_constant(start),
+                    OldMachineTerm::uint64_constant(end),
                     4,
                 ))
             };
@@ -4277,8 +4286,8 @@ fn constant_query_range(p: Address, start: u64, end: u64, native: bool) -> Memor
     if native {
         MemoryRange::new_wide(
             p,
-            MachineTerm::uint64_constant(start),
-            MachineTerm::uint64_constant(end),
+            OldMachineTerm::uint64_constant(start),
+            OldMachineTerm::uint64_constant(end),
             4,
         )
     } else {
@@ -4293,14 +4302,14 @@ fn native_symbolic_partition_ignores_unrelated_fragments() {
         for count in [4u64, 16, 64, 256] {
             let _session = crate::kernel::VerificationSession::enter();
             let p = Address::symbolic(Variable(989_972));
-            let n = MachineTerm::Variable(Variable(989_973));
-            let c = MachineTerm::uint64_constant;
+            let n = OldMachineTerm::Variable(Variable(989_973));
+            let c = OldMachineTerm::uint64_constant;
             let facts = PureFactContext::new()
                 .assume_condition(ConditionTerm::uint64_less_than(n.clone(), c(32)), true);
             let range = |lo, hi| MemoryRange::new_wide(p.clone(), lo, hi, 1);
             let first = ResourceFact::own_memory(range(c(0), n.clone()));
             let start = if case == "gap" {
-                MachineTerm::uint64_add(n.clone(), c(1))
+                OldMachineTerm::uint64_add(n.clone(), c(1))
             } else {
                 n.clone()
             };
@@ -4378,9 +4387,10 @@ fn symbolic_fold_consumption_ignores_unselected_fragments() {
         for count in [4u32, 16, 64, 256] {
             let _session = crate::kernel::VerificationSession::enter();
             let (instance, mut definition, _) = instance_memory_fixture();
-            let endpoint = MachineTerm::Variable(Variable(989_980));
-            let bound =
-                |n| ProgramExpression::Value(ProgramValue::UInt64(MachineTerm::uint64_constant(n)));
+            let endpoint = OldMachineTerm::Variable(Variable(989_980));
+            let bound = |n| {
+                ProgramExpression::Value(ProgramValue::UInt64(OldMachineTerm::uint64_constant(n)))
+            };
             definition.contains = vec![ResourceSpec::owned_memory(MemorySegment {
                 base: crate::kernel::program_expression::variable("p"),
                 start: bound(0),
@@ -4399,10 +4409,10 @@ fn symbolic_fold_consumption_ignores_unselected_fragments() {
             else {
                 unreachable!()
             };
-            let piece = |start: u64, end: MachineTerm| {
+            let piece = |start: u64, end: OldMachineTerm| {
                 ResourceFact::own_memory(MemoryRange::new_wide(
                     value.address().clone(),
-                    MachineTerm::uint64_constant(start),
+                    OldMachineTerm::uint64_constant(start),
                     end,
                     4,
                 ))
@@ -4410,7 +4420,7 @@ fn symbolic_fold_consumption_ignores_unselected_fragments() {
             let facts = PureFactContext::new()
                 .assume_condition(
                     ConditionTerm::uint64_less_than(
-                        MachineTerm::uint64_constant(2),
+                        OldMachineTerm::uint64_constant(2),
                         endpoint.clone(),
                     ),
                     true,
@@ -4418,7 +4428,7 @@ fn symbolic_fold_consumption_ignores_unselected_fragments() {
                 .assume_condition(
                     ConditionTerm::uint64_less_than(
                         endpoint.clone(),
-                        MachineTerm::uint64_constant(1024),
+                        OldMachineTerm::uint64_constant(1024),
                     ),
                     true,
                 );
@@ -4426,7 +4436,7 @@ fn symbolic_fold_consumption_ignores_unselected_fragments() {
                 0,
                 match case {
                     "owner" => endpoint.clone(),
-                    _ => MachineTerm::uint64_constant(1),
+                    _ => OldMachineTerm::uint64_constant(1),
                 },
             );
             let mut resources =
@@ -4437,7 +4447,7 @@ fn symbolic_fold_consumption_ignores_unselected_fragments() {
             for index in 0..count {
                 let start = 2048 + 2 * u64::from(index);
                 resources = resources
-                    .unchecked_with_fact(piece(start, MachineTerm::uint64_constant(start + 1)));
+                    .unchecked_with_fact(piece(start, OldMachineTerm::uint64_constant(start + 1)));
             }
             resources.synchronize_memory_equalities(&facts);
             let state = ExecutionState::new().with_resource_context(resources);
@@ -4482,9 +4492,10 @@ fn symbolic_offset_fold_stops_at_first_gap() {
         for count in [4u32, 16, 64, 256] {
             let _session = crate::kernel::VerificationSession::enter();
             let (instance, mut definition, _) = instance_memory_fixture();
-            let endpoint = MachineTerm::Variable(Variable(989_980));
-            let shifted =
-                |n| MachineTerm::uint64_add(endpoint.clone(), MachineTerm::uint64_constant(n));
+            let endpoint = OldMachineTerm::Variable(Variable(989_980));
+            let shifted = |n| {
+                OldMachineTerm::uint64_add(endpoint.clone(), OldMachineTerm::uint64_constant(n))
+            };
             let bound = |n| ProgramExpression::Value(ProgramValue::UInt64(shifted(n)));
             definition.contains = vec![ResourceSpec::owned_memory(MemorySegment {
                 base: crate::kernel::program_expression::variable("p"),
@@ -4515,7 +4526,7 @@ fn symbolic_offset_fold_stops_at_first_gap() {
             let facts = PureFactContext::new()
                 .assume_condition(
                     ConditionTerm::uint64_less_than(
-                        MachineTerm::uint64_constant(2),
+                        OldMachineTerm::uint64_constant(2),
                         endpoint.clone(),
                     ),
                     true,
@@ -4523,7 +4534,7 @@ fn symbolic_offset_fold_stops_at_first_gap() {
                 .assume_condition(
                     ConditionTerm::uint64_less_than(
                         endpoint.clone(),
-                        MachineTerm::uint64_constant(1024),
+                        OldMachineTerm::uint64_constant(1024),
                     ),
                     true,
                 );
@@ -4587,8 +4598,8 @@ fn symbolic_fold_does_not_scan_incident_order_bounds() {
         for count in [4u32, 16, 64, 256] {
             let _session = crate::kernel::VerificationSession::enter();
             let (instance, mut definition, _) = instance_memory_fixture();
-            let endpoint = MachineTerm::Variable(Variable(989_980));
-            let shifted = |n| MachineTerm::add(endpoint.clone(), MachineTerm::constant(n));
+            let endpoint = OldMachineTerm::Variable(Variable(989_980));
+            let shifted = |n| OldMachineTerm::add(endpoint.clone(), OldMachineTerm::constant(n));
             let bound = |n| ProgramExpression::Value(ProgramValue::Int32(shifted(n)));
             definition.contains = vec![ResourceSpec::owned_memory(MemorySegment {
                 base: crate::kernel::program_expression::variable("p"),
@@ -4617,11 +4628,14 @@ fn symbolic_fold_does_not_scan_incident_order_bounds() {
             };
             let mut facts = PureFactContext::new()
                 .assume_condition(
-                    ConditionTerm::signed_less_than(MachineTerm::constant(2), endpoint.clone()),
+                    ConditionTerm::signed_less_than(OldMachineTerm::constant(2), endpoint.clone()),
                     true,
                 )
                 .assume_condition(
-                    ConditionTerm::signed_less_than(endpoint.clone(), MachineTerm::constant(1024)),
+                    ConditionTerm::signed_less_than(
+                        endpoint.clone(),
+                        OldMachineTerm::constant(1024),
+                    ),
                     true,
                 );
             let first = piece(
@@ -4651,7 +4665,7 @@ fn symbolic_fold_does_not_scan_incident_order_bounds() {
             for index in 0..count {
                 facts = facts.assume_condition(
                     ConditionTerm::signed_less_than(
-                        MachineTerm::Variable(Variable(990_000 + u64::from(index))),
+                        OldMachineTerm::Variable(Variable(990_000 + u64::from(index))),
                         endpoint.clone(),
                     ),
                     true,
@@ -4696,7 +4710,7 @@ fn symbolic_consumption_scales_with_selected_pieces() {
     let mut samples = Vec::new();
     for count in [4u32, 16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
-        let index = MachineTerm::Variable(Variable(989_981));
+        let index = OldMachineTerm::Variable(Variable(989_981));
         let facts = PureFactContext::new()
             .assume_condition(
                 ConditionTerm::signed_less_than(0u32.into(), index.clone()),
@@ -4710,8 +4724,8 @@ fn symbolic_consumption_scales_with_selected_pieces() {
         let own = |start: u32, end: u32| {
             ResourceFact::own_memory(MemoryRange::new_with_element_width(
                 p.clone(),
-                MachineTerm::add(index.clone(), start.into()),
-                MachineTerm::add(index.clone(), end.into()),
+                OldMachineTerm::add(index.clone(), start.into()),
+                OldMachineTerm::add(index.clone(), end.into()),
                 4,
             ))
         };
@@ -4758,8 +4772,8 @@ fn symbolic_ownership_query_does_not_scan_incident_order_bounds() {
         let mut samples = Vec::new();
         for count in [4u32, 16, 64, 256] {
             let _session = crate::kernel::VerificationSession::enter();
-            let endpoint = MachineTerm::Variable(Variable(989_980));
-            let shifted = |n| MachineTerm::add(endpoint.clone(), MachineTerm::constant(n));
+            let endpoint = OldMachineTerm::Variable(Variable(989_980));
+            let shifted = |n| OldMachineTerm::add(endpoint.clone(), OldMachineTerm::constant(n));
             let base = Address::symbolic(Variable(991_000));
             let piece = |start: u32, end: u32| {
                 ResourceFact::own_memory(MemoryRange::new(
@@ -4770,11 +4784,14 @@ fn symbolic_ownership_query_does_not_scan_incident_order_bounds() {
             };
             let mut facts = PureFactContext::new()
                 .assume_condition(
-                    ConditionTerm::signed_less_than(MachineTerm::constant(2), endpoint.clone()),
+                    ConditionTerm::signed_less_than(OldMachineTerm::constant(2), endpoint.clone()),
                     true,
                 )
                 .assume_condition(
-                    ConditionTerm::signed_less_than(endpoint.clone(), MachineTerm::constant(1024)),
+                    ConditionTerm::signed_less_than(
+                        endpoint.clone(),
+                        OldMachineTerm::constant(1024),
+                    ),
                     true,
                 );
             let first = piece(
@@ -4804,7 +4821,7 @@ fn symbolic_ownership_query_does_not_scan_incident_order_bounds() {
             for index in 0..count {
                 facts = facts.assume_condition(
                     ConditionTerm::signed_less_than(
-                        MachineTerm::Variable(Variable(990_000 + u64::from(index))),
+                        OldMachineTerm::Variable(Variable(990_000 + u64::from(index))),
                         endpoint.clone(),
                     ),
                     true,
@@ -4851,7 +4868,7 @@ fn symbolic_ownership_query_scales_with_selected_pieces() {
     let mut samples = Vec::new();
     for count in [4u32, 16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
-        let index = MachineTerm::Variable(Variable(989_981));
+        let index = OldMachineTerm::Variable(Variable(989_981));
         let facts = PureFactContext::new()
             .assume_condition(
                 ConditionTerm::signed_less_than(0u32.into(), index.clone()),
@@ -4865,8 +4882,8 @@ fn symbolic_ownership_query_scales_with_selected_pieces() {
         let own = |start: u32, end: u32| {
             ResourceFact::own_memory(MemoryRange::new_with_element_width(
                 p.clone(),
-                MachineTerm::add(index.clone(), start.into()),
-                MachineTerm::add(index.clone(), end.into()),
+                OldMachineTerm::add(index.clone(), start.into()),
+                OldMachineTerm::add(index.clone(), end.into()),
                 4,
             ))
         };
@@ -4912,7 +4929,7 @@ fn instance_unfold_alias_work() -> Vec<[(usize, usize, usize, usize); 3]> {
             let (instance, definition, state) = instance_memory_fixture();
             let pointer = Address {
                 base: AddressBase::ExternalArgument,
-                offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(100)), 4),
+                offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(100)), 4),
             };
             let neighbor = Address::symbolic(Variable(9_810_000));
             let mut assumptions = PureFactContext::new();
@@ -5083,8 +5100,8 @@ fn symbolic_object_from_its_pieces_costs_its_fields_not_the_context() {
             context = context.unchecked_with_fact(ResourceFact::own_memory(
                 MemoryRange::new_with_element_width(
                     Address::symbolic(Variable(989_600 + u64::from(other))),
-                    MachineTerm::constant(0),
-                    MachineTerm::constant(1),
+                    OldMachineTerm::constant(0),
+                    OldMachineTerm::constant(1),
                     4,
                 ),
             ));

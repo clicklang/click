@@ -115,8 +115,9 @@ fn actual_nested_call_production_and_native_handoffs_scale_linearly() {
                 };
                 assert_eq!(next.children(), &[root.clone()]);
                 let next = next.clone();
-                let ProgramValue::UInt32(MachineTerm::ClickFunctionApplication {
-                    arguments, ..
+                let ProgramValue::UInt32(OldMachineTerm::ClickFunctionApplication {
+                    arguments,
+                    ..
                 }) = value.into_native()
                 else {
                     panic!()

@@ -10,7 +10,7 @@ fn shared_integer_application_substitution_scales_with_dag_size() {
     let mut samples = Vec::new();
     for depth in [8, 16, 32, 64] {
         let mut term: SharedIntegerTerm =
-            IntegerTerm::from_machine(MachineIntegerType::Int32, MachineTerm::Variable(from))
+            IntegerTerm::from_machine(MachineIntegerType::Int32, OldMachineTerm::Variable(from))
                 .unwrap()
                 .into();
         for _ in 0..depth {
@@ -27,7 +27,7 @@ fn shared_integer_application_substitution_scales_with_dag_size() {
             substitute_bitvector_variable_in_integer(
                 &term,
                 from,
-                &MachineTerm::Variable(Variable(832)),
+                &OldMachineTerm::Variable(Variable(832)),
             )
         });
         assert_ne!(&changed, term.as_ref());
@@ -82,7 +82,7 @@ fn public_integer_substitution_keeps_array_ref_states_opaque() {
         let Proposition::Equal(Term::Integer(value), _) = proposition else {
             panic!("expected Integer equality")
         };
-        let IntegerTerm::PureFunctionApplication(application) = value.native_compat() else {
+        let IntegerTerm::PureFunctionApplication(application) = value.old_form() else {
             panic!("expected pure Integer application")
         };
         let [

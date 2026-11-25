@@ -221,7 +221,7 @@ impl std::fmt::Debug for Load {
 }
 
 /// The point the producer of an integer or float read selected
-/// (`MachineTerm::MemoryLoad`'s first field). Consumers branch on its
+/// (`OldMachineTerm::MemoryLoad`'s first field). Consumers branch on its
 /// selection kind (entry, exact, indexed write); it is no part of the term's
 /// identity, which its [`LoadCell`] holds, so it compares equal to every
 /// other read point, as [`super::AddressObjectClass`] does.
@@ -286,7 +286,7 @@ impl std::fmt::Debug for ReadPoint {
     }
 }
 
-/// The cell of an integer or float read (`MachineTerm::MemoryLoad`'s second
+/// The cell of an integer or float read (`OldMachineTerm::MemoryLoad`'s second
 /// field): the address as the producer spelled it, and the interned [`Load`]
 /// of that address at the producer's point. The load is the term's identity
 /// (`design/loads.md`, step 3a): equality, hashing and ordering compare its
@@ -390,7 +390,7 @@ impl std::fmt::Debug for LoadCell {
 
 /// The operands of the integer or float read of `address` at `point`: the
 /// producer's point, and the address with its interned load. The one builder
-/// of [`ReadPoint`] and [`LoadCell`], called by `MachineTerm::read_named`;
+/// of [`ReadPoint`] and [`LoadCell`], called by `OldMachineTerm::read_named`;
 /// `build_support/read_construction.rs` keeps it so.
 pub(crate) fn read_operands(point: ProgramPoint, address: Box<Address>) -> (ReadPoint, LoadCell) {
     let load = Load::at(point.clone(), &address);
@@ -425,8 +425,8 @@ pub(crate) fn legacy_pointer_word_read(
     memory: &crate::kernel::SharedMemory,
     site: Option<&ProgramPoint>,
     cell: &Address,
-) -> crate::kernel::MachineTerm {
-    crate::kernel::MachineTerm::read_named(
+) -> crate::kernel::OldMachineTerm {
+    crate::kernel::OldMachineTerm::read_named(
         ProgramPoint::read_at_optional(memory, site),
         cell.clone(),
         crate::kernel::LoadKind::Bits64,

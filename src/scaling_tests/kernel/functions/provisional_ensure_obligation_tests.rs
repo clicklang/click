@@ -44,13 +44,13 @@ fn provisional_ensure_loadability_work_ignores_unrelated_facts() {
     let base_assumptions = PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
         memory: memory.clone(),
         base: data.clone(),
-        bytes: (MachineTerm::constant(8)).into(),
+        bytes: (OldMachineTerm::constant(8)).into(),
         wide: false,
     });
     let element_loadable = Proposition::MemoryLoadable {
         memory,
-        base: data.offset_by_int32_elements(MachineTerm::constant(1)),
-        bytes: (MachineTerm::constant(4)).into(),
+        base: data.offset_by_int32_elements(OldMachineTerm::constant(1)),
+        bytes: (OldMachineTerm::constant(4)).into(),
         wide: false,
     };
     let mut work_by_size = Vec::new();

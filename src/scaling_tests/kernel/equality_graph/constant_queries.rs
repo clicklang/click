@@ -23,8 +23,8 @@ fn shared_wide_constant_capture_scales_with_dag_and_selected_sources() {
             for i in 0..unrelated {
                 parent = parent.assume_condition(
                     ConditionTerm::int64_equal(
-                        MachineTerm::Variable(Variable(998800 + i)),
-                        MachineTerm::int64_constant(3),
+                        OldMachineTerm::Variable(Variable(998800 + i)),
+                        OldMachineTerm::int64_constant(3),
                     ),
                     true,
                 );

@@ -31,14 +31,14 @@ fn repeated_atomic_reduction_does_not_rebuild_its_selected_facts() {
 
 #[test]
 fn repeated_unsigned_and_integer_reductions_reuse_selected_evidence() {
-    let value = MachineTerm::Variable(Variable(786_001));
+    let value = OldMachineTerm::Variable(Variable(786_001));
     let wide_guard = Proposition::condition_is(
-        ConditionTerm::uint64_less_than(MachineTerm::uint64_constant(0), value.clone()),
+        ConditionTerm::uint64_less_than(OldMachineTerm::uint64_constant(0), value.clone()),
         true,
     );
     let wide_goal = Proposition::condition_is(
         ConditionTerm::uint64_less_than(
-            MachineTerm::uint64_subtract(value.clone(), MachineTerm::uint64_constant(1)),
+            OldMachineTerm::uint64_subtract(value.clone(), OldMachineTerm::uint64_constant(1)),
             value.clone(),
         ),
         true,
@@ -57,7 +57,7 @@ fn repeated_unsigned_and_integer_reductions_reuse_selected_evidence() {
                 Proposition::condition_is(
                     ConditionTerm::uint64_less_equal(
                         value.clone(),
-                        MachineTerm::uint64_constant(1000),
+                        OldMachineTerm::uint64_constant(1000),
                     ),
                     true,
                 ),

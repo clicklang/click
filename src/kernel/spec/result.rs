@@ -149,8 +149,8 @@ impl SpecValue {
                 let numeric = *record.numeric;
                 if matches!(
                     &numeric,
-                    ProgramValue::Int64(MachineTerm::IntegerAddress(..))
-                        | ProgramValue::UInt64(MachineTerm::IntegerAddress(..))
+                    ProgramValue::Int64(OldMachineTerm::IntegerAddress(..))
+                        | ProgramValue::UInt64(OldMachineTerm::IntegerAddress(..))
                 ) {
                     let root = KernelTermImport::default()
                         .argument(&PureFunctionArgument::Value(numeric.clone()));
@@ -337,13 +337,13 @@ impl SpecValue {
                 Some((left, right)) => {
                     let native = match format {
                         KernelFloatType::Float32 => ConditionTerm::float32_compare(
-                            MachineTerm::uint32_constant(left as u32),
-                            MachineTerm::uint32_constant(right as u32),
+                            OldMachineTerm::uint32_constant(left as u32),
+                            OldMachineTerm::uint32_constant(right as u32),
                             op,
                         ),
                         KernelFloatType::Float64 => ConditionTerm::float64_compare(
-                            MachineTerm::uint64_constant(left),
-                            MachineTerm::uint64_constant(right),
+                            OldMachineTerm::uint64_constant(left),
+                            OldMachineTerm::uint64_constant(right),
                             op,
                         ),
                     };
@@ -387,7 +387,7 @@ impl SpecValue {
         // format, such as `address(p) + 3u64 == address(p) + 3u64`, keep
         // the comparison; checking decides it.
         if let Some(Proposition::ConditionIs(condition, _)) = &proposition
-            && matches!(condition.native_compat(), ConditionTerm::Constant(_))
+            && matches!(condition.old_form(), ConditionTerm::Constant(_))
             && let Some(retained) = retained_word_comparison(&left, op, &right)
         {
             return Ok(Some(retained));
@@ -403,7 +403,7 @@ fn retained_word_comparison(
     op: ComparisonOperator,
     right: &ProgramValue,
 ) -> Option<Proposition> {
-    let word = |value: &ProgramValue| -> Option<(MachineIntegerType, MachineTerm)> {
+    let word = |value: &ProgramValue| -> Option<(MachineIntegerType, OldMachineTerm)> {
         Some(match value.numeric_value() {
             ProgramValue::Int32(term) => (MachineIntegerType::Int32, term.clone()),
             ProgramValue::UInt32(term) => (MachineIntegerType::UInt32, term.clone()),
@@ -433,8 +433,8 @@ fn retained_word_comparison(
         format,
         relation,
         [
-            crate::kernel::MachineOperandView::Legacy(&left),
-            crate::kernel::MachineOperandView::Legacy(&right),
+            crate::kernel::MachineOperandView::Old(&left),
+            crate::kernel::MachineOperandView::Old(&right),
         ],
     );
     (!matches!(condition, ConditionTerm::Constant(_)))
@@ -565,7 +565,7 @@ pub(super) fn common_call_arguments(arguments: &[SpecCallArgument]) -> Option<Ve
             | SpecCallArgument::Native(PureFunctionArgument::ArrayRef { .. }) => None,
             SpecCallArgument::Native(PureFunctionArgument::Value(
                 crate::kernel::integer_c_value!(term),
-            )) if matches!(term, MachineTerm::IntegerAddress(..)) => None,
+            )) if matches!(term, OldMachineTerm::IntegerAddress(..)) => None,
             SpecCallArgument::Native(value) => {
                 let root = importer.argument(value);
                 (!root.requires_native_argument_input()).then_some(root)
@@ -589,8 +589,8 @@ mod pointer_observation_tests {
     fn shared_float_atoms_keep_mixed_call_roots() {
         let _session = crate::kernel::VerificationSession::enter();
         for value in [
-            ProgramValue::Float32(MachineTerm::uint32_constant(0x7f800123)),
-            ProgramValue::Float64(MachineTerm::uint64_constant(0x8000000000000000)),
+            ProgramValue::Float32(OldMachineTerm::uint32_constant(0x7f800123)),
+            ProgramValue::Float64(OldMachineTerm::uint64_constant(0x8000000000000000)),
         ] {
             let expected = PureFunctionArgument::Value(value.clone());
             let root = KernelTermImport::default().argument(&expected);
@@ -612,7 +612,7 @@ mod pointer_observation_tests {
             Address::symbolic(Variable(1024900)),
             ProgramType::Int32Pointer,
         );
-        let numeric = ProgramValue::UInt64(MachineTerm::object_pointer_address(
+        let numeric = ProgramValue::UInt64(OldMachineTerm::object_pointer_address(
             pointer.address().clone(),
             pointer.object_class(),
         ));
@@ -633,7 +633,7 @@ mod pointer_observation_tests {
             Some(&PureFunctionArgument::Value(numeric.clone())),
             "opaque call arguments keep their exact native descriptor"
         );
-        let other = SpecValue::Native(ProgramValue::UInt64(MachineTerm::Variable(Variable(
+        let other = SpecValue::Native(ProgramValue::UInt64(OldMachineTerm::Variable(Variable(
             1024902,
         ))));
         assert_eq!(
@@ -702,7 +702,7 @@ mod condition_output_tests {
                         unreachable!()
                     };
                     assert!(condition.root().is_some());
-                    assert_eq!(condition.native_compat(), &expected);
+                    assert_eq!(condition.old_form(), &expected);
                     assert_eq!(
                         condition.root(),
                         Some(&KernelTermImport::for_exact_field_inputs().condition(&expected))
@@ -710,7 +710,7 @@ mod condition_output_tests {
                     assert_eq!(truth, operator != ComparisonOperator::NotEqual);
                     let exports = KernelTermExport::machine_export_count();
                     for _ in 0..4 {
-                        assert_eq!(condition.native_compat(), &expected);
+                        assert_eq!(condition.old_form(), &expected);
                     }
                     assert_eq!(KernelTermExport::machine_export_count(), exports);
                 }
@@ -787,12 +787,12 @@ mod condition_output_tests {
             IntegerTerm::constant_i64(7),
             IntegerTerm::from_machine(
                 MachineIntegerType::Int32,
-                MachineTerm::Variable(Variable(10993726)),
+                OldMachineTerm::Variable(Variable(10993726)),
             )
             .unwrap(),
             IntegerTerm::from_machine(
                 MachineIntegerType::UInt64,
-                MachineTerm::Variable(Variable(10993727)),
+                OldMachineTerm::Variable(Variable(10993727)),
             )
             .unwrap(),
             IntegerTerm::Add(
@@ -849,10 +849,7 @@ mod condition_output_tests {
                         &right.clone().into(),
                     );
                     assert!(actual.0.root().is_some());
-                    assert_eq!(
-                        (actual.0.native_compat(), actual.1),
-                        (&expected.0, expected.1)
-                    );
+                    assert_eq!((actual.0.old_form(), actual.1), (&expected.0, expected.1));
                     let expected_root =
                         KernelTermImport::for_exact_field_inputs().condition(&expected.0);
                     assert_eq!(actual.0.root(), Some(&expected_root));
@@ -901,11 +898,11 @@ mod condition_output_tests {
         assert_eq!(argument.root(), Some(&root));
         assert_eq!(KernelTermExport::machine_export_count(), exports);
         assert!(!root.has_cached_native_argument());
-        let native = ProgramValue::Int32(MachineTerm::Binary {
+        let native = ProgramValue::Int32(OldMachineTerm::Binary {
             format,
             op: MachineBinaryOp::Add,
-            left: Box::new(MachineTerm::Variable(Variable(10993746))),
-            right: Box::new(MachineTerm::Variable(Variable(10993746))),
+            left: Box::new(OldMachineTerm::Variable(Variable(10993746))),
+            right: Box::new(OldMachineTerm::Variable(Variable(10993746))),
         });
         let mut expected = path.proposition.clone();
         let Proposition::Predicate { arguments, .. } = &mut expected else {

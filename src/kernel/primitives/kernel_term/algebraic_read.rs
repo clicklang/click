@@ -30,7 +30,7 @@ mod tests {
         let ty = TypeParameterName::intern("RetainedReadT").algebraic_type();
         let pointer = Address {
             base: AddressBase::Symbolic(Variable(999744)),
-            offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(999745)), 4),
+            offset: AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(999745)), 4),
         };
         let sources = [first, second].map(|memory| AlgebraicTerm {
             algebraic_type: ty.clone(),
@@ -85,8 +85,8 @@ mod tests {
                 root.clone(),
                 KernelTermImport::default().algebraic(&variable),
             ]);
-            let a = MachineTerm::constant(1);
-            let b = MachineTerm::constant(2);
+            let a = OldMachineTerm::constant(1);
+            let b = OldMachineTerm::constant(2);
             let common = KernelTerm::machine_if_shared(
                 format,
                 [
@@ -100,7 +100,7 @@ mod tests {
             assert_eq!(KernelTermExport::machine_export_count(), exports);
             let native = SharedMachineIntegerTerm::intern(
                 format,
-                MachineTerm::If {
+                OldMachineTerm::If {
                     condition: Box::new(ConditionTerm::AlgebraicEqual(
                         Box::new(value),
                         Box::new(variable),

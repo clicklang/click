@@ -6,7 +6,7 @@ fn guarded_conjunction_chains_scale_with_their_length() {
     fn work(conjuncts: u32) -> usize {
         let _session = crate::kernel::VerificationSession::enter();
         let value = |id: u32| {
-            SpecExpression::Value(ProgramValue::Int32(MachineTerm::Variable(Variable(
+            SpecExpression::Value(ProgramValue::Int32(OldMachineTerm::Variable(Variable(
                 696_000 + u64::from(id),
             ))))
         };
@@ -46,7 +46,7 @@ fn guarded_conjunction_chains_scale_with_their_length() {
 fn operation_definedness_scales_with_expression_depth() {
     fn work(depth: u32) -> usize {
         let _session = crate::kernel::VerificationSession::enter();
-        let mut expression = SpecExpression::Value(ProgramValue::Int32(MachineTerm::Variable(
+        let mut expression = SpecExpression::Value(ProgramValue::Int32(OldMachineTerm::Variable(
             Variable(697_000),
         )));
         for _ in 0..depth {
@@ -81,7 +81,7 @@ fn operation_definedness_scales_with_expression_depth() {
 fn guarded_conjunction_chains_past_the_limit_are_refused_by_name() {
     let _session = crate::kernel::VerificationSession::enter();
     let value = |id: usize| {
-        SpecExpression::Value(ProgramValue::Int32(MachineTerm::Variable(Variable(
+        SpecExpression::Value(ProgramValue::Int32(OldMachineTerm::Variable(Variable(
             698_500 + id as u64,
         ))))
     };

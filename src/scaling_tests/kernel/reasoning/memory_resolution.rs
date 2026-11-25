@@ -8,7 +8,7 @@ use super::*;
 #[test]
 fn memory_resolution_graph_offset_queries_scale_without_legacy_fact_index() {
     for size in [16u64, 64, 256, 512] {
-        let scalar = |id| MachineTerm::Variable(Variable(92_000 + id));
+        let scalar = |id| OldMachineTerm::Variable(Variable(92_000 + id));
         let offset = |id| AddressOffset::scale_int32(scalar(id), 4);
         let named = AddressOffset::Variable(Variable(94_000));
         let mut context = PureFactContext::new().assume_condition(
@@ -39,11 +39,11 @@ fn memory_resolution_graph_offset_queries_scale_without_legacy_fact_index() {
 fn stored_load_alias_lookup_ignores_unrelated_cells() {
     let target = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(8_991_001)), 4),
+        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(8_991_001)), 4),
     };
     let alias = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(8_991_002)), 4),
+        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(8_991_002)), 4),
     };
     let assumptions = PureFactContext::new().assume_condition(
         ConditionTerm::address_offset_equal(target.offset.clone(), alias.offset.clone()),
@@ -58,7 +58,7 @@ fn stored_load_alias_lookup_ignores_unrelated_cells() {
                     base: AddressBase::ExternalArgument,
                     offset: AddressOffset::Constant(index * 4),
                 },
-                ProgramValue::Int32(MachineTerm::constant(0)),
+                ProgramValue::Int32(OldMachineTerm::constant(0)),
             );
         }
         // SymbolicMemory state construction/interning belongs to the producer. Measure
@@ -69,7 +69,7 @@ fn stored_load_alias_lookup_ignores_unrelated_cells() {
         });
         assert!(absent.is_none());
         samples.push(work);
-        let value = ProgramValue::Int32(MachineTerm::constant(17));
+        let value = ProgramValue::Int32(OldMachineTerm::constant(17));
         memory = memory.store(alias.clone(), value.clone());
         assert_eq!(
             stored_value_at_equal_pointer(&memory, &target, &assumptions),
@@ -167,8 +167,8 @@ fn interior_base_alias_frames_only_distinct_objects_and_is_indexed() {
 #[test]
 fn mixed_index_offsets_work_ignores_unrelated_facts() {
     use crate::kernel::{IntegerTerm, MachineIntegerType};
-    let wide = MachineTerm::Variable(Variable(82001));
-    let narrow = MachineTerm::Variable(Variable(82002));
+    let wide = OldMachineTerm::Variable(Variable(82001));
+    let narrow = OldMachineTerm::Variable(Variable(82002));
     let native = AddressOffset::scale_int64(wide.clone(), 1, true);
     let signed = AddressOffset::scale_int32(narrow.clone(), 1);
     let fact = ConditionTerm::IntegerEqual(
@@ -398,7 +398,7 @@ fn wide_offset_step_retains_dags_and_ignores_unrelated_facts() {
             let advanced = wide_index_binary(
                 MachineBinaryOp::Add,
                 index.operand_view(),
-                MachineOperandView::Legacy(&MachineTerm::uint64_constant(1)),
+                MachineOperandView::Old(&OldMachineTerm::uint64_constant(1)),
             );
             let scaled = |value| AddressOffset::Int64Scaled {
                 value,
@@ -414,15 +414,15 @@ fn wide_offset_step_retains_dags_and_ignores_unrelated_facts() {
                 wide_index_comparison(
                     CompareRelation::LessEqual,
                     index.operand_view(),
-                    MachineOperandView::Legacy(&MachineTerm::uint64_constant(u64::MAX - 1)),
+                    MachineOperandView::Old(&OldMachineTerm::uint64_constant(u64::MAX - 1)),
                 ),
                 true,
             );
             for extra in 0..unrelated {
                 facts = facts.assume_condition(
                     ConditionTerm::equal(
-                        MachineTerm::Variable(Variable(1019000 + extra as u64)),
-                        MachineTerm::constant(3),
+                        OldMachineTerm::Variable(Variable(1019000 + extra as u64)),
+                        OldMachineTerm::constant(3),
                     ),
                     true,
                 );
@@ -455,15 +455,15 @@ fn wide_offset_step_retains_dags_and_ignores_unrelated_facts() {
 fn a_byte_product_comparison_ignores_unrelated_bounded_indices() {
     let mut samples = Vec::new();
     for size in [16u64, 64, 256, 512] {
-        let scalar = |id| MachineTerm::Variable(Variable(96_000 + id));
+        let scalar = |id| OldMachineTerm::Variable(Variable(96_000 + id));
         let bounds = |context: PureFactContext, id| {
             context
                 .assume_condition(
-                    ConditionTerm::signed_less_equal(MachineTerm::constant(0), scalar(id)),
+                    ConditionTerm::signed_less_equal(OldMachineTerm::constant(0), scalar(id)),
                     true,
                 )
                 .assume_condition(
-                    ConditionTerm::signed_less_than(scalar(id), MachineTerm::constant(4)),
+                    ConditionTerm::signed_less_than(scalar(id), OldMachineTerm::constant(4)),
                     true,
                 )
         };
@@ -472,7 +472,7 @@ fn a_byte_product_comparison_ignores_unrelated_bounded_indices() {
             context = bounds(context, id);
         }
         let bytes = AddressOffset::scale_int32(
-            MachineTerm::multiply(scalar(0), MachineTerm::constant(4)),
+            OldMachineTerm::multiply(scalar(0), OldMachineTerm::constant(4)),
             1,
         );
         let elements = AddressOffset::scale_int32(scalar(0), 4);

@@ -9,8 +9,8 @@ fn float_atom_views_do_constant_work_beside_growing_arenas() {
             .collect::<Vec<_>>();
         for format in [KernelFloatType::Float32, KernelFloatType::Float64] {
             let native = match format {
-                KernelFloatType::Float32 => MachineTerm::constant(0x7fc00001),
-                KernelFloatType::Float64 => MachineTerm::uint64_constant(0x7ff8000000000001),
+                KernelFloatType::Float32 => OldMachineTerm::constant(0x7fc00001),
+                KernelFloatType::Float64 => OldMachineTerm::uint64_constant(0x7ff8000000000001),
             };
             let exports = KernelTermExport::machine_export_count();
             let (root, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -19,7 +19,7 @@ fn float_atom_views_do_constant_work_beside_growing_arenas() {
                 assert_eq!(view.format(), format);
                 assert!(view.literal().is_some());
                 assert_eq!(view.variable(), None);
-                assert_eq!(view.native_compat(), Some(&native));
+                assert_eq!(view.old_form(), Some(&native));
                 root
             });
             assert!(work <= 4, "size={size}, work={work}");
@@ -114,11 +114,11 @@ fn float_arithmetic_native_boundaries_walk_only_explicit_output_size() {
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         for format in [KernelFloatType::Float32, KernelFloatType::Float64] {
-            let mut native = MachineTerm::Variable(Variable(999932));
+            let mut native = OldMachineTerm::Variable(Variable(999932));
             for _ in 0..size {
                 native = match format {
-                    KernelFloatType::Float32 => MachineTerm::Float32Negate(Box::new(native)),
-                    KernelFloatType::Float64 => MachineTerm::Float64Negate(Box::new(native)),
+                    KernelFloatType::Float32 => OldMachineTerm::Float32Negate(Box::new(native)),
+                    KernelFloatType::Float64 => OldMachineTerm::Float64Negate(Box::new(native)),
                 };
             }
             let (root, import_work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -145,16 +145,16 @@ fn float_arithmetic_native_boundaries_walk_only_explicit_output_size() {
 #[test]
 fn conversion_rebuild_does_not_scan_symbolic_operand_prefixes() {
     for size in [16, 64, 256] {
-        let mut operand = MachineTerm::Variable(Variable(999951));
+        let mut operand = OldMachineTerm::Variable(Variable(999951));
         for _ in 0..size {
-            operand = MachineTerm::Float32Negate(Box::new(operand));
+            operand = OldMachineTerm::Float32Negate(Box::new(operand));
         }
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-            MachineTerm::rebuild_pure_application("c_float32_to_float64".into(), vec![operand])
+            OldMachineTerm::rebuild_pure_application("c_float32_to_float64".into(), vec![operand])
         });
         assert!(matches!(
             result,
-            MachineTerm::PureFunctionApplication { .. }
+            OldMachineTerm::PureFunctionApplication { .. }
         ));
         assert!(work <= 1, "size={size}: work={work}");
     }
@@ -326,9 +326,9 @@ fn float_call_import_and_export_scale_with_explicit_native_output() {
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let format = KernelFloatType::Float64;
-        let mut native = MachineTerm::Variable(Variable(1008202));
+        let mut native = OldMachineTerm::Variable(Variable(1008202));
         for _ in 0..size {
-            native = MachineTerm::ClickFunctionApplication {
+            native = OldMachineTerm::ClickFunctionApplication {
                 name: "step".into(),
                 arguments: vec![PureFunctionArgument::Value(format.value(native))],
             };
@@ -356,7 +356,7 @@ fn closed_float_predicate_checks_each_shared_arithmetic_node_once() {
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let format = KernelFloatType::Float64;
-        let zero = KernelTermImport::default().float(format, &MachineTerm::uint64_constant(0));
+        let zero = KernelTermImport::default().float(format, &OldMachineTerm::uint64_constant(0));
         let mut operand = zero.clone();
         for _ in 0..size {
             operand = KernelTerm::float_binary(

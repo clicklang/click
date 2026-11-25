@@ -2156,7 +2156,7 @@ impl MutexLedger {
 
     pub(super) fn held_condition(&self, mutex: &Address) -> ConditionTerm {
         match self.get(mutex) {
-            Some(MutexEntry::ConditionalLoop { held, .. }) => held.native_compat().clone(),
+            Some(MutexEntry::ConditionalLoop { held, .. }) => held.old_form().clone(),
             entry => ConditionTerm::Constant(matches!(entry, Some(MutexEntry::Locked { .. }))),
         }
     }
@@ -2938,11 +2938,11 @@ mod tests {
             ResourceFact::View(fact.resource().clone()),
             ResourceFact::own_quantity(
                 fact.resource().clone(),
-                super::super::MachineTerm::constant(0),
+                super::super::OldMachineTerm::constant(0),
             ),
             ResourceFact::own_quantity(
                 fact.resource().clone(),
-                super::super::MachineTerm::constant(2),
+                super::super::OldMachineTerm::constant(2),
             ),
         ] {
             assert!(!resources.satisfies_fact(&invalid, &assumptions));
@@ -3004,11 +3004,11 @@ mod tests {
             ResourceFact::View(fact.resource().clone()),
             ResourceFact::own_quantity(
                 fact.resource().clone(),
-                super::super::MachineTerm::constant(0),
+                super::super::OldMachineTerm::constant(0),
             ),
             ResourceFact::own_quantity(
                 fact.resource().clone(),
-                super::super::MachineTerm::constant(2),
+                super::super::OldMachineTerm::constant(2),
             ),
         ] {
             assert!(!resources.satisfies_fact(&invalid, &assumptions));
@@ -5304,8 +5304,8 @@ mod wide_range_reader_tests {
         );
         let wide = MemoryRange::new_wide(
             base,
-            MachineTerm::uint64_constant(0),
-            MachineTerm::uint64_constant(1 << 33),
+            OldMachineTerm::uint64_constant(0),
+            OldMachineTerm::uint64_constant(1 << 33),
             1,
         );
         assert!(

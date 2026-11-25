@@ -79,9 +79,11 @@ fn float_comparison_outputs_read_shared_constant_and_symbolic_dags_once() {
                 let mut root = if constant {
                     KernelTermImport::default().argument(&PureFunctionArgument::Value(
                         format.value(match format {
-                            KernelFloatType::Float32 => MachineTerm::uint32_constant(0x3f80_0000),
+                            KernelFloatType::Float32 => {
+                                OldMachineTerm::uint32_constant(0x3f80_0000)
+                            }
                             KernelFloatType::Float64 => {
-                                MachineTerm::uint64_constant(0x3ff0_0000_0000_0000)
+                                OldMachineTerm::uint64_constant(0x3ff0_0000_0000_0000)
                             }
                         }),
                     ))

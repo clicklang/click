@@ -19,7 +19,7 @@ fn loaded_quantifier_matching_ignores_ambient_facts_and_retained_memory_size() {
                         base: block.into(),
                         offset: AddressOffset::Constant(0),
                     },
-                    ProgramValue::Int32(MachineTerm::constant(index as u32)),
+                    ProgramValue::Int32(OldMachineTerm::constant(index as u32)),
                 );
             }
             let memory = intern_memory(memory);
@@ -29,8 +29,8 @@ fn loaded_quantifier_matching_ignores_ambient_facts_and_retained_memory_size() {
             for index in 0..size {
                 facts = facts.with_fact(Proposition::condition_is(
                     ConditionTerm::equal(
-                        MachineTerm::Variable(Variable(930_000 + index)),
-                        MachineTerm::constant(3),
+                        OldMachineTerm::Variable(Variable(930_000 + index)),
+                        OldMachineTerm::constant(3),
                     ),
                     true,
                 ));
@@ -44,7 +44,7 @@ fn loaded_quantifier_matching_ignores_ambient_facts_and_retained_memory_size() {
                     base: "loaded-quantifier".into(),
                     offset: AddressOffset::Constant(0),
                 },
-                ProgramValue::Int32(MachineTerm::constant(7)),
+                ProgramValue::Int32(OldMachineTerm::constant(7)),
             ));
             let missing = loaded_fact_of_format(&changed, Variable(920_002), true, format);
             let (refused, miss_work) = crate::instrumentation::measure_deterministic_work(|| {

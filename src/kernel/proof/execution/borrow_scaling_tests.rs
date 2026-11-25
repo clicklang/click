@@ -90,8 +90,8 @@ fn parameter_view(variable: u64) -> ResourceFact {
             base: AddressBase::ExternalArgument,
             offset: AddressOffset::Variable(Variable(variable)),
         },
-        MachineTerm::constant(0),
-        MachineTerm::constant(1),
+        OldMachineTerm::constant(0),
+        OldMachineTerm::constant(1),
         4,
     ))
 }

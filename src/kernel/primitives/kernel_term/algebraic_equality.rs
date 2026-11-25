@@ -193,9 +193,9 @@ mod tests {
             variant: "Arm".into(),
             fields: vec![
                 AlgebraicValue::Program(ProgramValue::Pointer(pointer)),
-                AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::add(
-                    MachineTerm::Variable(Variable(999671)),
-                    MachineTerm::constant(1),
+                AlgebraicValue::Program(ProgramValue::Int32(OldMachineTerm::add(
+                    OldMachineTerm::Variable(Variable(999671)),
+                    OldMachineTerm::constant(1),
                 ))),
             ],
         };
@@ -284,7 +284,7 @@ mod tests {
         );
         let condition = KernelTermImport::default().condition(&native);
         let format = MachineIntegerType::Int32;
-        let branches = [MachineTerm::constant(1), MachineTerm::constant(2)];
+        let branches = [OldMachineTerm::constant(1), OldMachineTerm::constant(2)];
         let common = KernelTerm::machine_if_shared(
             format,
             [
@@ -297,7 +297,7 @@ mod tests {
         let observed = SharedMachineIntegerTerm::observe_shared(format, common).unwrap();
         let native = SharedMachineIntegerTerm::intern(
             format,
-            MachineTerm::If {
+            OldMachineTerm::If {
                 condition: Box::new(native),
                 then_term: Box::new(branches[0].clone()),
                 else_term: Box::new(branches[1].clone()),

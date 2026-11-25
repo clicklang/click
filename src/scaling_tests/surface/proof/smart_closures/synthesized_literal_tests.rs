@@ -22,8 +22,8 @@ fn speculative_solve_premise_spelling_declines_large_components_without_renderin
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::constant(0)),
-                right: Box::new(MachineTerm::constant(0)),
+                left: Box::new(OldMachineTerm::constant(0)),
+                right: Box::new(OldMachineTerm::constant(0)),
             },
             true,
         ),
@@ -43,8 +43,8 @@ fn speculative_solve_premise_spelling_declines_large_components_without_renderin
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
-                        left: Box::new(MachineTerm::Variable(Variable(8_179_000 + index))),
-                        right: Box::new(MachineTerm::constant(0)),
+                        left: Box::new(OldMachineTerm::Variable(Variable(8_179_000 + index))),
+                        right: Box::new(OldMachineTerm::constant(0)),
                     },
                     true,
                 )

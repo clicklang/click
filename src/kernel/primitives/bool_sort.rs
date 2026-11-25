@@ -179,7 +179,7 @@ impl ConditionTerm {
     }
 }
 
-impl crate::kernel::MachineTerm {
+impl crate::kernel::OldMachineTerm {
     /// Rule C1: the integer value of the `Bool` `value` at format `to`,
     /// `value as to`. A constant folds to its word, 1 or 0; nothing else is
     /// read.
@@ -235,7 +235,7 @@ impl crate::kernel::MachineTerm {
 impl ConditionTerm {
     /// The Boolean value of an already selected one-byte cell read.
     pub fn boolean_cell_read(point: super::ProgramPoint, address: super::Address) -> Self {
-        Self::nonzero_bool_word(&crate::kernel::MachineTerm::read_named(
+        Self::nonzero_bool_word(&crate::kernel::OldMachineTerm::read_named(
             point,
             address,
             super::LoadKind::UInt8,
@@ -247,7 +247,7 @@ impl ConditionTerm {
     /// `b`, or as the `uint8` constant 0 or 1, whose truth it is. Any other
     /// 8-bit term (a variable, a conditional of carriers) reaches `Bool` by
     /// C's test `w != 0` at `uint8`.
-    pub(crate) fn truth_of_bool_word(word: &crate::kernel::MachineTerm) -> Self {
+    pub(crate) fn truth_of_bool_word(word: &crate::kernel::OldMachineTerm) -> Self {
         if let Some(value) = word.bool_cast_operand() {
             return value.clone();
         }
@@ -260,13 +260,16 @@ impl ConditionTerm {
     /// C's test `w != 0` at `uint8` of a `Bool` carrier, whatever its form:
     /// the truth of any carrier (rule C1), and for a cast `c as uint8`
     /// exactly `c` (rule C1a). One node over the word.
-    pub(crate) fn nonzero_bool_word(word: &crate::kernel::MachineTerm) -> Self {
+    pub(crate) fn nonzero_bool_word(word: &crate::kernel::OldMachineTerm) -> Self {
         use crate::kernel::MachineIntegerType;
         Self::bool_not(Self::narrow_compare(
             MachineIntegerType::UInt8,
             crate::kernel::CompareRelation::Equal,
             word.clone(),
-            crate::kernel::MachineTerm::bool_cast(MachineIntegerType::UInt8, Self::Constant(false)),
+            crate::kernel::OldMachineTerm::bool_cast(
+                MachineIntegerType::UInt8,
+                Self::Constant(false),
+            ),
         ))
     }
 
@@ -323,7 +326,7 @@ impl ConditionTerm {
     /// `(bool)2` and `(bool)-1` are true, with no reduction anywhere. `None`
     /// for a value with no such test (a float, an abstract value).
     pub(crate) fn nonzero_test(value: &crate::kernel::ProgramValue) -> Option<Self> {
-        use crate::kernel::{IntegerTerm, MachineIntegerType, MachineTerm, ProgramValue};
+        use crate::kernel::{IntegerTerm, MachineIntegerType, OldMachineTerm, ProgramValue};
         let is_zero = match value.numeric_value() {
             ProgramValue::Bool(word) => return Some(Self::truth_of_bool_word(word)),
             // Rule C1a: a cast is nonzero exactly when its `Bool` holds.
@@ -347,13 +350,13 @@ impl ConditionTerm {
                 )
             }
             ProgramValue::Int32(word) | ProgramValue::UInt32(word) => {
-                Self::equal(word.clone(), MachineTerm::constant(0))
+                Self::equal(word.clone(), OldMachineTerm::constant(0))
             }
             ProgramValue::Int64(word) => {
-                Self::int64_equal(word.clone(), MachineTerm::int64_constant(0))
+                Self::int64_equal(word.clone(), OldMachineTerm::int64_constant(0))
             }
             ProgramValue::UInt64(word) => {
-                Self::uint64_equal(word.clone(), MachineTerm::uint64_constant(0))
+                Self::uint64_equal(word.clone(), OldMachineTerm::uint64_constant(0))
             }
             value @ (ProgramValue::Int128(word) | ProgramValue::UInt128(word)) => {
                 let source = MachineIntegerType::from_program_type(value.program_type())?;
@@ -375,7 +378,7 @@ impl crate::kernel::ProgramValue {
     /// The `ProgramValue::Bool` carrier of the `Bool` `value`: its cast to
     /// `uint8` (rule C1), the byte a `bool` cell holds.
     pub(crate) fn of_bool(value: ConditionTerm) -> Self {
-        Self::Bool(crate::kernel::MachineTerm::bool_cast(
+        Self::Bool(crate::kernel::OldMachineTerm::bool_cast(
             crate::kernel::MachineIntegerType::UInt8,
             value,
         ))
@@ -390,7 +393,7 @@ impl crate::kernel::ProgramValue {
     /// type that is not a scalar.
     pub(crate) fn from_bitvector_term(
         program_type: crate::kernel::ProgramType,
-        term: crate::kernel::MachineTerm,
+        term: crate::kernel::OldMachineTerm,
     ) -> Option<Self> {
         use crate::kernel::ProgramType;
         Some(match program_type {

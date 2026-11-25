@@ -244,7 +244,7 @@ mod tests {
             Address {
                 base: AddressBase::Symbolic(Variable(1001001)),
                 offset: AddressOffset::scaled_int64_node(
-                    MachineTerm::Variable(Variable(1001002)),
+                    OldMachineTerm::Variable(Variable(1001002)),
                     8,
                     true,
                 ),
@@ -296,7 +296,7 @@ mod tests {
                 vec![PureFunctionArgument::Integer(fold.clone())],
             )),
             offset: AddressOffset::scaled_int32_node(
-                MachineTerm::IntegerToMachine {
+                OldMachineTerm::IntegerToMachine {
                     value: fold,
                     destination: MachineIntegerType::Int32,
                 },
@@ -334,7 +334,7 @@ mod tests {
         .with_bounds_owner(Some(Arc::new(Address::symbolic(Variable(1001012)))))
         .with_bounds(Some(SubobjectBounds {
             start: Address::symbolic(Variable(1001013)),
-            width: MachineTerm::Variable(Variable(1001014)),
+            width: OldMachineTerm::Variable(Variable(1001014)),
         }));
         let shared = SharedPointer::import(&source);
         for mode in MODES {

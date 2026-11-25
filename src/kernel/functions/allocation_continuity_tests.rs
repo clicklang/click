@@ -4,9 +4,9 @@ use crate::kernel::{CompareRelation, MachineIntegerType, VerificationSession};
 /// [`allocation_continuity`] of two 32-bit sizes.
 fn int32_continuity(
     input_base: &Address,
-    input_bytes: &MachineTerm,
+    input_bytes: &OldMachineTerm,
     output_base: &Address,
-    output_bytes: &MachineTerm,
+    output_bytes: &OldMachineTerm,
     assumptions: &PureFactContext,
 ) -> AllocationContinuity {
     allocation_continuity(
@@ -32,12 +32,12 @@ fn continuity_refuses_allocation_sizes_of_different_formats() {
         base: AddressBase::Heap(930_201),
         offset: AddressOffset::Constant(0),
     };
-    let count = MachineTerm::Variable(Variable(930_202));
+    let count = OldMachineTerm::Variable(Variable(930_202));
     let wide = AllocationSize::new(
-        MachineTerm::uint64_multiply(count.clone(), MachineTerm::uint64_constant(4)),
+        OldMachineTerm::uint64_multiply(count.clone(), OldMachineTerm::uint64_constant(4)),
         AllocationSizeKind::UInt64,
     );
-    let narrow = AllocationSize::int32(MachineTerm::constant(16));
+    let narrow = AllocationSize::int32(OldMachineTerm::constant(16));
     let assumptions = PureFactContext::new();
     for (input, output) in [(&wide, &narrow), (&narrow, &wide)] {
         assert_eq!(
@@ -64,9 +64,9 @@ fn continuity_refuses_allocation_sizes_of_different_formats() {
         AllocationContinuity::Same,
     );
     let other_wide = AllocationSize::new(
-        MachineTerm::uint64_multiply(
-            MachineTerm::Variable(Variable(930_204)),
-            MachineTerm::uint64_constant(4),
+        OldMachineTerm::uint64_multiply(
+            OldMachineTerm::Variable(Variable(930_204)),
+            OldMachineTerm::uint64_constant(4),
         ),
         AllocationSizeKind::UInt64,
     );
@@ -119,13 +119,13 @@ fn preserved_fold_can_continue_an_allocation_loaded_from_another_block() {
     };
     let consumed = heap(934_000);
     let slot = heap(934_001);
-    let bytes = MachineTerm::constant(4);
+    let bytes = OldMachineTerm::constant(4);
     let memory = SymbolicMemory::new()
         .with_heap_allocation_claim(consumed.clone(), AllocationSize::int32(bytes.clone()))
         .expect("live input allocation")
         .with_heap_allocation_claim(
             slot.clone(),
-            AllocationSize::int32(MachineTerm::constant(
+            AllocationSize::int32(OldMachineTerm::constant(
                 ProgramType::Int32Pointer.byte_width(),
             )),
         )
@@ -159,7 +159,7 @@ fn contract_retirement_invalidates_creation_history_even_with_replacement() {
         base: AddressBase::Heap(930_100),
         offset: AddressOffset::Constant(0),
     };
-    let bytes = MachineTerm::constant(16);
+    let bytes = OldMachineTerm::constant(16);
     let input = ResourceContext::new()
         .unchecked_with_fact(ResourceFact::own_allocation(base.clone(), bytes.clone()));
     let memory = SymbolicMemory::new()
@@ -177,7 +177,7 @@ fn contract_retirement_invalidates_creation_history_even_with_replacement() {
             .unwrap()
             .created_here(&base.base)
     );
-    let replacement_bytes = MachineTerm::Variable(Variable(930_101));
+    let replacement_bytes = OldMachineTerm::Variable(Variable(930_101));
     assert!(matches!(
         int32_continuity(
             &base,
@@ -235,7 +235,7 @@ fn contract_retirement_invalidates_creation_history_even_with_replacement() {
 fn external_pointer(variable: u64) -> Address {
     Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(variable)), 4),
+        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(variable)), 4),
     }
 }
 
@@ -243,7 +243,7 @@ fn external_pointer(variable: u64) -> Address {
 fn contract_allocation_retirement_respects_initialized_mutex_storage() {
     for continuity_undecided in [false, true] {
         let base = external_pointer(930_004);
-        let bytes = MachineTerm::constant(48);
+        let bytes = OldMachineTerm::constant(48);
         let input = ResourceContext::new()
             .try_compose_with_fact(
                 ResourceFact::own_allocation(base.clone(), bytes.clone()),
@@ -307,9 +307,9 @@ fn continuity_requires_both_the_allocation_base_and_size() {
     assert_eq!(
         int32_continuity(
             &input,
-            &MachineTerm::constant(4),
+            &OldMachineTerm::constant(4),
             &input,
-            &MachineTerm::constant(4),
+            &OldMachineTerm::constant(4),
             &assumptions,
         ),
         AllocationContinuity::Same,
@@ -317,9 +317,9 @@ fn continuity_requires_both_the_allocation_base_and_size() {
     assert_eq!(
         int32_continuity(
             &input,
-            &MachineTerm::constant(4),
+            &OldMachineTerm::constant(4),
             &input,
-            &MachineTerm::constant(8),
+            &OldMachineTerm::constant(8),
             &assumptions,
         ),
         AllocationContinuity::Inconsistent,
@@ -330,12 +330,12 @@ fn continuity_requires_both_the_allocation_base_and_size() {
                 base: AddressBase::Heap(930_002),
                 offset: AddressOffset::Constant(0),
             },
-            &MachineTerm::constant(4),
+            &OldMachineTerm::constant(4),
             &Address {
                 base: AddressBase::Heap(930_003),
                 offset: AddressOffset::Constant(0),
             },
-            &MachineTerm::constant(4),
+            &OldMachineTerm::constant(4),
             &assumptions,
         ),
         AllocationContinuity::Distinct,
@@ -345,9 +345,9 @@ fn continuity_requires_both_the_allocation_base_and_size() {
     assert_eq!(
         int32_continuity(
             &input,
-            &MachineTerm::constant(4),
+            &OldMachineTerm::constant(4),
             &other,
-            &MachineTerm::constant(4),
+            &OldMachineTerm::constant(4),
             &assumptions,
         ),
         AllocationContinuity::Undecided(ConditionTerm::address_equal(input, other)),
@@ -363,7 +363,7 @@ fn allocation_size_continuity_uses_graph_with_state_scope() {
         offset: AddressOffset::scale_int32(index, 4),
     };
     let load = |memory: &SharedMemory, index| {
-        MachineTerm::Variable(crate::kernel::load_variable_for_cell_with_origin(
+        OldMachineTerm::Variable(crate::kernel::load_variable_for_cell_with_origin(
             memory,
             &pointer(index),
             crate::kernel::LoadKind::Int32,
@@ -372,14 +372,14 @@ fn allocation_size_continuity_uses_graph_with_state_scope() {
         ))
     };
     let (a, b) = (
-        MachineTerm::Variable(Variable(930_010)),
-        MachineTerm::Variable(Variable(930_011)),
+        OldMachineTerm::Variable(Variable(930_010)),
+        OldMachineTerm::Variable(Variable(930_011)),
     );
     let after = crate::kernel::intern_memory(before.memory().clone().store(
         pointer(b.clone()),
-        ProgramValue::Int32(MachineTerm::constant(9)),
+        ProgramValue::Int32(OldMachineTerm::constant(9)),
     ));
-    let size = |value| MachineTerm::add(value, MachineTerm::constant(1));
+    let size = |value| OldMachineTerm::add(value, OldMachineTerm::constant(1));
     let input_size = size(load(&before, a.clone()));
     let output_size = size(load(&before, b.clone()));
     let later_size = size(load(&after, b.clone()));
@@ -539,15 +539,16 @@ mod scaling_tests {
 /// entry clause, a held body) is assumed.
 #[test]
 fn a_contract_uint64_allocation_size_needs_the_no_wrap_decision() {
-    let count = MachineTerm::Variable(Variable(930_300));
-    let other = MachineTerm::Variable(Variable(930_301));
-    let product = MachineTerm::uint64_multiply(count.clone(), MachineTerm::uint64_constant(4));
+    let count = OldMachineTerm::Variable(Variable(930_300));
+    let other = OldMachineTerm::Variable(Variable(930_301));
+    let product =
+        OldMachineTerm::uint64_multiply(count.clone(), OldMachineTerm::uint64_constant(4));
     let unbounded = PureFactContext::new();
     let bounded = [
-        ConditionTerm::uint64_greater_than(count.clone(), MachineTerm::uint64_constant(0)),
-        ConditionTerm::uint64_less_equal(count.clone(), MachineTerm::uint64_constant(1000)),
-        ConditionTerm::uint64_greater_than(other.clone(), MachineTerm::uint64_constant(0)),
-        ConditionTerm::uint64_less_equal(other.clone(), MachineTerm::uint64_constant(1000)),
+        ConditionTerm::uint64_greater_than(count.clone(), OldMachineTerm::uint64_constant(0)),
+        ConditionTerm::uint64_less_equal(count.clone(), OldMachineTerm::uint64_constant(1000)),
+        ConditionTerm::uint64_greater_than(other.clone(), OldMachineTerm::uint64_constant(0)),
+        ConditionTerm::uint64_less_equal(other.clone(), OldMachineTerm::uint64_constant(1000)),
     ]
     .into_iter()
     .fold(PureFactContext::new(), |context, condition| {
@@ -555,8 +556,8 @@ fn a_contract_uint64_allocation_size_needs_the_no_wrap_decision() {
     });
 
     assert_eq!(
-        uint64_allocation_size_argument(&MachineTerm::uint64_constant(16), &unbounded),
-        Ok(ProgramValue::Int32(MachineTerm::constant(16))),
+        uint64_allocation_size_argument(&OldMachineTerm::uint64_constant(16), &unbounded),
+        Ok(ProgramValue::Int32(OldMachineTerm::constant(16))),
     );
     assert!(matches!(
         uint64_allocation_size_argument(&product, &unbounded),
@@ -570,17 +571,17 @@ fn a_contract_uint64_allocation_size_needs_the_no_wrap_decision() {
         uint64_allocation_size_argument(&product, &unbounded.clone().assume_entry_clause_spans()),
         Ok(ProgramValue::UInt64(product.clone())),
     );
-    let symbolic_product = MachineTerm::uint64_multiply(count.clone(), other);
+    let symbolic_product = OldMachineTerm::uint64_multiply(count.clone(), other);
     assert!(matches!(
         uint64_allocation_size_argument(&symbolic_product, &bounded),
         Err(RuntimeError::FunctionContract(_)),
     ));
     assert!(matches!(
-        uint64_allocation_size_argument(&MachineTerm::uint64_constant(0), &unbounded),
+        uint64_allocation_size_argument(&OldMachineTerm::uint64_constant(0), &unbounded),
         Err(RuntimeError::FunctionContract(_)),
     ));
     assert!(matches!(
-        uint64_allocation_size_argument(&MachineTerm::uint64_constant(u64::MAX), &unbounded),
+        uint64_allocation_size_argument(&OldMachineTerm::uint64_constant(u64::MAX), &unbounded),
         Err(RuntimeError::FunctionContract(_)),
     ));
 }

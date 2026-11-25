@@ -4,7 +4,7 @@ use super::*;
 use crate::kernel::MachineCastSpelling;
 use crate::kernel::{
     BitvectorBinaryOp as B, CarrierWidth as W, KernelMachineLiteral as L, KernelTerm,
-    KernelTermNode as N, MachineTerm as T,
+    KernelTermNode as N, OldMachineTerm as T,
 };
 
 impl TermClasses {
@@ -512,7 +512,7 @@ impl TermClasses {
                 N::Variable(variable) => self.intern_typed_machine(&T::Variable(*variable), width),
                 N::MachineLiteral(value) => {
                     crate::instrumentation::record_deterministic_work(1);
-                    self.intern_typed_machine(&value.legacy_term(), width)
+                    self.intern_typed_machine(&value.old_term(), width)
                 }
                 _ => unreachable!("cached shared native fragment"),
             };

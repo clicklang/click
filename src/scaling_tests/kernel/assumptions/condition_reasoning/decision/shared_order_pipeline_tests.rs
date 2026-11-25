@@ -56,7 +56,7 @@ fn check_zero_prefixes(unresolved: bool, cancellation: bool) {
                 };
                 context = context.assume_condition(
                     ConditionTerm::equal(
-                        MachineTerm::Variable(Variable(997640 + n as u64)),
+                        OldMachineTerm::Variable(Variable(997640 + n as u64)),
                         (n as u32).into(),
                     ),
                     true,

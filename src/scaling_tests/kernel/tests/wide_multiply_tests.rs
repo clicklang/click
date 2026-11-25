@@ -19,8 +19,8 @@ fn wide_multiply_known_bounds_work_does_not_scan_unrelated_ambient_facts() {
         }
         let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
             crate::kernel::eval::apply_program_multiply(
-                ProgramValue::Int128(MachineTerm::Variable(Variable(150_001))),
-                ProgramValue::Int128(MachineTerm::Variable(Variable(150_002))),
+                ProgramValue::Int128(OldMachineTerm::Variable(Variable(150_001))),
+                ProgramValue::Int128(OldMachineTerm::Variable(Variable(150_002))),
                 Vec::new().into(),
                 Vec::new(),
                 &assumptions,
@@ -42,16 +42,16 @@ fn wide_multiply_resolves_indexed_narrow_inputs_with_their_signedness() {
     for (ty, input, expected) in [
         (
             MachineIntegerType::Int64,
-            MachineTerm::int64_constant(i64::MIN),
+            OldMachineTerm::int64_constant(i64::MIN),
             BigInt::from(i64::MIN) * 2,
         ),
         (
             MachineIntegerType::UInt64,
-            MachineTerm::uint64_constant(u64::MAX),
+            OldMachineTerm::uint64_constant(u64::MAX),
             BigInt::from(u64::MAX) * 2,
         ),
     ] {
-        let variable = MachineTerm::Variable(Variable(153_000));
+        let variable = OldMachineTerm::Variable(Variable(153_000));
         let condition = if ty == MachineIntegerType::Int64 {
             ConditionTerm::int64_equal(variable.clone(), input)
         } else {
@@ -65,8 +65,11 @@ fn wide_multiply_resolves_indexed_narrow_inputs_with_their_signedness() {
                     .assume_condition(ConditionTerm::Variable(Variable(154_000 + index)), true);
             }
             assumptions = assumptions.assume_condition(condition.clone(), true);
-            let widened =
-                MachineTerm::machine_integer_cast(ty, MachineIntegerType::Int128, variable.clone());
+            let widened = OldMachineTerm::machine_integer_cast(
+                ty,
+                MachineIntegerType::Int128,
+                variable.clone(),
+            );
             let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
                 crate::kernel::eval::apply_program_multiply(
                     ProgramValue::Int128(widened),

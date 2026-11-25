@@ -8,11 +8,14 @@ use super::*;
 fn narrowed_native_expression_identity_work_scales_with_selected_expression() {
     let mut measured = Vec::new();
     for count in [16, 32, 64, 128] {
-        let mut value = MachineTerm::Variable(Variable(100));
+        let mut value = OldMachineTerm::Variable(Variable(100));
         for i in 0..count {
-            value = MachineTerm::uint64_subtract(value, MachineTerm::Variable(Variable(1000 + i)));
+            value = OldMachineTerm::uint64_subtract(
+                value,
+                OldMachineTerm::Variable(Variable(1000 + i)),
+            );
         }
-        let narrow = MachineTerm::uint32_from_64(value);
+        let narrow = OldMachineTerm::uint32_from_64(value);
         let (atom, work) = crate::instrumentation::measure_deterministic_work(|| {
             SignedArithmeticAtom::from_term(&narrow).unwrap()
         });

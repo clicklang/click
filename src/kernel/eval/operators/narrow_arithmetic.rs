@@ -26,7 +26,7 @@ pub(in crate::kernel) fn is_narrow_format(format: MachineIntegerType) -> bool {
 pub(in crate::kernel) fn narrow_operand(
     format: MachineIntegerType,
     value: &ProgramValue,
-) -> Option<MachineTerm> {
+) -> Option<OldMachineTerm> {
     match value {
         ProgramValue::Int8(term)
         | ProgramValue::UInt8(term)
@@ -39,7 +39,7 @@ pub(in crate::kernel) fn narrow_operand(
             let value = num_bigint::BigInt::from(constant_u32(*bits) as i32);
             let (low, high) = format.format().bounds();
             (value >= low && value <= high)
-                .then(|| MachineTerm::narrow_constant(format, u128::from(constant_u32(*bits))))
+                .then(|| OldMachineTerm::narrow_constant(format, u128::from(constant_u32(*bits))))
         }
         _ => None,
     }
@@ -69,7 +69,7 @@ pub(in crate::kernel) fn native_narrow_binary(
     } else {
         narrow_operand(format, right)?
     };
-    Some(format.value_from_term(MachineTerm::machine_binary(format, op, left, right)))
+    Some(format.value_from_term(OldMachineTerm::machine_binary(format, op, left, right)))
 }
 
 /// `~value` at the narrow `format`, when `value` is a value of that format.
@@ -80,7 +80,7 @@ pub(in crate::kernel) fn native_narrow_not(
     if !is_narrow_format(format) {
         return None;
     }
-    Some(format.value_from_term(MachineTerm::machine_unary(
+    Some(format.value_from_term(OldMachineTerm::machine_unary(
         format,
         MachineUnaryOp::BitwiseNot,
         narrow_operand(format, value)?,

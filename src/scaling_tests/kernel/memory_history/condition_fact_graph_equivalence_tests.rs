@@ -8,7 +8,7 @@ use super::*;
 fn condition_fact_graph_queries_scale_without_fact_index() {
     for size in [16u64, 64, 256, 512] {
         let _session = crate::kernel::VerificationSession::enter();
-        let sum = |value| MachineTerm::add(value, MachineTerm::constant(1));
+        let sum = |value| OldMachineTerm::add(value, OldMachineTerm::constant(1));
         let source = less_than(sum(var(0)), var(9000));
         let mut context = PureFactContext::new();
         for index in 0..size {
@@ -42,7 +42,7 @@ fn failed_check_cell_capture_is_bounded_and_ignores_unrelated_facts() {
             .with_block(base.base.clone(), 128)
             .store(
                 Address::symbolic(Variable(982_000)),
-                ProgramValue::Int32(MachineTerm::constant(9)),
+                ProgramValue::Int32(OldMachineTerm::constant(9)),
             ),
     );
     let mut samples = Vec::new();
@@ -50,7 +50,7 @@ fn failed_check_cell_capture_is_bounded_and_ignores_unrelated_facts() {
         let mut context = PureFactContext::new();
         for index in 0..size {
             context = context.assume_condition(
-                ConditionTerm::equal(var(990_000 + index), MachineTerm::constant(7)),
+                ConditionTerm::equal(var(990_000 + index), OldMachineTerm::constant(7)),
                 true,
             );
         }

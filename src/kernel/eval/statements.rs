@@ -474,8 +474,8 @@ pub(in crate::kernel) fn memory_write_storage_outcome(
 ) -> Option<StatementOutcome> {
     let range = MemoryRange::new_with_element_width(
         pointer.clone(),
-        MachineTerm::constant(0),
-        MachineTerm::constant(1),
+        OldMachineTerm::constant(0),
+        OldMachineTerm::constant(1),
         bytes,
     );
     if let Some(error) = super::super::mutexes::storage_write_refusal(state, &range, assumptions) {
@@ -1635,8 +1635,8 @@ fn missing_aggregate_copy_write_resource(
             return Some(ResourceFact::own_memory(
                 MemoryRange::new_with_element_width(
                     pointer,
-                    MachineTerm::constant(0),
-                    MachineTerm::constant(1),
+                    OldMachineTerm::constant(0),
+                    OldMachineTerm::constant(1),
                     bytes,
                 ),
             ));
@@ -1683,8 +1683,8 @@ pub(in crate::kernel) fn missing_aggregate_copy_read_resource(
             return Some(ResourceFact::view_memory(
                 MemoryRange::new_with_element_width(
                     source.offset_by_layout(field.offset()),
-                    MachineTerm::constant(0),
-                    MachineTerm::constant(1),
+                    OldMachineTerm::constant(0),
+                    OldMachineTerm::constant(1),
                     crate::kernel::assumptions::read_candidate_byte_width(
                         field.program_type().byte_width(),
                     ),
@@ -1704,8 +1704,8 @@ pub(in crate::kernel) fn missing_aggregate_copy_read_resource(
             return Some(ResourceFact::view_memory(
                 MemoryRange::new_with_element_width(
                     pointer,
-                    MachineTerm::constant(0),
-                    MachineTerm::constant(1),
+                    OldMachineTerm::constant(0),
+                    OldMachineTerm::constant(1),
                     union.size_bytes(),
                 ),
             ));
@@ -2041,7 +2041,7 @@ fn heap_block_range(
 
 /// The element count and width of a whole heap block's owned range, in the
 /// size's format ([`AllocationSize::element_count`]).
-fn heap_range_element_count(size: &AllocationSize, requested_width: u32) -> (MachineTerm, u32) {
+fn heap_range_element_count(size: &AllocationSize, requested_width: u32) -> (OldMachineTerm, u32) {
     let element_width = heap_range_element_width(size, requested_width);
     let element_count = size
         .element_count(element_width)
@@ -2051,7 +2051,7 @@ fn heap_range_element_count(size: &AllocationSize, requested_width: u32) -> (Mac
 
 #[derive(Clone, Debug)]
 struct RequestedAllocationSize {
-    term: MachineTerm,
+    term: OldMachineTerm,
     unsigned: bool,
     /// The size's type admits values above `INT32_MAX` (`uint32`), so the
     /// facts must bound it to the signed 32-bit allocation size.
@@ -2068,7 +2068,7 @@ struct RequestedAllocationSize {
 
 impl RequestedAllocationSize {
     /// A 32-bit size of the given signedness.
-    fn int32(term: MachineTerm, unsigned: bool, needs_size_bound: bool) -> Self {
+    fn int32(term: OldMachineTerm, unsigned: bool, needs_size_bound: bool) -> Self {
         Self {
             term,
             unsigned,
@@ -2080,7 +2080,7 @@ impl RequestedAllocationSize {
 
     /// A symbolic 64-bit size as C's `size_t` argument: a `long` is read as
     /// its conversion, so a negative one is above `PTRDIFF_MAX`.
-    fn uint64(term: MachineTerm, wraps: bool) -> Self {
+    fn uint64(term: OldMachineTerm, wraps: bool) -> Self {
         Self {
             term,
             unsigned: true,
@@ -2096,9 +2096,9 @@ impl RequestedAllocationSize {
     /// bytes. `None` for a `long` count, whose product may be undefined.
     fn wrapped_product(&self, element_width: u32, assumptions: &PureFactContext) -> Option<Self> {
         (self.kind == AllocationSizeKind::UInt64 && self.wraps).then(|| {
-            let product = MachineTerm::uint64_multiply(
+            let product = OldMachineTerm::uint64_multiply(
                 self.term.clone(),
-                MachineTerm::uint64_constant(u64::from(element_width)),
+                OldMachineTerm::uint64_constant(u64::from(element_width)),
             );
             uint64_size_value(product, true, assumptions)
         })
@@ -2110,11 +2110,11 @@ impl RequestedAllocationSize {
     fn scaled(&self, element_width: u32) -> Self {
         let term = match self.kind {
             AllocationSizeKind::Int32 => {
-                MachineTerm::multiply(self.term.clone(), MachineTerm::constant(element_width))
+                OldMachineTerm::multiply(self.term.clone(), OldMachineTerm::constant(element_width))
             }
-            AllocationSizeKind::UInt64 => MachineTerm::uint64_multiply(
+            AllocationSizeKind::UInt64 => OldMachineTerm::uint64_multiply(
                 self.term.clone(),
-                MachineTerm::uint64_constant(u64::from(element_width)),
+                OldMachineTerm::uint64_constant(u64::from(element_width)),
             ),
         };
         Self {
@@ -2142,11 +2142,12 @@ impl RequestedAllocationSize {
     fn at_least(&self, bytes: u32) -> ConditionTerm {
         match (self.kind, self.unsigned) {
             (AllocationSizeKind::UInt64, _) => uint64_size_at_least(&self.term, u64::from(bytes)),
-            (AllocationSizeKind::Int32, true) => {
-                ConditionTerm::unsigned_less_equal(MachineTerm::constant(bytes), self.term.clone())
-            }
+            (AllocationSizeKind::Int32, true) => ConditionTerm::unsigned_less_equal(
+                OldMachineTerm::constant(bytes),
+                self.term.clone(),
+            ),
             (AllocationSizeKind::Int32, false) => {
-                ConditionTerm::signed_less_equal(MachineTerm::constant(bytes), self.term.clone())
+                ConditionTerm::signed_less_equal(OldMachineTerm::constant(bytes), self.term.clone())
             }
         }
     }
@@ -2159,11 +2160,12 @@ impl RequestedAllocationSize {
                     crate::kernel::reasoning::uint64_size_in_elements(&self.term, u64::from(bytes));
                 ConditionTerm::uint64_less_than(count.clone(), bound)
             }
-            (AllocationSizeKind::Int32, true) => {
-                ConditionTerm::unsigned_less_than(self.term.clone(), MachineTerm::constant(bytes))
-            }
+            (AllocationSizeKind::Int32, true) => ConditionTerm::unsigned_less_than(
+                self.term.clone(),
+                OldMachineTerm::constant(bytes),
+            ),
             (AllocationSizeKind::Int32, false) => {
-                ConditionTerm::signed_less_than(self.term.clone(), MachineTerm::constant(bytes))
+                ConditionTerm::signed_less_than(self.term.clone(), OldMachineTerm::constant(bytes))
             }
         }
     }
@@ -2173,7 +2175,7 @@ impl RequestedAllocationSize {
 /// with a constant `k` is exact ([`uint64_allocation_size_bytes_are_exact`]), so
 /// the comparison is `ceil(bytes / k) <= n` over its element count, which
 /// the facts about `n` decide where the wrapping product would not.
-fn uint64_size_at_least(size: &MachineTerm, bytes: u64) -> ConditionTerm {
+fn uint64_size_at_least(size: &OldMachineTerm, bytes: u64) -> ConditionTerm {
     let (count, bound) = crate::kernel::reasoning::uint64_size_in_elements(size, bytes);
     ConditionTerm::uint64_less_equal(bound, count.clone())
 }
@@ -2201,7 +2203,7 @@ fn realloc_zeroed_prefix(
             let new = u32::try_from(new).ok()?;
             let shrinks = match old_prefix.kind() {
                 AllocationSizeKind::Int32 => ConditionTerm::unsigned_less_equal(
-                    MachineTerm::constant(new),
+                    OldMachineTerm::constant(new),
                     old_prefix.bytes().clone(),
                 ),
                 AllocationSizeKind::UInt64 => {
@@ -2248,14 +2250,14 @@ fn allocation_size_value(
         ProgramValue::Int64(term) => Some(match exact_signed_size_value(&term, assumptions) {
             Some(value) => match u32::try_from(value) {
                 Ok(value) => {
-                    RequestedAllocationSize::int32(MachineTerm::constant(value), false, false)
+                    RequestedAllocationSize::int32(OldMachineTerm::constant(value), false, false)
                 }
                 Err(_) => RequestedAllocationSize::uint64(
-                    MachineTerm::uint64_constant(value as u64),
+                    OldMachineTerm::uint64_constant(value as u64),
                     false,
                 ),
             },
-            None => RequestedAllocationSize::uint64(MachineTerm::uint64_from_int64(term), false),
+            None => RequestedAllocationSize::uint64(OldMachineTerm::uint64_from_int64(term), false),
         }),
         ProgramValue::UInt64(term) => Some(uint64_size_value(term, true, assumptions)),
         ProgramValue::Int128(_)
@@ -2271,14 +2273,18 @@ fn allocation_size_value(
 /// A `uint64` size: a 32-bit constant size where the facts fix it to a
 /// value that fits `uint32` (D2), else a `uint64` size.
 fn uint64_size_value(
-    term: MachineTerm,
+    term: OldMachineTerm,
     wraps: bool,
     assumptions: &PureFactContext,
 ) -> RequestedAllocationSize {
     match exact_unsigned_size_value(&term, assumptions) {
         Some(value) => match u32::try_from(value) {
-            Ok(value) => RequestedAllocationSize::int32(MachineTerm::constant(value), false, false),
-            Err(_) => RequestedAllocationSize::uint64(MachineTerm::uint64_constant(value), wraps),
+            Ok(value) => {
+                RequestedAllocationSize::int32(OldMachineTerm::constant(value), false, false)
+            }
+            Err(_) => {
+                RequestedAllocationSize::uint64(OldMachineTerm::uint64_constant(value), wraps)
+            }
         },
         None => RequestedAllocationSize::uint64(term, wraps),
     }
@@ -2321,7 +2327,7 @@ fn heap_element_count_expression(
     }
 }
 
-fn exact_signed_size_value(term: &MachineTerm, assumptions: &PureFactContext) -> Option<i64> {
+fn exact_signed_size_value(term: &OldMachineTerm, assumptions: &PureFactContext) -> Option<i64> {
     if let Some(value) = term.int64_as_const() {
         return Some(value);
     }
@@ -2329,7 +2335,7 @@ fn exact_signed_size_value(term: &MachineTerm, assumptions: &PureFactContext) ->
         return Some(value);
     }
     match term {
-        MachineTerm::Binary {
+        OldMachineTerm::Binary {
             format: MachineIntegerType::Int64,
             op: MachineBinaryOp::Add,
             left,
@@ -2338,7 +2344,7 @@ fn exact_signed_size_value(term: &MachineTerm, assumptions: &PureFactContext) ->
             exact_signed_size_value(left, assumptions)?
                 .checked_add(exact_signed_size_value(right, assumptions)?)?,
         ),
-        MachineTerm::Binary {
+        OldMachineTerm::Binary {
             format: MachineIntegerType::Int64,
             op: MachineBinaryOp::Subtract,
             left,
@@ -2347,7 +2353,7 @@ fn exact_signed_size_value(term: &MachineTerm, assumptions: &PureFactContext) ->
             exact_signed_size_value(left, assumptions)?
                 .checked_sub(exact_signed_size_value(right, assumptions)?)?,
         ),
-        MachineTerm::Binary {
+        OldMachineTerm::Binary {
             format: MachineIntegerType::Int64,
             op: MachineBinaryOp::Multiply,
             left,
@@ -2360,7 +2366,7 @@ fn exact_signed_size_value(term: &MachineTerm, assumptions: &PureFactContext) ->
     }
 }
 
-fn exact_unsigned_size_value(term: &MachineTerm, assumptions: &PureFactContext) -> Option<u64> {
+fn exact_unsigned_size_value(term: &OldMachineTerm, assumptions: &PureFactContext) -> Option<u64> {
     if let Some(value) = term.uint64_as_const() {
         return Some(value);
     }
@@ -2368,7 +2374,7 @@ fn exact_unsigned_size_value(term: &MachineTerm, assumptions: &PureFactContext) 
         return u64::try_from(value).ok();
     }
     match term {
-        MachineTerm::Binary {
+        OldMachineTerm::Binary {
             format: MachineIntegerType::UInt64,
             op: MachineBinaryOp::Add,
             left,
@@ -2377,7 +2383,7 @@ fn exact_unsigned_size_value(term: &MachineTerm, assumptions: &PureFactContext) 
             exact_unsigned_size_value(left, assumptions)?
                 .wrapping_add(exact_unsigned_size_value(right, assumptions)?),
         ),
-        MachineTerm::Binary {
+        OldMachineTerm::Binary {
             format: MachineIntegerType::UInt64,
             op: MachineBinaryOp::Subtract,
             left,
@@ -2386,7 +2392,7 @@ fn exact_unsigned_size_value(term: &MachineTerm, assumptions: &PureFactContext) 
             exact_unsigned_size_value(left, assumptions)?
                 .wrapping_sub(exact_unsigned_size_value(right, assumptions)?),
         ),
-        MachineTerm::Binary {
+        OldMachineTerm::Binary {
             format: MachineIntegerType::UInt64,
             op: MachineBinaryOp::Multiply,
             left,
@@ -2404,9 +2410,9 @@ fn allocation_size_is_positive(
     assumptions: &PureFactContext,
 ) -> bool {
     let condition = if size.unsigned {
-        ConditionTerm::unsigned_greater_than(size.term.clone(), MachineTerm::constant(0))
+        ConditionTerm::unsigned_greater_than(size.term.clone(), OldMachineTerm::constant(0))
     } else {
-        ConditionTerm::signed_greater_than(size.term.clone(), MachineTerm::constant(0))
+        ConditionTerm::signed_greater_than(size.term.clone(), OldMachineTerm::constant(0))
     };
     assumptions.decide(&condition) == Some(true)
 }
@@ -2422,9 +2428,9 @@ fn allocation_size_fits_element_width(
 ) -> bool {
     let maximum = i32::MAX as u32 / element_width;
     let condition = if size.unsigned {
-        ConditionTerm::unsigned_less_equal(size.term.clone(), MachineTerm::constant(maximum))
+        ConditionTerm::unsigned_less_equal(size.term.clone(), OldMachineTerm::constant(maximum))
     } else {
-        ConditionTerm::signed_less_equal(size.term.clone(), MachineTerm::constant(maximum))
+        ConditionTerm::signed_less_equal(size.term.clone(), OldMachineTerm::constant(maximum))
     };
     assumptions.decide(&condition) == Some(true)
 }
@@ -2447,16 +2453,16 @@ fn uint64_allocation_size_is_exact(
     assumptions: &PureFactContext,
 ) -> bool {
     let holds = |condition: ConditionTerm| assumptions.decide(&condition) == Some(true);
-    let at_most = |term: &MachineTerm, width: u64| {
+    let at_most = |term: &OldMachineTerm, width: u64| {
         holds(ConditionTerm::uint64_less_equal(
             term.clone(),
-            MachineTerm::uint64_constant(i64::MAX as u64 / width),
+            OldMachineTerm::uint64_constant(i64::MAX as u64 / width),
         ))
     };
-    let positive = |term: &MachineTerm| {
+    let positive = |term: &OldMachineTerm| {
         holds(ConditionTerm::uint64_greater_than(
             term.clone(),
-            MachineTerm::uint64_constant(0),
+            OldMachineTerm::uint64_constant(0),
         ))
     };
     if element_count {
@@ -2473,20 +2479,20 @@ fn uint64_allocation_size_is_exact(
 /// of two symbolic factors is not one. `malloc` and a contract's
 /// `allocation(p, bytes)` admit a 64-bit size only under this decision.
 pub(in crate::kernel) fn uint64_allocation_size_bytes_are_exact(
-    bytes: &MachineTerm,
+    bytes: &OldMachineTerm,
     assumptions: &PureFactContext,
 ) -> bool {
     let holds = |condition: ConditionTerm| assumptions.decide(&condition) == Some(true);
-    let at_most = |term: &MachineTerm, width: u64| {
+    let at_most = |term: &OldMachineTerm, width: u64| {
         holds(ConditionTerm::uint64_less_equal(
             term.clone(),
-            MachineTerm::uint64_constant(i64::MAX as u64 / width),
+            OldMachineTerm::uint64_constant(i64::MAX as u64 / width),
         ))
     };
-    let positive = |term: &MachineTerm| {
+    let positive = |term: &OldMachineTerm| {
         holds(ConditionTerm::uint64_greater_than(
             term.clone(),
-            MachineTerm::uint64_constant(0),
+            OldMachineTerm::uint64_constant(0),
         ))
     };
     // A symbolic layout's size: an object type's size is at most
@@ -2799,7 +2805,7 @@ fn execute_program_realloc_result_paths(
                         ));
                         continue;
                     };
-                    Some(MachineTerm::constant(prefix))
+                    Some(OldMachineTerm::constant(prefix))
                 }
             };
 
@@ -4282,7 +4288,7 @@ fn execute_execution_statement_leaf_paths(
                             && let Some(bytes) = next
                                 .memory
                                 .block_size(&slot.base)
-                                .and_then(MachineTerm::as_const)
+                                .and_then(OldMachineTerm::as_const)
                         {
                             next.pending_thread_create = Some(pending.with_delta(
                                 super::super::threads::PendingThreadMemoryDelta::Declare {
@@ -4915,10 +4921,10 @@ fn execute_execution_statement_leaf_paths(
             execute_program_assert_paths(state, condition, label.as_deref(), assumptions, budget)?
         }
         ProgramStatement::BuiltinConstantP { step } => {
-            let value = MachineTerm::Variable(budget.allocate_kernel_variable()?);
+            let value = OldMachineTerm::Variable(budget.allocate_kernel_variable()?);
             let equals = |constant| {
                 Box::new(Proposition::condition_is(
-                    ConditionTerm::equal(value.clone(), MachineTerm::constant(constant)),
+                    ConditionTerm::equal(value.clone(), OldMachineTerm::constant(constant)),
                     true,
                 ))
             };
@@ -5577,7 +5583,7 @@ fn execute_program_switch_paths(
 
 fn execute_program_switch_dispatch_paths(
     state: &ExecutionState,
-    selector: &MachineTerm,
+    selector: &OldMachineTerm,
     selector_type: MachineIntegerType,
     cases: &[SwitchCase],
     case_index: usize,
@@ -5629,9 +5635,9 @@ fn execute_program_switch_dispatch_paths(
     // A case label holds its 32-bit pattern after conversion to the promoted
     // selector type, including -1 becoming UINT_MAX for an unsigned selector.
     let condition = if selector_type == MachineIntegerType::UInt32 {
-        ConditionTerm::uint32_equal(selector.clone(), MachineTerm::uint32_constant(value))
+        ConditionTerm::uint32_equal(selector.clone(), OldMachineTerm::uint32_constant(value))
     } else {
-        ConditionTerm::equal(selector.clone(), MachineTerm::constant(value))
+        ConditionTerm::equal(selector.clone(), OldMachineTerm::constant(value))
     };
     let mut paths = Vec::new();
     for condition_path in
@@ -6032,9 +6038,13 @@ fn local_declaration_pointer(
             .memory
             .block_size(&previous.base)
             .cloned()
-            .unwrap_or(MachineTerm::Variable(Variable(u64::MAX)));
-        let old_range =
-            MemoryRange::new_with_element_width(previous.clone(), MachineTerm::constant(0), end, 1);
+            .unwrap_or(OldMachineTerm::Variable(Variable(u64::MAX)));
+        let old_range = MemoryRange::new_with_element_width(
+            previous.clone(),
+            OldMachineTerm::constant(0),
+            end,
+            1,
+        );
         if let Some(error) = state.automatic_storage_borrow_refusal(&previous.base) {
             return Err(error);
         }
@@ -6147,7 +6157,7 @@ fn zero_fill_declared_array(
     if state
         .memory
         .block_size(&slot.base)
-        .and_then(MachineTerm::as_const)
+        .and_then(OldMachineTerm::as_const)
         != Some(object_bytes)
     {
         return Err(RuntimeError::TypeMismatch);
@@ -6213,8 +6223,8 @@ fn own_local_array(state: &mut ExecutionState, pointer: &Address, bytes: u32) {
         .unchecked_with_fact(ResourceFact::own_memory(
             MemoryRange::new_with_element_width(
                 pointer.clone(),
-                MachineTerm::constant(0),
-                MachineTerm::constant(bytes),
+                OldMachineTerm::constant(0),
+                OldMachineTerm::constant(bytes),
                 1,
             ),
         ));
@@ -6504,8 +6514,8 @@ pub(in crate::kernel) fn declare_local(
         }
         _ => MemoryRange::new_with_element_width(
             pointer.clone(),
-            MachineTerm::constant(0),
-            MachineTerm::constant(byte_width),
+            OldMachineTerm::constant(0),
+            OldMachineTerm::constant(byte_width),
             1,
         ),
     };

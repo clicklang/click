@@ -14,7 +14,7 @@ pub(super) struct Origins<'a, A, W> {
     pub(super) bounds: Option<(&'a A, &'a W)>,
     pub(super) known: bool,
 }
-impl<'a> Origins<'a, Address, MachineTerm> {
+impl<'a> Origins<'a, Address, OldMachineTerm> {
     pub(super) fn native(value: &'a OldPointer) -> Self {
         Self {
             provenance: value.provenance(),
@@ -43,7 +43,7 @@ pub(super) trait OriginChecks<A, W> {
     fn width(&self, a: &W, b: &W) -> bool;
     fn opaque_is_root(&self, a: &A) -> bool;
 }
-impl OriginChecks<Address, MachineTerm> for PureFactContext {
+impl OriginChecks<Address, OldMachineTerm> for PureFactContext {
     fn provenance(&self, a: &Address, b: &Address) -> bool {
         self.provenance_equal(a, b)
     }
@@ -53,7 +53,7 @@ impl OriginChecks<Address, MachineTerm> for PureFactContext {
     fn address(&self, a: &Address, b: &Address) -> bool {
         self.equality_graph.are_equal(a, b)
     }
-    fn width(&self, a: &MachineTerm, b: &MachineTerm) -> bool {
+    fn width(&self, a: &OldMachineTerm, b: &OldMachineTerm) -> bool {
         a == b
     }
     fn opaque_is_root(&self, a: &Address) -> bool {
@@ -216,7 +216,7 @@ mod tests {
     struct Selected<'a> {
         facts: &'a PureFactContext,
         addresses: HashMap<SharedAddress, Address>,
-        widths: HashMap<KernelTerm, MachineTerm>,
+        widths: HashMap<KernelTerm, OldMachineTerm>,
     }
     impl<'a> Selected<'a> {
         fn new(facts: &'a PureFactContext, values: &[(&OldPointer, &SharedPointer)]) -> Self {
@@ -268,9 +268,10 @@ mod tests {
         let _session = VerificationSession::enter();
         let cell = SymbolicMemory::global_pointer("shared-check-index");
         let before = SymbolicMemory::new().with_block("shared-check-index", 16);
-        let after = before
-            .clone()
-            .store(cell.clone(), ProgramValue::Int32(MachineTerm::constant(9)));
+        let after = before.clone().store(
+            cell.clone(),
+            ProgramValue::Int32(OldMachineTerm::constant(9)),
+        );
         for format in [
             MachineIntegerType::Int32,
             MachineIntegerType::UInt32,
@@ -280,7 +281,7 @@ mod tests {
             let make = |memory| {
                 let value = SharedMachineIntegerTerm::index(
                     format,
-                    MachineTerm::read_named(
+                    OldMachineTerm::read_named(
                         ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                         Box::new(cell.clone()),
                         if matches!(
@@ -318,7 +319,7 @@ mod tests {
                 let sa = SharedAddress::import(&a);
                 let sb = SharedAddress::import(right);
                 for allowed in [false, true] {
-                    let loads = |_: &MachineTerm, _: &MachineTerm| allowed;
+                    let loads = |_: &OldMachineTerm, _: &OldMachineTerm| allowed;
                     let expected = pointers_equal_with_load_atoms(&a, right, &loads);
                     let exports = KernelTermExport::machine_export_count();
                     assert_eq!(
@@ -358,7 +359,7 @@ mod tests {
                 .with_provenance(provenance.clone())
                 .with_bounds(Some(SubobjectBounds {
                     start,
-                    width: MachineTerm::constant(width),
+                    width: OldMachineTerm::constant(width),
                 }))
         };
         let left = make(a.clone(), 4);
@@ -406,7 +407,7 @@ mod tests {
         let stored = OldPointer::new(base.clone(), ProgramType::Int32Pointer);
         let bounded = stored.clone().with_bounds(Some(SubobjectBounds {
             start: base.clone(),
-            width: MachineTerm::constant(4),
+            width: OldMachineTerm::constant(4),
         }));
         let held = MemoryRange::new(base.clone(), 0u32.into(), 8u32.into());
         let before = PureFactContext::new().assume_condition(

@@ -111,8 +111,8 @@ fn widened_and_read_sums(n: u32) -> (SharedIntegerTerm, SharedIntegerTerm) {
     let mut widened: Option<SharedIntegerTerm> = None;
     let mut read: Option<SharedIntegerTerm> = None;
     for k in 0..n {
-        let byte = MachineTerm::Variable(Variable(940_000 + u64::from(k)));
-        let widening = MachineTerm::Cast {
+        let byte = OldMachineTerm::Variable(Variable(940_000 + u64::from(k)));
+        let widening = OldMachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             value: Box::new(byte.clone()),
             from: MachineIntegerType::UInt8,
@@ -220,13 +220,13 @@ fn importing_an_opposite_numeric_reading_reuses_the_retained_word_dag() {
     ] {
         for size in [16, 64, 256] {
             let _session = crate::kernel::VerificationSession::enter();
-            let mut native = MachineTerm::Variable(Variable(993281));
+            let mut native = OldMachineTerm::Variable(Variable(993281));
             for index in 0..size {
-                native = MachineTerm::Binary {
+                native = OldMachineTerm::Binary {
                     format: signed,
                     op: MachineBinaryOp::Multiply,
                     left: Box::new(native),
-                    right: Box::new(MachineTerm::Variable(Variable(993282 + index))),
+                    right: Box::new(OldMachineTerm::Variable(Variable(993282 + index))),
                 };
             }
             let original = SharedMachineIntegerTerm::intern(unsigned, native.clone());
@@ -277,8 +277,8 @@ fn shared_call_argument_readers_keep_dags_through_collection_and_rewrite() {
                 panic!("common call");
             };
             assert_eq!(arguments[0], root);
-            let source = MachineTerm::Variable(variable);
-            let target = MachineTerm::Variable(replacement_variable);
+            let source = OldMachineTerm::Variable(variable);
+            let target = OldMachineTerm::Variable(replacement_variable);
             let mut rewrite =
                 crate::kernel::proof::term_rewrite::TermRewrite::for_bits_checked(&source, &target);
             let result = rewrite.term(&Term::Integer(original.into()));
@@ -287,10 +287,7 @@ fn shared_call_argument_readers_keep_dags_through_collection_and_rewrite() {
                 panic!("Integer call");
             };
             let mut variables = BTreeSet::new();
-            crate::kernel::prelude::collect_integer_variables(
-                result.native_compat(),
-                &mut variables,
-            );
+            crate::kernel::prelude::collect_integer_variables(result.old_form(), &mut variables);
             assert!(variables.contains(&replacement_variable));
             assert!(!variables.contains(&variable));
         });
@@ -316,7 +313,7 @@ fn repeated_call_payloads_share_identity_without_accumulating_versions() {
         };
         let variable = Variable(998_730);
         let native =
-            PureFunctionArgument::Value(ProgramValue::UInt32(MachineTerm::Variable(variable)));
+            PureFunctionArgument::Value(ProgramValue::UInt32(OldMachineTerm::Variable(variable)));
         let shared = PureFunctionArgument::SharedMachine(
             SharedMachineIntegerTerm::from_shared(
                 MachineIntegerType::UInt32,

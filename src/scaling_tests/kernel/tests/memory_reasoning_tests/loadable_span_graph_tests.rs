@@ -106,7 +106,7 @@ fn filing_a_load_condition_in_a_fork_shares_every_other_load() {
     };
     let load_condition = |id: u64| {
         ConditionTerm::float64_compare(
-            MachineTerm::read_named(
+            OldMachineTerm::read_named(
                 ProgramPoint::at(&(crate::kernel::intern_memory(SymbolicMemory::new()))),
                 Box::new(pointer(id)),
                 crate::kernel::LoadKind::Float64,
@@ -159,7 +159,7 @@ fn integer_read_facts_do_not_grow_load_time_transport_work() {
     let _session = crate::kernel::VerificationSession::enter();
     let memory = crate::kernel::intern_memory(SymbolicMemory::new());
     let pointer = Address::symbolic(Variable(9_330_000));
-    let read = MachineTerm::read_named(
+    let read = OldMachineTerm::read_named(
         ProgramPoint::at(&memory),
         Box::new(pointer.clone()),
         crate::kernel::LoadKind::Int32,

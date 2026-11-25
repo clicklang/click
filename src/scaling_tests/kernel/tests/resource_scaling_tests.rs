@@ -30,8 +30,8 @@ fn heap_base(identity: u64) -> Address {
 fn owned_range(base: Address, start: u32, end: u32) -> ResourceFact {
     ResourceFact::own_memory(MemoryRange::new(
         base,
-        MachineTerm::constant(start),
-        MachineTerm::constant(end),
+        OldMachineTerm::constant(start),
+        OldMachineTerm::constant(end),
     ))
 }
 
@@ -208,8 +208,8 @@ fn private_owner_projection_does_not_republish_discarded_pairings() {
         for index in 0..size {
             assumptions = assumptions.assume_condition(
                 ConditionTerm::equal(
-                    MachineTerm::Variable(Variable(93_800 + index as u64)),
-                    MachineTerm::constant(index as u32),
+                    OldMachineTerm::Variable(Variable(93_800 + index as u64)),
+                    OldMachineTerm::constant(index as u32),
                 ),
                 true,
             );
@@ -825,7 +825,7 @@ fn a_kept_cell_is_placed_without_visiting_unrelated_ranges() {
     // symbolic base, as the arena's descriptors do.
     let object = |identity: u64| Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(identity)), 4),
+        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(identity)), 4),
     };
     let field = |identity: u64, bytes: i64| Address {
         base: AddressBase::ExternalArgument,
@@ -855,7 +855,7 @@ fn a_kept_cell_is_placed_without_visiting_unrelated_ranges() {
     assert_constant_plus_log_growth("kept cell placement", &samples, 4.0);
 }
 
-fn variable_range(base: Address, start: MachineTerm, end: MachineTerm) -> ResourceFact {
+fn variable_range(base: Address, start: OldMachineTerm, end: OldMachineTerm) -> ResourceFact {
     ResourceFact::own_memory(MemoryRange::new(base, start, end))
 }
 
@@ -863,8 +863,8 @@ fn int32_equal(left: u64, right: u64) -> ConditionTerm {
     ConditionTerm::Compare {
         format: MachineIntegerType::Int32,
         relation: CompareRelation::Equal,
-        left: Box::new(MachineTerm::Variable(Variable(left))),
-        right: Box::new(MachineTerm::Variable(Variable(right))),
+        left: Box::new(OldMachineTerm::Variable(Variable(left))),
+        right: Box::new(OldMachineTerm::Variable(Variable(right))),
     }
 }
 
@@ -879,13 +879,13 @@ fn joining_ranges_by_a_proved_endpoint_ignores_unrelated_equalities() {
         let frame = ResourceContext::new().unchecked_with_facts([
             variable_range(
                 heap_base(TARGET_HEAP),
-                MachineTerm::constant(0),
-                MachineTerm::Variable(Variable(end)),
+                OldMachineTerm::constant(0),
+                OldMachineTerm::Variable(Variable(end)),
             ),
             variable_range(
                 heap_base(TARGET_HEAP),
-                MachineTerm::Variable(Variable(start)),
-                MachineTerm::constant(16),
+                OldMachineTerm::Variable(Variable(start)),
+                OldMachineTerm::constant(16),
             ),
         ]);
         let assumptions = (0..size as u64).fold(
@@ -905,19 +905,19 @@ fn joining_ranges_by_a_proved_endpoint_ignores_unrelated_equalities() {
         let warm = ResourceContext::new().unchecked_with_facts([
             variable_range(
                 heap_base(TARGET_HEAP + 1),
-                MachineTerm::constant(0),
-                MachineTerm::Variable(Variable(end)),
+                OldMachineTerm::constant(0),
+                OldMachineTerm::Variable(Variable(end)),
             ),
             variable_range(
                 heap_base(TARGET_HEAP + 1),
-                MachineTerm::Variable(Variable(end)),
-                MachineTerm::constant(16),
+                OldMachineTerm::Variable(Variable(end)),
+                OldMachineTerm::constant(16),
             ),
         ]);
         assert_eq!(warm.normalized(&assumptions).facts().len(), 1);
         assert!(assumptions.int32_values_known_equal(
-            &MachineTerm::Variable(Variable(end)),
-            &MachineTerm::Variable(Variable(start)),
+            &OldMachineTerm::Variable(Variable(end)),
+            &OldMachineTerm::Variable(Variable(start)),
         ));
         let (normalized, work) = crate::instrumentation::measure_deterministic_work(|| {
             frame.clone().normalized(&assumptions)
@@ -926,8 +926,8 @@ fn joining_ranges_by_a_proved_endpoint_ignores_unrelated_equalities() {
             normalized.facts(),
             &[variable_range(
                 heap_base(TARGET_HEAP),
-                MachineTerm::constant(0),
-                MachineTerm::constant(16),
+                OldMachineTerm::constant(0),
+                OldMachineTerm::constant(16),
             )],
             "the two ranges join into one"
         );
@@ -944,7 +944,7 @@ fn joining_ranges_by_a_proved_endpoint_ignores_unrelated_equalities() {
 #[test]
 fn retirement_stale_check_ignores_unrelated_kept_resources() {
     let allocation = heap_base(TARGET_HEAP);
-    let bytes = MachineTerm::constant(16);
+    let bytes = OldMachineTerm::constant(16);
     let mut samples = Vec::new();
     for size in [4usize, 16, 64, 256] {
         let unrelated = (0..size).flat_map(|index| {
@@ -997,15 +997,15 @@ fn retirement_stale_check_ignores_unrelated_kept_resources() {
 fn parameter_base(identity: u64) -> Address {
     Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(identity)), 4),
+        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(identity)), 4),
     }
 }
 
 fn parameter_object(identity: u64) -> ResourceFact {
     ResourceFact::own_memory(MemoryRange::new_with_element_width(
         parameter_base(identity),
-        MachineTerm::constant(0),
-        MachineTerm::constant(3),
+        OldMachineTerm::constant(0),
+        OldMachineTerm::constant(3),
         4,
     ))
 }
@@ -1149,9 +1149,9 @@ fn parameter_validity_still_refuses_related_overlaps() {
     );
 
     let field = ResourceFact::own_memory(MemoryRange::new_with_element_width(
-        parameter_base(target).offset_by_elements(MachineTerm::constant(2), 4),
-        MachineTerm::constant(0),
-        MachineTerm::constant(1),
+        parameter_base(target).offset_by_elements(OldMachineTerm::constant(2), 4),
+        OldMachineTerm::constant(0),
+        OldMachineTerm::constant(1),
         4,
     ));
     assert!(overlaps(&field, &none), "a field of an owned object");
@@ -1164,15 +1164,15 @@ fn parameter_validity_still_refuses_related_overlaps() {
     let pinned = PureFactContext::new()
         .assume_condition(
             ConditionTerm::equal(
-                MachineTerm::Variable(Variable(other)),
-                MachineTerm::constant(7),
+                OldMachineTerm::Variable(Variable(other)),
+                OldMachineTerm::constant(7),
             ),
             true,
         )
         .assume_condition(
             ConditionTerm::equal(
-                MachineTerm::Variable(Variable(target)),
-                MachineTerm::constant(7),
+                OldMachineTerm::Variable(Variable(target)),
+                OldMachineTerm::constant(7),
             ),
             true,
         );
@@ -1226,7 +1226,7 @@ fn one_parameter_separation_query_is_linear_in_the_owned_objects() {
         let _session = crate::kernel::VerificationSession::enter();
         let (_, assumptions) = parameter_frame(size);
         let field = |identity: u64| {
-            parameter_base(identity).offset_by_elements(MachineTerm::constant(1), 4)
+            parameter_base(identity).offset_by_elements(OldMachineTerm::constant(1), 4)
         };
         let (left, right) = (
             field(FIRST_PARAMETER + size as u64 - 2),
@@ -1264,13 +1264,13 @@ fn a_proved_parameter_separation_reads_only_the_nominated_members() {
         let _session = crate::kernel::VerificationSession::enter();
         let (_, assumptions) = parameter_frame(size);
         let field = |identity: u64| {
-            parameter_base(identity).offset_by_elements(MachineTerm::constant(1), 4)
+            parameter_base(identity).offset_by_elements(OldMachineTerm::constant(1), 4)
         };
         let range = |identity: u64| {
             Resource::Memory(MemoryRange::new_with_element_width(
                 parameter_base(identity),
-                MachineTerm::constant(1),
-                MachineTerm::constant(2),
+                OldMachineTerm::constant(1),
+                OldMachineTerm::constant(2),
                 4,
             ))
         };
@@ -1371,7 +1371,7 @@ fn normalizing_external_ranges_compares_only_related_bases() {
             let base = Address {
                 base: AddressBase::ExternalArgument,
                 offset: AddressOffset::scale_int32(
-                    MachineTerm::Variable(Variable(9 * TARGET_HEAP + index)),
+                    OldMachineTerm::Variable(Variable(9 * TARGET_HEAP + index)),
                     4,
                 ),
             };
@@ -1499,8 +1499,8 @@ fn a_layered_footprint_is_linear_in_its_definitions() {
             ranges,
             vec![MemoryRange::new(
                 heap_base(TARGET_HEAP),
-                MachineTerm::constant(0),
-                MachineTerm::constant(1),
+                OldMachineTerm::constant(0),
+                OldMachineTerm::constant(1),
             )],
             "a {layers}-layer chain owns exactly the innermost cell"
         );
@@ -1639,7 +1639,7 @@ fn slot_definitions() -> Vec<CompositeResourceDefinition> {
 fn external_descriptor(identity: u64) -> Address {
     Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(identity)), 4),
+        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(identity)), 4),
     }
 }
 
@@ -1647,7 +1647,7 @@ fn external_descriptor(identity: u64) -> Address {
 /// it: the value named by that read.
 fn materialized_pointer(source: &SymbolicMemory, cell: &Address) -> ProgramValue {
     ProgramValue::Pointer(OldPointer::from_read(
-        Address::loaded(&MachineTerm::read_named(
+        Address::loaded(&OldMachineTerm::read_named(
             ProgramPoint::at(&(crate::kernel::intern_memory_ref(source))),
             Box::new(cell.clone()),
             crate::kernel::LoadKind::Int32,
@@ -1916,7 +1916,7 @@ fn a_store_forgets_a_folded_instance_cell_it_does_not_open() {
 fn shared_view_offset_alias_lookup_is_indexed_and_preserves_occurrences() {
     let base = symbolic_base(TARGET_HEAP);
     let alias = symbolic_base(2 * TARGET_HEAP);
-    let index = MachineTerm::Variable(Variable(3 * TARGET_HEAP));
+    let index = OldMachineTerm::Variable(Variable(3 * TARGET_HEAP));
     let displaced = base.offset_by_elements(index.clone(), 1);
     let facts = PureFactContext::new()
         .assume_condition(address_equal(alias.clone(), displaced), true)
@@ -1925,7 +1925,7 @@ fn shared_view_offset_alias_lookup_is_indexed_and_preserves_occurrences() {
             true,
         )
         .assume_condition(
-            ConditionTerm::signed_less_equal(MachineTerm::add(index, 4u32.into()), 16u32.into()),
+            ConditionTerm::signed_less_equal(OldMachineTerm::add(index, 4u32.into()), 16u32.into()),
             true,
         );
     let view = |pointer, end| {
@@ -2271,7 +2271,7 @@ fn observable_projection_tracks_supported_views_caches_and_owner_retirement() {
 fn argument_base(variable: u64) -> Address {
     Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(variable)), 4),
+        offset: AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(variable)), 4),
     }
 }
 
@@ -2296,8 +2296,8 @@ fn footprint_composition_does_not_decide_every_alias_pair() {
         owned_range(argument_base(STRUCT), 4, 6),
         ResourceFact::own_memory(MemoryRange::new(
             argument_base(ARRAY),
-            MachineTerm::constant(0),
-            MachineTerm::Variable(Variable(LENGTH)),
+            OldMachineTerm::constant(0),
+            OldMachineTerm::Variable(Variable(LENGTH)),
         )),
     ];
     let mut samples = Vec::new();
@@ -2313,8 +2313,8 @@ fn footprint_composition_does_not_decide_every_alias_pair() {
             };
             facts.assume_condition(
                 ConditionTerm::signed_less_than(
-                    MachineTerm::Variable(Variable(below)),
-                    MachineTerm::Variable(Variable(997_000 + index)),
+                    OldMachineTerm::Variable(Variable(below)),
+                    OldMachineTerm::Variable(Variable(997_000 + index)),
                 ),
                 true,
             )
@@ -2380,8 +2380,13 @@ fn selected_ownership_overlap_ignores_ambient_aliases() {
                     true,
                 )
         });
-        let range =
-            |base| MemoryRange::new(base, 0u32.into(), MachineTerm::Variable(Variable(998_002)));
+        let range = |base| {
+            MemoryRange::new(
+                base,
+                0u32.into(),
+                OldMachineTerm::Variable(Variable(998_002)),
+            )
+        };
         let left = range(left);
         let right = range(right);
         let (overlaps, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -2409,7 +2414,7 @@ fn with_live_allocation(
     let (memory, _, base) = memory
         .with_pending_heap_allocation(
             pending.clone(),
-            AllocationSize::int32(MachineTerm::constant(bytes)),
+            AllocationSize::int32(OldMachineTerm::constant(bytes)),
             false,
         )
         .resolve_pending_heap_allocation(&pending, true)
@@ -2420,8 +2425,8 @@ fn with_live_allocation(
         ResourceFact::own_allocation(base.clone(), bytes),
         ResourceFact::own_memory(MemoryRange::new_with_element_width(
             base,
-            MachineTerm::constant(0),
-            MachineTerm::constant(bytes),
+            OldMachineTerm::constant(0),
+            OldMachineTerm::constant(bytes),
             1,
         )),
     ]);
@@ -2457,8 +2462,8 @@ fn caller_beside_unrelated_allocations(unrelated: usize) -> ExecutionState {
     // normalizes the caller's resources, dropping and restoring both.
     let written = MemoryRange::new(
         heap_base(WRITTEN_INT_HEAP),
-        MachineTerm::constant(0),
-        MachineTerm::constant(4),
+        OldMachineTerm::constant(0),
+        OldMachineTerm::constant(4),
     );
     let pending = symbolic_base(WRITTEN_INT_HEAP);
     let (written_memory, _, _) = memory
@@ -2703,8 +2708,8 @@ fn matched_input_argument_views_ignore_unrelated_definitions_and_owners() {
             views[0],
             ResourceFact::view_memory(MemoryRange::new(
                 heap_base(TARGET_HEAP),
-                MachineTerm::constant(0),
-                MachineTerm::constant(2),
+                OldMachineTerm::constant(0),
+                OldMachineTerm::constant(2),
             )),
         );
         samples.push((size, work));
@@ -2725,11 +2730,11 @@ fn matched_input_argument_views_ignore_unrelated_definitions_and_owners() {
 /// symbolic endpoint, after the one indexed supplier is selected.
 #[test]
 fn respelling_a_wide_struct_range_is_logarithmic_in_unrelated_and_same_block_ranges() {
-    let count = |identity: u64| MachineTerm::Variable(Variable((1 << 40) + identity));
+    let count = |identity: u64| OldMachineTerm::Variable(Variable((1 << 40) + identity));
     let bytes = |identity: u64| {
-        MachineTerm::uint64_multiply(count(identity), MachineTerm::uint64_constant(8))
+        OldMachineTerm::uint64_multiply(count(identity), OldMachineTerm::uint64_constant(8))
     };
-    let zero = || MachineTerm::uint64_constant(0);
+    let zero = || OldMachineTerm::uint64_constant(0);
     let byte_block =
         |identity: u64| MemoryRange::new_wide(heap_base(identity), zero(), bytes(identity), 1);
     let struct_range =
@@ -2740,20 +2745,23 @@ fn respelling_a_wide_struct_range_is_logarithmic_in_unrelated_and_same_block_ran
             Address {
                 base: AddressBase::Heap(TARGET_HEAP),
                 offset: AddressOffset::scaled_int64_node(
-                    MachineTerm::Variable(Variable((1 << 41) + index)),
+                    OldMachineTerm::Variable(Variable((1 << 41) + index)),
                     8,
                     true,
                 ),
             },
             zero(),
-            MachineTerm::uint64_constant(1),
+            OldMachineTerm::uint64_constant(1),
             8,
         )
     };
-    let index = MachineTerm::Variable(Variable(1 << 42));
+    let index = OldMachineTerm::Variable(Variable(1 << 42));
     let bounded = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::uint64_less_equal(count(TARGET_HEAP), MachineTerm::uint64_constant(100)),
+            ConditionTerm::uint64_less_equal(
+                count(TARGET_HEAP),
+                OldMachineTerm::uint64_constant(100),
+            ),
             true,
         )
         .assume_condition(
@@ -2778,7 +2786,7 @@ fn respelling_a_wide_struct_range_is_logarithmic_in_unrelated_and_same_block_ran
         base: AddressBase::Heap(TARGET_HEAP),
         offset: AddressOffset::Add(
             Box::new(AddressOffset::scaled_int64_node(
-                MachineTerm::int64_multiply(index.clone(), MachineTerm::int64_constant(8)),
+                OldMachineTerm::int64_multiply(index.clone(), OldMachineTerm::int64_constant(8)),
                 1,
                 false,
             )),

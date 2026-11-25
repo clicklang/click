@@ -21,7 +21,7 @@ pub(in crate::kernel) fn normalize_node(
         } if matches!(ty, T::Int32 | T::UInt32) => {
             let operand = children.first()?;
             if let Some(native) = leaf(operand) {
-                retained(*ty, &MachineTerm::machine_unary(*ty, *operator, native))
+                retained(*ty, &OldMachineTerm::machine_unary(*ty, *operator, native))
             } else if let KernelTermNode::MachineUnary {
                 format: inner,
                 operator: inner_op,
@@ -42,7 +42,7 @@ pub(in crate::kernel) fn normalize_node(
 
 fn binary32(ty: T, op: O, left: KernelTerm, right: KernelTerm) -> KernelTerm {
     if let (Some(a), Some(b)) = (leaf(&left), leaf(&right)) {
-        return retained(ty, &MachineTerm::machine_binary(ty, op, a, b));
+        return retained(ty, &OldMachineTerm::machine_binary(ty, op, a, b));
     }
     if matches!(op, O::Add | O::Subtract) {
         return sum32(ty, op, left, right);
@@ -72,14 +72,14 @@ fn binary32(ty: T, op: O, left: KernelTerm, right: KernelTerm) -> KernelTerm {
     binary(ty, op, left, right)
 }
 
-// Match MachineTerm's derived ordering without exporting shared children. The
+// Match OldMachineTerm's derived ordering without exporting shared children. The
 // header contains only the variant's scalar fields; equal headers are followed
 // by a lexicographic comparison of children. Opaque leaves retain native order.
 fn syntax_cmp(left: &KernelTerm, right: &KernelTerm) -> std::cmp::Ordering {
-    fn header(node: &KernelTerm) -> MachineTerm {
-        let zero = || Box::new(MachineTerm::constant(0));
+    fn header(node: &KernelTerm) -> OldMachineTerm {
+        let zero = || Box::new(OldMachineTerm::constant(0));
         match node.node() {
-            KernelTermNode::MachineIf { arguments } => MachineTerm::If {
+            KernelTermNode::MachineIf { arguments } => OldMachineTerm::If {
                 condition: Box::new(
                     KernelTermExport::condition(&arguments[0]).expect("conditional guard"),
                 ),
@@ -88,7 +88,7 @@ fn syntax_cmp(left: &KernelTerm, right: &KernelTerm) -> std::cmp::Ordering {
             },
             KernelTermNode::MachineBinary {
                 format, operator, ..
-            } => MachineTerm::Binary {
+            } => OldMachineTerm::Binary {
                 format: *format,
                 op: *operator,
                 left: zero(),
@@ -96,7 +96,7 @@ fn syntax_cmp(left: &KernelTerm, right: &KernelTerm) -> std::cmp::Ordering {
             },
             KernelTermNode::MachineUnary {
                 format, operator, ..
-            } => MachineTerm::Unary {
+            } => OldMachineTerm::Unary {
                 format: *format,
                 op: *operator,
                 operand: zero(),
@@ -106,7 +106,7 @@ fn syntax_cmp(left: &KernelTerm, right: &KernelTerm) -> std::cmp::Ordering {
                 source,
                 destination,
                 ..
-            } => MachineTerm::Cast {
+            } => OldMachineTerm::Cast {
                 spelling: *encoding,
                 from: *source,
                 to: *destination,

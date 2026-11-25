@@ -1,21 +1,21 @@
 // Fixed intrinsic normalization beside growing related and unrelated facts.
 #[test]
 fn intrinsic_integer_normalization_reads_only_selected_bounds() {
-    use crate::kernel::{IntegerTerm, MachineBinaryOp, MachineTerm, SharedIntegerTerm};
+    use crate::kernel::{IntegerTerm, MachineBinaryOp, OldMachineTerm, SharedIntegerTerm};
     use num_bigint::BigInt;
     let ty = MachineIntegerType::UInt64;
-    let word = MachineTerm::Variable(Variable(973_001));
+    let word = OldMachineTerm::Variable(Variable(973_001));
     let a: SharedIntegerTerm = IntegerTerm::from_machine(ty, word.clone()).unwrap().into();
     let b: SharedIntegerTerm = IntegerTerm::Variable(Variable(973_002)).into();
     let one: SharedIntegerTerm = IntegerTerm::constant_i64(1).into();
     let sum: SharedIntegerTerm = IntegerTerm::Add(a.clone(), one).into();
     let actual: SharedIntegerTerm = IntegerTerm::from_machine(
         ty,
-        MachineTerm::Binary {
+        OldMachineTerm::Binary {
             format: ty,
             op: MachineBinaryOp::Add,
             left: Box::new(word),
-            right: Box::new(MachineTerm::uint64_constant(1)),
+            right: Box::new(OldMachineTerm::uint64_constant(1)),
         },
     )
     .unwrap()

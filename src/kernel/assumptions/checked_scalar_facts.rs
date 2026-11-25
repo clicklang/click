@@ -12,23 +12,23 @@ use crate::persistent::{PersistentMap, PersistentSet};
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub(in crate::kernel) enum ScalarOperandKey {
     Shared(MachineAtom),
-    Written(MachineTerm),
+    Written(OldMachineTerm),
 }
 
 impl ScalarOperandKey {
     pub(in crate::kernel) fn operand_view(&self) -> MachineOperandView<'_> {
         match self {
             Self::Shared(term) => term.operand_view(),
-            Self::Written(term) => MachineOperandView::Legacy(term),
+            Self::Written(term) => MachineOperandView::Old(term),
         }
     }
 
     pub(super) fn canonical(ty: MachineIntegerType, view: MachineOperandView<'_>) -> Self {
         match view {
             MachineOperandView::Shared(_) => Self::for_format(ty, view),
-            MachineOperandView::Legacy(term) => Self::for_format(
+            MachineOperandView::Old(term) => Self::for_format(
                 ty,
-                MachineOperandView::Legacy(&crate::kernel::eval::canonical_term(term)),
+                MachineOperandView::Old(&crate::kernel::eval::canonical_term(term)),
             ),
         }
     }
@@ -48,17 +48,17 @@ impl ScalarOperandKey {
             .then(|| view.literal())
             .flatten()
             .filter(|literal| matches!(literal, crate::kernel::uint32_constant!(_)))
-            .map(MachineTerm::constant_word32);
+            .map(OldMachineTerm::constant_word32);
         let view = literal
             .as_ref()
-            .map(MachineOperandView::Legacy)
+            .map(MachineOperandView::Old)
             .unwrap_or(view);
         match view {
             MachineOperandView::Shared(_) => {
                 Self::Shared(MachineAtom::from_numeric_operand(ty, view))
             }
-            MachineOperandView::Legacy(term) => {
-                if matches!(term, MachineTerm::ClickFunctionApplication { .. }) {
+            MachineOperandView::Old(term) => {
+                if matches!(term, OldMachineTerm::ClickFunctionApplication { .. }) {
                     // A call retains its typed argument identity regardless
                     // of the producer's native/shared carrier choice.
                     return Self::Shared(MachineAtom::from_numeric_operand(ty, view));
@@ -67,7 +67,7 @@ impl ScalarOperandKey {
                 // cold/warm accounting; only compound operands avoid a walk.
                 if matches!(
                     term,
-                    MachineTerm::Variable(_) | MachineTerm::Constant { .. }
+                    OldMachineTerm::Variable(_) | OldMachineTerm::Constant { .. }
                 ) && let Some(shared) =
                     crate::kernel::KernelTermImport::default().machine_arithmetic(ty, term)
                 {
@@ -101,7 +101,7 @@ fn selected_call_expression(root: MachineOperandView<'_>) -> bool {
         crate::instrumentation::record_deterministic_work(1);
         if matches!(
             view,
-            MachineOperandView::Legacy(MachineTerm::ClickFunctionApplication { .. })
+            MachineOperandView::Old(OldMachineTerm::ClickFunctionApplication { .. })
         ) {
             has_call = true;
         } else if view.variable().is_some() || view.literal().is_some() {
@@ -121,7 +121,7 @@ fn selected_call_expression(root: MachineOperandView<'_>) -> bool {
 #[derive(Clone, Debug, Default)]
 pub(in crate::kernel) struct CheckedScalarFacts {
     literals: PersistentMap<ScalarOperandKey, PersistentSet<(ConditionTerm, bool)>>,
-    equalities: PersistentMap<MachineTerm, PersistentSet<ConditionTerm>>,
+    equalities: PersistentMap<OldMachineTerm, PersistentSet<ConditionTerm>>,
     exclusions: PersistentMap<ScalarOperandKey, ExcludedIntegers>,
 }
 
@@ -161,7 +161,7 @@ impl CheckedScalarFacts {
             }
             // SymbolicMemory matching still consumes native written conditions. Keep
             // its unique-source policy separate from semantic scalar queries.
-            if let MachineOperandView::Legacy(endpoint) = endpoint
+            if let MachineOperandView::Old(endpoint) = endpoint
                 && matches!(
                     condition,
                     ConditionTerm::Compare {
@@ -183,10 +183,10 @@ impl CheckedScalarFacts {
                 let key = ScalarOperandKey::new(endpoint);
                 let alias = match endpoint {
                     MachineOperandView::Shared(_) => None,
-                    MachineOperandView::Legacy(term) => {
+                    MachineOperandView::Old(term) => {
                         let canonical = crate::kernel::eval::canonical_term(term);
                         (canonical != *term)
-                            .then(|| ScalarOperandKey::new(MachineOperandView::Legacy(&canonical)))
+                            .then(|| ScalarOperandKey::new(MachineOperandView::Old(&canonical)))
                     }
                 };
                 for key in std::iter::once(key).chain(alias) {
@@ -209,7 +209,7 @@ impl CheckedScalarFacts {
         self.literals.get(&key)?.iter().next()
     }
 
-    pub(super) fn singleton_equality(&self, term: &MachineTerm) -> Option<&ConditionTerm> {
+    pub(super) fn singleton_equality(&self, term: &OldMachineTerm) -> Option<&ConditionTerm> {
         let _checking =
             crate::instrumentation::CheckingWorkScope::new("select anchored equality", 1);
         crate::instrumentation::record_deterministic_work(1);

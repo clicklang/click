@@ -9,7 +9,7 @@ use crate::surface::proof::pure_theorems::PureTheoremContext;
 fn failed_integer_bridge_does_not_construct_unused_facts() {
     let mut samples = Vec::new();
     for size in [4, 16, 64] {
-        let value = MachineTerm::Variable(Variable(910_001));
+        let value = OldMachineTerm::Variable(Variable(910_001));
         let written = SyntaxTerm::ProgramExpression(ProgramExpression::Variable("x".into()));
         let mut facts = Vec::new();
         let mut surfaces = SurfacePropositionMap::default();
@@ -126,9 +126,9 @@ fn disequality_refutation_work_ignores_unrelated_facts() {
     let mut samples = Vec::new();
     for size in [4, 16, 64] {
         let (k, j, y) = (
-            MachineTerm::Variable(Variable(911_001)),
-            MachineTerm::Variable(Variable(911_002)),
-            MachineTerm::Variable(Variable(911_003)),
+            OldMachineTerm::Variable(Variable(911_001)),
+            OldMachineTerm::Variable(Variable(911_002)),
+            OldMachineTerm::Variable(Variable(911_003)),
         );
         let written =
             |name: &str| SyntaxTerm::ProgramExpression(ProgramExpression::Variable(name.into()));
@@ -238,7 +238,7 @@ fn retained_machine_rewrite_admission_reads_only_comparison_roots() {
         for size in [16, 64, 256] {
             let _session = crate::kernel::VerificationSession::enter();
             let mut root = KernelTermImport::default()
-                .machine(format, &MachineTerm::Variable(Variable(995454)));
+                .machine(format, &OldMachineTerm::Variable(Variable(995454)));
             let leaf = root.clone();
             for _ in 0..size {
                 root = KernelTerm::machine_binary_shared(

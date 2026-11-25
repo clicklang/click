@@ -41,12 +41,12 @@ impl MemoryStateLabels {
             .clone()
     }
 
-    fn legend_bits(&mut self, value: &MachineTerm) -> String {
+    fn legend_bits(&mut self, value: &OldMachineTerm) -> String {
         match value {
             bits32_constant!(value) => constant_u32(*value).to_string(),
             int64_constant!(value) => constant_i64(*value).to_string(),
             uint64_constant!(value) => constant_u64(*value).to_string(),
-            MachineTerm::Variable(variable) => {
+            OldMachineTerm::Variable(variable) => {
                 if let Some((memory, address)) =
                     crate::kernel::registered_load_for_variable(variable)
                 {
@@ -64,7 +64,7 @@ impl MemoryStateLabels {
                     self.legend_symbol(*variable)
                 )
             }
-            MachineTerm::MemoryLoad(memory, address, kind) => format!(
+            OldMachineTerm::MemoryLoad(memory, address, kind) => format!(
                 "{}-byte read({}, address {})",
                 kind.byte_width(),
                 self.memory_state_name(memory.memory()),
@@ -98,7 +98,7 @@ impl MemoryStateLabels {
             AddressOffset::Variable(variable) => {
                 format!(
                     "({}) bytes",
-                    self.legend_bits(&MachineTerm::Variable(*variable))
+                    self.legend_bits(&OldMachineTerm::Variable(*variable))
                 )
             }
             AddressOffset::Add(left, right) => format!(
@@ -138,7 +138,7 @@ impl MemoryStateLabels {
                 "pointer read at {retained_state}, address {address}, plus {displacement}"
             );
         }
-        if let Some(MachineTerm::MemoryLoad(memory, address, _)) =
+        if let Some(OldMachineTerm::MemoryLoad(memory, address, _)) =
             crate::surface::proof_trace::pointer_definition(pointer)
         {
             return format!(
@@ -619,9 +619,12 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let base = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(986_420)), 1),
+            offset: AddressOffset::scaled_int32_node(
+                OldMachineTerm::Variable(Variable(986_420)),
+                1,
+            ),
         };
-        let index = MachineTerm::Variable(Variable(986_421));
+        let index = OldMachineTerm::Variable(Variable(986_421));
         for (offset, expected) in [
             (AddressOffset::Constant(16), "16 bytes"),
             (AddressOffset::Variable(Variable(986_421)), "(d) bytes"),
@@ -791,7 +794,7 @@ mod tests {
                         base: "local:origin-test".into(),
                         offset: AddressOffset::Constant(0),
                     },
-                    ProgramValue::Int32(MachineTerm::constant(9)),
+                    ProgramValue::Int32(OldMachineTerm::constant(9)),
                 )
         })
         .join()
@@ -841,7 +844,7 @@ mod tests {
         let address = Address::symbolic(Variable(986_402));
         let memory = SymbolicMemory::new().store(
             address.clone(),
-            ProgramValue::Int32(MachineTerm::constant(7)),
+            ProgramValue::Int32(OldMachineTerm::constant(7)),
         );
         let mut labels = MemoryStateLabels::default();
         labels.immutable_pointer_name(&address, "p");
@@ -862,8 +865,8 @@ mod tests {
                 ResourceFact::own(Resource::Memory(
                     crate::kernel::MemoryRange::new_with_element_width(
                         pointer.clone(),
-                        MachineTerm::constant(index),
-                        MachineTerm::constant(index + 1),
+                        OldMachineTerm::constant(index),
+                        OldMachineTerm::constant(index + 1),
                         8,
                     ),
                 ))
@@ -871,8 +874,8 @@ mod tests {
         let condition = ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::constant(7)),
-            right: Box::new(MachineTerm::constant(7)),
+            left: Box::new(OldMachineTerm::constant(7)),
+            right: Box::new(OldMachineTerm::constant(7)),
         };
         let premises = vec![(condition.clone(), true)];
         let mut labels = MemoryStateLabels::default();

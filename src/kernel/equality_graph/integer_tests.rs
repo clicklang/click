@@ -5,7 +5,7 @@ use crate::kernel::{IntegerTerm as I, MachineIntegerType as M, SharedIntegerTerm
 fn cached(model: &AlgebraicTerm) -> I {
     I::from_machine(
         M::Int32,
-        MachineTerm::ClickFunctionApplication {
+        OldMachineTerm::ClickFunctionApplication {
             name: "cached".into(),
             arguments: vec![PureFunctionArgument::Algebraic(model.clone())],
         },
@@ -120,25 +120,25 @@ fn integer_order_truth_follows_aliases_without_merging_unrelated_true_facts() {
 #[test]
 fn integer_observations_keep_machine_types_and_read_states() {
     let _session = crate::kernel::VerificationSession::enter();
-    let bits = MachineTerm::Variable(Variable(920_131));
+    let bits = OldMachineTerm::Variable(Variable(920_131));
     let signed = I::from_machine(M::Int32, bits.clone()).unwrap();
     let unsigned = I::from_machine(M::UInt32, bits).unwrap();
     let graph = EqualityGraph::default();
     assert!(!graph.are_integer_equal(&signed, &unsigned));
     let p = Address::symbolic(Variable(920_132));
     let before = intern_memory(
-        SymbolicMemory::new().store(p.clone(), ProgramValue::Int32(MachineTerm::constant(7))),
+        SymbolicMemory::new().store(p.clone(), ProgramValue::Int32(OldMachineTerm::constant(7))),
     );
     let after = intern_memory(
         before
             .memory()
             .clone()
-            .store(p.clone(), ProgramValue::Int32(MachineTerm::constant(9))),
+            .store(p.clone(), ProgramValue::Int32(OldMachineTerm::constant(9))),
     );
     let read = |memory| {
         I::from_machine(
             M::Int32,
-            MachineTerm::read_named(memory, Box::new(p.clone()), LoadKind::Int32),
+            OldMachineTerm::read_named(memory, Box::new(p.clone()), LoadKind::Int32),
         )
         .unwrap()
     };
@@ -192,23 +192,23 @@ fn literal_integer_identities_join_classes_without_rewriting_terms() {
 fn fold_endpoint_congruence_keeps_the_bound_body_exact() {
     use crate::kernel::{IntegerRangeFoldIndex, MachineBinaryOp as Op};
     let _session = crate::kernel::VerificationSession::enter();
-    let endpoint = MachineTerm::Variable(Variable(989_781));
-    let predecessor = MachineTerm::logical_machine_binary(
+    let endpoint = OldMachineTerm::Variable(Variable(989_781));
+    let predecessor = OldMachineTerm::logical_machine_binary(
         M::Int32,
         Op::Subtract,
         endpoint.clone(),
-        MachineTerm::constant(1),
+        OldMachineTerm::constant(1),
     );
-    let restored = MachineTerm::logical_machine_binary(
+    let restored = OldMachineTerm::logical_machine_binary(
         M::Int32,
         Op::Add,
         predecessor,
-        MachineTerm::constant(1),
+        OldMachineTerm::constant(1),
     );
     let body = I::Variable(Variable(989_782));
-    let fold = |end: MachineTerm, body: I| I::RangeFold {
+    let fold = |end: OldMachineTerm, body: I| I::RangeFold {
         index: IntegerRangeFoldIndex::Int32 {
-            start: crate::kernel::SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0)),
+            start: crate::kernel::SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(0)),
             end: crate::kernel::SharedIntegerRangeEndpoint::intern(end),
         },
         initial: I::constant_i64(0).into(),
@@ -231,7 +231,7 @@ fn integer_residue_projection_matches_the_legacy_wrapped_consequences() {
         Operation, modular::wrapped_equality_of_integer_equality,
     };
     let _session = crate::kernel::VerificationSession::enter();
-    let observe = |n| I::from_machine(M::Int32, MachineTerm::Variable(Variable(n))).unwrap();
+    let observe = |n| I::from_machine(M::Int32, OldMachineTerm::Variable(Variable(n))).unwrap();
     let (x, y, z) = (observe(982700), observe(982701), observe(982702));
     let mut expressions = vec![x.clone(), I::Negate(x.clone().into())];
     for op in Operation::ALL {
@@ -257,8 +257,8 @@ fn integer_residue_projection_matches_the_legacy_wrapped_consequences() {
             );
             let parent = graph.clone();
             graph.add_int32_equality(
-                &MachineTerm::Variable(Variable(982702)),
-                &MachineTerm::constant(7),
+                &OldMachineTerm::Variable(Variable(982702)),
+                &OldMachineTerm::constant(7),
             );
             assert!(parent.knows_condition(&wrapped, true));
         }
@@ -268,8 +268,8 @@ fn integer_residue_projection_matches_the_legacy_wrapped_consequences() {
 #[test]
 fn integer_residue_consequence_needs_its_source() {
     let _session = crate::kernel::VerificationSession::enter();
-    let x = MachineTerm::Variable(Variable(982703));
-    let y = MachineTerm::Variable(Variable(982704));
+    let x = OldMachineTerm::Variable(Variable(982703));
+    let y = OldMachineTerm::Variable(Variable(982704));
     let source = eq(
         I::Subtract(
             I::from_machine(M::Int32, x.clone()).unwrap().into(),
@@ -278,7 +278,7 @@ fn integer_residue_consequence_needs_its_source() {
         I::constant_i64(0),
     );
     let goal = Proposition::condition_is(
-        ConditionTerm::equal(MachineTerm::subtract(x, y), MachineTerm::constant(0)),
+        ConditionTerm::equal(OldMachineTerm::subtract(x, y), OldMachineTerm::constant(0)),
         true,
     );
     let context = PureFactContext::new().assume_proposition(source.clone());
@@ -293,7 +293,7 @@ fn constant_residue_projection_preserves_the_operation_alias_route() {
         modular::wrapped_equality_of_integer_equality,
     };
     let _session = crate::kernel::VerificationSession::enter();
-    let x = I::from_machine(M::Int32, MachineTerm::Variable(Variable(982709))).unwrap();
+    let x = I::from_machine(M::Int32, OldMachineTerm::Variable(Variable(982709))).unwrap();
     let exact = I::Subtract(x.clone().into(), x.into());
     let condition = ConditionTerm::IntegerEqual(exact.into(), I::constant_i64(0).into());
     assert!(wrapped_equality_of_integer_equality(&condition, true).is_none());
@@ -313,18 +313,18 @@ fn constant_residue_projection_preserves_the_operation_alias_route() {
 fn cited_mathematical_guards_share_native_and_retained_call_observations() {
     use crate::kernel::{KernelTerm, SharedMachineIntegerTerm};
     let _session = crate::kernel::VerificationSession::enter();
-    let call = |shared, name: &str| MachineTerm::ClickFunctionApplication {
+    let call = |shared, name: &str| OldMachineTerm::ClickFunctionApplication {
         name: name.into(),
         arguments: vec![if shared {
             PureFunctionArgument::SharedMachine(SharedMachineIntegerTerm::intern(
                 M::UInt64,
-                MachineTerm::uint64_constant(7),
+                OldMachineTerm::uint64_constant(7),
             ))
         } else {
-            PureFunctionArgument::Value(ProgramValue::UInt64(MachineTerm::uint64_constant(7)))
+            PureFunctionArgument::Value(ProgramValue::UInt64(OldMachineTerm::uint64_constant(7)))
         }],
     };
-    let difference = |shared| MachineTerm::Binary {
+    let difference = |shared| OldMachineTerm::Binary {
         format: M::UInt64,
         op: crate::kernel::MachineBinaryOp::Subtract,
         left: Box::new(call(shared, "guard_padded_length")),
@@ -335,10 +335,10 @@ fn cited_mathematical_guards_share_native_and_retained_call_observations() {
     for conditional in [false, true] {
         let endpoint = |shared| {
             if conditional {
-                MachineTerm::If {
+                OldMachineTerm::If {
                     condition: Box::new(ConditionTerm::Variable(Variable(982798))),
                     then_term: Box::new(difference(shared)),
-                    else_term: Box::new(MachineTerm::uint64_constant(2)),
+                    else_term: Box::new(OldMachineTerm::uint64_constant(2)),
                 }
             } else {
                 difference(shared)
@@ -352,7 +352,7 @@ fn cited_mathematical_guards_share_native_and_retained_call_observations() {
             )
             .expect("shared arithmetic"),
         );
-        let left = I::from_machine(M::UInt64, MachineTerm::Variable(Variable(982799))).unwrap();
+        let left = I::from_machine(M::UInt64, OldMachineTerm::Variable(Variable(982799))).unwrap();
         for truth in [false, true] {
             let premise =
                 ConditionTerm::IntegerLessThan(left.clone().into(), native.clone().into());
@@ -370,20 +370,20 @@ fn cited_mathematical_guards_share_native_and_retained_call_observations() {
 fn narrow_call_bounds_preserve_retained_argument_observation_identity() {
     use crate::kernel::{KernelTerm, SharedMachineIntegerTerm};
     let _session = crate::kernel::VerificationSession::enter();
-    let length = |name: &str| MachineTerm::ClickFunctionApplication {
+    let length = |name: &str| OldMachineTerm::ClickFunctionApplication {
         name: name.into(),
         arguments: vec![PureFunctionArgument::Value(ProgramValue::UInt64(
-            MachineTerm::Variable(Variable(982811)),
+            OldMachineTerm::Variable(Variable(982811)),
         ))],
     };
-    let subtract = |left, right| MachineTerm::Binary {
+    let subtract = |left, right| OldMachineTerm::Binary {
         format: M::UInt64,
         op: crate::kernel::MachineBinaryOp::Subtract,
         left: Box::new(left),
         right: Box::new(right),
     };
     let index = subtract(
-        MachineTerm::Variable(Variable(982812)),
+        OldMachineTerm::Variable(Variable(982812)),
         subtract(length("padded_length"), length("decimal_length")),
     );
     let retained = SharedMachineIntegerTerm::from_shared(
@@ -396,11 +396,11 @@ fn narrow_call_bounds_preserve_retained_argument_observation_identity() {
         ConditionTerm::narrow_compare(
             M::UInt8,
             crate::kernel::CompareRelation::LessEqual,
-            MachineTerm::Constant {
+            OldMachineTerm::Constant {
                 format: M::UInt8,
                 bits: 48,
             },
-            MachineTerm::ClickFunctionApplication {
+            OldMachineTerm::ClickFunctionApplication {
                 name: "decimal_digit".into(),
                 arguments: vec![PureFunctionArgument::SharedMachine(index)],
             },

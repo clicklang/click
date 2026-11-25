@@ -108,8 +108,8 @@ mod tests {
         ]);
         let format = MachineIntegerType::Int32;
         let native_condition = ConditionTerm::AlgebraicEqual(Box::new(native), Box::new(variable));
-        let a = MachineTerm::constant(1);
-        let b = MachineTerm::constant(2);
+        let a = OldMachineTerm::constant(1);
+        let b = OldMachineTerm::constant(2);
         let common = KernelTerm::machine_if_shared(
             format,
             [
@@ -123,7 +123,7 @@ mod tests {
         assert_eq!(KernelTermExport::machine_export_count(), exports);
         let expected = SharedMachineIntegerTerm::intern(
             format,
-            MachineTerm::If {
+            OldMachineTerm::If {
                 condition: Box::new(native_condition),
                 then_term: Box::new(a),
                 else_term: Box::new(b),
@@ -138,7 +138,7 @@ mod tests {
         let format = MachineIntegerType::Int32;
         let argument = SharedMachineIntegerTerm::intern(
             format,
-            MachineTerm::ClickFunctionApplication {
+            OldMachineTerm::ClickFunctionApplication {
                 name: "word_result".into(),
                 arguments: vec![],
             },

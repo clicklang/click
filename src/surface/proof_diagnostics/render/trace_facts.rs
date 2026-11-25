@@ -4,7 +4,7 @@ use super::*;
 use crate::kernel::binary_node;
 #[cfg(test)]
 use crate::kernel::{CompareRelation, MachineBinaryOp, MachineIntegerType};
-use crate::kernel::{MachineCastSpelling, MachineTerm};
+use crate::kernel::{MachineCastSpelling, OldMachineTerm};
 use crate::kernel::{binary_term, unary_term};
 
 impl Renderer<'_> {
@@ -38,7 +38,7 @@ impl Renderer<'_> {
                     self.push("owns ");
                     self.resource(resource);
                     self.push(" x ");
-                    self.bitvector(quantity.native_compat());
+                    self.bitvector(quantity.old_form());
                 }
                 ResourceFact::View(resource) => {
                     self.push("views ");
@@ -57,8 +57,8 @@ impl Renderer<'_> {
 
     /// Spell the operator as well as its numeric interpretation. A shared
     /// term arena does not make signed/unsigned or 32/64-bit operations equal.
-    pub(super) fn machine_operation(&mut self, value: &MachineTerm) -> bool {
-        use MachineTerm::*;
+    pub(super) fn machine_operation(&mut self, value: &OldMachineTerm) -> bool {
+        use OldMachineTerm::*;
         let binary = match value {
             binary_term!(Int32, Divide, a, b) => Some((a, b, "bits32", "sdiv")),
             binary_term!(UInt32, Divide, a, b) => Some((a, b, "bits32", "udiv")),
@@ -145,21 +145,21 @@ mod tests {
     fn inventory_fact_kinds_show_operands_instead_of_opaque_counts() {
         let p = Address::symbolic(Variable(986_700));
         let memory = SymbolicMemory::new();
-        let word = MachineTerm::read_named(
+        let word = OldMachineTerm::read_named(
             crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
             Box::new(p.clone()),
             LoadKind::Bits64,
         );
         let field = Resource::Memory(MemoryRange::new_with_element_width(
             p.clone(),
-            MachineTerm::constant(0),
-            MachineTerm::constant(1),
+            OldMachineTerm::constant(0),
+            OldMachineTerm::constant(1),
             8,
         ));
         let composite = Resource::Composite {
             name: "rb_child_links".into(),
             arguments: Vec::from([AlgebraicValue::Program(ProgramValue::Int32(
-                MachineTerm::constant(7),
+                OldMachineTerm::constant(7),
             ))])
             .into(),
         };
@@ -169,7 +169,7 @@ mod tests {
         };
         let context = ResourceContext::new().unchecked_with_fact(ResourceFact::Own(
             field.clone(),
-            Box::new(MachineTerm::constant(1).into()),
+            Box::new(OldMachineTerm::constant(1).into()),
         ));
         let facts = [
             (
@@ -177,13 +177,13 @@ mod tests {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int64,
                         relation: CompareRelation::Equal,
-                        left: Box::new(MachineTerm::Binary {
+                        left: Box::new(OldMachineTerm::Binary {
                             format: MachineIntegerType::UInt64,
                             op: MachineBinaryOp::BitwiseAnd,
                             left: Box::new(word),
-                            right: Box::new(MachineTerm::uint64_constant(1)),
+                            right: Box::new(OldMachineTerm::uint64_constant(1)),
                         }),
-                        right: Box::new(MachineTerm::uint64_constant(0)),
+                        right: Box::new(OldMachineTerm::uint64_constant(0)),
                     },
                     true,
                 ),
@@ -194,11 +194,11 @@ mod tests {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
-                        left: Box::new(MachineTerm::ClickFunctionApplication {
+                        left: Box::new(OldMachineTerm::ClickFunctionApplication {
                             name: "rb_root_black".into(),
                             arguments: vec![PureFunctionArgument::Algebraic(model.clone())],
                         }),
-                        right: Box::new(MachineTerm::constant(1)),
+                        right: Box::new(OldMachineTerm::constant(1)),
                     },
                     true,
                 ),
@@ -232,7 +232,7 @@ mod tests {
                 Proposition::MemoryLoadable {
                     memory,
                     base: p,
-                    bytes: (MachineTerm::constant(8)).into(),
+                    bytes: (OldMachineTerm::constant(8)).into(),
                     wide: false,
                 },
                 "bytes:uint32=8",
@@ -251,7 +251,7 @@ mod tests {
                     kind: crate::kernel::VolatileAccessKind::Write,
                     pointer: Address::symbolic(Variable(986_703)),
                     value_type: crate::kernel::ProgramType::UInt64,
-                    value: ProgramValue::UInt64(MachineTerm::uint64_constant(1)).into(),
+                    value: ProgramValue::UInt64(OldMachineTerm::uint64_constant(1)).into(),
                 })),
                 "volatile-write-event#123(",
             ),
@@ -276,7 +276,7 @@ mod tests {
             crate::kernel::intern_memory(SymbolicMemory::new().with_block("trace_changed", 4));
         let load = |memory, kind| {
             Term::Bitvector32(
-                MachineTerm::read_named(memory, Box::new(address.clone()), kind).into(),
+                OldMachineTerm::read_named(memory, Box::new(address.clone()), kind).into(),
             )
         };
         let fact = Proposition::Equal(
@@ -316,11 +316,11 @@ mod tests {
 
     #[test]
     fn machine_operations_keep_width_signedness_and_casts() {
-        let a = Box::new(MachineTerm::Variable(Variable(986_703)));
-        let b = Box::new(MachineTerm::constant(2));
+        let a = Box::new(OldMachineTerm::Variable(Variable(986_703)));
+        let b = Box::new(OldMachineTerm::constant(2));
         for (value, expected) in [
             (
-                MachineTerm::Binary {
+                OldMachineTerm::Binary {
                     format: MachineIntegerType::Int64,
                     op: MachineBinaryOp::Divide,
                     left: a.clone(),
@@ -329,7 +329,7 @@ mod tests {
                 "int64(",
             ),
             (
-                MachineTerm::Binary {
+                OldMachineTerm::Binary {
                     format: MachineIntegerType::UInt64,
                     op: MachineBinaryOp::Divide,
                     left: a.clone(),
@@ -343,13 +343,13 @@ mod tests {
             ),
             (binary_node!(Int32, ShiftRight, a.clone(), b), "ashr"),
             (
-                MachineTerm::legacy_cast(MachineCastSpelling::UInt64FromInt32, a),
+                OldMachineTerm::legacy_cast(MachineCastSpelling::UInt64FromInt32, a),
                 "UInt64FromInt32(",
             ),
         ] {
             let text = render(&Proposition::Equal(
                 Term::Bitvector32(value.into()),
-                Term::Bitvector32(MachineTerm::constant(0).into()),
+                Term::Bitvector32(OldMachineTerm::constant(0).into()),
             ));
             assert!(text.contains(expected), "{text}");
         }

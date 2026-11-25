@@ -49,7 +49,7 @@ fn read_origin_raising_ignores_other_points_with_equal_memory() {
         source
             .memory()
             .clone()
-            .store(slot, ProgramValue::Int32(MachineTerm::constant(7))),
+            .store(slot, ProgramValue::Int32(OldMachineTerm::constant(7))),
     );
     assert_eq!(replacement.observation_point_id(), point.id());
     let mut points = RecordedStates::new();
@@ -68,10 +68,10 @@ fn boolean_local_synthesis_round_trips_and_scales_with_local_population() {
         for index in 0..size {
             state = state.with_local(
                 format!("a_{index:04}"),
-                crate::kernel::bool_value(MachineTerm::Variable(Variable(2000 + index as u64))),
+                crate::kernel::bool_value(OldMachineTerm::Variable(Variable(2000 + index as u64))),
             );
         }
-        let value = crate::kernel::bool_value(MachineTerm::Variable(Variable(9000)));
+        let value = crate::kernel::bool_value(OldMachineTerm::Variable(Variable(9000)));
         let ProgramValue::Bool(term) = &value else {
             unreachable!()
         };
@@ -122,7 +122,7 @@ fn pointer_spelling_skips_cyclic_offsets_and_tries_the_next_local() {
                 let cyclic = Address {
                     base: pointer.base.clone(),
                     offset: AddressOffset::scaled_int32_node(
-                        MachineTerm::integer_address(pointer.clone()),
+                        OldMachineTerm::integer_address(pointer.clone()),
                         4,
                     ),
                 };
@@ -477,18 +477,18 @@ fn common_arithmetic_names_ignore_unrelated_locals_without_exports() {
     use crate::kernel::{KernelTermExport, KernelTermImport, VerificationSession};
     for size in [16, 64, 256] {
         let _session = VerificationSession::enter();
-        let native = MachineTerm::logical_machine_binary(
+        let native = OldMachineTerm::logical_machine_binary(
             MachineIntegerType::Int32,
             MachineBinaryOp::Add,
-            MachineTerm::Variable(Variable(993410)),
-            MachineTerm::constant(1),
+            OldMachineTerm::Variable(Variable(993410)),
+            OldMachineTerm::constant(1),
         );
         let root = KernelTermImport::default().machine(MachineIntegerType::Int32, &native);
         let mut state = ExecutionState::new().with_local("current", ProgramValue::Int32(native));
         for index in 0..size {
             state = state.with_local(
                 format!("noise_{index}"),
-                ProgramValue::Int32(MachineTerm::Variable(Variable(994000 + index))),
+                ProgramValue::Int32(OldMachineTerm::Variable(Variable(994000 + index))),
             );
         }
         let exports = KernelTermExport::machine_export_count();
@@ -512,20 +512,20 @@ fn nested_fold_surface_raising_scales_without_ambient_local_scan() {
     for unrelated in [0, 64, 256] {
         for size in [3, 9, 27] {
             let _session = crate::kernel::VerificationSession::enter();
-            let n = MachineTerm::Variable(Variable(720000));
+            let n = OldMachineTerm::Variable(Variable(720000));
             let mut state = ExecutionState::new().with_local("n", ProgramValue::Int32(n.clone()));
             for i in 0..unrelated {
                 state = state.with_local(
                     format!("unused_{i}"),
-                    ProgramValue::Int32(MachineTerm::Variable(Variable(730000 + i))),
+                    ProgramValue::Int32(OldMachineTerm::Variable(Variable(730000 + i))),
                 );
             }
-            let mut term = MachineTerm::Variable(Variable(720001));
+            let mut term = OldMachineTerm::Variable(Variable(720001));
             for _ in 0..size {
-                term = MachineTerm::RangeFold {
-                    start: Box::new(MachineTerm::constant(0)),
+                term = OldMachineTerm::RangeFold {
+                    start: Box::new(OldMachineTerm::constant(0)),
                     end: Box::new(n.clone()),
-                    initial: Box::new(MachineTerm::constant(0)),
+                    initial: Box::new(OldMachineTerm::constant(0)),
                     accumulator: Variable(720001),
                     item: Variable(720002),
                     body: Box::new(term),
@@ -617,12 +617,12 @@ fn nested_fold_match_call_surface_work_ignores_unrelated_locals() {
     for unrelated in [0, 64, 256] {
         for depth in [3, 9, 27] {
             let _session = crate::kernel::VerificationSession::enter();
-            let n = MachineTerm::Variable(Variable(992000));
+            let n = OldMachineTerm::Variable(Variable(992000));
             let mut state = ExecutionState::new().with_local("n", ProgramValue::Int32(n.clone()));
             for i in 0..unrelated {
                 state = state.with_local(
                     format!("unused_{i}"),
-                    ProgramValue::Int32(MachineTerm::Variable(Variable(993000 + i))),
+                    ProgramValue::Int32(OldMachineTerm::Variable(Variable(993000 + i))),
                 );
             }
             let mut import = KernelTermImport::default();
@@ -630,7 +630,7 @@ fn nested_fold_match_call_surface_work_ignores_unrelated_locals() {
                 KernelMatch::test_scrutinee(vec![AlgebraicValueType::Program(ProgramType::Int32)]),
             ));
             let ty = KernelType::Program(ProgramType::Int32);
-            let zero = import.machine(MachineIntegerType::Int32, &MachineTerm::constant(0));
+            let zero = import.machine(MachineIntegerType::Int32, &OldMachineTerm::constant(0));
             let end = import.machine(MachineIntegerType::Int32, &n);
             let declaration = KernelTerm::variable(ty.clone(), Variable(992003));
             let mut root = KernelTerm::variable(ty.clone(), Variable(992001));
@@ -855,20 +855,20 @@ fn shared_overflow_spelling_does_not_export_growing_operands() {
     for size in [8, 32, 64] {
         let _session = crate::kernel::VerificationSession::enter();
         let variable = Variable(999987);
-        let mut operand = MachineTerm::Variable(variable);
+        let mut operand = OldMachineTerm::Variable(variable);
         for _ in 0..size {
-            operand = MachineTerm::logical_machine_binary(
+            operand = OldMachineTerm::logical_machine_binary(
                 MachineIntegerType::Int32,
                 MachineBinaryOp::Add,
                 operand,
-                MachineTerm::constant(1),
+                OldMachineTerm::constant(1),
             );
         }
         let root = KernelTermImport::default().condition(&ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Add,
             left: Box::new(operand),
-            right: Box::new(MachineTerm::Variable(variable)),
+            right: Box::new(OldMachineTerm::Variable(variable)),
         });
         let names = (BTreeMap::<_, String>::from([(variable, "x".into())]))
             .into_iter()
@@ -895,13 +895,13 @@ fn pointer_comparison_spelling_does_not_export_bounds_payloads() {
     for size in [8, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = Address::symbolic(Variable(999990));
-        let mut width = MachineTerm::Variable(Variable(999991));
+        let mut width = OldMachineTerm::Variable(Variable(999991));
         for _ in 0..size {
-            width = MachineTerm::logical_machine_binary(
+            width = OldMachineTerm::logical_machine_binary(
                 MachineIntegerType::Int32,
                 MachineBinaryOp::Add,
                 width,
-                MachineTerm::constant(1),
+                OldMachineTerm::constant(1),
             );
         }
         let value = OldPointer::new(pointer.clone(), ProgramType::Int32Pointer).with_bounds(Some(
@@ -1033,20 +1033,21 @@ fn pthread_handle_names_ignore_unrelated_live_and_recorded_handles() {
         for id in 0..size {
             state = state.with_local(
                 format!("other_{id}"),
-                ProgramValue::UInt64(MachineTerm::ThreadHandle(ThreadHandleId(id))),
+                ProgramValue::UInt64(OldMachineTerm::ThreadHandle(ThreadHandleId(id))),
             );
             points.insert(
                 ProgramPointSelector::Mark(format!("other_{id}")),
                 state.clone(),
             );
         }
-        let native = MachineTerm::ThreadHandle(ThreadHandleId(999002));
+        let native = OldMachineTerm::ThreadHandle(ThreadHandleId(999002));
         let root = KernelTermImport::default().machine(MachineIntegerType::UInt64, &native);
         state = state.with_local("h", ProgramValue::UInt64(native));
         points.insert(ProgramPointSelector::Mark("created".into()), state.clone());
-        let now = state
-            .clone()
-            .with_local("h", ProgramValue::UInt64(MachineTerm::uint64_constant(0)));
+        let now = state.clone().with_local(
+            "h",
+            ProgramValue::UInt64(OldMachineTerm::uint64_constant(0)),
+        );
         let _points = SynthesisRecordedPointsScope::enter(&points);
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for (selected, expected) in [(&state, "h"), (&now, "at(created, h)")] {

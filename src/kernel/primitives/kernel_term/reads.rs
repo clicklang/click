@@ -56,16 +56,16 @@ impl KernelTermImport {
     pub(super) fn scalar_read(
         &mut self,
         format: MachineIntegerType,
-        value: &MachineTerm,
+        value: &OldMachineTerm,
     ) -> Option<KernelTerm> {
         match value {
-            MachineTerm::MemoryLoad(point, address, kind) => {
+            OldMachineTerm::MemoryLoad(point, address, kind) => {
                 KernelTerm::scalar_read_descriptor(format, point, address, *kind)
             }
             // Exact field carriers retain the producer's written name. A
             // registered name and its structural read have different native
             // reader scopes and must not share a selected output slot.
-            MachineTerm::Variable(variable)
+            OldMachineTerm::Variable(variable)
                 if !self.exact_field_inputs && crate::kernel::eval::is_load_variable(variable) =>
             {
                 self.machine_input_requires_export = true;
@@ -91,7 +91,7 @@ impl KernelTerm {
         {
             return None;
         }
-        let MachineTerm::MemoryLoad(point, address, _) =
+        let OldMachineTerm::MemoryLoad(point, address, _) =
             crate::kernel::equality_graph::logical_pointer_read_term(value.address())?
         else {
             return None;
@@ -120,7 +120,7 @@ impl KernelTerm {
 
     /// Selected native read leaf for consumers still using the native atom
     /// interface. Never expands a surrounding shared arithmetic expression.
-    pub(crate) fn machine_read_leaf(&self) -> Option<&MachineTerm> {
+    pub(crate) fn machine_read_leaf(&self) -> Option<&OldMachineTerm> {
         let KernelTermNode::MemoryLoad {
             point,
             address,
@@ -130,7 +130,7 @@ impl KernelTerm {
             return None;
         };
         Some(self.0.machine_leaf.get_or_init(|| {
-            crate::kernel::MachineTerm::read_named(
+            crate::kernel::OldMachineTerm::read_named(
                 point.clone(),
                 address.export().expect("retained read address"),
                 *kind,
@@ -292,7 +292,7 @@ mod tests {
         let address = Address::symbolic(Variable(993100));
         let memory = intern_memory(SymbolicMemory::new().store(
             address.clone(),
-            ProgramValue::Int32(MachineTerm::constant(7)),
+            ProgramValue::Int32(OldMachineTerm::constant(7)),
         ));
         for (kind, format) in [
             (LoadKind::Int8, MachineIntegerType::Int8),
@@ -305,7 +305,7 @@ mod tests {
             (LoadKind::Int128, MachineIntegerType::Int128),
             (LoadKind::UInt128, MachineIntegerType::UInt128),
         ] {
-            let native = crate::kernel::MachineTerm::read_named(
+            let native = crate::kernel::OldMachineTerm::read_named(
                 ProgramPoint::at(&memory),
                 address.clone(),
                 kind,
@@ -363,7 +363,7 @@ mod tests {
             )
             .unwrap();
             let output = KernelTermExport::machine(&root).unwrap();
-            let MachineTerm::MemoryLoad(_, address, _) = &output else {
+            let OldMachineTerm::MemoryLoad(_, address, _) = &output else {
                 panic!("read")
             };
             let AddressBase::PureFunctionApplication(call) = &address.base else {
@@ -392,12 +392,12 @@ mod tests {
         let memory = intern_memory(SymbolicMemory::new());
         let written = intern_memory(SymbolicMemory::new().store(
             address.clone(),
-            ProgramValue::Int32(MachineTerm::constant(7)),
+            ProgramValue::Int32(OldMachineTerm::constant(7)),
         ));
         let load = |memory, address, kind| {
             KernelTermImport::default().machine(
                 MachineIntegerType::Int32,
-                &crate::kernel::MachineTerm::read_named(memory, address, kind),
+                &crate::kernel::OldMachineTerm::read_named(memory, address, kind),
             )
         };
         let first = load(ProgramPoint::at(&memory), address.clone(), LoadKind::Int32);
@@ -423,7 +423,7 @@ mod tests {
     fn registered_read_handle_imports_as_its_owned_read_descriptor() {
         let _session = VerificationSession::enter();
         let format = MachineIntegerType::Int32;
-        let raw = crate::kernel::MachineTerm::read_named(
+        let raw = crate::kernel::OldMachineTerm::read_named(
             ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
             Address::symbolic(Variable(993120)),
             LoadKind::Int32,
@@ -442,13 +442,13 @@ mod tests {
     fn named_read_import_and_arithmetic_storage_retain_the_same_descriptor() {
         let _session = VerificationSession::enter();
         let format = MachineIntegerType::UInt32;
-        let raw = crate::kernel::MachineTerm::read_named(
+        let raw = crate::kernel::OldMachineTerm::read_named(
             ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
             Address::symbolic(Variable(993126)),
             LoadKind::UInt32,
         );
         let (name, descriptor) = crate::kernel::eval::load_variable_for_term(&raw).unwrap();
-        let named = MachineTerm::Variable(name);
+        let named = OldMachineTerm::Variable(name);
         let arithmetic = KernelTermImport::default()
             .machine_arithmetic(format, &named)
             .unwrap();
@@ -467,7 +467,7 @@ mod tests {
     fn registered_read_cache_follows_registry_capture_and_restore() {
         let _session = VerificationSession::enter();
         let format = MachineIntegerType::Int32;
-        let raw = crate::kernel::MachineTerm::read_named(
+        let raw = crate::kernel::OldMachineTerm::read_named(
             ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
             Address::symbolic(Variable(993125)),
             LoadKind::Int32,
@@ -491,15 +491,16 @@ mod tests {
         let p = Address::symbolic(Variable(993140));
         let before = intern_memory(SymbolicMemory::new());
         let after = intern_memory(
-            SymbolicMemory::new().store(p.clone(), ProgramValue::Int32(MachineTerm::constant(1))),
+            SymbolicMemory::new()
+                .store(p.clone(), ProgramValue::Int32(OldMachineTerm::constant(1))),
         );
         let nested = |inner: SharedMemory, outer: SharedMemory, kind| {
-            crate::kernel::MachineTerm::read_named(
+            crate::kernel::OldMachineTerm::read_named(
                 ProgramPoint::at(&outer),
                 Address {
                     base: AddressBase::Symbolic(Variable(993141)),
                     offset: AddressOffset::scaled_int32_node(
-                        MachineTerm::read_named(
+                        OldMachineTerm::read_named(
                             ProgramPoint::at(&inner),
                             Box::new(p.clone()),
                             kind,
@@ -544,7 +545,7 @@ mod tests {
         assert_ne!(first.arena_id(), second.arena_id());
         assert_eq!(first, second); // Same contents, distinct retained_state identities.
         let read = |memory| {
-            crate::kernel::MachineTerm::read_named(
+            crate::kernel::OldMachineTerm::read_named(
                 memory,
                 Address::symbolic(Variable(993150)),
                 LoadKind::Int32,
@@ -563,12 +564,12 @@ mod tests {
         let import = |inner| {
             KernelTermImport::default().machine(
                 MachineIntegerType::Int32,
-                &crate::kernel::MachineTerm::read_named(
+                &crate::kernel::OldMachineTerm::read_named(
                     ProgramPoint::at(&outer),
                     Address {
                         base: AddressBase::Symbolic(Variable(993151)),
                         offset: AddressOffset::scaled_int32_node(
-                            MachineTerm::read_named(
+                            OldMachineTerm::read_named(
                                 inner,
                                 Box::new(Address::symbolic(Variable(993150))),
                                 LoadKind::Int32,
@@ -597,17 +598,17 @@ mod tests {
             (MachineIntegerType::Int32, LoadKind::Int32, false),
             (MachineIntegerType::Int64, LoadKind::Bits64, true),
         ] {
-            let read = crate::kernel::MachineTerm::read_named(
+            let read = crate::kernel::OldMachineTerm::read_named(
                 ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
                 Address::symbolic(Variable(993160)),
                 kind,
             );
             let (name, descriptor) = crate::kernel::eval::load_variable_for_term(&read).unwrap();
-            let written = SharedMachineIntegerTerm::intern(format, MachineTerm::Variable(name));
-            assert!(matches!(written.value(), MachineTerm::Variable(_)));
+            let written = SharedMachineIntegerTerm::intern(format, OldMachineTerm::Variable(name));
+            assert!(matches!(written.value(), OldMachineTerm::Variable(_)));
             let mut facts = crate::kernel::ExecutionFacts::new();
             let index = crate::kernel::canonicalized_offset_index_term(
-                MachineTerm::Variable(name),
+                OldMachineTerm::Variable(name),
                 &mut facts,
             );
             assert_eq!(index, descriptor);
@@ -641,7 +642,8 @@ mod tests {
         let _session = VerificationSession::enter();
         let p = Address::symbolic(Variable(993162));
         let memory = intern_memory(
-            SymbolicMemory::new().store(p.clone(), ProgramValue::Int32(MachineTerm::constant(3))),
+            SymbolicMemory::new()
+                .store(p.clone(), ProgramValue::Int32(OldMachineTerm::constant(3))),
         );
         let index = crate::kernel::eval::canonical_form_of_load(memory.clone(), p, LoadKind::Int32);
         let address = Address {
@@ -672,7 +674,7 @@ mod tests {
         for class in [CScalarClass::Int, CScalarClass::Char] {
             let expected = Some(CAccessClass::Scalar(class));
             let index = AddressOffset::scaled_int64_node(
-                MachineTerm::IntegerAddress(
+                OldMachineTerm::IntegerAddress(
                     Box::new(Address::symbolic(Variable(993161))),
                     crate::kernel::AddressObjectClass::new(expected.clone()),
                 ),
@@ -683,7 +685,7 @@ mod tests {
                 unreachable!()
             };
             assert!(value.shared_operand().is_none());
-            let MachineTerm::IntegerAddress(_, actual) = value.structural_value() else {
+            let OldMachineTerm::IntegerAddress(_, actual) = value.structural_value() else {
                 panic!("address payload")
             };
             assert_eq!(actual.class(), expected);
@@ -698,14 +700,14 @@ mod tests {
         let address = Address {
             base: AddressBase::Symbolic(Variable(993130)),
             offset: AddressOffset::scaled_int32_node(
-                MachineTerm::IntegerAddress(
+                OldMachineTerm::IntegerAddress(
                     Box::new(Address::symbolic(Variable(993131))),
                     crate::kernel::AddressObjectClass::NONE,
                 ),
                 4,
             ),
         };
-        let native = crate::kernel::MachineTerm::read_named(
+        let native = crate::kernel::OldMachineTerm::read_named(
             ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
             address,
             LoadKind::Int32,

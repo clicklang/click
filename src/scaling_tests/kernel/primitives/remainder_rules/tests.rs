@@ -181,7 +181,7 @@ fn division_guards_retain_shared_prefixes_in_linear_work() {
                     let query = condition_for_operand_views(
                         format,
                         relation,
-                        [V::Legacy(&zero), V::Shared(&q)],
+                        [V::Old(&zero), V::Shared(&q)],
                     );
                     assert_eq!(
                         query.nonnegative_division_bound_guards().is_some(),
@@ -234,7 +234,7 @@ fn division_guard_casts_reuse_growing_composition_prefixes() {
                 let query = condition_for_operand_views(
                     signed,
                     CompareRelation::LessEqual,
-                    [V::Legacy(&zero), V::Shared(&q)],
+                    [V::Old(&zero), V::Shared(&q)],
                 );
                 assert_eq!(query.nonnegative_division_bound_guards().unwrap().len(), 2);
             }

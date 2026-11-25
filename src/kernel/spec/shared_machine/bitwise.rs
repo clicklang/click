@@ -4,11 +4,11 @@ use crate::kernel::{MachineUnaryOp, machine_operand_syntax_cmp};
 
 fn constant(format: MachineIntegerType, bits: u64) -> KernelTerm {
     let value = if format.format().bits() == 32 {
-        MachineTerm::constant(bits as u32).in_format32(format)
+        OldMachineTerm::constant(bits as u32).in_format32(format)
     } else if format.format().is_signed() {
-        MachineTerm::int64_constant(bits as i64)
+        OldMachineTerm::int64_constant(bits as i64)
     } else {
-        MachineTerm::uint64_constant(bits)
+        OldMachineTerm::uint64_constant(bits)
     };
     KernelTerm::retained_native_machine_operand(format, &value)
 }

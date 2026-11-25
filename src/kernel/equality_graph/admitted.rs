@@ -42,7 +42,7 @@ pub(in crate::kernel) struct InputData {
     /// inserting an equality updates only its two endpoints.
     pub(in crate::kernel) bitvector64_equality_facts: crate::persistent::PersistentMap<
         crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey,
-        crate::persistent::PersistentMap<MachineTerm, ConditionTerm>,
+        crate::persistent::PersistentMap<OldMachineTerm, ConditionTerm>,
     >,
     /// Exact literal-pinning source premises, in deterministic source order.
     pub(in crate::kernel) exact_constant_equalities: crate::persistent::PersistentMap<
@@ -75,7 +75,7 @@ pub(in crate::kernel) struct InputData {
     /// Pointer-address endpoints of full-width equalities, by object.
     /// Lets store framing follow address copies without scanning size facts.
     pub(in crate::kernel) wide_pointer_alias_endpoints_by_object:
-        crate::persistent::PersistentMap<Address, crate::persistent::PersistentSet<MachineTerm>>,
+        crate::persistent::PersistentMap<Address, crate::persistent::PersistentSet<OldMachineTerm>>,
     pub(in crate::kernel) algebraic_graph_equalities: crate::persistent::PersistentMap<
         (
             crate::kernel::SharedPureApplication,

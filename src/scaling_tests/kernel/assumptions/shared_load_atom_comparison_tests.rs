@@ -9,7 +9,7 @@ fn growing_shared_state_comparisons_reuse_syntax_but_recheck_loads() {
                 let _session = crate::kernel::VerificationSession::enter();
                 let ty = MachineIntegerType::Int32;
                 let (left_read, right_read, a, b) = load_pair(ty);
-                let leaf = |read: &MachineTerm, variable| {
+                let leaf = |read: &OldMachineTerm, variable| {
                     if structural {
                         crate::kernel::KernelTermImport::default()
                             .machine_arithmetic(ty, read)
@@ -21,7 +21,7 @@ fn growing_shared_state_comparisons_reuse_syntax_but_recheck_loads() {
                 let mut left = leaf(&left_read, a);
                 let mut right = leaf(&right_read, b);
                 let zero = crate::kernel::KernelTermImport::default()
-                    .machine(ty, &MachineTerm::constant(0));
+                    .machine(ty, &OldMachineTerm::constant(0));
                 let guard = |read, variable| {
                     crate::kernel::KernelTermImport::default().condition(&ConditionTerm::Compare {
                         format: ty,
@@ -29,9 +29,9 @@ fn growing_shared_state_comparisons_reuse_syntax_but_recheck_loads() {
                         left: Box::new(if structural {
                             read
                         } else {
-                            MachineTerm::Variable(variable)
+                            OldMachineTerm::Variable(variable)
                         }),
-                        right: Box::new(MachineTerm::constant(0)),
+                        right: Box::new(OldMachineTerm::constant(0)),
                     })
                 };
                 let guards = [guard(left_read.clone(), a), guard(right_read.clone(), b)];

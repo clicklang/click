@@ -84,8 +84,8 @@ fn exit_argument_checks_reuse_the_checked_path_context() {
     let fact = |id, value| {
         Proposition::condition_is(
             ConditionTerm::equal(
-                MachineTerm::Variable(Variable(id)),
-                MachineTerm::constant(value),
+                OldMachineTerm::Variable(Variable(id)),
+                OldMachineTerm::constant(value),
             ),
             true,
         )

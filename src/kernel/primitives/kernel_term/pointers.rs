@@ -229,7 +229,7 @@ impl SharedPointer {
                             start: address(&bounds.start),
                             width: KernelTerm::retained_machine_operand(
                                 MachineIntegerType::Int32,
-                                MachineOperandView::Legacy(&bounds.width),
+                                MachineOperandView::Old(&bounds.width),
                             ),
                         }),
                         within: member.within.as_deref().map(address),
@@ -429,7 +429,7 @@ mod tests {
                 true,
                 Some(SubobjectBounds {
                     start: Address::symbolic(Variable(1000004)),
-                    width: MachineTerm::Variable(Variable(1000005)),
+                    width: OldMachineTerm::Variable(Variable(1000005)),
                 }),
                 Some(Arc::new(Address::symbolic(Variable(1000003)))),
             ),

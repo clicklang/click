@@ -4,7 +4,7 @@
 //! holds of every observation with no premise.
 
 use crate::kernel::{
-    ConditionTerm, IntegerTerm, MachineIntegerConstant, MachineIntegerType, MachineTerm,
+    ConditionTerm, IntegerTerm, MachineIntegerConstant, MachineIntegerType, OldMachineTerm,
     Proposition, SharedMachineIntegerTerm,
 };
 use num_bigint::BigInt;
@@ -43,6 +43,6 @@ pub(crate) fn observation_range(value: &SharedMachineIntegerTerm) -> (BigInt, Bi
 
 /// The word that spells the constant `value` at `ty`, or `None` when
 /// `value` is outside `ty`'s range.
-pub(crate) fn constant_word(ty: MachineIntegerType, value: &BigInt) -> Option<MachineTerm> {
+pub(crate) fn constant_word(ty: MachineIntegerType, value: &BigInt) -> Option<OldMachineTerm> {
     ty.constant_term(MachineIntegerConstant::from_integer(ty.format(), value)?)
 }

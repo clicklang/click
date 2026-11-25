@@ -3,7 +3,7 @@
 // tests" in `docs/internals/testing.md`.
 
 use super::*;
-use crate::kernel::{MachineCastSpelling, MachineTerm};
+use crate::kernel::{MachineCastSpelling, OldMachineTerm};
 use crate::kernel::{MachineIntegerType, OverflowOperation};
 
 #[test]
@@ -11,7 +11,7 @@ fn equal_value_interval_queries_scale_with_delta_and_skip_unrelated_facts() {
     let mut works = Vec::new();
     for size in [32u64, 64, 128] {
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-            let root = MachineTerm::Variable(Variable(200_000 + size * 10));
+            let root = OldMachineTerm::Variable(Variable(200_000 + size * 10));
             let mut facts = PureFactContext::new()
                 .assume_condition(
                     ConditionTerm::signed_greater_equal(root.clone(), 0u32.into()),
@@ -23,8 +23,8 @@ fn equal_value_interval_queries_scale_with_delta_and_skip_unrelated_facts() {
                 );
             PureFactContext::reset_signed_interval_fallback_fact_visits();
             for index in 0..size {
-                let alias = MachineTerm::Variable(Variable(300_000 + size * 10 + index));
-                let unrelated = MachineTerm::Variable(Variable(400_000 + size * 10 + index));
+                let alias = OldMachineTerm::Variable(Variable(300_000 + size * 10 + index));
+                let unrelated = OldMachineTerm::Variable(Variable(400_000 + size * 10 + index));
                 facts = facts
                     .assume_condition(
                         ConditionTerm::signed_less_equal(unrelated, 1000u32.into()),
@@ -51,18 +51,18 @@ fn order_chain_interval_requires_explicit_endpoint_bound() {
     let chain_context = |length: u64, unrelated: u64| {
         let mut assumptions = PureFactContext::new();
         for index in 0..unrelated {
-            let a = MachineTerm::Variable(Variable(97_000 + 2 * index));
-            let b = MachineTerm::Variable(Variable(97_001 + 2 * index));
+            let a = OldMachineTerm::Variable(Variable(97_000 + 2 * index));
+            let b = OldMachineTerm::Variable(Variable(97_001 + 2 * index));
             assumptions = assumptions
                 .assume_condition(ConditionTerm::signed_less_equal(a, b.clone()), true)
                 .assume_condition(
-                    ConditionTerm::signed_less_than(b, MachineTerm::constant(50)),
+                    ConditionTerm::signed_less_than(b, OldMachineTerm::constant(50)),
                     true,
                 );
         }
-        let link = |index: u64| MachineTerm::Variable(Variable(98_000 + index));
+        let link = |index: u64| OldMachineTerm::Variable(Variable(98_000 + index));
         assumptions = assumptions.assume_condition(
-            ConditionTerm::signed_less_equal(MachineTerm::constant(0), link(0)),
+            ConditionTerm::signed_less_equal(OldMachineTerm::constant(0), link(0)),
             true,
         );
         for index in 0..length {
@@ -72,7 +72,7 @@ fn order_chain_interval_requires_explicit_endpoint_bound() {
             );
         }
         assumptions = assumptions.assume_condition(
-            ConditionTerm::signed_less_than(link(length), MachineTerm::constant(1000)),
+            ConditionTerm::signed_less_than(link(length), OldMachineTerm::constant(1000)),
             true,
         );
         (assumptions, link(0))
@@ -84,7 +84,7 @@ fn order_chain_interval_requires_explicit_endpoint_bound() {
         });
         assert_eq!(bound, Some((0, i64::from(i32::MAX))));
         let explicit = assumptions.assume_condition(
-            ConditionTerm::signed_less_than(start.clone(), MachineTerm::constant(1000)),
+            ConditionTerm::signed_less_than(start.clone(), OldMachineTerm::constant(1000)),
             true,
         );
         let (bound, explicit_work) =
@@ -103,16 +103,16 @@ fn order_chain_interval_requires_explicit_endpoint_bound() {
 
 #[test]
 fn int64_guard_work_is_independent_of_unrelated_facts() {
-    let n = MachineTerm::Variable(Variable(95_111));
-    let d = MachineTerm::Variable(Variable(95_112));
-    let constant = MachineTerm::int64_constant;
+    let n = OldMachineTerm::Variable(Variable(95_111));
+    let d = OldMachineTerm::Variable(Variable(95_112));
+    let constant = OldMachineTerm::int64_constant;
     let mut work_counts = Vec::new();
     for size in [8, 32, 128, 512] {
         let mut facts = PureFactContext::new();
         for index in 0..size {
             facts = facts.assume_condition(
                 ConditionTerm::int64_signed_less_equal(
-                    MachineTerm::Variable(Variable(96_000 + index)),
+                    OldMachineTerm::Variable(Variable(96_000 + index)),
                     constant(123),
                 ),
                 true,
@@ -152,9 +152,9 @@ fn int64_guard_work_is_independent_of_unrelated_facts() {
 
 #[test]
 fn int64_zero_alias_addition_and_subtraction_are_safe_and_indexed() {
-    let x = MachineTerm::Variable(Variable(96_001));
-    let zero = MachineTerm::Variable(Variable(96_002));
-    let constant = MachineTerm::int64_constant;
+    let x = OldMachineTerm::Variable(Variable(96_001));
+    let zero = OldMachineTerm::Variable(Variable(96_002));
+    let constant = OldMachineTerm::int64_constant;
     let mut baseline_work = None;
     for population in [8u64, 32, 128, 512] {
         let mut facts = PureFactContext::new()
@@ -162,7 +162,7 @@ fn int64_zero_alias_addition_and_subtraction_are_safe_and_indexed() {
         for i in 0..population {
             facts = facts.assume_condition(
                 ConditionTerm::int64_signed_less_equal(
-                    MachineTerm::Variable(Variable(97_000 + i)),
+                    OldMachineTerm::Variable(Variable(97_000 + i)),
                     constant(100),
                 ),
                 true,
@@ -183,11 +183,11 @@ fn int64_zero_alias_addition_and_subtraction_are_safe_and_indexed() {
                     zero.clone(),
                 )),
                 facts.decide(&ConditionTerm::int64_equal(
-                    MachineTerm::int64_add(x.clone(), zero.clone()),
+                    OldMachineTerm::int64_add(x.clone(), zero.clone()),
                     x.clone(),
                 )),
                 facts.decide(&ConditionTerm::int64_equal(
-                    MachineTerm::int64_subtract(x.clone(), zero.clone()),
+                    OldMachineTerm::int64_subtract(x.clone(), zero.clone()),
                     x.clone(),
                 )),
             ]
@@ -205,7 +205,7 @@ fn int64_zero_alias_addition_and_subtraction_are_safe_and_indexed() {
         assert!(work > 0);
         assert_eq!(
             facts.decide(&ConditionTerm::int64_equal(
-                MachineTerm::int64_add(x.clone(), constant(1)),
+                OldMachineTerm::int64_add(x.clone(), constant(1)),
                 x.clone()
             )),
             None
@@ -260,17 +260,17 @@ fn int64_zero_alias_addition_and_subtraction_are_safe_and_indexed() {
 
 #[test]
 fn int64_zero_identity_chains_scale_with_the_queried_term() {
-    let x = MachineTerm::Variable(Variable(98_001));
-    let zero = MachineTerm::Variable(Variable(98_002));
+    let x = OldMachineTerm::Variable(Variable(98_001));
+    let zero = OldMachineTerm::Variable(Variable(98_002));
     let facts = PureFactContext::new().assume_condition(
-        ConditionTerm::int64_equal(zero.clone(), MachineTerm::int64_constant(0)),
+        ConditionTerm::int64_equal(zero.clone(), OldMachineTerm::int64_constant(0)),
         true,
     );
     let mut previous = None;
     for depth in [8usize, 32, 128, 512] {
         let mut term = x.clone();
         for _ in 0..depth {
-            term = MachineTerm::int64_add(term, zero.clone());
+            term = OldMachineTerm::int64_add(term, zero.clone());
         }
         let query = ConditionTerm::int64_equal(term, x.clone());
         let (answer, work) =
@@ -289,21 +289,21 @@ fn int64_zero_identity_chains_scale_with_the_queried_term() {
 
 #[test]
 fn bit_preserving_64_bit_conversion_equalities_are_indexed_and_scale() {
-    let value = MachineTerm::Variable(Variable(99_001));
+    let value = OldMachineTerm::Variable(Variable(99_001));
     let mut baseline = None;
     for population in [8u64, 32, 128] {
         let mut facts = PureFactContext::new();
         for index in 0..population {
             facts = facts.assume_condition(
                 ConditionTerm::uint64_equal(
-                    MachineTerm::Variable(Variable(100_000 + index)),
-                    MachineTerm::uint64_constant(0),
+                    OldMachineTerm::Variable(Variable(100_000 + index)),
+                    OldMachineTerm::uint64_constant(0),
                 ),
                 true,
             );
         }
         let query = ConditionTerm::uint64_equal(
-            MachineTerm::legacy_cast(
+            OldMachineTerm::legacy_cast(
                 MachineCastSpelling::UInt64FromInt64,
                 Box::new(value.clone()),
             ),
@@ -323,7 +323,8 @@ fn bit_preserving_64_bit_conversion_equalities_are_indexed_and_scale() {
     for depth in [8usize, 32, 128, 512] {
         let mut term = value.clone();
         for _ in 0..depth {
-            term = MachineTerm::legacy_cast(MachineCastSpelling::UInt64FromInt64, Box::new(term));
+            term =
+                OldMachineTerm::legacy_cast(MachineCastSpelling::UInt64FromInt64, Box::new(term));
         }
         let query = ConditionTerm::uint64_equal(term, value.clone());
         let (answer, work) =
@@ -344,12 +345,12 @@ fn signed_wide_interval_queries_ignore_bound_bucket_size() {
     let mut baseline = None;
     for size in [4, 16, 64] {
         let _session = crate::kernel::VerificationSession::enter();
-        let x = MachineTerm::Variable(Variable(982002));
+        let x = OldMachineTerm::Variable(Variable(982002));
         let mut facts = PureFactContext::new();
         for offset in 0..size {
             facts = facts.assume_condition(
                 ConditionTerm::int64_signed_less_equal(
-                    MachineTerm::int64_constant(-1000 - offset),
+                    OldMachineTerm::int64_constant(-1000 - offset),
                     x.clone(),
                 ),
                 true,
@@ -357,7 +358,7 @@ fn signed_wide_interval_queries_ignore_bound_bucket_size() {
             facts = facts.assume_condition(
                 ConditionTerm::int64_signed_less_equal(
                     x.clone(),
-                    MachineTerm::int64_constant(1000 + offset),
+                    OldMachineTerm::int64_constant(1000 + offset),
                 ),
                 true,
             );
@@ -385,7 +386,7 @@ fn shared_masked_order_queries_do_not_export_growing_operands() {
         let mut root =
             KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(985302));
         let mask = KernelTermImport::default()
-            .machine_arithmetic(ty, &MachineTerm::constant(127))
+            .machine_arithmetic(ty, &OldMachineTerm::constant(127))
             .unwrap();
         let context = PureFactContext::new();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -510,7 +511,7 @@ fn widened_source_selection_is_bounded_in_related_bounds() {
     let mut samples = Vec::new();
     for size in [8, 32, 96] {
         let _session = crate::kernel::VerificationSession::enter();
-        let value = MachineTerm::Variable(Variable(986202));
+        let value = OldMachineTerm::Variable(Variable(986202));
         let mut context = PureFactContext::new();
         for index in 0..size {
             context = context.assume_condition(
@@ -518,11 +519,12 @@ fn widened_source_selection_is_bounded_in_related_bounds() {
                 true,
             );
         }
-        let sum = MachineTerm::int64_add(
-            MachineTerm::int64_from_uint32(value.clone()),
-            MachineTerm::int64_from_uint32(value),
+        let sum = OldMachineTerm::int64_add(
+            OldMachineTerm::int64_from_uint32(value.clone()),
+            OldMachineTerm::int64_from_uint32(value),
         );
-        let query = ConditionTerm::int64_signed_less_equal(sum, MachineTerm::int64_constant(200));
+        let query =
+            ConditionTerm::int64_signed_less_equal(sum, OldMachineTerm::int64_constant(200));
         let (sources, work) = crate::instrumentation::measure_deterministic_work(|| {
             context.widened_unsigned_sum_bound_premises(&query).unwrap()
         });
@@ -597,21 +599,21 @@ fn signed_ranges_keep_shared_prefixes_and_memoize_refusals() {
         for ambient in [1, 64] {
             let _session = crate::kernel::VerificationSession::enter();
             let ty = MachineIntegerType::Int32;
-            let x = MachineTerm::Variable(Variable(994601));
+            let x = OldMachineTerm::Variable(Variable(994601));
             let mut facts = PureFactContext::new()
                 .assume_condition(
-                    ConditionTerm::signed_less_equal(MachineTerm::constant(0), x.clone()),
+                    ConditionTerm::signed_less_equal(OldMachineTerm::constant(0), x.clone()),
                     true,
                 )
                 .assume_condition(
-                    ConditionTerm::signed_less_equal(x.clone(), MachineTerm::constant(1)),
+                    ConditionTerm::signed_less_equal(x.clone(), OldMachineTerm::constant(1)),
                     true,
                 );
             for i in 0..ambient {
                 facts = facts.assume_condition(
                     ConditionTerm::equal(
-                        MachineTerm::Variable(Variable(995600 + i)),
-                        MachineTerm::constant(3),
+                        OldMachineTerm::Variable(Variable(995600 + i)),
+                        OldMachineTerm::constant(3),
                     ),
                     true,
                 );
@@ -702,8 +704,8 @@ fn shared_overflow_queries_keep_prefixes_across_context_changes() {
                 );
                 context = context.clone().assume_condition(
                     ConditionTerm::equal(
-                        MachineTerm::Variable(Variable(996800 + index)),
-                        MachineTerm::constant(3),
+                        OldMachineTerm::Variable(Variable(996800 + index)),
+                        OldMachineTerm::constant(3),
                     ),
                     true,
                 );
@@ -729,7 +731,7 @@ fn retained_overflow_source_lookup_ignores_unrelated_guards() {
     for size in [8, 32, 96] {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::Int32;
-        let written = MachineTerm::Variable(Variable(997701));
+        let written = OldMachineTerm::Variable(Variable(997701));
         let operand = SharedMachineIntegerTerm::from_shared(
             format,
             KernelTermImport::default()
@@ -742,7 +744,7 @@ fn retained_overflow_source_lookup_ignores_unrelated_guards() {
                 format,
                 op: OverflowOperation::Multiply,
                 left: written.into(),
-                right: MachineTerm::constant(2).into(),
+                right: OldMachineTerm::constant(2).into(),
             },
             false,
         );
@@ -752,8 +754,8 @@ fn retained_overflow_source_lookup_ignores_unrelated_guards() {
                 ConditionTerm::Overflows {
                     format,
                     op: OverflowOperation::Multiply,
-                    left: MachineTerm::Variable(Variable(997800 + i)).into(),
-                    right: MachineTerm::constant(2).into(),
+                    left: OldMachineTerm::Variable(Variable(997800 + i)).into(),
+                    right: OldMachineTerm::constant(2).into(),
                 },
                 false,
             );

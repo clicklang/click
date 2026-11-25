@@ -11,7 +11,7 @@ fn common_fold_rewrite_scales_with_shared_children_without_machine_exports() {
             } else {
                 KernelTerm::retained_machine_operand(
                     format,
-                    MachineOperandView::Legacy(&MachineTerm::Variable(Variable(70))),
+                    MachineOperandView::Old(&OldMachineTerm::Variable(Variable(70))),
                 )
             };
             for _ in 0..size {
@@ -34,7 +34,7 @@ fn common_fold_rewrite_scales_with_shared_children_without_machine_exports() {
             } else {
                 KernelTerm::retained_machine_operand(
                     format,
-                    MachineOperandView::Legacy(&MachineTerm::constant(0)),
+                    MachineOperandView::Old(&OldMachineTerm::constant(0)),
                 )
             };
             let fold = KernelFold::new(
@@ -48,8 +48,8 @@ fn common_fold_rewrite_scales_with_shared_children_without_machine_exports() {
                 [zero.clone(), zero, body.clone(), body],
             )
             .unwrap();
-            let from = MachineTerm::Variable(Variable(90));
-            let to = MachineTerm::Variable(Variable(91));
+            let from = OldMachineTerm::Variable(Variable(90));
+            let to = OldMachineTerm::Variable(Variable(91));
             let mut rewrite = TermRewrite::for_bits(&from, &to);
             let exports = KernelTermExport::machine_export_count();
             let (result, work) =
@@ -328,7 +328,7 @@ fn boolean_variable_guards_in_integer_folds_select_retained_arms() {
         ] {
             let program = BTreeMap::from([(
                 variable,
-                TypedProgramValueReplacement::Bitvector(MachineTerm::bool_cast(
+                TypedProgramValueReplacement::Bitvector(OldMachineTerm::bool_cast(
                     MachineIntegerType::UInt8,
                     ConditionTerm::Constant(truth),
                 )),
@@ -377,14 +377,14 @@ fn literal_machine_guards_in_integer_folds_keep_retained_arms() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
-            left: Box::new(MachineTerm::constant(u32::MAX)),
-            right: Box::new(MachineTerm::constant(0)),
+            left: Box::new(OldMachineTerm::constant(u32::MAX)),
+            right: Box::new(OldMachineTerm::constant(0)),
         },
         ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Add,
-            left: Box::new(MachineTerm::constant(i32::MAX as u32)),
-            right: Box::new(MachineTerm::constant(1)),
+            left: Box::new(OldMachineTerm::constant(i32::MAX as u32)),
+            right: Box::new(OldMachineTerm::constant(1)),
         },
     ];
     for depth in [16, 64, 256] {

@@ -7,7 +7,7 @@ fn signedness_casts_retain_growing_prefixes_without_exports() {
         for size in [16, 64, 256] {
             let _session = VerificationSession::enter();
             let mut root = KernelTermImport::default()
-                .machine(signed, &MachineTerm::Variable(Variable(995425)));
+                .machine(signed, &OldMachineTerm::Variable(Variable(995425)));
             let exports = KernelTermExport::machine_export_count();
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 for _ in 0..size {
@@ -52,9 +52,9 @@ fn opaque_signedness_cast_chains_keep_shared_parents() {
         let mut previous = None;
         for size in [16, 64, 256] {
             let _session = VerificationSession::enter();
-            let leaf = MachineTerm::opaque_conversion(
+            let leaf = OldMachineTerm::opaque_conversion(
                 "opaque_cast_scaling",
-                MachineTerm::Variable(Variable(995426)),
+                OldMachineTerm::Variable(Variable(995426)),
             );
             let mut root = KernelTerm::retained_native_machine_operand(signed, &leaf);
             let exports = KernelTermExport::machine_export_count();

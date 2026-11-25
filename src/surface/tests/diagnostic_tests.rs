@@ -747,12 +747,12 @@ fn concise_reason_keeps_list_entries_and_definitions_whole() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_05")]
 fn click_addition_cancels_a_negated_pointer_base() {
-    let base = MachineTerm::Variable(Variable(90));
-    let index = MachineTerm::Variable(Variable(91));
+    let base = OldMachineTerm::Variable(Variable(90));
+    let index = OldMachineTerm::Variable(Variable(91));
     let negative_base = binary_node!(
         Int32,
         Subtract,
-        Box::new(MachineTerm::constant(0)),
+        Box::new(OldMachineTerm::constant(0)),
         Box::new(base.clone()),
     );
 
@@ -777,7 +777,7 @@ fn click_addition_cancels_a_negated_pointer_base() {
 fn an_unnamed_store_index_is_spelled_through_its_own_base() {
     let base = |variable: u64| Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(variable)), 4),
+        offset: AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(variable)), 4),
     };
     let parameters = vec![
         crate::languages::interface::ImportedParameter::new(
@@ -807,7 +807,7 @@ fn an_unnamed_store_index_is_spelled_through_its_own_base() {
         offset: AddressOffset::Add(
             Box::new(base(100_001).offset),
             Box::new(AddressOffset::scaled_int32_node(
-                MachineTerm::Variable(Variable(1_000_000)),
+                OldMachineTerm::Variable(Variable(1_000_000)),
                 4,
             )),
         ),
@@ -827,7 +827,7 @@ fn an_unnamed_store_index_is_spelled_through_its_own_base() {
 fn exact_struct_field_offsets_remain_resolvable_after_deadline() {
     let base = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(100000)), 4),
+        offset: AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(100000)), 4),
     };
     let field = base.offset_by_bytes(4);
 
@@ -835,7 +835,7 @@ fn exact_struct_field_offsets_remain_resolvable_after_deadline() {
         super::checking::pointer_element_index_from_base(&field, &base, &PureFactContext::new())
     });
 
-    assert_eq!(index, Some(MachineTerm::constant(1)));
+    assert_eq!(index, Some(OldMachineTerm::constant(1)));
 }
 
 #[test]
@@ -879,15 +879,15 @@ fn execution_effect_diagnostics_omit_raw_memory_states() {
             after: after.clone(),
             mutable_ranges: vec![MemoryRange::new(
                 pointer.clone(),
-                MachineTerm::constant(0),
-                MachineTerm::constant(1),
+                OldMachineTerm::constant(0),
+                OldMachineTerm::constant(1),
             )],
         }),
         ExecutionPureFact::new(Proposition::HeapAllocationFreed {
             before,
             after,
             allocation_base: pointer,
-            bytes: crate::kernel::AllocationSize::int32(MachineTerm::constant(4)),
+            bytes: crate::kernel::AllocationSize::int32(OldMachineTerm::constant(4)),
         }),
     ];
 
@@ -914,15 +914,15 @@ fn execution_effect_diagnostics_omit_raw_memory_states() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_06")]
 fn a_condition_search_miss_spells_its_goal_and_premises() {
-    let x = MachineTerm::Variable(Variable(1));
-    let y = MachineTerm::Variable(Variable(2));
-    let at_most = |term: &MachineTerm, bound: u32| {
+    let x = OldMachineTerm::Variable(Variable(1));
+    let y = OldMachineTerm::Variable(Variable(2));
+    let at_most = |term: &OldMachineTerm, bound: u32| {
         Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
                 left: Box::new(term.clone()),
-                right: Box::new(MachineTerm::constant(bound)),
+                right: Box::new(OldMachineTerm::constant(bound)),
             },
             true,
         )
@@ -973,8 +973,8 @@ fn verifier_diagnostics_bound_fact_items() {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left: Box::new(MachineTerm::constant(index)),
-                    right: Box::new(MachineTerm::constant(index)),
+                    left: Box::new(OldMachineTerm::constant(index)),
+                    right: Box::new(OldMachineTerm::constant(index)),
                 },
                 true,
             )
@@ -1323,7 +1323,7 @@ fn statement_head_names_the_guard_without_the_loop_node() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_09")]
 fn borrow_refusal_diagnostic_renders_only_its_selected_subject() {
-    use crate::kernel::{Address, AddressBase, AddressOffset, MachineTerm, MemoryRange};
+    use crate::kernel::{Address, AddressBase, AddressOffset, MemoryRange, OldMachineTerm};
     use crate::kernel::{BorrowRefusal, BorrowRefusalOperation, BorrowRefusalSubject};
 
     let pointer = Address {
@@ -1332,8 +1332,8 @@ fn borrow_refusal_diagnostic_renders_only_its_selected_subject() {
     };
     let selected = ResourceFact::own_memory(MemoryRange::new(
         pointer,
-        MachineTerm::constant(0),
-        MachineTerm::constant(4),
+        OldMachineTerm::constant(0),
+        OldMachineTerm::constant(4),
     ));
     let diagnostic = BorrowRefusal::ActiveDependency.diagnostic_with_subject(
         BorrowRefusalOperation::MemoryAccess,
@@ -1359,7 +1359,7 @@ fn borrow_refusal_diagnostic_renders_only_its_selected_subject() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_09")]
 fn borrow_refusal_diagnostic_renders_a_range_subject_without_ledger_state() {
-    use crate::kernel::{Address, AddressBase, AddressOffset, MachineTerm, MemoryRange};
+    use crate::kernel::{Address, AddressBase, AddressOffset, MemoryRange, OldMachineTerm};
     use crate::kernel::{BorrowRefusal, BorrowRefusalOperation, BorrowRefusalSubject};
 
     let range = MemoryRange::new(
@@ -1367,8 +1367,8 @@ fn borrow_refusal_diagnostic_renders_a_range_subject_without_ledger_state() {
             base: AddressBase::Concrete("selected_range".to_string()),
             offset: AddressOffset::Constant(0),
         },
-        MachineTerm::constant(1),
-        MachineTerm::constant(3),
+        OldMachineTerm::constant(1),
+        OldMachineTerm::constant(3),
     );
     let diagnostic = BorrowRefusal::UnsupportedPartition.diagnostic_with_subject(
         BorrowRefusalOperation::Plan,
@@ -1516,9 +1516,9 @@ fn a_store_wider_than_an_element_is_refused_by_bytes_not_by_index() {
 
     // An inequality the facts already state is not offered again: stating it
     // a second time cannot change what this check concludes.
-    use crate::kernel::{ConditionTerm, MachineTerm, Proposition, Variable};
-    let i = MachineTerm::Variable(Variable(1));
-    let j = MachineTerm::Variable(Variable(2));
+    use crate::kernel::{ConditionTerm, OldMachineTerm, Proposition, Variable};
+    let i = OldMachineTerm::Variable(Variable(1));
+    let j = OldMachineTerm::Variable(Variable(2));
     let differ = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
@@ -1546,7 +1546,7 @@ fn a_store_wider_than_an_element_is_refused_by_bytes_not_by_index() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(i.clone()),
-            right: Box::new(MachineTerm::constant(0)),
+            right: Box::new(OldMachineTerm::constant(0)),
         },
         false,
     );
@@ -1591,8 +1591,8 @@ fn empty_footprint_rejects_a_fact_aliased_write_and_effect_range() {
             after,
             mutable_ranges: vec![MemoryRange::new(
                 alias,
-                MachineTerm::constant(0),
-                MachineTerm::constant(1),
+                OldMachineTerm::constant(0),
+                OldMachineTerm::constant(1),
             )],
         }),
     ];
@@ -1623,14 +1623,14 @@ fn empty_footprint_rejects_a_fact_aliased_write_and_effect_range() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_10")]
 fn a_conditional_term_spells_its_unsigned_guard() {
-    let x = MachineTerm::Variable(crate::kernel::Variable(7));
-    let term = MachineTerm::If {
+    let x = OldMachineTerm::Variable(crate::kernel::Variable(7));
+    let term = OldMachineTerm::If {
         condition: Box::new(ConditionTerm::unsigned_less_than(
             x.clone(),
-            MachineTerm::constant(4),
+            OldMachineTerm::constant(4),
         )),
         then_term: Box::new(x),
-        else_term: Box::new(MachineTerm::constant(5)),
+        else_term: Box::new(OldMachineTerm::constant(5)),
     };
     let rendered = super::diagnostics::describe_bitvector(&term);
     assert!(rendered.contains(" < 4 (unsigned)"), "{rendered}");
@@ -1643,8 +1643,8 @@ fn a_conditional_term_spells_its_unsigned_guard() {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_10")]
 fn a_uint32_order_is_named_as_unsigned() {
     let (x, y) = (
-        MachineTerm::Variable(crate::kernel::Variable(8)),
-        MachineTerm::Variable(crate::kernel::Variable(9)),
+        OldMachineTerm::Variable(crate::kernel::Variable(8)),
+        OldMachineTerm::Variable(crate::kernel::Variable(9)),
     );
     for (condition, kind) in [
         (
@@ -2078,7 +2078,7 @@ fn unheld_field_without_a_checked_consumption_does_not_invent_one() {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_12")]
 fn source_unknown_local_pointer_diagnostics_identify_byte_units() {
     use crate::kernel::{
-        Address, AddressBase, AddressOffset, MachineTerm, MemoryRange, OldPointer, ProgramType,
+        Address, AddressBase, AddressOffset, MemoryRange, OldMachineTerm, OldPointer, ProgramType,
     };
     let base = Address {
         base: AddressBase::Concrete("unknown".into()),
@@ -2089,7 +2089,11 @@ fn source_unknown_local_pointer_diagnostics_identify_byte_units() {
         ProgramValue::Pointer(OldPointer::new(base.clone(), ProgramType::Int32Pointer)),
     );
     let (parameters, arguments) = super::diagnostics::local_naming_tables_with_source(&state, None);
-    let range = MemoryRange::new(base, MachineTerm::constant(1), MachineTerm::constant(2));
+    let range = MemoryRange::new(
+        base,
+        OldMachineTerm::constant(1),
+        OldMachineTerm::constant(2),
+    );
     assert_eq!(
         super::diagnostics::describe_memory_range(
             &range,
@@ -2119,8 +2123,8 @@ fn address_mismatch_diagnostic_compares_selected_read_points() {
         .with_resource_context(ResourceContext::new().unchecked_with_fact(
             ResourceFact::view_memory(MemoryRange::new(
                 address.clone(),
-                MachineTerm::constant(0),
-                MachineTerm::constant(2),
+                OldMachineTerm::constant(0),
+                OldMachineTerm::constant(2),
             )),
         ));
     let second = first.clone().begin_function_entry_memory();
@@ -2920,7 +2924,7 @@ fn memory_history_diagnostic_names_the_store_and_limits_its_claim() {
     let before = SymbolicMemory::new();
     let blocked = before.clone().store(
         written.clone(),
-        ProgramValue::UInt64(MachineTerm::uint64_constant(42)),
+        ProgramValue::UInt64(OldMachineTerm::uint64_constant(42)),
     );
     let after = blocked.clone().store(
         Address {
@@ -2930,7 +2934,7 @@ fn memory_history_diagnostic_names_the_store_and_limits_its_claim() {
         int32(1),
     );
     let load = |memory: &SymbolicMemory| {
-        MachineTerm::read_named(
+        OldMachineTerm::read_named(
             crate::kernel::ProgramPoint::at(&(intern_memory(memory.clone()))),
             Box::new(read.clone()),
             LoadKind::Bits64,
@@ -3119,15 +3123,15 @@ void call(int32* p, int32* q, int32* anchor) {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_16")]
 fn call_resource_diagnostic_read_shows_state_and_access() {
-    use crate::kernel::{Address, AddressBase, AddressOffset, MachineTerm, MemoryRange};
+    use crate::kernel::{Address, AddressBase, AddressOffset, MemoryRange, OldMachineTerm};
     let address = Address {
         base: AddressBase::Concrete("selected_child_cell".into()),
         offset: AddressOffset::Constant(0),
     };
     let required = ResourceFact::View(crate::kernel::Resource::Memory(MemoryRange::new(
         address,
-        MachineTerm::constant(0),
-        MachineTerm::constant(1),
+        OldMachineTerm::constant(0),
+        OldMachineTerm::constant(1),
     )));
     let error = crate::kernel::RuntimeError::ContractResourceDiagnostic {
         reason: "resource `child` argument 1 could not be evaluated: required access authority is unavailable".into(),
@@ -3558,7 +3562,7 @@ fn native_view_solve_distinguishes_a_rejected_kernel_query() {
 fn pending_call_obligations_use_shared_goal_printer_and_state_legend() {
     let _typed = crate::surface::proof_diagnostics::render::TypedNotationScope::enter();
     use crate::kernel::{
-        Address, AddressOffset, ConditionTerm, MachineTerm, ProofObligation, Proposition,
+        Address, AddressOffset, ConditionTerm, OldMachineTerm, ProofObligation, Proposition,
         RuntimeError, SymbolicMemory,
     };
     use crate::surface::proof_diagnostics::render::{
@@ -3573,12 +3577,12 @@ fn pending_call_obligations_use_shared_goal_printer_and_state_legend() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::read_named(
+            left: Box::new(OldMachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                 Box::new(pointer),
                 crate::kernel::LoadKind::Int32,
             )),
-            right: Box::new(MachineTerm::constant(7)),
+            right: Box::new(OldMachineTerm::constant(7)),
         },
         true,
     );
@@ -3730,12 +3734,12 @@ fn call_resource_diagnostic_distinguishes_exact_pointer_arguments_and_states() {
                     binary_node!(
                         Int32,
                         Subtract,
-                        Box::new(MachineTerm::read_named(
+                        Box::new(OldMachineTerm::read_named(
                             crate::kernel::ProgramPoint::at(&(intern_memory(memory))),
                             Box::new(read.clone()),
                             LoadKind::Int32,
                         )),
-                        Box::new(MachineTerm::Variable(Variable(993451))),
+                        Box::new(OldMachineTerm::Variable(Variable(993451))),
                     ),
                     4,
                 ),
@@ -4312,8 +4316,8 @@ fn struct_pointer_pointer_ranges_print_pointer_units() {
     for (start, end) in [(0, 4), (1, 3)] {
         let range = MemoryRange::from_pointer_value(
             &pointer,
-            MachineTerm::constant(start),
-            MachineTerm::constant(end),
+            OldMachineTerm::constant(start),
+            OldMachineTerm::constant(end),
             8,
         );
         assert_eq!(

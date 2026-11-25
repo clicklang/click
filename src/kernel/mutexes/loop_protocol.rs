@@ -82,10 +82,11 @@ impl MutexContext {
         else {
             return Ok(None);
         };
-        let held = crate::kernel::loops::condition_is_decided(assumptions, held.native_compat())
-            .ok_or(MutexTransitionError::Refusal(
+        let held = crate::kernel::loops::condition_is_decided(assumptions, held.old_form()).ok_or(
+            MutexTransitionError::Refusal(
                 "Requires the loop resource to determine whether the mutex is held",
-            ))?;
+            ),
+        )?;
         let entry = if held {
             MutexEntry::Locked {
                 initialization: *initialization,
@@ -150,7 +151,7 @@ impl MutexLedger {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::{AddressOffset, MachineTerm, Variable};
+    use crate::kernel::{AddressOffset, OldMachineTerm, Variable};
 
     fn mutex(index: usize) -> Address {
         Address {
@@ -225,7 +226,7 @@ mod tests {
         let address = mutex(0);
         let concrete = initialized(&address);
         let condition =
-            ConditionTerm::signed_less_than(MachineTerm::Variable(Variable(999)), 0u32.into());
+            ConditionTerm::signed_less_than(OldMachineTerm::Variable(Variable(999)), 0u32.into());
         let head =
             MutexContext::new(abstract_loop_mutex(concrete.state(), &address, condition).unwrap());
         let assumptions = PureFactContext::new();

@@ -42,7 +42,7 @@ fn visit_machine_operand_carrier_leaves_selected(
         if !include_variables {
             return;
         }
-        visit(MachineOperandView::Legacy(&MachineTerm::Variable(
+        visit(MachineOperandView::Old(&OldMachineTerm::Variable(
             *variable,
         )));
         return;
@@ -62,7 +62,7 @@ fn visit_machine_operand_carrier_leaves_selected(
         return;
     }
     if let Some(leaf) = root.machine_conversion_leaf() {
-        visit(MachineOperandView::Legacy(leaf));
+        visit(MachineOperandView::Old(leaf));
         return;
     }
     if let Some(leaves) =
@@ -80,7 +80,7 @@ fn visit_machine_operand_carrier_leaves_selected(
             ) {
                 visit(MachineOperandView::Shared(leaf));
             } else {
-                visit(MachineOperandView::Legacy(
+                visit(MachineOperandView::Old(
                     leaf.machine_conversion_leaf().expect("conversion leaf"),
                 ));
             }
@@ -104,7 +104,7 @@ fn visit_machine_operand_carrier_leaves_selected(
             if let Some(variable) =
                 written.get_less_than(&Variable(ExecutionBudget::KERNEL_VARIABLE_CEILING))
             {
-                visit(MachineOperandView::Legacy(&MachineTerm::Variable(
+                visit(MachineOperandView::Old(&OldMachineTerm::Variable(
                     *variable,
                 )));
             }
@@ -116,7 +116,7 @@ fn visit_machine_operand_carrier_leaves_selected(
                 {
                     break;
                 }
-                visit(MachineOperandView::Legacy(&MachineTerm::Variable(
+                visit(MachineOperandView::Old(&OldMachineTerm::Variable(
                     *variable,
                 )));
                 previous = *variable;
@@ -127,7 +127,7 @@ fn visit_machine_operand_carrier_leaves_selected(
             if checked_collection_checkpoint() {
                 return;
             }
-            visit(MachineOperandView::Legacy(&MachineTerm::Variable(
+            visit(MachineOperandView::Old(&OldMachineTerm::Variable(
                 *variable,
             )));
         }
@@ -210,7 +210,7 @@ fn collect_operand_bitvector_variables(
         collect_shared_memory_bitvector_variables(memory, variables);
         collect_pointer_bitvector_variables(pointer, variables);
         collect_stored_load_connection_variables(memory, pointer, variables);
-    } else if let MachineOperandView::Legacy(term) = operand {
+    } else if let MachineOperandView::Old(term) = operand {
         collect_bitvector_variables(term, variables);
     } else {
         unreachable!("carrier leaf");
@@ -258,7 +258,7 @@ fn collect_operand_integer_variables_seen(
     }
     if let Some((_, pointer, _)) = operand.read() {
         collect_pointer_integer_variables(pointer, variables, seen);
-    } else if let MachineOperandView::Legacy(term) = operand {
+    } else if let MachineOperandView::Old(term) = operand {
         collect_bitvector_integer_variables_seen(term, variables, seen);
     } else {
         unreachable!("carrier leaf");
@@ -328,7 +328,7 @@ fn collect_operand_binder_variables_seen(
     if operand.read().is_some() {
         return;
     }
-    if let MachineOperandView::Legacy(term) = operand {
+    if let MachineOperandView::Old(term) = operand {
         collect_bitvector_binder_variables_seen(term, integer_variables, bitvector_variables, seen);
     } else {
         unreachable!("carrier leaf");
@@ -665,8 +665,8 @@ pub(crate) fn collect_proposition_connection_variables(
 }
 
 pub(in crate::kernel) fn bitvector_same_base_nonzero_const_offset(
-    left: &MachineTerm,
-    right: &MachineTerm,
+    left: &OldMachineTerm,
+    right: &OldMachineTerm,
 ) -> bool {
     if let Some((left_base, left_addend)) = left.add_const_parts() {
         if &left_base == right {
@@ -884,9 +884,9 @@ pub(in crate::kernel) fn collect_term_bitvector_variables(
 ) {
     match term {
         Term::Condition(condition) => {
-            collect_condition_bitvector_variables(condition.native_compat(), variables)
+            collect_condition_bitvector_variables(condition.old_form(), variables)
         }
-        Term::Bitvector32(bits) => collect_bitvector_variables(bits.native_compat(), variables),
+        Term::Bitvector32(bits) => collect_bitvector_variables(bits.old_form(), variables),
         Term::Integer(integer) => {
             if !integer.root().is_some_and(|root| {
                 retained_folds::collect_integer_scope_variables(
@@ -895,7 +895,7 @@ pub(in crate::kernel) fn collect_term_bitvector_variables(
                     variables,
                 )
             }) {
-                collect_integer_variables(integer.native_compat(), variables);
+                collect_integer_variables(integer.old_form(), variables);
             }
         }
         Term::PointerOffset(offset) => {
@@ -919,15 +919,15 @@ pub(in crate::kernel) fn collect_term_bitvector_variables(
                     }
                 });
             } else {
-                collect_pointer_offset_bitvector_variables(offset.native_compat(), variables);
+                collect_pointer_offset_bitvector_variables(offset.old_form(), variables);
             }
         }
         Term::ProgramValue(value) => {
-            collect_program_value_bitvector_variables(value.native_compat(), variables);
+            collect_program_value_bitvector_variables(value.old_form(), variables);
         }
         Term::Sequence(sequence) => collect_sequence_bitvector_variables(sequence, variables),
         Term::Algebraic(term) => {
-            collect_algebraic_term_bitvector_variables(term.native_compat(), variables)
+            collect_algebraic_term_bitvector_variables(term.old_form(), variables)
         }
         Term::ArrayReadPoint(point) => {
             collect_memory_bitvector_variables(point.memory(), variables)
@@ -942,10 +942,10 @@ pub(in crate::kernel) fn collect_term_bitvector_variables(
 /// conditional `if condition { 1 } else { 0 }`: a walker reaches its terms as
 /// it reaches any scalar conditional's.
 fn condition_carrier(condition: &ConditionTerm) -> AlgebraicValue {
-    AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::If {
+    AlgebraicValue::Program(ProgramValue::Int32(OldMachineTerm::If {
         condition: Box::new(condition.clone()),
-        then_term: Box::new(MachineTerm::constant(1)),
-        else_term: Box::new(MachineTerm::constant(0)),
+        then_term: Box::new(OldMachineTerm::constant(1)),
+        else_term: Box::new(OldMachineTerm::constant(0)),
     }))
 }
 
@@ -2604,7 +2604,7 @@ fn collect_shared_integer_carrier_variables_seen(
 /// load can carry a variable relevant to a lexical substitution, and that
 /// payload is a machine term with no Integer carrier.
 pub(crate) fn collect_bitvector_integer_variables(
-    term: &MachineTerm,
+    term: &OldMachineTerm,
     variables: &mut BTreeSet<Variable>,
 ) {
     let mut seen = SeenTerms::default();
@@ -2612,7 +2612,7 @@ pub(crate) fn collect_bitvector_integer_variables(
 }
 
 fn collect_bitvector_integer_variables_seen(
-    term: &MachineTerm,
+    term: &OldMachineTerm,
     variables: &mut BTreeSet<Variable>,
     seen: &mut SeenTerms,
 ) {
@@ -2620,15 +2620,15 @@ fn collect_bitvector_integer_variables_seen(
         return;
     }
     match term {
-        MachineTerm::ThreadHandle(_) => {}
-        MachineTerm::Constant { .. } | MachineTerm::Variable(_) => {}
-        MachineTerm::MemoryLoad(_, pointer, _) => {
+        OldMachineTerm::ThreadHandle(_) => {}
+        OldMachineTerm::Constant { .. } | OldMachineTerm::Variable(_) => {}
+        OldMachineTerm::MemoryLoad(_, pointer, _) => {
             collect_pointer_integer_variables(pointer.address(), variables, seen)
         }
-        MachineTerm::IntegerAddress(pointer, _) => {
+        OldMachineTerm::IntegerAddress(pointer, _) => {
             collect_pointer_integer_variables(pointer, variables, seen)
         }
-        MachineTerm::IntegerToMachine { value, .. } => {
+        OldMachineTerm::IntegerToMachine { value, .. } => {
             collect_shared_integer_variables_seen(value, variables, seen);
         }
         crate::kernel::binary_machine_term!(left, right) => {
@@ -2641,18 +2641,18 @@ fn collect_bitvector_integer_variables_seen(
         crate::kernel::unary_machine_term!(value) => {
             collect_bitvector_integer_variables_seen(value, variables, seen)
         }
-        MachineTerm::Float32Binary { left, right, .. }
-        | MachineTerm::Float64Binary { left, right, .. } => {
+        OldMachineTerm::Float32Binary { left, right, .. }
+        | OldMachineTerm::Float64Binary { left, right, .. } => {
             collect_bitvector_integer_variables_seen(left, variables, seen);
             if crate::instrumentation::checked_collection_exhausted() {
                 return;
             }
             collect_bitvector_integer_variables_seen(right, variables, seen);
         }
-        MachineTerm::BoolCast { value, .. } => {
+        OldMachineTerm::BoolCast { value, .. } => {
             collect_condition_integer_variables(value, variables, seen)
         }
-        MachineTerm::If {
+        OldMachineTerm::If {
             condition,
             then_term,
             else_term,
@@ -2667,7 +2667,7 @@ fn collect_bitvector_integer_variables_seen(
             }
             collect_bitvector_integer_variables_seen(else_term, variables, seen);
         }
-        MachineTerm::RangeFold {
+        OldMachineTerm::RangeFold {
             start,
             end,
             initial,
@@ -2688,7 +2688,7 @@ fn collect_bitvector_integer_variables_seen(
             }
             collect_bitvector_integer_variables_seen(body, variables, seen);
         }
-        MachineTerm::PureFunctionApplication { arguments, .. } => {
+        OldMachineTerm::PureFunctionApplication { arguments, .. } => {
             for argument in arguments {
                 if crate::instrumentation::checked_collection_exhausted() {
                     return;
@@ -2696,7 +2696,7 @@ fn collect_bitvector_integer_variables_seen(
                 collect_bitvector_integer_variables_seen(argument, variables, seen);
             }
         }
-        MachineTerm::ClickFunctionApplication { arguments, .. } => {
+        OldMachineTerm::ClickFunctionApplication { arguments, .. } => {
             for argument in arguments {
                 if crate::instrumentation::checked_collection_exhausted() {
                     return;
@@ -2704,7 +2704,7 @@ fn collect_bitvector_integer_variables_seen(
                 collect_pure_argument_integer_variables(argument, variables, seen);
             }
         }
-        MachineTerm::AlgebraicMatch { scrutinee, arms } => {
+        OldMachineTerm::AlgebraicMatch { scrutinee, arms } => {
             collect_algebraic_integer_variables(scrutinee, variables, seen);
             if crate::instrumentation::checked_collection_exhausted() {
                 return;
@@ -3283,7 +3283,7 @@ fn collect_integer_variables_seen(
             }
         }
         IntegerTerm::Machine(value) => match value.operand_view() {
-            MachineOperandView::Legacy(value) => collect_bitvector_variables(value, variables),
+            MachineOperandView::Old(value) => collect_bitvector_variables(value, variables),
             MachineOperandView::Shared(root) => {
                 if let Some(leaves) =
                     shared_machine_conversion_leaves(root, || !checked_collection_checkpoint())
@@ -3355,7 +3355,7 @@ fn collect_integer_variables_seen(
                                 break;
                             }
                             collect_bitvector_variables(
-                                &MachineTerm::Variable(*variable),
+                                &OldMachineTerm::Variable(*variable),
                                 variables,
                             );
                             previous = *variable;
@@ -3368,7 +3368,10 @@ fn collect_integer_variables_seen(
                         }
                         // Preserve state deferral, connection and frame modes
                         // by using the ordinary variable-leaf collector.
-                        collect_bitvector_variables(&MachineTerm::Variable(*variable), variables);
+                        collect_bitvector_variables(
+                            &OldMachineTerm::Variable(*variable),
+                            variables,
+                        );
                     }
                 }
             }
@@ -3489,11 +3492,14 @@ fn collect_machine_read_variables(
     }
 }
 
-pub(crate) fn collect_bitvector_variables(term: &MachineTerm, variables: &mut BTreeSet<Variable>) {
+pub(crate) fn collect_bitvector_variables(
+    term: &OldMachineTerm,
+    variables: &mut BTreeSet<Variable>,
+) {
     match term {
-        MachineTerm::ThreadHandle(_) => {}
-        MachineTerm::Constant { .. } => {}
-        MachineTerm::Variable(variable) => {
+        OldMachineTerm::ThreadHandle(_) => {}
+        OldMachineTerm::Constant { .. } => {}
+        OldMachineTerm::Variable(variable) => {
             let newly_seen = variables.insert(*variable);
             if collecting_connection_variables() && !newly_seen {
                 return;
@@ -3520,18 +3526,18 @@ pub(crate) fn collect_bitvector_variables(term: &MachineTerm, variables: &mut BT
             }
         }
         crate::kernel::binary_machine_term!(left, right)
-        | MachineTerm::Float32Binary { left, right, .. }
-        | MachineTerm::Float64Binary { left, right, .. } => {
+        | OldMachineTerm::Float32Binary { left, right, .. }
+        | OldMachineTerm::Float64Binary { left, right, .. } => {
             collect_bitvector_variables(left, variables);
             collect_bitvector_variables(right, variables);
         }
         crate::kernel::unary_machine_term!(value) => {
             collect_bitvector_variables(value, variables);
         }
-        MachineTerm::BoolCast { value, .. } => {
+        OldMachineTerm::BoolCast { value, .. } => {
             collect_condition_bitvector_variables(value, variables)
         }
-        MachineTerm::If {
+        OldMachineTerm::If {
             condition,
             then_term,
             else_term,
@@ -3540,7 +3546,7 @@ pub(crate) fn collect_bitvector_variables(term: &MachineTerm, variables: &mut BT
             collect_bitvector_variables(then_term, variables);
             collect_bitvector_variables(else_term, variables);
         }
-        MachineTerm::RangeFold {
+        OldMachineTerm::RangeFold {
             start,
             end,
             initial,
@@ -3557,15 +3563,15 @@ pub(crate) fn collect_bitvector_variables(term: &MachineTerm, variables: &mut BT
             body_variables.remove(item);
             variables.extend(body_variables);
         }
-        MachineTerm::PureFunctionApplication { arguments, .. } => {
+        OldMachineTerm::PureFunctionApplication { arguments, .. } => {
             for argument in arguments {
                 collect_bitvector_variables(argument, variables);
             }
         }
-        MachineTerm::ClickFunctionApplication { arguments, .. } => {
+        OldMachineTerm::ClickFunctionApplication { arguments, .. } => {
             collect_application_connection_variables(arguments, variables);
         }
-        MachineTerm::AlgebraicMatch {
+        OldMachineTerm::AlgebraicMatch {
             scrutinee, arms, ..
         } => {
             if collecting_connection_variables() {
@@ -3575,13 +3581,13 @@ pub(crate) fn collect_bitvector_variables(term: &MachineTerm, variables: &mut BT
                 collect_bitvector_variables(&arm.body, variables);
             }
         }
-        MachineTerm::MemoryLoad(memory, pointer, kind) => {
+        OldMachineTerm::MemoryLoad(memory, pointer, kind) => {
             collect_machine_read_variables(memory, pointer, *kind, variables);
         }
-        MachineTerm::IntegerAddress(pointer, _) => {
+        OldMachineTerm::IntegerAddress(pointer, _) => {
             collect_pointer_bitvector_variables(pointer, variables);
         }
-        MachineTerm::IntegerToMachine { value, .. } => {
+        OldMachineTerm::IntegerToMachine { value, .. } => {
             let mut seen = SeenTerms::default();
             collect_shared_integer_variables(value, variables, &mut seen);
         }
@@ -3589,7 +3595,7 @@ pub(crate) fn collect_bitvector_variables(term: &MachineTerm, variables: &mut BT
 }
 
 fn collect_bitvector_capture_variables_seen(
-    term: &MachineTerm,
+    term: &OldMachineTerm,
     variables: &mut BTreeSet<Variable>,
     integer_seen: &mut SeenTerms,
 ) {
@@ -3597,9 +3603,9 @@ fn collect_bitvector_capture_variables_seen(
         return;
     }
     match term {
-        MachineTerm::ThreadHandle(_) => {}
-        MachineTerm::Constant { .. } => {}
-        MachineTerm::Variable(variable) => {
+        OldMachineTerm::ThreadHandle(_) => {}
+        OldMachineTerm::Constant { .. } => {}
+        OldMachineTerm::Variable(variable) => {
             variables.insert(*variable);
             if crate::kernel::is_load_variable(variable)
                 && let Some((_, pointer)) =
@@ -3609,8 +3615,8 @@ fn collect_bitvector_capture_variables_seen(
             }
         }
         crate::kernel::binary_machine_term!(left, right)
-        | MachineTerm::Float32Binary { left, right, .. }
-        | MachineTerm::Float64Binary { left, right, .. } => {
+        | OldMachineTerm::Float32Binary { left, right, .. }
+        | OldMachineTerm::Float64Binary { left, right, .. } => {
             collect_bitvector_capture_variables_seen(left, variables, integer_seen);
             if crate::instrumentation::checked_collection_exhausted() {
                 return;
@@ -3620,10 +3626,10 @@ fn collect_bitvector_capture_variables_seen(
         crate::kernel::unary_machine_term!(value) => {
             collect_bitvector_capture_variables_seen(value, variables, integer_seen)
         }
-        MachineTerm::BoolCast { value, .. } => {
+        OldMachineTerm::BoolCast { value, .. } => {
             collect_condition_capture_variables(value, variables, integer_seen)
         }
-        MachineTerm::If {
+        OldMachineTerm::If {
             condition,
             then_term,
             else_term,
@@ -3638,7 +3644,7 @@ fn collect_bitvector_capture_variables_seen(
             }
             collect_bitvector_capture_variables_seen(else_term, variables, integer_seen);
         }
-        MachineTerm::RangeFold {
+        OldMachineTerm::RangeFold {
             start,
             end,
             initial,
@@ -3671,7 +3677,7 @@ fn collect_bitvector_capture_variables_seen(
             body_variables.remove(item);
             variables.extend(body_variables);
         }
-        MachineTerm::PureFunctionApplication { arguments, .. } => {
+        OldMachineTerm::PureFunctionApplication { arguments, .. } => {
             for argument in arguments {
                 if crate::instrumentation::checked_collection_exhausted() {
                     return;
@@ -3679,7 +3685,7 @@ fn collect_bitvector_capture_variables_seen(
                 collect_bitvector_capture_variables_seen(argument, variables, integer_seen);
             }
         }
-        MachineTerm::ClickFunctionApplication { arguments, .. } => {
+        OldMachineTerm::ClickFunctionApplication { arguments, .. } => {
             for argument in arguments {
                 if crate::instrumentation::checked_collection_exhausted() {
                     return;
@@ -3687,7 +3693,7 @@ fn collect_bitvector_capture_variables_seen(
                 collect_capture_variables_in_pure_argument(argument, variables, integer_seen);
             }
         }
-        MachineTerm::AlgebraicMatch { scrutinee, arms } => {
+        OldMachineTerm::AlgebraicMatch { scrutinee, arms } => {
             collect_capture_variables_in_algebraic_term(scrutinee, variables, integer_seen);
             if crate::instrumentation::checked_collection_exhausted() {
                 return;
@@ -3708,13 +3714,13 @@ fn collect_bitvector_capture_variables_seen(
                 }
             }
         }
-        MachineTerm::MemoryLoad(_, pointer, _) => {
+        OldMachineTerm::MemoryLoad(_, pointer, _) => {
             collect_pointer_capture_variables(pointer.address(), variables, integer_seen)
         }
-        MachineTerm::IntegerAddress(pointer, _) => {
+        OldMachineTerm::IntegerAddress(pointer, _) => {
             collect_pointer_capture_variables(pointer, variables, integer_seen)
         }
-        MachineTerm::IntegerToMachine { value, .. } => {
+        OldMachineTerm::IntegerToMachine { value, .. } => {
             collect_shared_integer_bitvector_capture_variables(value, variables, integer_seen)
         }
     }
@@ -3747,7 +3753,7 @@ pub(in crate::kernel) fn collect_proposition_capture_variables(
                     );
                 } else {
                     collect_condition_capture_variables(
-                        condition.native_compat(),
+                        condition.old_form(),
                         variables,
                         &mut integer_seen,
                     );
@@ -3866,7 +3872,7 @@ fn collect_pointer_offset_capture_variables(
             visit_machine_carrier_leaves(value, |leaf| {
                 if let Some((_, pointer, _)) = leaf.read() {
                     collect_pointer_capture_variables(pointer, variables, integer_seen);
-                } else if let MachineOperandView::Legacy(term) = leaf {
+                } else if let MachineOperandView::Old(term) = leaf {
                     collect_bitvector_capture_variables_seen(term, variables, integer_seen);
                 }
             });
@@ -4110,7 +4116,7 @@ fn collect_integer_bitvector_capture_variables(
     match term {
         IntegerTerm::Constant(_) | IntegerTerm::Variable(_) => {}
         IntegerTerm::Machine(value) => match value.operand_view() {
-            MachineOperandView::Legacy(value) => {
+            MachineOperandView::Old(value) => {
                 collect_bitvector_capture_variables_seen(value, variables, integer_seen)
             }
             MachineOperandView::Shared(root) => {
@@ -4168,7 +4174,7 @@ fn collect_integer_bitvector_capture_variables(
                         // A registered load's pointer can capture the binder.
                         // Keep the ordinary leaf rule after traversing the DAG.
                         collect_bitvector_capture_variables_seen(
-                            &MachineTerm::Variable(*variable),
+                            &OldMachineTerm::Variable(*variable),
                             variables,
                             integer_seen,
                         );
@@ -4493,13 +4499,13 @@ fn collect_machine_operand_scope_summary(
     summaries: &mut std::collections::HashMap<u64, IntegerScopeSummary>,
 ) -> IntegerScopeSummary {
     let MachineOperandView::Shared(root) = operand else {
-        let MachineOperandView::Legacy(term) = operand else {
+        let MachineOperandView::Old(term) = operand else {
             unreachable!()
         };
         return collect_bitvector_scope_summary(term, summaries);
     };
     if let Some(variable) = operand.variable() {
-        return collect_bitvector_scope_summary(&MachineTerm::Variable(*variable), summaries);
+        return collect_bitvector_scope_summary(&OldMachineTerm::Variable(*variable), summaries);
     }
     if let Some((_, pointer, _)) = operand.read() {
         return collect_pointer_scope_summary(pointer, summaries);
@@ -4565,7 +4571,7 @@ fn collect_machine_operand_scope_summary(
                 break;
             }
             summary.merge(collect_bitvector_scope_summary(
-                &MachineTerm::Variable(*variable),
+                &OldMachineTerm::Variable(*variable),
                 summaries,
             ));
             previous = *variable;
@@ -4697,16 +4703,16 @@ fn collect_integer_scope_summary(
 }
 
 fn collect_bitvector_scope_summary(
-    term: &MachineTerm,
+    term: &OldMachineTerm,
     summaries: &mut std::collections::HashMap<u64, IntegerScopeSummary>,
 ) -> IntegerScopeSummary {
     if checked_collection_checkpoint() {
         return IntegerScopeSummary::default();
     }
     match term {
-        MachineTerm::ThreadHandle(_) => IntegerScopeSummary::default(),
-        MachineTerm::Constant { .. } => IntegerScopeSummary::default(),
-        MachineTerm::Variable(variable) => {
+        OldMachineTerm::ThreadHandle(_) => IntegerScopeSummary::default(),
+        OldMachineTerm::Constant { .. } => IntegerScopeSummary::default(),
+        OldMachineTerm::Variable(variable) => {
             let mut summary = IntegerScopeSummary::bitvector_variable(*variable);
             if crate::kernel::is_load_variable(variable)
                 && let Some((_, pointer)) =
@@ -4717,8 +4723,8 @@ fn collect_bitvector_scope_summary(
             summary
         }
         crate::kernel::binary_machine_term!(left, right)
-        | MachineTerm::Float32Binary { left, right, .. }
-        | MachineTerm::Float64Binary { left, right, .. } => {
+        | OldMachineTerm::Float32Binary { left, right, .. }
+        | OldMachineTerm::Float64Binary { left, right, .. } => {
             let mut summary = collect_bitvector_scope_summary(left, summaries);
             if crate::instrumentation::checked_collection_exhausted() {
                 return IntegerScopeSummary::default();
@@ -4729,8 +4735,8 @@ fn collect_bitvector_scope_summary(
         crate::kernel::unary_machine_term!(value) => {
             collect_bitvector_scope_summary(value, summaries)
         }
-        MachineTerm::BoolCast { value, .. } => collect_condition_scope_summary(value, summaries),
-        MachineTerm::If {
+        OldMachineTerm::BoolCast { value, .. } => collect_condition_scope_summary(value, summaries),
+        OldMachineTerm::If {
             condition,
             then_term,
             else_term,
@@ -4746,7 +4752,7 @@ fn collect_bitvector_scope_summary(
             summary.merge(collect_bitvector_scope_summary(else_term, summaries));
             summary
         }
-        MachineTerm::RangeFold {
+        OldMachineTerm::RangeFold {
             start,
             end,
             initial,
@@ -4771,7 +4777,7 @@ fn collect_bitvector_scope_summary(
             summary.reserve(*item);
             summary
         }
-        MachineTerm::PureFunctionApplication { arguments, .. } => {
+        OldMachineTerm::PureFunctionApplication { arguments, .. } => {
             let mut summary = IntegerScopeSummary::default();
             for argument in arguments {
                 if crate::instrumentation::checked_collection_exhausted() {
@@ -4781,7 +4787,7 @@ fn collect_bitvector_scope_summary(
             }
             summary
         }
-        MachineTerm::ClickFunctionApplication { arguments, .. } => {
+        OldMachineTerm::ClickFunctionApplication { arguments, .. } => {
             let mut summary = IntegerScopeSummary::default();
             for argument in arguments {
                 if crate::instrumentation::checked_collection_exhausted() {
@@ -4791,7 +4797,7 @@ fn collect_bitvector_scope_summary(
             }
             summary
         }
-        MachineTerm::AlgebraicMatch { scrutinee, arms } => {
+        OldMachineTerm::AlgebraicMatch { scrutinee, arms } => {
             let mut summary = collect_algebraic_scope_summary(scrutinee, summaries);
             if crate::instrumentation::checked_collection_exhausted() {
                 return IntegerScopeSummary::default();
@@ -4813,13 +4819,13 @@ fn collect_bitvector_scope_summary(
             }
             summary
         }
-        MachineTerm::MemoryLoad(_, pointer, _) => {
+        OldMachineTerm::MemoryLoad(_, pointer, _) => {
             collect_pointer_scope_summary(pointer.address(), summaries)
         }
-        MachineTerm::IntegerAddress(pointer, _) => {
+        OldMachineTerm::IntegerAddress(pointer, _) => {
             collect_pointer_scope_summary(pointer, summaries)
         }
-        MachineTerm::IntegerToMachine { value, .. } => {
+        OldMachineTerm::IntegerToMachine { value, .. } => {
             collect_integer_scope_summary_shared(value, summaries)
         }
     }
@@ -5333,7 +5339,7 @@ fn collect_integer_binder_variables_shared(
 }
 
 fn collect_bitvector_binder_variables_seen(
-    term: &MachineTerm,
+    term: &OldMachineTerm,
     integer_variables: &mut BTreeSet<Variable>,
     bitvector_variables: &mut BTreeSet<Variable>,
     integer_seen: &mut SeenTerms,
@@ -5342,12 +5348,12 @@ fn collect_bitvector_binder_variables_seen(
         return;
     }
     match term {
-        MachineTerm::ThreadHandle(_) => {}
-        MachineTerm::Constant { .. }
-        | MachineTerm::Variable(_)
-        | MachineTerm::MemoryLoad(_, _, _)
-        | MachineTerm::IntegerAddress(_, _) => {}
-        MachineTerm::IntegerToMachine { value, .. } => {
+        OldMachineTerm::ThreadHandle(_) => {}
+        OldMachineTerm::Constant { .. }
+        | OldMachineTerm::Variable(_)
+        | OldMachineTerm::MemoryLoad(_, _, _)
+        | OldMachineTerm::IntegerAddress(_, _) => {}
+        OldMachineTerm::IntegerToMachine { value, .. } => {
             collect_integer_binder_variables_shared(
                 value,
                 integer_variables,
@@ -5356,8 +5362,8 @@ fn collect_bitvector_binder_variables_seen(
             );
         }
         crate::kernel::binary_machine_term!(left, right)
-        | MachineTerm::Float32Binary { left, right, .. }
-        | MachineTerm::Float64Binary { left, right, .. } => {
+        | OldMachineTerm::Float32Binary { left, right, .. }
+        | OldMachineTerm::Float64Binary { left, right, .. } => {
             collect_bitvector_binder_variables_seen(
                 left,
                 integer_variables,
@@ -5382,13 +5388,13 @@ fn collect_bitvector_binder_variables_seen(
                 integer_seen,
             );
         }
-        MachineTerm::BoolCast { value, .. } => collect_condition_binder_variables(
+        OldMachineTerm::BoolCast { value, .. } => collect_condition_binder_variables(
             value,
             integer_variables,
             bitvector_variables,
             integer_seen,
         ),
-        MachineTerm::If {
+        OldMachineTerm::If {
             condition,
             then_term,
             else_term,
@@ -5418,7 +5424,7 @@ fn collect_bitvector_binder_variables_seen(
                 integer_seen,
             );
         }
-        MachineTerm::RangeFold {
+        OldMachineTerm::RangeFold {
             start,
             end,
             initial,
@@ -5462,7 +5468,7 @@ fn collect_bitvector_binder_variables_seen(
                 integer_seen,
             );
         }
-        MachineTerm::PureFunctionApplication { arguments, .. } => {
+        OldMachineTerm::PureFunctionApplication { arguments, .. } => {
             for argument in arguments {
                 if crate::instrumentation::checked_collection_exhausted() {
                     return;
@@ -5475,7 +5481,7 @@ fn collect_bitvector_binder_variables_seen(
                 );
             }
         }
-        MachineTerm::ClickFunctionApplication { arguments, .. } => {
+        OldMachineTerm::ClickFunctionApplication { arguments, .. } => {
             for argument in arguments {
                 if crate::instrumentation::checked_collection_exhausted() {
                     return;
@@ -5488,7 +5494,7 @@ fn collect_bitvector_binder_variables_seen(
                 );
             }
         }
-        MachineTerm::AlgebraicMatch { scrutinee, arms } => {
+        OldMachineTerm::AlgebraicMatch { scrutinee, arms } => {
             collect_binder_variables_in_algebraic_term(
                 scrutinee,
                 integer_variables,
@@ -7220,7 +7226,7 @@ mod integer_expression_tests {
         let expression = SpecIntegerExpression::Negate(Box::new(SpecIntegerExpression::Add(
             Box::new(SpecIntegerExpression::Term(IntegerTerm::Constant(1.into()))),
             Box::new(SpecIntegerExpression::FromMachine(Box::new(
-                SpecExpression::Value(ProgramValue::Int32(MachineTerm::Variable(variable))),
+                SpecExpression::Value(ProgramValue::Int32(OldMachineTerm::Variable(variable))),
             ))),
         )));
         let mut variables = BTreeSet::new();
@@ -7228,8 +7234,11 @@ mod integer_expression_tests {
         assert_eq!(variables, BTreeSet::from([variable]));
         variables.clear();
         let field = AlgebraicValue::Integer(
-            IntegerTerm::from_machine(MachineIntegerType::Int32, MachineTerm::Variable(variable))
-                .unwrap(),
+            IntegerTerm::from_machine(
+                MachineIntegerType::Int32,
+                OldMachineTerm::Variable(variable),
+            )
+            .unwrap(),
         );
         collect_algebraic_value_bitvector_variables(&field, &mut variables);
         assert_eq!(variables, BTreeSet::from([variable]));
@@ -7304,7 +7313,7 @@ mod shared_read_walker_tests {
             )),
             offset: AddressOffset::Constant(0),
         };
-        let native = MachineTerm::read_named(
+        let native = OldMachineTerm::read_named(
             ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
             Box::new(pointer),
             LoadKind::Int32,
@@ -7327,9 +7336,9 @@ mod shared_read_walker_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = Address {
             base: AddressBase::Symbolic(Variable(994100)),
-            offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(994101)), 4),
+            offset: AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(994101)), 4),
         };
-        let raw = MachineTerm::read_named(
+        let raw = OldMachineTerm::read_named(
             ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
             Box::new(pointer),
             LoadKind::Int32,
@@ -7341,7 +7350,7 @@ mod shared_read_walker_tests {
             [leaf.clone(), leaf],
         )
         .unwrap();
-        let native = MachineTerm::Binary {
+        let native = OldMachineTerm::Binary {
             format: MachineIntegerType::Int32,
             op: MachineBinaryOp::Add,
             left: Box::new(raw.clone()),

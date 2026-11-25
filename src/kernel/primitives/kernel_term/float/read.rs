@@ -38,13 +38,13 @@ mod tests {
         let second = intern_memory(SymbolicMemory::new());
         let pointer = Address {
             base: AddressBase::Symbolic(Variable(999814)),
-            offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(999815)), 4),
+            offset: AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(999815)), 4),
         };
         let address = SharedAddress::import(&pointer);
         let mut identities = std::collections::HashSet::new();
         for format in [KernelFloatType::Float32, KernelFloatType::Float64] {
             for memory in [&first, &second] {
-                let source = MachineTerm::read_named(
+                let source = OldMachineTerm::read_named(
                     ProgramPoint::at(memory),
                     Box::new(pointer.clone()),
                     format.load_kind(),
@@ -78,7 +78,7 @@ mod tests {
         }
         // A malformed native carrier is preserved at its existing boundary,
         // rather than silently changing the written load kind during import.
-        let mismatch = MachineTerm::read_named(
+        let mismatch = OldMachineTerm::read_named(
             ProgramPoint::at(&second),
             Box::new(pointer),
             LoadKind::Int32,

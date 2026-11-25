@@ -1,6 +1,6 @@
 use super::super::tests::bound_return_producer;
 use super::*;
-use crate::kernel::{ConditionTerm, MachineTerm, Variable};
+use crate::kernel::{ConditionTerm, OldMachineTerm, Variable};
 
 #[test]
 fn return_producer_ignores_unrelated_history_and_facts() {
@@ -9,8 +9,8 @@ fn return_producer_ignores_unrelated_history_and_facts() {
         for index in 0..size {
             facts = facts.with_fact(Proposition::condition_is(
                 ConditionTerm::equal(
-                    MachineTerm::Variable(Variable(1000 + index)),
-                    MachineTerm::constant(0),
+                    OldMachineTerm::Variable(Variable(1000 + index)),
+                    OldMachineTerm::constant(0),
                 ),
                 false,
             ));

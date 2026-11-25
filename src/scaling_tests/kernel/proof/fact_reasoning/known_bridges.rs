@@ -8,7 +8,7 @@ fn exact_float_bounds_check_only_the_input_endpoint() {
     let other = KernelTerm::variable(ty, Variable(995729));
     let narrow = KernelFloatType::Float32;
     let wide = KernelFloatType::Float64;
-    let upper = |format, operand, endpoint: MachineTerm, operator| {
+    let upper = |format, operand, endpoint: OldMachineTerm, operator| {
         let literal = KernelTermImport::default().float(format, &endpoint);
         let condition = KernelTerm::float_compare(format, operator, [operand, literal]).unwrap();
         Proposition::condition_is(StoredConditionTerm::from_root(condition).unwrap(), true)
@@ -18,19 +18,19 @@ fn exact_float_bounds_check_only_the_input_endpoint() {
     let widened_goal = upper(
         wide,
         widened,
-        MachineTerm::uint64_constant(1.0f64.to_bits()),
+        OldMachineTerm::uint64_constant(1.0f64.to_bits()),
         less_than,
     );
     let adjacent_goal = upper(
         narrow,
         input.clone(),
-        MachineTerm::constant(1.0f32.to_bits() - 1),
+        OldMachineTerm::constant(1.0f32.to_bits() - 1),
         ComparisonOperator::LessEqual,
     );
     let required = upper(
         narrow,
         input.clone(),
-        MachineTerm::constant(1.0f32.to_bits()),
+        OldMachineTerm::constant(1.0f32.to_bits()),
         less_than,
     );
     for goal in [widened_goal, adjacent_goal] {
@@ -46,7 +46,7 @@ fn exact_float_bounds_check_only_the_input_endpoint() {
                             } else {
                                 other.clone()
                             },
-                            MachineTerm::constant((index as f32 + 2.0).to_bits()),
+                            OldMachineTerm::constant((index as f32 + 2.0).to_bits()),
                             less_than,
                         )
                     })
@@ -72,7 +72,8 @@ fn exact_float_bounds_check_only_the_input_endpoint() {
 fn signed_product_bound_checks_only_the_exact_guards() {
     let _session = VerificationSession::enter();
     let ty = MachineIntegerType::Int32;
-    let observed = |id| IntegerTerm::from_machine(ty, MachineTerm::Variable(Variable(id))).unwrap();
+    let observed =
+        |id| IntegerTerm::from_machine(ty, OldMachineTerm::Variable(Variable(id))).unwrap();
     let x = observed(995725);
     let y = observed(995726);
     let maximum = IntegerTerm::constant_i64(i64::from(i32::MAX));
@@ -122,14 +123,14 @@ fn shift_definedness_bridges_read_only_the_exact_count_bounds() {
         (MachineIntegerType::Int64, MachineIntegerType::UInt64),
     ] {
         let _session = VerificationSession::enter();
-        let count = MachineTerm::Variable(Variable(995760));
-        let other = MachineTerm::Variable(Variable(995761));
+        let count = OldMachineTerm::Variable(Variable(995760));
+        let other = OldMachineTerm::Variable(Variable(995761));
         let width = unsigned.format().bits();
         let maximum = signed.format().bounds().1;
         let observe = |ty, op, left, right| {
             IntegerTerm::from_machine(
                 ty,
-                MachineTerm::Binary {
+                OldMachineTerm::Binary {
                     format: ty,
                     op,
                     left: Box::new(left),
@@ -174,8 +175,8 @@ fn shift_definedness_bridges_read_only_the_exact_count_bounds() {
                 unsigned,
                 CompareRelation::LessThan,
                 [
-                    MachineOperandView::Legacy(d),
-                    MachineOperandView::Legacy(&endpoint),
+                    MachineOperandView::Old(d),
+                    MachineOperandView::Old(&endpoint),
                 ],
             )
             .truth_claim(true)
@@ -364,7 +365,7 @@ fn neutral_bitwise_leaves_keep_large_operands_shared_without_fact_queries() {
             IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(ty, root.clone()).unwrap());
         let zero = KernelTerm::retained_machine_operand(
             ty,
-            MachineOperandView::Legacy(&MachineTerm::uint64_constant(0)),
+            MachineOperandView::Old(&OldMachineTerm::uint64_constant(0)),
         );
         let mut goals = Vec::new();
         for op in [MachineBinaryOp::BitwiseAnd, MachineBinaryOp::BitwiseOr] {
@@ -402,13 +403,13 @@ fn finite_float_reflexivity_uses_one_exact_classification() {
     let finite = |id| {
         Proposition::condition_is(
             ConditionTerm::float32_classification(
-                MachineTerm::Variable(Variable(id)),
+                OldMachineTerm::Variable(Variable(id)),
                 FloatClassification::Finite,
             ),
             true,
         )
     };
-    let operand = MachineTerm::Variable(Variable(996800));
+    let operand = OldMachineTerm::Variable(Variable(996800));
     let goal = Proposition::condition_is(
         ConditionTerm::float32_compare(operand.clone(), operand, ComparisonOperator::Equal),
         true,
@@ -518,7 +519,7 @@ fn non_numeric_arm_equations_use_only_the_written_guard() {
 fn odd_wrapping_product_reads_only_the_operand_disequality() {
     let _session = VerificationSession::enter();
     let format = MachineIntegerType::UInt32;
-    let word = |id| MachineTerm::Variable(Variable(id));
+    let word = |id| OldMachineTerm::Variable(Variable(id));
     let x = word(996901);
     let differs = |operand, literal| {
         Proposition::condition_is(
@@ -526,17 +527,17 @@ fn odd_wrapping_product_reads_only_the_operand_disequality() {
                 format,
                 CompareRelation::Equal,
                 operand,
-                MachineTerm::constant(literal),
+                OldMachineTerm::constant(literal),
             ),
             false,
         )
     };
     let product = |factor| {
-        MachineTerm::machine_binary(
+        OldMachineTerm::machine_binary(
             format,
             MachineBinaryOp::Multiply,
             x.clone(),
-            MachineTerm::constant(factor),
+            OldMachineTerm::constant(factor),
         )
     };
     let odd = differs(product(3), 0);

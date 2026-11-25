@@ -225,7 +225,7 @@ pub(super) fn reduces_one_operation(goal: &Proposition, premises: &[Proposition]
                 return false;
             };
             if !crate::kernel::machine_integer::comparison::comparison_view(
-                condition.native_compat(),
+                condition.old_form(),
                 *truth,
             )
             .is_some_and(|view| {
@@ -311,19 +311,19 @@ mod tests {
     fn le(a: SharedIntegerTerm, b: SharedIntegerTerm) -> Proposition {
         Proposition::condition_is(ConditionTerm::IntegerLessEqual(a, b), true)
     }
-    fn observe(value: MachineTerm) -> SharedIntegerTerm {
+    fn observe(value: OldMachineTerm) -> SharedIntegerTerm {
         IntegerTerm::from_machine(MachineIntegerType::Int32, value)
             .unwrap()
             .into()
     }
     fn inputs(op: MachineBinaryOp, constant: i32) -> (Proposition, Vec<Proposition>) {
-        let x = MachineTerm::Variable(Variable(987_701));
+        let x = OldMachineTerm::Variable(Variable(987_701));
         let observed = observe(x.clone());
-        let operation = MachineTerm::logical_machine_binary(
+        let operation = OldMachineTerm::logical_machine_binary(
             MachineIntegerType::Int32,
             op,
             x,
-            MachineTerm::constant(constant as u32),
+            OldMachineTerm::constant(constant as u32),
         );
         (
             le(observe(operation), literal(11)),
@@ -341,12 +341,12 @@ mod tests {
     }
     #[test]
     fn signed_observations_do_not_clip_with_an_unsigned_guard() {
-        let x = MachineTerm::Variable(Variable(987_777));
-        let root = MachineTerm::logical_machine_binary(
+        let x = OldMachineTerm::Variable(Variable(987_777));
+        let root = OldMachineTerm::logical_machine_binary(
             MachineIntegerType::UInt32,
             MachineBinaryOp::Add,
             x.clone(),
-            MachineTerm::constant(1),
+            OldMachineTerm::constant(1),
         );
         let unsigned: SharedIntegerTerm = IntegerTerm::from_machine(MachineIntegerType::UInt32, x)
             .unwrap()
@@ -370,7 +370,7 @@ mod tests {
     #[test]
     fn extreme_strict_endpoints_refuse_without_panicking() {
         let (goal, _) = inputs(MachineBinaryOp::Add, 1);
-        let x = observe(MachineTerm::Variable(Variable(987_701)));
+        let x = observe(OldMachineTerm::Variable(Variable(987_701)));
         for (value, lower) in [(i128::MAX, true), (i128::MIN, false)] {
             let endpoint: SharedIntegerTerm = IntegerTerm::Constant(value.into()).into();
             let (a, b) = if lower {

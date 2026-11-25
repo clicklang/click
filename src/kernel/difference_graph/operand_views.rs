@@ -17,9 +17,9 @@ pub(super) fn format(domain: Domain) -> MachineIntegerType {
     }
 }
 
-fn atom(term: V<'_>) -> Option<MachineTerm> {
+fn atom(term: V<'_>) -> Option<OldMachineTerm> {
     term.literal()
-        .or_else(|| term.variable().copied().map(MachineTerm::Variable))
+        .or_else(|| term.variable().copied().map(OldMachineTerm::Variable))
 }
 pub(super) fn constant_view(domain: Domain, term: V<'_>) -> Option<i128> {
     constant(domain, &term.literal()?)
@@ -128,15 +128,20 @@ struct Query<'a> {
 }
 
 impl DifferenceGraph {
-    pub(super) fn index_operand_node(&mut self, domain: Domain, term: &MachineTerm, node: NodeId) {
-        let named_read = matches!(term, MachineTerm::Variable(variable)
+    pub(super) fn index_operand_node(
+        &mut self,
+        domain: Domain,
+        term: &OldMachineTerm,
+        node: NodeId,
+    ) {
+        let named_read = matches!(term, OldMachineTerm::Variable(variable)
             if crate::kernel::is_load_variable(variable));
-        if !named_read && matches!(term, MachineTerm::Variable(_))
-            || V::Legacy(term).literal().is_some()
+        if !named_read && matches!(term, OldMachineTerm::Variable(_))
+            || V::Old(term).literal().is_some()
         {
             self.shared_queries.invalidate(Read::Operand(
                 domain,
-                Key::for_format(format(domain), V::Legacy(term)),
+                Key::for_format(format(domain), V::Old(term)),
             ));
             return;
         }
@@ -200,7 +205,7 @@ impl DifferenceGraph {
             return None;
         }
         if format.format().bits() == 64
-            && let (V::Legacy(a), V::Legacy(b)) = (a, b)
+            && let (V::Old(a), V::Old(b)) = (a, b)
         {
             return self.decide_native_wide_equality(a, b);
         }
@@ -491,13 +496,13 @@ impl<'a> Query<'a> {
     fn known_flip(&mut self, domain: Domain, base: Affine) -> Option<Affine> {
         DifferenceGraph::flip_reading(domain, base, |base| self.affine_interval(base))
     }
-    fn resolve_atom(&mut self, domain: Domain, atom: &MachineTerm) -> Option<Affine> {
+    fn resolve_atom(&mut self, domain: Domain, atom: &OldMachineTerm) -> Option<Affine> {
         if let Some(value) = constant(domain, atom) {
             return Some((None, value));
         }
         self.depend(Read::Operand(
             domain,
-            Key::for_format(format(domain), V::Legacy(atom)),
+            Key::for_format(format(domain), V::Old(atom)),
         ));
         if let Some(node) = self.graph.nodes.get(&(domain, atom.clone())) {
             return Some((Some(*node), 0));
@@ -515,7 +520,7 @@ impl<'a> Query<'a> {
     }
 
     fn resolve(&mut self, domain: Domain, term: V<'_>) -> Option<Affine> {
-        if let V::Legacy(term) = term {
+        if let V::Old(term) = term {
             self.uncacheable();
             return self.graph.resolve(domain, term);
         }
@@ -554,7 +559,7 @@ impl<'a> Query<'a> {
             .then_some((base.0, base.1 + offset))
     }
     fn modular_resolve(&mut self, domain: Domain, term: V<'_>) -> Option<Affine> {
-        if let V::Legacy(term) = term {
+        if let V::Old(term) = term {
             self.uncacheable();
             return self.graph.modular_resolve(domain, term);
         }
@@ -580,13 +585,10 @@ impl<'a> Query<'a> {
         // The native reader does not report individual cache dependencies, so
         // invalidate this query's cacheability just as for an explicit leaf.
         let term = match term {
-            V::Shared(root) => root
-                .machine_conversion_leaf()
-                .map(V::Legacy)
-                .unwrap_or(term),
+            V::Shared(root) => root.machine_conversion_leaf().map(V::Old).unwrap_or(term),
             term => term,
         };
-        if let V::Legacy(term) = term {
+        if let V::Old(term) = term {
             self.uncacheable();
             return self.graph.term_interval(domain, term);
         }
@@ -838,7 +840,7 @@ impl<'a> Query<'a> {
     }
 }
 fn word_domain_view(term: V<'_>) -> Domain {
-    if let V::Legacy(term) = term {
+    if let V::Old(term) = term {
         return word_domain(term);
     }
     if matches!(term.literal(), Some(uint64_constant!(_)))
@@ -893,9 +895,9 @@ mod tests {
         let memory = intern_memory(SymbolicMemory::new());
         let name = crate::kernel::eval::load_variable_for_cell(&memory, &address, LoadKind::Int32);
         let read = crate::kernel::eval::registered_load_term_for_variable(&name).unwrap();
-        let named = MachineTerm::Variable(name);
-        let lower = MachineTerm::Variable(Variable(998_302));
-        let upper = MachineTerm::Variable(Variable(998_303));
+        let named = OldMachineTerm::Variable(name);
+        let lower = OldMachineTerm::Variable(Variable(998_302));
+        let upper = OldMachineTerm::Variable(Variable(998_303));
         let equal = ConditionTerm::equal(named.clone(), lower.clone());
         let bound = ConditionTerm::signed_less_than(lower.clone(), upper.clone());
         for facts in [
@@ -921,7 +923,7 @@ mod tests {
             }
             let shared = SharedMachineIntegerTerm::index(MachineIntegerType::Int32, read.clone());
             assert_eq!(
-                graph.decide_word_equality_views(shared.operand_view(), V::Legacy(&lower)),
+                graph.decide_word_equality_views(shared.operand_view(), V::Old(&lower)),
                 Some(true)
             );
             let changed = intern_memory(
@@ -930,7 +932,7 @@ mod tests {
                     .clone()
                     .store(address.clone(), ProgramValue::Int32(17u32.into())),
             );
-            let other = MachineTerm::read_named(
+            let other = OldMachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(&changed),
                 Box::new(address.clone()),
                 LoadKind::Int32,
@@ -955,14 +957,14 @@ mod tests {
         for ty in [MachineIntegerType::Int32, MachineIntegerType::Int64] {
             let word = |value: i64| {
                 if ty == MachineIntegerType::Int32 {
-                    MachineTerm::constant(value as u32)
+                    OldMachineTerm::constant(value as u32)
                 } else {
-                    MachineTerm::int64_constant(value)
+                    OldMachineTerm::int64_constant(value)
                 }
             };
-            let x = MachineTerm::Variable(Variable(997801));
-            let n = MachineTerm::Variable(Variable(997802));
-            let native = |op, left, right| MachineTerm::Binary {
+            let x = OldMachineTerm::Variable(Variable(997801));
+            let n = OldMachineTerm::Variable(Variable(997802));
+            let native = |op, left, right| OldMachineTerm::Binary {
                 format: ty,
                 op,
                 left: Box::new(left),
@@ -997,7 +999,7 @@ mod tests {
                         )
                         .unwrap(),
                     );
-                    let shared = |term: &MachineTerm| {
+                    let shared = |term: &OldMachineTerm| {
                         SharedMachineIntegerTerm::from_shared(
                             ty,
                             KernelTermImport::default()
@@ -1026,7 +1028,7 @@ mod tests {
     #[test]
     fn graph_interval_views_match_native_operations_and_casts() {
         let _session = crate::kernel::VerificationSession::enter();
-        let x = MachineTerm::Variable(Variable(997811));
+        let x = OldMachineTerm::Variable(Variable(997811));
         let mut graph = DifferenceGraph::new();
         graph.assume_condition(&ConditionTerm::signed_less_equal(2.into(), x.clone()), true);
         graph.assume_condition(&ConditionTerm::signed_less_equal(x.clone(), 4.into()), true);
@@ -1044,11 +1046,11 @@ mod tests {
                 cases.push((
                     Domain::Int32,
                     ty,
-                    MachineTerm::Binary {
+                    OldMachineTerm::Binary {
                         format: ty,
                         op,
                         left: Box::new(x.clone()),
-                        right: Box::new(MachineTerm::constant(3)),
+                        right: Box::new(OldMachineTerm::constant(3)),
                     },
                 ));
             }
@@ -1057,17 +1059,17 @@ mod tests {
             (
                 Domain::Int64,
                 MachineIntegerType::Int64,
-                MachineTerm::int64_from_32(x.clone()),
+                OldMachineTerm::int64_from_32(x.clone()),
             ),
             (
                 Domain::Int64,
                 MachineIntegerType::Int64,
-                MachineTerm::int64_from_uint32(x.clone()),
+                OldMachineTerm::int64_from_uint32(x.clone()),
             ),
             (
                 Domain::UInt64,
                 MachineIntegerType::UInt64,
-                MachineTerm::uint64_from_32(x.clone()),
+                OldMachineTerm::uint64_from_32(x.clone()),
             ),
         ]);
         for (domain, ty, term) in cases {
@@ -1088,14 +1090,14 @@ mod tests {
     fn graph_overflow_views_reuse_original_compound_nodes_in_one_branch() {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
-        let x = MachineTerm::Variable(Variable(997821));
-        let y = MachineTerm::Variable(Variable(997822));
-        let product = MachineTerm::multiply(x, y.clone());
+        let x = OldMachineTerm::Variable(Variable(997821));
+        let y = OldMachineTerm::Variable(Variable(997822));
+        let product = OldMachineTerm::multiply(x, y.clone());
         let source = ConditionTerm::signed_add_overflows(product.clone(), y.clone());
         let parent = DifferenceGraph::new();
         let mut child = parent.clone();
         child.assume_condition(&source, false);
-        let shared = |term: &MachineTerm| {
+        let shared = |term: &OldMachineTerm| {
             SharedMachineIntegerTerm::from_shared(
                 ty,
                 KernelTermImport::default()
@@ -1128,17 +1130,17 @@ mod tests {
             MachineIntegerType::UInt64,
         ] {
             let two = match ty {
-                MachineIntegerType::Int64 => MachineTerm::int64_constant(2),
-                MachineIntegerType::UInt64 => MachineTerm::uint64_constant(2),
-                _ => MachineTerm::constant(2),
+                MachineIntegerType::Int64 => OldMachineTerm::int64_constant(2),
+                MachineIntegerType::UInt64 => OldMachineTerm::uint64_constant(2),
+                _ => OldMachineTerm::constant(2),
             };
-            let left = MachineTerm::Binary {
+            let left = OldMachineTerm::Binary {
                 format: ty,
                 op: MachineBinaryOp::Add,
-                left: Box::new(MachineTerm::Variable(Variable(997851))),
+                left: Box::new(OldMachineTerm::Variable(Variable(997851))),
                 right: Box::new(two),
             };
-            let right = MachineTerm::Variable(Variable(997852));
+            let right = OldMachineTerm::Variable(Variable(997852));
             let mut graph = DifferenceGraph::new();
             graph.assume_condition(
                 &ConditionTerm::machine_compare(
@@ -1193,17 +1195,17 @@ mod tests {
             MachineIntegerType::UInt64,
         ] {
             let word = |n| match ty {
-                MachineIntegerType::Int64 => MachineTerm::int64_constant(n),
-                MachineIntegerType::UInt64 => MachineTerm::uint64_constant(n as u64),
-                _ => MachineTerm::constant(n as u32),
+                MachineIntegerType::Int64 => OldMachineTerm::int64_constant(n),
+                MachineIntegerType::UInt64 => OldMachineTerm::uint64_constant(n as u64),
+                _ => OldMachineTerm::constant(n as u32),
             };
-            let native_left = MachineTerm::Binary {
+            let native_left = OldMachineTerm::Binary {
                 format: ty,
                 op: MachineBinaryOp::Multiply,
-                left: Box::new(MachineTerm::Variable(Variable(997861))),
+                left: Box::new(OldMachineTerm::Variable(Variable(997861))),
                 right: Box::new(word(3)),
             };
-            let native_right = MachineTerm::Variable(Variable(997862));
+            let native_right = OldMachineTerm::Variable(Variable(997862));
             let left = KernelTermImport::default()
                 .machine_arithmetic(ty, &native_left)
                 .unwrap();

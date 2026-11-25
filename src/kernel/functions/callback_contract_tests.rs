@@ -240,8 +240,8 @@ fn resource_transition_retains_borrow_role_for_owned_entry_fact() {
     };
     let range = MemoryRange::new(
         pointer.clone(),
-        MachineTerm::constant(0),
-        MachineTerm::constant(1),
+        OldMachineTerm::constant(0),
+        OldMachineTerm::constant(1),
     );
     let requirement = ResourceSpec::owned_memory(MemorySegment::new(
         ProgramExpression::Variable("p".into()),
@@ -297,8 +297,8 @@ fn call_site_and_function_boundary_transitions_agree_on_the_callee_entry() {
     let range = |pointer: &Address| {
         MemoryRange::new(
             pointer.clone(),
-            MachineTerm::constant(0),
-            MachineTerm::constant(1),
+            OldMachineTerm::constant(0),
+            OldMachineTerm::constant(1),
         )
     };
     let segment = |name: &str| {
@@ -564,7 +564,7 @@ fn named_contract_application_discards_template_body_and_storage() {
         ProgramExpression::Variable("p".into()),
     )));
     let body_with_variable = ProgramStatement::Return(ProgramExpression::Value(
-        ProgramValue::Int32(MachineTerm::Variable(body_variable)),
+        ProgramValue::Int32(OldMachineTerm::Variable(body_variable)),
     ));
     let with_body_and_storage = program_function(
         ProgramType::Void,
@@ -757,8 +757,8 @@ fn direct_and_named_callback_resource_interfaces_agree_across_families() {
         .with_resource_context(ResourceContext::new().unchecked_with_fact(
             ResourceFact::own_memory(MemoryRange::new(
                 memory_pointer,
-                MachineTerm::constant(0),
-                MachineTerm::constant(1),
+                OldMachineTerm::constant(0),
+                OldMachineTerm::constant(1),
             )),
         ));
     let memory_contract = FunctionContract::new("ParityMemory", memory_function.clone()).unwrap();
@@ -1274,8 +1274,8 @@ fn declared_loop_frame_is_installed_from_the_loop_specs_not_from_segments() {
         .expect("a declared frame is installed at loop entry");
     assert_eq!(ranges.len(), 1);
     assert_eq!(ranges[0].base(), &pointer);
-    assert_eq!(ranges[0].start(), &MachineTerm::constant(0));
-    assert_eq!(ranges[0].end(), &MachineTerm::constant(1));
+    assert_eq!(ranges[0].start(), &OldMachineTerm::constant(0));
+    assert_eq!(ranges[0].end(), &OldMachineTerm::constant(1));
 
     // When the kernel cannot read the spec (no definition to expand it
     // through), the frame stays uninstalled and the back edge refuses it;

@@ -15,7 +15,7 @@ fn retained_equality_aliases_reuse_one_coordinate_across_growing_prefixes() {
             let _session = crate::kernel::VerificationSession::enter();
             let mut root =
                 KernelTerm::variable(KernelType::Program(format.program_type()), Variable(993251));
-            let y = MachineTerm::Variable(Variable(993252));
+            let y = OldMachineTerm::Variable(Variable(993252));
             let mut facts = DifferenceGraph::new();
             let exports = KernelTermExport::machine_export_count();
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -28,7 +28,7 @@ fn retained_equality_aliases_reuse_one_coordinate_across_growing_prefixes() {
                     let alias = condition_for_operand_views(
                         format,
                         CompareRelation::Equal,
-                        [V::Shared(&root), V::Legacy(&y)],
+                        [V::Shared(&root), V::Old(&y)],
                     );
                     assert_eq!(facts.decide(&alias), None);
                     facts.assume_condition(&alias, true);

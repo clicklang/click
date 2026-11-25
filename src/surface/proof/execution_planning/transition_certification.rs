@@ -1283,7 +1283,7 @@ mod condition_transition_tests {
             offset: AddressOffset::Constant(0),
         };
         let load = |pointer: Address| {
-            MachineTerm::read_named(
+            OldMachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(&memory),
                 Box::new(pointer),
                 crate::kernel::LoadKind::Int32,
@@ -1347,8 +1347,8 @@ mod condition_transition_tests {
             .with_resource_context(ResourceContext::new().unchecked_with_fact(
                 ResourceFact::own_memory(MemoryRange::new(
                     pointer.clone(),
-                    MachineTerm::constant(0),
-                    MachineTerm::constant(1),
+                    OldMachineTerm::constant(0),
+                    OldMachineTerm::constant(1),
                 )),
             ));
         let mut next_opaque_call = 0;
@@ -1374,7 +1374,7 @@ mod condition_transition_tests {
         assert!(transition.generated_load_source_events.is_empty());
         assert!(matches!(&transition.outcome,
             StatementOutcome::Return { value, .. }
-                if matches!(value.native().as_ref(), ProgramValue::Int32(MachineTerm::MemoryLoad(_, at, crate::kernel::LoadKind::Int32)) if **at == pointer)));
+                if matches!(value.native().as_ref(), ProgramValue::Int32(OldMachineTerm::MemoryLoad(_, at, crate::kernel::LoadKind::Int32)) if **at == pointer)));
 
         // Feed the producer-issued transition metadata through the same
         // persistent presentation store used by the execution cursor. This
@@ -1433,8 +1433,8 @@ mod condition_transition_tests {
             .with_resource_context(ResourceContext::new().unchecked_with_fact(
                 ResourceFact::own_memory(MemoryRange::new(
                     pointer.clone(),
-                    MachineTerm::constant(0),
-                    MachineTerm::constant(1),
+                    OldMachineTerm::constant(0),
+                    OldMachineTerm::constant(1),
                 )),
             ));
         let mut next_opaque_call = 0;
@@ -1473,7 +1473,7 @@ mod condition_transition_tests {
                     format: crate::kernel::MachineIntegerType::UInt32,
                     relation: crate::kernel::CompareRelation::Equal,
                     left: Box::new(value),
-                    right: Box::new(MachineTerm::constant(0))
+                    right: Box::new(OldMachineTerm::constant(0))
                 },
                 true
             )
@@ -1484,7 +1484,7 @@ mod condition_transition_tests {
     fn failed_typed_load_publishes_no_source_event() {
         let statement = ProgramStatement::Return(ProgramExpression::TypedLoad {
             pointer: Box::new(ProgramExpression::Value(ProgramValue::Int32(
-                MachineTerm::constant(7),
+                OldMachineTerm::constant(7),
             ))),
             value_type: ProgramType::Int32,
             volatile: false,

@@ -111,8 +111,8 @@ fn memory_direct_support_preserves_held_identity_and_authority() {
                 if native {
                     MemoryRange::new_wide(
                         p.clone(),
-                        MachineTerm::uint64_constant(start.into()),
-                        MachineTerm::uint64_constant(end.into()),
+                        OldMachineTerm::uint64_constant(start.into()),
+                        OldMachineTerm::uint64_constant(end.into()),
                         4,
                     )
                 } else {

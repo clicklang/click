@@ -21,21 +21,21 @@ impl TermClasses {
     pub(in crate::kernel::equality_graph) fn scalar_leaf_of_class(
         &self,
         id: u64,
-    ) -> Option<MachineTerm> {
+    ) -> Option<OldMachineTerm> {
         match self.scalar_constant_of_class(id) {
-            SignedConstantResolution::Known(value) => Some(MachineTerm::constant(value as u32)),
+            SignedConstantResolution::Known(value) => Some(OldMachineTerm::constant(value as u32)),
             SignedConstantResolution::Ambiguous => None,
             SignedConstantResolution::Unknown => self
                 .scalar_witnesses
                 .variables
                 .get(&self.root(id))
                 .copied()
-                .map(MachineTerm::Variable),
+                .map(OldMachineTerm::Variable),
         }
     }
 
-    pub(super) fn register_scalar_witness(&mut self, term: &MachineTerm, node: u64) {
-        self.register_scalar_witness_view(crate::kernel::MachineOperandView::Legacy(term), node);
+    pub(super) fn register_scalar_witness(&mut self, term: &OldMachineTerm, node: u64) {
+        self.register_scalar_witness_view(crate::kernel::MachineOperandView::Old(term), node);
     }
 
     pub(super) fn register_scalar_witness_view(
@@ -109,7 +109,7 @@ impl TermClasses {
             return;
         }
         let value = self.intern_node(super::Node::Int32(MachineAtom::int32(
-            MachineTerm::constant(u32::from(value as i8 as u8)),
+            OldMachineTerm::constant(u32::from(value as i8 as u8)),
         )));
         for byte in bytes.iter() {
             pending.push((*byte, value));
@@ -210,14 +210,14 @@ impl TermClasses {
 /// word, such as a signed byte read or a C narrowing conversion, with its
 /// source and destination. Its constant is a function of the operand's.
 pub(super) fn word_cast_operand(
-    term: &MachineTerm,
+    term: &OldMachineTerm,
 ) -> Option<(
-    &MachineTerm,
+    &OldMachineTerm,
     crate::kernel::MachineIntegerType,
     crate::kernel::MachineIntegerType,
 )> {
     match term {
-        MachineTerm::Cast {
+        OldMachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             value,
             from: source,
@@ -236,11 +236,11 @@ pub(super) fn word_cast_operand(
 /// variable naming one) holds exactly one byte, zero-extended, whatever
 /// produced the term, so its range is structural rather than a fact. Other
 /// operands are folded forward but never inverted.
-pub(super) fn signed_byte_load_operand(term: &MachineTerm) -> Option<&MachineTerm> {
+pub(super) fn signed_byte_load_operand(term: &OldMachineTerm) -> Option<&OldMachineTerm> {
     let operand = term.signed_byte_operand()?;
     matches!(
         crate::kernel::eval::viewed_as_memory_load(operand),
-        Some(MachineTerm::MemoryLoad(
+        Some(OldMachineTerm::MemoryLoad(
             _,
             _,
             crate::kernel::LoadKind::UInt8
@@ -253,11 +253,11 @@ pub(super) fn signed_byte_load_operand(term: &MachineTerm) -> Option<&MachineTer
 /// any operand is, the evaluated constant if every operand is known, and
 /// `Unknown` otherwise (including a term that is not arithmetic).
 pub(in crate::kernel) fn fold_arithmetic(
-    term: &MachineTerm,
-    mut operand: impl FnMut(&MachineTerm) -> SignedConstantResolution,
+    term: &OldMachineTerm,
+    mut operand: impl FnMut(&OldMachineTerm) -> SignedConstantResolution,
 ) -> SignedConstantResolution {
     // Literal operands need no contextual class query or recursion guard.
-    let mut operand = |term: &MachineTerm| {
+    let mut operand = |term: &OldMachineTerm| {
         signed_bitvector_constant(term)
             .map(SignedConstantResolution::Known)
             .unwrap_or_else(|| operand(term))
@@ -271,25 +271,26 @@ pub(in crate::kernel) fn fold_arithmetic(
             }
             (SignedConstantResolution::Known(left), SignedConstantResolution::Known(right)) => {
                 SignedConstantResolution::from_term(operator.build(
-                    MachineTerm::constant(left as i32 as u32),
-                    MachineTerm::constant(right as i32 as u32),
+                    OldMachineTerm::constant(left as i32 as u32),
+                    OldMachineTerm::constant(right as i32 as u32),
                 ))
             }
             _ => SignedConstantResolution::Unknown,
         };
     }
     match term {
-        unary_term!(Bits32, BitwiseNot, value) => operand(value)
-            .map(|value| MachineTerm::bitwise_not(MachineTerm::constant(value as i32 as u32))),
+        unary_term!(Bits32, BitwiseNot, value) => operand(value).map(|value| {
+            OldMachineTerm::bitwise_not(OldMachineTerm::constant(value as i32 as u32))
+        }),
         // The conversion's own constant fold: a byte constant `c` in
         // `0..=255` converts to its two's-complement value, and a constant
         // outside the byte range stays unfolded (`Unknown`).
         term => match word_cast_operand(term) {
             Some((value, source, destination)) => operand(value).map(|value| {
-                MachineTerm::machine_integer_cast(
+                OldMachineTerm::machine_integer_cast(
                     source,
                     destination,
-                    MachineTerm::constant(value as i32 as u32),
+                    OldMachineTerm::constant(value as i32 as u32),
                 )
             }),
             None => SignedConstantResolution::Unknown,

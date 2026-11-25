@@ -77,7 +77,7 @@ fn computes_atom(goal: &Proposition, expected: bool) -> bool {
             .operand_view()
             .closed_float_predicate_value()
             .or_else(|| {
-                let condition = condition.native_compat();
+                let condition = condition.old_form();
                 condition_value(condition)
                     .or_else(|| super::machine_ranges::comparison_value(condition))
             })
@@ -92,16 +92,16 @@ fn computes_atom(goal: &Proposition, expected: bool) -> bool {
             } else {
                 let left = left_root
                     .and_then(KernelTerm::algebraic_native_term)
-                    .unwrap_or_else(|| left.native_compat());
+                    .unwrap_or_else(|| left.old_form());
                 let right = right_root
                     .and_then(KernelTerm::algebraic_native_term)
-                    .unwrap_or_else(|| right.native_compat());
+                    .unwrap_or_else(|| right.old_form());
                 algebraic_equality(left, right)
             }
         }
         Proposition::Equal(Term::Integer(left), Term::Integer(right)) => {
-            let left = left.native_compat();
-            let right = right.native_compat();
+            let left = left.old_form();
+            let right = right.old_form();
             if unchanged_integer_folds_equal(left, right) {
                 Some(true)
             } else {
@@ -121,7 +121,7 @@ fn computes_atom(goal: &Proposition, expected: bool) -> bool {
         } => {
             let size = if *wide {
                 bytes
-                    .native_compat()
+                    .old_form()
                     .uint64_as_const()
                     .and_then(|size| u32::try_from(size).ok())
             } else {
@@ -206,9 +206,9 @@ fn unchanged_integer_folds_equal(left: &IntegerTerm, right: &IntegerTerm) -> boo
     (a.is_some() || b.is_some()) && a.as_ref().unwrap_or(left) == b.as_ref().unwrap_or(right)
 }
 
-fn unchanged_machine_folds_equal(left: &MachineTerm, right: &MachineTerm) -> bool {
-    let left = MachineOperandView::Legacy(left);
-    let right = MachineOperandView::Legacy(right);
+fn unchanged_machine_folds_equal(left: &OldMachineTerm, right: &OldMachineTerm) -> bool {
+    let left = MachineOperandView::Old(left);
+    let right = MachineOperandView::Old(right);
     let a = unchanged_fold_initial(left);
     let b = unchanged_fold_initial(right);
     if a.is_none() && b.is_none() {
@@ -253,8 +253,8 @@ pub(crate) fn trivial_condition_value(condition: &ConditionTerm) -> Option<bool>
             // constant in a signed equality (or conversely) at the same width.
             if *relation == CompareRelation::Equal
                 && let (
-                    MachineTerm::Constant { format: a, bits: x },
-                    MachineTerm::Constant { format: b, bits: y },
+                    OldMachineTerm::Constant { format: a, bits: x },
+                    OldMachineTerm::Constant { format: b, bits: y },
                 ) = (left.as_ref(), right.as_ref())
                 && a.format().width() == format.format().width()
                 && b.format().width() == format.format().width()
@@ -315,8 +315,8 @@ pub(in crate::kernel) fn literal_value_if_guard(condition: &ConditionTerm) -> Op
     match condition {
         ConditionTerm::Constant(_) => {}
         ConditionTerm::Compare { left, right, .. }
-            if matches!(left.as_ref(), MachineTerm::Constant { .. })
-                && matches!(right.as_ref(), MachineTerm::Constant { .. }) => {}
+            if matches!(left.as_ref(), OldMachineTerm::Constant { .. })
+                && matches!(right.as_ref(), OldMachineTerm::Constant { .. }) => {}
         integer_comparison_condition!(left, right)
             if matches!(left.as_ref(), IntegerTerm::Constant(_))
                 && matches!(right.as_ref(), IntegerTerm::Constant(_)) => {}
@@ -340,8 +340,8 @@ pub(in crate::kernel) fn is_literal_value_if_guard_root(guard: &KernelTerm) -> b
 
 /// A by-value copy can hold the source member as its exact typed view.
 /// Read that immutable entry without resolving aliases or earlier writes.
-fn stored_int32_union_member(read: &MachineTerm) -> Option<&MachineTerm> {
-    let MachineTerm::MemoryLoad(point, pointer, LoadKind::Int32) = read else {
+fn stored_int32_union_member(read: &OldMachineTerm) -> Option<&OldMachineTerm> {
+    let OldMachineTerm::MemoryLoad(point, pointer, LoadKind::Int32) = read else {
         return None;
     };
     crate::instrumentation::record_deterministic_work(1);
@@ -356,8 +356,8 @@ fn stored_int32_union_member(read: &MachineTerm) -> Option<&MachineTerm> {
 
 /// A native comparison can read a literal already stored at its exact
 /// typed cell. Run slots, aliases, and earlier memory states stay opaque.
-fn stored_int32_literal(term: &MachineTerm) -> Option<MachineIntegerConstant> {
-    let MachineTerm::MemoryLoad(point, pointer, LoadKind::Int32) = term else {
+fn stored_int32_literal(term: &OldMachineTerm) -> Option<MachineIntegerConstant> {
+    let OldMachineTerm::MemoryLoad(point, pointer, LoadKind::Int32) = term else {
         return None;
     };
     crate::instrumentation::record_deterministic_work(1);
@@ -409,7 +409,7 @@ fn stored_uint8_observation(term: &IntegerTerm) -> Option<num_bigint::BigInt> {
 }
 
 fn literal_word_bits(operand: MachineOperandView<'_>, width: u32) -> Option<u128> {
-    let MachineTerm::Constant { format, bits } = operand.literal()? else {
+    let OldMachineTerm::Constant { format, bits } = operand.literal()? else {
         return None;
     };
     (format.format().bits() == width).then_some(bits)
@@ -512,8 +512,8 @@ fn condition_value(condition: &ConditionTerm) -> Option<bool> {
             left,
             right,
         } => {
-            let a = MachineOperandView::Legacy(left);
-            let b = MachineOperandView::Legacy(right);
+            let a = MachineOperandView::Old(left);
+            let b = MachineOperandView::Old(right);
             let width = format.format().bits();
             if *relation == CompareRelation::Equal
                 && ((literal_word_bits(a, width) == Some(0) && bitwise_or_has_set_bit(b, width))
@@ -548,8 +548,8 @@ fn condition_value(condition: &ConditionTerm) -> Option<bool> {
                         | CompareRelation::GreaterEqual
                 ));
             }
-            if (matches!(left.as_ref(), MachineTerm::IntegerToMachine { .. })
-                || matches!(right.as_ref(), MachineTerm::IntegerToMachine { .. }))
+            if (matches!(left.as_ref(), OldMachineTerm::IntegerToMachine { .. })
+                || matches!(right.as_ref(), OldMachineTerm::IntegerToMachine { .. }))
                 && let Some(value) =
                     crate::kernel::machine_integer::comparison::literal_native_comparison_value(
                         condition,
@@ -591,7 +591,7 @@ fn condition_value(condition: &ConditionTerm) -> Option<bool> {
             };
             if let Some((value, bound)) = strict_upper_bound
                 && let Some(divisor) =
-                    positive_literal_remainder_divisor(*format, MachineOperandView::Legacy(value))
+                    positive_literal_remainder_divisor(*format, MachineOperandView::Old(value))
                 && format
                     .constant_from_term(bound)
                     .is_some_and(|bound| bound.to_integer() == divisor)
@@ -621,7 +621,7 @@ fn condition_value(condition: &ConditionTerm) -> Option<bool> {
                     )
                 {
                     if let Proposition::ConditionIs(reading, true) = reading
-                        && integer_operation_bound_comparison(reading.native_compat()) == Some(true)
+                        && integer_operation_bound_comparison(reading.old_form()) == Some(true)
                     {
                         return Some(true);
                     }
@@ -644,7 +644,7 @@ fn condition_value(condition: &ConditionTerm) -> Option<bool> {
 
 fn reduce_known_int32_match_operands(
     condition: &ConditionTerm,
-) -> Option<(CompareRelation, [Cow<'_, MachineTerm>; 2])> {
+) -> Option<(CompareRelation, [Cow<'_, OldMachineTerm>; 2])> {
     use crate::kernel::proof::term_rewrite::TermRewrite;
     let ConditionTerm::Compare {
         format: MachineIntegerType::Int32,
@@ -732,7 +732,7 @@ fn int32_conditional_guard(guard: BooleanOperandView<'_>) -> Option<bool> {
     };
     match (left, right) {
         (MachineOperandView::Shared(a), MachineOperandView::Shared(b)) if a == b => Some(true),
-        (MachineOperandView::Legacy(a), MachineOperandView::Legacy(b)) if std::ptr::eq(a, b) => {
+        (MachineOperandView::Old(a), MachineOperandView::Old(b)) if std::ptr::eq(a, b) => {
             Some(true)
         }
         _ if left
@@ -798,7 +798,7 @@ pub(in crate::kernel) fn closed_algebraic_if_comparison(goal: &Proposition) -> O
                 StoredAlgebraicTerm::from_root(selected.clone()).expect("typed algebraic arm")
             });
         }
-        let input = term.native_compat();
+        let input = term.old_form();
         let selected = select_closed_algebraic_arm(input);
         (!std::ptr::eq(input, selected)).then(|| selected.clone().into())
     };
@@ -945,7 +945,7 @@ fn is_constructor_payload_literal(field: &AlgebraicValue) -> bool {
     match field {
         AlgebraicValue::Integer(IntegerTerm::Constant(_)) => true,
         AlgebraicValue::Program(ProgramValue::Bool(word)) => word.bool_constant_value().is_some(),
-        AlgebraicValue::Program(integer_c_value!(MachineTerm::Constant { format, .. })) => {
+        AlgebraicValue::Program(integer_c_value!(OldMachineTerm::Constant { format, .. })) => {
             field.value_type() == AlgebraicValueType::Program(format.program_type())
         }
         _ => false,
@@ -983,13 +983,13 @@ fn is_constructor_payload(field: &AlgebraicValue) -> bool {
 
 fn constructor_payload_variable(field: &AlgebraicValue) -> Option<Variable> {
     match field {
-        AlgebraicValue::Program(integer_c_value!(MachineTerm::Variable(variable)))
+        AlgebraicValue::Program(integer_c_value!(OldMachineTerm::Variable(variable)))
         | AlgebraicValue::Integer(IntegerTerm::Variable(variable))
         | AlgebraicValue::Algebraic(AlgebraicTerm {
             node: AlgebraicTermNode::Variable(variable),
             ..
         }) => Some(*variable),
-        AlgebraicValue::Program(ProgramValue::Bool(MachineTerm::BoolCast {
+        AlgebraicValue::Program(ProgramValue::Bool(OldMachineTerm::BoolCast {
             to: MachineIntegerType::UInt8,
             value,
         })) => match value.as_ref() {
@@ -1286,7 +1286,7 @@ fn constructor_match_projection(term: &AlgebraicTerm) -> Option<&AlgebraicTerm> 
 /// The walk visits each node of the goal once.
 pub(super) fn machine_affine_equality(
     condition: &ConditionTerm,
-    atom_key: fn(&MachineTerm) -> MachineTerm,
+    atom_key: fn(&OldMachineTerm) -> OldMachineTerm,
 ) -> Option<bool> {
     let (left, right, wide) = match condition {
         ConditionTerm::Compare {
@@ -1315,18 +1315,18 @@ pub(super) fn machine_affine_equality(
 }
 
 fn collect_machine_affine_atoms(
-    term: &MachineTerm,
+    term: &OldMachineTerm,
     coefficient: u64,
     wide: bool,
-    atoms: &mut std::collections::BTreeMap<MachineTerm, u64>,
+    atoms: &mut std::collections::BTreeMap<OldMachineTerm, u64>,
     constant: &mut u64,
-    atom_key: fn(&MachineTerm) -> MachineTerm,
+    atom_key: fn(&OldMachineTerm) -> OldMachineTerm,
 ) {
     crate::instrumentation::record_deterministic_work(1);
     match (term, wide) {
         (binary_term!(Int32, Add, left, right), false)
         | (
-            MachineTerm::Binary {
+            OldMachineTerm::Binary {
                 format: MachineIntegerType::Int64,
                 op: MachineBinaryOp::Add,
                 left,
@@ -1335,7 +1335,7 @@ fn collect_machine_affine_atoms(
             true,
         )
         | (
-            MachineTerm::Binary {
+            OldMachineTerm::Binary {
                 format: MachineIntegerType::UInt64,
                 op: MachineBinaryOp::Add,
                 left,
@@ -1348,7 +1348,7 @@ fn collect_machine_affine_atoms(
         }
         (binary_term!(Int32, Subtract, left, right), false)
         | (
-            MachineTerm::Binary {
+            OldMachineTerm::Binary {
                 format: MachineIntegerType::Int64,
                 op: MachineBinaryOp::Subtract,
                 left,
@@ -1357,7 +1357,7 @@ fn collect_machine_affine_atoms(
             true,
         )
         | (
-            MachineTerm::Binary {
+            OldMachineTerm::Binary {
                 format: MachineIntegerType::UInt64,
                 op: MachineBinaryOp::Subtract,
                 left,
@@ -1928,7 +1928,7 @@ mod tests {
             offset: AddressOffset::Constant(4),
         };
         let read = |memory: SymbolicMemory, pointer: &Address| {
-            MachineTerm::read_named(
+            OldMachineTerm::read_named(
                 ProgramPoint::at(&crate::kernel::intern_memory(memory)),
                 Box::new(pointer.clone()),
                 LoadKind::Int32,
@@ -1937,7 +1937,7 @@ mod tests {
         let empty = SymbolicMemory::new();
         let copied = read(empty.clone(), &source);
         let different = read(empty.clone(), &source.offset_by_bytes(4));
-        let check = |memory, expected: &MachineTerm| {
+        let check = |memory, expected: &OldMachineTerm| {
             let condition = ConditionTerm::equal(read(memory, &destination), expected.clone());
             let goal = Proposition::condition_is(condition, true);
             crate::instrumentation::measure_deterministic_work(|| computes_leaf(&goal))
@@ -1986,7 +1986,7 @@ mod tests {
                     base: "target".into(),
                     offset: AddressOffset::Constant(4),
                 },
-                bytes: MachineTerm::constant(size).into(),
+                bytes: OldMachineTerm::constant(size).into(),
                 wide: false,
             };
             crate::instrumentation::measure_deterministic_work(|| computes_leaf(&goal))
@@ -2013,10 +2013,10 @@ mod tests {
                     let bytes = if wide {
                         StoredMachineTerm::new(
                             MachineIntegerType::UInt64,
-                            MachineTerm::uint64_constant(size),
+                            OldMachineTerm::uint64_constant(size),
                         )
                     } else {
-                        MachineTerm::constant(size as u32).into()
+                        OldMachineTerm::constant(size as u32).into()
                     };
                     let goal = Proposition::MemoryLoadable {
                         memory: memory.clone(),
@@ -2076,7 +2076,7 @@ mod tests {
             let before = memory.clone().store(base.clone(), int32(1));
             let after = before.clone().store(base.clone(), int32(u32::MAX));
             let check = |memory| {
-                let read = MachineTerm::read_named(
+                let read = OldMachineTerm::read_named(
                     ProgramPoint::at(&crate::kernel::intern_memory(memory)),
                     Box::new(base.clone()),
                     LoadKind::Int32,
@@ -2103,7 +2103,7 @@ mod tests {
         let _session = VerificationSession::enter();
         let n = IntegerTerm::from_machine(
             MachineIntegerType::Int32,
-            MachineTerm::Variable(Variable(402904)),
+            OldMachineTerm::Variable(Variable(402904)),
         )
         .unwrap();
         let observed =
@@ -2141,8 +2141,8 @@ mod tests {
             let condition = ConditionTerm::Compare {
                 format,
                 relation: CompareRelation::LessThan,
-                left: Box::new(MachineTerm::constant(u32::MAX)),
-                right: Box::new(MachineTerm::constant(0)),
+                left: Box::new(OldMachineTerm::constant(u32::MAX)),
+                right: Box::new(OldMachineTerm::constant(0)),
             };
             assert!(computes_leaf(&Proposition::condition_is(
                 condition.clone(),
@@ -2156,7 +2156,7 @@ mod tests {
 
     #[test]
     fn computation_does_not_use_float_reflexivity() {
-        let nan = MachineTerm::constant(0x7fc00000);
+        let nan = OldMachineTerm::constant(0x7fc00000);
         let goal = Proposition::condition_is(
             ConditionTerm::Float32(FloatCondition::Comparison {
                 operator: ComparisonOperator::Equal,

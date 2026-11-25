@@ -17,7 +17,7 @@ fn retained_run_reads_refresh_load_origins_without_scanning_the_run() {
             panic!("a seeded scalar names its source load");
         };
         let observation = || {
-            crate::kernel::eval::scalar_read_observation(crate::kernel::MachineOperandView::Legacy(
+            crate::kernel::eval::scalar_read_observation(crate::kernel::MachineOperandView::Old(
                 read,
             ))
             .and_then(|read| {
@@ -25,7 +25,10 @@ fn retained_run_reads_refresh_load_origins_without_scanning_the_run() {
                     .map(|origin| (origin.into_shared_memory(), read.pointer))
             })
         };
-        assert!(matches!(read, crate::kernel::MachineTerm::MemoryLoad(..)));
+        assert!(matches!(
+            read,
+            crate::kernel::OldMachineTerm::MemoryLoad(..)
+        ));
         assert!(observation().is_some());
         crate::kernel::eval::begin_load_origin_epoch();
         assert!(observation().is_none());

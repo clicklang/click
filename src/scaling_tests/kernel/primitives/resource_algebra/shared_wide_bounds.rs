@@ -24,8 +24,8 @@ fn rebased_wide_bounds_retain_cold_coordinate_dags() {
                     unsigned: true,
                 },
             },
-            MachineTerm::uint64_constant(0),
-            MachineTerm::uint64_constant(1),
+            OldMachineTerm::uint64_constant(0),
+            OldMachineTerm::uint64_constant(1),
             8,
         );
         let facts = PureFactContext::new();
@@ -77,8 +77,8 @@ fn wide_normalization_candidates_keep_shared_endpoint_keys() {
         let fact = |start, end| {
             ResourceFact::own_memory(MemoryRange::new_wide(
                 base.clone(),
-                MachineTerm::uint64_constant(start),
-                MachineTerm::uint64_constant(end),
+                OldMachineTerm::uint64_constant(start),
+                OldMachineTerm::uint64_constant(end),
                 8,
             ))
         };

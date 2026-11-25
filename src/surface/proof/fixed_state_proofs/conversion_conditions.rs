@@ -143,7 +143,7 @@ impl<'a> StatedSite<'a> {
     }
 
     /// One kernel machine term in the user's spelling.
-    fn spell_term(&self, term: &MachineTerm) -> Option<String> {
+    fn spell_term(&self, term: &OldMachineTerm) -> Option<String> {
         let (parameters, arguments) = self.naming();
         synthesize_surface_machine_expression(
             term,
@@ -220,7 +220,7 @@ fn spell_condition(
         crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard(condition)
             .map(|query| Proposition::condition_is(query, false));
     if let Proposition::ConditionIs(condition, false) = ordinary_query.as_ref().unwrap_or(condition)
-        && let Some(operation) = overflowing_operation(condition.native_compat())
+        && let Some(operation) = overflowing_operation(condition.old_form())
         && let Some(operation) = site.spell_term(&operation)
     {
         return SpelledCondition {
@@ -232,7 +232,7 @@ fn spell_condition(
         };
     }
     if let Proposition::ConditionIs(condition, true) = condition
-        && let Some((side, value, bound)) = conversion_bound(condition.native_compat(), labels)
+        && let Some((side, value, bound)) = conversion_bound(condition.old_form(), labels)
     {
         // The bound remains actionable even when this lowering supplied no
         // exact source names for the converted Integer value.
@@ -256,7 +256,7 @@ fn spell_condition(
             site.spell_proposition(&Proposition::MemoryLoadable {
                 memory: site.state.memory().clone(),
                 base: pointer.clone(),
-                bytes: (MachineTerm::constant(4)).into(),
+                bytes: (OldMachineTerm::constant(4)).into(),
                 wide: false,
             })
             .as_ref(),
@@ -368,7 +368,7 @@ fn conversion_bound(
 }
 
 /// The machine operation a signed-overflow guard is about.
-fn overflowing_operation(condition: &ConditionTerm) -> Option<MachineTerm> {
+fn overflowing_operation(condition: &ConditionTerm) -> Option<OldMachineTerm> {
     match condition {
         ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
@@ -393,7 +393,7 @@ fn overflowing_operation(condition: &ConditionTerm) -> Option<MachineTerm> {
             op: OverflowOperation::Add,
             left,
             right,
-        } => Some(MachineTerm::Binary {
+        } => Some(OldMachineTerm::Binary {
             format: MachineIntegerType::Int64,
             op: MachineBinaryOp::Add,
             left: left.clone(),
@@ -404,7 +404,7 @@ fn overflowing_operation(condition: &ConditionTerm) -> Option<MachineTerm> {
             op: OverflowOperation::Subtract,
             left,
             right,
-        } => Some(MachineTerm::Binary {
+        } => Some(OldMachineTerm::Binary {
             format: MachineIntegerType::Int64,
             op: MachineBinaryOp::Subtract,
             left: left.clone(),
@@ -415,7 +415,7 @@ fn overflowing_operation(condition: &ConditionTerm) -> Option<MachineTerm> {
             op: OverflowOperation::Multiply,
             left,
             right,
-        } => Some(MachineTerm::Binary {
+        } => Some(OldMachineTerm::Binary {
             format: MachineIntegerType::Int64,
             op: MachineBinaryOp::Multiply,
             left: left.clone(),
@@ -441,8 +441,8 @@ fn load_definition_cell(condition: &Proposition) -> Option<&Address> {
         return None;
     };
     match (left.as_ref(), right.as_ref()) {
-        (MachineTerm::Variable(_), MachineTerm::MemoryLoad(_, pointer, _))
-        | (MachineTerm::MemoryLoad(_, pointer, _), MachineTerm::Variable(_)) => Some(pointer),
+        (OldMachineTerm::Variable(_), OldMachineTerm::MemoryLoad(_, pointer, _))
+        | (OldMachineTerm::MemoryLoad(_, pointer, _), OldMachineTerm::Variable(_)) => Some(pointer),
         _ => None,
     }
 }

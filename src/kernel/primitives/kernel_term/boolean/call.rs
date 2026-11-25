@@ -40,7 +40,7 @@ impl KernelTerm {
         let KernelTermNode::Call { name, arguments } = self.node() else {
             return None;
         };
-        let MachineTerm::BoolCast { value, .. } = self.0.machine_leaf.get_or_init(|| {
+        let OldMachineTerm::BoolCast { value, .. } = self.0.machine_leaf.get_or_init(|| {
             let mut export = KernelTermExport::default();
             let arguments = arguments
                 .iter()
@@ -58,7 +58,7 @@ impl KernelTerm {
                     }
                 })
                 .collect();
-            MachineTerm::BoolCast {
+            OldMachineTerm::BoolCast {
                 to: MachineIntegerType::UInt8,
                 value: Box::new(ConditionTerm::BoolApplication(
                     SharedPureApplication::intern(name.clone(), arguments),
@@ -114,9 +114,9 @@ mod tests {
                     [
                         guard,
                         KernelTermImport::default()
-                            .machine(MachineIntegerType::Int32, &MachineTerm::constant(1)),
+                            .machine(MachineIntegerType::Int32, &OldMachineTerm::constant(1)),
                         KernelTermImport::default()
-                            .machine(MachineIntegerType::Int32, &MachineTerm::constant(0)),
+                            .machine(MachineIntegerType::Int32, &OldMachineTerm::constant(0)),
                     ],
                 ),
             )

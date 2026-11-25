@@ -24,7 +24,7 @@ impl SequenceValues {
         match self.0.as_ref() {
             SequenceValuesStorage::Input(values) => values.get(index),
             SequenceValuesStorage::Retained(values) => {
-                values.get(index).map(RetainedProgramValue::native_compat)
+                values.get(index).map(RetainedProgramValue::old_form)
             }
         }
     }

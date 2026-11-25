@@ -11,7 +11,7 @@ fn split_formation_selects_the_owned_piece_beside_unrelated_owners() {
                 Address {
                     base: AddressBase::ExternalArgument,
                     offset: AddressOffset::scale_int32(
-                        MachineTerm::Variable(Variable(932_000 + i)),
+                        OldMachineTerm::Variable(Variable(932_000 + i)),
                         4,
                     ),
                 },
@@ -79,8 +79,8 @@ fn symbolic_offset_zero_query_does_not_build_unrelated_stated_keys() {
         for index in 0..size {
             facts = facts.assume_condition(
                 ConditionTerm::signed_less_than(
-                    MachineTerm::Variable(Variable(934_000)),
-                    MachineTerm::constant(10_000 + index as u32),
+                    OldMachineTerm::Variable(Variable(934_000)),
+                    OldMachineTerm::constant(10_000 + index as u32),
                 ),
                 true,
             );
@@ -89,7 +89,7 @@ fn symbolic_offset_zero_query_does_not_build_unrelated_stated_keys() {
         let result = pointer_offset_by_elements_paths(
             &ExecutionState::new(),
             OldPointer::new(Address::null(), ProgramType::Int32Pointer),
-            MachineTerm::Variable(Variable(934_001)),
+            OldMachineTerm::Variable(Variable(934_001)),
             4,
             false,
             false,

@@ -35,7 +35,7 @@ fn a_literal_span_is_checked_in_the_selected_memory() {
     let id = StringLiteralId::new("literal_span", 0);
     let pointer = SymbolicMemory::string_literal_pointer(&id, b"ok\0");
     let memory = SymbolicMemory::new().with_read_only_block(pointer.base.clone(), 3);
-    let bytes = MachineTerm::Variable(Variable(92_001));
+    let bytes = OldMachineTerm::Variable(Variable(92_001));
     let facts = PureFactContext::new()
         .assume_condition(
             ConditionTerm::signed_less_equal(0u32.into(), bytes.clone()),
@@ -55,9 +55,9 @@ fn a_literal_span_is_checked_in_the_selected_memory() {
     );
     assert!(facts.proves_memory_loadable(&memory, &alias, &bytes));
 
-    let wide = MachineTerm::Variable(Variable(92_003));
+    let wide = OldMachineTerm::Variable(Variable(92_003));
     let facts = facts.assume_condition(
-        ConditionTerm::uint64_less_equal(wide.clone(), MachineTerm::uint64_constant(3)),
+        ConditionTerm::uint64_less_equal(wide.clone(), OldMachineTerm::uint64_constant(3)),
         true,
     );
     assert!(facts.proves_native_memory_loadable(&memory, &pointer, &wide));

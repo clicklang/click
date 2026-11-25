@@ -188,7 +188,7 @@ impl IntegerLiteral {
         } else {
             value
         };
-        let narrow = MachineTerm::constant(bits as u32);
+        let narrow = OldMachineTerm::constant(bits as u32);
         Ok(match suffix {
             IntegerSuffix::I8 => crate::kernel::int8(narrow),
             IntegerSuffix::I16 => crate::kernel::int16(narrow),
@@ -197,10 +197,10 @@ impl IntegerLiteral {
             IntegerSuffix::U16 => crate::kernel::uint16(narrow),
             IntegerSuffix::U32 => crate::kernel::uint32(narrow),
             IntegerSuffix::I64 | IntegerSuffix::Isize => {
-                ProgramValue::Int64(MachineTerm::int64_constant(bits as i64))
+                ProgramValue::Int64(OldMachineTerm::int64_constant(bits as i64))
             }
             IntegerSuffix::U64 | IntegerSuffix::Usize => {
-                ProgramValue::UInt64(MachineTerm::uint64_constant(bits))
+                ProgramValue::UInt64(OldMachineTerm::uint64_constant(bits))
             }
         })
     }
@@ -229,20 +229,22 @@ impl IntegerLiteral {
                 .map_err(|_| "integer literal does not fit a native integer".to_string())?;
             if negative {
                 if magnitude <= 1 << 31 {
-                    ProgramValue::Int32(MachineTerm::constant(0u32.wrapping_sub(magnitude as u32)))
+                    ProgramValue::Int32(OldMachineTerm::constant(
+                        0u32.wrapping_sub(magnitude as u32),
+                    ))
                 } else if magnitude <= 1 << 63 {
-                    ProgramValue::Int64(MachineTerm::int64_constant(
-                        0u64.wrapping_sub(magnitude) as i64
+                    ProgramValue::Int64(OldMachineTerm::int64_constant(
+                        0u64.wrapping_sub(magnitude) as i64,
                     ))
                 } else {
                     return Err("negative integer literal does not fit i64".into());
                 }
             } else if magnitude <= i32::MAX as u64 {
-                ProgramValue::Int32(MachineTerm::constant(magnitude as u32))
+                ProgramValue::Int32(OldMachineTerm::constant(magnitude as u32))
             } else if magnitude <= i64::MAX as u64 {
-                ProgramValue::Int64(MachineTerm::int64_constant(magnitude as i64))
+                ProgramValue::Int64(OldMachineTerm::int64_constant(magnitude as i64))
             } else {
-                ProgramValue::UInt64(MachineTerm::uint64_constant(magnitude))
+                ProgramValue::UInt64(OldMachineTerm::uint64_constant(magnitude))
             }
         };
         // A narrow value's constant is native; its literal reads its value.
@@ -258,10 +260,10 @@ impl IntegerLiteral {
                     .and_then(crate::kernel::MachineIntegerConstant::to_i128)
                     .expect("literal constants") as i32 as u32;
                 match value {
-                    ProgramValue::Int8(_) => ProgramValue::Int8(MachineTerm::constant(word)),
-                    ProgramValue::UInt8(_) => ProgramValue::UInt8(MachineTerm::constant(word)),
-                    ProgramValue::Int16(_) => ProgramValue::Int16(MachineTerm::constant(word)),
-                    _ => ProgramValue::UInt16(MachineTerm::constant(word)),
+                    ProgramValue::Int8(_) => ProgramValue::Int8(OldMachineTerm::constant(word)),
+                    ProgramValue::UInt8(_) => ProgramValue::UInt8(OldMachineTerm::constant(word)),
+                    ProgramValue::Int16(_) => ProgramValue::Int16(OldMachineTerm::constant(word)),
+                    _ => ProgramValue::UInt16(OldMachineTerm::constant(word)),
                 }
             }
             _ => value,

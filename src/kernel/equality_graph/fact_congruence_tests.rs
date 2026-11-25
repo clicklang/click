@@ -23,19 +23,19 @@ fn complete_pointer_representative_exposes_a_stored_callback() {
     assert_eq!(graph.pointer_value_representative(&unknown), unknown);
 }
 
-fn var(id: u64) -> MachineTerm {
-    MachineTerm::Variable(Variable(id))
+fn var(id: u64) -> OldMachineTerm {
+    OldMachineTerm::Variable(Variable(id))
 }
-fn call(name: &str, arguments: Vec<PureFunctionArgument>) -> MachineTerm {
-    MachineTerm::ClickFunctionApplication {
+fn call(name: &str, arguments: Vec<PureFunctionArgument>) -> OldMachineTerm {
+    OldMachineTerm::ClickFunctionApplication {
         name: name.into(),
         arguments,
     }
 }
-fn scalar(term: MachineTerm) -> PureFunctionArgument {
+fn scalar(term: OldMachineTerm) -> PureFunctionArgument {
     PureFunctionArgument::Value(ProgramValue::Int32(term))
 }
-fn eq(a: MachineTerm, b: MachineTerm) -> Proposition {
+fn eq(a: OldMachineTerm, b: OldMachineTerm) -> Proposition {
     Proposition::condition_is(ConditionTerm::equal(a, b), true)
 }
 fn pointer(name: &str) -> Address {
@@ -431,15 +431,15 @@ fn pointer_comparison_preserves_base_evidence_through_aliases_and_scopes() {
 // Reduced from the expanded zlib cursor join: two symbolic loop values meet
 // a native C argument through signed prefix counts and a native length.
 fn selected_cursor_chain() -> (Proposition, Vec<Proposition>) {
-    let total = MachineTerm::Variable(Variable(2));
-    let remaining = MachineTerm::Variable(Variable(1_000_002));
-    let after = MachineTerm::Binary {
+    let total = OldMachineTerm::Variable(Variable(2));
+    let remaining = OldMachineTerm::Variable(Variable(1_000_002));
+    let after = OldMachineTerm::Binary {
         format: MachineIntegerType::UInt64,
         op: MachineBinaryOp::Subtract,
         left: Box::new(remaining.clone()),
-        right: Box::new(MachineTerm::uint64_constant(5552)),
+        right: Box::new(OldMachineTerm::uint64_constant(5552)),
     };
-    let prefix = |remaining: MachineTerm| MachineTerm::ClickFunctionApplication {
+    let prefix = |remaining: OldMachineTerm| OldMachineTerm::ClickFunctionApplication {
         name: "prefix".into(),
         arguments: vec![
             PureFunctionArgument::Value(ProgramValue::UInt64(total.clone())),
@@ -452,9 +452,9 @@ fn selected_cursor_chain() -> (Proposition, Vec<Proposition>) {
         Int32,
         Add,
         Box::new(first.clone()),
-        Box::new(MachineTerm::constant(5552)),
+        Box::new(OldMachineTerm::constant(5552)),
     );
-    let difference = MachineTerm::Binary {
+    let difference = OldMachineTerm::Binary {
         format: MachineIntegerType::UInt64,
         op: MachineBinaryOp::Subtract,
         left: Box::new(total.clone()),
@@ -463,7 +463,7 @@ fn selected_cursor_chain() -> (Proposition, Vec<Proposition>) {
     let original = OldPointer::new(
         Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(100_001)), 1),
+            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(100_001)), 1),
         },
         ProgramType::UInt8Pointer,
     );
@@ -548,7 +548,7 @@ fn full_pointer_queries_refresh_late_address_aliases() {
             facts
                 .assumptions()
                 .equality_graph
-                .knows_condition(condition.native_compat(), *value),
+                .knows_condition(condition.old_form(), *value),
             "admission order {indices:?}"
         );
         normalize_using_conditions(&goal, &premises, &facts).expect("selected cursor chain");
@@ -626,7 +626,7 @@ fn selected_native_cursor_normalization_is_stable_across_context_orders() {
     let original = OldPointer::new(
         Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(100_001)), 1),
+            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(100_001)), 1),
         },
         ProgramType::UInt8Pointer,
     );
@@ -641,8 +641,8 @@ fn selected_native_cursor_normalization_is_stable_across_context_orders() {
     let cursor = root
         .clone()
         .with_address(root.address().offset_by_bytes(16));
-    let first = MachineTerm::Variable(Variable(10));
-    let second = MachineTerm::Variable(Variable(11));
+    let first = OldMachineTerm::Variable(Variable(10));
+    let second = OldMachineTerm::Variable(Variable(11));
     let at_first = original.clone().with_address(Address {
         base: original.address().base.clone(),
         offset: AddressOffset::add(
@@ -666,7 +666,7 @@ fn selected_native_cursor_normalization_is_stable_across_context_orders() {
         offset: AddressOffset::add(
             original.address().offset.clone(),
             AddressOffset::scale_int64(
-                MachineTerm::Binary {
+                OldMachineTerm::Binary {
                     format: MachineIntegerType::UInt64,
                     op: MachineBinaryOp::Add,
                     left: Box::new(first),
@@ -964,7 +964,7 @@ fn pointer_domain_queries_register_stored_read_definitions_without_prior_address
 #[test]
 fn native_and_shared_word_arguments_have_the_same_typed_call_congruence() {
     let _session = VerificationSession::enter();
-    let word = MachineTerm::add(var(998_730), MachineTerm::constant(3));
+    let word = OldMachineTerm::add(var(998_730), OldMachineTerm::constant(3));
     let root = crate::kernel::KernelTermImport::default()
         .machine(crate::kernel::MachineIntegerType::Int32, &word);
     let shared = PureFunctionArgument::SharedMachine(

@@ -37,7 +37,7 @@ fn compact_scalar_arrays_copy_uniform_values_without_expanding_storage_or_work()
         );
         assert_eq!(
             memory.load(&pointer("local:array-target", i64::from(count - 1) * 4)),
-            ExpressionOutcome::Value(ProgramValue::UInt32(MachineTerm::Variable(Variable(
+            ExpressionOutcome::Value(ProgramValue::UInt32(OldMachineTerm::Variable(Variable(
                 912_345
             ))))
         );
@@ -108,7 +108,7 @@ fn scalar_array_copy_after_call_captures_unknown_initialized_values_compactly() 
             ));
             assert_ne!(
                 held,
-                ExpressionOutcome::Value(ProgramValue::UInt32(MachineTerm::Variable(Variable(
+                ExpressionOutcome::Value(ProgramValue::UInt32(OldMachineTerm::Variable(Variable(
                     912_345
                 )),))
             );
@@ -213,7 +213,7 @@ fn scalar_array_states_preserve_sparse_lanes_without_length_work() {
         let _session = crate::kernel::VerificationSession::enter();
         let source = pointer("local:array-source", 0);
         let target = pointer("local:array-target", 0);
-        let lane = ProgramValue::UInt32(MachineTerm::Variable(Variable(912_346)));
+        let lane = ProgramValue::UInt32(OldMachineTerm::Variable(Variable(912_346)));
         let memory = seeded(count).store(source.clone(), lane.clone()).store(
             pointer("local:array-source", i64::from(count - 1) * 4),
             ProgramValue::UInt32(17u32.into()),
@@ -245,7 +245,7 @@ fn scalar_array_states_preserve_sparse_lanes_without_length_work() {
         assert_eq!(changed.load(&target), ExpressionOutcome::Value(lane));
         assert_eq!(
             changed.load(&pointer("local:array-source", 4)),
-            ExpressionOutcome::Value(ProgramValue::UInt32(MachineTerm::Variable(Variable(
+            ExpressionOutcome::Value(ProgramValue::UInt32(OldMachineTerm::Variable(Variable(
                 912_345
             ))))
         );

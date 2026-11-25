@@ -327,12 +327,13 @@ fn pointer_offset_bytes(
     assumptions: &PureFactContext,
     offset: &AddressOffset,
 ) -> Option<SharedMachineIntegerTerm> {
-    let literal =
-        |n| SharedMachineIntegerTerm::intern(MachineIntegerType::Int32, MachineTerm::constant(n));
+    let literal = |n| {
+        SharedMachineIntegerTerm::intern(MachineIntegerType::Int32, OldMachineTerm::constant(n))
+    };
     if let Some(bytes) = offset.as_const() {
         return u32::try_from(bytes).ok().map(literal);
     }
-    let zero = MachineTerm::constant(0);
+    let zero = OldMachineTerm::constant(0);
     let max = i32::MAX as u32;
     let le =
         |a: Operand<'_>, b: Operand<'_>| certification_proves_signed_le_views(assumptions, a, b);
@@ -349,18 +350,18 @@ fn pointer_offset_bytes(
                 left.operand_view(),
                 right.operand_view(),
             );
-            (le(Operand::Legacy(&zero), left.operand_view())
-                && le(Operand::Legacy(&zero), right.operand_view())
-                && le(Operand::Legacy(&zero), sum.operand_view())
+            (le(Operand::Old(&zero), left.operand_view())
+                && le(Operand::Old(&zero), right.operand_view())
+                && le(Operand::Old(&zero), sum.operand_view())
                 && le(left.operand_view(), sum.operand_view())
                 && le(right.operand_view(), sum.operand_view()))
             .then_some(sum)
         }
         AddressOffset::Int32Scaled { value, byte_width } => {
             let width = u32::try_from(*byte_width).ok().filter(|width| *width > 0)?;
-            let limit = MachineTerm::constant(max / width);
-            (le(Operand::Legacy(&zero), value.operand_view())
-                && (width == 1 || le(value.operand_view(), Operand::Legacy(&limit))))
+            let limit = OldMachineTerm::constant(max / width);
+            (le(Operand::Old(&zero), value.operand_view())
+                && (width == 1 || le(value.operand_view(), Operand::Old(&limit))))
             .then(|| {
                 if width == 1 {
                     value.clone()
@@ -369,7 +370,7 @@ fn pointer_offset_bytes(
                         assumptions,
                         MachineBinaryOp::Multiply,
                         value.operand_view(),
-                        Operand::Legacy(&MachineTerm::constant(width)),
+                        Operand::Old(&OldMachineTerm::constant(width)),
                     )
                 }
             })
@@ -387,7 +388,7 @@ fn pointer_offset_byte_delta(
     if goal_offset == fact_offset {
         return Some(SharedMachineIntegerTerm::intern(
             MachineIntegerType::Int32,
-            MachineTerm::constant(0),
+            OldMachineTerm::constant(0),
         ));
     }
     if let AddressOffset::Add(left, right) = goal_offset {
@@ -448,7 +449,7 @@ pub fn execution_state_justifies_loadability_obligation(
             let loadable = Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: pointer.clone(),
-                bytes: (MachineTerm::constant(value_type.byte_width())).into(),
+                bytes: (OldMachineTerm::constant(value_type.byte_width())).into(),
                 wide: false,
             };
             execution_state_justifies_loadability_obligation(state, &loadable, assumptions)
@@ -475,14 +476,14 @@ pub fn execution_state_justifies_loadability_obligation(
                     None => crate::kernel::resource_context_has_symbolic_range_read(
                         state.resources(),
                         base,
-                        bytes.native_compat(),
+                        bytes.old_form(),
                         assumptions,
                     ),
                 }
                 || assumptions.proves_memory_loadable_for_memory_resolution(
                     memory,
                     base,
-                    bytes.native_compat(),
+                    bytes.old_form(),
                 )
                 || symbolic_base_aliases_a_held_cell(memory, base, assumptions)
         }
@@ -605,12 +606,12 @@ pub fn loadable_covered_by_fact(assumptions: &PureFactContext, goal: &Propositio
                 // constant-size cell even when its symbolic byte offset is too wide
                 // for this rule's signed arithmetic.
                 if assumptions
-                    .simplify_bitvector_under_assumptions(bytes.native_compat())
+                    .simplify_bitvector_under_assumptions(bytes.old_form())
                     .as_const()
                     .is_some_and(|byte_width| {
                         assumptions.proves_loadable_cell_from_region_elements(
                             fact_base,
-                            fact_bytes.native_compat(),
+                            fact_bytes.old_form(),
                             base,
                             byte_width,
                         )
@@ -642,7 +643,7 @@ pub fn loadable_covered_by_fact(assumptions: &PureFactContext, goal: &Propositio
                 ) {
                     return u64::from(delta) + u64::from(width) <= u64::from(span);
                 }
-                let start = MachineTerm::constant(0);
+                let start = OldMachineTerm::constant(0);
                 let end = certification_binary(
                     assumptions,
                     MachineBinaryOp::Add,
@@ -662,7 +663,7 @@ pub fn loadable_covered_by_fact(assumptions: &PureFactContext, goal: &Propositio
                         le,
                     );
                 let ends_in_bounds = nonwrapping_sum
-                    && ((le(Operand::Legacy(&start), span.operand_view())
+                    && ((le(Operand::Old(&start), span.operand_view())
                         && le(end.operand_view(), span.operand_view()))
                         || {
                             let (end_base, end_shift) = split_additive_constant(end.operand_view());
@@ -671,8 +672,8 @@ pub fn loadable_covered_by_fact(assumptions: &PureFactContext, goal: &Propositio
                             end_shift <= i32::MAX as u32
                                 && span_shift <= i32::MAX as u32
                                 && end_shift <= span_shift
-                                && le(Operand::Legacy(&start), end_base.operand_view())
-                                && le(Operand::Legacy(&start), span_base.operand_view())
+                                && le(Operand::Old(&start), end_base.operand_view())
+                                && le(Operand::Old(&start), span_base.operand_view())
                                 && le(end_base.operand_view(), end.operand_view())
                                 && le(end_base.operand_view(), span_base.operand_view())
                         });
@@ -706,16 +707,16 @@ fn certification_proves_signed_le_views(
         || assumptions.proves_order_condition_for_memory_resolution(&condition, true)
 }
 
-fn collect_shallow_term_variables(term: &MachineTerm, variables: &mut BTreeSet<Variable>) {
+fn collect_shallow_term_variables(term: &OldMachineTerm, variables: &mut BTreeSet<Variable>) {
     match term {
-        MachineTerm::ThreadHandle(_) => {}
-        MachineTerm::Cast {
+        OldMachineTerm::ThreadHandle(_) => {}
+        OldMachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             ..
         }
-        | MachineTerm::BoolCast { .. } => {}
+        | OldMachineTerm::BoolCast { .. } => {}
 
-        MachineTerm::Constant { .. }
+        OldMachineTerm::Constant { .. }
         | cast_term!(Int64From32, _)
         | cast_term!(Int64FromUInt32, _)
         | cast_term!(UInt64From32, _)
@@ -724,24 +725,24 @@ fn collect_shallow_term_variables(term: &MachineTerm, variables: &mut BTreeSet<V
         | cast_term!(UInt64FromInt64, _)
         | crate::kernel::binary_wide_term!(..)
         | crate::kernel::unary_wide_term!(..) => {}
-        MachineTerm::Variable(variable) => {
+        OldMachineTerm::Variable(variable) => {
             variables.insert(*variable);
         }
         crate::kernel::binary_bitvector32_term!(left, right) => {
             collect_shallow_term_variables(left, variables);
             collect_shallow_term_variables(right, variables);
         }
-        MachineTerm::Float32Binary { left, right, .. }
-        | MachineTerm::Float64Binary { left, right, .. } => {
+        OldMachineTerm::Float32Binary { left, right, .. }
+        | OldMachineTerm::Float64Binary { left, right, .. } => {
             collect_shallow_term_variables(left, variables);
             collect_shallow_term_variables(right, variables);
         }
         unary_term!(Bits32, BitwiseNot, inner)
-        | MachineTerm::Float32Negate(inner)
-        | MachineTerm::Float64Negate(inner) => {
+        | OldMachineTerm::Float32Negate(inner)
+        | OldMachineTerm::Float64Negate(inner) => {
             collect_shallow_term_variables(inner, variables);
         }
-        MachineTerm::If {
+        OldMachineTerm::If {
             then_term,
             else_term,
             ..
@@ -749,7 +750,7 @@ fn collect_shallow_term_variables(term: &MachineTerm, variables: &mut BTreeSet<V
             collect_shallow_term_variables(then_term, variables);
             collect_shallow_term_variables(else_term, variables);
         }
-        MachineTerm::RangeFold {
+        OldMachineTerm::RangeFold {
             start,
             end,
             initial,
@@ -761,19 +762,20 @@ fn collect_shallow_term_variables(term: &MachineTerm, variables: &mut BTreeSet<V
             collect_shallow_term_variables(initial, variables);
             collect_shallow_term_variables(body, variables);
         }
-        MachineTerm::PureFunctionApplication { arguments, .. } => {
+        OldMachineTerm::PureFunctionApplication { arguments, .. } => {
             for argument in arguments {
                 collect_shallow_term_variables(argument, variables);
             }
         }
-        MachineTerm::ClickFunctionApplication { .. } | MachineTerm::AlgebraicMatch { .. } => {}
+        OldMachineTerm::ClickFunctionApplication { .. } | OldMachineTerm::AlgebraicMatch { .. } => {
+        }
         // The memory state may contain a large symbolic state. Only
         // variables outside nested loads can be the surrounding
         // quantified index. Variables in the loaded address belong to
         // the base expression (for example the owner parameter), not to
         // that index.
-        MachineTerm::MemoryLoad(_, _, _) => {}
-        MachineTerm::IntegerAddress(_, _) | MachineTerm::IntegerToMachine { .. } => {}
+        OldMachineTerm::MemoryLoad(_, _, _) => {}
+        OldMachineTerm::IntegerAddress(_, _) | OldMachineTerm::IntegerToMachine { .. } => {}
     }
 }
 
@@ -782,7 +784,7 @@ fn collect_shallow_operand_variables(term: Operand<'_>, variables: &mut BTreeSet
     let mut seen = BTreeSet::new();
     while let Some(term) = pending.pop() {
         crate::instrumentation::record_deterministic_work(1);
-        if let Operand::Legacy(term) = term {
+        if let Operand::Old(term) = term {
             collect_shallow_term_variables(term, variables);
             continue;
         }
@@ -1623,7 +1625,7 @@ fn program_function_contract_entry_facts(
                 };
                 if let Some(coverage) = pointer.opaque_coverage_fact(&MemoryRange::new_wide(
                     pointer.address().clone(),
-                    MachineTerm::uint64_constant(0),
+                    OldMachineTerm::uint64_constant(0),
                     bytes.term(),
                     1,
                 )) {
@@ -1664,14 +1666,14 @@ fn program_function_contract_entry_facts(
                 Proposition::condition_is(
                     ConditionTerm::uint64_less_equal(
                         length.clone(),
-                        MachineTerm::uint64_constant(i64::MAX as u64 / u64::from(width)),
+                        OldMachineTerm::uint64_constant(i64::MAX as u64 / u64::from(width)),
                     ),
                     true,
                 ),
             );
             if let Some(coverage) = pointer.opaque_coverage_fact(&MemoryRange::new_wide(
                 pointer.address().clone(),
-                MachineTerm::uint64_constant(0),
+                OldMachineTerm::uint64_constant(0),
                 length.clone(),
                 width,
             )) {
@@ -1866,7 +1868,7 @@ fn program_function_contract_entry_facts(
         for guard in crate::kernel::admitted_memory_range_span_facts(range) {
             let guard_is_false = match &guard {
                 Proposition::ConditionIs(condition, true) => {
-                    assumptions.decide(condition.native_compat()) == Some(false)
+                    assumptions.decide(condition.old_form()) == Some(false)
                 }
                 _ => false,
             };
@@ -1919,9 +1921,9 @@ fn program_function_contract_entry_facts(
                 base: range
                     .base()
                     .offset_by_elements(range.start().clone(), width),
-                bytes: (MachineTerm::multiply(
-                    MachineTerm::subtract(range.end().clone(), range.start().clone()),
-                    MachineTerm::constant(width),
+                bytes: (OldMachineTerm::multiply(
+                    OldMachineTerm::subtract(range.end().clone(), range.start().clone()),
+                    OldMachineTerm::constant(width),
                 ))
                 .into(),
                 wide: false,
@@ -1942,7 +1944,7 @@ fn program_function_contract_entry_facts(
         for guard in crate::kernel::admitted_memory_range_span_facts(range) {
             let guard_is_false = match &guard {
                 Proposition::ConditionIs(condition, true) => {
-                    assumptions.decide(condition.native_compat()) == Some(false)
+                    assumptions.decide(condition.old_form()) == Some(false)
                 }
                 _ => false,
             };
@@ -1975,7 +1977,7 @@ fn program_function_contract_entry_facts(
         for guard in crate::kernel::admitted_memory_range_span_facts(range) {
             let guard_is_false = match &guard {
                 Proposition::ConditionIs(condition, true) => {
-                    assumptions.decide(condition.native_compat()) == Some(false)
+                    assumptions.decide(condition.old_form()) == Some(false)
                 }
                 _ => false,
             };
@@ -2976,12 +2978,12 @@ fn freshen_proposition_bodies(
             substitute_bitvector_variable_in_proposition(
                 left_body,
                 left_binder,
-                &MachineTerm::Variable(fresh),
+                &OldMachineTerm::Variable(fresh),
             ),
             substitute_bitvector_variable_in_proposition(
                 right_body,
                 right_binder,
-                &MachineTerm::Variable(fresh),
+                &OldMachineTerm::Variable(fresh),
             ),
         )
     }
@@ -3030,7 +3032,7 @@ pub(crate) fn substitute_quantified_body_capture_free(
             substitute_bitvector_variable_in_proposition(
                 body,
                 binder,
-                &MachineTerm::Variable(target),
+                &OldMachineTerm::Variable(target),
             )
         },
     )
@@ -3103,11 +3105,11 @@ pub(crate) fn propositions_alpha_equivalent(left: &Proposition, right: &Proposit
         ) => {
             left_value == right_value
                 && (retained_syntax::conditions_equal(
-                    left_condition.native_compat(),
-                    right_condition.native_compat(),
-                ) || condition_with_canonicalized_loads(left_condition.native_compat())
+                    left_condition.old_form(),
+                    right_condition.old_form(),
+                ) || condition_with_canonicalized_loads(left_condition.old_form())
                     .zip(condition_with_canonicalized_loads(
-                        right_condition.native_compat(),
+                        right_condition.old_form(),
                     ))
                     .is_some_and(|(left, right)| left == right))
         }
@@ -3133,8 +3135,8 @@ pub(crate) fn propositions_alpha_equivalent(left: &Proposition, right: &Proposit
             },
         ) => {
             canonicalize_pointer_loads(left_base) == canonicalize_pointer_loads(right_base)
-                && canonicalize_atomic_loads(left_bytes.native_compat())
-                    == canonicalize_atomic_loads(right_bytes.native_compat())
+                && canonicalize_atomic_loads(left_bytes.old_form())
+                    == canonicalize_atomic_loads(right_bytes.old_form())
                 // Loadability depends on the state's blocks, not its
                 // cached cell values. Retired automatic blocks are part of
                 // the state marker too.
@@ -3375,11 +3377,11 @@ pub(crate) fn condition_holds_by_memory_resolution(
 /// bounded, memoized unchanged-load check over recorded derivations and
 /// effect facts, consulting no resolution fuel.
 fn names_of_one_cell_framed(
-    left: &MachineTerm,
-    right: &MachineTerm,
+    left: &OldMachineTerm,
+    right: &OldMachineTerm,
     assumptions: &PureFactContext,
 ) -> bool {
-    let (MachineTerm::Variable(left_variable), MachineTerm::Variable(right_variable)) =
+    let (OldMachineTerm::Variable(left_variable), OldMachineTerm::Variable(right_variable)) =
         (left, right)
     else {
         return false;
@@ -3391,8 +3393,8 @@ fn names_of_one_cell_framed(
         return false;
     };
     let (
-        MachineTerm::MemoryLoad(left_memory, left_pointer, left_kind),
-        MachineTerm::MemoryLoad(right_memory, right_pointer, right_kind),
+        OldMachineTerm::MemoryLoad(left_memory, left_pointer, left_kind),
+        OldMachineTerm::MemoryLoad(right_memory, right_pointer, right_kind),
     ) = (&left, &right)
     else {
         return false;
@@ -3413,8 +3415,8 @@ fn names_of_one_cell_framed(
     pointers_proven_equal_for_memory_resolution(left_pointer, right_pointer, assumptions)
         && [left_pointer, right_pointer].into_iter().any(|pointer| {
             crate::kernel::explicit_atomic_equality_from_memory_derivations(
-                &MachineTerm::read_named(left_memory.clone(), pointer.clone(), *left_kind),
-                &MachineTerm::read_named(right_memory.clone(), pointer.clone(), *right_kind),
+                &OldMachineTerm::read_named(left_memory.clone(), pointer.clone(), *left_kind),
+                &OldMachineTerm::read_named(right_memory.clone(), pointer.clone(), *right_kind),
                 assumptions,
             )
         })
@@ -3458,7 +3460,7 @@ pub(super) fn resources_certify_loadability(
             || crate::kernel::resource_context_has_symbolic_range_read(
                 resources,
                 base,
-                bytes.native_compat(),
+                bytes.old_form(),
                 assumptions,
             ))
 }
@@ -3487,9 +3489,9 @@ mod shared_contract_operand_tests {
             base: "contract-expression-cell".into(),
             offset: AddressOffset::Constant(0),
         };
-        let written = MachineTerm::add(
-            MachineTerm::Variable(Variable(1017151)),
-            MachineTerm::constant(7),
+        let written = OldMachineTerm::add(
+            OldMachineTerm::Variable(Variable(1017151)),
+            OldMachineTerm::constant(7),
         );
         let before = crate::kernel::SymbolicMemory::new().with_block("contract-expression-cell", 4);
         let after = before
@@ -3498,7 +3500,7 @@ mod shared_contract_operand_tests {
         let load = |memory| {
             SharedMachineIntegerTerm::index(
                 MachineIntegerType::Int32,
-                crate::kernel::MachineTerm::read_named(
+                crate::kernel::OldMachineTerm::read_named(
                     ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                     pointer.clone(),
                     crate::kernel::LoadKind::Int32,
@@ -3539,9 +3541,9 @@ mod shared_contract_operand_tests {
                 .with_block("contract-index", 4)
                 .store(
                     pointer.clone(),
-                    ProgramValue::Int32(MachineTerm::Variable(Variable(id))),
+                    ProgramValue::Int32(OldMachineTerm::Variable(Variable(id))),
                 );
-            crate::kernel::MachineTerm::read_named(
+            crate::kernel::OldMachineTerm::read_named(
                 ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                 pointer.clone(),
                 crate::kernel::LoadKind::Int32,
@@ -3556,8 +3558,8 @@ mod shared_contract_operand_tests {
         let left = offset(a.clone());
         let right = offset(b.clone());
         let equation = ConditionTerm::equal(
-            MachineTerm::Variable(Variable(1017152)),
-            MachineTerm::Variable(Variable(1017153)),
+            OldMachineTerm::Variable(Variable(1017152)),
+            OldMachineTerm::Variable(Variable(1017153)),
         );
         let empty = PureFactContext::new();
         let related = empty.clone().assume_condition(equation.clone(), true);
@@ -3577,15 +3579,17 @@ mod shared_contract_operand_tests {
     #[test]
     fn shared_byte_offsets_keep_bounds_and_width_authority() {
         let _session = crate::kernel::VerificationSession::enter();
-        let x = MachineTerm::Variable(Variable(1017121));
+        let x = OldMachineTerm::Variable(Variable(1017121));
         let offset = AddressOffset::Int32Scaled {
             value: SharedMachineIntegerTerm::index(MachineIntegerType::Int32, x.clone()),
             byte_width: 4,
         };
         let empty = PureFactContext::new();
-        let lower = ConditionTerm::signed_greater_equal(x.clone(), MachineTerm::constant(0));
-        let upper =
-            ConditionTerm::signed_less_equal(x.clone(), MachineTerm::constant(i32::MAX as u32 / 4));
+        let lower = ConditionTerm::signed_greater_equal(x.clone(), OldMachineTerm::constant(0));
+        let upper = ConditionTerm::signed_less_equal(
+            x.clone(),
+            OldMachineTerm::constant(i32::MAX as u32 / 4),
+        );
         let lower_only = empty.clone().assume_condition(lower.clone(), true);
         let bounded = lower_only.clone().assume_condition(upper, true);
         let exports = KernelTermExport::machine_export_count();
@@ -3598,7 +3602,7 @@ mod shared_contract_operand_tests {
                 &AddressOffset::Int64Scaled {
                     value: SharedMachineIntegerTerm::index(
                         MachineIntegerType::Int64,
-                        MachineTerm::int64_from_32(x)
+                        OldMachineTerm::int64_from_32(x)
                     ),
                     byte_width: 4,
                     unsigned: false,
@@ -3650,7 +3654,7 @@ mod prepared_entry_cases_tests {
         )
         .with_contract(vec![ternary_requirement()], vec![], vec![], vec![], true);
         let state = ExecutionState::new();
-        let flag = MachineTerm::Variable(Variable(100));
+        let flag = OldMachineTerm::Variable(Variable(100));
         let open_entry = |flag, y| {
             program_function_contract_entry(
                 &state,
@@ -3661,18 +3665,18 @@ mod prepared_entry_cases_tests {
                 ],
             )
         };
-        open_entry(MachineTerm::constant(0), MachineTerm::constant(1))
+        open_entry(OldMachineTerm::constant(0), OldMachineTerm::constant(1))
             .expect("flag = 0, y = 1 satisfies the precondition");
-        let entry = open_entry(flag.clone(), MachineTerm::Variable(Variable(101)))
+        let entry = open_entry(flag.clone(), OldMachineTerm::Variable(Variable(101)))
             .expect("a symbolic conditional is a single entry requirement");
-        let flag_is_zero = ConditionTerm::equal(flag.clone(), MachineTerm::constant(0));
+        let flag_is_zero = ConditionTerm::equal(flag.clone(), OldMachineTerm::constant(0));
         assert!(!entry.states(&Proposition::condition_is(flag_is_zero.clone(), false)));
         assert!(!entry.states(&Proposition::condition_is(flag_is_zero, true)));
         assert!(entry.facts().iter().any(|fact| {
             fact.origin() == ContractEntryFactOrigin::Requirement(0)
                 && !PureFactContext::new().proves_exact(fact.proposition())
         }));
-        open_entry(flag, MachineTerm::constant(1)).expect("both possible arms return 1");
+        open_entry(flag, OldMachineTerm::constant(1)).expect("both possible arms return 1");
     }
 
     pub(super) fn fixture(
@@ -3688,7 +3692,7 @@ mod prepared_entry_cases_tests {
             let name = format!("guarded_{index}");
             let parameter = format!("flag_{index}");
             let value =
-                ProgramValue::Int32(MachineTerm::Variable(Variable(600_000 + index as u64)));
+                ProgramValue::Int32(OldMachineTerm::Variable(Variable(600_000 + index as u64)));
             parameters.push(program_parameter(&parameter, ProgramType::Int32));
             arguments.push(ProgramExpression::Value(value.clone()));
             requirements.push(ResourceSpec::composite(
@@ -3707,7 +3711,7 @@ mod prepared_entry_cases_tests {
                         crate::kernel::program_expression::variable("flag"),
                     ),
                     operator: ComparisonOperator::NotEqual,
-                    right: SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(0))),
+                    right: SpecExpression::Value(ProgramValue::Int32(OldMachineTerm::constant(0))),
                 }),
                 false,
                 vec![ResourceSpec::token(

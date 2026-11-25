@@ -197,23 +197,23 @@ fn retained_plain_origin_requires_an_exact_allowed_atom() {
     };
     let _session = crate::kernel::VerificationSession::enter();
     for (ty, term, expected) in [
-        (T::Int32, MachineTerm::Variable(Variable(994530)), true),
-        (T::Int32, MachineTerm::constant(3), true),
-        (T::UInt32, MachineTerm::uint32_constant(3), true),
-        (T::Int64, MachineTerm::int64_constant(3), true),
-        (T::UInt64, MachineTerm::uint64_constant(3), false),
+        (T::Int32, OldMachineTerm::Variable(Variable(994530)), true),
+        (T::Int32, OldMachineTerm::constant(3), true),
+        (T::UInt32, OldMachineTerm::uint32_constant(3), true),
+        (T::Int64, OldMachineTerm::int64_constant(3), true),
+        (T::UInt64, OldMachineTerm::uint64_constant(3), false),
         (
             T::Int32,
-            MachineTerm::Binary {
+            OldMachineTerm::Binary {
                 format: T::Int32,
                 op: MachineBinaryOp::Add,
-                left: Box::new(MachineTerm::constant(1)),
-                right: Box::new(MachineTerm::constant(2)),
+                left: Box::new(OldMachineTerm::constant(1)),
+                right: Box::new(OldMachineTerm::constant(2)),
             },
             false,
         ),
     ] {
-        let root = KernelTerm::retained_machine_operand(ty, V::Legacy(&term));
+        let root = KernelTerm::retained_machine_operand(ty, V::Old(&term));
         let offset = AddressOffset::Int32Scaled {
             value: V::Shared(&root).retain(T::Int32),
             byte_width: 4,

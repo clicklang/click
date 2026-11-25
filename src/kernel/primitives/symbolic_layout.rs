@@ -11,7 +11,7 @@
 //! accesses at one base through two fields of one layout, each reaching no
 //! further than its field, are apart. No pairwise fact is stated.
 
-use super::{MachineTerm, TypeParameterName};
+use super::{OldMachineTerm, TypeParameterName};
 use std::sync::{Arc, Mutex};
 
 /// The bytes an access reaches: a fixed count from its address, or, for a
@@ -75,9 +75,9 @@ impl AccessExtent {
     }
 
     /// The extent as a 64-bit term: its count, or `sizeof(T)`.
-    pub fn term(self) -> MachineTerm {
+    pub fn term(self) -> OldMachineTerm {
         match self {
-            Self::Bytes(bytes) => MachineTerm::uint64_constant(u64::from(bytes)),
+            Self::Bytes(bytes) => OldMachineTerm::uint64_constant(u64::from(bytes)),
             Self::Object(parameter) => parameter.size_term(),
         }
     }
@@ -135,9 +135,9 @@ impl LayoutOffset {
     }
 
     /// The offset as a 64-bit term.
-    pub fn term(self) -> MachineTerm {
+    pub fn term(self) -> OldMachineTerm {
         match self {
-            Self::Bytes(bytes) => MachineTerm::uint64_constant(u64::from(bytes)),
+            Self::Bytes(bytes) => OldMachineTerm::uint64_constant(u64::from(bytes)),
             Self::Field(layout, field) => layout.offset_term(field),
         }
     }
@@ -169,9 +169,9 @@ impl LayoutSize {
             .expect("the size of a concrete layout; symbolic layouts use their terms")
     }
 
-    pub fn term(self) -> MachineTerm {
+    pub fn term(self) -> OldMachineTerm {
         match self {
-            Self::Bytes(bytes) => MachineTerm::uint64_constant(u64::from(bytes)),
+            Self::Bytes(bytes) => OldMachineTerm::uint64_constant(u64::from(bytes)),
             Self::Of(layout) => layout.size_term(),
         }
     }
@@ -300,7 +300,7 @@ impl SymbolicLayoutName {
             };
             // The size is the struct type's own `sizeof`, the one a value of
             // the type held whole reaches ([`Self::value_type`]).
-            let MachineTerm::PureFunctionApplication {
+            let OldMachineTerm::PureFunctionApplication {
                 name: size_name, ..
             } = TypeParameterName::intern(name).size_term()
             else {
@@ -400,16 +400,16 @@ impl SymbolicLayoutName {
     }
 
     /// `sizeof(name)`.
-    pub fn size_term(self) -> MachineTerm {
-        MachineTerm::PureFunctionApplication {
+    pub fn size_term(self) -> OldMachineTerm {
+        OldMachineTerm::PureFunctionApplication {
             name: self.entry().size_term.to_string(),
             arguments: Vec::new(),
         }
     }
 
     /// `offsetof(name, field)`.
-    pub fn offset_term(self, field: u32) -> MachineTerm {
-        MachineTerm::PureFunctionApplication {
+    pub fn offset_term(self, field: u32) -> OldMachineTerm {
+        OldMachineTerm::PureFunctionApplication {
             name: self.entry().offset_terms[field as usize].to_string(),
             arguments: Vec::new(),
         }
@@ -497,8 +497,8 @@ impl SymbolicLayoutName {
 
     /// The layout and field a term names: `offsetof(L, f)` is `(L, Some(f))`
     /// and `sizeof(L)` is `(L, None)`.
-    pub fn of_term(term: &MachineTerm) -> Option<(Self, Option<u32>)> {
-        let MachineTerm::PureFunctionApplication { name, arguments } = term else {
+    pub fn of_term(term: &OldMachineTerm) -> Option<(Self, Option<u32>)> {
+        let OldMachineTerm::PureFunctionApplication { name, arguments } = term else {
             return None;
         };
         if !arguments.is_empty() || !(name.starts_with("offsetof<") || name.starts_with("sizeof<"))

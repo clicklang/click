@@ -10,8 +10,8 @@ fn call(name: &str, arguments: Vec<PureFunctionArgument>) -> Address {
         offset: AddressOffset::Constant(0),
     }
 }
-fn word(id: u64) -> MachineTerm {
-    MachineTerm::Variable(Variable(id))
+fn word(id: u64) -> OldMachineTerm {
+    OldMachineTerm::Variable(Variable(id))
 }
 fn argument(id: u64) -> PureFunctionArgument {
     PureFunctionArgument::Value(ProgramValue::Int32(word(id)))
@@ -131,13 +131,13 @@ fn nested_pointer_calls_feed_scalar_calls_and_checked_reads() {
         p
     };
     let (a, b) = (build(p.clone()), build(q.clone()));
-    let scalar = |p| MachineTerm::ClickFunctionApplication {
+    let scalar = |p| OldMachineTerm::ClickFunctionApplication {
         name: "count".into(),
         arguments: vec![pointer_argument(p)],
     };
     let memory = intern_memory(SymbolicMemory::new());
     let read = |p| {
-        MachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
+        OldMachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
             &memory,
             &p,
             LoadKind::Int32,

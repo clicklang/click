@@ -14,7 +14,7 @@ fn byte_assembly_masks_symbolic_bytes_and_ignores_unrelated_memory() {
         for byte in 0..3 {
             memory = memory.store(
                 word(byte),
-                ProgramValue::UInt8(MachineTerm::Variable(Variable(8000 + byte as u64))),
+                ProgramValue::UInt8(OldMachineTerm::Variable(Variable(8000 + byte as u64))),
             );
         }
         for index in 0..size {
@@ -26,20 +26,20 @@ fn byte_assembly_masks_symbolic_bytes_and_ignores_unrelated_memory() {
                 ProgramValue::UInt32(index.into()),
             );
         }
-        let incoming = ProgramValue::UInt8(MachineTerm::Variable(Variable(8003)));
+        let incoming = ProgramValue::UInt8(OldMachineTerm::Variable(Variable(8003)));
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
             assemble(&memory, &word(3), &incoming, Some(ByteOrder::Little))
         });
-        let mut expected = MachineTerm::constant(0);
+        let mut expected = OldMachineTerm::constant(0);
         for byte in 0u32..4 {
-            expected = MachineTerm::bitwise_or(
+            expected = OldMachineTerm::bitwise_or(
                 expected,
                 // Each byte's word is its zero extension.
-                MachineTerm::unsigned_shift_left(
-                    MachineTerm::machine_integer_cast(
+                OldMachineTerm::unsigned_shift_left(
+                    OldMachineTerm::machine_integer_cast(
                         crate::kernel::MachineIntegerType::UInt8,
                         crate::kernel::MachineIntegerType::Int32,
-                        MachineTerm::Variable(Variable(8000 + u64::from(byte))),
+                        OldMachineTerm::Variable(Variable(8000 + u64::from(byte))),
                     ),
                     (8 * byte).into(),
                 ),
@@ -60,7 +60,7 @@ fn containing_cell_lookup_work_is_independent_of_unrelated_cells() {
     for unrelated in [8_u32, 32, 128, 512] {
         let mut memory = SymbolicMemory::new().store(
             word(0),
-            ProgramValue::UInt64(MachineTerm::uint64_constant(0x0102_0304_0506_0708)),
+            ProgramValue::UInt64(OldMachineTerm::uint64_constant(0x0102_0304_0506_0708)),
         );
         for index in 0..unrelated {
             memory = memory.store(
@@ -114,7 +114,7 @@ fn declared_word_read_representation_ignores_unrelated_memory() {
 
 #[test]
 fn containing_cell_lookup_keeps_compact_runs_compact() {
-    let value = ProgramValue::UInt64(MachineTerm::uint64_constant(0x0102_0304_0506_0708));
+    let value = ProgramValue::UInt64(OldMachineTerm::uint64_constant(0x0102_0304_0506_0708));
     let absent = Address {
         base: AddressBase::from("global:other"),
         offset: AddressOffset::Constant(0),

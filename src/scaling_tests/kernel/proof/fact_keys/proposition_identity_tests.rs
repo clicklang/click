@@ -8,8 +8,8 @@ use super::*;
 fn alpha_identity_work_scales_with_nested_binder_depth() {
     let make = |depth: u64, offset: u64| {
         let mut proposition = equal(
-            MachineTerm::Variable(Variable(offset + depth - 1)),
-            MachineTerm::constant(1),
+            OldMachineTerm::Variable(Variable(offset + depth - 1)),
+            OldMachineTerm::constant(1),
         );
         for index in (0..depth).rev() {
             proposition = forall(offset + index, proposition);

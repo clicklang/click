@@ -46,7 +46,7 @@ fn selected_constructor_payload_check_scales_with_written_fields() {
         let mut result_fields = bindings.iter().cloned().rev().collect::<Vec<_>>();
         let extra_field = match ty {
             AlgebraicValueType::Program(ProgramType::UInt64) => {
-                AlgebraicValue::Program(uint64(MachineTerm::uint64_constant(7)))
+                AlgebraicValue::Program(uint64(OldMachineTerm::uint64_constant(7)))
             }
             _ => value(992_500),
         };
@@ -435,10 +435,10 @@ fn stored_byte_order_uses_only_the_exact_cells() {
     let other = block("byte-order-other");
     let format = MachineIntegerType::Int32;
     let read = |memory: &SymbolicMemory, pointer: Address| {
-        MachineTerm::machine_integer_cast(
+        OldMachineTerm::machine_integer_cast(
             MachineIntegerType::UInt8,
             format,
-            MachineTerm::read_named(
+            OldMachineTerm::read_named(
                 ProgramPoint::at(&crate::kernel::intern_memory(memory.clone())),
                 Box::new(pointer),
                 LoadKind::UInt8,
@@ -520,7 +520,7 @@ fn cached_read_definedness_checks_only_the_selected_typed_cell() {
         base: AddressBase::Concrete("local:other-definedness-read".into()),
         offset: AddressOffset::Constant(0),
     };
-    let int32 = |value| ProgramValue::Int32(MachineTerm::constant(value));
+    let int32 = |value| ProgramValue::Int32(OldMachineTerm::constant(value));
     let before = SymbolicMemory::new()
         .with_block(selected.base.clone(), 4096)
         .with_block(unrelated.base.clone(), 4096);
@@ -633,22 +633,25 @@ fn computation_refusal_is_independent_of_memory_history() {
         );
         let mut after = before.memory().clone();
         for _ in 0..size {
-            after = after.store(other.clone(), ProgramValue::Int32(MachineTerm::constant(7)));
+            after = after.store(
+                other.clone(),
+                ProgramValue::Int32(OldMachineTerm::constant(7)),
+            );
         }
         let after = crate::kernel::intern_memory(after);
-        let left = MachineTerm::read_named(
+        let left = OldMachineTerm::read_named(
             ProgramPoint::at(&before),
             Box::new(pointer.clone()),
             LoadKind::Int32,
         );
-        let right = MachineTerm::read_named(
+        let right = OldMachineTerm::read_named(
             ProgramPoint::at(&after),
             Box::new(pointer.clone()),
             LoadKind::Int32,
         );
         let read_equality =
             Proposition::condition_is(ConditionTerm::equal(left.clone(), right), true);
-        let add = |left, right| MachineTerm::Binary {
+        let add = |left, right| OldMachineTerm::Binary {
             format: MachineIntegerType::Int32,
             op: MachineBinaryOp::Add,
             left: Box::new(left),
@@ -656,8 +659,8 @@ fn computation_refusal_is_independent_of_memory_history() {
         };
         let rearranged = Proposition::condition_is(
             ConditionTerm::equal(
-                add(left.clone(), MachineTerm::constant(1)),
-                add(MachineTerm::constant(1), left),
+                add(left.clone(), OldMachineTerm::constant(1)),
+                add(OldMachineTerm::constant(1), left),
             ),
             true,
         );
@@ -671,7 +674,7 @@ fn computation_refusal_is_independent_of_memory_history() {
         assert!(!computes_leaf(&Proposition::MemoryLoadable {
             memory: before.memory().clone(),
             base: pointer,
-            bytes: (MachineTerm::constant(5)).into(),
+            bytes: (OldMachineTerm::constant(5)).into(),
             wide: false,
         }));
     }
@@ -751,11 +754,11 @@ fn distribution_check_is_one_local_step_and_never_expands_a_polynomial() {
 fn integer_normalization_uses_intrinsic_widenings_with_linear_work() {
     use crate::kernel::{MachineCastSpelling, MachineIntegerType as Ty};
     fn observation(variable: u64, destination: Ty) -> IntegerTerm {
-        let value = MachineTerm::Variable(Variable(variable));
+        let value = OldMachineTerm::Variable(Variable(variable));
         let value = if destination == Ty::UInt8 {
             value
         } else {
-            MachineTerm::Cast {
+            OldMachineTerm::Cast {
                 spelling: MachineCastSpelling::Generic,
                 value: Box::new(value),
                 from: Ty::UInt8,

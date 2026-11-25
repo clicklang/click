@@ -4,7 +4,7 @@ fn retained_pure_citations_use_singletons_without_scanning_related_or_unrelated_
     let functions = ClickFunctionEnvironment::new(&[]);
     let theorems = TheoremEnvironment::new(&[]);
     let point = crate::kernel::ProgramPoint::starting_at(&SymbolicMemory::new());
-    let value = MachineTerm::Variable(Variable(987_123));
+    let value = OldMachineTerm::Variable(Variable(987_123));
     let values = ProgramValueBindings::from([("n".into(), ProgramValue::Int32(value))]);
     let source = SyntaxProposition::Comparison {
         left: SyntaxTerm::ProgramExpression(ProgramExpression::Variable("n".into())),

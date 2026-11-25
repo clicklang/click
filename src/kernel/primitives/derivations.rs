@@ -181,7 +181,7 @@ impl PropositionDerivation {
     /// prover: the quantified fact, concrete argument, and guard premises.
     pub fn forall_int32_instantiation(
         &self,
-    ) -> Option<(&Proposition, &MachineTerm, &[Proposition])> {
+    ) -> Option<(&Proposition, &OldMachineTerm, &[Proposition])> {
         match &self.rule {
             PropositionDerivationRule::ContextualAtomic {
                 evidence: AtomicPropositionDerivationEvidence::ForallInt32Instantiation(evidence),
@@ -862,7 +862,7 @@ impl PointerOffsetCongruenceEvidence {
                     return false;
                 };
                 let Some((premise_left, premise_right)) =
-                    condition.native_compat().pointer_offset_sides()
+                    condition.old_form().pointer_offset_sides()
                 else {
                     return false;
                 };
@@ -1009,7 +1009,7 @@ impl SignedConstantEvidence {
         let Proposition::ConditionIs(condition, value) = source else {
             return None;
         };
-        let view = comparison_view(condition.native_compat(), *value)?;
+        let view = comparison_view(condition.old_form(), *value)?;
         if !matches!(
             view.format,
             MachineIntegerType::Int32 | MachineIntegerType::UInt32
@@ -1037,13 +1037,13 @@ impl SignedConstantEvidence {
 impl DirectBitvectorEqualityEvidence {
     pub(in crate::kernel) fn checks(
         &self,
-        left: &MachineTerm,
-        right: &MachineTerm,
+        left: &OldMachineTerm,
+        right: &OldMachineTerm,
         assumptions: &PureFactContext,
     ) -> bool {
         self.checks_views(
-            crate::kernel::MachineOperandView::Legacy(left),
-            crate::kernel::MachineOperandView::Legacy(right),
+            crate::kernel::MachineOperandView::Old(left),
+            crate::kernel::MachineOperandView::Old(right),
             assumptions,
         )
     }
@@ -1098,7 +1098,7 @@ impl DirectBitvectorEqualityEvidence {
                                         return None;
                                     };
                                     let view = crate::kernel::assumptions::order_view_at_format(
-                                        condition.native_compat(),
+                                        condition.old_form(),
                                         *truth,
                                         MachineIntegerType::Int32,
                                     )?;
@@ -1255,12 +1255,12 @@ impl LoadAddressCongruenceEvidence {
             return false;
         };
         let (Some(left), Some(right)) = (
-            crate::kernel::eval::scalar_read_observation(
-                crate::kernel::MachineOperandView::Legacy(left),
-            ),
-            crate::kernel::eval::scalar_read_observation(
-                crate::kernel::MachineOperandView::Legacy(right),
-            ),
+            crate::kernel::eval::scalar_read_observation(crate::kernel::MachineOperandView::Old(
+                left,
+            )),
+            crate::kernel::eval::scalar_read_observation(crate::kernel::MachineOperandView::Old(
+                right,
+            )),
         ) else {
             return false;
         };
@@ -1292,7 +1292,7 @@ impl SignedOrderDerivationStep {
     ) -> Self {
         use super::super::assumptions::checked_scalar_facts::ScalarOperandKey as Key;
         let retain = |operand| match operand {
-            MachineOperandView::Legacy(term) => Key::Written(term.clone()),
+            MachineOperandView::Old(term) => Key::Written(term.clone()),
             MachineOperandView::Shared(_) => Key::for_format(MachineIntegerType::Int32, operand),
         };
         Self {
@@ -1316,7 +1316,7 @@ impl SignedOrderDerivationStep {
         value: MachineOperandView<'_>,
     ) -> bool {
         use super::super::assumptions::checked_scalar_facts::ScalarOperandKey as Key;
-        if let (Key::Written(left), MachineOperandView::Legacy(right)) = (endpoint, value) {
+        if let (Key::Written(left), MachineOperandView::Old(right)) = (endpoint, value) {
             left == right
         } else {
             Key::for_format(MachineIntegerType::Int32, endpoint.operand_view())
@@ -1332,16 +1332,16 @@ impl SignedOrderDerivationStep {
         Self::endpoint_matches(&self.upper, value)
     }
 
-    pub(in crate::kernel) fn lower_is(&self, value: &MachineTerm) -> bool {
-        self.lower_matches_view(MachineOperandView::Legacy(value))
+    pub(in crate::kernel) fn lower_is(&self, value: &OldMachineTerm) -> bool {
+        self.lower_matches_view(MachineOperandView::Old(value))
     }
 
-    pub(in crate::kernel) fn upper_is(&self, value: &MachineTerm) -> bool {
-        self.upper_matches_view(MachineOperandView::Legacy(value))
+    pub(in crate::kernel) fn upper_is(&self, value: &OldMachineTerm) -> bool {
+        self.upper_matches_view(MachineOperandView::Old(value))
     }
 
     /// Explicit compatibility output; checker consumers use `lower_view`.
-    pub fn lower(&self) -> &MachineTerm {
+    pub fn lower(&self) -> &OldMachineTerm {
         match &self.lower {
             super::super::assumptions::checked_scalar_facts::ScalarOperandKey::Shared(term) => {
                 term.value()
@@ -1352,7 +1352,7 @@ impl SignedOrderDerivationStep {
         }
     }
 
-    pub fn upper(&self) -> &MachineTerm {
+    pub fn upper(&self) -> &OldMachineTerm {
         match &self.upper {
             super::super::assumptions::checked_scalar_facts::ScalarOperandKey::Shared(term) => {
                 term.value()
@@ -1385,11 +1385,11 @@ impl BitvectorEqualityDerivationStep {
     }
 
     /// Explicit compatibility output for surface certificate construction.
-    pub fn source(&self) -> &MachineTerm {
+    pub fn source(&self) -> &OldMachineTerm {
         self.source.value()
     }
 
-    pub fn target(&self) -> &MachineTerm {
+    pub fn target(&self) -> &OldMachineTerm {
         self.target.value()
     }
 

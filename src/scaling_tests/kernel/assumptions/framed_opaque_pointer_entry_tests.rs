@@ -27,7 +27,7 @@ fn an_opaque_candidate_does_not_walk_its_unusable_memory_frame() {
         for index in 0..size {
             memory = memory.store(
                 field.clone().offset_by_bytes((8 + index * 8) as u32),
-                ProgramValue::UInt64(MachineTerm::uint64_constant(index)),
+                ProgramValue::UInt64(OldMachineTerm::uint64_constant(index)),
             );
         }
         let current = OldPointer::new(
@@ -90,7 +90,7 @@ fn framed_pointer_refusals_do_not_scan_same_address_sources() {
         for index in 0..size {
             let memory = SymbolicMemory::new().store(
                 field.offset_by_bytes(8),
-                ProgramValue::UInt64(MachineTerm::uint64_constant(index)),
+                ProgramValue::UInt64(OldMachineTerm::uint64_constant(index)),
             );
             let source = OldPointer::new(
                 Address::loaded_value(&intern_memory_ref(&memory), &field),

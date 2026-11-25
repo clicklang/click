@@ -404,8 +404,8 @@ impl<'a> BooleanOperandView<'a> {
                 *format,
                 *op,
                 [
-                    MachineOperandView::Legacy(left),
-                    MachineOperandView::Legacy(right),
+                    MachineOperandView::Old(left),
+                    MachineOperandView::Old(right),
                 ],
             )),
             _ => None,
@@ -441,8 +441,8 @@ impl<'a> BooleanOperandView<'a> {
                 *format,
                 *relation,
                 [
-                    MachineOperandView::Legacy(left),
-                    MachineOperandView::Legacy(right),
+                    MachineOperandView::Old(left),
+                    MachineOperandView::Old(right),
                 ],
             )),
             _ => None,
@@ -729,12 +729,12 @@ impl KernelTermExport {
         })
     }
 
-    fn condition_machine_operand(term: &KernelTerm) -> Result<MachineTerm, &'static str> {
+    fn condition_machine_operand(term: &KernelTerm) -> Result<OldMachineTerm, &'static str> {
         // Fixed-size atoms have their exact written form already. Only a
         // compound guard operand needs the remaining Boolean export boundary.
         match term.node() {
-            KernelTermNode::Variable(variable) => Ok(MachineTerm::Variable(*variable)),
-            KernelTermNode::MachineLiteral(value) => Ok(value.legacy_term()),
+            KernelTermNode::Variable(variable) => Ok(OldMachineTerm::Variable(*variable)),
+            KernelTermNode::MachineLiteral(value) => Ok(value.old_term()),
             KernelTermNode::MemoryLoad { .. } => {
                 Ok(term.machine_read_leaf().expect("read descriptor").clone())
             }
@@ -763,8 +763,8 @@ mod tests {
                 cases.push(ConditionTerm::Compare {
                     format,
                     relation,
-                    left: Box::new(MachineTerm::Variable(Variable(964_096))),
-                    right: Box::new(MachineTerm::machine_constant(
+                    left: Box::new(OldMachineTerm::Variable(Variable(964_096))),
+                    right: Box::new(OldMachineTerm::machine_constant(
                         MachineIntegerConstant::from_signed(format.format(), 1).unwrap(),
                     )),
                 });
@@ -808,15 +808,15 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let free = Variable(971_001);
         let accumulator = Variable(971_002);
-        let fold = MachineTerm::RangeFold {
-            start: Box::new(MachineTerm::constant(0)),
-            end: Box::new(MachineTerm::Variable(free)),
-            initial: Box::new(MachineTerm::Variable(accumulator)),
+        let fold = OldMachineTerm::RangeFold {
+            start: Box::new(OldMachineTerm::constant(0)),
+            end: Box::new(OldMachineTerm::Variable(free)),
+            initial: Box::new(OldMachineTerm::Variable(accumulator)),
             accumulator,
             item: Variable(971_003),
-            body: Box::new(MachineTerm::add(
-                MachineTerm::Variable(free),
-                MachineTerm::Variable(accumulator),
+            body: Box::new(OldMachineTerm::add(
+                OldMachineTerm::Variable(free),
+                OldMachineTerm::Variable(accumulator),
             )),
         };
         let source = ConditionTerm::BoolIf {
@@ -825,12 +825,12 @@ mod tests {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left: Box::new(fold.clone()),
-                right: Box::new(MachineTerm::Variable(Variable(971_004))),
+                right: Box::new(OldMachineTerm::Variable(Variable(971_004))),
             }),
             else_condition: Box::new(ConditionTerm::Constant(false)),
         };
         let root = KernelTermImport::default().condition(&source);
-        let replacement = MachineTerm::Variable(accumulator);
+        let replacement = OldMachineTerm::Variable(accumulator);
         let expected =
             crate::kernel::reasoning::substitute_bitvector_variable(&fold, free, &replacement);
         let actual =
@@ -859,11 +859,11 @@ mod tests {
         let atom = ConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::IntegerAddress(
+            left: Box::new(OldMachineTerm::IntegerAddress(
                 Box::new(Address::symbolic(from)),
                 crate::kernel::AddressObjectClass::NONE,
             )),
-            right: Box::new(MachineTerm::uint64_constant(0)),
+            right: Box::new(OldMachineTerm::uint64_constant(0)),
         };
         let sources = [
             ConditionTerm::BoolEqual(Box::new(atom.clone()), Box::new(atom.clone())),
@@ -929,8 +929,8 @@ mod tests {
             condition: Box::new(ConditionTerm::Compare {
                 format: MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::Variable(Variable(964_090))),
-                right: Box::new(MachineTerm::constant(1)),
+                left: Box::new(OldMachineTerm::Variable(Variable(964_090))),
+                right: Box::new(OldMachineTerm::constant(1)),
             }),
             then_condition: Box::new(ConditionTerm::Constant(true)),
             else_condition: Box::new(ConditionTerm::BoolEqual(
@@ -1016,8 +1016,8 @@ mod tests {
         let comparison = |format| ConditionTerm::Compare {
             format,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::Variable(Variable(961_001))),
-            right: Box::new(MachineTerm::constant(0)),
+            left: Box::new(OldMachineTerm::Variable(Variable(961_001))),
+            right: Box::new(OldMachineTerm::constant(0)),
         };
         let signed = comparison(MachineIntegerType::Int32);
         let unsigned = comparison(MachineIntegerType::UInt32);
@@ -1044,7 +1044,7 @@ mod tests {
             ConditionTerm::BoolApplication(SharedPureApplication::intern(
                 "predicate".into(),
                 vec![PureFunctionArgument::Value(ProgramValue::Int32(
-                    MachineTerm::Variable(Variable(961_003)),
+                    OldMachineTerm::Variable(Variable(961_003)),
                 ))],
             )),
             ConditionTerm::IntegerEqual(
@@ -1060,7 +1060,7 @@ mod tests {
             ] {
                 let source = PureFunctionArgument::Value(super::super::machine::wrap_exact(
                     destination,
-                    MachineTerm::BoolCast {
+                    OldMachineTerm::BoolCast {
                         to: destination,
                         value: Box::new(condition.clone()),
                     },

@@ -260,7 +260,7 @@ promotion and unsigned wrapping retain their C meanings.
 Specification `/` and `%` are total
 (`eval/operators/spec_arithmetic.rs`, `SpecDivision`). A zero divisor owes
 nothing: the term is the kernel's quotient node, which constant folding
-leaves standing for a zero divisor (`MachineTerm::divide`,
+leaves standing for a zero divisor (`OldMachineTerm::divide`,
 `MachineIntegerConstant::truncating_div_rem`), so `x / 0` is a fixed but
 unspecified value. Only congruence relates it: `a / 0 == a / 0`, and equal
 operands give equal quotients, but no rule states a value or a bound for it.
@@ -590,7 +590,7 @@ includes the unchanged Bitcoin fast-path operand conversion expressions.
 
 A C conversion between `int` and `unsigned int` is the sign cast σ, the
 generic `Cast` node from `int32` to `uint32` or back
-(`MachineTerm::sign_cast32`). C assignment, return, argument and cast
+(`OldMachineTerm::sign_cast32`). C assignment, return, argument and cast
 conversions build it, the usual arithmetic conversions build it for an
 `int` operand of an `unsigned` operation, and so does the modulo boundary
 above (Rust `as`, C++ conversions, specification casts). A sign-cleared
@@ -655,15 +655,15 @@ signed read of a cell is the native sign cast of its unsigned read, a
 conversion node as a written cast interns it. Kernel-internal reads (index
 arithmetic, pointer words) are `Int32`.
 
-A constant has a format: `MachineTerm::Constant { format, bits }` is
+A constant has a format: `OldMachineTerm::Constant { format, bits }` is
 one node for every format (decision G9), built by
-`MachineTerm::constant(v)` at `int32`, the format of every
+`OldMachineTerm::constant(v)` at `int32`, the format of every
 kernel-internal constant, `uint32_constant`, `int64_constant`,
 `uint64_constant` and `machine_constant`. A C, C++ or Rust value at
 `uint32` takes the `uint32` format: literals,
 `MachineIntegerType::constant_term` and every conversion that folds to
 `uint32`, `kernel::uint32` and `value_from_term`
-(`MachineTerm::in_format32`). Inside an `int32` operator, comparison or
+(`OldMachineTerm::in_format32`). Inside an `int32` operator, comparison or
 overflow test a `uint32` constant is read as the `int32` constant of its
 bits (`into_word32`, `constant_word32`), and the e-graph interns both as
 one atom (`MachineAtom::int32`). The difference graph reads its value, and
@@ -882,7 +882,7 @@ This representation foundation used schema 38 without admitting new source opera
 ## Integer conditional
 
 `IntegerTerm::If { condition, then_term, else_term }` is the Integer
-counterpart of the machine `MachineTerm::If`: a `ConditionTerm` and two
+counterpart of the machine `OldMachineTerm::If`: a `ConditionTerm` and two
 shared (`SharedIntegerTerm`) arms. `IntegerTerm::if_then_else` builds it and
 leaves one arm for a constant condition or equal arms, so neither stands.
 `SpecIntegerExpression::If` holds the written proposition and Integer

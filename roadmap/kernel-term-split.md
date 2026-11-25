@@ -36,6 +36,9 @@ renamed to "old". Renamed so far:
 | --- | --- |
 | `OldPointer` | `KernelPointer` (handle `SharedPointer`) |
 | `KernelTerm::old_pointer_value`, `old_pointer_argument` | the retained `SharedPointer` itself |
+| `OldMachineTerm` | `KernelTerm` machine nodes (`MachineBinary`, `MachineCast`, …) |
+| `MachineOperandView::Old`, `MachineLeaf::Old` | `MachineOperandView::Shared` |
+| `old_form()` (was `native_compat()`), `old_term()` (was `legacy_term()`) | the retained kernel value |
 
 ## Closure checklist
 

@@ -18962,7 +18962,7 @@ fn qualified_static_struct_startup_and_expansion() {
                 "state".into(),
             ))
         )),
-        ExpressionOutcome::Value(ProgramValue::UInt64(MachineTerm::uint64_constant(7)))
+        ExpressionOutcome::Value(ProgramValue::UInt64(OldMachineTerm::uint64_constant(7)))
     );
     let verified_for_expansion = verify_c_sources(source, &sources).unwrap();
     for (_, expanded) in expand_checked_grouped_claims(

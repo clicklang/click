@@ -166,7 +166,7 @@ impl KernelTerm {
             || (matches!(a.program_type, ProgramType::FunctionPointer(_))
                 && matches!(b.program_type, ProgramType::FunctionPointer(_)))
         {
-            fn bits(address: &SharedAddress) -> Option<&MachineTerm> {
+            fn bits(address: &SharedAddress) -> Option<&OldMachineTerm> {
                 if matches!(
                     address.node().offset.node(),
                     KernelAddressOffset::Constant(0)
@@ -185,8 +185,10 @@ impl KernelTerm {
                             .machine(MachineIntegerType::UInt64, bits);
                     }
                     if address.syntax_equal(&SharedAddress::import(&Address::null())) {
-                        return KernelTermImport::default()
-                            .machine(MachineIntegerType::UInt64, &MachineTerm::uint64_constant(0));
+                        return KernelTermImport::default().machine(
+                            MachineIntegerType::UInt64,
+                            &OldMachineTerm::uint64_constant(0),
+                        );
                     }
                     Self::shared_pointer_address_observation(
                         MachineIntegerType::UInt64,
@@ -217,7 +219,7 @@ mod tests {
         for pointer in [
             Address::symbolic(Variable(999101)),
             Address::null(),
-            Address::from_integer_address(MachineTerm::Variable(Variable(999102))),
+            Address::from_integer_address(OldMachineTerm::Variable(Variable(999102))),
             Address {
                 base: AddressBase::ExternalObject(Variable(999101)),
                 offset: AddressOffset::Constant(0),
@@ -229,7 +231,7 @@ mod tests {
             values.push(raw.clone().with_root_bounds());
             values.push(raw.clone().with_bounds(Some(SubobjectBounds {
                 start: Address::symbolic(Variable(999101)),
-                width: MachineTerm::Variable(Variable(999102)),
+                width: OldMachineTerm::Variable(Variable(999102)),
             })));
             values.push(
                 raw.clone()
@@ -240,7 +242,7 @@ mod tests {
                 offset: AddressOffset::Add(
                     Box::new(AddressOffset::Constant(0)),
                     Box::new(AddressOffset::scaled_int32_node(
-                        MachineTerm::Variable(Variable(999102)),
+                        OldMachineTerm::Variable(Variable(999102)),
                         4,
                     )),
                 ),
@@ -313,7 +315,7 @@ mod tests {
                     ),
                 ] {
                     let root = KernelTermImport::default().condition(&source);
-                    let bits = MachineTerm::constant(3);
+                    let bits = OldMachineTerm::constant(3);
                     let expected =
                         crate::kernel::reasoning::substitute_bitvector_variable_in_condition(
                             &source,
@@ -395,9 +397,9 @@ mod tests {
                 .syntax_equal(BooleanOperandView::Shared(&roots[1]))
         );
         let one = KernelTermImport::default()
-            .machine(MachineIntegerType::Int32, &MachineTerm::constant(1));
+            .machine(MachineIntegerType::Int32, &OldMachineTerm::constant(1));
         let zero = KernelTermImport::default()
-            .machine(MachineIntegerType::Int32, &MachineTerm::constant(0));
+            .machine(MachineIntegerType::Int32, &OldMachineTerm::constant(0));
         let observed = roots.map(|guard| {
             SharedMachineIntegerTerm::observe_shared(
                 MachineIntegerType::Int32,
@@ -415,9 +417,9 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let values = values();
         let one = KernelTermImport::default()
-            .machine(MachineIntegerType::Int32, &MachineTerm::constant(1));
+            .machine(MachineIntegerType::Int32, &OldMachineTerm::constant(1));
         let zero = KernelTermImport::default()
-            .machine(MachineIntegerType::Int32, &MachineTerm::constant(0));
+            .machine(MachineIntegerType::Int32, &OldMachineTerm::constant(0));
         let observed: Vec<_> = values
             .iter()
             .map(|value| {
@@ -449,13 +451,13 @@ mod tests {
             .with_block("complete-other", 4);
         let after = before.clone().store(
             crate::kernel::SymbolicMemory::global_pointer("complete-other"),
-            ProgramValue::Int32(MachineTerm::constant(1)),
+            ProgramValue::Int32(OldMachineTerm::constant(1)),
         );
         let roots = [before, after].map(|memory| {
             let pointer = Address {
                 base: AddressBase::Symbolic(Variable(999130)),
                 offset: AddressOffset::scaled_int32_node(
-                    MachineTerm::read_named(
+                    OldMachineTerm::read_named(
                         ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                         Box::new(crate::kernel::SymbolicMemory::global_pointer(
                             "complete-read",
@@ -471,7 +473,7 @@ mod tests {
             ))
         });
         for allowed in [false, true] {
-            let loads = |_: &MachineTerm, _: &MachineTerm| allowed;
+            let loads = |_: &OldMachineTerm, _: &OldMachineTerm| allowed;
             assert!(
                 !crate::kernel::assumptions::boolean_operands_equal_with_load_atoms(
                     BooleanOperandView::Shared(&roots[0]),

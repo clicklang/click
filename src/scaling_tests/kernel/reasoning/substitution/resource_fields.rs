@@ -76,7 +76,7 @@ fn mixed_resource_fields_substitute_without_exporting_the_integer_dag() {
             substitute_bitvector_variable_in_resource(
                 &resource,
                 variable,
-                &MachineTerm::uint64_constant(7),
+                &OldMachineTerm::uint64_constant(7),
             )
         });
         assert_eq!(

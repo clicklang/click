@@ -151,7 +151,7 @@ fn integer_binder_contexts_share_unrelated_machine_bindings() {
                 .map(|index| {
                     (
                         format!("unrelated{index}"),
-                        SpecExpression::Value(ProgramValue::Int32(MachineTerm::Variable(
+                        SpecExpression::Value(ProgramValue::Int32(OldMachineTerm::Variable(
                             Variable(index),
                         ))),
                     )

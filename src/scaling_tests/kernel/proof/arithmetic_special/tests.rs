@@ -7,7 +7,7 @@ use crate::kernel::CompareRelation;
 use crate::kernel::MachineBinaryOp;
 use crate::kernel::MachineIntegerType;
 use crate::kernel::binary_node;
-use crate::kernel::{MachineCastSpelling, MachineTerm};
+use crate::kernel::{MachineCastSpelling, OldMachineTerm};
 
 #[test]
 fn cast_identity_reads_interned_integer_operands_without_walking_their_dags() {
@@ -19,7 +19,7 @@ fn cast_identity_reads_interned_integer_operands_without_walking_their_dags() {
         for index in 0..size {
             value = IntegerTerm::add(value, IntegerTerm::Variable(Variable(893_000 + index)));
         }
-        let cast = MachineTerm::IntegerToMachine {
+        let cast = OldMachineTerm::IntegerToMachine {
             value: value.into(),
             destination: MachineIntegerType::Int64,
         };
@@ -41,16 +41,17 @@ fn cast_identity_reads_interned_integer_operands_without_walking_their_dags() {
 fn unsigned_widening_identity_work_scales_with_operand_payload() {
     let mut samples = Vec::new();
     for size in [4, 16, 64, 96] {
-        let mut value = MachineTerm::Variable(crate::kernel::Variable(994_111));
+        let mut value = OldMachineTerm::Variable(crate::kernel::Variable(994_111));
         for _ in 0..size {
             value = binary_node!(
                 Int32,
                 Add,
                 Box::new(value),
-                Box::new(MachineTerm::constant(0))
+                Box::new(OldMachineTerm::constant(0))
             );
         }
-        let widened = MachineTerm::legacy_cast(MachineCastSpelling::UInt64From32, Box::new(value));
+        let widened =
+            OldMachineTerm::legacy_cast(MachineCastSpelling::UInt64From32, Box::new(value));
         let (same, work) = crate::instrumentation::measure_deterministic_work(|| {
             bitvector_equal(&widened, &widened)
         });
@@ -77,11 +78,11 @@ fn arithmetic_read_atoms_keep_state_identity_without_scanning_storage() {
         for index in 0..size {
             memory = memory.store(
                 Address::symbolic(Variable(895_000 + index)),
-                ProgramValue::Int32(MachineTerm::constant(7)),
+                ProgramValue::Int32(OldMachineTerm::constant(7)),
             );
         }
         let memory = intern_memory(memory);
-        let read = MachineTerm::read_named(
+        let read = OldMachineTerm::read_named(
             crate::kernel::ProgramPoint::at(&memory),
             Box::new(address.clone()),
             LoadKind::Bits64,
@@ -95,9 +96,9 @@ fn arithmetic_read_atoms_keep_state_identity_without_scanning_storage() {
         });
         let changed = intern_memory(memory.memory().clone().store(
             address.clone(),
-            ProgramValue::UInt64(MachineTerm::uint64_constant(9)),
+            ProgramValue::UInt64(OldMachineTerm::uint64_constant(9)),
         ));
-        let different = MachineTerm::read_named(
+        let different = OldMachineTerm::read_named(
             crate::kernel::ProgramPoint::at(&changed),
             Box::new(address.clone()),
             LoadKind::Bits64,
@@ -105,7 +106,7 @@ fn arithmetic_read_atoms_keep_state_identity_without_scanning_storage() {
         assert!(!bitvector_equal(&read, &different));
         assert!(!bitvector_equal(
             &read,
-            &MachineTerm::read_named(
+            &OldMachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(&memory),
                 Box::new(address),
                 LoadKind::Int32
@@ -126,14 +127,14 @@ fn shared_tagged_word_certificates_preserve_bounds_without_exports() {
     for size in [8, 32, 96] {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::UInt64;
-        let address = MachineTerm::IntegerAddress(
+        let address = OldMachineTerm::IntegerAddress(
             Box::new(pointer(AddressOffset::Constant(0))),
             crate::kernel::AddressObjectClass::NONE,
         );
-        let mut root = KernelTerm::retained_machine_operand(format, View::Legacy(&address));
+        let mut root = KernelTerm::retained_machine_operand(format, View::Old(&address));
         let one = KernelTerm::retained_machine_operand(
             format,
-            View::Legacy(&MachineTerm::uint64_constant(1)),
+            View::Old(&OldMachineTerm::uint64_constant(1)),
         );
         for _ in 0..size {
             root = KernelTerm::machine_binary_shared(
@@ -233,7 +234,7 @@ fn symbolic_alignment_known_work_ignores_other_recorded_alignments() {
         )
     };
     let premise = at(base.clone(), AddressOffset::Constant(0), 8);
-    let i = MachineTerm::Variable(crate::kernel::Variable(899_012));
+    let i = OldMachineTerm::Variable(crate::kernel::Variable(899_012));
     let goals = [8, 4].map(|width| {
         at(
             base.clone(),

@@ -15,7 +15,7 @@ pub(super) fn named(
         "named_box".into(),
         vec![ProgramValue::pointer(pointer).into()].into(),
         schema.clone(),
-        vec![ProgramValue::Int32(MachineTerm::constant(7)).into()].into(),
+        vec![ProgramValue::Int32(OldMachineTerm::constant(7)).into()].into(),
     )
     .unwrap();
     let definition = CompositeResourceDefinition::new(

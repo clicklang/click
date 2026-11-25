@@ -7,7 +7,7 @@ use crate::kernel::{
     uint32_constant, uint64_constant,
 };
 
-fn retained_machine_input(node: &KernelTermNode) -> Option<&MachineTerm> {
+fn retained_machine_input(node: &KernelTermNode) -> Option<&OldMachineTerm> {
     match node {
         KernelTermNode::MachineObservationInput { observation, .. } => Some(observation.value()),
         KernelTermNode::WrittenMachine(value) => Some(value.value()),
@@ -17,7 +17,7 @@ fn retained_machine_input(node: &KernelTermNode) -> Option<&MachineTerm> {
 
 impl KernelTerm {
     /// Borrow a selected operand already owned by its machine input.
-    pub(crate) fn retained_machine_input(&self) -> Option<&MachineTerm> {
+    pub(crate) fn retained_machine_input(&self) -> Option<&OldMachineTerm> {
         retained_machine_input(self.node())
     }
 
@@ -38,7 +38,7 @@ impl KernelTerm {
         };
         match self.0.machine_leaf.0.get() {
             Some(MachineLeaf::Application(application)) => return Some(application.identity()),
-            Some(MachineLeaf::Native(_)) => {}
+            Some(MachineLeaf::Old(_)) => {}
             None => {
                 if let Some(identity) =
                     SharedPureApplication::identity_for_machine_roots(name, arguments)
@@ -47,7 +47,7 @@ impl KernelTerm {
                 }
             }
         }
-        let MachineTerm::ClickFunctionApplication { name, arguments } =
+        let OldMachineTerm::ClickFunctionApplication { name, arguments } =
             self.machine_conversion_leaf()?
         else {
             return None;
@@ -58,12 +58,12 @@ impl KernelTerm {
     /// An explicitly retained native leaf or the compatibility reading of a
     /// mathematical integer conversion. The surrounding machine DAG is never
     /// exported; conversion Integer payloads stay shared.
-    pub(crate) fn machine_conversion_leaf(&self) -> Option<&MachineTerm> {
+    pub(crate) fn machine_conversion_leaf(&self) -> Option<&OldMachineTerm> {
         if let KernelTermNode::ThreadHandle(id) = self.node() {
             return Some(
                 self.0
                     .machine_leaf
-                    .get_or_init(|| MachineTerm::ThreadHandle(*id)),
+                    .get_or_init(|| OldMachineTerm::ThreadHandle(*id)),
             );
         }
         if let KernelTermNode::IntegerAddress {
@@ -72,7 +72,7 @@ impl KernelTerm {
         } = self.node()
         {
             return Some(self.0.machine_leaf.get_or_init(|| {
-                MachineTerm::IntegerAddress(
+                OldMachineTerm::IntegerAddress(
                     Box::new(address.export().expect("address observation")),
                     AddressObjectClass::new(object_class.clone()),
                 )
@@ -103,7 +103,7 @@ impl KernelTerm {
                         }
                     })
                     .collect();
-                MachineTerm::ClickFunctionApplication {
+                OldMachineTerm::ClickFunctionApplication {
                     name: name.clone(),
                     arguments,
                 }
@@ -115,7 +115,7 @@ impl KernelTerm {
         } = self.node()
         {
             return Some(self.0.machine_leaf.get_or_init(|| {
-                MachineTerm::BoolCast {
+                OldMachineTerm::BoolCast {
                     to: *destination,
                     value: Box::new(
                         BooleanOperandView::Shared(operand)
@@ -133,7 +133,7 @@ impl KernelTerm {
             return None;
         };
         Some(self.0.machine_leaf.get_or_init(|| {
-            MachineTerm::IntegerToMachine {
+            OldMachineTerm::IntegerToMachine {
                 destination: *destination,
                 value: KernelTermExport::default()
                     .integer(operand)
@@ -322,16 +322,16 @@ pub enum KernelMachineLiteral {
 impl KernelMachineLiteral {
     /// An atomic literal output, preserving its written carrier exactly.
     pub(crate) fn value_at(&self, format: MachineIntegerType) -> ProgramValue {
-        wrap_exact(format, self.legacy_term())
+        wrap_exact(format, self.old_term())
     }
 
-    pub(crate) fn legacy_term(&self) -> MachineTerm {
+    pub(crate) fn old_term(&self) -> OldMachineTerm {
         match self {
-            Self::Word32(bits) => MachineTerm::constant(*bits),
-            Self::UInt32(bits) => MachineTerm::uint32_constant(*bits),
-            Self::Int64(value) => MachineTerm::int64_constant(*value),
-            Self::UInt64(value) => MachineTerm::uint64_constant(*value),
-            Self::Wide(value) => MachineTerm::machine_constant(*value),
+            Self::Word32(bits) => OldMachineTerm::constant(*bits),
+            Self::UInt32(bits) => OldMachineTerm::uint32_constant(*bits),
+            Self::Int64(value) => OldMachineTerm::int64_constant(*value),
+            Self::UInt64(value) => OldMachineTerm::uint64_constant(*value),
+            Self::Wide(value) => OldMachineTerm::machine_constant(*value),
         }
     }
 }
@@ -386,11 +386,11 @@ pub(super) fn constant_reading(node: &KernelTermNode) -> Option<KernelMachineLit
             }
             (
                 *format,
-                MachineTerm::Binary {
+                OldMachineTerm::Binary {
                     format: *format,
                     op: *operator,
-                    left: Box::new(left.machine_constant_reading()?.legacy_term()),
-                    right: Box::new(right.machine_constant_reading()?.legacy_term()),
+                    left: Box::new(left.machine_constant_reading()?.old_term()),
+                    right: Box::new(right.machine_constant_reading()?.old_term()),
                 },
             )
         }
@@ -400,10 +400,10 @@ pub(super) fn constant_reading(node: &KernelTermNode) -> Option<KernelMachineLit
             operand,
         } => (
             *format,
-            MachineTerm::Unary {
+            OldMachineTerm::Unary {
                 format: *format,
                 op: *operator,
-                operand: Box::new(operand.machine_constant_reading()?.legacy_term()),
+                operand: Box::new(operand.machine_constant_reading()?.old_term()),
             },
         ),
         KernelTermNode::MachineCast {
@@ -438,7 +438,7 @@ pub(super) fn constant_reading(node: &KernelTermNode) -> Option<KernelMachineLit
                 *destination,
                 encoding
                     .unary(*source, *destination)
-                    .build_raw(reading.legacy_term()),
+                    .build_raw(reading.old_term()),
             )
         }
         _ => return None,
@@ -479,7 +479,10 @@ impl MachineCastSpelling {
     }
 }
 
-pub(in crate::kernel) fn wrap_exact(format: MachineIntegerType, term: MachineTerm) -> ProgramValue {
+pub(in crate::kernel) fn wrap_exact(
+    format: MachineIntegerType,
+    term: OldMachineTerm,
+) -> ProgramValue {
     // value_from_term applies the word-format convention. This adapter must
     // preserve the payload exactly, including constants inside operations.
     match format {
@@ -502,10 +505,10 @@ impl KernelTermImport {
     pub(crate) fn machine_arithmetic(
         &mut self,
         result: MachineIntegerType,
-        term: &MachineTerm,
+        term: &OldMachineTerm,
     ) -> Option<KernelTerm> {
         use KernelMachineLiteral as Literal;
-        use MachineTerm as Old;
+        use OldMachineTerm as Old;
         if matches!(term, Old::MemoryLoad(..))
             || matches!(term, Old::Variable(v) if crate::kernel::registered_load_kind_for_variable(v).is_some())
         {
@@ -665,10 +668,14 @@ impl KernelTermImport {
         root
     }
 
-    pub(crate) fn machine(&mut self, result: MachineIntegerType, term: &MachineTerm) -> KernelTerm {
+    pub(crate) fn machine(
+        &mut self,
+        result: MachineIntegerType,
+        term: &OldMachineTerm,
+    ) -> KernelTerm {
         use KernelMachineLiteral as Literal;
         use KernelTermNode as Node;
-        use MachineTerm as Old;
+        use OldMachineTerm as Old;
         crate::instrumentation::record_deterministic_work(1);
         if matches!(
             result,
@@ -797,9 +804,9 @@ impl KernelTermExport {
         MACHINE_EXPORT_COUNT.with(std::cell::Cell::get)
     }
 
-    pub(crate) fn machine(term: &KernelTerm) -> Result<MachineTerm, &'static str> {
+    pub(crate) fn machine(term: &KernelTerm) -> Result<OldMachineTerm, &'static str> {
         use KernelTermNode as Node;
-        use MachineTerm as Old;
+        use OldMachineTerm as Old;
         #[cfg(test)]
         MACHINE_EXPORT_COUNT.with(|count| count.set(count.get() + 1));
         crate::instrumentation::record_deterministic_work(1);
@@ -831,7 +838,7 @@ impl KernelTermExport {
                 AddressObjectClass::new(object_class.clone()),
             ),
             Node::ThreadHandle(id) => Old::ThreadHandle(*id),
-            Node::MachineLiteral(value) => value.legacy_term(),
+            Node::MachineLiteral(value) => value.old_term(),
             Node::Variable(variable) => Old::Variable(*variable),
             Node::MemoryLoad {
                 point,
@@ -917,7 +924,7 @@ mod tests {
             .into();
             let source = PureFunctionArgument::Value(wrap_exact(
                 destination,
-                MachineTerm::IntegerToMachine {
+                OldMachineTerm::IntegerToMachine {
                     value: operand,
                     destination,
                 },
@@ -950,10 +957,10 @@ mod tests {
             MachineIntegerType::UInt64,
         ] {
             let constant = match format {
-                MachineIntegerType::Int32 => MachineTerm::constant(u32::MAX),
-                MachineIntegerType::UInt32 => MachineTerm::uint32_constant(u32::MAX),
-                MachineIntegerType::Int64 => MachineTerm::int64_constant(i64::MIN),
-                _ => MachineTerm::uint64_constant(u64::MAX),
+                MachineIntegerType::Int32 => OldMachineTerm::constant(u32::MAX),
+                MachineIntegerType::UInt32 => OldMachineTerm::uint32_constant(u32::MAX),
+                MachineIntegerType::Int64 => OldMachineTerm::int64_constant(i64::MIN),
+                _ => OldMachineTerm::uint64_constant(u64::MAX),
             };
             for operator in [
                 MachineBinaryOp::Add,
@@ -967,10 +974,10 @@ mod tests {
                 MachineBinaryOp::BitwiseOr,
                 MachineBinaryOp::BitwiseXor,
             ] {
-                let bits = MachineTerm::Binary {
+                let bits = OldMachineTerm::Binary {
                     format,
                     op: operator,
-                    left: Box::new(MachineTerm::Variable(Variable(991100))),
+                    left: Box::new(OldMachineTerm::Variable(Variable(991100))),
                     right: Box::new(constant.clone()),
                 };
                 let source = PureFunctionArgument::Value(wrap_exact(format, bits));
@@ -986,11 +993,11 @@ mod tests {
         }
         // The result's unsigned type does not retag a sign-free word node,
         // or change the exact constant representation used by its operand.
-        let source = PureFunctionArgument::Value(ProgramValue::UInt32(MachineTerm::Binary {
+        let source = PureFunctionArgument::Value(ProgramValue::UInt32(OldMachineTerm::Binary {
             format: MachineIntegerType::Int32,
             op: MachineBinaryOp::Add,
-            left: Box::new(MachineTerm::constant(1)),
-            right: Box::new(MachineTerm::uint32_constant(1)),
+            left: Box::new(OldMachineTerm::constant(1)),
+            right: Box::new(OldMachineTerm::uint32_constant(1)),
         }));
         let term = KernelTermImport::default().argument(&source);
         assert_ne!(term.children()[0], term.children()[1]);
@@ -1001,7 +1008,7 @@ mod tests {
     fn specialized_casts_share_typed_nodes_without_losing_their_encoding() {
         use MachineCastSpelling as S;
         use MachineIntegerType as Ty;
-        use MachineTerm as Old;
+        use OldMachineTerm as Old;
         let casts = [
             (S::Int64From32, Ty::Int32, Ty::Int64),
             (S::UInt64From32, Ty::UInt32, Ty::UInt64),
@@ -1051,7 +1058,7 @@ mod tests {
 
     #[test]
     fn machine_import_keeps_complete_pointer_integer_metadata() {
-        let value = ProgramValue::UInt64(MachineTerm::Variable(Variable(991101)))
+        let value = ProgramValue::UInt64(OldMachineTerm::Variable(Variable(991101)))
             .complete_word(Address::symbolic(Variable(991102)));
         let source = PureFunctionArgument::Value(value);
         let term = KernelTermImport::default().argument(&source);
@@ -1061,11 +1068,11 @@ mod tests {
 
     #[test]
     fn machine_cast_bridge_keeps_source_and_destination_without_evaluation() {
-        let source = PureFunctionArgument::Value(ProgramValue::UInt64(MachineTerm::Cast {
+        let source = PureFunctionArgument::Value(ProgramValue::UInt64(OldMachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             from: MachineIntegerType::Int32,
             to: MachineIntegerType::UInt64,
-            value: Box::new(MachineTerm::constant(u32::MAX)),
+            value: Box::new(OldMachineTerm::constant(u32::MAX)),
         }));
         let term = KernelTermImport::default().argument(&source);
         assert_eq!(
@@ -1138,7 +1145,7 @@ impl KernelTerm {
                     break term.with_machine_observation_type(destination);
                 }
                 if let KernelTermNode::MachineLiteral(literal) = term.node()
-                    && let Some(constant) = source.constant_from_term(&literal.legacy_term())
+                    && let Some(constant) = source.constant_from_term(&literal.old_term())
                 {
                     let value = destination
                         .constant_term(constant.convert_modulo(destination.format()))
@@ -1199,7 +1206,7 @@ impl KernelTerm {
         use KernelMachineLiteral as L;
         use MachineIntegerType as Ty;
         let literal =
-            |bits| KernelTermImport::default().machine(Ty::Int32, &MachineTerm::constant(bits));
+            |bits| KernelTermImport::default().machine(Ty::Int32, &OldMachineTerm::constant(bits));
         let root = |value: &Self| match value.node() {
             KernelTermNode::MachineLiteral(L::Int64(bits)) => literal(*bits as u32),
             KernelTermNode::MachineLiteral(L::UInt64(bits)) => literal(*bits as u32),
@@ -1279,7 +1286,7 @@ impl KernelTerm {
         use MachineCastSpelling as E;
         assert!(self.is_shared_machine_operand());
         if let KernelTermNode::MachineLiteral(literal) = self.node() {
-            let value = convert_value(source.value_from_term(literal.legacy_term()), destination)
+            let value = convert_value(source.value_from_term(literal.old_term()), destination)
                 .expect("integer conversion");
             return KernelTermImport::default().argument(&PureFunctionArgument::Value(value));
         }
@@ -1323,7 +1330,7 @@ impl KernelTerm {
             return KernelTermImport::default().machine(
                 destination,
                 &literal
-                    .legacy_term()
+                    .old_term()
                     .in_format32(destination)
                     .in_narrow_format(destination),
             );

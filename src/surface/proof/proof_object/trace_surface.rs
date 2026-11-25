@@ -82,7 +82,7 @@ impl Proof<'_> {
                     retained_state: None,
                 });
             }
-            let Some(MachineTerm::MemoryLoad(memory, address, _)) = pointer_definition(pointer)
+            let Some(OldMachineTerm::MemoryLoad(memory, address, _)) = pointer_definition(pointer)
             else {
                 return None;
             };

@@ -1075,7 +1075,7 @@ impl<'a> Proof<'a> {
                 },
                 operator: ComparisonOperator::LessEqual,
                 right: SyntaxTerm::ProgramExpression(ProgramExpression::Value(
-                    ProgramValue::UInt64(MachineTerm::uint64_constant(constant_u64(*limit))),
+                    ProgramValue::UInt64(OldMachineTerm::uint64_constant(constant_u64(*limit))),
                 )),
             };
             if self

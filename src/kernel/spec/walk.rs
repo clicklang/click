@@ -400,7 +400,7 @@ mod tests {
     use super::*;
 
     fn int(value: u32) -> SpecExpression {
-        SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(value)))
+        SpecExpression::Value(ProgramValue::Int32(OldMachineTerm::constant(value)))
     }
 
     fn comparison(left: SpecExpression, right: SpecExpression) -> SpecProposition {

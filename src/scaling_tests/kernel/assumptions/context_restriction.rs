@@ -43,14 +43,14 @@ fn memory_view_miss_does_not_scan_other_bases_in_one_block() {
         let memory = SymbolicMemory::new();
         let pointer = |id| Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(id)), 4),
+            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(id)), 4),
         };
         let mut context = PureFactContext::new();
         for index in 0..size {
             context = context.assume_proposition(Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: pointer(720_000 + index),
-                bytes: (MachineTerm::constant(4)).into(),
+                bytes: (OldMachineTerm::constant(4)).into(),
                 wide: false,
             });
         }
@@ -59,7 +59,7 @@ fn memory_view_miss_does_not_scan_other_bases_in_one_block() {
                 assert!(!context.proves_memory_loadable(
                     &memory,
                     &pointer(730_000),
-                    &MachineTerm::constant(4)
+                    &OldMachineTerm::constant(4)
                 ));
             }
         });
@@ -77,12 +77,12 @@ fn atom_memory_condition_miss_does_not_scan_open_fact_family() {
     let mut samples = Vec::new();
     for size in [8u64, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
-        let term = |id| MachineTerm::Variable(Variable(id));
+        let term = |id| OldMachineTerm::Variable(Variable(id));
         let mut context = PureFactContext::new();
         for index in 0..size {
             context = context.assume_condition(
                 ConditionTerm::signed_less_than(
-                    MachineTerm::add(term(740_000 + index * 2), MachineTerm::constant(1)),
+                    OldMachineTerm::add(term(740_000 + index * 2), OldMachineTerm::constant(1)),
                     term(740_001 + index * 2),
                 ),
                 true,
@@ -240,9 +240,9 @@ fn ambiguous_view_buckets_keep_exact_and_selected_evidence() {
                 let base = Address::symbolic(Variable(790_000));
                 let span = |n: u32| {
                     if wide {
-                        MachineTerm::uint64_constant(u64::from(n))
+                        OldMachineTerm::uint64_constant(u64::from(n))
                     } else {
-                        MachineTerm::constant(n)
+                        OldMachineTerm::constant(n)
                     }
                 };
                 let mut context = PureFactContext::new();
@@ -275,7 +275,7 @@ fn ambiguous_view_buckets_keep_exact_and_selected_evidence() {
                     context = context.assume_proposition(fact);
                 }
                 let selected = selected.unwrap();
-                let proves = |context: &PureFactContext, bytes: &MachineTerm| {
+                let proves = |context: &PureFactContext, bytes: &OldMachineTerm| {
                     if wide {
                         context.proves_native_memory_loadable(&memory, &base, bytes)
                     } else {
@@ -294,13 +294,9 @@ fn ambiguous_view_buckets_keep_exact_and_selected_evidence() {
                             unreachable!()
                         };
                         assert!(if wide {
-                            context.proves_native_memory_loadable(
-                                memory,
-                                &base,
-                                bytes.native_compat(),
-                            )
+                            context.proves_native_memory_loadable(memory, &base, bytes.old_form())
                         } else {
-                            context.proves_memory_loadable(memory, &base, bytes.native_compat())
+                            context.proves_memory_loadable(memory, &base, bytes.old_form())
                         });
                     }
                 });
@@ -387,8 +383,8 @@ fn numeric_comparison_view_queries_do_not_scan_supports() {
         let view = Proposition::Or(
             Box::new(Proposition::condition_is(
                 ConditionTerm::equal(
-                    MachineTerm::Variable(Variable(880000)),
-                    MachineTerm::constant(i32::MIN as u32),
+                    OldMachineTerm::Variable(Variable(880000)),
+                    OldMachineTerm::constant(i32::MIN as u32),
                 ),
                 false,
             )),
@@ -408,7 +404,7 @@ fn numeric_comparison_view_queries_do_not_scan_supports() {
                     ConditionTerm::IntegerNotEqual(
                         I::from_machine(
                             MachineIntegerType::Int32,
-                            MachineTerm::Variable(Variable(880000)),
+                            OldMachineTerm::Variable(Variable(880000)),
                         )
                         .unwrap()
                         .into(),

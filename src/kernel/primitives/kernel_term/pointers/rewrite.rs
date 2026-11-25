@@ -274,13 +274,13 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let free = Variable(1004010);
         let item = Variable(1004011);
-        let native = MachineTerm::RangeFold {
-            start: Box::new(MachineTerm::constant(0)),
-            end: Box::new(MachineTerm::Variable(free)),
-            initial: Box::new(MachineTerm::constant(0)),
+        let native = OldMachineTerm::RangeFold {
+            start: Box::new(OldMachineTerm::constant(0)),
+            end: Box::new(OldMachineTerm::Variable(free)),
+            initial: Box::new(OldMachineTerm::constant(0)),
             accumulator: Variable(1004012),
             item,
-            body: Box::new(MachineTerm::Variable(item)),
+            body: Box::new(OldMachineTerm::Variable(item)),
         };
         let index = KernelTermImport::default().machine(MachineIntegerType::Int32, &native);
         let offset = KernelAddressOffset::Int32Scaled {
@@ -302,8 +302,8 @@ mod tests {
                 result.ok_or("unsupported shared child")
             }
         }
-        let from = MachineTerm::Variable(free);
-        let to = MachineTerm::Variable(item);
+        let from = OldMachineTerm::Variable(free);
+        let to = OldMachineTerm::Variable(item);
         let mut scoped = TermRewrite::for_bits_checked(&from, &to);
         let exports = KernelTermExport::machine_export_count();
         let output = address.try_rewrite(&mut Scoped(&mut scoped)).unwrap();

@@ -959,13 +959,13 @@ impl<const N: usize> From<[ExecutionPureFact; N]> for ExecutionFacts {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::{MachineTerm, PureFactContext, Variable};
+    use crate::kernel::{OldMachineTerm, PureFactContext, Variable};
 
     fn guard(index: u32, value: bool) -> Proposition {
         Proposition::condition_is(
             ConditionTerm::equal(
-                MachineTerm::Variable(Variable(index as u64)),
-                MachineTerm::constant(0),
+                OldMachineTerm::Variable(Variable(index as u64)),
+                OldMachineTerm::constant(0),
             ),
             value,
         )

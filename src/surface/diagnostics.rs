@@ -1111,7 +1111,7 @@ pub(super) fn describe_missing_resource_fact(
                 .iter()
                 .map(|hole| format!(
                     "`{}`",
-                    describe_bitvector_with_context(hole.native_compat(), parameter_binding)
+                    describe_bitvector_with_context(hole.old_form(), parameter_binding)
                 ))
                 .collect::<Vec<_>>()
                 .join(", ")
@@ -1227,7 +1227,7 @@ pub(super) fn pure_facts_relevant_to(
         collector.extend_into(&mut variables);
         variables
             .into_iter()
-            .map(MachineTerm::Variable)
+            .map(OldMachineTerm::Variable)
             .chain(collector.take_read_terms())
             .collect::<BTreeSet<_>>()
     };
@@ -1244,7 +1244,7 @@ pub(super) fn pure_facts_relevant_to(
     }
     let facts = conjuncts;
     let fact_atoms = facts.iter().map(|fact| atoms_of(fact)).collect::<Vec<_>>();
-    let mut facts_by_atom = BTreeMap::<MachineTerm, Vec<usize>>::new();
+    let mut facts_by_atom = BTreeMap::<OldMachineTerm, Vec<usize>>::new();
     for (index, variables) in fact_atoms.iter().enumerate() {
         for variable in variables {
             facts_by_atom
@@ -2320,7 +2320,7 @@ pub(in crate::surface) fn describe_iterated_memory(
     iterated: &crate::kernel::IteratedMemory,
     parameter_binding: ParameterBinding<'_>,
 ) -> String {
-    let index = MachineTerm::Variable(crate::kernel::Variable(u64::MAX - 7));
+    let index = OldMachineTerm::Variable(crate::kernel::Variable(u64::MAX - 7));
     // Iterated ownership's element_range constructs signed int32 bounds.
     let element = iterated.element_range(&index);
     let spelled_index = describe_bitvector_with_context(&index, parameter_binding);
@@ -2352,10 +2352,7 @@ pub(in crate::surface) fn describe_iterated_memory(
             iterated
                 .holes()
                 .iter()
-                .map(|hole| describe_bitvector_with_context(
-                    hole.native_compat(),
-                    parameter_binding
-                ))
+                .map(|hole| describe_bitvector_with_context(hole.old_form(), parameter_binding))
                 .collect::<Vec<_>>()
                 .join(", ")
         ));
@@ -2604,12 +2601,12 @@ fn struct_byte_bounds(
 ) -> Option<(
     String,
     crate::languages::interface::RecordLayout,
-    MachineTerm,
-    MachineTerm,
+    OldMachineTerm,
+    OldMachineTerm,
 )> {
     range.int32_bounds()?;
-    let bounds = |offset: MachineTerm| {
-        let bytes = |index: &MachineTerm| {
+    let bounds = |offset: OldMachineTerm| {
+        let bytes = |index: &OldMachineTerm| {
             Some(bitvector32_add(
                 offset.clone(),
                 rescale_range_index(index, range.element_width(), 1)?,
@@ -2661,16 +2658,16 @@ fn struct_byte_bounds(
 
 /// A pointer offset as a byte count: `i * 4 + 8` for `Int32Scaled(i, 4) +
 /// 8`. Display only; a 64-bit scaled index is not narrowed.
-fn pointer_offset_bytes(offset: &AddressOffset) -> Option<MachineTerm> {
+fn pointer_offset_bytes(offset: &AddressOffset) -> Option<OldMachineTerm> {
     match offset {
         AddressOffset::Constant(bytes) => {
-            Some(MachineTerm::constant(i32::try_from(*bytes).ok()? as u32))
+            Some(OldMachineTerm::constant(i32::try_from(*bytes).ok()? as u32))
         }
         AddressOffset::Int32Scaled { value, byte_width } => Some(match byte_width {
             1 => value.structural_value().clone(),
             width => super::lowering::bitvector32_multiply(
                 value.structural_value().clone(),
-                MachineTerm::constant(i32::try_from(*width).ok()? as u32),
+                OldMachineTerm::constant(i32::try_from(*width).ok()? as u32),
             ),
         }),
         AddressOffset::Add(left, right) => Some(bitvector32_add(
@@ -2687,9 +2684,9 @@ fn pointer_offset_bytes(offset: &AddressOffset) -> Option<MachineTerm> {
 /// inside it. `None` when the bounds are not whole elements of the field.
 fn scalar_array_field_indices<'a>(
     layout: &'a crate::languages::interface::RecordLayout,
-    start: &MachineTerm,
-    end: &MachineTerm,
-) -> Option<(&'a str, MachineTerm, MachineTerm)> {
+    start: &OldMachineTerm,
+    end: &OldMachineTerm,
+) -> Option<(&'a str, OldMachineTerm, OldMachineTerm)> {
     let anchor = constant_addend(start)?;
     layout.size().bytes()?;
     let (name, field) = layout.fields().iter().find(|(_, field)| {
@@ -2703,7 +2700,7 @@ fn scalar_array_field_indices<'a>(
     })?;
     let width = u32::try_from(scalar_element_width(field.interface_type())?).ok()?;
     let offset = field.offset_bytes();
-    let index = |bytes: &MachineTerm| {
+    let index = |bytes: &OldMachineTerm| {
         if offset.is_multiple_of(width) {
             subtract_constant(&exact_quotient(bytes, width)?, offset / width)
         } else {
@@ -2722,7 +2719,7 @@ fn scalar_array_field_indices<'a>(
 
 /// The constant summand of a byte offset: `8` in `8 + i * 4`, `0` in
 /// `i * 4`. Display only; it picks the field a symbolic offset starts in.
-fn constant_addend(term: &MachineTerm) -> Option<i64> {
+fn constant_addend(term: &OldMachineTerm) -> Option<i64> {
     if let Some(value) = term.as_const() {
         return Some(i64::from(value as i32));
     }
@@ -2739,31 +2736,31 @@ fn constant_addend(term: &MachineTerm) -> Option<i64> {
             (Some(factor), _) => Some(i64::from(factor as i32) * constant_addend(right)?),
             _ => Some(0),
         },
-        MachineTerm::Variable(_) => Some(0),
+        OldMachineTerm::Variable(_) => Some(0),
         _ => None,
     }
 }
 
 /// `term - amount`, folding the constant into a constant summand.
-fn subtract_constant(term: &MachineTerm, amount: u32) -> Option<MachineTerm> {
+fn subtract_constant(term: &OldMachineTerm, amount: u32) -> Option<OldMachineTerm> {
     if amount == 0 {
         return Some(term.clone());
     }
     match term {
-        bits32_constant!(value) => Some(MachineTerm::constant(
+        bits32_constant!(value) => Some(OldMachineTerm::constant(
             constant_u32(*value).wrapping_sub(amount),
         )),
         binary_term!(Int32, Add, left, right) => {
             if let Some(left) = left.as_const() {
                 return Some(bitvector32_add(
-                    MachineTerm::constant(left.wrapping_sub(amount)),
+                    OldMachineTerm::constant(left.wrapping_sub(amount)),
                     right.as_ref().clone(),
                 ));
             }
             if let Some(right) = right.as_const() {
                 return Some(bitvector32_add(
                     left.as_ref().clone(),
-                    MachineTerm::constant(right.wrapping_sub(amount)),
+                    OldMachineTerm::constant(right.wrapping_sub(amount)),
                 ));
             }
             None
@@ -2775,7 +2772,7 @@ fn subtract_constant(term: &MachineTerm, amount: u32) -> Option<MachineTerm> {
 /// `term / width` when the term is visibly a multiple of `width`: a
 /// constant multiple, a product by such a constant, or a sum or difference
 /// of those. Display only.
-fn exact_quotient(term: &MachineTerm, width: u32) -> Option<MachineTerm> {
+fn exact_quotient(term: &OldMachineTerm, width: u32) -> Option<OldMachineTerm> {
     if width == 1 {
         return Some(term.clone());
     }
@@ -2783,7 +2780,7 @@ fn exact_quotient(term: &MachineTerm, width: u32) -> Option<MachineTerm> {
         bits32_constant!(value) => {
             let value = constant_u32(*value) as i32;
             (value % width as i32 == 0)
-                .then(|| MachineTerm::constant((value / width as i32) as u32))
+                .then(|| OldMachineTerm::constant((value / width as i32) as u32))
         }
         binary_term!(Int32, Multiply, left, right) => {
             let (factor, constant) = match (left.as_const(), right.as_const()) {
@@ -2798,7 +2795,7 @@ fn exact_quotient(term: &MachineTerm, width: u32) -> Option<MachineTerm> {
                 1 => factor.clone(),
                 multiple => super::lowering::bitvector32_multiply(
                     factor.clone(),
-                    MachineTerm::constant(multiple),
+                    OldMachineTerm::constant(multiple),
                 ),
             })
         }
@@ -3050,7 +3047,7 @@ pub(super) fn describe_parameter_relative_range(
 
 /// Whether `start..end` is one element: constants one apart, or `end`
 /// written as `start + 1`.
-fn is_one_element(start: &MachineTerm, end: &MachineTerm) -> bool {
+fn is_one_element(start: &OldMachineTerm, end: &OldMachineTerm) -> bool {
     match (start.as_const(), end.as_const()) {
         (Some(start), Some(end)) => start.checked_add(1) == Some(end),
         _ => range_end_is_next_element(start, end),
@@ -3058,11 +3055,12 @@ fn is_one_element(start: &MachineTerm, end: &MachineTerm) -> bool {
 }
 
 /// Whether `end` is written as `start + 1`, so the range is one element.
-fn range_end_is_next_element(start: &MachineTerm, end: &MachineTerm) -> bool {
-    let one = |term: &MachineTerm| term.as_const() == Some(1) || term.uint64_as_const() == Some(1);
+fn range_end_is_next_element(start: &OldMachineTerm, end: &OldMachineTerm) -> bool {
+    let one =
+        |term: &OldMachineTerm| term.as_const() == Some(1) || term.uint64_as_const() == Some(1);
     match end {
         binary_term!(Int32, Add, left, right)
-        | MachineTerm::Binary {
+        | OldMachineTerm::Binary {
             format: MachineIntegerType::Int64 | MachineIntegerType::UInt64,
             op: MachineBinaryOp::Add,
             left,
@@ -3085,7 +3083,7 @@ fn parameter_relative_base<'a>(
     parameter_binding: ParameterBinding<'a>,
 ) -> Option<(
     &'a crate::languages::interface::ImportedParameter,
-    MachineTerm,
+    OldMachineTerm,
 )> {
     let mut symbolic = None;
     for (parameter, argument) in parameter_binding
@@ -3114,24 +3112,24 @@ fn parameter_relative_base<'a>(
     symbolic
 }
 
-fn rescale_range_index(index: &MachineTerm, from: u32, to: u32) -> Option<MachineTerm> {
+fn rescale_range_index(index: &OldMachineTerm, from: u32, to: u32) -> Option<OldMachineTerm> {
     if to == 0 {
         return None;
     }
     if from.is_multiple_of(to) {
         return Some(super::lowering::bitvector32_multiply(
             index.clone(),
-            MachineTerm::constant(from / to),
+            OldMachineTerm::constant(from / to),
         ));
     }
     let bytes = i64::from(index.as_const()? as i32) * i64::from(from);
-    (bytes % i64::from(to) == 0).then(|| MachineTerm::constant((bytes / i64::from(to)) as u32))
+    (bytes % i64::from(to) == 0).then(|| OldMachineTerm::constant((bytes / i64::from(to)) as u32))
 }
 
 fn parameter_relative_endpoints(
-    base_index: &MachineTerm,
+    base_index: &OldMachineTerm,
     range: &MemoryRange,
-) -> (MachineTerm, MachineTerm) {
+) -> (OldMachineTerm, OldMachineTerm) {
     // A wide range is shown by its own bounds: they are 64-bit terms, and
     // a 32-bit parameter offset is not added to them. Display only.
     if let Some((start, end)) = range.wide_bounds() {
@@ -3416,7 +3414,7 @@ pub(super) fn describe_missing_range_end_note(
         };
         return access_note + &range_note;
     };
-    let decided = |lower: &MachineTerm, upper: &MachineTerm| {
+    let decided = |lower: &OldMachineTerm, upper: &OldMachineTerm| {
         Some(lower.as_const()? as i32 <= upper.as_const()? as i32)
     };
     if sides
@@ -3547,8 +3545,8 @@ fn unresolved_load_kind(value: &ProgramValue) -> Option<crate::kernel::LoadKind>
         _ => return None,
     };
     match widened_word(term) {
-        MachineTerm::MemoryLoad(_, _, kind) => Some(*kind),
-        MachineTerm::Variable(variable) => {
+        OldMachineTerm::MemoryLoad(_, _, kind) => Some(*kind),
+        OldMachineTerm::Variable(variable) => {
             crate::kernel::registered_load_kind_for_variable(variable)
         }
         _ => None,
@@ -3579,7 +3577,7 @@ fn describe_load_kind(kind: crate::kernel::LoadKind) -> &'static str {
 /// The word a narrow value widened into 32 bits has (rule K8, a relation): a promoted
 /// read is still that read. Only the widening is read through; a σ keeps
 /// its own node here, as a reinterpretation of the read.
-fn widened_word(term: &MachineTerm) -> &MachineTerm {
+fn widened_word(term: &OldMachineTerm) -> &OldMachineTerm {
     match term.narrow_widening32_operand() {
         Some((_, word)) => word,
         None => term,
@@ -3601,7 +3599,7 @@ fn unresolved_load(value: &ProgramValue) -> Option<crate::kernel::ScalarReadObse
         | ProgramValue::UInt64(term) => term,
         _ => return None,
     };
-    crate::kernel::scalar_read_observation(crate::kernel::MachineOperandView::Legacy(widened_word(
+    crate::kernel::scalar_read_observation(crate::kernel::MachineOperandView::Old(widened_word(
         term,
     )))
 }
@@ -4539,13 +4537,17 @@ fn describe_same_object_store_cause(
 
 /// Whether a fact states that two index terms differ, as `i != j` lowers:
 /// their equality is false. Operand order is not significant.
-fn states_terms_differ(stated: &[&Proposition], left: &MachineTerm, right: &MachineTerm) -> bool {
+fn states_terms_differ(
+    stated: &[&Proposition],
+    left: &OldMachineTerm,
+    right: &OldMachineTerm,
+) -> bool {
     stated.iter().any(|fact| {
         let Proposition::ConditionIs(condition, false) = fact else {
             return false;
         };
         matches!(
-            condition.native_compat().as_bitvector_comparison(),
+            condition.old_form().as_bitvector_comparison(),
             Some((
                 crate::kernel::BitvectorComparisonOp::Compare(
                     _,
@@ -4741,14 +4743,14 @@ pub(in crate::surface) fn store_cause_between_indexes_for_tests(
 #[cfg(test)]
 pub(in crate::surface) fn store_cause_between_indexes_with_facts_for_tests(
     object: &str,
-    read_index: (&str, Option<MachineTerm>),
-    written_index: (&str, Option<MachineTerm>),
+    read_index: (&str, Option<OldMachineTerm>),
+    written_index: (&str, Option<OldMachineTerm>),
     element_bytes: Option<u32>,
     read_bytes: u32,
     store_bytes: Option<u32>,
     stated: &[&Proposition],
 ) -> String {
-    let spelled = |(index, index_term): (&str, Option<MachineTerm>)| SourceCell {
+    let spelled = |(index, index_term): (&str, Option<OldMachineTerm>)| SourceCell {
         object: object.to_string(),
         index: CellIndex::Named(index.to_string()),
         element_bytes,
@@ -4982,7 +4984,7 @@ struct SourceCell {
     element_bytes: Option<u32>,
     /// The kernel term the index was spelled from, where it came from a
     /// typed base, so a refusal can ask whether the facts already relate it.
-    index_term: Option<MachineTerm>,
+    index_term: Option<OldMachineTerm>,
 }
 
 impl SourceCell {
@@ -5220,13 +5222,14 @@ fn describe_source_range(
 /// term that mentions one is not shown to the reader at all: a repair written
 /// over a name nobody wrote is not a repair.
 fn bitvector_is_source_spelled(
-    term: &MachineTerm,
+    term: &OldMachineTerm,
     parameter_binding: ParameterBinding<'_>,
 ) -> bool {
     let mut variables = std::collections::BTreeSet::new();
     crate::kernel::collect_bitvector_variables(term, &mut variables);
     variables.iter().all(|variable| {
-        describe_parameter_bitvector(&MachineTerm::Variable(*variable), parameter_binding).is_some()
+        describe_parameter_bitvector(&OldMachineTerm::Variable(*variable), parameter_binding)
+            .is_some()
     })
 }
 
@@ -5356,7 +5359,10 @@ thread_local! {
 /// loaded from. Naming a load spells its address, whose own index can be a
 /// load again, and one address can be reached from itself that way; past a
 /// small nesting the index is spelled without the tables, which ends it.
-fn describe_address_index(index: &MachineTerm, parameter_binding: ParameterBinding<'_>) -> String {
+fn describe_address_index(
+    index: &OldMachineTerm,
+    parameter_binding: ParameterBinding<'_>,
+) -> String {
     const NESTING_LIMIT: u32 = 2;
     let depth = NESTED_ADDRESS_SPELLINGS.with(std::cell::Cell::get);
     if depth >= NESTING_LIMIT {
@@ -5451,7 +5457,7 @@ pub(in crate::surface) fn describe_pointer(
             base,
             diagnostic_parameter_element_width(parameter),
         ) {
-            let spelled = if index == MachineTerm::constant(0) {
+            let spelled = if index == OldMachineTerm::constant(0) {
                 crate::surface::surface_parameter_binding(parameter.binding_name()).to_string()
             } else {
                 format!(
@@ -5567,8 +5573,8 @@ fn describe_parameter_struct_field_pointer(
                 return None;
             };
             let loaded_at = match value.structural_value() {
-                MachineTerm::MemoryLoad(_, loaded_at, _) => loaded_at.as_ref().clone(),
-                MachineTerm::Variable(variable) => {
+                OldMachineTerm::MemoryLoad(_, loaded_at, _) => loaded_at.as_ref().clone(),
+                OldMachineTerm::Variable(variable) => {
                     crate::kernel::registered_load_for_variable(variable)?.1
                 }
                 _ => return None,
@@ -5587,7 +5593,7 @@ fn describe_parameter_struct_field_pointer(
             return None;
         }
         let field_offset = diagnostic_pointer_element_index_from_base(&loaded_at, base, 1)?;
-        (field.offset().bytes().map(MachineTerm::constant) == Some(field_offset)).then(|| {
+        (field.offset().bytes().map(OldMachineTerm::constant) == Some(field_offset)).then(|| {
             describe_field_place(
                 &crate::surface::surface_parameter_binding(parameter.binding_name()).to_string(),
                 name,
@@ -5651,7 +5657,7 @@ fn describe_struct_member_from(
         return None;
     }
     let mut constant = 0i64;
-    let mut element: Option<&MachineTerm> = None;
+    let mut element: Option<&OldMachineTerm> = None;
     let rest = pointer.offset_from_base(base)?;
     let mut pending = vec![&rest];
     while let Some(term) = pending.pop() {
@@ -5835,7 +5841,7 @@ fn scaled_index_signedness(pointer: &Address, base: &Address) -> Option<bool> {
 /// it. A parameter or local named with a 64-bit type of the other signedness
 /// shows the conversion, `p[k as int64]`; any other index is spelled as is.
 fn describe_scaled_index(
-    index: &MachineTerm,
+    index: &OldMachineTerm,
     unsigned: Option<bool>,
     parameter_binding: ParameterBinding<'_>,
 ) -> String {
@@ -5869,13 +5875,13 @@ pub(super) fn diagnostic_pointer_element_index_from_base(
     pointer: &Address,
     base: &Address,
     byte_width: i64,
-) -> Option<MachineTerm> {
+) -> Option<OldMachineTerm> {
     if pointer.base != base.base {
         return None;
     }
 
     if pointer.offset == base.offset {
-        return Some(MachineTerm::constant(0));
+        return Some(OldMachineTerm::constant(0));
     }
 
     if base.offset == AddressOffset::Constant(0) {
@@ -5913,13 +5919,13 @@ pub(super) fn diagnostic_pointer_element_index_from_base(
 pub(super) fn diagnostic_element_index_from_pointer_offset(
     offset: &AddressOffset,
     byte_width: i64,
-) -> Option<MachineTerm> {
+) -> Option<OldMachineTerm> {
     match offset {
         AddressOffset::Constant(offset) if offset % byte_width == 0 => {
             let index = offset / byte_width;
             (i32::MIN as i64..=i32::MAX as i64)
                 .contains(&index)
-                .then_some(MachineTerm::constant((index as i32) as u32))
+                .then_some(OldMachineTerm::constant((index as i32) as u32))
         }
         AddressOffset::Int32Scaled {
             value,
@@ -5958,11 +5964,11 @@ pub(super) fn diagnostic_element_index_from_pointer_offset(
 pub(in crate::surface) fn exact_float_literal_spelling(value: &ProgramValue) -> Option<String> {
     use crate::kernel::MachineIntegerType;
     match value {
-        ProgramValue::Float32(MachineTerm::Constant {
+        ProgramValue::Float32(OldMachineTerm::Constant {
             format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             bits,
         }) if *bits <= u128::from(u32::MAX) => Some(format!("float32_from_bits(0x{bits:08x})")),
-        ProgramValue::Float64(MachineTerm::Constant {
+        ProgramValue::Float64(OldMachineTerm::Constant {
             format: MachineIntegerType::UInt64,
             bits,
         }) if *bits <= u128::from(u64::MAX) => Some(format!("float64_from_bits(0x{bits:016x}u64)")),
@@ -6901,7 +6907,7 @@ fn loaded_pointer_base(address: &Address) -> Option<(Address, u64)> {
 
 /// `(a, bytes)` for an address past the pointer a load of `a` read, with
 /// the rest of its offset as a byte count, which may be symbolic.
-fn loaded_pointer_split(address: &Address) -> Option<(Address, MachineTerm)> {
+fn loaded_pointer_split(address: &Address) -> Option<(Address, OldMachineTerm)> {
     if let Some(read) = address.as_loaded_value() {
         return Some((
             read.defining_address,
@@ -6924,7 +6930,7 @@ fn loaded_pointer_split(address: &Address) -> Option<(Address, MachineTerm)> {
     }
     let loaded = |summand: &AddressOffset| match summand {
         AddressOffset::Int32Scaled { value, .. } => match value.structural_value() {
-            MachineTerm::Variable(variable)
+            OldMachineTerm::Variable(variable)
                 if crate::kernel::is_load_variable(variable)
                     && crate::kernel::registered_load_for_variable(variable).is_some() =>
             {
@@ -6938,7 +6944,7 @@ fn loaded_pointer_split(address: &Address) -> Option<(Address, MachineTerm)> {
     let (Some(variable), None) = (variables.next(), variables.next()) else {
         return None;
     };
-    let mut bytes = MachineTerm::constant(0);
+    let mut bytes = OldMachineTerm::constant(0);
     for summand in summands.iter().filter(|summand| loaded(summand).is_none()) {
         bytes = bitvector32_add(bytes, pointer_offset_bytes(summand)?);
     }
@@ -7543,7 +7549,7 @@ fn describe_byte_list(mut expression: &SyntaxTerm) -> Option<String> {
             }
             ("Cons", [head, tail]) if bytes.len() < crate::source::BYTE_STRING_MAX_BYTES => {
                 let SyntaxTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::UInt8(
-                    MachineTerm::Constant {
+                    OldMachineTerm::Constant {
                         format: MachineIntegerType::UInt8,
                         bits,
                     },
@@ -8426,20 +8432,20 @@ fn lowering_only_variable(prefix: &str, id: u64) -> String {
     }
 }
 
-pub(super) fn describe_bitvector(term: &MachineTerm) -> String {
+pub(super) fn describe_bitvector(term: &OldMachineTerm) -> String {
     describe_bitvector_with_context(term, ParameterBinding::default())
 }
 
 pub(super) fn describe_bitvector_with_context(
-    term: &MachineTerm,
+    term: &OldMachineTerm,
     parameter_binding: ParameterBinding<'_>,
 ) -> String {
     if let Some(name) = describe_parameter_bitvector(term, parameter_binding) {
         return name;
     }
     match term {
-        MachineTerm::ThreadHandle(_) => format!("{term:?}"),
-        MachineTerm::Cast {
+        OldMachineTerm::ThreadHandle(_) => format!("{term:?}"),
+        OldMachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             value,
             to: destination,
@@ -8473,7 +8479,7 @@ pub(super) fn describe_bitvector_with_context(
         ),
         // A diagnostic prints the load represented by a load variable,
         // never the kernel variable's id.
-        MachineTerm::Variable(variable)
+        OldMachineTerm::Variable(variable)
             if crate::kernel::is_load_variable(variable)
                 && crate::kernel::registered_load_for_variable(variable).is_some() =>
         {
@@ -8484,20 +8490,20 @@ pub(super) fn describe_bitvector_with_context(
         // And a model-field variable prints as the field it is. The value is
         // stored inside the instance fact, so there is nothing in the term to
         // recover it from; the mint registered it.
-        MachineTerm::Variable(variable)
+        OldMachineTerm::Variable(variable)
             if crate::kernel::model_fields::model_field_surface(*variable).is_some() =>
         {
             crate::kernel::model_fields::model_field_surface(*variable)
                 .expect("checked registered above")
         }
-        MachineTerm::Variable(variable) => lowering_only_variable("v", variable.0),
+        OldMachineTerm::Variable(variable) => lowering_only_variable("v", variable.0),
         unary_term!(Int32, BitwiseNot, value) => {
             format!(
                 "~{}",
                 describe_bitvector_with_context(value, parameter_binding)
             )
         }
-        MachineTerm::Float32Negate(value) | MachineTerm::Float64Negate(value) => {
+        OldMachineTerm::Float32Negate(value) | OldMachineTerm::Float64Negate(value) => {
             format!(
                 "-{}",
                 describe_bitvector_with_context(value, parameter_binding)
@@ -8526,13 +8532,13 @@ pub(super) fn describe_bitvector_with_context(
                 "uint32"
             )
         ),
-        MachineTerm::Unary { operand: value, .. } => {
+        OldMachineTerm::Unary { operand: value, .. } => {
             format!(
                 "~{}",
                 describe_bitvector_with_context(value, parameter_binding)
             )
         }
-        MachineTerm::If {
+        OldMachineTerm::If {
             condition,
             then_term,
             else_term,
@@ -8545,7 +8551,7 @@ pub(super) fn describe_bitvector_with_context(
         // A fold body is an arbitrary term over its own binders, so it has no
         // shorter source spelling; render it through the bounded proposition
         // printer rather than dumping the developer structure.
-        MachineTerm::RangeFold {
+        OldMachineTerm::RangeFold {
             start,
             end,
             initial,
@@ -8562,12 +8568,12 @@ pub(super) fn describe_bitvector_with_context(
                 describe_bitvector_with_context(body, parameter_binding)
             )
         }
-        MachineTerm::PureFunctionApplication { name, arguments }
+        OldMachineTerm::PureFunctionApplication { name, arguments }
             if let Some(spelled) = crate::kernel::layout_term_spelling(name, arguments.len()) =>
         {
             crate::languages::display_source_names(&spelled).into_owned()
         }
-        MachineTerm::PureFunctionApplication {
+        OldMachineTerm::PureFunctionApplication {
             name,
             arguments: values,
         } => format!(
@@ -8579,25 +8585,25 @@ pub(super) fn describe_bitvector_with_context(
                 .collect::<Vec<_>>()
                 .join(", ")
         ),
-        MachineTerm::ClickFunctionApplication { name, .. } => {
+        OldMachineTerm::ClickFunctionApplication { name, .. } => {
             format!("{name}(<typed Click arguments>)")
         }
-        MachineTerm::AlgebraicMatch { .. } => "match <algebraic value> { ... }".to_string(),
-        MachineTerm::MemoryLoad(_, pointer, _) => describe_load_at(pointer, parameter_binding),
-        MachineTerm::IntegerAddress(pointer, _) => {
+        OldMachineTerm::AlgebraicMatch { .. } => "match <algebraic value> { ... }".to_string(),
+        OldMachineTerm::MemoryLoad(_, pointer, _) => describe_load_at(pointer, parameter_binding),
+        OldMachineTerm::IntegerAddress(pointer, _) => {
             format!(
                 "({})",
                 click_cast(&describe_pointer(pointer, parameter_binding), "uint64")
             )
         }
-        MachineTerm::IntegerToMachine { value, destination } => format!(
+        OldMachineTerm::IntegerToMachine { value, destination } => format!(
             "to_{}({})",
             format!("{destination:?}").to_ascii_lowercase(),
             describe_integer_term(value)
         ),
         // Rule C1: a specification `Bool` travels as its cast to `uint8`,
         // which reads as the `Bool` itself; any other format is the cast.
-        MachineTerm::BoolCast { to, value } => {
+        OldMachineTerm::BoolCast { to, value } => {
             let condition = describe_condition_with_context(value, parameter_binding);
             if *to == crate::kernel::MachineIntegerType::UInt8 {
                 condition
@@ -8626,13 +8632,13 @@ pub(super) fn describe_bitvector_with_context(
 }
 
 pub(super) fn describe_parameter_bitvector(
-    term: &MachineTerm,
+    term: &OldMachineTerm,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<String> {
     // A constant is its literal. A local that happens to hold the same
     // value does not name it: `b->content[0u64..n]` is not
     // `b->content[skipped..n]`.
-    if matches!(term, MachineTerm::Constant { .. }) {
+    if matches!(term, OldMachineTerm::Constant { .. }) {
         return None;
     }
     for (parameter, argument) in parameter_binding
@@ -8703,9 +8709,9 @@ pub(super) fn describe_parameter_bitvector(
 }
 
 pub(super) fn describe_binary_bitvector_with_context(
-    left: &MachineTerm,
+    left: &OldMachineTerm,
     operator: &str,
-    right: &MachineTerm,
+    right: &OldMachineTerm,
     parameter_binding: ParameterBinding<'_>,
 ) -> String {
     format!(
@@ -8947,7 +8953,7 @@ pub(super) fn describe_condition_with_context(
     condition: &ConditionTerm,
     parameter_binding: ParameterBinding<'_>,
 ) -> String {
-    let binary = |left: &MachineTerm, operator: &str, right: &MachineTerm| {
+    let binary = |left: &OldMachineTerm, operator: &str, right: &OldMachineTerm| {
         format!(
             "{} {operator} {}",
             describe_bitvector_with_context(left, parameter_binding),
@@ -9079,14 +9085,14 @@ fn describe_unsigned_comparison(
         // A `uint32` equality spells a constant operand in its own type
         // (rule K6).
         CompareRelation::Equal => {
-            let operand = |term: &MachineTerm| match term.as_const() {
+            let operand = |term: &OldMachineTerm| match term.as_const() {
                 Some(value) => format!("{value}u32"),
                 None => describe_bitvector_with_context(term, parameter_binding),
             };
             return Some(format!("{} == {}", operand(left), operand(right)));
         }
     };
-    let operand = |term: &MachineTerm| match term.as_const() {
+    let operand = |term: &OldMachineTerm| match term.as_const() {
         Some(value) => value.to_string(),
         None => describe_bitvector_with_context(term, parameter_binding),
     };
@@ -9098,9 +9104,9 @@ fn describe_unsigned_comparison(
 }
 
 pub(super) fn describe_binary_condition(
-    left: &MachineTerm,
+    left: &OldMachineTerm,
     operator: &str,
-    right: &MachineTerm,
+    right: &OldMachineTerm,
 ) -> String {
     format!(
         "{} {operator} {}",
@@ -9142,8 +9148,8 @@ mod wide_range_reader_tests {
         let base = Address::symbolic(Variable(985_400));
         let wide = MemoryRange::new_wide(
             base,
-            MachineTerm::uint64_constant(0),
-            MachineTerm::uint64_constant(1 << 33),
+            OldMachineTerm::uint64_constant(0),
+            OldMachineTerm::uint64_constant(1 << 33),
             1,
         );
         assert!(describe_source_range(&wide, ParameterBinding::default()).is_none());

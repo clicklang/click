@@ -215,7 +215,7 @@ impl Framer<'_> {
                     crate::kernel::substitute_int32_variable_in_proposition(
                         to_body,
                         **to_var,
-                        MachineTerm::Variable(**from_var),
+                        OldMachineTerm::Variable(**from_var),
                     )
                 };
                 let both = Proposition::And(from_body.clone(), Box::new(to_body));
@@ -332,8 +332,8 @@ impl Framer<'_> {
                 Proposition::ConditionIs(right, right_value),
             ) if left_value == right_value => {
                 let carried = conditions_equal_with_load_atoms(
-                    left.native_compat(),
-                    right.native_compat(),
+                    left.old_form(),
+                    right.old_form(),
                     &|left, right| loads_unchanged(left, right, &contexts.reads),
                 ) || (self.leaf)(from, to, &contexts.leaf);
                 if carried {
@@ -355,14 +355,18 @@ impl Framer<'_> {
 /// at two states, shown to hold one version by the kernel's checked load
 /// equality, exactly as the condition bridge
 /// (`conditions_equal_modulo_origin_unchanged`) asks it.
-fn loads_unchanged(left: &MachineTerm, right: &MachineTerm, assumptions: &PureFactContext) -> bool {
+fn loads_unchanged(
+    left: &OldMachineTerm,
+    right: &OldMachineTerm,
+    assumptions: &PureFactContext,
+) -> bool {
     crate::instrumentation::record_deterministic_work(1);
     if left == right {
         return true;
     }
     let (
-        MachineTerm::MemoryLoad(_, left_pointer, left_kind),
-        MachineTerm::MemoryLoad(right_memory, right_pointer, right_kind),
+        OldMachineTerm::MemoryLoad(_, left_pointer, left_kind),
+        OldMachineTerm::MemoryLoad(right_memory, right_pointer, right_kind),
     ) = (left, right)
     else {
         return false;
@@ -382,7 +386,7 @@ fn loads_unchanged(left: &MachineTerm, right: &MachineTerm, assumptions: &PureFa
         return false;
     }
     let right_at_left_address =
-        MachineTerm::read_named(right_memory.clone(), left_pointer.clone(), *right_kind);
+        OldMachineTerm::read_named(right_memory.clone(), left_pointer.clone(), *right_kind);
     crate::kernel::memory_history::explicit_atomic_equality_from_memory_derivations(
         left,
         &right_at_left_address,
@@ -407,10 +411,10 @@ mod wide_condition_tests {
         let before = SymbolicMemory::new().with_block("wide-equality-frame", 16);
         let after = before.clone().store(
             pointer.offset_by_bytes(8),
-            ProgramValue::UInt64(MachineTerm::uint64_constant(3)),
+            ProgramValue::UInt64(OldMachineTerm::uint64_constant(3)),
         );
         let load = |memory: &SymbolicMemory, kind| {
-            crate::kernel::MachineTerm::read_named(
+            crate::kernel::OldMachineTerm::read_named(
                 ProgramPoint::at(&(crate::kernel::intern_memory_ref(memory))),
                 pointer.clone(),
                 kind,
@@ -422,7 +426,7 @@ mod wide_condition_tests {
             left: Box::new(read),
             right: Box::new(value),
         };
-        let stamp = MachineTerm::uint64_constant(0x1_0000_0001);
+        let stamp = OldMachineTerm::uint64_constant(0x1_0000_0001);
         let source = condition(load(&before, LoadKind::Bits64), stamp.clone());
         let target = condition(load(&after, LoadKind::Bits64), stamp.clone());
         let carried = |target: &ConditionTerm| {
@@ -437,11 +441,11 @@ mod wide_condition_tests {
         )));
         assert!(!carried(&condition(
             load(&after, LoadKind::Bits64),
-            MachineTerm::uint64_constant(1),
+            OldMachineTerm::uint64_constant(1),
         )));
         let partial = before.clone().store(
             pointer.offset_by_bytes(4),
-            ProgramValue::Int32(MachineTerm::constant(0)),
+            ProgramValue::Int32(OldMachineTerm::constant(0)),
         );
         assert!(!carried(&condition(
             load(&partial, LoadKind::Bits64),
@@ -453,7 +457,7 @@ mod wide_condition_tests {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(load(&after, LoadKind::Bits64)),
-                right: Box::new(MachineTerm::constant(1))
+                right: Box::new(OldMachineTerm::constant(1))
             },
             &|_, _| true,
         ));

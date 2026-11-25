@@ -10,7 +10,7 @@ fn borrowed_range_frame_is_indexed_full_width_and_authority_scoped() {
         let _session = crate::kernel::VerificationSession::enter();
         let field = Address::symbolic(Variable(9_897_001));
         let data = Address::symbolic(Variable(9_897_002));
-        let count = MachineTerm::Variable(Variable(9_897_003));
+        let count = OldMachineTerm::Variable(Variable(9_897_003));
         let backing = MemoryRange::new_with_element_width(data, 0u32.into(), count.clone(), 4);
         let descriptor =
             MemoryRange::new_with_element_width(field.clone(), 0u32.into(), 2u32.into(), 4);
@@ -78,7 +78,7 @@ fn borrowed_range_frame_is_indexed_full_width_and_authority_scoped() {
         let wider_range = MemoryRange::new_with_element_width(
             backing.base().clone(),
             0u32.into(),
-            MachineTerm::add(count.clone(), 1u32.into()),
+            OldMachineTerm::add(count.clone(), 1u32.into()),
             4,
         );
         assert!(!proof.checks(&wider_range, &field, 8, &context));
@@ -103,7 +103,7 @@ fn borrowed_range_frame_is_indexed_full_width_and_authority_scoped() {
             None,
         );
         let load = |memory: &SymbolicMemory| {
-            MachineTerm::read_named(
+            OldMachineTerm::read_named(
                 ProgramPoint::at(&(crate::kernel::intern_memory_ref(memory))),
                 Box::new(field.clone()),
                 LoadKind::Bits64,

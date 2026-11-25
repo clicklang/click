@@ -84,8 +84,8 @@ fn singleton_normalization_retains_occurrences_without_alias_discovery() {
 
 #[test]
 fn constructed_normalization_omits_only_proven_empty_ranges() {
-    let start = MachineTerm::Variable(Variable(8_968_000));
-    let end = MachineTerm::Variable(Variable(8_968_001));
+    let start = OldMachineTerm::Variable(Variable(8_968_000));
+    let end = OldMachineTerm::Variable(Variable(8_968_001));
     let range = ResourceFact::own_memory(MemoryRange::new(
         Address::symbolic(Variable(8_968_002)),
         start.clone(),
@@ -102,8 +102,8 @@ fn constructed_normalization_omits_only_proven_empty_ranges() {
     let work = [4_u64, 16, 64].map(|count| {
         let _session = crate::kernel::VerificationSession::enter();
         let facts = (0..count).fold(PureFactContext::new(), |facts, index| {
-            let adjacent = MachineTerm::Variable(Variable(8_968_100 + index));
-            let unrelated = MachineTerm::Variable(Variable(8_968_200 + index));
+            let adjacent = OldMachineTerm::Variable(Variable(8_968_100 + index));
+            let unrelated = OldMachineTerm::Variable(Variable(8_968_200 + index));
             facts
                 .assume_condition(equal(end.clone(), adjacent), true)
                 .assume_condition(

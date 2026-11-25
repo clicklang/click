@@ -12,8 +12,8 @@ fn shared_bound_consumers_preserve_dag_operands() {
             for i in 0..ambient {
                 facts = facts.assume_condition(
                     ConditionTerm::equal(
-                        MachineTerm::Variable(Variable(995000 + i)),
-                        MachineTerm::constant(7),
+                        OldMachineTerm::Variable(Variable(995000 + i)),
+                        OldMachineTerm::constant(7),
                     ),
                     true,
                 );
@@ -23,8 +23,8 @@ fn shared_bound_consumers_preserve_dag_operands() {
             let observe = |term| IntegerTerm::from_machine(ty, term).unwrap();
             let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
                 for level in 0..size {
-                    let x = MachineTerm::Variable(Variable(996000 + level * 2));
-                    let y = MachineTerm::Variable(Variable(996001 + level * 2));
+                    let x = OldMachineTerm::Variable(Variable(996000 + level * 2));
+                    let y = OldMachineTerm::Variable(Variable(996001 + level * 2));
                     root = KernelTerm::machine_binary_shared(
                         ty,
                         MachineBinaryOp::Add,
@@ -44,7 +44,7 @@ fn shared_bound_consumers_preserve_dag_operands() {
                         .assume_condition(second, true);
                     assert!(facts.has_upper_bound_at_or_below(&x, &y));
                     assert!(shared_signed_const_add(operand.operand_view(), 1).is_none());
-                    assert!(!shared_successor_of(operand.operand_view(), V::Legacy(&y)));
+                    assert!(!shared_successor_of(operand.operand_view(), V::Old(&y)));
                     assert!(!operand.has_boxed_operand());
                 }
             });
@@ -77,15 +77,15 @@ fn shared_comparison_class_queries_do_not_export_dag_prefixes() {
             for i in 0..ambient {
                 facts = facts.assume_condition(
                     ConditionTerm::signed_less_equal(
-                        MachineTerm::Variable(Variable(997000 + i)),
-                        MachineTerm::constant(7),
+                        OldMachineTerm::Variable(Variable(997000 + i)),
+                        OldMachineTerm::constant(7),
                     ),
                     true,
                 );
             }
             let mut root =
                 KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(994401));
-            let right = MachineTerm::Variable(Variable(994402));
+            let right = OldMachineTerm::Variable(Variable(994402));
             let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
                 for level in 0..size {
                     root = KernelTerm::machine_binary_shared(
@@ -101,7 +101,7 @@ fn shared_comparison_class_queries_do_not_export_dag_prefixes() {
                     assert!(!facts.equality_graph.knows_condition(&query, true));
                     assert!(!facts.equality_graph.knows_condition(&query, false));
                     assert!(!operand.has_boxed_operand());
-                    let alias = MachineTerm::Variable(Variable(998000 + level));
+                    let alias = OldMachineTerm::Variable(Variable(998000 + level));
                     let child = facts
                         .clone()
                         .assume_condition(
@@ -163,8 +163,8 @@ fn shared_exact_order_walk_visits_dag_endpoints_once() {
             for i in 0..ambient {
                 facts = facts.assume_condition(
                     ConditionTerm::signed_less_than(
-                        MachineTerm::Variable(Variable(998000 + i * 2)),
-                        MachineTerm::Variable(Variable(998001 + i * 2)),
+                        OldMachineTerm::Variable(Variable(998000 + i * 2)),
+                        OldMachineTerm::Variable(Variable(998001 + i * 2)),
                     ),
                     true,
                 );
@@ -230,14 +230,14 @@ fn initialized_range_order_collection_does_not_enumerate_elements() {
     let mut costs = Vec::new();
     for size in [16, 1024, 1_000_000] {
         let var = Variable(9_200_100);
-        let index = MachineTerm::Variable(var);
+        let index = OldMachineTerm::Variable(var);
         let guard = Proposition::And(
             Box::new(Proposition::condition_is(
                 ConditionTerm::signed_less_equal(0u32.into(), index.clone()),
                 true,
             )),
             Box::new(Proposition::condition_is(
-                ConditionTerm::signed_less_than(index.clone(), MachineTerm::constant(size)),
+                ConditionTerm::signed_less_than(index.clone(), OldMachineTerm::constant(size)),
                 true,
             )),
         );
@@ -262,7 +262,7 @@ fn initialized_range_order_collection_does_not_enumerate_elements() {
             assert!(facts.is_empty());
             assert!(!context.proposition_proves_condition(
                 &source,
-                &ConditionTerm::signed_less_than(MachineTerm::Variable(var), 7u32.into()),
+                &ConditionTerm::signed_less_than(OldMachineTerm::Variable(var), 7u32.into()),
                 true,
             ));
         });

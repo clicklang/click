@@ -1,7 +1,7 @@
 use super::*;
 use crate::kernel::binary_term;
 use crate::kernel::{CompareRelation, MachineIntegerType};
-use crate::kernel::{MachineCastSpelling, MachineTerm};
+use crate::kernel::{MachineCastSpelling, OldMachineTerm};
 use crate::kernel::{bits32_constant, constant_u32, int32_constant};
 
 #[cfg(test)]
@@ -42,7 +42,7 @@ thread_local! {
 /// own endpoints; `None` for any other shape.
 pub(in crate::kernel) fn wide_struct_array_count(
     range: &MemoryRange,
-) -> Option<(&MachineTerm, i64)> {
+) -> Option<(&OldMachineTerm, i64)> {
     let (start, end) = range.wide_bounds()?;
     if start.uint64_as_const() != Some(0) {
         return None;
@@ -128,7 +128,7 @@ use crate::kernel::scaled_span_element_width;
 /// subtractive constants a range endpoint is written with. `hi - 1` is `hi`
 /// shifted by `-1`; anything else is itself shifted by `0`. One level, no
 /// facts, no recursion budget.
-fn endpoint_base_and_shift(term: &MachineTerm) -> (&MachineTerm, i64) {
+fn endpoint_base_and_shift(term: &OldMachineTerm) -> (&OldMachineTerm, i64) {
     match term {
         binary_term!(Int32, Add, left, right) => match (left.as_ref(), right.as_ref()) {
             (base, bits32_constant!(shift)) => (base, i64::from(constant_u32(*shift) as i32)),
@@ -159,8 +159,8 @@ fn endpoint_base_and_shift(term: &MachineTerm) -> (&MachineTerm, i64) {
 /// the same start for the same reason; sharing one reading keeps a range
 /// written from `0` — which is how a C contract usually writes one — from
 /// being a different kind of range to the rules than `p[a..b]` is.
-fn element_count_endpoints(element_count: &MachineTerm) -> (&MachineTerm, &MachineTerm) {
-    const ZERO: &MachineTerm = &MachineTerm::constant(0);
+fn element_count_endpoints(element_count: &OldMachineTerm) -> (&OldMachineTerm, &OldMachineTerm) {
+    const ZERO: &OldMachineTerm = &OldMachineTerm::constant(0);
     match element_count {
         binary_term!(Int32, Subtract, end, start) => (start.as_ref(), end.as_ref()),
         _ => (ZERO, element_count),
@@ -176,7 +176,7 @@ fn element_count_endpoints(element_count: &MachineTerm) -> (&MachineTerm, &Machi
 /// reads the term and consults no facts, and the difference it reports is the
 /// term's own modular value: for a shared base the base cancels, so the count
 /// is exactly the shift difference.
-fn constant_element_count(element_count: &MachineTerm) -> Option<i64> {
+fn constant_element_count(element_count: &OldMachineTerm) -> Option<i64> {
     if let Some(value) = signed_bitvector_constant(element_count) {
         return Some(value);
     }
@@ -192,7 +192,7 @@ fn constant_element_count(element_count: &MachineTerm) -> Option<i64> {
 /// scaled once by an element width. Read only this expression, without facts
 /// or rewriting away the endpoints other range rules need. The cast and
 /// product use the span's own modular 32-bit arithmetic.
-fn structural_constant_byte_span(bytes: &MachineTerm) -> Option<u32> {
+fn structural_constant_byte_span(bytes: &OldMachineTerm) -> Option<u32> {
     crate::instrumentation::record_deterministic_work(1);
     match bytes {
         binary_term!(Int32, Multiply, left, right) => match (left.as_ref(), right.as_ref()) {
@@ -212,9 +212,9 @@ pub(in crate::kernel) fn signed_byte_sum_is_nonwrapping_views(
     sum: MachineOperandView<'_>,
     mut proves_signed_less_equal: impl FnMut(MachineOperandView<'_>, MachineOperandView<'_>) -> bool,
 ) -> bool {
-    let zero = MachineTerm::constant(0);
-    proves_signed_less_equal(MachineOperandView::Legacy(&zero), left)
-        && proves_signed_less_equal(MachineOperandView::Legacy(&zero), right)
+    let zero = OldMachineTerm::constant(0);
+    proves_signed_less_equal(MachineOperandView::Old(&zero), left)
+        && proves_signed_less_equal(MachineOperandView::Old(&zero), right)
         && proves_signed_less_equal(left, sum)
 }
 
@@ -456,7 +456,7 @@ impl PureFactContext {
         pointer: &Address,
         byte_width: u32,
     ) -> bool {
-        self.proves_memory_loadable(memory, pointer, &MachineTerm::constant(byte_width))
+        self.proves_memory_loadable(memory, pointer, &OldMachineTerm::constant(byte_width))
     }
 
     /// Carry a native liveness range, or a checked subrange, through
@@ -467,7 +467,7 @@ impl PureFactContext {
         &self,
         memory: &SymbolicMemory,
         base: &Address,
-        bytes: &MachineTerm,
+        bytes: &OldMachineTerm,
     ) -> bool {
         // Exact evidence is an indexed lookup even when its address holds
         // many other views. Choosing a different premise belongs to search.
@@ -509,7 +509,7 @@ impl PureFactContext {
             .filter_map(|fact| match fact {
                 Proposition::MemoryLoadable {
                     bytes, wide: false, ..
-                } => match bytes.native_compat() {
+                } => match bytes.old_form() {
                     int32_constant!(held) => Some(constant_u32(*held)),
                     _ => None,
                 },
@@ -523,9 +523,9 @@ impl PureFactContext {
                 .is_some_and(|count| count <= u64::from(held))
                 || self.decide(&ConditionTerm::uint64_less_equal(
                     bytes.clone(),
-                    MachineTerm::uint64_constant(u64::from(held)),
+                    OldMachineTerm::uint64_constant(u64::from(held)),
                 )) == Some(true))
-            && self.proves_memory_loadable(memory, base, &MachineTerm::constant(held))
+            && self.proves_memory_loadable(memory, base, &OldMachineTerm::constant(held))
         {
             return true;
         }
@@ -543,10 +543,10 @@ impl PureFactContext {
                 };
                 crate::instrumentation::record_deterministic_work(1);
                 source_base == base
-                    && (source_bytes.native_compat() == bytes
+                    && (source_bytes.old_form() == bytes
                         || self.decide(&ConditionTerm::uint64_less_equal(
                             bytes.clone(),
-                            source_bytes.native_compat().clone(),
+                            source_bytes.old_form().clone(),
                         )) == Some(true))
                     && before.read_region_identity(source_base) == memory.read_region_identity(base)
                     && memory_range_still_available(before, memory, source_base, self)
@@ -596,7 +596,7 @@ impl PureFactContext {
         fact: &Proposition,
         memory: &SymbolicMemory,
         base: &Address,
-        bytes: &MachineTerm,
+        bytes: &OldMachineTerm,
     ) -> bool {
         crate::instrumentation::record_deterministic_work(1);
         let Proposition::MemoryLoadable {
@@ -620,14 +620,14 @@ impl PureFactContext {
         self.decide(&wide_index_comparison(
             CompareRelation::LessEqual,
             delta.operand_view(),
-            MachineOperandView::Legacy(&MachineTerm::uint64_constant(i64::MAX as u64)),
+            MachineOperandView::Old(&OldMachineTerm::uint64_constant(i64::MAX as u64)),
         )) == Some(true)
             && self.decide(&wide_index_comparison(
                 CompareRelation::LessEqual,
                 delta.operand_view(),
                 held.operand_view(),
             )) == Some(true)
-            && self.window_fits_after(delta.operand_view(), bytes, held.native_compat())
+            && self.window_fits_after(delta.operand_view(), bytes, held.old_form())
             && before.read_region_identity(source) == memory.read_region_identity(source)
             && memory_range_still_available(before, memory, source, self)
     }
@@ -638,23 +638,23 @@ impl PureFactContext {
     fn window_fits_after(
         &self,
         delta: MachineOperandView<'_>,
-        bytes: &MachineTerm,
-        held: &MachineTerm,
+        bytes: &OldMachineTerm,
+        held: &OldMachineTerm,
     ) -> bool {
         let remaining = wide_index_binary(
             MachineBinaryOp::Subtract,
-            MachineOperandView::Legacy(held),
+            MachineOperandView::Old(held),
             delta,
         );
         if self.decide(&wide_index_comparison(
             CompareRelation::LessEqual,
-            MachineOperandView::Legacy(bytes),
+            MachineOperandView::Old(bytes),
             remaining.operand_view(),
         )) == Some(true)
         {
             return true;
         }
-        let MachineTerm::Binary {
+        let OldMachineTerm::Binary {
             op: MachineBinaryOp::Subtract,
             format: MachineIntegerType::UInt64,
             left: end,
@@ -663,12 +663,12 @@ impl PureFactContext {
         else {
             return false;
         };
-        MachineOperandView::Legacy(start).retain(MachineIntegerType::UInt64)
+        MachineOperandView::Old(start).retain(MachineIntegerType::UInt64)
             == delta.retain(MachineIntegerType::UInt64)
             && self.decide(&wide_index_comparison(
                 CompareRelation::LessEqual,
                 delta,
-                MachineOperandView::Legacy(end),
+                MachineOperandView::Old(end),
             )) == Some(true)
             && self.decide(&ConditionTerm::uint64_less_equal(
                 end.as_ref().clone(),
@@ -680,7 +680,7 @@ impl PureFactContext {
         &self,
         memory: &SymbolicMemory,
         base: &Address,
-        bytes: &MachineTerm,
+        bytes: &OldMachineTerm,
     ) -> bool {
         // The loadable prover is the one consumer of the extended DAG
         // bridging: a loadability fact carrying one memory state must
@@ -708,7 +708,7 @@ impl PureFactContext {
         &self,
         memory: &SymbolicMemory,
         base: &Address,
-        bytes: &MachineTerm,
+        bytes: &OldMachineTerm,
     ) -> bool {
         // Exact evidence is an indexed lookup even when its address holds
         // many other views. Choosing a different premise belongs to search.
@@ -759,7 +759,7 @@ impl PureFactContext {
                 memory_range_still_available(range_memory, memory, range_base, self)
                     && self.proves_loadable_region_from_structural_range(
                         range_base,
-                        range_bytes.native_compat(),
+                        range_bytes.old_form(),
                         base,
                         bytes,
                     )
@@ -793,7 +793,7 @@ impl PureFactContext {
                     return false;
                 };
                 let Some(elements) =
-                    crate::kernel::wide_loadable_element_count(range_bytes.native_compat(), width)
+                    crate::kernel::wide_loadable_element_count(range_bytes.old_form(), width)
                 else {
                     return false;
                 };
@@ -801,12 +801,12 @@ impl PureFactContext {
                 else {
                     return false;
                 };
-                let limit = MachineTerm::uint64_constant(i64::MAX as u64 / u64::from(width));
+                let limit = OldMachineTerm::uint64_constant(i64::MAX as u64 / u64::from(width));
                 memory_range_still_available(range_memory, memory, range_base, self)
                     && self.decide(&wide_index_comparison(
                         CompareRelation::LessThan,
                         index.operand_view(),
-                        MachineOperandView::Legacy(elements),
+                        MachineOperandView::Old(elements),
                     )) == Some(true)
                     && self.decide(&ConditionTerm::uint64_less_equal(elements.clone(), limit))
                         == Some(true)
@@ -846,7 +846,7 @@ impl PureFactContext {
             .collect::<Vec<_>>();
         ranges.sort_by_key(|(preferred, _, _)| !preferred);
         ranges.into_iter().any(|(_, range_base, range_bytes)| {
-            self.proves_loadable_region_from_range(range_base, range_bytes.native_compat(), base, bytes)
+            self.proves_loadable_region_from_range(range_base, range_bytes.old_form(), base, bytes)
         }) || bytes.as_const() == Some(4)
             && crate::kernel::api::contract_certification::quantified_int32_fact_certifies_loadable_cell(
                 self, memory, base,
@@ -860,7 +860,7 @@ impl PureFactContext {
         &self,
         memory: &SymbolicMemory,
         base: &Address,
-        bytes: &MachineTerm,
+        bytes: &OldMachineTerm,
     ) -> Option<Vec<Proposition>> {
         let compatible = |fact_memory: &SymbolicMemory, fact_base: &Address| {
             fact_memory == memory
@@ -876,7 +876,7 @@ impl PureFactContext {
                 || crate::kernel::api::memories_canonically_equal(fact_memory, memory)
                 || crate::kernel::api::memories_connected_by_effects(fact_memory, memory, self)
         };
-        let equal = |left: &MachineTerm, right: &MachineTerm| {
+        let equal = |left: &OldMachineTerm, right: &OldMachineTerm| {
             let left = self.simplify_bitvector_under_assumptions(left);
             let right = self.simplify_bitvector_under_assumptions(right);
             left == right
@@ -941,7 +941,7 @@ impl PureFactContext {
                 || shared_pointer_byte_offset_from_base(prefix_base, &base).is_some_and(|offset| {
                     self.byte_operands_equal(
                         offset.operand_view(),
-                        MachineOperandView::Legacy(&MachineTerm::constant(0)),
+                        MachineOperandView::Old(&OldMachineTerm::constant(0)),
                     )
                 });
             if !prefix_starts_at_goal {
@@ -953,7 +953,7 @@ impl PureFactContext {
                 .as_const()
                 .map(|width| base.offset_by_bytes(width))
                 .or_else(|| {
-                    int32_element_count_from_bytes(prefix_bytes.native_compat())
+                    int32_element_count_from_bytes(prefix_bytes.old_form())
                         .map(|count| base.offset_by_int32_elements(count))
                 });
             let Some(endpoint) = endpoint else {
@@ -1021,31 +1021,29 @@ impl PureFactContext {
                 let byte_concatenation = byte_adjacent
                     && equal(
                         bytes,
-                        &MachineTerm::add(
-                            prefix_bytes.native_compat().clone(),
-                            suffix_bytes.native_compat().clone(),
+                        &OldMachineTerm::add(
+                            prefix_bytes.old_form().clone(),
+                            suffix_bytes.old_form().clone(),
                         ),
                     );
-                let element_concatenation =
-                    int32_element_count_from_bytes(prefix_bytes.native_compat())
-                        .zip(int32_element_count_from_bytes(suffix_bytes.native_compat()))
-                        .zip(int32_element_count_from_bytes(bytes))
-                        .is_some_and(|((prefix_count, suffix_count), goal_count)| {
-                            if !self.assumed_span_covers_its_element_count(&prefix_count, 4)
-                                || !self.assumed_span_covers_its_element_count(&suffix_count, 4)
-                            {
-                                return false;
-                            }
-                            let expected_suffix =
-                                base.offset_by_int32_elements(prefix_count.clone());
-                            (suffix_base == &expected_suffix
+                let element_concatenation = int32_element_count_from_bytes(prefix_bytes.old_form())
+                    .zip(int32_element_count_from_bytes(suffix_bytes.old_form()))
+                    .zip(int32_element_count_from_bytes(bytes))
+                    .is_some_and(|((prefix_count, suffix_count), goal_count)| {
+                        if !self.assumed_span_covers_its_element_count(&prefix_count, 4)
+                            || !self.assumed_span_covers_its_element_count(&suffix_count, 4)
+                        {
+                            return false;
+                        }
+                        let expected_suffix = base.offset_by_int32_elements(prefix_count.clone());
+                        (suffix_base == &expected_suffix
                         || crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
                             suffix_base,
                             &expected_suffix,
                             self,
                         ))
-                        && equal(&goal_count, &MachineTerm::add(prefix_count, suffix_count))
-                        });
+                        && equal(&goal_count, &OldMachineTerm::add(prefix_count, suffix_count))
+                    });
                 if byte_concatenation || element_concatenation {
                     return Some(
                         [*prefix_fact, *suffix_fact]
@@ -1064,7 +1062,7 @@ impl PureFactContext {
         &self,
         memory: &SymbolicMemory,
         base: &Address,
-        bytes: &MachineTerm,
+        bytes: &OldMachineTerm,
     ) -> bool {
         // Exact evidence is an indexed lookup even when its address holds
         // many other views. Choosing a different premise belongs to search.
@@ -1112,7 +1110,7 @@ impl PureFactContext {
                 }
                 if self.same_base_and_loadable_span_match(
                     range_base,
-                    range_bytes.native_compat(),
+                    range_bytes.old_form(),
                     base,
                     bytes,
                 ) {
@@ -1122,7 +1120,7 @@ impl PureFactContext {
                     return false;
                 };
                 let Some(element_count) =
-                    element_count_from_bytes(range_bytes.native_compat(), byte_width)
+                    element_count_from_bytes(range_bytes.old_form(), byte_width)
                 else {
                     return false;
                 };
@@ -1132,7 +1130,7 @@ impl PureFactContext {
                 pointer_in_range_for_memory_resolution(
                     base,
                     range_base,
-                    &MachineTerm::constant(0),
+                    &OldMachineTerm::constant(0),
                     &element_count,
                     byte_width,
                     self,
@@ -1146,7 +1144,7 @@ impl PureFactContext {
         &self,
         memory: &'m SymbolicMemory,
         base: &Address,
-    ) -> Option<(Address, &'m MachineTerm)> {
+    ) -> Option<(Address, &'m OldMachineTerm)> {
         let block = if matches!(base.base, AddressBase::StringLiteral { .. }) {
             base.base.clone()
         } else {
@@ -1171,11 +1169,11 @@ impl PureFactContext {
     fn nonwrapping_signed_byte_sum_end(
         &self,
         left: MachineOperandView<'_>,
-        right: &MachineTerm,
+        right: &OldMachineTerm,
     ) -> Option<SharedMachineIntegerTerm> {
         let left = self.simplify_machine_operand_under_assumptions(left, MachineIntegerType::Int32);
         let right = self.simplify_machine_operand_under_assumptions(
-            MachineOperandView::Legacy(right),
+            MachineOperandView::Old(right),
             MachineIntegerType::Int32,
         );
         let sum = self.simplify_machine_operand_under_assumptions(
@@ -1220,9 +1218,9 @@ impl PureFactContext {
     fn same_base_and_loadable_span_match(
         &self,
         range_base: &Address,
-        range_bytes: &MachineTerm,
+        range_bytes: &OldMachineTerm,
         base: &Address,
-        bytes: &MachineTerm,
+        bytes: &OldMachineTerm,
     ) -> bool {
         range_base == base
             && (structural_constant_byte_span(range_bytes)
@@ -1238,9 +1236,9 @@ impl PureFactContext {
     fn proves_loadable_region_from_structural_range(
         &self,
         range_base: &Address,
-        range_bytes: &MachineTerm,
+        range_bytes: &OldMachineTerm,
         base: &Address,
-        bytes: &MachineTerm,
+        bytes: &OldMachineTerm,
     ) -> bool {
         if base.blocks_proven_distinct(range_base) {
             return false;
@@ -1273,13 +1271,13 @@ impl PureFactContext {
         {
             let lower = index_comparison(
                 CompareRelation::LessEqual,
-                MachineOperandView::Legacy(&MachineTerm::constant(0)),
+                MachineOperandView::Old(&OldMachineTerm::constant(0)),
                 index.operand_view(),
             );
             let upper = index_comparison(
                 CompareRelation::LessThan,
                 index.operand_view(),
-                MachineOperandView::Legacy(&element_count),
+                MachineOperandView::Old(&element_count),
             );
             if self.selected_comparison_value(&lower) == Some(true)
                 && self.selected_comparison_value(&upper) == Some(true)
@@ -1295,7 +1293,7 @@ impl PureFactContext {
                 if 0 <= index_constant
                     && self.has_exact_order_path_views(
                         index.operand_view(),
-                        MachineOperandView::Legacy(&element_count),
+                        MachineOperandView::Old(&element_count),
                         true,
                     )
                 {
@@ -1311,13 +1309,13 @@ impl PureFactContext {
                 binary_term!(Int32, Subtract, range_end, count_start),
             ) = (index.operand_view().binary(), &element_count)
                 && checked_scalar_facts::ScalarOperandKey::new(range_start)
-                    == checked_scalar_facts::ScalarOperandKey::new(MachineOperandView::Legacy(
+                    == checked_scalar_facts::ScalarOperandKey::new(MachineOperandView::Old(
                         count_start,
                     ))
                 && self.has_exact_order_path_views(range_start, target_index, false)
                 && self.has_exact_order_path_views(
                     target_index,
-                    MachineOperandView::Legacy(range_end),
+                    MachineOperandView::Old(range_end),
                     true,
                 )
             {
@@ -1339,7 +1337,7 @@ impl PureFactContext {
         self.decide(&index_comparison(
             CompareRelation::LessEqual,
             access_end.operand_view(),
-            MachineOperandView::Legacy(range_bytes),
+            MachineOperandView::Old(range_bytes),
         )) == Some(true)
     }
 
@@ -1371,7 +1369,7 @@ impl PureFactContext {
     /// another rather than between two term shapes.
     ///
     /// Soundness, in the arithmetic the terms are actually written in. An
-    /// span is a `MachineTerm`: `(b - a) * w` is modular, so reading the
+    /// span is a `OldMachineTerm`: `(b - a) * w` is modular, so reading the
     /// fact as "the elements `a..b`" is only legitimate while that product is
     /// the true count of bytes. The rule therefore requires the assumed fact's
     /// own byte-count guards —
@@ -1409,9 +1407,9 @@ impl PureFactContext {
     fn proves_loadable_subrange_by_element_endpoints(
         &self,
         range_base: &Address,
-        range_bytes: &MachineTerm,
+        range_bytes: &OldMachineTerm,
         base: &Address,
-        bytes: &MachineTerm,
+        bytes: &OldMachineTerm,
     ) -> bool {
         if crate::kernel::assumptions::reasoning_interrupted() {
             return false;
@@ -1451,8 +1449,8 @@ impl PureFactContext {
         let offset_agrees = index
             == index_binary(
                 MachineBinaryOp::Subtract,
-                MachineOperandView::Legacy(goal_start),
-                MachineOperandView::Legacy(range_start),
+                MachineOperandView::Old(goal_start),
+                MachineOperandView::Old(range_start),
             );
         offset_agrees
             && self.proves_element_endpoint_order(range_start, goal_start)
@@ -1482,8 +1480,8 @@ impl PureFactContext {
     /// really `-1` and the span has wrapped.
     fn assumed_range_is_a_valid_byte_span(
         &self,
-        start: &MachineTerm,
-        end: &MachineTerm,
+        start: &OldMachineTerm,
+        end: &OldMachineTerm,
         element_width: u32,
     ) -> bool {
         crate::instrumentation::record_deterministic_work(1);
@@ -1508,7 +1506,7 @@ impl PureFactContext {
                 if guards.iter().all(|guard| self.proves_exact(guard)) {
                     return true;
                 }
-                let element_count = MachineTerm::subtract(end.clone(), start.clone());
+                let element_count = OldMachineTerm::subtract(end.clone(), start.clone());
                 // A count the term itself decides needs no facts: the shared
                 // definition above only sees two symbolic endpoints, while
                 // `hi - (hi - 1)` is one element for every `hi`.
@@ -1557,7 +1555,7 @@ impl PureFactContext {
     /// facts a proof must supply are spelled over the count the user wrote.
     fn assumed_span_covers_its_element_count(
         &self,
-        element_count: &MachineTerm,
+        element_count: &OldMachineTerm,
         element_width: u32,
     ) -> bool {
         // When the count still names both endpoints, ask about those: the
@@ -1569,7 +1567,7 @@ impl PureFactContext {
             return true;
         }
         self.assumed_range_is_a_valid_byte_span(
-            &MachineTerm::constant(0),
+            &OldMachineTerm::constant(0),
             element_count,
             element_width,
         )
@@ -1580,7 +1578,7 @@ impl PureFactContext {
     ///
     /// This is what an affine constant difference needs before it may be read
     /// as an order. [`crate::kernel::assumptions::affine_bitvector_difference_constant`]
-    /// works in `i64` while the endpoints are modular `MachineTerm`s, so
+    /// works in `i64` while the endpoints are modular `OldMachineTerm`s, so
     /// its result is the true difference only modulo `2^32`; a residue is
     /// outside the range exactly when it is at least the range's element
     /// count, and that comparison needs the count bounded.
@@ -1593,12 +1591,12 @@ impl PureFactContext {
     /// count at all — for four-byte elements to `1073741823`.
     pub(super) fn established_range_element_count_bound(
         &self,
-        start: &MachineTerm,
-        end: &MachineTerm,
+        start: &OldMachineTerm,
+        end: &OldMachineTerm,
         element_width: u32,
     ) -> Option<i64> {
         crate::instrumentation::record_deterministic_work(1);
-        let count = MachineTerm::subtract(end.clone(), start.clone());
+        let count = OldMachineTerm::subtract(end.clone(), start.clone());
         let guards = crate::kernel::memory_range_element_count_guards(count, element_width);
         guards
             .iter()
@@ -1632,12 +1630,12 @@ impl PureFactContext {
     /// path also answers the non-strict question.
     pub(super) fn proves_element_endpoint_order(
         &self,
-        lower: &MachineTerm,
-        upper: &MachineTerm,
+        lower: &OldMachineTerm,
+        upper: &OldMachineTerm,
     ) -> bool {
         self.proves_element_endpoint_order_views(
-            MachineOperandView::Legacy(lower),
-            MachineOperandView::Legacy(upper),
+            MachineOperandView::Old(lower),
+            MachineOperandView::Old(upper),
         )
     }
 
@@ -1692,7 +1690,7 @@ impl PureFactContext {
             return false;
         };
         self.proves_element_endpoint_order_views(
-            MachineOperandView::Legacy(&MachineTerm::constant(shifted as u32)),
+            MachineOperandView::Old(&OldMachineTerm::constant(shifted as u32)),
             base,
         )
     }
@@ -1700,9 +1698,9 @@ impl PureFactContext {
     pub(in crate::kernel) fn proves_loadable_region_from_range(
         &self,
         range_base: &Address,
-        range_bytes: &MachineTerm,
+        range_bytes: &OldMachineTerm,
         base: &Address,
-        bytes: &MachineTerm,
+        bytes: &OldMachineTerm,
     ) -> bool {
         if self.same_base_and_loadable_span_match(range_base, range_bytes, base, bytes) {
             return true;
@@ -1723,7 +1721,7 @@ impl PureFactContext {
             return self.decide(&index_comparison(
                 CompareRelation::LessEqual,
                 access_end.operand_view(),
-                MachineOperandView::Legacy(range_bytes),
+                MachineOperandView::Old(range_bytes),
             )) == Some(true);
         }
 
@@ -1757,7 +1755,7 @@ impl PureFactContext {
     pub(in crate::kernel) fn proves_loadable_cell_from_region_elements(
         &self,
         base: &Address,
-        bytes: &MachineTerm,
+        bytes: &OldMachineTerm,
         pointer: &Address,
         byte_width: u32,
     ) -> bool {
@@ -1777,13 +1775,13 @@ impl PureFactContext {
         {
             let lower_condition = index_comparison(
                 CompareRelation::LessEqual,
-                MachineOperandView::Legacy(&MachineTerm::constant(0)),
+                MachineOperandView::Old(&OldMachineTerm::constant(0)),
                 index.operand_view(),
             );
             let upper_condition = index_comparison(
                 CompareRelation::LessThan,
                 index.operand_view(),
-                MachineOperandView::Legacy(&element_count),
+                MachineOperandView::Old(&element_count),
             );
             let lower = self
                 .selected_comparison_value(&lower_condition)
@@ -1837,7 +1835,7 @@ impl PureFactContext {
     fn proves_cell_within_strided_region(
         &self,
         base: &Address,
-        bytes: &MachineTerm,
+        bytes: &OldMachineTerm,
         pointer: &Address,
         byte_width: u32,
         holds: &dyn Fn(MachineOperandView<'_>, MachineOperandView<'_>, bool) -> bool,
@@ -1888,12 +1886,12 @@ impl PureFactContext {
             return false;
         }
         if !holds(
-            MachineOperandView::Legacy(&MachineTerm::constant(0)),
+            MachineOperandView::Old(&OldMachineTerm::constant(0)),
             index.operand_view(),
             false,
         ) || !holds(
             index.operand_view(),
-            MachineOperandView::Legacy(&element_count),
+            MachineOperandView::Old(&element_count),
             true,
         ) {
             return false;
@@ -1915,7 +1913,7 @@ impl PureFactContext {
         };
         self.proves_loadable_cell_from_region(
             &element,
-            &MachineTerm::constant(stride),
+            &OldMachineTerm::constant(stride),
             &within,
             byte_width,
         )
@@ -1924,7 +1922,7 @@ impl PureFactContext {
     pub(in crate::kernel) fn proves_loadable_cell_from_region(
         &self,
         base: &Address,
-        bytes: &MachineTerm,
+        bytes: &OldMachineTerm,
         pointer: &Address,
         byte_width: u32,
     ) -> bool {
@@ -1943,7 +1941,7 @@ impl PureFactContext {
         }
 
         if let Some(byte_offset) = shared_pointer_byte_offset_from_base(pointer, base) {
-            let byte_width = MachineTerm::constant(byte_width);
+            let byte_width = OldMachineTerm::constant(byte_width);
             let Some(access_end) =
                 self.nonwrapping_signed_byte_sum_end(byte_offset.operand_view(), &byte_width)
             else {
@@ -1952,7 +1950,7 @@ impl PureFactContext {
             return self.decide(&index_comparison(
                 CompareRelation::LessEqual,
                 access_end.operand_view(),
-                MachineOperandView::Legacy(bytes),
+                MachineOperandView::Old(bytes),
             )) == Some(true);
         }
 
@@ -2455,7 +2453,7 @@ impl PureFactContext {
         if contains(pointer)
             && (elements == 1
                 || contains(
-                    &pointer.offset_by_elements(MachineTerm::constant(elements - 1), width),
+                    &pointer.offset_by_elements(OldMachineTerm::constant(elements - 1), width),
                 ))
         {
             return true;
@@ -2466,7 +2464,7 @@ impl PureFactContext {
         range.constant_start() == Some(0)
             && self.proves_cell_within_strided_region(
                 range.base(),
-                &MachineTerm::multiply(range.end().clone(), MachineTerm::constant(width)),
+                &OldMachineTerm::multiply(range.end().clone(), OldMachineTerm::constant(width)),
                 pointer,
                 bytes,
                 &|left, right, strict| {
@@ -2517,12 +2515,12 @@ impl PureFactContext {
             structural_element_index(pointer, range.base(), width, self).is_some_and(|index| {
                 self.proves_range_bound(index_comparison(
                     CompareRelation::LessEqual,
-                    MachineOperandView::Legacy(range.start()),
+                    MachineOperandView::Old(range.start()),
                     index.operand_view(),
                 )) && self.proves_range_bound(index_comparison(
                     CompareRelation::LessThan,
                     index.operand_view(),
-                    MachineOperandView::Legacy(range.end()),
+                    MachineOperandView::Old(range.end()),
                 ))
             })
         };
@@ -2530,7 +2528,7 @@ impl PureFactContext {
         contains(pointer)
             && (elements == 1
                 || contains(
-                    &pointer.offset_by_elements(MachineTerm::constant(elements - 1), width),
+                    &pointer.offset_by_elements(OldMachineTerm::constant(elements - 1), width),
                 ))
     }
 
@@ -2597,8 +2595,8 @@ impl PureFactContext {
         &self,
         pointer: &Address,
         base: &Address,
-        start: &MachineTerm,
-        end: &MachineTerm,
+        start: &OldMachineTerm,
+        end: &OldMachineTerm,
         element_width: u32,
     ) -> bool {
         if pointer_in_range_shallow(pointer, base, start, end, element_width, Some(self)) {
@@ -2632,13 +2630,13 @@ impl PureFactContext {
         if let Some(index) = delta.as_index_term()
             && self.selected_comparison_value(&index_comparison(
                 CompareRelation::LessEqual,
-                MachineOperandView::Legacy(start),
+                MachineOperandView::Old(start),
                 index.operand_view(),
             )) == Some(true)
             && self.selected_comparison_value(&index_comparison(
                 CompareRelation::LessThan,
                 index.operand_view(),
-                MachineOperandView::Legacy(end),
+                MachineOperandView::Old(end),
             )) == Some(true)
         {
             return true;
@@ -2648,7 +2646,7 @@ impl PureFactContext {
         };
         exact_affine_index_difference_views(
             delta.index.operand_view(),
-            MachineOperandView::Legacy(start),
+            MachineOperandView::Old(start),
             Some(self),
         )
         .and_then(|difference| difference.checked_add(delta.constant))
@@ -2685,7 +2683,7 @@ impl PureFactContext {
                     shared_element_index_from_offset(left, range.element_width())
                 }
                 _ if offset_matches(&pointer.offset, &range.base().offset) => Some(
-                    MachineOperandView::Legacy(&MachineTerm::constant(0))
+                    MachineOperandView::Old(&OldMachineTerm::constant(0))
                         .retain(MachineIntegerType::Int32),
                 ),
                 _ => None,
@@ -2695,13 +2693,13 @@ impl PureFactContext {
         };
         self.selected_comparison_value(&index_comparison(
             CompareRelation::LessEqual,
-            MachineOperandView::Legacy(range.start()),
+            MachineOperandView::Old(range.start()),
             index.operand_view(),
         )) == Some(true)
             && self.selected_comparison_value(&index_comparison(
                 CompareRelation::LessThan,
                 index.operand_view(),
-                MachineOperandView::Legacy(range.end()),
+                MachineOperandView::Old(range.end()),
             )) == Some(true)
     }
 
@@ -3133,7 +3131,7 @@ impl PureFactContext {
                     |index| {
                         index_binary(
                             MachineBinaryOp::Subtract,
-                            MachineOperandView::Legacy(&MachineTerm::constant(0)),
+                            MachineOperandView::Old(&OldMachineTerm::constant(0)),
                             index.operand_view(),
                         )
                     },
@@ -3144,7 +3142,7 @@ impl PureFactContext {
                     |index| {
                         index_binary(
                             MachineBinaryOp::Subtract,
-                            MachineOperandView::Legacy(&MachineTerm::constant(0)),
+                            MachineOperandView::Old(&OldMachineTerm::constant(0)),
                             index.operand_view(),
                         )
                     },
@@ -3154,7 +3152,7 @@ impl PureFactContext {
 
         if offsets_equal(&pointer.offset, &base.offset) {
             return Some(
-                MachineOperandView::Legacy(&MachineTerm::constant(0))
+                MachineOperandView::Old(&OldMachineTerm::constant(0))
                     .retain(MachineIntegerType::Int32),
             );
         }
@@ -3174,7 +3172,7 @@ impl PureFactContext {
         )?;
         if pointer.offset == base.offset {
             return Some(
-                MachineOperandView::Legacy(&MachineTerm::constant(0))
+                MachineOperandView::Old(&OldMachineTerm::constant(0))
                     .retain(MachineIntegerType::Int32),
             );
         }
@@ -3204,7 +3202,7 @@ impl PureFactContext {
                     |index| {
                         index_binary(
                             MachineBinaryOp::Subtract,
-                            MachineOperandView::Legacy(&MachineTerm::constant(0)),
+                            MachineOperandView::Old(&OldMachineTerm::constant(0)),
                             index.operand_view(),
                         )
                     },
@@ -3215,7 +3213,7 @@ impl PureFactContext {
                     |index| {
                         index_binary(
                             MachineBinaryOp::Subtract,
-                            MachineOperandView::Legacy(&MachineTerm::constant(0)),
+                            MachineOperandView::Old(&OldMachineTerm::constant(0)),
                             index.operand_view(),
                         )
                     },
@@ -3238,8 +3236,8 @@ impl PureFactContext {
         &self,
         pointer: &Address,
         base: &Address,
-        start: &MachineTerm,
-        end: &MachineTerm,
+        start: &OldMachineTerm,
+        end: &OldMachineTerm,
         element_width: u32,
     ) -> bool {
         // A loop invariant can establish that a havoced pointer local names
@@ -3265,15 +3263,15 @@ impl PureFactContext {
         if let Some(index) =
             self.pointer_element_index_from_base_with_width(pointer, &range_base, element_width)
         {
-            let range_length = MachineTerm::subtract(end.clone(), start.clone());
+            let range_length = OldMachineTerm::subtract(end.clone(), start.clone());
             if proves(index_comparison(
                 CompareRelation::LessEqual,
-                MachineOperandView::Legacy(&MachineTerm::constant(0)),
+                MachineOperandView::Old(&OldMachineTerm::constant(0)),
                 index.operand_view(),
             )) && proves(index_comparison(
                 CompareRelation::LessThan,
                 index.operand_view(),
-                MachineOperandView::Legacy(&range_length),
+                MachineOperandView::Old(&range_length),
             )) {
                 return true;
             }
@@ -3286,12 +3284,12 @@ impl PureFactContext {
         };
         proves(index_comparison(
             CompareRelation::LessEqual,
-            MachineOperandView::Legacy(start),
+            MachineOperandView::Old(start),
             index.operand_view(),
         )) && proves(index_comparison(
             CompareRelation::LessThan,
             index.operand_view(),
-            MachineOperandView::Legacy(end),
+            MachineOperandView::Old(end),
         ))
     }
 
@@ -3368,7 +3366,7 @@ impl PureFactContext {
         // Facts may write the load atom by its load variable while the
         // index carries the raw load (or vice versa); try both forms.
         let mut forms = vec![term.as_ref().clone()];
-        if let MachineTerm::MemoryLoad(memory, pointer, kind) = term.as_ref() {
+        if let OldMachineTerm::MemoryLoad(memory, pointer, kind) = term.as_ref() {
             let named =
                 crate::kernel::canonical_form_of_load_at(memory, pointer.as_ref().clone(), *kind);
             if !forms.contains(&named) {
@@ -3377,7 +3375,7 @@ impl PureFactContext {
         }
         forms.iter().any(|form| {
             let nonnegative =
-                ConditionTerm::signed_less_equal(MachineTerm::constant(0), form.clone());
+                ConditionTerm::signed_less_equal(OldMachineTerm::constant(0), form.clone());
             (self.selected_comparison_value(&nonnegative) == Some(true)
                 || self.exact_ordering_modulo_canonical_atoms(&nonnegative))
                 // A true `left < _` fact is an order fact filed under the
@@ -3450,8 +3448,8 @@ impl PureFactContext {
         // filed asks nothing.
         if self.equality_graph.has_wide_pointer_sources()
             && self.uint64_values_known_equal(
-                &MachineTerm::integer_address(left.clone()),
-                &MachineTerm::integer_address(right.clone()),
+                &OldMachineTerm::integer_address(left.clone()),
+                &OldMachineTerm::integer_address(right.clone()),
             )
         {
             return true;
@@ -4261,7 +4259,9 @@ impl PureFactContext {
         if parent.element_width() != child.element_width() {
             return false;
         }
-        if MachineTerm::subtract(child.end().clone(), child.start().clone()).as_const() == Some(1) {
+        if OldMachineTerm::subtract(child.end().clone(), child.start().clone()).as_const()
+            == Some(1)
+        {
             let child_pointer = child
                 .base
                 .offset_by_elements(child.start().clone(), child.element_width());
@@ -4314,12 +4314,12 @@ impl PureFactContext {
 
     fn bitvector_terms_equal_for_fact_transport(
         &self,
-        left: &MachineTerm,
-        right: &MachineTerm,
+        left: &OldMachineTerm,
+        right: &OldMachineTerm,
     ) -> bool {
         self.bitvector_terms_equal_for_fact_transport_views(
-            MachineOperandView::Legacy(left),
-            MachineOperandView::Legacy(right),
+            MachineOperandView::Old(left),
+            MachineOperandView::Old(right),
         )
     }
 
@@ -4439,8 +4439,8 @@ impl PureFactContext {
         &self,
         target: &MemoryRange,
         base: &Address,
-        start: &MachineTerm,
-        end: &MachineTerm,
+        start: &OldMachineTerm,
+        end: &OldMachineTerm,
     ) -> Option<(i64, i64)> {
         let base = &self.pointer_in_block(base, &target.base.base)?;
         let base_delta = self.pointer_element_index_from_base_with_width(
@@ -4451,12 +4451,12 @@ impl PureFactContext {
         let start = index_binary(
             MachineBinaryOp::Add,
             base_delta.operand_view(),
-            MachineOperandView::Legacy(start),
+            MachineOperandView::Old(start),
         );
         let end = index_binary(
             MachineBinaryOp::Add,
             base_delta.operand_view(),
-            MachineOperandView::Legacy(end),
+            MachineOperandView::Old(end),
         );
         Some((
             signed_index_constant(start.operand_view())?,
@@ -4521,7 +4521,7 @@ impl PureFactContext {
         let literal = |value| {
             let root = KernelTerm::retained_native_machine_operand(
                 MachineIntegerType::UInt64,
-                &MachineTerm::uint64_constant(value),
+                &OldMachineTerm::uint64_constant(value),
             );
             MachineOperandView::Shared(&root).retain(MachineIntegerType::UInt64)
         };
@@ -4673,18 +4673,18 @@ impl PureFactContext {
                 )) == Some(true)
         };
         holds(
-            MachineOperandView::Legacy(end),
-            MachineOperandView::Legacy(&MachineTerm::uint64_constant(limit)),
+            MachineOperandView::Old(end),
+            MachineOperandView::Old(&OldMachineTerm::uint64_constant(limit)),
         ) && holds(
             index.operand_view(),
-            MachineOperandView::Legacy(&MachineTerm::uint64_constant(last_start)),
-        ) && (holds(MachineOperandView::Legacy(end), index.operand_view()) || {
+            MachineOperandView::Old(&OldMachineTerm::uint64_constant(last_start)),
+        ) && (holds(MachineOperandView::Old(end), index.operand_view()) || {
             let access_end = wide_index_binary(
                 MachineBinaryOp::Add,
                 index.operand_view(),
-                MachineOperandView::Legacy(&MachineTerm::uint64_constant(span)),
+                MachineOperandView::Old(&OldMachineTerm::uint64_constant(span)),
             );
-            holds(access_end.operand_view(), MachineOperandView::Legacy(start))
+            holds(access_end.operand_view(), MachineOperandView::Old(start))
         })
     }
 
@@ -4772,7 +4772,7 @@ impl PureFactContext {
         let exact = || {
             holds(ConditionTerm::uint64_less_equal(
                 count.clone(),
-                MachineTerm::uint64_constant((i64::MAX / stride) as u64),
+                OldMachineTerm::uint64_constant((i64::MAX / stride) as u64),
             ))
         };
         let Some(offset) = pointer.offset_from_base(range.base()) else {
@@ -4787,7 +4787,7 @@ impl PureFactContext {
             else {
                 return false;
             };
-            let bound = MachineTerm::uint64_constant(last.div_ceil(stride as u64));
+            let bound = OldMachineTerm::uint64_constant(last.div_ceil(stride as u64));
             return exact() && holds(ConditionTerm::uint64_less_equal(bound, count.clone()));
         }
         let Some(element) = crate::kernel::reasoning::scaled_element_offset(&offset) else {
@@ -4880,7 +4880,7 @@ impl PureFactContext {
         let holds = |relation, left: MachineOperandView<'_>, right: MachineOperandView<'_>| {
             self.decide(&wide_index_comparison(relation, left, right)) == Some(true)
         };
-        let end_view = MachineOperandView::Legacy(end);
+        let end_view = MachineOperandView::Old(end);
         let below_equal_spelling = || {
             let Some((MachineIntegerType::UInt64, MachineBinaryOp::Subtract, [whole, taken])) =
                 index.operand_view().binary()
@@ -4895,7 +4895,7 @@ impl PureFactContext {
                     end_view,
                 ) || (holds(
                     CompareRelation::LessEqual,
-                    MachineOperandView::Legacy(&MachineTerm::uint64_constant(1)),
+                    MachineOperandView::Old(&OldMachineTerm::uint64_constant(1)),
                     taken,
                 ) && holds(CompareRelation::LessEqual, taken, end_view)))
         };
@@ -4912,7 +4912,7 @@ impl PureFactContext {
             holds(
                 CompareRelation::LessEqual,
                 whole,
-                MachineOperandView::Legacy(&MachineTerm::uint64_constant(u64::MAX - added)),
+                MachineOperandView::Old(&OldMachineTerm::uint64_constant(u64::MAX - added)),
             ) && (index
                 .operand_view()
                 .uint64_constant()
@@ -4923,7 +4923,7 @@ impl PureFactContext {
         (start.uint64_as_const() == Some(0)
             || holds(
                 CompareRelation::LessEqual,
-                MachineOperandView::Legacy(start),
+                MachineOperandView::Old(start),
                 index.operand_view(),
             ))
             && (holds(CompareRelation::LessThan, index.operand_view(), end_view)
@@ -4932,7 +4932,7 @@ impl PureFactContext {
             && holds(
                 CompareRelation::LessEqual,
                 end_view,
-                MachineOperandView::Legacy(&MachineTerm::uint64_constant(limit)),
+                MachineOperandView::Old(&OldMachineTerm::uint64_constant(limit)),
             )
     }
 
@@ -5024,7 +5024,7 @@ impl PureFactContext {
                                 position,
                                 bytes,
                                 &from,
-                                &MachineTerm::constant(0),
+                                &OldMachineTerm::constant(0),
                                 &count,
                                 width,
                             )
@@ -5034,7 +5034,7 @@ impl PureFactContext {
                                 || contains(address, 0)
                                 || contains(position, 1)
                                 || self.decide(&ConditionTerm::signed_less_than(
-                                    MachineTerm::constant(0),
+                                    OldMachineTerm::constant(0),
                                     count,
                                 )) == Some(true))
                     })
@@ -5051,8 +5051,8 @@ impl PureFactContext {
         pointer: &Address,
         byte_width: u32,
         base: &Address,
-        start: &MachineTerm,
-        end: &MachineTerm,
+        start: &OldMachineTerm,
+        end: &OldMachineTerm,
         element_width: u32,
     ) -> bool {
         // An owned range keeps its own base spelling. Once the trusted graph
@@ -5127,11 +5127,11 @@ impl PureFactContext {
                 authorized_access_element_length(byte_width, element_width)
             }
         {
-            let access_length = MachineTerm::constant(logical_access_length);
+            let access_length = OldMachineTerm::constant(logical_access_length);
             let access_end = index_binary(
                 MachineBinaryOp::Add,
                 index.operand_view(),
-                MachineOperandView::Legacy(&access_length),
+                MachineOperandView::Old(&access_length),
             );
             let exact_within_range = match (
                 super::exact_signed_constant_view(index.operand_view(), self),
@@ -5153,21 +5153,15 @@ impl PureFactContext {
                     // [index, index + 1), so its endpoint is expressed by the
                     // strict element-membership check below. Wider accesses
                     // need their successor endpoint to be at most `end`.
-                    proves_order(
-                        MachineOperandView::Legacy(start),
-                        index.operand_view(),
-                        false,
-                    ) && proves_order(index.operand_view(), MachineOperandView::Legacy(end), true)
+                    proves_order(MachineOperandView::Old(start), index.operand_view(), false)
+                        && proves_order(index.operand_view(), MachineOperandView::Old(end), true)
                 } else {
-                    proves_order(
-                        MachineOperandView::Legacy(start),
-                        index.operand_view(),
-                        false,
-                    ) && proves_order(
-                        access_end.operand_view(),
-                        MachineOperandView::Legacy(end),
-                        false,
-                    )
+                    proves_order(MachineOperandView::Old(start), index.operand_view(), false)
+                        && proves_order(
+                            access_end.operand_view(),
+                            MachineOperandView::Old(end),
+                            false,
+                        )
                 };
             if within_range {
                 return true;
@@ -5181,25 +5175,25 @@ impl PureFactContext {
         // Keep this fallback read-only; resource consumption still requires
         // matching logical range units so splitting ownership remains exact.
         let range_base = base.offset_by_elements(start.clone(), element_width);
-        let range_bytes = MachineTerm::multiply(
-            MachineTerm::subtract(end.clone(), start.clone()),
-            MachineTerm::constant(element_width),
+        let range_bytes = OldMachineTerm::multiply(
+            OldMachineTerm::subtract(end.clone(), start.clone()),
+            OldMachineTerm::constant(element_width),
         );
         if let Some(byte_offset) = shared_pointer_byte_offset_from_base(pointer, &range_base) {
             let access_end = index_binary(
                 MachineBinaryOp::Add,
                 byte_offset.operand_view(),
-                MachineOperandView::Legacy(&MachineTerm::constant(byte_width)),
+                MachineOperandView::Old(&OldMachineTerm::constant(byte_width)),
             );
             if self.decide(&index_comparison(
                 CompareRelation::GreaterEqual,
                 byte_offset.operand_view(),
-                MachineOperandView::Legacy(&MachineTerm::constant(0)),
+                MachineOperandView::Old(&OldMachineTerm::constant(0)),
             )) == Some(true)
                 && self.decide(&index_comparison(
                     CompareRelation::LessEqual,
                     access_end.operand_view(),
-                    MachineOperandView::Legacy(&range_bytes),
+                    MachineOperandView::Old(&range_bytes),
                 )) == Some(true)
             {
                 return true;
@@ -5219,30 +5213,30 @@ impl PureFactContext {
 
         if element_width > 0 && byte_width.is_multiple_of(element_width) {
             let range_base = base.offset_by_elements(start.clone(), element_width);
-            let access_length = MachineTerm::constant(byte_width / element_width);
+            let access_length = OldMachineTerm::constant(byte_width / element_width);
             if pointer == &range_base
-                && end == &MachineTerm::add(start.clone(), access_length.clone())
+                && end == &OldMachineTerm::add(start.clone(), access_length.clone())
             {
                 return true;
             }
             if let Some(index) =
                 self.pointer_element_index_from_base_with_width(pointer, &range_base, element_width)
             {
-                let range_length = MachineTerm::subtract(end.clone(), start.clone());
+                let range_length = OldMachineTerm::subtract(end.clone(), start.clone());
                 let access_end = index_binary(
                     MachineBinaryOp::Add,
                     index.operand_view(),
-                    MachineOperandView::Legacy(&access_length),
+                    MachineOperandView::Old(&access_length),
                 );
                 if self.decide(&index_comparison(
                     CompareRelation::LessEqual,
-                    MachineOperandView::Legacy(&MachineTerm::constant(0)),
+                    MachineOperandView::Old(&OldMachineTerm::constant(0)),
                     index.operand_view(),
                 )) == Some(true)
                     && self.decide(&index_comparison(
                         CompareRelation::LessEqual,
                         access_end.operand_view(),
-                        MachineOperandView::Legacy(&range_length),
+                        MachineOperandView::Old(&range_length),
                     )) == Some(true)
                 {
                     return true;
@@ -5256,13 +5250,13 @@ impl PureFactContext {
             };
             return self.decide(&index_comparison(
                 CompareRelation::LessEqual,
-                MachineOperandView::Legacy(start),
+                MachineOperandView::Old(start),
                 index.operand_view(),
             )) == Some(true)
                 && self.decide(&index_comparison(
                     CompareRelation::LessThan,
                     index.operand_view(),
-                    MachineOperandView::Legacy(end),
+                    MachineOperandView::Old(end),
                 )) == Some(true);
         }
 
@@ -5472,7 +5466,7 @@ impl PureFactContext {
         let pointer = &self.pointer_in_block(pointer, &base.base)?;
         if self.pointer_offsets_equal_from_facts(&pointer.offset, &base.offset) {
             return Some(
-                MachineOperandView::Legacy(&MachineTerm::constant(0))
+                MachineOperandView::Old(&OldMachineTerm::constant(0))
                     .retain(MachineIntegerType::Int32),
             );
         }
@@ -5549,8 +5543,8 @@ impl PureFactContext {
         }
         bitvector_index_in_range_shallow_views(
             index.operand_view(),
-            MachineOperandView::Legacy(range.start()),
-            MachineOperandView::Legacy(range.end()),
+            MachineOperandView::Old(range.start()),
+            MachineOperandView::Old(range.end()),
             self,
         )
     }
@@ -5663,8 +5657,8 @@ impl PureFactContext {
             let byte_width = access_byte_width_for_separation(pointer);
             if let (Some(index), Some(start), Some(end)) = (
                 resolve(index.operand_view()),
-                resolve(MachineOperandView::Legacy(range.start())),
-                resolve(MachineOperandView::Legacy(range.end())),
+                resolve(MachineOperandView::Old(range.start())),
+                resolve(MachineOperandView::Old(range.end())),
             ) && Self::constant_access_outside_range(
                 index,
                 start,
@@ -5690,11 +5684,11 @@ impl PureFactContext {
                 && self.decide(&index_comparison(
                     CompareRelation::LessThan,
                     index.operand_view(),
-                    MachineOperandView::Legacy(range.start()),
+                    MachineOperandView::Old(range.start()),
                 )) == Some(true)
                 || self.decide(&index_comparison(
                     CompareRelation::LessEqual,
-                    MachineOperandView::Legacy(range.end()),
+                    MachineOperandView::Old(range.end()),
                     index.operand_view(),
                 )) == Some(true)
             {
@@ -5703,8 +5697,8 @@ impl PureFactContext {
         }
         let pointer_range = MemoryRange::new(
             pointer.clone(),
-            MachineTerm::constant(0),
-            MachineTerm::constant(1),
+            OldMachineTerm::constant(0),
+            OldMachineTerm::constant(1),
         );
         if self.memory_ranges_proven_disjoint_by_explicit_separation_for_memory_resolution(
             range,
@@ -5735,11 +5729,11 @@ impl PureFactContext {
                 let range_start = index_binary(
                     MachineBinaryOp::Add,
                     forward_offset.operand_view(),
-                    MachineOperandView::Legacy(range.start()),
+                    MachineOperandView::Old(range.start()),
                 );
                 if self.decide(&index_comparison(
                     CompareRelation::LessThan,
-                    MachineOperandView::Legacy(&MachineTerm::constant(0)),
+                    MachineOperandView::Old(&OldMachineTerm::constant(0)),
                     range_start.operand_view(),
                 )) == Some(true)
                 {
@@ -5754,8 +5748,8 @@ impl PureFactContext {
         &self,
         range: &MemoryRange,
         base: &Address,
-        start: &MachineTerm,
-        end: &MachineTerm,
+        start: &OldMachineTerm,
+        end: &OldMachineTerm,
     ) -> bool {
         if range.wide_bounds().is_some() {
             let available = MemoryRange::new_with_element_width(
@@ -5772,32 +5766,31 @@ impl PureFactContext {
                 "fact range coverage",
                 "fact range coverage: exact base",
             );
-            let base_delta =
-                MachineOperandView::Legacy(&relative_range_offset(range.start(), start))
-                    .retain(MachineIntegerType::Int32);
-            let range_length = MachineTerm::subtract(range.end().clone(), range.start().clone());
-            let fact_length = MachineTerm::subtract(end.clone(), start.clone());
-            let end_is_covered = if range_length == MachineTerm::constant(1) {
+            let base_delta = MachineOperandView::Old(&relative_range_offset(range.start(), start))
+                .retain(MachineIntegerType::Int32);
+            let range_length = OldMachineTerm::subtract(range.end().clone(), range.start().clone());
+            let fact_length = OldMachineTerm::subtract(end.clone(), start.clone());
+            let end_is_covered = if range_length == OldMachineTerm::constant(1) {
                 self.decide(&index_comparison(
                     CompareRelation::LessThan,
                     base_delta.operand_view(),
-                    MachineOperandView::Legacy(&fact_length),
+                    MachineOperandView::Old(&fact_length),
                 )) == Some(true)
             } else {
                 let range_end = index_binary(
                     MachineBinaryOp::Add,
                     base_delta.operand_view(),
-                    MachineOperandView::Legacy(&range_length),
+                    MachineOperandView::Old(&range_length),
                 );
                 self.decide(&index_comparison(
                     CompareRelation::LessEqual,
                     range_end.operand_view(),
-                    MachineOperandView::Legacy(&fact_length),
+                    MachineOperandView::Old(&fact_length),
                 )) == Some(true)
             };
             if self.decide(&index_comparison(
                 CompareRelation::LessEqual,
-                MachineOperandView::Legacy(&MachineTerm::constant(0)),
+                MachineOperandView::Old(&OldMachineTerm::constant(0)),
                 base_delta.operand_view(),
             )) == Some(true)
                 && end_is_covered
@@ -5824,12 +5817,12 @@ impl PureFactContext {
             },
         );
         if let Some(base_delta) = shifted_base_delta {
-            let range_length = MachineTerm::subtract(range.end().clone(), range.start().clone());
-            let fact_length = MachineTerm::subtract(end.clone(), start.clone());
+            let range_length = OldMachineTerm::subtract(range.end().clone(), range.start().clone());
+            let fact_length = OldMachineTerm::subtract(end.clone(), start.clone());
             let range_end = index_binary(
                 MachineBinaryOp::Add,
                 base_delta.operand_view(),
-                MachineOperandView::Legacy(&range_length),
+                MachineOperandView::Old(&range_length),
             );
             if crate::instrumentation::measure_operation(
                 "kernel",
@@ -5838,13 +5831,13 @@ impl PureFactContext {
                 || {
                     self.decide(&index_comparison(
                         CompareRelation::LessEqual,
-                        MachineOperandView::Legacy(&MachineTerm::constant(0)),
+                        MachineOperandView::Old(&OldMachineTerm::constant(0)),
                         base_delta.operand_view(),
                     )) == Some(true)
                         && self.decide(&index_comparison(
                             CompareRelation::LessEqual,
                             range_end.operand_view(),
-                            MachineOperandView::Legacy(&fact_length),
+                            MachineOperandView::Old(&fact_length),
                         )) == Some(true)
                 },
             ) {
@@ -5870,12 +5863,12 @@ impl PureFactContext {
         let range_start = index_binary(
             MachineBinaryOp::Add,
             base_delta.operand_view(),
-            MachineOperandView::Legacy(range.start()),
+            MachineOperandView::Old(range.start()),
         );
         let range_end = index_binary(
             MachineBinaryOp::Add,
             base_delta.operand_view(),
-            MachineOperandView::Legacy(range.end()),
+            MachineOperandView::Old(range.end()),
         );
 
         crate::instrumentation::measure_operation(
@@ -5885,13 +5878,13 @@ impl PureFactContext {
             || {
                 self.decide(&index_comparison(
                     CompareRelation::LessEqual,
-                    MachineOperandView::Legacy(start),
+                    MachineOperandView::Old(start),
                     range_start.operand_view(),
                 )) == Some(true)
                     && self.decide(&index_comparison(
                         CompareRelation::LessEqual,
                         range_end.operand_view(),
-                        MachineOperandView::Legacy(end),
+                        MachineOperandView::Old(end),
                     )) == Some(true)
             },
         )
@@ -6000,7 +5993,7 @@ fn structural_element_index(
     }
     if pointer.offset == base.offset {
         return Some(
-            MachineOperandView::Legacy(&MachineTerm::constant(0)).retain(MachineIntegerType::Int32),
+            MachineOperandView::Old(&OldMachineTerm::constant(0)).retain(MachineIntegerType::Int32),
         );
     }
     // From a base at offset zero, such as a loaded pointer's own read or a
@@ -6102,13 +6095,21 @@ mod seeded_interval_adjacency_tests {
         let context = PureFactContext::new();
         assert!(
             context
-                .adjacent_loadable_region_facts(&memory, &base, &MachineTerm::constant(0x8000_0001))
+                .adjacent_loadable_region_facts(
+                    &memory,
+                    &base,
+                    &OldMachineTerm::constant(0x8000_0001)
+                )
                 .is_none()
         );
         let memory = memory.store(base.offset_by_bytes(0x8000_0000), crate::kernel::uint8(9));
         assert!(
             context
-                .adjacent_loadable_region_facts(&memory, &base, &MachineTerm::constant(0x8000_0001))
+                .adjacent_loadable_region_facts(
+                    &memory,
+                    &base,
+                    &OldMachineTerm::constant(0x8000_0001)
+                )
                 .is_some()
         );
     }
@@ -6133,23 +6134,23 @@ mod nonnegative_successor_tests {
     /// scanned every condition fact, so a miss grew with unrelated facts.
     #[test]
     fn successor_rule_ignores_unrelated_condition_facts() {
-        let term = MachineTerm::Variable(Variable(96_000));
+        let term = OldMachineTerm::Variable(Variable(96_000));
         let goal = ConditionTerm::signed_less_equal(
-            MachineTerm::constant(0),
-            MachineTerm::add(term.clone(), MachineTerm::constant(1)),
+            OldMachineTerm::constant(0),
+            OldMachineTerm::add(term.clone(), OldMachineTerm::constant(1)),
         );
         let work = [16_u64, 64, 256]
             .into_iter()
             .map(|unrelated| {
                 let mut context = PureFactContext::new().assume_condition(
-                    ConditionTerm::signed_less_equal(MachineTerm::constant(0), term.clone()),
+                    ConditionTerm::signed_less_equal(OldMachineTerm::constant(0), term.clone()),
                     true,
                 );
                 for index in 0..unrelated {
                     context = context.assume_condition(
                         ConditionTerm::signed_less_than(
-                            MachineTerm::Variable(Variable(96_100 + index)),
-                            MachineTerm::Variable(Variable(96_600 + index)),
+                            OldMachineTerm::Variable(Variable(96_100 + index)),
+                            OldMachineTerm::Variable(Variable(96_600 + index)),
                         ),
                         true,
                     );
@@ -6521,8 +6522,8 @@ mod wide_separation_index_tests {
         let wide = |base| {
             MemoryRange::new_wide(
                 base,
-                MachineTerm::uint64_constant(0),
-                MachineTerm::uint64_constant(8),
+                OldMachineTerm::uint64_constant(0),
+                OldMachineTerm::uint64_constant(8),
                 4,
             )
         };
@@ -6582,7 +6583,7 @@ mod shared_range_index_tests {
             Variable(1018301),
         );
         let one =
-            MachineOperandView::Legacy(&MachineTerm::constant(1)).retain(MachineIntegerType::Int32);
+            MachineOperandView::Old(&OldMachineTerm::constant(1)).retain(MachineIntegerType::Int32);
         MachineOperandView::Shared(&KernelTerm::machine_binary_shared(
             MachineIntegerType::Int32,
             MachineBinaryOp::Add,
@@ -6597,10 +6598,10 @@ mod shared_range_index_tests {
     #[test]
     fn shared_wide_coordinates_require_full_width_bounds() {
         let _session = VerificationSession::enter();
-        let wide = MachineTerm::Variable(Variable(1018320));
-        let narrow = MachineTerm::add(
-            MachineTerm::uint32_from_64(wide.clone()),
-            MachineTerm::constant(1),
+        let wide = OldMachineTerm::Variable(Variable(1018320));
+        let narrow = OldMachineTerm::add(
+            OldMachineTerm::uint32_from_64(wide.clone()),
+            OldMachineTerm::constant(1),
         );
         let root =
             crate::kernel::KernelTermImport::default().machine(MachineIntegerType::Int32, &narrow);
@@ -6608,14 +6609,14 @@ mod shared_range_index_tests {
         let bounded = empty.clone().assume_condition(
             ConditionTerm::uint64_less_equal(
                 wide.clone(),
-                MachineTerm::uint64_constant(i32::MAX as u64 - 1),
+                OldMachineTerm::uint64_constant(i32::MAX as u64 - 1),
             ),
             true,
         );
         let truncated = empty.clone().assume_condition(
             ConditionTerm::unsigned_less_equal(
-                MachineTerm::uint32_from_64(wide.clone()),
-                MachineTerm::constant(i32::MAX as u32 - 1),
+                OldMachineTerm::uint32_from_64(wide.clone()),
+                OldMachineTerm::constant(i32::MAX as u32 - 1),
             ),
             true,
         );
@@ -6642,7 +6643,7 @@ mod shared_range_index_tests {
         assert_eq!(KernelTermExport::machine_export_count(), exports);
         assert_eq!(
             result.structural_value(),
-            &MachineTerm::uint64_add(wide, MachineTerm::uint64_constant(1))
+            &OldMachineTerm::uint64_add(wide, OldMachineTerm::uint64_constant(1))
         );
     }
 
@@ -6659,13 +6660,13 @@ mod shared_range_index_tests {
             .offset_by_bytes(4);
         let low = index_comparison(
             CompareRelation::LessEqual,
-            MachineOperandView::Legacy(&MachineTerm::constant(0)),
+            MachineOperandView::Old(&OldMachineTerm::constant(0)),
             index.operand_view(),
         );
         let high = index_comparison(
             CompareRelation::LessThan,
             index.operand_view(),
-            MachineOperandView::Legacy(&MachineTerm::constant(8)),
+            MachineOperandView::Old(&OldMachineTerm::constant(8)),
         );
         let empty = PureFactContext::new();
         let lower = empty.clone().assume_condition(low, true);
@@ -6675,7 +6676,7 @@ mod shared_range_index_tests {
             assert_eq!(
                 facts.proves_cell_within_strided_region(
                     &base,
-                    &MachineTerm::constant(128),
+                    &OldMachineTerm::constant(128),
                     &pointer,
                     4,
                     &|a, b, strict| {
@@ -6705,18 +6706,18 @@ mod shared_range_index_tests {
             offset: AddressOffset::Constant(0),
         };
         let pointer = base.offset_by_shared_elements(index.clone(), 4);
-        let zero = MachineTerm::constant(0);
-        let end = MachineTerm::constant(8);
+        let zero = OldMachineTerm::constant(0);
+        let end = OldMachineTerm::constant(8);
         let range = MemoryRange::new(base.clone(), zero.clone(), end.clone());
         let lower = index_comparison(
             CompareRelation::LessEqual,
-            MachineOperandView::Legacy(&zero),
+            MachineOperandView::Old(&zero),
             index.operand_view(),
         );
         let upper = index_comparison(
             CompareRelation::LessThan,
             index.operand_view(),
-            MachineOperandView::Legacy(&end),
+            MachineOperandView::Old(&end),
         );
         let parent = PureFactContext::new();
         let lower_only = parent.clone().assume_condition(lower.clone(), true);
@@ -6740,12 +6741,13 @@ mod shared_range_index_tests {
     #[test]
     fn retained_range_query_accepts_original_native_symbolic_bounds() {
         let _session = VerificationSession::enter();
-        let start = MachineTerm::Variable(Variable(1018320));
-        let end = MachineTerm::Variable(Variable(1018321));
-        let absolute = MachineTerm::add(start.clone(), MachineTerm::Variable(Variable(1018322)));
+        let start = OldMachineTerm::Variable(Variable(1018320));
+        let end = OldMachineTerm::Variable(Variable(1018321));
+        let absolute =
+            OldMachineTerm::add(start.clone(), OldMachineTerm::Variable(Variable(1018322)));
         let base = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(1018323)), 4),
+            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(1018323)), 4),
         };
         let pointer = base.offset_by_int32_elements(absolute.clone());
         let range = MemoryRange::new(base.clone(), start.clone(), end.clone());
@@ -6760,8 +6762,8 @@ mod shared_range_index_tests {
         assert!(
             bitvector_index_in_range_shallow_views(
                 delta.index.operand_view(),
-                MachineOperandView::Legacy(&start),
-                MachineOperandView::Legacy(&end),
+                MachineOperandView::Old(&start),
+                MachineOperandView::Old(&end),
                 &facts
             ),
             "shallow bounds"
@@ -6794,8 +6796,8 @@ mod shared_range_index_tests {
         let exports = KernelTermExport::machine_export_count();
         assert!(delta.as_index_term().is_none());
         assert!(!delta.is_constant());
-        let zero = MachineTerm::constant(0);
-        let end = MachineTerm::constant(8);
+        let zero = OldMachineTerm::constant(0);
+        let end = OldMachineTerm::constant(8);
         assert!(!element_delta_in_range_by_affine_arithmetic(
             &delta,
             &zero,
@@ -6805,7 +6807,7 @@ mod shared_range_index_tests {
         let shifted = index_binary(
             MachineBinaryOp::Add,
             index.operand_view(),
-            MachineOperandView::Legacy(&MachineTerm::constant(1)),
+            MachineOperandView::Old(&OldMachineTerm::constant(1)),
         );
         assert_eq!(
             exact_affine_index_difference_views(shifted.operand_view(), index.operand_view(), None),
@@ -6814,7 +6816,7 @@ mod shared_range_index_tests {
         let facts = PureFactContext::new().assume_condition(
             index_comparison(
                 CompareRelation::LessEqual,
-                MachineOperandView::Legacy(&zero),
+                MachineOperandView::Old(&zero),
                 shifted.operand_view(),
             ),
             true,

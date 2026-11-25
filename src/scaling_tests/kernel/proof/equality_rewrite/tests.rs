@@ -14,9 +14,11 @@ fn pointer_rewrite_integer_reads_preserves_state_kind_and_scales() {
             let mut p = Address::symbolic(Variable(241_000));
             let mut q = Address::symbolic(Variable(241_001)).offset_by_bytes(3);
             if same_block {
-                p.offset = AddressOffset::scale_int32(MachineTerm::Variable(Variable(241_002)), 1);
+                p.offset =
+                    AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(241_002)), 1);
                 q.base = p.base.clone();
-                q.offset = AddressOffset::scale_int32(MachineTerm::Variable(Variable(241_003)), 1);
+                q.offset =
+                    AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(241_003)), 1);
             }
             let cited =
                 Proposition::condition_is(ConditionTerm::address_equal(p.clone(), q.clone()), true);
@@ -33,7 +35,7 @@ fn pointer_rewrite_integer_reads_preserves_state_kind_and_scales() {
                 ));
             }
             let read = |memory: &SymbolicMemory, pointer: &Address, kind| {
-                MachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
+                OldMachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
                     &crate::kernel::intern_memory(memory.clone()),
                     pointer,
                     kind,
@@ -42,13 +44,14 @@ fn pointer_rewrite_integer_reads_preserves_state_kind_and_scales() {
             };
             // The read identity preserves only its original cell. The observed
             // origin is needed when the equality exposes the alias address.
-            let source = MachineTerm::Variable(crate::kernel::load_variable_for_cell_with_origin(
-                &crate::kernel::intern_memory(SymbolicMemory::new()),
-                &p,
-                LoadKind::UInt8,
-                1,
-                &crate::kernel::intern_memory(memory.clone()),
-            ));
+            let source =
+                OldMachineTerm::Variable(crate::kernel::load_variable_for_cell_with_origin(
+                    &crate::kernel::intern_memory(SymbolicMemory::new()),
+                    &p,
+                    LoadKind::UInt8,
+                    1,
+                    &crate::kernel::intern_memory(memory.clone()),
+                ));
             let target = read(&memory, &q, LoadKind::UInt8);
             let later = memory.clone().store(q.clone(), crate::kernel::uint8(99));
             let other_memory_state = read(&later, &q, LoadKind::UInt8);
@@ -112,7 +115,7 @@ fn pointer_read_rewrite_preserves_value_state_and_scales() {
         let owner = Address::symbolic(Variable(211_000));
         let alias = Address {
             base: AddressBase::Symbolic(Variable(211_001)),
-            offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(211_002)), 4),
+            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(211_002)), 4),
         };
         let address = owner.offset_by_bytes(16);
         let alias_address = alias.offset_by_bytes(16);
@@ -125,11 +128,11 @@ fn pointer_read_rewrite_preserves_value_state_and_scales() {
         for i in 0..size {
             memory = memory.store(
                 Address::symbolic(Variable(220_000 + i)),
-                ProgramValue::Int32(MachineTerm::constant(7)),
+                ProgramValue::Int32(OldMachineTerm::constant(7)),
             );
             facts = facts.with_fact(equality(
-                MachineTerm::Variable(Variable(230_000 + i)),
-                MachineTerm::constant(i as u32),
+                OldMachineTerm::Variable(Variable(230_000 + i)),
+                OldMachineTerm::constant(i as u32),
             ));
         }
         let context = PureFactContext::new();
@@ -201,7 +204,7 @@ fn pointer_read_rewrite_preserves_value_state_and_scales() {
             )
         );
         // An unregistered scaled integer is still pointer arithmetic.
-        let index = MachineTerm::Variable(Variable(211_005));
+        let index = OldMachineTerm::Variable(Variable(211_005));
         let indexed = Address::loaded(&index.clone()).unwrap();
         let arithmetic_goal =
             Proposition::condition_is(ConditionTerm::address_equal(indexed, leaf.clone()), true);
@@ -229,8 +232,8 @@ fn pointer_read_rewrite_preserves_value_state_and_scales() {
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn native_equality_rewrite_preserves_wide_order_and_truth_value() {
-    let x = MachineTerm::Variable(Variable(193_020));
-    let y = MachineTerm::Variable(Variable(193_021));
+    let x = OldMachineTerm::Variable(Variable(193_020));
+    let y = OldMachineTerm::Variable(Variable(193_021));
     let cited = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int64,
@@ -248,8 +251,8 @@ fn native_equality_rewrite_preserves_wide_order_and_truth_value() {
             let mut facts = PureFactStore::default().with_fact(cited.clone());
             for i in 0..ambient {
                 facts = facts.with_fact(equality(
-                    MachineTerm::Variable(Variable(194_000 + i)),
-                    MachineTerm::constant(i as u32),
+                    OldMachineTerm::Variable(Variable(194_000 + i)),
+                    OldMachineTerm::constant(i as u32),
                 ));
             }
             facts
@@ -275,8 +278,8 @@ fn native_equality_rewrite_preserves_wide_order_and_truth_value() {
         });
     for make in comparisons {
         for bound in [
-            MachineTerm::int64_constant(i64::MIN),
-            MachineTerm::uint64_constant(u64::MAX),
+            OldMachineTerm::int64_constant(i64::MIN),
+            OldMachineTerm::uint64_constant(u64::MAX),
         ] {
             for truth in [false, true] {
                 let goal = Proposition::condition_is(
@@ -320,8 +323,8 @@ fn native_equality_rewrite_preserves_wide_order_and_truth_value() {
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.9s in the parallel gate"]
 fn native_integer_bound_rewrite_is_dag_linear_and_budget_checked() {
-    let x = MachineTerm::Variable(Variable(193_028));
-    let y = MachineTerm::Variable(Variable(193_029));
+    let x = OldMachineTerm::Variable(Variable(193_028));
+    let y = OldMachineTerm::Variable(Variable(193_029));
     let cited = equality(x.clone(), y.clone());
     let make_term = |value, depth| {
         let mut term: SharedIntegerTerm =
@@ -348,8 +351,8 @@ fn native_integer_bound_rewrite_is_dag_linear_and_budget_checked() {
             let mut facts = PureFactStore::default().with_fact(cited.clone());
             for i in 0..ambient {
                 facts = facts.with_fact(equality(
-                    MachineTerm::Variable(Variable(195_000 + i)),
-                    MachineTerm::constant(i as u32),
+                    OldMachineTerm::Variable(Variable(195_000 + i)),
+                    OldMachineTerm::constant(i as u32),
                 ));
             }
             let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -438,24 +441,24 @@ fn cited_read_rewrite_requires_unchanged_cells_and_its_named_premise() {
     let after = before.clone().with_block("local:rewrite-unrelated", 4);
     let changed = after.clone().store(
         pointer.clone(),
-        ProgramValue::Int32(MachineTerm::constant(43)),
+        ProgramValue::Int32(OldMachineTerm::constant(43)),
     );
     let load = |memory: &SymbolicMemory| {
-        MachineTerm::read_named(
+        OldMachineTerm::read_named(
             ProgramPoint::at(&(crate::kernel::intern_memory_ref(memory))),
             Box::new(pointer.clone()),
             crate::kernel::LoadKind::Int32,
         )
     };
-    let premise = equality(load(&before), MachineTerm::constant(42));
-    let goal = equality(load(&after), MachineTerm::constant(42));
+    let premise = equality(load(&before), OldMachineTerm::constant(42));
+    let goal = equality(load(&after), OldMachineTerm::constant(42));
     let mut costs = vec![];
     for size in [16u64, 64, 256, 1024] {
         let mut facts = PureFactStore::from_ordered(std::slice::from_ref(&premise));
         for index in 0..size {
             facts = facts.with_fact(equality(
-                MachineTerm::Variable(Variable(80_000 + index)),
-                MachineTerm::constant(index as u32),
+                OldMachineTerm::Variable(Variable(80_000 + index)),
+                OldMachineTerm::constant(index as u32),
             ));
         }
         crate::kernel::eval::clear_load_canonicalization_caches();
@@ -469,7 +472,7 @@ fn cited_read_rewrite_requires_unchanged_cells_and_its_named_premise() {
         assert!(
             facts
                 .check_equality_rewrite(
-                    &equality(load(&changed), MachineTerm::constant(42)),
+                    &equality(load(&changed), OldMachineTerm::constant(42)),
                     &premise
                 )
                 .is_err()
@@ -489,14 +492,14 @@ fn cited_read_rewrite_requires_unchanged_cells_and_its_named_premise() {
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn same_block_pointer_view_rewrite_preserves_span_and_selected_work() {
     let _session = crate::kernel::VerificationSession::enter();
-    let source = AddressOffset::scale_int32(MachineTerm::Variable(Variable(192_920)), 1);
-    let target = AddressOffset::scale_int32(MachineTerm::Variable(Variable(192_921)), 1);
+    let source = AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(192_920)), 1);
+    let target = AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(192_921)), 1);
     let cited = Proposition::condition_is(
         ConditionTerm::AddressOffsetEqual(Box::new(source.clone()), Box::new(target.clone())),
         true,
     );
     let memory = SymbolicMemory::new().with_block("offset-view-rewrite", 8);
-    let span = MachineTerm::Variable(Variable(192_922));
+    let span = OldMachineTerm::Variable(Variable(192_922));
     let goal = Proposition::MemoryLoadable {
         memory: memory.clone(),
         base: Address {
@@ -524,8 +527,8 @@ fn same_block_pointer_view_rewrite_preserves_span_and_selected_work() {
         let mut facts = PureFactStore::from_ordered(std::slice::from_ref(&cited));
         for index in 0..size {
             facts = facts.with_fact(equality(
-                MachineTerm::Variable(Variable(210_000 + index)),
-                MachineTerm::constant(index as u32),
+                OldMachineTerm::Variable(Variable(210_000 + index)),
+                OldMachineTerm::constant(index as u32),
             ));
         }
         let (rewritten, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -549,7 +552,7 @@ fn same_block_pointer_view_rewrite_preserves_span_and_selected_work() {
             base.offset,
             AddressOffset::add(target.clone(), AddressOffset::Constant(2))
         );
-        assert_eq!(bytes.native_compat(), &span);
+        assert_eq!(bytes.old_form(), &span);
         costs.push(work);
     }
     assert!(costs.iter().all(|cost| *cost == costs[0]), "{costs:?}");
@@ -565,7 +568,7 @@ fn pointer_view_rewrite_preserves_state_span_and_ambient_scaling() {
         true,
     );
     let memory = SymbolicMemory::new().with_block("pointer-view-rewrite", 8);
-    let span = MachineTerm::Variable(Variable(192_912));
+    let span = OldMachineTerm::Variable(Variable(192_912));
     let goal = Proposition::MemoryLoadable {
         memory: memory.clone(),
         base: source,
@@ -582,8 +585,8 @@ fn pointer_view_rewrite_preserves_state_span_and_ambient_scaling() {
         let mut facts = PureFactStore::from_ordered(std::slice::from_ref(&cited));
         for index in 0..size {
             facts = facts.with_fact(equality(
-                MachineTerm::Variable(Variable(200_000 + index)),
-                MachineTerm::constant(index as u32),
+                OldMachineTerm::Variable(Variable(200_000 + index)),
+                OldMachineTerm::constant(index as u32),
             ));
         }
         let (rewritten, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -603,7 +606,7 @@ fn pointer_view_rewrite_preserves_state_span_and_ambient_scaling() {
             memory.diagnostic_identity()
         );
         assert_eq!(base, &target);
-        assert_eq!(bytes.native_compat(), &span);
+        assert_eq!(bytes.old_form(), &span);
         costs.push(work);
     }
     assert!(costs.iter().all(|cost| *cost == costs[0]), "{costs:?}");
@@ -624,7 +627,7 @@ fn pointer_rewrite_enters_scalar_calls_and_preserves_scope_and_states() {
     let memory = SymbolicMemory::new().with_block("unchanged", 4);
     let goal_at = |pointer: Address, count: usize| {
         equality(
-            MachineTerm::ClickFunctionApplication {
+            OldMachineTerm::ClickFunctionApplication {
                 name: "observes".into(),
                 arguments: vec![
                     PureFunctionArgument::ArrayRef {
@@ -635,7 +638,7 @@ fn pointer_rewrite_enters_scalar_calls_and_preserves_scope_and_states() {
                     count
                 ],
             },
-            MachineTerm::constant(1),
+            OldMachineTerm::constant(1),
         )
     };
     let facts = PureFactStore::from_ordered(std::slice::from_ref(&cited));
@@ -703,16 +706,16 @@ fn pointer_rewrite_enters_scalar_calls_and_preserves_scope_and_states() {
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn checked_rewrite_does_not_scan_or_rebuild_ambient_facts() {
-    let x = MachineTerm::Variable(Variable(921));
-    let cited = equality(x.clone(), MachineTerm::constant(7));
-    let goal = equality(x, MachineTerm::constant(9));
+    let x = OldMachineTerm::Variable(Variable(921));
+    let cited = equality(x.clone(), OldMachineTerm::constant(7));
+    let goal = equality(x, OldMachineTerm::constant(9));
     let mut costs = Vec::new();
     for size in [16u64, 64, 256, 1024] {
         let mut facts = PureFactStore::default();
         for index in 0..size {
             facts = facts.with_fact(equality(
-                MachineTerm::Variable(Variable(10_000 + index)),
-                MachineTerm::constant(index as u32),
+                OldMachineTerm::Variable(Variable(10_000 + index)),
+                OldMachineTerm::constant(index as u32),
             ));
         }
         facts = facts.with_fact(cited.clone());
@@ -737,15 +740,15 @@ fn rewrite_capture_collection_does_not_visit_state_contents() {
         for i in 0..size {
             memory = memory.store(
                 Address::symbolic(Variable(100_000 + i)),
-                ProgramValue::Int32(MachineTerm::Variable(Variable(200_000 + i))),
+                ProgramValue::Int32(OldMachineTerm::Variable(Variable(200_000 + i))),
             );
         }
         let equality = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::Variable(free)),
-                right: Box::new(MachineTerm::read_named(
+                left: Box::new(OldMachineTerm::Variable(free)),
+                right: Box::new(OldMachineTerm::read_named(
                     ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                     Box::new(Address::symbolic(address)),
                     crate::kernel::LoadKind::Int32,
@@ -764,8 +767,8 @@ fn rewrite_capture_collection_does_not_visit_state_contents() {
 
 #[test]
 fn rewrite_integer_application_endpoint_keeps_byte_state_and_ignores_its_contents() {
-    let index = MachineTerm::Variable(Variable(47));
-    let replacement = MachineTerm::constant(9);
+    let index = OldMachineTerm::Variable(Variable(47));
+    let replacement = OldMachineTerm::constant(9);
     let equality = Proposition::condition_is(
         ConditionTerm::equal(index.clone(), replacement.clone()),
         true,
@@ -776,7 +779,7 @@ fn rewrite_integer_application_endpoint_keeps_byte_state_and_ignores_its_content
         for i in 0..size {
             memory = memory.store(
                 Address::symbolic(Variable(300000 + i)),
-                ProgramValue::Int32(MachineTerm::constant(i as u32)),
+                ProgramValue::Int32(OldMachineTerm::constant(i as u32)),
             );
         }
         let array = PureFunctionArgument::ArrayRef {
@@ -893,7 +896,7 @@ fn checked_integer_rewrite_is_exact_and_ignores_unrelated_facts() {
 
 #[test]
 fn integer_observation_rewrite_work_tracks_selected_comparison_leaves() {
-    let word = MachineTerm::Variable(Variable(74_201));
+    let word = OldMachineTerm::Variable(Variable(74_201));
     let source: SharedIntegerTerm =
         IntegerTerm::from_machine(MachineIntegerType::UInt64, word.clone())
             .unwrap()
@@ -959,11 +962,11 @@ fn pointer_read_chain_rewrite_work(
     let _session = VerificationSession::enter();
     let from = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(998_950)), 8),
+        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(998_950)), 8),
     };
     let to = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(998_951)), 8),
+        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(998_951)), 8),
     };
     let mut memory = SymbolicMemory::new();
     for index in 0..cells {
@@ -980,7 +983,7 @@ fn pointer_read_chain_rewrite_work(
         if native {
             Address::version_read(&memory, address)
         } else {
-            let term = MachineTerm::read_named(
+            let term = OldMachineTerm::read_named(
                 ProgramPoint::at(&memory),
                 Box::new(address.clone()),
                 LoadKind::Int32,
@@ -1081,8 +1084,8 @@ fn machine_readings_of_selected_integer_facts_ignore_ambient_facts() {
     for size in [4u64, 64, 256, 1024] {
         let _session = VerificationSession::enter();
         let ty = MachineIntegerType::UInt64;
-        let n = MachineTerm::Variable(Variable(249_000));
-        let r = MachineTerm::Variable(Variable(249_001));
+        let n = OldMachineTerm::Variable(Variable(249_000));
+        let r = OldMachineTerm::Variable(Variable(249_001));
         let observe = |word| IntegerTerm::from_machine(ty, word).unwrap();
         let difference = IntegerTerm::subtract(observe(n.clone()), observe(r.clone()));
         let bound = Proposition::condition_is(
@@ -1092,7 +1095,7 @@ fn machine_readings_of_selected_integer_facts_ignore_ambient_facts() {
         let range =
             Proposition::condition_is(ConditionTerm::uint64_less_equal(r.clone(), n.clone()), true);
         let equality = integer_equality(difference, observe(n.clone()));
-        let word = MachineTerm::uint64_subtract(n.clone(), r.clone());
+        let word = OldMachineTerm::uint64_subtract(n.clone(), r.clone());
         let goal =
             Proposition::condition_is(ConditionTerm::uint64_less_than(word, n.clone()), true);
         let mut facts = PureFactStore::default().with_fact(equality.clone());
@@ -1111,7 +1114,7 @@ fn machine_readings_of_selected_integer_facts_ignore_ambient_facts() {
                     unreachable!()
                 };
                 let shared_goal = crate::kernel::machine_integer::comparison::comparison_view(
-                    condition.native_compat(),
+                    condition.old_form(),
                     *truth,
                 )
                 .unwrap()
@@ -1153,15 +1156,15 @@ fn modular_integer_rewrite_work_tracks_the_cited_expression() {
     for depth in [2u64, 4, 8, 16] {
         let _session = VerificationSession::enter();
         let ty = MachineIntegerType::UInt64;
-        let n = MachineTerm::Variable(Variable(250_000));
-        let target = MachineTerm::Variable(Variable(250_001));
+        let n = OldMachineTerm::Variable(Variable(250_000));
+        let target = OldMachineTerm::Variable(Variable(250_001));
         let observe = |word| IntegerTerm::from_machine(ty, word).unwrap();
         let mut exact = observe(n.clone());
         let mut word = n.clone();
         for index in 0..depth {
-            let operand = MachineTerm::Variable(Variable(251_000 + index));
+            let operand = OldMachineTerm::Variable(Variable(251_000 + index));
             exact = IntegerTerm::subtract(exact, observe(operand.clone()));
-            word = MachineTerm::uint64_subtract(word, operand);
+            word = OldMachineTerm::uint64_subtract(word, operand);
         }
         let cited = integer_equality(exact, observe(target.clone()));
         let facts = PureFactStore::default().with_fact(cited.clone());
@@ -1241,9 +1244,9 @@ fn retained_pointer_index_rewrite_scales_with_distinct_nodes() {
     for size in [16, 64, 256] {
         let _session = VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
-        let x = MachineTerm::Variable(Variable(1081301));
-        let y = MachineTerm::Variable(Variable(1081302));
-        let mut root = KernelTerm::retained_machine_operand(ty, MachineOperandView::Legacy(&x));
+        let x = OldMachineTerm::Variable(Variable(1081301));
+        let y = OldMachineTerm::Variable(Variable(1081302));
+        let mut root = KernelTerm::retained_machine_operand(ty, MachineOperandView::Old(&x));
         for _ in 0..size {
             root =
                 KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [root.clone(), root]);
@@ -1294,8 +1297,8 @@ fn selected_rewrite_premises_never_rebuild_a_context() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::Variable(Variable(a))),
-                right: Box::new(MachineTerm::Variable(Variable(b))),
+                left: Box::new(OldMachineTerm::Variable(Variable(a))),
+                right: Box::new(OldMachineTerm::Variable(Variable(b))),
             },
             true,
         )
@@ -1334,14 +1337,14 @@ fn selected_rewrite_premises_never_rebuild_a_context() {
 #[test]
 fn selected_rewrite_does_not_discover_a_load_equality_chain() {
     let _session = VerificationSession::enter();
-    let x = MachineTerm::Variable(Variable(800_001));
-    let y = MachineTerm::Variable(Variable(800_002));
-    let read = MachineTerm::read_named(
+    let x = OldMachineTerm::Variable(Variable(800_001));
+    let y = OldMachineTerm::Variable(Variable(800_002));
+    let read = OldMachineTerm::read_named(
         ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
         Box::new(Address::symbolic(Variable(800_003))),
         crate::kernel::LoadKind::Int32,
     );
-    let eq = |a: MachineTerm, b: MachineTerm| {
+    let eq = |a: OldMachineTerm, b: OldMachineTerm| {
         Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
@@ -1353,9 +1356,9 @@ fn selected_rewrite_does_not_discover_a_load_equality_chain() {
         )
     };
     let premises = [eq(x.clone(), read.clone()), eq(read.clone(), y.clone())];
-    let goal = eq(x.clone(), MachineTerm::constant(9));
+    let goal = eq(x.clone(), OldMachineTerm::constant(9));
     assert!(rewrite_proposition_by_exact_equality(&goal, &eq(x, y.clone()), &premises).is_err());
     let first = rewrite_proposition_by_exact_equality(&goal, &premises[0], &premises).unwrap();
     let second = rewrite_proposition_by_exact_equality(&first, &premises[1], &premises).unwrap();
-    assert_eq!(second, eq(y, MachineTerm::constant(9)));
+    assert_eq!(second, eq(y, OldMachineTerm::constant(9)));
 }

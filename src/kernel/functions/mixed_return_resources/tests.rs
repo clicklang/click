@@ -953,8 +953,8 @@ fn fixed_range_transfers_preserve_typed_widths_and_partial_frames() {
         let owner = |from, to| {
             ResourceFact::own_memory(MemoryRange::new_with_element_width(
                 pointer.clone(),
-                MachineTerm::constant(from),
-                MachineTerm::constant(to),
+                OldMachineTerm::constant(from),
+                OldMachineTerm::constant(to),
                 width,
             ))
         };
@@ -1120,8 +1120,8 @@ fn fixed_wide_range_returns_keep_their_original_index_kind() {
     let range = |start, end| {
         ResourceFact::own_memory(MemoryRange::new_wide(
             pointer.clone(),
-            MachineTerm::uint64_constant(start),
-            MachineTerm::uint64_constant(end),
+            OldMachineTerm::uint64_constant(start),
+            OldMachineTerm::uint64_constant(end),
             8,
         ))
     };
@@ -1330,7 +1330,7 @@ fn nonunit_memory_returns_refuse_but_token_counts_keep_their_constructed_body() 
                 name: "many".into(),
                 arguments: vec![].into(),
             },
-            Box::new(MachineTerm::constant(2).into()),
+            Box::new(OldMachineTerm::constant(2).into()),
         );
         let evaluated = EvaluatedReturnResources::new(&facts)
             .admit(head.clone(), ReturnOwnershipOrigin::Description, &facts)
@@ -1616,7 +1616,7 @@ fn flat_body_admission_uses_cold_coordinates_but_refuses_general_geometry() {
     let symbolic = ResourceFact::own_memory(MemoryRange::new(
         pointer,
         0u32.into(),
-        MachineTerm::Variable(Variable(8_819_103)),
+        OldMachineTerm::Variable(Variable(8_819_103)),
     ));
     let general = ResourceContext::new_with_equalities(&facts).unchecked_with_fact(symbolic);
     general.synchronize_memory_equalities(&facts);
@@ -1797,10 +1797,10 @@ fn decided_conditional_bodies_and_opaque_guards_are_constructed_once() {
         right: SpecExpression::ProgramExpression(int32_literal(0)),
     });
     for (flag, count) in [
-        (ProgramValue::Int32(MachineTerm::constant(0)), 2),
-        (ProgramValue::Int32(MachineTerm::constant(1)), 0),
+        (ProgramValue::Int32(OldMachineTerm::constant(0)), 2),
+        (ProgramValue::Int32(OldMachineTerm::constant(1)), 0),
         (
-            ProgramValue::Int32(MachineTerm::Variable(Variable(8_819_203))),
+            ProgramValue::Int32(OldMachineTerm::Variable(Variable(8_819_203))),
             1,
         ),
     ] {
@@ -2551,7 +2551,7 @@ fn fact_only_view_expansion_keeps_ambient_child_identity_and_binding() {
 fn cached_composite_expansion_reuses_symbolic_endpoint_fragments() {
     let _session = crate::kernel::VerificationSession::enter();
     let pointer = Address::symbolic(Variable(9_831_200));
-    let end = MachineTerm::Variable(Variable(9_831_201));
+    let end = OldMachineTerm::Variable(Variable(9_831_201));
     let facts = PureFactContext::new().assume_condition(
         ConditionTerm::signed_less_than(2u32.into(), end.clone()),
         true,

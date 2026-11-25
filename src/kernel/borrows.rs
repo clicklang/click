@@ -26,7 +26,7 @@ use super::primitives::{
     memory_range_is_proven_empty,
 };
 use super::{
-    ExecutionState, MachineTerm, MemoryRange, Proposition, PureFactContext, Resource,
+    ExecutionState, MemoryRange, OldMachineTerm, Proposition, PureFactContext, Resource,
     ResourceContext, ResourceDescription, ResourceFact, ResourceOccurrenceId, ResourceStateSource,
     ResourceTransferRole,
 };
@@ -761,7 +761,7 @@ fn without_unindexed_memory(
 ///
 /// A backwards range is how a range says it is empty, and both endpoints are
 /// read as the signed `int32` values they are. Read through
-/// `MachineTerm::as_const`, a start of `-1` arrives as `4294967295` and
+/// `OldMachineTerm::as_const`, a start of `-1` arrives as `4294967295` and
 /// every range beginning below its base — `r[-1..3]` under a callee's
 /// `mutable r[s..e]` called at `-1, 3` — claimed to be empty and took the
 /// barrier's exit: no interval lookup, no symbolic comparison, no refusal,
@@ -828,7 +828,7 @@ pub(crate) fn protected_range_proven_overlapping(
     }
     let byte_range = |range: &MemoryRange| {
         let (base, bytes) = range.byte_footprint();
-        MemoryRange::new_with_element_width(base, MachineTerm::constant(0), bytes, 1)
+        MemoryRange::new_with_element_width(base, OldMachineTerm::constant(0), bytes, 1)
     };
     queries.iter().any(|query| {
         protected_ranges.iter().any(|protected| {
@@ -3296,7 +3296,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
             {
                 StableViewPlanError::MissingResource(ResourceFact::Own(
                     fact.resource().clone(),
-                    Box::new(MachineTerm::constant(demanded).into()),
+                    Box::new(OldMachineTerm::constant(demanded).into()),
                 ))
             }
             _ => StableViewPlanError::MissingResource(fact.clone()),
@@ -3515,7 +3515,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
                     // Two wide ranges have one span when their widths and
                     // 64-bit bounds agree.
                     (Some((required_start, required_end)), Some((caller_start, caller_end))) => {
-                        let same = |left: &MachineTerm, right: &MachineTerm| {
+                        let same = |left: &OldMachineTerm, right: &OldMachineTerm| {
                             left == right
                                 || assumptions.decide(&crate::kernel::ConditionTerm::uint64_equal(
                                     left.clone(),
@@ -6615,7 +6615,7 @@ impl BorrowLedger {
     pub(super) fn automatic_storage_retirement_refusal(
         &self,
         block: &AddressBase,
-        size: &MachineTerm,
+        size: &OldMachineTerm,
     ) -> Option<BorrowRefusalDiagnostic> {
         #[cfg(test)]
         let _fast =

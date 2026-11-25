@@ -3907,7 +3907,7 @@ fn path_case_split_condition(
             let splits = [true, false].into_iter().all(|value| {
                 cases
                     .iter()
-                    .any(|case| decides(case, condition.native_compat(), value))
+                    .any(|case| decides(case, condition.old_form(), value))
             });
             let undecided = [true, false]
                 .into_iter()
@@ -3922,11 +3922,11 @@ fn path_case_split_condition(
     };
     candidates
         .iter()
-        .filter(|condition| decided_by_every_case(condition.native_compat()))
+        .filter(|condition| decided_by_every_case(condition.old_form()))
         .chain(
             candidates
                 .iter()
-                .filter(|condition| !decided_by_every_case(condition.native_compat())),
+                .filter(|condition| !decided_by_every_case(condition.old_form())),
         )
         .find_map(|condition| {
             let surface = synthesize_surface_proposition(
@@ -3937,7 +3937,7 @@ fn path_case_split_condition(
                 ),
                 state,
             )?;
-            Some((condition.native_compat().clone(), surface))
+            Some((condition.old_form().clone(), surface))
         })
 }
 
@@ -4483,7 +4483,7 @@ fn word_store_source(
     outcome: &StatementOutcome,
     exit_point: &ProgramPointRef,
 ) -> Option<SyntaxProposition> {
-    use crate::kernel::{MachineTerm, ProgramType, ProgramValue};
+    use crate::kernel::{OldMachineTerm, ProgramType, ProgramValue};
 
     let (pointer, value) = match statement {
         ProgramStatement::Store { pointer, value }
@@ -4525,7 +4525,9 @@ fn word_store_source(
             SyntaxTerm::Binding(index.source_spelling()?.to_owned())
         }
         Some(
-            index @ ProgramExpression::Value(ProgramValue::Int32(MachineTerm::Constant { .. })),
+            index @ ProgramExpression::Value(ProgramValue::Int32(OldMachineTerm::Constant {
+                ..
+            })),
         ) => SyntaxTerm::ProgramExpression(index.clone()),
         _ => return None,
     };

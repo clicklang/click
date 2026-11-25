@@ -8,7 +8,7 @@ fn assert_without_discovery(operation: impl FnOnce()) {
 
 fn partition() -> (PureFactContext, ResourceFact, ResourceFact) {
     let p = Address::symbolic(Variable(8_915_000));
-    let n = MachineTerm::Variable(Variable(8_915_001));
+    let n = OldMachineTerm::Variable(Variable(8_915_001));
     let facts = PureFactContext::new()
         .assume_condition(
             ConditionTerm::signed_less_equal(1u32.into(), n.clone()),

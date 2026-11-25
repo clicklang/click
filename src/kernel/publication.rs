@@ -316,7 +316,7 @@ fn release_store(
         format: MachineIntegerType::Int32,
         relation: CompareRelation::Equal,
         left: Box::new(desired.clone()),
-        right: Box::new(MachineTerm::constant(0)),
+        right: Box::new(OldMachineTerm::constant(0)),
     }) != Some(false)
     {
         return Ok(Err(refusal(
@@ -472,7 +472,7 @@ pub(crate) fn resolve_observed_publications(
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(term.clone()),
-            right: Box::new(MachineTerm::constant(0)),
+            right: Box::new(OldMachineTerm::constant(0)),
         };
         let Some(unpublished) = assumptions.decide(&zero) else {
             continue;
@@ -583,7 +583,7 @@ mod tests {
             stored.root().is_some(),
             "the minted observation stays common"
         );
-        assert_eq!(stored.native_compat(), &value);
+        assert_eq!(stored.old_form(), &value);
     }
 
     /// Acquire-loads every subscriber flag, then settles them all as
@@ -616,7 +616,7 @@ mod tests {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
                         left: Box::new(term),
-                        right: Box::new(MachineTerm::constant(0)),
+                        right: Box::new(OldMachineTerm::constant(0)),
                     },
                     false,
                 ))

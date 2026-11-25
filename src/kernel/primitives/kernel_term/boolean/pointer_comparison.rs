@@ -48,12 +48,12 @@ mod tests {
                 &memory,
                 &crate::kernel::SymbolicMemory::global_pointer("raw-pointer"),
             ),
-            Address::from_integer_address(MachineTerm::Variable(Variable(999002))),
+            Address::from_integer_address(OldMachineTerm::Variable(Variable(999002))),
             Address {
                 base: AddressBase::PureFunctionApplication(SharedPureApplication::intern(
                     "raw_pointer_call".into(),
                     vec![PureFunctionArgument::Value(ProgramValue::Int32(
-                        MachineTerm::Variable(Variable(999002)),
+                        OldMachineTerm::Variable(Variable(999002)),
                     ))],
                 )),
                 offset: AddressOffset::Constant(0),
@@ -66,7 +66,7 @@ mod tests {
                 offset: AddressOffset::Add(
                     Box::new(AddressOffset::Constant(0)),
                     Box::new(AddressOffset::scaled_int32_node(
-                        MachineTerm::Variable(Variable(999002)),
+                        OldMachineTerm::Variable(Variable(999002)),
                         4,
                     )),
                 ),
@@ -120,7 +120,7 @@ mod tests {
                 ),
             ] {
                 let root = KernelTermImport::default().condition(&source);
-                let bits = MachineTerm::constant(3);
+                let bits = OldMachineTerm::constant(3);
                 let expected = crate::kernel::reasoning::substitute_bitvector_variable_in_condition(
                     &source,
                     Variable(999002),
@@ -170,7 +170,7 @@ mod tests {
             let block = AddressBase::PureFunctionApplication(SharedPureApplication::intern(
                 "raw_pointer_metadata".into(),
                 vec![PureFunctionArgument::Value(ProgramValue::UInt64(
-                    MachineTerm::IntegerAddress(
+                    OldMachineTerm::IntegerAddress(
                         Box::new(Address::symbolic(Variable(999020))),
                         AddressObjectClass::new(Some(CAccessClass::Scalar(class))),
                     ),
@@ -191,9 +191,9 @@ mod tests {
                 .syntax_equal(BooleanOperandView::Shared(&roots[1]))
         );
         let one = KernelTermImport::default()
-            .machine(MachineIntegerType::Int32, &MachineTerm::constant(1));
+            .machine(MachineIntegerType::Int32, &OldMachineTerm::constant(1));
         let zero = KernelTermImport::default()
-            .machine(MachineIntegerType::Int32, &MachineTerm::constant(0));
+            .machine(MachineIntegerType::Int32, &OldMachineTerm::constant(0));
         let observations = roots.map(|guard| {
             SharedMachineIntegerTerm::observe_shared(
                 MachineIntegerType::Int32,
@@ -214,13 +214,13 @@ mod tests {
             .with_block("offset-other", 4);
         let after = before.clone().store(
             crate::kernel::SymbolicMemory::global_pointer("offset-other"),
-            ProgramValue::Int32(MachineTerm::constant(1)),
+            ProgramValue::Int32(OldMachineTerm::constant(1)),
         );
         let memory_a = crate::kernel::intern_memory(before);
         let memory_b = crate::kernel::intern_memory(after);
         for wide in [false, true] {
             let condition = |memory| {
-                let value = MachineTerm::read_named(
+                let value = OldMachineTerm::read_named(
                     memory,
                     Box::new(crate::kernel::SymbolicMemory::global_pointer(
                         "offset-condition",
@@ -249,7 +249,7 @@ mod tests {
             let ar = KernelTermImport::default().condition(&a);
             let br = KernelTermImport::default().condition(&b);
             for allowed in [false, true] {
-                let loads = |_: &MachineTerm, _: &MachineTerm| allowed;
+                let loads = |_: &OldMachineTerm, _: &OldMachineTerm| allowed;
                 let expected =
                     crate::kernel::assumptions::conditions_equal_with_load_atoms(&a, &b, &loads);
                 assert_eq!(

@@ -53,7 +53,7 @@ impl<'a> Offset<'a> {
             // The native offset exporter preserves opaque index payloads as
             // native operands. Do not grant them shared-root identity here.
             let operand = if let Some(native) = value.retained_machine_input() {
-                Operand::Legacy(native)
+                Operand::Old(native)
             } else {
                 Operand::Shared(value)
             };
@@ -158,7 +158,7 @@ impl<'a> Value<'a> {
             Self::Native(value) => value.bounds().map(|bounds| {
                 (
                     BorrowedAddress::Native(&bounds.start),
-                    Operand::Legacy(&bounds.width),
+                    Operand::Old(&bounds.width),
                 )
             }),
             Self::Shared(value) => value.node().array.bounds().map(|bounds| {
@@ -259,13 +259,13 @@ impl Comparison {
                 // Export only this selected width, never the complete pointer;
                 // a shared identity shortcut would admit additional widths.
                 let native = |value| match value {
-                    Operand::Legacy(value) => Cow::Borrowed(value),
+                    Operand::Old(value) => Cow::Borrowed(value),
                     Operand::Shared(root) => Cow::Owned(
                         crate::kernel::KernelTermExport::machine(root).expect("bounds width"),
                     ),
                 };
                 let (aw, bw) = (native(aw), native(bw));
-                self.machine(Operand::Legacy(&aw), Operand::Legacy(&bw))
+                self.machine(Operand::Old(&aw), Operand::Old(&bw))
             }
             (None, None) => true,
             _ => false,

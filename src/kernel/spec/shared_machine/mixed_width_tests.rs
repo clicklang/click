@@ -19,7 +19,7 @@ const OPS: [MachineBinaryOp; 5] = [
     MachineBinaryOp::Remainder,
 ];
 
-fn native(format: MachineIntegerType, term: MachineTerm) -> ProgramValue {
+fn native(format: MachineIntegerType, term: OldMachineTerm) -> ProgramValue {
     match format {
         MachineIntegerType::Int8 => ProgramValue::Int8(term),
         MachineIntegerType::UInt8 => ProgramValue::UInt8(term),
@@ -28,9 +28,9 @@ fn native(format: MachineIntegerType, term: MachineTerm) -> ProgramValue {
         _ => wrap(format, term),
     }
 }
-fn operand(format: MachineIntegerType, value: &MachineTerm, shared: bool) -> SpecValue {
+fn operand(format: MachineIntegerType, value: &OldMachineTerm, shared: bool) -> SpecValue {
     if shared {
-        KernelTerm::retained_machine_operand(format, MachineOperandView::Legacy(value)).into()
+        KernelTerm::retained_machine_operand(format, MachineOperandView::Old(value)).into()
     } else {
         native(format, value.clone()).into()
     }
@@ -56,7 +56,7 @@ pub(super) fn native_domain(value: &Proposition) -> Proposition {
             Proposition::Or(Box::new(native_domain(a)), Box::new(native_domain(b)))
         }
         Proposition::ConditionIs(condition, truth) => {
-            let condition = match condition.native_compat() {
+            let condition = match condition.old_form() {
                 ConditionTerm::IntegerLessEqual(a, b) => {
                     ConditionTerm::integer_less_equal(native_integer(a), native_integer(b))
                 }
@@ -83,10 +83,10 @@ fn mixed_arithmetic_matches_native_terms_and_domains() {
                     budget.program_definedness = defined;
                     for case in 0..4 {
                         let term = |format: MachineIntegerType, id| match case {
-                            0 => MachineTerm::Variable(Variable(id)),
-                            1 => MachineTerm::opaque_conversion(
+                            0 => OldMachineTerm::Variable(Variable(id)),
+                            1 => OldMachineTerm::opaque_conversion(
                                 "mixed_operand",
-                                MachineTerm::Variable(Variable(id)),
+                                OldMachineTerm::Variable(Variable(id)),
                             ),
                             2 => crate::kernel::machine_integer::range::constant_word(
                                 format,
@@ -171,7 +171,7 @@ fn mixed_arithmetic_evaluator_preserves_nested_results_and_refusals() {
         let leaf = |format, id| {
             Box::new(SpecExpression::Value(native(
                 format,
-                MachineTerm::Variable(Variable(id)),
+                OldMachineTerm::Variable(Variable(id)),
             )))
         };
         let expression = SpecExpression::Add(
@@ -193,12 +193,12 @@ fn mixed_arithmetic_evaluator_preserves_nested_results_and_refusals() {
     }
     let mut execution = ExecutionBudget::new();
     let budget = SpecEvaluation::logical(&mut execution);
-    let left = SpecValue::Native(ProgramValue::Int32(MachineTerm::Variable(Variable(995455))));
-    let right = SpecValue::Native(ProgramValue::UInt64(MachineTerm::Variable(Variable(
+    let left = SpecValue::Native(ProgramValue::Int32(OldMachineTerm::Variable(Variable(995455))));
+    let right = SpecValue::Native(ProgramValue::UInt64(OldMachineTerm::Variable(Variable(
         995456,
     ))));
     assert!(apply_values(Some(MachineBinaryOp::ShiftLeft), &left, &right, &budget).is_some());
-    let wide = SpecValue::Native(ProgramValue::Int128(MachineTerm::Variable(Variable(
+    let wide = SpecValue::Native(ProgramValue::Int128(OldMachineTerm::Variable(Variable(
         995457,
     ))));
     assert!(apply_values(Some(MachineBinaryOp::Add), &wide, &right, &budget).is_none());

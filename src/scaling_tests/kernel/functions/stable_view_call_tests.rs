@@ -111,7 +111,7 @@ fn preparing_a_reserved_fold_leaves_unrelated_caller_heads_unmaterialized() {
             memory = memory
                 .with_heap_allocation_claim(
                     heap(id),
-                    AllocationSize::int32(MachineTerm::constant(4)),
+                    AllocationSize::int32(OldMachineTerm::constant(4)),
                 )
                 .expect("distinct live cell");
             resources = resources.unchecked_with_fact(cell(id));

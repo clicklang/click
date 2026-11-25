@@ -13,7 +13,7 @@ use crate::kernel::proof::signed_arithmetic::{
     SignedArithmeticPlan, SignedArithmeticRelation, add_claim,
 };
 use crate::kernel::{CompareRelation, OverflowOperation};
-use crate::kernel::{ConditionTerm, MachineTerm, Proposition};
+use crate::kernel::{ConditionTerm, OldMachineTerm, Proposition};
 use crate::kernel::{MachineCastSpelling, cast_term};
 use crate::kernel::{binary_term, unary_term};
 use crate::kernel::{bits32_constant, constant_u32, int64_constant, uint64_constant};
@@ -35,11 +35,11 @@ fn native_certificate_proposition(proposition: &Proposition) -> Option<Propositi
     let Proposition::ConditionIs(condition, truth) = &canonical else {
         return Some(canonical);
     };
-    if matches!(condition.native_compat(), ConditionTerm::Compare { .. }) {
+    if matches!(condition.old_form(), ConditionTerm::Compare { .. }) {
         return Some(canonical);
     }
     let Some(view) = crate::kernel::machine_integer::comparison::structural_native_comparison_view(
-        condition.native_compat(),
+        condition.old_form(),
         *truth,
     ) else {
         return Some(canonical);
@@ -72,7 +72,7 @@ fn native_certificate_proposition(proposition: &Proposition) -> Option<Propositi
     }
     let (condition, truth) =
         crate::kernel::machine_integer::comparison::native_comparison_of_integer_observation(
-            condition.native_compat(),
+            condition.old_form(),
             *truth,
         )?;
     Some(crate::kernel::canonical_condition_fact(
@@ -370,7 +370,7 @@ pub(in crate::surface) fn decomposed_signed_claim(
         },
         _ => return None,
     };
-    let (relation, left, right, strict) = match (condition.native_compat(), value) {
+    let (relation, left, right, strict) = match (condition.old_form(), value) {
         (
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
@@ -492,8 +492,8 @@ pub(in crate::surface) fn decomposed_signed_claim(
 }
 
 fn decomposed_affine_difference(
-    left: &MachineTerm,
-    right: &MachineTerm,
+    left: &OldMachineTerm,
+    right: &OldMachineTerm,
 ) -> Option<(BTreeMap<SignedArithmeticAtom, BigInt>, BigInt)> {
     let mut terms: BTreeMap<SignedArithmeticAtom, BigInt> = BTreeMap::new();
     let mut constant = BigInt::zero();
@@ -753,9 +753,9 @@ fn affine_conclusion(
 
 fn affine_operation_terms(
     proposition: &Proposition,
-) -> Option<(Option<&MachineTerm>, Option<&MachineTerm>)> {
+) -> Option<(Option<&OldMachineTerm>, Option<&OldMachineTerm>)> {
     let (left, right, _) = comparison_terms(proposition)?;
-    let is_affine_operation = |term: &MachineTerm| {
+    let is_affine_operation = |term: &OldMachineTerm| {
         matches!(
             term,
             binary_term!(Int32, Add, _, _)
@@ -771,11 +771,11 @@ fn affine_operation_terms(
 
 /// A goal side the affine planner may combine premises over as one opaque
 /// atom: a term with no machine operation.
-fn is_affine_planning_atom(term: &MachineTerm) -> bool {
+fn is_affine_planning_atom(term: &OldMachineTerm) -> bool {
     !contains_machine_operation(term)
 }
 
-fn contains_machine_operation(root: &MachineTerm) -> bool {
+fn contains_machine_operation(root: &OldMachineTerm) -> bool {
     let mut pending = vec![root];
     while let Some(term) = pending.pop() {
         match term {
@@ -794,7 +794,7 @@ fn contains_machine_operation(root: &MachineTerm) -> bool {
             }
             unary_term!(Int32, BitwiseNot, _) => return true,
             term if is_narrowed_word_cast(term) => return true,
-            MachineTerm::PureFunctionApplication { arguments, .. } => {
+            OldMachineTerm::PureFunctionApplication { arguments, .. } => {
                 pending.extend(arguments.iter());
             }
             _ => {}
@@ -805,7 +805,7 @@ fn contains_machine_operation(root: &MachineTerm) -> bool {
 
 /// The 32-bit reading of a C conversion the checked `IntervalNarrowedCast`
 /// node can relate to its operand: its `int32` widening.
-fn is_narrowed_word_cast(term: &MachineTerm) -> bool {
+fn is_narrowed_word_cast(term: &OldMachineTerm) -> bool {
     crate::kernel::proof::signed_arithmetic::widened_narrowed_cast(term).is_some()
 }
 
@@ -1015,7 +1015,9 @@ struct DefinednessKey {
     right: u64,
 }
 
-fn definedness_parts_from_term(term: &MachineTerm) -> Option<(u8, &MachineTerm, &MachineTerm)> {
+fn definedness_parts_from_term(
+    term: &OldMachineTerm,
+) -> Option<(u8, &OldMachineTerm, &OldMachineTerm)> {
     Some(match term {
         binary_term!(Int32, Add, left, right) => (0, left, right),
         binary_term!(Int32, Subtract, left, right) => (1, left, right),
@@ -1028,11 +1030,11 @@ fn definedness_parts_from_term(term: &MachineTerm) -> Option<(u8, &MachineTerm, 
 
 fn definedness_parts_from_proposition(
     proposition: &Proposition,
-) -> Option<(u8, &MachineTerm, &MachineTerm)> {
+) -> Option<(u8, &OldMachineTerm, &OldMachineTerm)> {
     let Proposition::ConditionIs(condition, false) = proposition else {
         return None;
     };
-    Some(match condition.native_compat() {
+    Some(match condition.old_form() {
         ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Add,
@@ -1719,7 +1721,7 @@ impl<'a> Planner<'a> {
         Some(None)
     }
 
-    fn defined(&mut self, term: &MachineTerm) -> Option<usize> {
+    fn defined(&mut self, term: &OldMachineTerm) -> Option<usize> {
         let cache_key = self.definedness_key_from_term(term)?;
         if let Some(index) = self.defined_cache.get(&cache_key) {
             return index.and_then(|index| {
@@ -1749,7 +1751,7 @@ impl<'a> Planner<'a> {
         })
     }
 
-    fn definedness_key_from_term(&mut self, term: &MachineTerm) -> Option<DefinednessKey> {
+    fn definedness_key_from_term(&mut self, term: &OldMachineTerm) -> Option<DefinednessKey> {
         let (operator, left, right) = definedness_parts_from_term(term)?;
         Some(DefinednessKey {
             operator,
@@ -1758,21 +1760,21 @@ impl<'a> Planner<'a> {
         })
     }
 
-    fn term_hash(&mut self, root: &MachineTerm) -> Option<u64> {
-        let root_key = root as *const MachineTerm as usize;
+    fn term_hash(&mut self, root: &OldMachineTerm) -> Option<u64> {
+        let root_key = root as *const OldMachineTerm as usize;
         if let Some(hash) = self.term_hash_cache.get(&root_key) {
             return Some(*hash);
         }
         enum Task<'a> {
-            Visit(&'a MachineTerm),
-            Finish(&'a MachineTerm),
+            Visit(&'a OldMachineTerm),
+            Finish(&'a OldMachineTerm),
         }
         let mut tasks = vec![Task::Visit(root)];
         while let Some(task) = tasks.pop() {
             charge_work(1)?;
             match task {
                 Task::Visit(term) => {
-                    let key = term as *const MachineTerm as usize;
+                    let key = term as *const OldMachineTerm as usize;
                     if self.term_hash_cache.contains_key(&key) {
                         continue;
                     }
@@ -1780,19 +1782,19 @@ impl<'a> Planner<'a> {
                         bits32_constant!(_)
                         | int64_constant!(_)
                         | uint64_constant!(_)
-                        | MachineTerm::Variable(_) => {
+                        | OldMachineTerm::Variable(_) => {
                             let mut hasher = std::collections::hash_map::DefaultHasher::new();
                             std::mem::discriminant(term).hash(&mut hasher);
                             term.hash(&mut hasher);
                             self.term_hash_cache.insert(key, hasher.finish());
                         }
-                        MachineTerm::MemoryLoad(..) => {
+                        OldMachineTerm::MemoryLoad(..) => {
                             let atom = SignedArithmeticAtom::from_term(term)?;
                             let mut hasher = std::collections::hash_map::DefaultHasher::new();
                             atom.hash(&mut hasher);
                             self.term_hash_cache.insert(key, hasher.finish());
                         }
-                        MachineTerm::PureFunctionApplication { arguments, .. } => {
+                        OldMachineTerm::PureFunctionApplication { arguments, .. } => {
                             tasks.push(Task::Finish(term));
                             tasks.extend(arguments.iter().rev().map(Task::Visit));
                         }
@@ -1815,7 +1817,7 @@ impl<'a> Planner<'a> {
                     }
                 }
                 Task::Finish(term) => {
-                    let key = term as *const MachineTerm as usize;
+                    let key = term as *const OldMachineTerm as usize;
                     if self.term_hash_cache.contains_key(&key) {
                         continue;
                     }
@@ -1823,21 +1825,21 @@ impl<'a> Planner<'a> {
                     std::mem::discriminant(term).hash(&mut hasher);
                     term.machine_operator().hash(&mut hasher);
                     match term {
-                        MachineTerm::PureFunctionApplication { name, arguments } => {
+                        OldMachineTerm::PureFunctionApplication { name, arguments } => {
                             name.hash(&mut hasher);
                             arguments.len().hash(&mut hasher);
                             for argument in arguments {
                                 self.term_hash_cache
-                                    .get(&(argument as *const MachineTerm as usize))?
+                                    .get(&(argument as *const OldMachineTerm as usize))?
                                     .hash(&mut hasher);
                             }
                         }
                         crate::kernel::binary_bitvector32_term!(left, right) => {
                             self.term_hash_cache
-                                .get(&(left.as_ref() as *const MachineTerm as usize))?
+                                .get(&(left.as_ref() as *const OldMachineTerm as usize))?
                                 .hash(&mut hasher);
                             self.term_hash_cache
-                                .get(&(right.as_ref() as *const MachineTerm as usize))?
+                                .get(&(right.as_ref() as *const OldMachineTerm as usize))?
                                 .hash(&mut hasher);
                         }
                         unary_term!(Int32, BitwiseNot, operand)
@@ -1848,7 +1850,7 @@ impl<'a> Planner<'a> {
                         | cast_term!(UInt64FromInt32, operand)
                         | cast_term!(UInt64FromInt64, operand) => {
                             self.term_hash_cache
-                                .get(&(operand.as_ref() as *const MachineTerm as usize))?
+                                .get(&(operand.as_ref() as *const OldMachineTerm as usize))?
                                 .hash(&mut hasher);
                         }
                         _ => return None,
@@ -1945,7 +1947,7 @@ impl<'a> Planner<'a> {
         Some(())
     }
 
-    fn interval_atom(&mut self, term: &MachineTerm) -> Option<usize> {
+    fn interval_atom(&mut self, term: &OldMachineTerm) -> Option<usize> {
         let cache_key = SignedArithmeticAtom::from_term(term)?;
         if let Some(index) = self.interval_cache.get(&cache_key) {
             return Some(*index);
@@ -2274,19 +2276,20 @@ impl<'a> Planner<'a> {
         )
     }
 
-    fn is_safe_interval_atom(term: &MachineTerm) -> bool {
+    fn is_safe_interval_atom(term: &OldMachineTerm) -> bool {
         let mut pending = vec![term];
         while let Some(term) = pending.pop() {
             match term {
-                MachineTerm::Variable(_) | bits32_constant!(_) => {}
-                MachineTerm::MemoryLoad(..) if SignedArithmeticAtom::from_term(term).is_some() => {}
+                OldMachineTerm::Variable(_) | bits32_constant!(_) => {}
+                OldMachineTerm::MemoryLoad(..)
+                    if SignedArithmeticAtom::from_term(term).is_some() => {}
                 cast_term!(UInt32From64, _) if SignedArithmeticAtom::from_term(term).is_some() => {}
-                MachineTerm::PureFunctionApplication { arguments, .. } => {
+                OldMachineTerm::PureFunctionApplication { arguments, .. } => {
                     pending.extend(arguments.iter());
                 }
                 // The `int32` widening of an 8- or 16-bit value, an opaque
                 // value as the checker reads it (`is_opaque_root`).
-                MachineTerm::Cast {
+                OldMachineTerm::Cast {
                     spelling: MachineCastSpelling::Generic,
                     value,
                     from: source,
@@ -2298,22 +2301,22 @@ impl<'a> Planner<'a> {
         true
     }
 
-    fn build_interval(&mut self, root: &MachineTerm) -> Option<usize> {
+    fn build_interval(&mut self, root: &OldMachineTerm) -> Option<usize> {
         self.build_interval_with_direct(root, true)
     }
 
-    fn build_interval_for_affine(&mut self, root: &MachineTerm) -> Option<usize> {
+    fn build_interval_for_affine(&mut self, root: &OldMachineTerm) -> Option<usize> {
         self.build_interval_with_direct(root, false)
     }
 
     fn build_interval_with_direct(
         &mut self,
-        root: &MachineTerm,
+        root: &OldMachineTerm,
         allow_direct: bool,
     ) -> Option<usize> {
         enum Task<'a> {
-            Visit(&'a MachineTerm, bool),
-            Build(&'a MachineTerm),
+            Visit(&'a OldMachineTerm, bool),
+            Build(&'a OldMachineTerm),
         }
         let mut tasks = vec![Task::Visit(root, allow_direct)];
         let mut results = Vec::new();
@@ -2397,7 +2400,7 @@ impl<'a> Planner<'a> {
     /// one-sided interval is what refuses it, so the extra work is one build
     /// of this operation's operands, and certificates that did not need it
     /// keep their single direct root.
-    fn tighten_one_sided_direct_interval(&mut self, term: &MachineTerm, direct: usize) -> usize {
+    fn tighten_one_sided_direct_interval(&mut self, term: &OldMachineTerm, direct: usize) -> usize {
         let Some(direct_interval) = self.interval_at(direct) else {
             return direct;
         };
@@ -2454,7 +2457,7 @@ impl<'a> Planner<'a> {
 
     fn build_operation(
         &mut self,
-        term: &MachineTerm,
+        term: &OldMachineTerm,
         left_index: Option<usize>,
         right_index: Option<usize>,
     ) -> Option<usize> {
@@ -2588,7 +2591,7 @@ impl<'a> Planner<'a> {
                         Int32,
                         Remainder,
                         base.clone(),
-                        Box::new(MachineTerm::constant(divisor as u32)),
+                        Box::new(OldMachineTerm::constant(divisor as u32)),
                     );
                     if let Some(remainder) = self.interval_atom(&original)
                         && let Some(op) = self.interval_at(operand)
@@ -2717,7 +2720,7 @@ impl<'a> Planner<'a> {
     }
 }
 
-fn exact_definedness(proposition: &Proposition, term: &MachineTerm) -> bool {
+fn exact_definedness(proposition: &Proposition, term: &OldMachineTerm) -> bool {
     let ordinary =
         crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard(proposition)
             .map(|condition| Proposition::condition_is(condition, false));
@@ -2725,7 +2728,7 @@ fn exact_definedness(proposition: &Proposition, term: &MachineTerm) -> bool {
     else {
         return false;
     };
-    match (condition.native_compat(), term) {
+    match (condition.old_form(), term) {
         (
             ConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
@@ -2775,7 +2778,7 @@ fn exact_definedness(proposition: &Proposition, term: &MachineTerm) -> bool {
     }
 }
 
-fn terms_equal(left: &MachineTerm, right: &MachineTerm) -> bool {
+fn terms_equal(left: &OldMachineTerm, right: &OldMachineTerm) -> bool {
     let (Some(left), Some(right)) = (
         SignedArithmeticAtom::from_term(left),
         SignedArithmeticAtom::from_term(right),
@@ -2814,7 +2817,7 @@ fn plan_interval_goal(
 }
 
 /// The operands of a held `uint32` order goal, as `(lower, upper, strict)`.
-fn unsigned_order_terms(goal: &Proposition) -> Option<(&MachineTerm, &MachineTerm, bool)> {
+fn unsigned_order_terms(goal: &Proposition) -> Option<(&OldMachineTerm, &OldMachineTerm, bool)> {
     let Some((
         ConditionTerm::Compare {
             format: MachineIntegerType::UInt32,
@@ -2874,7 +2877,7 @@ fn plan_unsigned_order_goal(
         })
         .collect::<Vec<_>>();
     let mut planner = Planner::new(premises, &claims, int32_range_fallback);
-    let mut side = |term: &MachineTerm| -> Option<(usize, (i64, i64))> {
+    let mut side = |term: &OldMachineTerm| -> Option<(usize, (i64, i64))> {
         let mut node = planner.build_interval(term)?;
         let mut interval = planner.interval_at(node)?;
         if (interval.lower == SIGNED_MIN || interval.upper == SIGNED_MAX)
@@ -2919,8 +2922,8 @@ fn plan_unsigned_order_goal(
 }
 
 fn term_interval_proves(
-    left: &MachineTerm,
-    right: &MachineTerm,
+    left: &OldMachineTerm,
+    right: &OldMachineTerm,
     comparison: Comparison,
     left_interval: &SignedArithmeticInterval,
 ) -> bool {
@@ -2933,12 +2936,14 @@ fn term_interval_proves(
     terms_equal(operand, right) && shift.as_const().is_some_and(|value| value <= 31)
 }
 
-fn comparison_terms(proposition: &Proposition) -> Option<(&MachineTerm, &MachineTerm, Comparison)> {
+fn comparison_terms(
+    proposition: &Proposition,
+) -> Option<(&OldMachineTerm, &OldMachineTerm, Comparison)> {
     let (condition, value) = match proposition {
         Proposition::ConditionIs(condition, value) => (condition, *value),
         _ => return None,
     };
-    match (condition.native_compat(), value) {
+    match (condition.old_form(), value) {
         (
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
@@ -3074,7 +3079,7 @@ mod tests {
     use super::*;
     use crate::kernel::Variable;
 
-    fn equal(left: MachineTerm, right: MachineTerm) -> Proposition {
+    fn equal(left: OldMachineTerm, right: OldMachineTerm) -> Proposition {
         proposition(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
@@ -3086,7 +3091,7 @@ mod tests {
         )
     }
 
-    fn plus(left: MachineTerm, right: MachineTerm) -> MachineTerm {
+    fn plus(left: OldMachineTerm, right: OldMachineTerm) -> OldMachineTerm {
         binary_node!(Int32, Add, Box::new(left), Box::new(right))
     }
 
@@ -3166,17 +3171,17 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let memory = crate::kernel::intern_memory(crate::kernel::SymbolicMemory::new());
         let pointer = crate::kernel::Address::symbolic(Variable(71_201));
-        let read = MachineTerm::read_named(
+        let read = OldMachineTerm::read_named(
             crate::kernel::ProgramPoint::at(&memory),
             Box::new(pointer.clone()),
             crate::kernel::LoadKind::Int32,
         );
         let goal = lt(
-            MachineTerm::subtract_at(MachineIntegerType::Int32, read.clone(), constant(1)),
+            OldMachineTerm::subtract_at(MachineIntegerType::Int32, read.clone(), constant(1)),
             read.clone(),
         );
         checked_plan(&goal, &[lt(constant(0), read)]);
-        let other = MachineTerm::read_named(
+        let other = OldMachineTerm::read_named(
             crate::kernel::ProgramPoint::at(&memory),
             Box::new(pointer.offset_by_bytes(4)),
             crate::kernel::LoadKind::Int32,
@@ -3184,19 +3189,19 @@ mod tests {
         assert!(plan_signed_arithmetic(&goal, &[lt(constant(0), other)]).is_none());
     }
 
-    fn var(index: u64) -> MachineTerm {
-        MachineTerm::Variable(Variable(index))
+    fn var(index: u64) -> OldMachineTerm {
+        OldMachineTerm::Variable(Variable(index))
     }
 
-    fn constant(value: i32) -> MachineTerm {
-        MachineTerm::constant(value as u32)
+    fn constant(value: i32) -> OldMachineTerm {
+        OldMachineTerm::constant(value as u32)
     }
 
     fn proposition(condition: ConditionTerm, value: bool) -> Proposition {
         Proposition::condition_is(condition, value)
     }
 
-    fn le(left: MachineTerm, right: MachineTerm) -> Proposition {
+    fn le(left: OldMachineTerm, right: OldMachineTerm) -> Proposition {
         proposition(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
@@ -3208,7 +3213,7 @@ mod tests {
         )
     }
 
-    fn lt(left: MachineTerm, right: MachineTerm) -> Proposition {
+    fn lt(left: OldMachineTerm, right: OldMachineTerm) -> Proposition {
         proposition(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
@@ -3220,7 +3225,7 @@ mod tests {
         )
     }
 
-    fn ge(left: MachineTerm, right: MachineTerm) -> Proposition {
+    fn ge(left: OldMachineTerm, right: OldMachineTerm) -> Proposition {
         proposition(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
@@ -3232,7 +3237,7 @@ mod tests {
         )
     }
 
-    fn neq(left: MachineTerm, right: MachineTerm) -> Proposition {
+    fn neq(left: OldMachineTerm, right: OldMachineTerm) -> Proposition {
         proposition(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
@@ -3244,7 +3249,7 @@ mod tests {
         )
     }
 
-    fn defined_add(left: MachineTerm, right: MachineTerm) -> Proposition {
+    fn defined_add(left: OldMachineTerm, right: OldMachineTerm) -> Proposition {
         proposition(
             ConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,

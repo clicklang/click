@@ -806,15 +806,15 @@ fn overlapping_memory_view_clustering_handles_chains_and_equal_starts() {
             };
             let owner = ResourceFact::own_memory(MemoryRange::new(
                 base.clone(),
-                MachineTerm::constant(0),
-                MachineTerm::constant(6),
+                OldMachineTerm::constant(0),
+                OldMachineTerm::constant(6),
             ));
             caller_resources = caller_resources.unchecked_with_fact(owner);
             let view = |start, end| {
                 checked(ResourceFact::view_memory(MemoryRange::new(
                     base.clone(),
-                    MachineTerm::constant(start),
-                    MachineTerm::constant(end),
+                    OldMachineTerm::constant(start),
+                    OldMachineTerm::constant(end),
                 )))
             };
             // Three clauses form a transitive overlap chain. Keeping the
@@ -986,12 +986,12 @@ fn offset_alias_overlap_uses_exact_bytes_and_ignores_unrelated_facts() {
     };
     let q = Address {
         base: p.base.clone(),
-        offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(600)), 1),
+        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(600)), 1),
     };
     let protected = MemoryRange::new_with_element_width(
         p.clone(),
-        MachineTerm::constant(0),
-        MachineTerm::constant(1),
+        OldMachineTerm::constant(0),
+        OldMachineTerm::constant(1),
         4,
     );
     let mut samples = Vec::new();
@@ -1001,8 +1001,8 @@ fn offset_alias_overlap_uses_exact_bytes_and_ignores_unrelated_facts() {
         for index in 0..size {
             assumptions = assumptions.assume_condition(
                 ConditionTerm::equal(
-                    MachineTerm::Variable(Variable(1000 + index)),
-                    MachineTerm::constant(0),
+                    OldMachineTerm::Variable(Variable(1000 + index)),
+                    OldMachineTerm::constant(0),
                 ),
                 true,
             );
@@ -1020,8 +1020,8 @@ fn offset_alias_overlap_uses_exact_bytes_and_ignores_unrelated_facts() {
             let context = assumptions.clone().assume_condition(equality.clone(), true);
             let query = MemoryRange::new_with_element_width(
                 q.clone(),
-                MachineTerm::constant(0),
-                MachineTerm::constant(1),
+                OldMachineTerm::constant(0),
+                OldMachineTerm::constant(1),
                 width,
             );
             let (actual, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -1062,8 +1062,8 @@ fn offset_alias_overlap_uses_exact_bytes_and_ignores_unrelated_facts() {
 fn joint_fragment_reservation_does_not_scan_ambient_memory_with_scalar_equalities() {
     let facts = PureFactContext::new().assume_condition(
         ConditionTerm::equal(
-            MachineTerm::Variable(Variable(944_023)),
-            MachineTerm::constant(7),
+            OldMachineTerm::Variable(Variable(944_023)),
+            OldMachineTerm::constant(7),
         ),
         true,
     );
@@ -1147,8 +1147,8 @@ fn mixed_width_view_backing_joins_only_its_own_pieces() {
                 base: "buffer".into(),
                 offset: crate::kernel::AddressOffset::Constant(0),
             },
-            crate::kernel::MachineTerm::constant(start),
-            crate::kernel::MachineTerm::constant(end),
+            crate::kernel::OldMachineTerm::constant(start),
+            crate::kernel::OldMachineTerm::constant(end),
             width,
         ))
     };
@@ -1445,9 +1445,9 @@ fn writes_without_active_memory_borrows_do_not_walk_pointer_aliases() {
                     );
                 }
                 let end = if symbolic_bound {
-                    MachineTerm::Variable(Variable(981_000))
+                    OldMachineTerm::Variable(Variable(981_000))
                 } else {
-                    MachineTerm::constant(1)
+                    OldMachineTerm::constant(1)
                 };
                 let range = MemoryRange::new_with_element_width(base, 0u32.into(), end, 4);
                 for repeat in 0..3 {

@@ -14,17 +14,17 @@ fn call(format: MachineIntegerType, name: &str) -> KernelTerm {
     let application = SharedPureApplication::intern(
         name.into(),
         vec![PureFunctionArgument::Value(ProgramValue::Int32(
-            MachineTerm::Variable(Variable(995810)),
+            OldMachineTerm::Variable(Variable(995810)),
         ))],
     );
     KernelTermImport::default().machine_call(format, &application)
 }
 // Oracle-only materialization: argument carrier choice is not a change to
 // the call's typed value. Production readers keep these handles retained.
-fn native_term(value: &MachineTerm) -> MachineTerm {
+fn native_term(value: &OldMachineTerm) -> OldMachineTerm {
     match value {
-        MachineTerm::ClickFunctionApplication { name, arguments } => {
-            MachineTerm::ClickFunctionApplication {
+        OldMachineTerm::ClickFunctionApplication { name, arguments } => {
+            OldMachineTerm::ClickFunctionApplication {
                 name: name.clone(),
                 arguments: arguments
                     .iter()
@@ -48,12 +48,12 @@ fn native_term(value: &MachineTerm) -> MachineTerm {
                     .collect(),
             }
         }
-        MachineTerm::Cast {
+        OldMachineTerm::Cast {
             spelling,
             from,
             to,
             value,
-        } => MachineTerm::Cast {
+        } => OldMachineTerm::Cast {
             spelling: *spelling,
             from: *from,
             to: *to,
@@ -83,7 +83,7 @@ fn native_domain(value: &Proposition) -> Proposition {
             Proposition::Or(Box::new(native_domain(a)), Box::new(native_domain(b)))
         }
         Proposition::ConditionIs(c, t) => Proposition::condition_is(
-            match c.native_compat() {
+            match c.old_form() {
                 ConditionTerm::IntegerEqual(a, b) => {
                     ConditionTerm::integer_equal(native_integer(a), native_integer(b))
                 }
@@ -215,7 +215,7 @@ fn common_call_root_readings_keep_wide_refusals_and_borrow_arguments() {
         let root = call(format, "borrowed_call");
         let exports = KernelTermExport::machine_export_count();
         let leaf = root.machine_conversion_leaf().unwrap();
-        let MachineTerm::ClickFunctionApplication { arguments, .. } = leaf else {
+        let OldMachineTerm::ClickFunctionApplication { arguments, .. } = leaf else {
             panic!()
         };
         assert!(matches!(
@@ -225,7 +225,7 @@ fn common_call_root_readings_keep_wide_refusals_and_borrow_arguments() {
         assert!(std::ptr::eq(leaf, root.machine_conversion_leaf().unwrap()));
         assert_eq!(
             MachineOperandView::Shared(&root).root_width(),
-            MachineOperandView::Legacy(leaf).root_width()
+            MachineOperandView::Old(leaf).root_width()
         );
         assert_eq!(
             MachineOperandView::Shared(&root).accepts_cast_operand(format),
@@ -342,7 +342,7 @@ fn produced_paths(expression: &SpecExpression, legacy: bool) -> Vec<SpecExpressi
 #[test]
 fn actual_call_producers_keep_all_integer_types_and_nested_arguments() {
     let _session = VerificationSession::enter();
-    let input = SpecExpression::Value(ProgramValue::Int32(MachineTerm::Variable(Variable(995830))));
+    let input = SpecExpression::Value(ProgramValue::Int32(OldMachineTerm::Variable(Variable(995830))));
     for format in FORMATS
         .into_iter()
         .chain([MachineIntegerType::Int128, MachineIntegerType::UInt128])
@@ -434,7 +434,7 @@ fn actual_call_native_handoff_retains_nested_call_arguments() {
     let child = root.children()[0].clone();
     let exports = KernelTermExport::machine_export_count();
     let native = paths.pop().unwrap().value.into_native();
-    let ProgramValue::Int32(MachineTerm::ClickFunctionApplication { arguments, .. }) = native
+    let ProgramValue::Int32(OldMachineTerm::ClickFunctionApplication { arguments, .. }) = native
     else {
         panic!()
     };
@@ -449,7 +449,7 @@ fn actual_call_native_handoff_retains_nested_call_arguments() {
 fn actual_call_arithmetic_keeps_native_values_and_definedness() {
     let _session = VerificationSession::enter();
     let call = call_expression(MachineIntegerType::Int32, vec![]);
-    let one = SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(1)));
+    let one = SpecExpression::Value(ProgramValue::Int32(OldMachineTerm::constant(1)));
     for expression in [
         SpecExpression::Add(Box::new(call.clone()), Box::new(one.clone())),
         SpecExpression::Divide(Box::new(one.clone()), Box::new(call.clone())),
@@ -515,7 +515,7 @@ fn actual_call_comparisons_preserve_native_fact_forms() {
         let actual = produced_paths(&expression, false).pop().unwrap().value;
         let expected = produced_paths(&expression, true).pop().unwrap().value;
         let other =
-            SpecValue::Native(format.value_from_term(MachineTerm::Variable(Variable(995832))));
+            SpecValue::Native(format.value_from_term(OldMachineTerm::Variable(Variable(995832))));
         for op in [
             ComparisonOperator::Equal,
             ComparisonOperator::NotEqual,
@@ -706,7 +706,7 @@ fn boolean_call_handoffs_retain_nested_boolean_arguments() {
 fn boolean_composition_producers_preserve_casts_and_comparison_rules() {
     let _session = VerificationSession::enter();
     let condition = ConditionTerm::Variable(Variable(999440));
-    let native = ProgramValue::Bool(MachineTerm::bool_cast(
+    let native = ProgramValue::Bool(OldMachineTerm::bool_cast(
         MachineIntegerType::UInt8,
         condition.clone(),
     ));
@@ -747,13 +747,13 @@ fn boolean_composition_producers_preserve_casts_and_comparison_rules() {
     }
     for right in [
         right,
-        SpecValue::Native(ProgramValue::Bool(MachineTerm::Variable(Variable(999443)))),
-        SpecValue::Native(ProgramValue::Bool(MachineTerm::bool_cast(
+        SpecValue::Native(ProgramValue::Bool(OldMachineTerm::Variable(Variable(999443)))),
+        SpecValue::Native(ProgramValue::Bool(OldMachineTerm::bool_cast(
             MachineIntegerType::UInt8,
             ConditionTerm::Constant(true),
         ))),
         SpecValue::Shared(KernelTermImport::default().condition(&ConditionTerm::Constant(false))),
-        SpecValue::Native(ProgramValue::Int32(MachineTerm::constant(1))),
+        SpecValue::Native(ProgramValue::Int32(OldMachineTerm::constant(1))),
     ] {
         for op in [
             ComparisonOperator::Equal,

@@ -1794,7 +1794,7 @@ mod tests {
     fn negative_int64_source_barrier_does_not_change_diagnostic_spelling() {
         let word = |n| {
             SyntaxTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Int64(
-                crate::kernel::MachineTerm::int64_constant(n),
+                crate::kernel::OldMachineTerm::int64_constant(n),
             )))
         };
         let proposition = SyntaxProposition::Comparison {
@@ -1908,7 +1908,7 @@ mod tests {
         }
         let word = |value: u64| {
             SyntaxTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::UInt64(
-                crate::kernel::MachineTerm::uint64_constant(value),
+                crate::kernel::OldMachineTerm::uint64_constant(value),
             )))
         };
         let n = || SyntaxTerm::ProgramExpression(ProgramExpression::Variable("n".into()));
@@ -1971,7 +1971,7 @@ mod tests {
         let address = ProgramExpression::CheckedObjectAddress(Box::new(
             ProgramExpression::Variable("value".into()),
         ));
-        let zero = ProgramExpression::Value(ProgramValue::Int32(MachineTerm::constant(0)));
+        let zero = ProgramExpression::Value(ProgramValue::Int32(OldMachineTerm::constant(0)));
         // Call substitution retains a Surface index; lowered C expressions
         // can also carry the read. Both must print the original lvalue.
         for read in [
@@ -1988,7 +1988,7 @@ mod tests {
                 left: read,
                 operator: ComparisonOperator::LessEqual,
                 right: SyntaxTerm::ProgramExpression(ProgramExpression::Value(
-                    ProgramValue::Int32(MachineTerm::constant(10)),
+                    ProgramValue::Int32(OldMachineTerm::constant(10)),
                 )),
             };
             let source = source_click_proposition(&proposition);

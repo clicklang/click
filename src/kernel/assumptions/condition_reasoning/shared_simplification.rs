@@ -21,7 +21,7 @@ impl PureFactContext {
             memo: &mut BTreeMap<(u64, MachineIntegerType), S>,
         ) -> S {
             let V::Shared(root) = operand else {
-                let V::Legacy(term) = operand else {
+                let V::Old(term) = operand else {
                     unreachable!()
                 };
                 return S::intern(format, facts.simplify_bitvector_under_assumptions(term));
@@ -44,7 +44,7 @@ impl PureFactContext {
             let result = if let Some(bits) =
                 facts.equality_graph.direct_scalar_constant_view(operand)
             {
-                S::intern(format, MachineTerm::constant(bits))
+                S::intern(format, OldMachineTerm::constant(bits))
             } else if let Some(native) = root.machine_conversion_leaf() {
                 S::intern(format, facts.simplify_bitvector_under_assumptions(native))
             } else if let Some(carrier) = facts.narrowed_cast_carrier_view(operand) {
@@ -122,7 +122,7 @@ impl PureFactContext {
                         if let Some(literal) = child.operand_view().literal() {
                             S::intern(
                                 format,
-                                MachineTerm::machine_unary(*op_format, *operator, literal),
+                                OldMachineTerm::machine_unary(*op_format, *operator, literal),
                             )
                         } else {
                             retain(KernelTerm::machine_unary_shared(
@@ -142,7 +142,7 @@ impl PureFactContext {
                             && let Some(bits) =
                                 facts.wide_constant_from_equalities_view(V::Shared(child))
                         {
-                            S::intern(format, MachineTerm::constant(bits as u32))
+                            S::intern(format, OldMachineTerm::constant(bits as u32))
                         } else {
                             let child = walk(facts, V::Shared(child), *source, memo);
                             let child = node(&child);
@@ -198,16 +198,16 @@ impl PureFactContext {
         };
         let bound = |format: MachineIntegerType, relation, n: i64| {
             let literal = if format == MachineIntegerType::Int64 {
-                MachineTerm::int64_constant(n)
+                OldMachineTerm::int64_constant(n)
             } else if format == MachineIntegerType::UInt64 {
-                MachineTerm::uint64_constant(n as u64)
+                OldMachineTerm::uint64_constant(n as u64)
             } else {
-                MachineTerm::constant(n as u32)
+                OldMachineTerm::constant(n as u32)
             };
             self.decide(&condition_for_operand_views(
                 format,
                 relation,
-                [V::Shared(&carrier), V::Legacy(&literal)],
+                [V::Shared(&carrier), V::Old(&literal)],
             )) == Some(true)
         };
         let format = if source_bits < 32 {
@@ -246,36 +246,36 @@ mod tests {
     #[test]
     fn shared_checking_simplification_matches_native_rules_and_sources() {
         let _session = crate::kernel::VerificationSession::enter();
-        let x = MachineTerm::Variable(Variable(1017101));
-        let y = MachineTerm::Variable(Variable(1017102));
-        let narrow = MachineTerm::machine_integer_cast(
+        let x = OldMachineTerm::Variable(Variable(1017101));
+        let y = OldMachineTerm::Variable(Variable(1017102));
+        let narrow = OldMachineTerm::machine_integer_cast(
             T::Int8,
             T::Int32,
-            MachineTerm::machine_integer_cast(T::Int32, T::Int8, x.clone()),
+            OldMachineTerm::machine_integer_cast(T::Int32, T::Int8, x.clone()),
         );
         let cases = vec![
-            MachineTerm::add(x.clone(), MachineTerm::constant(0)),
-            MachineTerm::add(x.clone(), y.clone()),
-            MachineTerm::multiply(
-                MachineTerm::add(x.clone(), MachineTerm::constant(2)),
+            OldMachineTerm::add(x.clone(), OldMachineTerm::constant(0)),
+            OldMachineTerm::add(x.clone(), y.clone()),
+            OldMachineTerm::multiply(
+                OldMachineTerm::add(x.clone(), OldMachineTerm::constant(2)),
                 y.clone(),
             ),
-            MachineTerm::machine_binary(T::UInt32, B::Divide, x.clone(), y.clone()),
-            MachineTerm::machine_binary(
+            OldMachineTerm::machine_binary(T::UInt32, B::Divide, x.clone(), y.clone()),
+            OldMachineTerm::machine_binary(
                 T::Int32,
                 B::ShiftLeft,
                 x.clone(),
-                MachineTerm::constant(1),
+                OldMachineTerm::constant(1),
             ),
-            MachineTerm::machine_unary(
+            OldMachineTerm::machine_unary(
                 T::Int32,
                 crate::kernel::MachineUnaryOp::BitwiseNot,
                 x.clone(),
             ),
             narrow,
-            MachineTerm::if_then_else(
-                ConditionTerm::equal(x.clone(), MachineTerm::constant(5)),
-                MachineTerm::add(x.clone(), MachineTerm::constant(1)),
+            OldMachineTerm::if_then_else(
+                ConditionTerm::equal(x.clone(), OldMachineTerm::constant(5)),
+                OldMachineTerm::add(x.clone(), OldMachineTerm::constant(1)),
                 y.clone(),
             ),
         ];
@@ -283,11 +283,11 @@ mod tests {
         let exact = empty
             .clone()
             .assume_condition(
-                ConditionTerm::equal(x.clone(), MachineTerm::constant(5)),
+                ConditionTerm::equal(x.clone(), OldMachineTerm::constant(5)),
                 true,
             )
             .assume_condition(
-                ConditionTerm::equal(y.clone(), MachineTerm::constant(3)),
+                ConditionTerm::equal(y.clone(), OldMachineTerm::constant(3)),
                 true,
             );
         let bounded = empty
@@ -295,16 +295,16 @@ mod tests {
             .assume_condition(
                 ConditionTerm::signed_greater_equal(
                     x.clone(),
-                    MachineTerm::constant((-128i32) as u32),
+                    OldMachineTerm::constant((-128i32) as u32),
                 ),
                 true,
             )
             .assume_condition(
-                ConditionTerm::signed_less_equal(x, MachineTerm::constant(127)),
+                ConditionTerm::signed_less_equal(x, OldMachineTerm::constant(127)),
                 true,
             );
         let compound = cases[1].clone();
-        let compound_fact = ConditionTerm::equal(compound, MachineTerm::constant(9));
+        let compound_fact = ConditionTerm::equal(compound, OldMachineTerm::constant(9));
         let compound_context = empty.clone().assume_condition(compound_fact, true);
         for facts in [empty, exact, bounded, compound_context] {
             for term in &cases {

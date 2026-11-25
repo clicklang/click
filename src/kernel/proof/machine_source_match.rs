@@ -13,7 +13,7 @@ enum Shape {
     Fold(Variable, Variable, [usize; 4]),
     Match(AlgebraicTerm, Vec<(String, Vec<AlgebraicValue>, usize)>),
     If(ConditionTerm, [usize; 2]),
-    Native(MachineTerm),
+    Native(OldMachineTerm),
     Application(std::sync::Arc<PureApplicationIdentity>),
     Binary(MachineIntegerType, MachineBinaryOp, [usize; 2]),
     Unary(MachineIntegerType, MachineUnaryOp, usize),
@@ -161,7 +161,7 @@ impl<'a> MachineSourceMatcher<'a> {
                     let value = term
                         .machine_conversion_leaf()
                         .expect("retained native machine leaf");
-                    if let MachineTerm::ClickFunctionApplication { name, arguments } = value {
+                    if let OldMachineTerm::ClickFunctionApplication { name, arguments } = value {
                         Shape::Application(SharedPureApplication::identity_for(name, arguments))
                     } else {
                         Shape::Native(value.clone())
@@ -193,10 +193,10 @@ mod tests {
         let format = MachineIntegerType::Int32;
         let var = Variable(1_006_610);
         let name = "checked_machine_source";
-        let native = MachineTerm::ClickFunctionApplication {
+        let native = OldMachineTerm::ClickFunctionApplication {
             name: name.into(),
             arguments: vec![PureFunctionArgument::Value(ProgramValue::Int32(
-                MachineTerm::Variable(var),
+                OldMachineTerm::Variable(var),
             ))],
         };
         let call = |argument_type, variable| {
@@ -212,7 +212,7 @@ mod tests {
         let matched = call(ProgramType::Int32, var);
         let other_variable = call(ProgramType::Int32, Variable(var.0 + 1));
         let other_type = call(ProgramType::UInt32, var);
-        let mut matcher = MachineSourceMatcher::new(MachineOperandView::Legacy(&native));
+        let mut matcher = MachineSourceMatcher::new(MachineOperandView::Old(&native));
         let exports = KernelTermExport::machine_export_count();
         for (root, expected) in [
             (&matched, true),
@@ -234,7 +234,7 @@ mod tests {
             ProgramType::Int32Pointer,
         );
         let values = [pointer.clone(), pointer].map(|pointer| {
-            MachineTerm::bool_cast(
+            OldMachineTerm::bool_cast(
                 MachineIntegerType::Int32,
                 ConditionTerm::BoolApplication(SharedPureApplication::intern(
                     "bool_source".into(),
@@ -248,7 +248,7 @@ mod tests {
             .unwrap();
         let exports = KernelTermExport::machine_export_count();
         assert_eq!(
-            MachineSourceMatcher::new(MachineOperandView::Legacy(&values[0]))
+            MachineSourceMatcher::new(MachineOperandView::Old(&values[0]))
                 .matches(MachineIntegerType::Int32, &root),
             Some(true)
         );
@@ -261,23 +261,23 @@ mod tests {
         let memory = intern_memory(SymbolicMemory::new().with_block("opaque-source", 16));
         let later = intern_memory(memory.memory().clone().with_block("later", 16));
         let pointer = SymbolicMemory::global_pointer("opaque-source");
-        let opaque = |memory: SharedMemory, name| MachineTerm::If {
+        let opaque = |memory: SharedMemory, name| OldMachineTerm::If {
             condition: ConditionTerm::Variable(Variable(name)).into(),
-            then_term: MachineTerm::read_named(
+            then_term: OldMachineTerm::read_named(
                 ProgramPoint::at(&memory),
                 pointer.clone(),
                 LoadKind::Int32,
             )
             .into(),
-            else_term: MachineTerm::Variable(Variable(1006600)).into(),
+            else_term: OldMachineTerm::Variable(Variable(1006600)).into(),
         };
         let from = opaque(memory.clone(), 1006601);
         for ty in [MachineIntegerType::Int32, MachineIntegerType::UInt64] {
-            let wrap = |v| MachineTerm::Cast {
+            let wrap = |v| OldMachineTerm::Cast {
                 spelling: MachineCastSpelling::Generic,
                 from: MachineIntegerType::Int32,
                 to: ty,
-                value: MachineTerm::add(v, MachineTerm::Variable(Variable(1006602))).into(),
+                value: OldMachineTerm::add(v, OldMachineTerm::Variable(Variable(1006602))).into(),
             };
             let source = wrap(from.clone());
             for (candidate, expected) in [
@@ -285,12 +285,10 @@ mod tests {
                 (wrap(opaque(later.clone(), 1006601)), false),
                 (wrap(opaque(memory.clone(), 1006603)), false),
             ] {
-                let root = KernelTerm::retained_machine_operand(
-                    ty,
-                    MachineOperandView::Legacy(&candidate),
-                );
+                let root =
+                    KernelTerm::retained_machine_operand(ty, MachineOperandView::Old(&candidate));
                 let exports = KernelTermExport::machine_export_count();
-                let mut matcher = MachineSourceMatcher::new(MachineOperandView::Legacy(&source));
+                let mut matcher = MachineSourceMatcher::new(MachineOperandView::Old(&source));
                 assert_eq!(matcher.matches(ty, &root), Some(expected));
                 assert_eq!(KernelTermExport::machine_export_count(), exports);
                 assert_eq!(KernelTermExport::machine(&root).unwrap(), candidate);
