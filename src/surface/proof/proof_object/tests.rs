@@ -6281,11 +6281,13 @@ fn fixed_state_transport_can_follow_another_checked_step() {
             .apply_step(known_have_step(extracted.clone()))
             .expect("the predecessor should advance the proof");
         let retained_refined = refined.clone();
-        let rejected = refined.driver().apply_step(ProofStep::TransportUsing {
-            source: source.clone(),
-            target: missing.clone(),
-            premises: Vec::new(),
-        });
+        let rejected = refined
+            .driver()
+            .apply_step(ProofStep::CompatibilityFactTransport {
+                source: source.clone(),
+                target: missing.clone(),
+                premises: Vec::new(),
+            });
         assert!(rejected.is_err());
         assert!(refined.state.shares_state_with(&retained_refined.state));
         if size == 16 {
@@ -6323,7 +6325,7 @@ fn fixed_state_transport_can_follow_another_checked_step() {
             assert!(refined.state.shares_state_with(&retained_refined.state));
         }
 
-        let transport = ProofStep::TransportUsing {
+        let transport = ProofStep::CompatibilityFactTransport {
             source: source.clone(),
             target: source.clone(),
             premises: Vec::new(),
@@ -10525,7 +10527,7 @@ fn execution_transport_forks_without_copying_unrelated_state() {
             &theorem_environment,
         );
         let retained_root = root.clone();
-        let step = ProofStep::TransportUsing {
+        let step = ProofStep::CompatibilityFactTransport {
             source: surface.clone(),
             target: surface.clone(),
             premises: vec![surface.clone()],
@@ -14642,7 +14644,7 @@ fn fixed_state_transport_retains_checked_spellings_for_rewrite() {
         );
         let transported = root
             .driver()
-            .apply_step(ProofStep::TransportUsing {
+            .apply_step(ProofStep::CompatibilityFactTransport {
                 source: surface.clone(),
                 target: surface.clone(),
                 premises: vec![surface.clone()],

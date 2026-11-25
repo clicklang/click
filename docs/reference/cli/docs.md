@@ -54,7 +54,7 @@ and its refusal points at `click docs tracing`. A control tactic such as `have` 
 entry, since its refusal comes from a tactic it contains.
 
 A smart form that elides an argument a simple form of the same tactic takes
-written, such as `transport(P, Q)` beside its `using` form, has a fourth meaning: a search fills
+written, such as an application with an elided argument, has a fourth meaning: a search fills
 the argument, and a refusal is a search miss. Its line reads:
 
 ```text

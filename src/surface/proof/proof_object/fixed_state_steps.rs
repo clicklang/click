@@ -3266,14 +3266,14 @@ impl<'a> Proof<'a> {
         })
     }
 
-    pub(super) fn apply_transport_using(
+    pub(super) fn apply_compatibility_fact_transport(
         &self,
         source: &SurfaceProposition,
         target: &SurfaceProposition,
         premises: &[SurfaceProposition],
     ) -> Result<CheckedFocusedTransition, ClickError> {
         match self.context.as_ref() {
-            ProofContext::FixedState(context) => self.apply_fixed_state_transport_using(
+            ProofContext::FixedState(context) => self.apply_fixed_state_fact_transport(
                 source,
                 target,
                 premises,
@@ -3285,7 +3285,7 @@ impl<'a> Proof<'a> {
                 let view = self
                     .outcome_fixed_state_view()
                     .expect("a focused outcome judgment resolves its fixed-state view");
-                self.apply_fixed_state_transport_using(source, target, premises, &view)
+                self.apply_fixed_state_fact_transport(source, target, premises, &view)
             }
             // A nested `have` at an execution frontier is a proposition
             // judgment borrowing that outcome's fixed-state environment. Keep
@@ -3297,13 +3297,13 @@ impl<'a> Proof<'a> {
                     .execution_proposition_fixed_state_view()
                     .ok_or_else(|| {
                         self.step_error(
-                            "`transport using` requires a fixed-state proposition proof",
+                            "transport frame check requires a fixed-state proposition proof",
                         )
                     })?;
-                self.apply_fixed_state_transport_using(source, target, premises, &view)
+                self.apply_fixed_state_fact_transport(source, target, premises, &view)
             }
             ProofContext::Execution(context) => {
-                self.apply_execution_transport_using(source, target, premises, context)
+                self.apply_execution_fact_transport(source, target, premises, context)
             }
             ProofContext::Pure(_) => {
                 Err(self.step_error("fact transport requires a recorded execution state"))
@@ -3370,7 +3370,7 @@ impl<'a> Proof<'a> {
                 (error.raw_summary(), "checked transport target")
             } else {
                 (
-                    "`transport using` requires an exact premise",
+                    "transport frame check requires an exact premise",
                     "required transport premise",
                 )
             };
@@ -3384,7 +3384,7 @@ impl<'a> Proof<'a> {
         }
     }
 
-    pub(super) fn apply_fixed_state_transport_using(
+    pub(super) fn apply_fixed_state_fact_transport(
         &self,
         source: &SurfaceProposition,
         target: &SurfaceProposition,
@@ -3403,7 +3403,7 @@ impl<'a> Proof<'a> {
                     .collect::<Result<Vec<_>, _>>()?,
             )
         };
-        let checked = check_fixed_state_fact_transport_using_facts(
+        let checked = check_fixed_state_fact_transport(
             &source,
             &target,
             &premises,
@@ -3495,7 +3495,7 @@ impl<'a> Proof<'a> {
         Ok(self.checked_fact_transition(locals, facts, complete, added_facts, checked_facts))
     }
 
-    pub(super) fn apply_execution_transport_using(
+    pub(super) fn apply_execution_fact_transport(
         &self,
         source: &SurfaceProposition,
         target: &SurfaceProposition,
@@ -3526,7 +3526,7 @@ impl<'a> Proof<'a> {
         let pre_state = context
             .old_reference_state(&execution.core.frontier, &execution.core.state)
             .clone();
-        let checked = check_fixed_state_fact_transport_using_facts(
+        let checked = check_fixed_state_fact_transport(
             &source,
             &target,
             &premises,

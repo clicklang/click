@@ -12340,17 +12340,10 @@ impl Parser {
                 self.expect(Token::Comma)?;
                 let target = self.parse_proposition()?;
                 self.expect(Token::RParen)?;
-                if self.peek_ident() != Some("using") {
-                    ProofTactic::Transport { source, target }
-                } else {
-                    let premises = self.parse_exact_premises()?;
-                    self.skip_redundant_semicolon();
-                    return Ok(ProofTactic::TransportUsing {
-                        source,
-                        target,
-                        premises,
-                    });
+                if self.peek_ident() == Some("using") {
+                    return Err(self.error("`transport ... using` is retired; use `have`, `preserve`, and `rewrite` for explicit frame proofs"));
                 }
+                ProofTactic::Transport { source, target }
             }
             "instantiate" => {
                 self.expect(Token::LParen)?;
@@ -19821,10 +19814,6 @@ mod tactic_classification_tests {
         ("contradiction-false", "contradiction();"),
         ("rewrite", "rewrite(x, 1);"),
         ("transport", "transport(x == 1, y == 1);"),
-        (
-            "transport-using",
-            "transport(x == 1, y == 1) using { x == y; };",
-        ),
         ("instantiate", "instantiate(F, 1);"),
         ("close-using", "close() using { x == 1; };"),
         ("check-termination-local", "check_termination_local(\"f\");"),

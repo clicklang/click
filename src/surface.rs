@@ -6343,11 +6343,6 @@ pub enum ProofTactic {
         source: SurfaceProposition,
         target: SurfaceProposition,
     },
-    TransportUsing {
-        source: SurfaceProposition,
-        target: SurfaceProposition,
-        premises: Vec<SurfaceProposition>,
-    },
     /// A legacy frame check with no ordinary Surface expansion.
     CompatibilityFactTransport {
         source: SurfaceProposition,
@@ -6780,11 +6775,6 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
         class: "smart",
     },
     PublicTacticForm {
-        id: "transport-using",
-        syntax: "transport(P, Q) using",
-        class: "simple",
-    },
-    PublicTacticForm {
         id: "instantiate",
         syntax: "instantiate(F, value, ...)",
         class: "simple",
@@ -6961,7 +6951,7 @@ impl ProofTactic {
             Self::Transport { .. } => {
                 TacticClass::Smart(SmartSite::Elided(ElidedArgument::FrameEvidence))
             }
-            Self::TransportUsing { .. } | Self::CompatibilityFactTransport { .. } => {
+            Self::CompatibilityFactTransport { .. } => {
                 TacticClass::Simple(SimpleTactic::FactTransport)
             }
             Self::Instantiate { .. } => TacticClass::Simple(SimpleTactic::Instantiate),

@@ -1637,7 +1637,6 @@ fn expand_declared_resource_tactic(
         | ProofTactic::Preserve(_)
         | ProofTactic::Rewrite(_)
         | ProofTactic::Transport { .. }
-        | ProofTactic::TransportUsing { .. }
         | ProofTactic::CompatibilityFactTransport { .. }
         | ProofTactic::SolveUsing(_)
         | ProofTactic::NormalizeUsing(_)) => {
@@ -1969,18 +1968,6 @@ fn expand_declared_resource_tactic_with_propositions(
         ProofTactic::Transport { source, target } => Ok(ProofTactic::Transport {
             source: expand_declared_resource_proposition(source, resource_definitions)?,
             target: expand_declared_resource_proposition(target, resource_definitions)?,
-        }),
-        ProofTactic::TransportUsing {
-            source,
-            target,
-            premises,
-        } => Ok(ProofTactic::TransportUsing {
-            source: expand_declared_resource_proposition(source, resource_definitions)?,
-            target: expand_declared_resource_proposition(target, resource_definitions)?,
-            premises: premises
-                .into_iter()
-                .map(|premise| expand_declared_resource_proposition(premise, resource_definitions))
-                .collect::<Result<Vec<_>, _>>()?,
         }),
         ProofTactic::CompatibilityFactTransport {
             source,

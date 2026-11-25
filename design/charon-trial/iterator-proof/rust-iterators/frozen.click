@@ -12,10 +12,7 @@ fn sum(bytes: &[u8]) -> i32 {
     step_until(region(9).entry);
     have 0 <= ((bytes.len() as uint32) as int32) by { close(); }
     have viewable(bytes[0..((bytes.len() as uint32) as int32)]) by {
-        transport(at(function.entry, viewable(bytes[0..((bytes.len() as uint32) as int32)])), viewable(bytes[0..((bytes.len() as uint32) as int32)])) using {
-            at(function.entry, viewable(bytes[0..((bytes.len() as uint32) as int32)]));
-            0 <= ((bytes.len() as uint32) as int32);
-        }
+        transport(at(function.entry, viewable(bytes[0..((bytes.len() as uint32) as int32)])), viewable(bytes[0..((bytes.len() as uint32) as int32)]));
     }
     have prefix(bytes, (((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining)) == 0 by {
         unfold(prefix(bytes, (((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining))); close();
@@ -113,19 +110,10 @@ fn sum(bytes: &[u8]) -> i32 {
                 apply(integer::int32_nonnegative_subtract_within_value_is_defined(((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining, 1)); close();
             }
             have viewable(bytes[0..((bytes.len() as uint32) as int32)]) by {
-                transport(at(region(10).entry, viewable(bytes[0..((bytes.len() as uint32) as int32)])), viewable(bytes[0..((bytes.len() as uint32) as int32)])) using {
-                    at(region(10).entry, viewable(bytes[0..((bytes.len() as uint32) as int32)]));
-                    0 <= ((bytes.len() as uint32) as int32);
-                }
+                transport(at(region(10).entry, viewable(bytes[0..((bytes.len() as uint32) as int32)])), viewable(bytes[0..((bytes.len() as uint32) as int32)]));
             }
             have defined(bytes[(((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1)]) by {
-                transport(viewable(bytes[0..((bytes.len() as uint32) as int32)]), defined(bytes[(((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1)])) using {
-                    viewable(bytes[0..((bytes.len() as uint32) as int32)]);
-                    defined(((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1);
-                    0 <= ((bytes.len() as uint32) as int32);
-                    0 <= (((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1);
-                    (((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1) < ((bytes.len() as uint32) as int32);
-                }
+                transport(viewable(bytes[0..((bytes.len() as uint32) as int32)]), defined(bytes[(((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1)]));
             }
             have 0 <= to_integer((bytes[(((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1)] as int32)) by {
                 apply(integer::int32_less_equal_to_integer(0, (bytes[(((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1)] as int32)));
@@ -293,10 +281,7 @@ fn sum(bytes: &[u8]) -> i32 {
             }
             step();
             have viewable(bytes[0..((bytes.len() as uint32) as int32)]) by {
-                transport(at(region(23).entry, viewable(bytes[0..((bytes.len() as uint32) as int32)])), viewable(bytes[0..((bytes.len() as uint32) as int32)])) using {
-                    at(region(23).entry, viewable(bytes[0..((bytes.len() as uint32) as int32)]));
-                    0 <= ((bytes.len() as uint32) as int32);
-                }
+                transport(at(region(23).entry, viewable(bytes[0..((bytes.len() as uint32) as int32)])), viewable(bytes[0..((bytes.len() as uint32) as int32)]));
             }
         }
     }

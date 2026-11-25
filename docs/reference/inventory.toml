@@ -1557,9 +1557,6 @@ path = "reference/tactics/index.md#proposition-reasoning"
 id = "tactic-form.transport"
 path = "reference/tactics/index.md#resources-and-transport"
 [[item]]
-id = "tactic-form.transport-using"
-path = "reference/tactics/index.md#resources-and-transport"
-[[item]]
 id = "tactic-form.instantiate"
 path = "reference/tactics/index.md#proposition-reasoning"
 [[item]]

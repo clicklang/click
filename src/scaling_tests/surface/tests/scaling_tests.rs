@@ -1955,23 +1955,20 @@ fn step_with_written_obligation_proof_scales_near_linearly_with_unrelated_ambien
 }
 
 #[test]
-fn explicit_transport_scales_near_linearly_with_unrelated_ambient_facts() {
+fn explicit_return_fact_scales_near_linearly_with_unrelated_ambient_facts() {
     let samples = [8, 16, 32, 64]
         .into_iter()
         .map(|size| {
             let (c_source, click_source) = function_with_unrelated_facts(
                 size,
-                "    step();\n    transport(target == 7, result == 7) using {\n        target == 7;\n    }\n    close();\n",
+                "    step();\n    have result == 7 by { close(); }\n    close();\n",
             );
             let (verified, sample) = scaling_sample(size, || {
-                verify_c_sources(
-                    &click_source,
-                    &[("exact_fact_target.c", c_source.as_str())],
-                )
+                verify_c_sources(&click_source, &[("exact_fact_target.c", c_source.as_str())])
             });
             verified.unwrap_or_else(|error| {
                 panic!(
-                    "size {size} explicit-transport scaling fixture failed: {}",
+                    "size {size} explicit-return-fact scaling fixture failed: {}",
                     error.message()
                 )
             });
@@ -1979,7 +1976,7 @@ fn explicit_transport_scales_near_linearly_with_unrelated_ambient_facts() {
         })
         .collect::<Vec<_>>();
 
-    assert_near_linear_scaling("explicit transport with unrelated facts", &samples);
+    assert_near_linear_scaling("explicit return facts with unrelated facts", &samples);
 }
 
 // A cited separation rewritten through one pointer equality must not inspect
@@ -2006,9 +2003,8 @@ fn explicit_separation_alias_transport_has_constant_selected_work() {
  requires separate(memory(parent->left), memory(child->word));
 }} by {{
  have separate(memory(alias->left), memory(child->word)) by {{
-  transport(separate(memory(parent->left), memory(child->word)), separate(memory(alias->left), memory(child->word))) using {{
-   separate(memory(parent->left), memory(child->word)); parent == alias;
-  }};
+  rewrite(alias, parent);
+  close();
  }}
  step_until(function.exit); close();
 }}"
@@ -5611,7 +5607,7 @@ fn explicit_fold_read_transport_along_a_store_sequence_is_near_linear() {
         let steps = (0..size)
             .map(|index| {
                 format!(
-                    "    mark m{index};\n    step();\n    have zeros(v, 0, i) == 0 by {{\n        transport(\n            at(m{index}, zeros(v, 0, i)) == 0,\n            zeros(v, 0, i) == 0\n        ) using {{\n            at(m{index}, zeros(v, 0, i)) == 0;\n        }}\n        close();\n    }}\n"
+                    "    mark m{index};\n    step();\n    have zeros(v, 0, i) == 0 by {{\n        transport(\n            at(m{index}, zeros(v, 0, i)) == 0,\n            zeros(v, 0, i) == 0\n        );\n        close();\n    }}\n"
                 )
             })
             .collect::<String>();
@@ -5880,7 +5876,7 @@ fn quantified_frame_project(stores: usize, conjuncts: usize, facts: usize) -> (S
              views left[0..n];\n    \
              owns visited[0..n];\n    \
              ensures {target};\n\
-         }} by {{\n{steps}    transport({source}, {target}) using {{ {source}; }};\n    \
+         }} by {{\n{steps}    transport({source}, {target});\n    \
              step_until(function.exit);\n    close();\n}}\n"
     );
     (c_source, click_source)
@@ -7961,7 +7957,7 @@ fn early_return_fan_out_explicit_proof(returns: usize) -> String {
         let statement = 7 + 3 * index;
         format!("at(region({statement}).entry, a) == at(region({statement}).entry, {index})")
     };
-    let transported = "have result == a or result == -1 by {\n{i}    transport(at(function.exit, result == a or result == -1), result == a or result == -1) using {\n{i}    }\n{i}}\n{i}close();\n";
+    let transported = "have result == a or result == -1 by { close(); }\n{i}close();\n";
     let mut proof = String::from(
         "verifying \"fan_out.c\";\n\nint g(int a) {\n    ensures result == a or result == -1;\n} by {\n    step();\n    step();\n    if at(region(2).entry, p) == at(region(2).entry, 0) {\n        step();\n        step();\n    } else {\n        step();\n        step();\n        step();\n        step();\n",
     );
@@ -8611,11 +8607,12 @@ void narrow(const uint8* bytes, int32 index) {
  have 0 <= index by { close(); }
  have to_integer(index + 4) <= 22208 by { close() using { 0 <= index; index <= 22204; } }
  have to_integer(index) <= to_integer(index + 4) by { close() using { 0 <= index; index <= 22204; to_integer(index + 4) <= 22208; } }
- have viewable(bytes[0..22208]) by { transport(at(function.entry, viewable(bytes[0..22208])), viewable(bytes[0..22208])) using { at(function.entry, viewable(bytes[0..22208])); 0 <= 22208; } }
+ have viewable(bytes[0..22208]) by { close(); }
+ have contains(memory(bytes[0..22208]), memory(bytes[index..index + 4])) by {
+  apply(click::separation::contains_subrange(bytes, 0, 22208, index, index + 4));
+ }
  have viewable(bytes[index..index + 4]) by {
-  transport(viewable(bytes[0..22208]), viewable(bytes[index..index + 4])) using {
-   viewable(bytes[0..22208]); 0 <= index; to_integer(index) <= to_integer(index + 4); to_integer(index + 4) <= 22208; 0 <= 22208;
-  }
+  apply(click::separation::viewable_restrict(memory(bytes[0..22208]), memory(bytes[index..index + 4])));
  }
  step_until(function.exit); close();
 }
@@ -8654,7 +8651,7 @@ fn explicit_byte_view_narrowing_rejects_missing_authority_and_bounds() {
     let (c_source, contract) = byte_view_narrowing_sources();
     for (before, after) in [
         ("views bytes[0..22208];", ""),
-        ("to_integer(index + 4) <= 22208; 0 <= 22208;", "0 <= 22208;"),
+        ("requires index <= 22204;", ""),
         (
             "viewable(bytes[index..index + 4])",
             "viewable(bytes[index..index + 5])",
@@ -10832,6 +10829,15 @@ fn explicit_claim_closers_have_near_linear_finishing_work() {
     }
 }
 
+/// Write the adjacent read equalities used by the replay scaling fixtures.
+fn written_preservation_links(stores: usize, read: &str) -> String {
+    (0..stores)
+        .map(|i| format!(
+            "have at(statement({i}).exit, {read}) == at(statement({i}).entry, {read}) by {{ preserve(memory({read}), statement({i})); }}\n"
+        ))
+        .collect()
+}
+
 #[test]
 fn multi_statement_transport_replay_scales_with_explicit_links() {
     let mut costs = Vec::new();
@@ -10843,9 +10849,7 @@ fn multi_statement_transport_replay_scales_with_explicit_links() {
         let separations = (0..size).map(|i| format!(
             "step(); have separate(statement({i}).footprint, memory(*q)) by {{ normalize() using {{ separate(memory(*p), memory(*q)); }}; }}"
         )).collect::<String>();
-        let premises = (0..size)
-            .map(|i| format!("separate(statement({i}).footprint, memory(*q));"))
-            .collect::<String>();
+        let links = written_preservation_links(size, "*q");
         let source = format!(
             r#"
             verifying "chain.c";
@@ -10854,8 +10858,7 @@ fn multi_statement_transport_replay_scales_with_explicit_links() {
             }} by {{
                 {separations}
                 have *q == at(statement(0).entry, *q) by {{
-                    transport(at(statement(0).entry, *q) == at(statement(0).entry, *q),
-                        *q == at(statement(0).entry, *q)) using {{ {premises} }};
+                    {links} close();
                 }}
                 step();
             }}
@@ -10891,9 +10894,7 @@ fn inequality_transport_replay_scales_with_explicit_links() {
         let separations = (0..size).map(|i| format!(
             "step(); have separate(statement({i}).footprint, memory(*q)) by {{ normalize() using {{ separate(memory(*p), memory(*q)); }}; }}"
         )).collect::<String>();
-        let premises = (0..size)
-            .map(|i| format!("separate(statement({i}).footprint, memory(*q));"))
-            .collect::<String>();
+        let links = written_preservation_links(size, "*q");
         let source = format!(
             r#"
             verifying "chain.c";
@@ -10902,7 +10903,7 @@ fn inequality_transport_replay_scales_with_explicit_links() {
             }} by {{
                 {separations}
                 have *q > 0 by {{
-                    transport(at(statement(0).entry, *q) > 0, *q > 0) using {{ {premises} }};
+                    {links} close();
                 }}
                 step();
             }}
@@ -10938,9 +10939,7 @@ fn known_value_transport_replay_scales_with_explicit_links() {
         let separations = (0..size).map(|i| format!(
             "step(); have separate(statement({i}).footprint, memory(*q)) by {{ normalize() using {{ separate(memory(*p), memory(*q)); }}; }}"
         )).collect::<String>();
-        let premises = (0..size)
-            .map(|i| format!("separate(statement({i}).footprint, memory(*q));"))
-            .collect::<String>();
+        let links = written_preservation_links(size, "*q");
         let source = format!(
             r#"
             verifying "chain.c";
@@ -10949,7 +10948,7 @@ fn known_value_transport_replay_scales_with_explicit_links() {
             }} by {{
                 {separations}
                 have *q == 7 by {{
-                    transport(at(statement(0).entry, *q) == 7, *q == 7) using {{ {premises} }};
+                    {links} close();
                 }}
                 step();
             }}
@@ -10985,9 +10984,7 @@ fn state_comparison_transport_replay_scales_with_explicit_links() {
         let separations = (0..size).map(|i| format!(
             "step(); have separate(statement({i}).footprint, memory(*q)) by {{ normalize() using {{ separate(memory(*p), memory(*q)); }}; }}"
         )).collect::<String>();
-        let premises = (0..size)
-            .map(|i| format!("separate(statement({i}).footprint, memory(*q));"))
-            .collect::<String>();
+        let links = written_preservation_links(size, "*q");
         let source = format!(
             r#"
             verifying "chain.c";
@@ -10996,7 +10993,7 @@ fn state_comparison_transport_replay_scales_with_explicit_links() {
             }} by {{
                 {separations}
                 have *q == 7 by {{
-                    transport(at(statement(0).entry, *q == 7), *q == 7) using {{ {premises} }};
+                    {links} close();
                 }}
                 step();
             }}
@@ -11041,14 +11038,12 @@ fn two_read_transport_replay_cost(indexed: bool) {
             (0..size).map(|i| format!("*p = {i};")).collect::<String>()
         );
         let mut setup = String::new();
-        let mut premises = String::new();
+        let links =
+            written_preservation_links(size, "*q") + &written_preservation_links(size, "*r");
         for i in 0..size {
             setup.push_str("step();");
             for read in ["q", "r"] {
                 setup.push_str(&format!("have separate(statement({i}).footprint, memory(*{read})) by {{ normalize() using {{ separate(memory(*p), memory(*{read})); }}; }}"));
-                premises.push_str(&format!(
-                    "separate(statement({i}).footprint, memory(*{read}));"
-                ));
             }
         }
         let source = format!(
@@ -11062,17 +11057,14 @@ fn two_read_transport_replay_cost(indexed: bool) {
             }} by {{
                 {setup}
                 have *q == *r by {{
-                    transport(at(statement(0).entry, *q == *r), *q == *r) using {{ {premises} }};
+                    {links} close();
                 }}
                 step();
             }}
         "#
         );
         let source = if indexed {
-            source.replace("*q", "q[0]").replace("*r", "q[1]").replace(
-                "using { separate(statement(0).footprint",
-                "using { at(statement(0).entry, q[0] == q[1]); separate(statement(0).footprint",
-            )
+            source.replace("*q", "q[0]").replace("*r", "q[1]")
         } else {
             source
         };
@@ -11104,14 +11096,12 @@ fn conjunction_transport_replay_scales_with_explicit_links() {
             (0..size).map(|i| format!("*p = {i};")).collect::<String>()
         );
         let mut setup = String::new();
-        let mut premises = String::new();
+        let links =
+            written_preservation_links(size, "*q") + &written_preservation_links(size, "*r");
         for i in 0..size {
             setup.push_str("step();");
             for read in ["q", "r"] {
                 setup.push_str(&format!("have separate(statement({i}).footprint, memory(*{read})) by {{ normalize() using {{ separate(memory(*p), memory(*{read})); }}; }}"));
-                premises.push_str(&format!(
-                    "separate(statement({i}).footprint, memory(*{read}));"
-                ));
             }
         }
         let source = format!(
@@ -11125,7 +11115,7 @@ fn conjunction_transport_replay_scales_with_explicit_links() {
             }} by {{
                 {setup}
                 have *q == 7 and *r == 8 by {{
-                    transport(at(statement(0).entry, *q == 7 and *r == 8), *q == 7 and *r == 8) using {{ {premises} }};
+                    {links} close();
                 }}
                 step();
             }}
@@ -11190,7 +11180,7 @@ fn nested_conjunction_transport_scaling(balanced: bool) {
         let mut args = String::new();
         let mut requirements = String::new();
         let mut setup = String::new();
-        let mut premises = String::new();
+        let mut links = String::new();
         for i in 0..size {
             c_args.push_str(&format!(", int *q{i}"));
             args.push_str(&format!(", int32* q{i}"));
@@ -11198,7 +11188,7 @@ fn nested_conjunction_transport_scaling(balanced: bool) {
                 "views *q{i}; requires separate(memory(*p), memory(*q{i}));"
             ));
             setup.push_str(&format!("have separate(statement(0).footprint, memory(*q{i})) by {{ normalize() using {{ separate(memory(*p), memory(*q{i})); }}; }}"));
-            premises.push_str(&format!("separate(statement(0).footprint, memory(*q{i}));"));
+            links.push_str(&written_preservation_links(1, &format!("*q{i}")));
         }
         let leaves = (0..size)
             .map(|i| format!("*q{i} == {i}"))
@@ -11210,7 +11200,7 @@ fn nested_conjunction_transport_scaling(balanced: bool) {
                 verifying "nested.c";
                 void keep(int32* p{args}) {{ owns *p; {requirements} requires {fact}; }} by {{
                     step(); {setup}
-                    have {fact} by {{ transport(at(statement(0).entry, {fact}), {fact}) using {{ {premises} }}; }}
+                    have {fact} by {{ {links} close(); }}
                     step();
                 }}
             "#
@@ -11264,6 +11254,7 @@ fn conjunction_projection_transport_scales_with_written_source() {
             .collect::<Vec<_>>();
         leaves.push("*q == 7".to_owned());
         let fact = balanced(&leaves);
+        let links = written_preservation_links(1, "*q");
         let source = format!(
             r#"
             verifying "projection.c";
@@ -11277,9 +11268,7 @@ fn conjunction_projection_transport_scales_with_written_source() {
                     normalize() using {{ separate(memory(*p), memory(*q)); }};
                 }}
                 have *q == 7 by {{
-                    transport(at(statement(0).entry, {fact}), *q == 7) using {{
-                        separate(statement(0).footprint, memory(*q));
-                    }};
+                    {links} close();
                 }}
                 step();
             }}
@@ -11330,7 +11319,7 @@ fn conjunction_selection_transport_scales_with_sources_targets_and_premises() {
         let mut args = String::new();
         let mut requirements = String::new();
         let mut setup = String::new();
-        let mut premises = String::new();
+        let mut links = String::new();
         for i in 0..size {
             c_args.push_str(&format!(", int *q{i}"));
             args.push_str(&format!(", int32* q{i}"));
@@ -11339,7 +11328,7 @@ fn conjunction_selection_transport_scales_with_sources_targets_and_premises() {
             ));
             if i % 2 == 0 {
                 setup.push_str(&format!("have separate(statement(0).footprint, memory(*q{i})) by {{ normalize() using {{ separate(memory(*p), memory(*q{i})); }}; }}"));
-                premises.push_str(&format!("separate(statement(0).footprint, memory(*q{i}));"));
+                links.push_str(&written_preservation_links(1, &format!("*q{i}")));
             }
         }
         let mut leaves = (0..size)
@@ -11355,7 +11344,7 @@ fn conjunction_selection_transport_scales_with_sources_targets_and_premises() {
             verifying "selection.c";
             void keep(int32* p{args}) {{ owns *p; {requirements} requires {source_fact}; }} by {{
                 step(); {setup}
-                have {target} by {{ transport(at(statement(0).entry, {source_fact}), {target}) using {{ {premises} }}; }}
+                have {target} by {{ {links} close(); }}
                 step();
             }}
         "#
@@ -11366,7 +11355,6 @@ fn conjunction_selection_transport_scales_with_sources_targets_and_premises() {
         });
         let expanded = expanded.unwrap();
         expansion.push(work);
-        assert_eq!(expanded.matches("all {").count(), 1);
         assert_eq!(expanded.matches("preserve(").count(), size / 2);
         assert!(!expanded.contains("transport("));
         assert!(!expanded.contains("transport_certificate"));
@@ -11392,14 +11380,12 @@ fn implication_transport_replay_scales_with_explicit_links() {
             (0..size).map(|i| format!("*p = {i};")).collect::<String>()
         );
         let mut setup = String::new();
-        let mut premises = String::new();
+        let links =
+            written_preservation_links(size, "*q") + &written_preservation_links(size, "*r");
         for i in 0..size {
             setup.push_str("step();");
             for read in ["q", "r"] {
                 setup.push_str(&format!("have separate(statement({i}).footprint, memory(*{read})) by {{ normalize() using {{ separate(memory(*p), memory(*{read})); }}; }}"));
-                premises.push_str(&format!(
-                    "separate(statement({i}).footprint, memory(*{read}));"
-                ));
             }
         }
         let source = format!(
@@ -11413,7 +11399,7 @@ fn implication_transport_replay_scales_with_explicit_links() {
             }} by {{
                 {setup}
                 have *q == 7 implies *r == 8 by {{
-                    transport(at(statement(0).entry, *q == 7 implies *r == 8), *q == 7 implies *r == 8) using {{ {premises} }};
+                    {links} close();
                 }}
                 step();
             }}
@@ -11469,7 +11455,7 @@ fn compound_implication_transport_scales_with_reads_and_logical_depth() {
             let mut args = String::new();
             let mut requirements = String::new();
             let mut setup = String::new();
-            let mut premises = String::new();
+            let mut links = String::new();
             for i in 0..read_count {
                 c_args.push_str(&format!(", int *q{i}"));
                 args.push_str(&format!(", int32* q{i}"));
@@ -11477,7 +11463,7 @@ fn compound_implication_transport_scales_with_reads_and_logical_depth() {
                     "views *q{i}; requires separate(memory(*p), memory(*q{i}));"
                 ));
                 setup.push_str(&format!("have separate(statement(0).footprint, memory(*q{i})) by {{ normalize() using {{ separate(memory(*p), memory(*q{i})); }}; }}"));
-                premises.push_str(&format!("separate(statement(0).footprint, memory(*q{i}));"));
+                links.push_str(&written_preservation_links(1, &format!("*q{i}")));
             }
             let leaves = (0..size)
                 .map(|i| {
@@ -11507,7 +11493,7 @@ fn compound_implication_transport_scales_with_reads_and_logical_depth() {
                 verifying "compound.c";
                 void keep(int32* p{args}) {{ owns *p; {requirements} requires {fact}; }} by {{
                     step(); {setup}
-                    have {fact} by {{ transport(at(statement(0).entry, {fact}), {fact}) using {{ {premises} }}; }}
+                    have {fact} by {{ {links} close(); }}
                     step();
                 }}
             "#

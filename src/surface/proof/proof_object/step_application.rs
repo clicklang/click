@@ -341,7 +341,6 @@ fn chosen_step_text(step: &ProofStep) -> Option<String> {
         step,
         ProofStep::ApplyTheoremUsing { .. }
             | ProofStep::ApplyPlannedTheorem { .. }
-            | ProofStep::TransportUsing { .. }
             | ProofStep::CompatibilityFactTransport { .. }
     ) {
         return None;

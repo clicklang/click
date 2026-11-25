@@ -98,9 +98,7 @@ explanation.
 
 Before splitting a link, identify the inference that should justify it. A
 single proof step has specified premises, a specified conclusion, and a
-checked rule connecting them. Counting tactic calls is insufficient: one
-`transport ... using` can still hide a history walk. Conversely, an explicit
-certificate may contain several primitive steps.
+checked rule connecting them. A certificate may contain several primitive steps.
 
 Use this map to find the applicable rule, then read its full **Accepts** list
 and checked examples. The linked tactic reference is the catalog of supported
@@ -116,7 +114,7 @@ that every current implementation meets the checking-cost contract.
 | Apply a mathematical or separation law | [Theorem application](../reference/tactics/index.md#theorem-application), [library laws](../reference/library/index.md) | The named theorem, typed arguments, and each instantiated requirement |
 | Establish arithmetic | [Ordinary arithmetic proofs](../reference/tactics/index.md#ordinary-arithmetic-proofs) | Named laws, cited premises, and explicit intermediate facts |
 | Execute one program statement | [Single statements](../reference/tactics/index.md#single-statements), [one statement obligation](../reference/tactics/index.md#one-statement-obligation) | The statement, its preconditions, and resulting state/effect |
-| Preserve a fact across a state transition | [Preservation](../reference/tactics/index.md#preservation), [Transport with selected premises](../reference/tactics/index.md#transport-with-selected-premises) | The source fact, before/after states, checked effect, and separation or other frame premises |
+| Preserve a fact across a state transition | [Preservation](../reference/tactics/index.md#preservation) | The source fact, before/after states, checked effect, and separation or other frame premises |
 | Establish current live storage | [Observing resources](../reference/tactics/index.md#observing-resources) | One exact held memory range, named by `observe(p[lo..hi])`; this establishes liveness, not initialization or a stored value |
 | Manipulate ownership or open a resource definition | [Scoped resource opening](../reference/tactics/index.md#scoped-resource-opening), [tactic reference](../reference/tactics/index.md) | The selected resource instance, its definition, and required ownership quantities |
 

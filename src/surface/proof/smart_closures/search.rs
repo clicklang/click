@@ -8171,7 +8171,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// mid-execution, such as loop-invariant initialization and preservation.
     /// The candidate space is the execution's
     /// recorded-state index, not the ambient fact set; every accepted source
-    /// and target is checked by `TransportUsing` on this immutable Proof.
+    /// and target is checked against this immutable proof.
     pub(in crate::surface::proof) fn try_state_transport_closure(
         search_input: &Proof<'a>,
         surface_goal: &SurfaceProposition,

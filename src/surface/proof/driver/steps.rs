@@ -169,23 +169,10 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             )));
         }
 
-        if matches!(step, ProofStep::TransportUsing { .. })
-            && matches!(driver_proof.context.as_ref(), ProofContext::Pure(_))
-        {
-            return Err(driver_proof.step_error(
-                "`transport ... using` is retired in pure proofs; state intermediate facts with `have` and use `rewrite` or `close() using`",
-            ));
-        }
-
         // One explicitly selected statement can produce its read equality
         // directly. A later landing state belongs to history planning,
         // not to this ordinary preserve operation.
-        if let ProofStep::TransportUsing {
-            source,
-            target,
-            premises,
-        }
-        | ProofStep::CompatibilityFactTransport {
+        if let ProofStep::CompatibilityFactTransport {
             source,
             target,
             premises,
@@ -211,12 +198,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
 
         // Each cited footprint contributes one ordinary read equality. The
         // equality graph connects their named endpoints without a history walk.
-        if let ProofStep::TransportUsing {
-            source,
-            target,
-            premises,
-        }
-        | ProofStep::CompatibilityFactTransport {
+        if let ProofStep::CompatibilityFactTransport {
             source,
             target,
             premises,
@@ -232,12 +214,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
 
         // Retain the ordinary derivation, rather than an opaque transport
         // node, when the written inputs identify a viewability restriction.
-        if let ProofStep::TransportUsing {
-            source,
-            target,
-            premises,
-        }
-        | ProofStep::CompatibilityFactTransport {
+        if let ProofStep::CompatibilityFactTransport {
             source,
             target,
             premises,
@@ -278,12 +255,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         // A known target needs no transport rule. Keep an ordinary lookup in
         // the certificate, including when transport merely adds an auxiliary
         // fact rather than closing the currently focused proposition.
-        if let ProofStep::TransportUsing {
-            source,
-            target,
-            premises,
-        }
-        | ProofStep::CompatibilityFactTransport {
+        if let ProofStep::CompatibilityFactTransport {
             source,
             target,
             premises,
@@ -578,16 +550,11 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             {
                 Err(driver_proof.step_error("verification-only fact transport cannot replay"))
             }
-            ProofStep::TransportUsing {
+            ProofStep::CompatibilityFactTransport {
                 source,
                 target,
                 premises,
-            }
-            | ProofStep::CompatibilityFactTransport {
-                source,
-                target,
-                premises,
-            } => driver_proof.apply_transport_using(source, target, premises),
+            } => driver_proof.apply_compatibility_fact_transport(source, target, premises),
             ProofStep::UnfoldProposition(target) => {
                 driver_proof.apply_local_predicate_unfold(target)
             }
@@ -636,9 +603,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         // boundary and accidentally make a later citation look current.
         if matches!(
             step,
-            ProofStep::Rewrite(_)
-                | ProofStep::TransportUsing { .. }
-                | ProofStep::CompatibilityFactTransport { .. }
+            ProofStep::Rewrite(_) | ProofStep::CompatibilityFactTransport { .. }
         ) {
             transition.clear_existential_projection();
         }
@@ -666,7 +631,6 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 | ProofStep::ApplyTheorem(_)
                 | ProofStep::ApplyTheoremUsing { .. }
                 | ProofStep::ApplyPlannedTheorem { .. }
-                | ProofStep::TransportUsing { .. }
                 | ProofStep::CompatibilityFactTransport { .. }
                 | ProofStep::LetSatisfy(_)
         ) {
@@ -827,10 +791,9 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         proof: &ProofCertificate,
     ) -> Result<Proof<'a>, ClickError> {
         let driver_proof = self.proof;
-        let observe_goal = !matches!(proof.steps(), [ProofStep::TransportUsing { .. }]);
         let mut scope = driver_proof
             .driver()
-            .open_have_with_goal_observations(proposition.clone(), observe_goal)?;
+            .open_have_with_goal_observations(proposition.clone(), true)?;
         for step in proof.steps() {
             scope = scope.driver().apply_step(step.clone())?;
         }
