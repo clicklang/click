@@ -1,4 +1,4 @@
-# Machine bridges normalize with explicit Integer bounds
+# Machine bridges use explicit Integer bounds
 
 A machine operation or cast is related to its exact Integer value using the
 two stated bounds on that value. A product bound names both operands' ranges.
