@@ -84,6 +84,7 @@ impl SourceContext {
                     | ProofTactic::ReleaseView(_)
                     | ProofTactic::ObserveResource(_)
                     | ProofTactic::Iterated(_)
+                    | ProofTactic::Instantiate { .. }
                     | ProofTactic::ApplyFactUsing { .. }
                     | ProofTactic::ApplyTheoremUsing { .. }
             ),
