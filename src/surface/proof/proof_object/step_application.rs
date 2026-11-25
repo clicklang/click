@@ -339,9 +339,7 @@ fn unsigned_order_names_a_variable(goal: &crate::kernel::Proposition) -> bool {
 fn chosen_step_text(step: &ProofStep) -> Option<String> {
     if !matches!(
         step,
-        ProofStep::ApplyTheoremUsing { .. }
-            | ProofStep::ApplyPlannedTheorem { .. }
-            | ProofStep::CompatibilityFactTransport { .. }
+        ProofStep::ApplyTheoremUsing { .. } | ProofStep::ApplyPlannedTheorem { .. }
     ) {
         return None;
     }

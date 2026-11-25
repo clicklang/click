@@ -3965,7 +3965,6 @@ fn proof_step_source_name(step: &ProofStep) -> &'static str {
         | ProofStep::ApplyPlannedTheorem { .. } => "apply",
         ProofStep::ApplyInduction { .. } => "apply",
         ProofStep::Induct { .. } => "induct",
-        ProofStep::CompatibilityFactTransport { .. } => "verification-only fact transport",
         ProofStep::Instantiate { .. } => "instantiate",
         ProofStep::Have { .. } => "have",
         ProofStep::Open { .. } => "with",

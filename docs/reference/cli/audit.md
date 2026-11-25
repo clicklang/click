@@ -158,8 +158,8 @@ fails the audit; one with smart sites is reported by its session.
 A wholly selected claim is expanded once with all its smart sites. The
 rewrite must pass retained and cold verification.
 Cold replay disables proof search inside the selected claim and its nested
-proofs. It also rejects monitored discovery, including ambient search,
-proposition search, and legacy fact transport. Neighboring claims and modeled
+proofs. It also rejects monitored discovery, including ambient and
+proposition search. Neighboring claims and modeled
 workers keep their ordinary verification policy. A selected claim that cold
 replay did not visit fails the audit.
 

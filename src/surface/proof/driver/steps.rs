@@ -169,113 +169,6 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             )));
         }
 
-        // One explicitly selected statement can produce its read equality
-        // directly. A later landing state belongs to history planning,
-        // not to this ordinary preserve operation.
-        if let ProofStep::CompatibilityFactTransport {
-            source,
-            target,
-            premises,
-        } = &step
-            && driver_proof.surface_goal() == Some(target)
-            && let Some(separation) =
-                single_statement_preservation_premise(source, target, premises)
-            && let Some(execution) = driver_proof.execution()
-        {
-            let fact = driver_proof
-                .lower_surface_proposition_direct(&separation, "transport separation")?;
-            if let Proposition::ResourceSeparate { left, .. } = fact
-                && let crate::kernel::Resource::Footprint(footprint) = left.as_ref()
-                && crate::kernel::MemoryStateIdentity::of(&footprint.after)
-                    == crate::kernel::MemoryStateIdentity::of(execution.core.state.memory())
-                && footprint
-                    .after_resources
-                    .shares_storage_with(execution.core.state.resources())
-            {
-                return self.apply_step(ProofStep::Preserve(separation));
-            }
-        }
-
-        // Each cited footprint contributes one ordinary read equality. The
-        // equality graph connects their named endpoints without a history walk.
-        if let ProofStep::CompatibilityFactTransport {
-            source,
-            target,
-            premises,
-        } = &step
-            && let Some(steps) = statement_preservation_steps(source, target, premises)
-                .or_else(|| comparison_preservation_steps(source, target, premises))
-                .or_else(|| implication_preservation_steps(source, target, premises))
-                .or_else(|| conjunction_preservation_steps(source, target, premises))
-                .or_else(|| conjunction_projection_preservation_steps(source, target, premises))
-        {
-            return self.apply_ordinary_transport_steps(target, steps);
-        }
-
-        // Retain the ordinary derivation, rather than an opaque transport
-        // node, when the written inputs identify a viewability restriction.
-        if let ProofStep::CompatibilityFactTransport {
-            source,
-            target,
-            premises,
-        } = &step
-            && let Some((steps, narrow_range)) =
-                viewability_restriction_steps(source, target, premises)
-        {
-            let source_fact =
-                driver_proof.lower_surface_proposition_direct(source, "transport source")?;
-            let target_fact =
-                driver_proof.lower_surface_proposition_direct(target, "transport target")?;
-            let same_state = match (&source_fact, &target_fact) {
-                (
-                    Proposition::MemoryLoadable {
-                        memory: left,
-                        wide: false,
-                        ..
-                    },
-                    Proposition::MemoryLoadable {
-                        memory: right,
-                        wide: false,
-                        ..
-                    },
-                ) if narrow_range => left == right,
-                (
-                    Proposition::ResourceViewable { memory: left, .. }
-                    | Proposition::MemoryLoadable { memory: left, .. },
-                    Proposition::ResourceViewable { memory: right, .. }
-                    | Proposition::MemoryLoadable { memory: right, .. },
-                ) if !narrow_range => left == right,
-                _ => false,
-            };
-            if same_state {
-                return self.apply_ordinary_transport_steps(target, steps);
-            }
-        }
-
-        // A known target needs no transport rule. Keep an ordinary lookup in
-        // the certificate, including when transport merely adds an auxiliary
-        // fact rather than closing the currently focused proposition.
-        if let ProofStep::CompatibilityFactTransport {
-            source,
-            target,
-            premises,
-        } = &step
-            && (source == target
-                || premises.contains(source)
-                || driver_proof.focused_outcome_data().is_some())
-        {
-            let target_fact =
-                driver_proof.lower_surface_proposition_direct(target, "transport target")?;
-            if driver_proof.facts().contains(&target_fact)
-                || driver_proof
-                    .facts()
-                    .assumptions()
-                    .contains_known(&target_fact)
-            {
-                return self.apply_ordinary_transport_steps(target, vec![ProofStep::Known]);
-            }
-        }
-
         // A witness for several binders instantiates them in the order
         // written and is recorded as the one step that was written.
         if let ProofStep::Witness(witness) = &step
@@ -543,18 +436,6 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 application,
                 premises,
             } => driver_proof.apply_theorem_using(application, premises),
-            ProofStep::CompatibilityFactTransport { .. }
-                if crate::instrumentation::replay_forbids_discovery(
-                    "verification-only fact transport",
-                ) =>
-            {
-                Err(driver_proof.step_error("verification-only fact transport cannot replay"))
-            }
-            ProofStep::CompatibilityFactTransport {
-                source,
-                target,
-                premises,
-            } => driver_proof.apply_compatibility_fact_transport(source, target, premises),
             ProofStep::UnfoldProposition(target) => {
                 driver_proof.apply_local_predicate_unfold(target)
             }
@@ -598,13 +479,10 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 .step_error("this proof step has not yet migrated to the checked `Proof` API")),
         }?;
 
-        // A rewrite or transport changes the cited proposition's state
+        // A rewrite changes the cited proposition's state
         // context. Do not let a source-epoch projection survive that
         // boundary and accidentally make a later citation look current.
-        if matches!(
-            step,
-            ProofStep::Rewrite(_) | ProofStep::CompatibilityFactTransport { .. }
-        ) {
+        if matches!(step, ProofStep::Rewrite(_)) {
             transition.clear_existential_projection();
         }
 
@@ -631,7 +509,6 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 | ProofStep::ApplyTheorem(_)
                 | ProofStep::ApplyTheoremUsing { .. }
                 | ProofStep::ApplyPlannedTheorem { .. }
-                | ProofStep::CompatibilityFactTransport { .. }
                 | ProofStep::LetSatisfy(_)
         ) {
             close_goal_from_added_fact(state)
