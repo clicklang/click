@@ -220,6 +220,9 @@ pub(crate) use memory_loads::{
     registered_load_kind_for_variable, registered_load_origin_term_for_variable,
     registered_load_term_for_variable,
 };
+pub(crate) use memory_loads::{
+    registered_load_origin_point_for_variable, registered_load_point_for_variable,
+};
 pub(super) use operators::pointer_offset_by_bytes_paths;
 pub(super) use operators::*;
 #[cfg(test)]

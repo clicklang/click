@@ -3712,6 +3712,19 @@ pub(crate) fn registered_load_for_variable(variable: &Variable) -> Option<(Share
     })
 }
 
+/// [`registered_load_for_variable`] with the registered read's point, so a
+/// read rebuilt from it is placed where the registered one was.
+pub(crate) fn registered_load_point_for_variable(
+    variable: &Variable,
+) -> Option<(ProgramPoint, Address)> {
+    LOAD_VARIABLE_REGISTRY.with(|registry| {
+        registry
+            .borrow()
+            .get(variable)
+            .map(|load| (load.point.clone(), load.pointer.clone()))
+    })
+}
+
 /// The load term a load variable names, kind included: the right-hand side
 /// of its defining equation.
 pub(crate) fn registered_load_term_for_variable(variable: &Variable) -> Option<MachineTerm> {
@@ -4135,6 +4148,16 @@ pub(crate) fn registered_load_origin_for_variable(
         &MachineTerm::Variable(*variable),
     ))?;
     Some((read.origin?.into_shared_memory(), read.pointer))
+}
+
+/// [`registered_load_origin_for_variable`] with the origin's point.
+pub(crate) fn registered_load_origin_point_for_variable(
+    variable: &Variable,
+) -> Option<(ProgramPoint, Address)> {
+    let read = scalar_read_observation(crate::kernel::MachineOperandView::Legacy(
+        &MachineTerm::Variable(*variable),
+    ))?;
+    Some((read.origin?, read.pointer))
 }
 
 /// [`registered_load_origin_for_variable`] as the load term it names there:

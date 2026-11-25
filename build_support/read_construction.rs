@@ -155,8 +155,6 @@ const BASELINE: &[(&str, Form, usize)] = &[
         1,
     ),
     ("src/kernel/assumptions.rs", Form::UnplacedPoint, 1),
-    ("src/kernel/equality_graph.rs", Form::UnplacedPoint, 1),
-    ("src/kernel/equality_graph/terms.rs", Form::UnplacedPoint, 1),
     ("src/kernel/eval/memory_loads.rs", Form::UnplacedPoint, 12),
     (
         "src/kernel/functions/globals_and_aggregates.rs",
@@ -194,14 +192,8 @@ const BASELINE: &[(&str, Form, usize)] = &[
     (
         "src/kernel/proof/equality_rewrite.rs",
         Form::UnplacedPoint,
-        2,
-    ),
-    (
-        "src/kernel/reasoning/substitution.rs",
-        Form::UnplacedPoint,
         1,
     ),
-    ("src/kernel/spec.rs", Form::UnplacedPoint, 1),
     (
         "src/surface/proof/fixed_state_proofs/fact_transport.rs",
         Form::UnplacedPoint,

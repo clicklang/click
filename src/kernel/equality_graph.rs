@@ -2876,10 +2876,15 @@ impl EqualityGraphState {
                         && crate::kernel::registered_load_bytes_for_variable(variable)
                             == Some(8) =>
                 {
-                    crate::kernel::registered_load_for_variable(variable).and_then(
-                        |(memory, address)| {
-                            crate::kernel::registered_load_kind_for_variable(variable)
-                                .map(|kind| (ProgramPoint::unplaced(&memory), address, kind))
+                    crate::kernel::eval::registered_load_point_for_variable(variable).and_then(
+                        |(point, address)| {
+                            crate::kernel::registered_load_kind_for_variable(variable).map(|kind| {
+                                (
+                                    ProgramPoint::viewing(point.shared_memory(), &point),
+                                    address,
+                                    kind,
+                                )
+                            })
                         },
                     )
                 }
