@@ -12245,21 +12245,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         }
         if !proof.focused_discharged() {
             let conclusion = plan.conclusion?;
-            let closed = Self::try_ordinary_fact_transport(
+            proof = Self::try_ordinary_fact_transport(
                 &proof,
                 &conclusion.source,
                 &conclusion.target,
                 &conclusion.premises,
             )
             .ok()?
-            .filter(Proof::focused_discharged);
-            proof = match closed {
-                Some(closed) => closed,
-                None => proof
-                    .driver()
-                    .try_generated_linear_script(&conclusion.fallback)
-                    .ok()??,
-            };
+            .filter(Proof::focused_discharged)?;
         }
         for (parent, introduced) in openings.into_iter().rev() {
             proof = parent.finish_generated_intro(&introduced, proof).ok()?;

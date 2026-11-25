@@ -644,7 +644,7 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_view
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_after_direct_with_surfaces_and_function_unfold	try_ordinary_viewability_restriction_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_forall_goal	try_universal_steps_with_arithmetic	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_preserve_selected_fact	try_indexed_read_preservation	1
-src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_universal_steps_with_arithmetic	driver	2
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_universal_steps_with_arithmetic	driver	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_universal_steps_with_arithmetic	try_ordinary_fact_transport	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_ordinary_fact_transport	driver	11
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_ordinary_fact_transport	try_ordinary_fact_transport	1
