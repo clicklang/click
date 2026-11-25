@@ -4432,6 +4432,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                     | ProofTactic::Close
                                     | ProofTactic::Enumerate
                                     | ProofTactic::Normalize
+                                    | ProofTactic::CloseBounds(_)
                                     | ProofTactic::NormalizeUsing(_)
                                     | ProofTactic::CompatibilityNormalize(_)
                                     | ProofTactic::ArithmeticUsing(_)
@@ -4531,6 +4532,7 @@ pub(super) fn finish_ordered_proof<'a>(
                             PostExecutionTactic::SolveUsing(_) => Some("close() using"),
                             PostExecutionTactic::Leaf(
                                 tactic @ (ProofTactic::Normalize
+                                | ProofTactic::CloseBounds(_)
                                 | ProofTactic::NormalizeUsing(_)
                                 | ProofTactic::CompatibilityNormalize(_)
                                 | ProofTactic::ArithmeticUsing(_)
@@ -5122,6 +5124,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                 | ProofTactic::Close
                                 | ProofTactic::Enumerate
                                 | ProofTactic::Normalize
+                                | ProofTactic::CloseBounds(_)
                                 | ProofTactic::NormalizeUsing(_)
                                 | ProofTactic::CompatibilityNormalize(_)
                                 | ProofTactic::ArithmeticUsing(_)
@@ -5285,10 +5288,18 @@ pub(super) fn finish_ordered_proof<'a>(
                                         // Same rule for the explicit arithmetic
                                         // closer: its premises are cited against
                                         // a return state this path does not have.
-                                        if matches!(closer_step, ProofStep::ArithmeticUsing(_)) {
-                                            return Err(ClickError::new(
-                                                "`arithmetic using` requires a return-state proposition; use `close()` for a divergent path",
-                                            ));
+                                        match closer_step {
+                                            ProofStep::ArithmeticUsing(_) => {
+                                                return Err(ClickError::new(
+                                                    "`arithmetic using` requires a return-state proposition; use `close()` for a divergent path",
+                                                ));
+                                            }
+                                            ProofStep::CloseBounds(_) => {
+                                                return Err(ClickError::new(
+                                                    "`close() using bounds` requires a return-state proposition; use `close()` for a divergent path",
+                                                ));
+                                            }
+                                            _ => {}
                                         }
                                         record_claim_closure(
                                             &mut outcome_proof,

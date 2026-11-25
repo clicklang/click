@@ -54,6 +54,7 @@ impl SourceContext {
                     | ProofTactic::Normalize
                     | ProofTactic::ArithmeticUsing(_)
                     | ProofTactic::Preserve(_)
+                    | ProofTactic::CloseBounds(_)
                     | ProofTactic::NormalizeUsing(_)
                     | ProofTactic::CompatibilityNormalize(_)
                     | ProofTactic::Intro
@@ -105,6 +106,7 @@ impl SourceContext {
                     | ProofTactic::Known
                     | ProofTactic::Enumerate
                     | ProofTactic::Normalize
+                    | ProofTactic::CloseBounds(_)
                     | ProofTactic::NormalizeUsing(_)
                     | ProofTactic::CompatibilityNormalize(_)
                     | ProofTactic::ArithmeticUsing(_)

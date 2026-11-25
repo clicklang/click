@@ -482,6 +482,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 Some(driver_proof.apply_fact_using(fact, premises))
             }
             ProofStep::Known => Some(driver_proof.apply_known()),
+            ProofStep::CloseBounds(premises) => Some(driver_proof.apply_close_bounds(premises)),
             ProofStep::Normalize | ProofStep::CompatibilityNormalize(None) => {
                 Some(driver_proof.apply_normalize())
             }

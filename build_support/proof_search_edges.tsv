@@ -712,7 +712,7 @@ src/surface/proof/signed_definedness/search.rs	search	ProofSearch::try_signed_de
 src/surface/proof/signed_definedness/search.rs	search	ProofSearch::try_signed_definedness_bounds	prepare_integer_read_domain	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure	try_single_theorem_using	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_single_theorem_using	driver	2
-src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure_before_arithmetic	driver	8
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure_before_arithmetic	driver	9
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_after_direct_with_surfaces_and_function_unfold	driver	2
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_after_direct_with_surfaces_and_function_unfold	apply_integer_composition	1
 src/surface/proof/smart_closures/integer_composition.rs	search	ProofSearch::apply_integer_composition	try_signed_definedness_closure	1

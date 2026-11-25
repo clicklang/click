@@ -21,6 +21,13 @@ int32 first(int32* p, int32 n, int32 a, int32 b) {
     step();
     close();
 }
+
+theorem cross_width(p: int32[]) {
+    requires viewable(p[0..1]);
+    ensures viewable((p as (uint8 *))[0..4]) by {
+        close() using { viewable(p[0..1]); };
+    }
+}
 ```
 
 ```expect

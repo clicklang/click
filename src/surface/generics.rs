@@ -1266,6 +1266,12 @@ fn instantiate_proof_tactic(
                 })
                 .transpose()?,
         ),
+        ProofTactic::CloseBounds(premises) => ProofTactic::CloseBounds(
+            premises
+                .iter()
+                .map(proposition)
+                .collect::<Result<Vec<_>, _>>()?,
+        ),
         ProofTactic::NormalizeUsing(premises) => ProofTactic::NormalizeUsing(
             premises
                 .iter()
