@@ -1382,17 +1382,16 @@ int32 bad(int32 x) {
         assert!(!expanded.contains(text), "{expanded}");
     }
 
-    /// Call outcomes: the `solve` closing the `returned` arm is selected by
-    /// its line, and only that arm is rewritten.
+    /// Select the execution step in the threw arm by its source line.
     #[test]
     #[ignore = "nightly: 1.1s in the parallel gate"]
     fn a_line_in_a_call_outcome_arm_selects_its_smart_tactic() {
         let path = mdtest_path("cpp_single_guard_throw_step.md");
         assert_eq!(
-            markdown_line(&path, 81).trim(),
+            markdown_line(&path, 84).trim(),
             "step_until(function.exit);"
         );
-        let expanded = run_location(&path, "81").unwrap();
+        let expanded = run_location(&path, "84").unwrap();
         let tail = expanded
             .split_once("        threw(error) => {\n")
             .expect("the threw arm is kept")
