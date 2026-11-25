@@ -75,9 +75,34 @@ theorem rb_member_is_inorder_membership(tree: RbTree, target: struct rb_node*) {
                 rewrite(rb_member(left, target), list::contains(rb_inorder(left), target));
                 rewrite(rb_member(right, target), list::contains(rb_inorder(right), target));
                 if node == target {
-                    normalize() using { node == target; };
+                    have (if node == target { true } else {
+                        if list::contains(rb_inorder(left), target) { true }
+                        else { list::contains(rb_inorder(right), target) }
+                    }) == true by close();
+                    rewrite((if node == target { true } else {
+                        if list::contains(rb_inorder(left), target) { true }
+                        else { list::contains(rb_inorder(right), target) }
+                    }), true);
+                    have (if node == target { true } else { list::contains(rb_inorder(right), target) })
+                        == true by close();
+                    rewrite((if node == target { true } else { list::contains(rb_inorder(right), target) }), true);
+                    close();
                 } else {
-                    normalize() using { not(node == target); };
+                    have (if node == target { true } else {
+                        if list::contains(rb_inorder(left), target) { true }
+                        else { list::contains(rb_inorder(right), target) }
+                    }) == (if list::contains(rb_inorder(left), target) { true }
+                        else { list::contains(rb_inorder(right), target) }) by close();
+                    rewrite((if node == target { true } else {
+                        if list::contains(rb_inorder(left), target) { true }
+                        else { list::contains(rb_inorder(right), target) }
+                    }), (if list::contains(rb_inorder(left), target) { true }
+                        else { list::contains(rb_inorder(right), target) }));
+                    have (if node == target { true } else { list::contains(rb_inorder(right), target) })
+                        == list::contains(rb_inorder(right), target) by close();
+                    rewrite((if node == target { true } else { list::contains(rb_inorder(right), target) }),
+                        list::contains(rb_inorder(right), target));
+                    close();
                 }
             }
         }

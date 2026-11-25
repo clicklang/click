@@ -21,10 +21,10 @@ int probe() {
     step();
     step();
     step();
-    have pair.second == 7 by normalize();
+    have pair.second == 7 by close();
 }
 ```
 
 ```expect
-fail: goal did not normalize to true
+fail: could not establish `pair->second == 7`
 ```

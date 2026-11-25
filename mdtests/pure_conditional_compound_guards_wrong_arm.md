@@ -8,11 +8,11 @@ theorem wrong(x: uint64, y: uint64) {
     requires not(x == 0);
     requires not(y == 1);
     ensures or_value(x, y) == 7 by {
-        unfold(or_value(x, y)); normalize() using { not(x == 0); not(y == 1); };
+        unfold(or_value(x, y)); close() using { not(x == 0); not(y == 1); };
     }
 }
 ```
 
 ```expect
-fail: did not normalize to true
+fail: `close() using` could not prove the current goal from only its listed premises
 ```

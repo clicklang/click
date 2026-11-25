@@ -4,11 +4,11 @@
 theorem unsafe_bound(y: float) {
     requires y >= float32_from_bits(0);
     ensures float32_from_bits(0x3f800000) / y <= float32_from_bits(0x3f800000) by {
-        normalize() using { y >= float32_from_bits(0); };
+        close() using { y >= float32_from_bits(0); };
     }
 }
 ```
 
 ```expect
-fail: did not normalize
+fail: `close() using` could not prove the current goal from only its listed premises
 ```

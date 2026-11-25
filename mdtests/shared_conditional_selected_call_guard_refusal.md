@@ -22,11 +22,11 @@ theorem selected(x: Payload) {
         unfold(joined(wrapped(x)));
         rewrite(flag(wrapped(x)), flag(x));
         rewrite(value(wrapped(x)), value(x));
-        normalize() using { flag(x) == 1; };
+        close() using { flag(x) == 1; };
     }
 }
 ```
 
 ```expect
-fail: `normalize using` goal did not normalize to true using the listed conditions
+fail: `close() using` could not prove the current goal from only its listed premises
 ```
