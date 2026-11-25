@@ -549,13 +549,13 @@ follow-up (`cpp_record_reference_locals_*`) checks mutable/const aliases,
 `ref.field`/`&ref` spelling, nested record members, non-reading pointer binding,
 permission refusals and storage retirement with expanded and retained replay.
 Unsupported result categories, nontrivial copy/move bodies and the broader
-source forms listed in the C++ coverage item remain outside these witnesses.
+source forms described in the [object model](cpp-object-model.md#decisions-and-scope)
+remain outside these witnesses.
 
 They do not establish arbitrary casts/retyping, byte-built pointers, broader
 lifetime replacement, union punning, general inheritance, additional targets,
 owning containers or Bitcoin serialization. Unsupported source forms above
-are explicit refusals, not delivered functionality. Keep these laws as
-requirements of each later C++ slice in `roadmap/cpp-support.md`.
+are explicit refusals. Future C++ slices must preserve these laws.
 
 The getter, pointer-field fold and modular byte-output acceptance cases have
 named proof-mode and hostile controls above. With this matrix's entry/caller

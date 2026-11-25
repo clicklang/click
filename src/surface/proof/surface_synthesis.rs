@@ -8496,6 +8496,41 @@ fn synthesize_pointer_equality_operand(
             ProgramExpression::Variable(name.into()),
         ));
     }
+    // A pointer converted from an integer word is the written conversion,
+    // `(word) as (T *)`. The pointer keeps no struct tag, so the conversion
+    // names its pointer type.
+    if let Some(bits) = value.integer_cast_word() {
+        use crate::surface::proof::raise_lower_audit::note_reason;
+        // The word is unsigned; spelled from its bare bits, a 64-bit read
+        // would default to `int64` and lower with a conversion.
+        let root =
+            crate::kernel::KernelTermImport::default().machine(MachineIntegerType::UInt64, bits);
+        let Some(word) = raise_kernel_term(&root, parameter_binding, state, bound_variables) else {
+            note_reason(|| "integer-converted pointer: its word has no spelling".into());
+            return None;
+        };
+        let Some(operand) =
+            crate::surface::lowering::contract_expression_as_program_expression(&word)
+        else {
+            note_reason(|| {
+                "integer-converted pointer: its word is not a current C expression".into()
+            });
+            return None;
+        };
+        return Some(crate::surface::lowering::contract_c_unary(
+            word,
+            ProgramExpression::Cast {
+                expression: Box::new(operand),
+                target_type: value.program_type(),
+                integer_mode: crate::kernel::IntegerCastMode::Standard,
+                pointee_struct_size: None,
+                pointee_struct: None,
+                pointee_volatile: false,
+                pointee_constant: false,
+                explicit_qualification: false,
+            },
+        ));
+    }
     let address_read = value
         .address()
         .as_loaded_value()

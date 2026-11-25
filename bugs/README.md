@@ -34,8 +34,7 @@ per independent bug, stating:
 Directly under the title, state `Soundness: <label>.` with a one-paragraph
 argument, using the labels defined in
 [`roadmap/README.md`](../roadmap/README.md). A bug that lets a false claim
-verify is `unsound`. Put `Priority: P1.` above its Soundness paragraph: it
-blocks launch.
+verify is `unsound` and blocks launch.
 
 Write enough for a fresh contributor to act without the originating chat.
 Tell the user what was filed. Delete the file when its fix, regression coverage,
