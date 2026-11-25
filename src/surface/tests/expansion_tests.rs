@@ -17366,7 +17366,7 @@ fn branch_continuation_claims_retain_their_selected_outcome_step() {
             }),
             "the retained step does not cite the anchored branch premises:\n{expanded}"
         );
-        without_implicit_solve_for_claim(label, || {
+        crate::surface::check_audit_claim(label, true, || {
             verify_c_sources(&expanded, &c_sources).map_err(|error| error.report())
         })
         .unwrap_or_else(|error| {
@@ -17384,7 +17384,7 @@ fn branch_continuation_claims_retain_their_selected_outcome_step() {
             .collect::<Vec<_>>()
             .join("\n");
         assert!(
-            without_implicit_solve_for_claim(label, || {
+            crate::surface::check_audit_claim(label, true, || {
                 verify_c_sources(&without_retained_step, &c_sources).map_err(|error| error.report())
             })
             .is_err(),
