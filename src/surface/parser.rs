@@ -274,8 +274,8 @@ pub(in crate::surface) struct ProgramLayouts {
     /// A C definition's execution name, indexed by translation unit and source spelling.
     pub(in crate::surface) qualified_functions: BTreeMap<(String, String), String>,
     pub(in crate::surface) program_object_names: BTreeMap<String, std::sync::Arc<BTreeSet<String>>>,
-    /// Library-provided C values with stable identities in the selected profile.
-    pub(in crate::surface) hosted_stdout: BTreeMap<String, ProgramValue>,
+    pub(in crate::surface) c_library_names_by_function:
+        BTreeMap<String, std::sync::Arc<BTreeSet<String>>>,
     /// Native declarations that can supply a const library value, with a
     /// stable symbol index for this set of translation units.
     pub(in crate::surface) c_library_globals:
@@ -1044,8 +1044,8 @@ struct Parser {
     loop_predicate_bodies: BTreeMap<String, SyntaxProposition>,
     resource_parameters: BTreeMap<String, usize>,
     program_object_names_by_function: BTreeMap<String, std::sync::Arc<BTreeSet<String>>>,
-    hosted_stdout_by_function: BTreeMap<String, ProgramValue>,
-    hosted_stdout: Option<ProgramValue>,
+    c_library_names_by_function: BTreeMap<String, std::sync::Arc<BTreeSet<String>>>,
+    c_library_names: Option<std::sync::Arc<BTreeSet<String>>>,
     c_library_globals: std::sync::Arc<BTreeMap<String, (syntax::CGlobal, u64)>>,
     c_library_values: BTreeMap<String, CLibraryValue>,
     in_pure_theorem: bool,
@@ -1890,7 +1890,7 @@ impl Parser {
         parser.string_literal_values = layouts.string_literal_values;
         parser.string_literal_owners = layouts.string_literal_owners;
         parser.program_object_names_by_function = layouts.program_object_names;
-        parser.hosted_stdout_by_function = layouts.hosted_stdout;
+        parser.c_library_names_by_function = layouts.c_library_names_by_function;
         parser.c_library_globals = layouts.c_library_globals;
         parser.rust_enum_types = layouts.rust_enum_types;
         parser.recursion_peers_by_function = layouts.recursion_peers;
@@ -2106,8 +2106,9 @@ impl Parser {
         if let Some(catalog) = catalog {
             let source = crate::source::SourceContainer::new("catalog.interface.click", 0);
             let (mut catalog_tokens, mut catalog_positions) = tokenize(catalog, Some(&source))?;
-            // C++ catalog binders precede the client contracts that name them.
-            if import_language == Some(SourceLanguage::Cpp) {
+            // C library values and C++ catalog binders precede the client
+            // contracts that name them.
+            if import_language != Some(SourceLanguage::Rust) {
                 catalog_tokens.append(&mut tokens);
                 catalog_positions.append(&mut positions);
                 tokens = catalog_tokens;
@@ -2279,8 +2280,8 @@ impl Parser {
             loop_proof_value_names: Default::default(),
             loop_predicate_bodies: BTreeMap::new(),
             program_object_names_by_function: BTreeMap::new(),
-            hosted_stdout_by_function: BTreeMap::new(),
-            hosted_stdout: None,
+            c_library_names_by_function: BTreeMap::new(),
+            c_library_names: None,
             c_library_globals: Default::default(),
             c_library_values: BTreeMap::new(),
             in_pure_theorem: false,
@@ -2652,15 +2653,10 @@ impl Parser {
         if let Some((global, ordinal)) = self.c_library_globals.get(&name)
             && declaration.matches_global(global)
         {
-            declaration.linked_value = Some(global.hosted_stdout().unwrap_or_else(|| {
-                crate::kernel::symbolic_call_result(
-                    declaration.interface_type.to_kernel_type(),
-                    crate::kernel::Variable::produced(
-                        crate::kernel::Producer::CLibraryValue,
-                        *ordinal,
-                    ),
-                )
-            }));
+            declaration.linked_value = Some(crate::kernel::symbolic_call_result(
+                declaration.interface_type.to_kernel_type(),
+                crate::kernel::Variable::produced(crate::kernel::Producer::CLibraryValue, *ordinal),
+            ));
         }
         Ok((name, declaration))
     }
@@ -5549,9 +5545,9 @@ impl Parser {
                 .get(&table_name)
                 .cloned(),
         );
-        let previous_hosted_stdout = std::mem::replace(
-            &mut self.hosted_stdout,
-            self.hosted_stdout_by_function.get(&table_name).cloned(),
+        let previous_c_library_names = std::mem::replace(
+            &mut self.c_library_names,
+            self.c_library_names_by_function.get(&table_name).cloned(),
         );
         // A pointer or reference to a value of an abstract type refers to
         // its whole object (`abstract_pointer_params`).
@@ -6278,7 +6274,7 @@ impl Parser {
         self.names.program_parameter_types = previous_c_parameter_types;
         self.abstract_pointer_params = previous_abstract_pointer_params;
         self.names.program_object_names = previous_c_object_names;
-        self.hosted_stdout = previous_hosted_stdout;
+        self.c_library_names = previous_c_library_names;
         self.rust_loop_iterators = previous_loop_iterators;
         self.rust_slice_locals = previous_slice_locals;
         let parameter_struct_casts = std::mem::replace(
@@ -6886,8 +6882,14 @@ impl Parser {
         if let Some(expression) = self.take_rust_vec_method(&name)? {
             return Ok(expression);
         }
-        if self.in_pure_theorem
-            && let Some(declaration) = self.c_library_values.get(&name)
+        if let Some(declaration) = self.c_library_values.get(&name)
+            && (self.in_pure_theorem
+                || self
+                    .c_library_names
+                    .as_ref()
+                    .is_some_and(|names| names.contains(&name)))
+            && !self.names.contains(NameKind::TheoremParameter, &name)
+            && !self.names.program_parameter_types.contains_key(&name)
         {
             let Some(value) = &declaration.linked_value else {
                 return Err(self
@@ -6896,14 +6898,6 @@ impl Parser {
                     ))
                     .with_kind(ClickErrorKind::Type));
             };
-            return Ok(SyntaxTerm::QualifiedC {
-                name,
-                lowered: ProgramExpression::Value(value.clone()),
-            });
-        }
-        if name == "stdout"
-            && let Some(value) = &self.hosted_stdout
-        {
             return Ok(SyntaxTerm::QualifiedC {
                 name,
                 lowered: ProgramExpression::Value(value.clone()),

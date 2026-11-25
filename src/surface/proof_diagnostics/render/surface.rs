@@ -2113,6 +2113,14 @@ impl Printer<'_> {
             let precedence = if name.starts_with('&') { UNARY } else { ATOM };
             return Some(spelled(name.clone(), precedence));
         }
+        if let Some((name, _)) = super::c_library_pointer_name(pointer) {
+            return Some(if pointer.offset == AddressOffset::Constant(0) {
+                atom(name)
+            } else {
+                let offset = self.offset(&pointer.offset, depth + 1);
+                atom(format!("byte_offset({name}, {offset})"))
+            });
+        }
         // A pointer read from memory is the place it was read from.
         if let Some(read) = pointer.as_loaded_value() {
             let place =

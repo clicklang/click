@@ -74,6 +74,9 @@ pub(super) fn initialize_program_function_globals_owned(
                 );
             }
         }
+        let library_value = global
+            .linked_library_value
+            .then(|| StoredExecutionValue::from(global.initial_value().clone()));
         state.locals.set_global_with_all_qualifiers(
             global.kernel_name().clone(),
             global.program_type(),
@@ -82,6 +85,7 @@ pub(super) fn initialize_program_function_globals_owned(
             global.pointee_is_volatile(),
             global.is_constant(),
             global.pointee_is_constant(),
+            library_value.clone(),
         );
         if global.kernel_name().named() != Some(global.name())
             && !state.locals.contains_name(global.name())
@@ -94,6 +98,7 @@ pub(super) fn initialize_program_function_globals_owned(
                 global.pointee_is_volatile(),
                 global.is_constant(),
                 global.pointee_is_constant(),
+                library_value,
             );
         }
     }
@@ -263,6 +268,7 @@ pub(super) fn initialize_program_function_globals_owned(
             static_local.pointee_is_volatile(),
             static_local.is_constant(),
             static_local.pointee_is_constant(),
+            None,
         );
         // Contract C fragments use the source spelling. A nested static may
         // have a kernel-only name to distinguish it from another object in a
@@ -279,6 +285,7 @@ pub(super) fn initialize_program_function_globals_owned(
                 static_local.pointee_is_volatile(),
                 static_local.is_constant(),
                 static_local.pointee_is_constant(),
+                None,
             );
         }
     }
