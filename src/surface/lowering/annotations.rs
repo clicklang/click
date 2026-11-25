@@ -237,6 +237,64 @@ mod comparison_elaboration;
 #[cfg(test)]
 mod tests;
 
+/// The typing environment elaboration reads: the type each name bound
+/// outside the term has in this context. Lowering records a name's type only
+/// by the map its lowered value is in (`integer_values`, `algebraic_values`,
+/// `values`), so these read it from there; elaboration asks only these, never
+/// the maps themselves (`design/typed-surface.md`).
+impl SpecElaborationContext {
+    fn binding_click_type<Q: crate::surface::binders::BinderKey + ?Sized>(
+        &self,
+        name: &Q,
+    ) -> Option<ClickType> {
+        if self.integer_values.contains_key(name) {
+            return Some(ClickType::Integer);
+        }
+        if let Some(value) = self.algebraic_values.get(name) {
+            return Some(generics::click_type_from_algebraic_value_type(
+                &value.algebraic_type.value_type(),
+            ));
+        }
+        self.program_binding_click_type(name)
+    }
+
+    /// Whether a name is bound to an algebraic value.
+    fn binding_is_algebraic<Q: crate::surface::binders::BinderKey + ?Sized>(
+        &self,
+        name: &Q,
+    ) -> bool {
+        self.algebraic_values.contains_key(name)
+    }
+
+    /// The element type of a program binding that names an array or a
+    /// pointer.
+    fn program_binding_pointer_element_type<Q: crate::surface::binders::BinderKey + ?Sized>(
+        &self,
+        name: &Q,
+    ) -> Option<ProgramType> {
+        self.array_refs
+            .get(name)
+            .map(|array_ref| array_ref.element_type)
+            .or_else(|| {
+                self.values.get(name).and_then(|value| match value {
+                    SpecExpression::Value(ProgramValue::Pointer(pointer)) => {
+                        pointer.program_type().pointee_type()
+                    }
+                    _ => None,
+                })
+            })
+    }
+
+    /// The type of a name bound to a program value, as a program binding
+    /// reads it: only `values`.
+    fn program_binding_click_type<Q: crate::surface::binders::BinderKey + ?Sized>(
+        &self,
+        name: &Q,
+    ) -> Option<ClickType> {
+        self.values.get(name).and_then(spec_expression_click_type)
+    }
+}
+
 pub(in crate::surface) fn resolve_resource_field_schema(
     definition: &ResourceDefinition,
     environment: &ClickFunctionEnvironment,
@@ -634,7 +692,7 @@ fn contract_expression_is_algebraic(
             .iter()
             .rev()
             .find_map(|(name, value)| (name == &SurfaceBinder::Generated(id)).then_some(*value))
-            .unwrap_or_else(|| environment.algebraic_values.contains_key(&id));
+            .unwrap_or_else(|| environment.binding_is_algebraic(&id));
     }
 
     match expression {
@@ -649,7 +707,7 @@ fn contract_expression_is_algebraic(
             .iter()
             .rev()
             .find_map(|(binding, algebraic)| (binding == name).then_some(*algebraic))
-            .unwrap_or_else(|| environment.algebraic_values.contains_key(name)),
+            .unwrap_or_else(|| environment.binding_is_algebraic(name)),
         SyntaxTerm::Old(inner)
         | SyntaxTerm::At {
             expression: inner, ..
@@ -5921,18 +5979,7 @@ impl AnnotationLowerer<'_> {
             {
                 return ty.clone();
             }
-            if environment.integer_values.contains_key(&id) {
-                return Some(ClickType::Integer);
-            }
-            if let Some(value) = environment.algebraic_values.get(&id) {
-                return Some(generics::click_type_from_algebraic_value_type(
-                    &value.algebraic_type.value_type(),
-                ));
-            }
-            return environment
-                .values
-                .get(&id)
-                .and_then(spec_expression_click_type);
+            return environment.binding_click_type(&id);
         }
 
         match expression {
@@ -5957,17 +6004,8 @@ impl AnnotationLowerer<'_> {
                     .find(|(binding, _)| binding == name)
                 {
                     click_type.clone()
-                } else if environment.integer_values.contains_key(name) {
-                    Some(ClickType::Integer)
-                } else if let Some(value) = environment.algebraic_values.get(name) {
-                    Some(generics::click_type_from_algebraic_value_type(
-                        &value.algebraic_type.value_type(),
-                    ))
                 } else {
-                    environment
-                        .values
-                        .get(name)
-                        .and_then(spec_expression_click_type)
+                    environment.binding_click_type(name)
                 }
             }
             SyntaxTerm::AlgebraicVariable { algebraic_type, .. }
@@ -6063,17 +6101,8 @@ impl AnnotationLowerer<'_> {
                     .find(|(binding, _)| binding == name)
                 {
                     click_type.clone()
-                } else if environment.integer_values.contains_key(name) {
-                    Some(ClickType::Integer)
-                } else if let Some(value) = environment.algebraic_values.get(name) {
-                    Some(generics::click_type_from_algebraic_value_type(
-                        &value.algebraic_type.value_type(),
-                    ))
                 } else {
-                    environment
-                        .values
-                        .get(name)
-                        .and_then(spec_expression_click_type)
+                    environment.binding_click_type(name)
                 }
             }
             SyntaxTerm::ProgramBinding(name) => lexical_bindings
@@ -6081,12 +6110,7 @@ impl AnnotationLowerer<'_> {
                 .rev()
                 .find_map(|(binding, click_type)| (binding == name).then(|| click_type.clone()))
                 .flatten()
-                .or_else(|| {
-                    environment
-                        .values
-                        .get(name)
-                        .and_then(spec_expression_click_type)
-                }),
+                .or_else(|| environment.program_binding_click_type(name)),
             SyntaxTerm::Let {
                 name,
                 click_type: Some(ClickType::Integer),
@@ -10838,18 +10862,9 @@ impl AnnotationLowerer<'_> {
                 }
                 _ => self.program_expression_array_element_type(lowered, environment),
             },
-            SyntaxTerm::ProgramBinding(name) => environment
-                .array_refs
-                .get(name)
-                .map(|array_ref| array_ref.element_type)
-                .or_else(|| {
-                    environment.values.get(name).and_then(|value| match value {
-                        SpecExpression::Value(ProgramValue::Pointer(pointer)) => {
-                            pointer.program_type().pointee_type()
-                        }
-                        _ => None,
-                    })
-                }),
+            SyntaxTerm::ProgramBinding(name) => {
+                environment.program_binding_pointer_element_type(name)
+            }
             SyntaxTerm::QualifiedC {
                 lowered: expression,
                 ..
