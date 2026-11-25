@@ -435,6 +435,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if let Some(proof) = Self::try_history_indexed_equalities(search_input, source, target)? {
             return Ok(Ok(proof));
         }
+        if search_input.surface_goal() == Some(target)
+            && let Some(proof) = Self::try_struct_field_store_bridge(search_input, target)?
+        {
+            return Ok(Ok(proof));
+        }
         let apply = |premises: Vec<SyntaxProposition>| {
             search_input
                 .driver()

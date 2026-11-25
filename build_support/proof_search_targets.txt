@@ -316,5 +316,7 @@ try_float_finite_interval
 try_float_square_bound
 try_rounded_int32_to_float32_bound
 try_struct_field_equalities
+try_written_field_equalities
+try_unchanged_struct_operand
 try_struct_field_equality
 try_struct_field_store_bridge
