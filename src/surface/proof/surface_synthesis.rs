@@ -2616,6 +2616,21 @@ fn synthesize_surface_atomic_proposition(
             _ => {}
         }
     }
+    if let Proposition::ConditionIs(condition, value) = proposition
+        && let Some((operator, operands)) =
+            crate::kernel::machine_integer::comparison::written_integer_comparison(
+                condition.operand_view(),
+            )
+    {
+        return raise_integer_comparison(
+            operator,
+            &operands,
+            *value,
+            parameter_binding,
+            state,
+            bound_variables,
+        );
+    }
     // A `bool` local's truth, C's test `w != 0` at `uint8` of its carrier:
     // the claim on the local, `w` or `not w`, which is what a claim on it
     // lowers to. Compared with an integer, as `w != 0`, it would not lower.
@@ -3261,92 +3276,6 @@ fn synthesize_surface_atomic_proposition(
             ClickProposition::Not(Box::new(comparison))
         });
     }
-    // An Integer comparison of observations keeps machine Surface operands
-    // exactly when the machine spelling lowers back to it: lowering keeps a
-    // comparison over a retained compound operand (an operation, a
-    // conditional, a cast) Integer. Over atomic operands the machine
-    // spelling lowers native, so those keep explicit `to_integer`.
-    if !matches!(condition.native_compat(), ConditionTerm::Compare { .. })
-        && let Some(view) = crate::kernel::machine_integer::comparison::structural_comparison_view(
-            condition.native_compat(),
-        )
-        && matches!(
-            view.format,
-            MachineIntegerType::Int32
-                | MachineIntegerType::UInt32
-                | MachineIntegerType::Int64
-                | MachineIntegerType::UInt64
-        )
-        && machine_spelling_lowers_to_integer(
-            view.format,
-            view.relation,
-            view.operands.each_ref().map(|operand| {
-                crate::kernel::KernelTerm::retained_machine_operand(
-                    view.format,
-                    operand.operand_view(),
-                )
-            }),
-        )
-    {
-        let operator = match view.relation {
-            CompareRelation::Equal => ComparisonOperator::Equal,
-            CompareRelation::LessThan => ComparisonOperator::LessThan,
-            CompareRelation::LessEqual => ComparisonOperator::LessEqual,
-            CompareRelation::GreaterThan => ComparisonOperator::GreaterThan,
-            CompareRelation::GreaterEqual => ComparisonOperator::GreaterEqual,
-        };
-        let raise = |operand: &crate::kernel::machine_integer::comparison::ComparisonOperand<
-            '_,
-        >| {
-            let root = crate::kernel::KernelTerm::retained_machine_operand(
-                view.format,
-                operand.operand_view(),
-            );
-            raise_kernel_term(&root, parameter_binding, state, bound_variables).and_then(
-                |expression| synthesize_observation_operand(expression, view.format.program_type()),
-            )
-        };
-        let comparison = ClickProposition::Comparison {
-            left: raise(&view.operands[0])?,
-            operator,
-            right: raise(&view.operands[1])?,
-        };
-        return Some(if *value != view.negated {
-            comparison
-        } else {
-            ClickProposition::Not(Box::new(comparison))
-        });
-    }
-    let integer_comparison = match condition.native_compat() {
-        ConditionTerm::IntegerLessThan(left, right) => {
-            Some((left, ComparisonOperator::LessThan, right))
-        }
-        ConditionTerm::IntegerLessEqual(left, right) => {
-            Some((left, ComparisonOperator::LessEqual, right))
-        }
-        ConditionTerm::IntegerGreaterThan(left, right) => {
-            Some((left, ComparisonOperator::GreaterThan, right))
-        }
-        ConditionTerm::IntegerGreaterEqual(left, right) => {
-            Some((left, ComparisonOperator::GreaterEqual, right))
-        }
-        ConditionTerm::IntegerEqual(left, right) => Some((left, ComparisonOperator::Equal, right)),
-        ConditionTerm::IntegerNotEqual(left, right) => {
-            Some((left, ComparisonOperator::NotEqual, right))
-        }
-        _ => None,
-    };
-    if let Some((left, operator, right)) = integer_comparison {
-        return integer_observation_comparison(
-            left,
-            operator,
-            right,
-            *value,
-            parameter_binding,
-            state,
-            bound_variables,
-        );
-    }
     // Keep the narrow interpretation even when rewriting removed the last
     // symbolic operand. Observing a literal as Integer would discard its type.
     if let ConditionTerm::Compare {
@@ -3531,7 +3460,52 @@ fn synthesize_surface_atomic_proposition(
             ..
         }
     );
+    // A 64-bit equality the source wrote between a 64-bit word and a 32-bit
+    // one holds the narrow operand widened. Writing that widening as a cast
+    // gives two operands of one format, which lower to a different
+    // comparison; the narrow operand is written as the source had it and
+    // lowering widens it again. Against a constant the cast stays: lowering
+    // decides or narrows a widened word compared with a literal, so only the
+    // one-format comparison keeps it.
+    fn widened(term: &MachineTerm) -> Option<(&MachineTerm, bool)> {
+        match term {
+            cast_term!(Int64From32, value) | cast_term!(UInt64FromInt32, value) => {
+                Some((value.as_ref(), false))
+            }
+            cast_term!(Int64FromUInt32, value) | cast_term!(UInt64From32, value) => {
+                Some((value.as_ref(), true))
+            }
+            _ => None,
+        }
+    }
+    let wide_constant =
+        |term: &MachineTerm| term.int64_as_const().is_some() || term.uint64_as_const().is_some();
+    let narrow_operand = matches!(
+        condition.native_compat(),
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::Equal,
+            ..
+        }
+    )
+    .then(|| match (widened(left), widened(right)) {
+        (Some(narrow), None) if !wide_constant(right) => Some((left, narrow)),
+        (None, Some(narrow)) if !wide_constant(left) => Some((right, narrow)),
+        _ => None,
+    })
+    .flatten();
     let operand = |term: &MachineTerm| {
+        if let Some((widening, (narrow, unsigned))) = narrow_operand
+            && std::ptr::eq::<MachineTerm>(&**widening, term)
+        {
+            let narrow =
+                synthesize_surface_bitvector(narrow, parameter_binding, state, bound_variables)?;
+            return if unsigned {
+                synthesize_uint32_operand(narrow)
+            } else {
+                synthesize_int32_operand(narrow)
+            };
+        }
         // A `uint32` equality's constant whose word reads negative as an
         // `int32` is written as its `uint32` value: the word it compares is
         // the same either way, but `-56` beside a `uint32` value would read
@@ -3734,28 +3708,29 @@ pub(super) fn spell_conjunct_observations(goal: &Proposition, surface: &mut Clic
             spell_conjunct_observations(goal, surface_body);
         }
         (goal, ClickProposition::Comparison { left, right, .. }) => {
-            if let Some((
-                ConditionTerm::Compare {
-                    format,
-                    left: a,
-                    right: b,
-                    ..
-                },
-                _,
-            )) = goal.condition_native()
+            use crate::kernel::BooleanOperandView as B;
+            if let Proposition::ConditionIs(condition, _) = goal
+                && let Some((format, _, operands)) = match condition.operand_view() {
+                    B::Shared(root) => root.cached_condition_output().map_or_else(
+                        || B::Shared(root).comparison(),
+                        |native| B::Native(native).comparison(),
+                    ),
+                    view => view.comparison(),
+                }
                 && matches!(
                     format,
                     MachineIntegerType::Int32 | MachineIntegerType::Int64
                 )
-                && [a.as_ref(), b.as_ref()].iter().any(|operand| {
+                && operands.iter().any(|operand| {
                     matches!(
-                        operand,
-                        MachineTerm::Binary {
-                            op: MachineBinaryOp::Add
+                        operand.binary(),
+                        Some((
+                            _,
+                            MachineBinaryOp::Add
                                 | MachineBinaryOp::Subtract
                                 | MachineBinaryOp::Multiply,
-                            ..
-                        }
+                            _
+                        ))
                     )
                 })
             {
@@ -3794,6 +3769,91 @@ fn machine_spelling_lowers_to_integer(
             comparison::logical_condition_for_operand_views(format, relation, operands),
             ConditionTerm::Compare { .. } | ConditionTerm::Constant(_)
         )
+}
+
+fn raise_integer_comparison(
+    operator: crate::kernel::IntegerComparisonOperator,
+    operands: &[crate::kernel::SharedIntegerTerm; 2],
+    value: bool,
+    parameter_binding: ParameterBinding<'_>,
+    state: &ExecutionState,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
+) -> Option<ClickProposition> {
+    // An Integer comparison of observations keeps machine Surface operands
+    // exactly when the machine spelling lowers back to it: lowering keeps a
+    // comparison over a retained compound operand (an operation, a
+    // conditional, a cast) Integer. Over atomic operands the machine
+    // spelling lowers native, so those keep explicit `to_integer`.
+    if let Some(view) =
+        crate::kernel::machine_integer::comparison::structural_integer_comparison_view(
+            operator,
+            operands.each_ref(),
+        )
+        && matches!(
+            view.format,
+            MachineIntegerType::Int32
+                | MachineIntegerType::UInt32
+                | MachineIntegerType::Int64
+                | MachineIntegerType::UInt64
+        )
+        && machine_spelling_lowers_to_integer(
+            view.format,
+            view.relation,
+            view.operands.each_ref().map(|operand| {
+                crate::kernel::KernelTerm::retained_machine_operand(
+                    view.format,
+                    operand.operand_view(),
+                )
+            }),
+        )
+    {
+        let operator = match view.relation {
+            CompareRelation::Equal => ComparisonOperator::Equal,
+            CompareRelation::LessThan => ComparisonOperator::LessThan,
+            CompareRelation::LessEqual => ComparisonOperator::LessEqual,
+            CompareRelation::GreaterThan => ComparisonOperator::GreaterThan,
+            CompareRelation::GreaterEqual => ComparisonOperator::GreaterEqual,
+        };
+        let raise = |operand: &crate::kernel::machine_integer::comparison::ComparisonOperand<
+            '_,
+        >| {
+            let root = crate::kernel::KernelTerm::retained_machine_operand(
+                view.format,
+                operand.operand_view(),
+            );
+            raise_kernel_term(&root, parameter_binding, state, bound_variables).and_then(
+                |expression| synthesize_observation_operand(expression, view.format.program_type()),
+            )
+        };
+        let comparison = ClickProposition::Comparison {
+            left: raise(&view.operands[0])?,
+            operator,
+            right: raise(&view.operands[1])?,
+        };
+        return Some(if value != view.negated {
+            comparison
+        } else {
+            ClickProposition::Not(Box::new(comparison))
+        });
+    }
+    use crate::kernel::IntegerComparisonOperator as Op;
+    let operator = match operator {
+        Op::Equal => ComparisonOperator::Equal,
+        Op::NotEqual => ComparisonOperator::NotEqual,
+        Op::LessThan => ComparisonOperator::LessThan,
+        Op::LessEqual => ComparisonOperator::LessEqual,
+        Op::GreaterThan => ComparisonOperator::GreaterThan,
+        Op::GreaterEqual => ComparisonOperator::GreaterEqual,
+    };
+    integer_observation_comparison(
+        &operands[0],
+        operator,
+        &operands[1],
+        value,
+        parameter_binding,
+        state,
+        bound_variables,
+    )
 }
 
 /// `to_integer(left) OP to_integer(right)` with an explicit Integer context:
@@ -4098,9 +4158,8 @@ pub(super) fn raise_kernel_term(
     raise_kernel_term_dispatch(term, parameter_binding, state, bound_variables)
 }
 
-// A comparison's presentation reads addresses and declared pointer types.
-// Keep producer qualifiers/evidence/bounds on the root; do not export those
-// unrelated payloads merely to pass through a native condition constructor.
+// Pointer-value equality can name full pointers even when their addresses
+// coincide. Address and offset comparisons retain their own operand types.
 fn raise_pointer_comparison(
     term: &crate::kernel::KernelTerm,
     parameter_binding: ParameterBinding<'_>,
@@ -4110,7 +4169,23 @@ fn raise_pointer_comparison(
     use crate::kernel::{KernelAddressOffset, KernelTermNode as Node};
     let (left, right) = match term.node() {
         Node::PointerEqual(pair) => {
+            let [left, right] = pair.arguments();
+            let shared_address =
+                left.node().address == right.node().address && !left.same_source_payload(right);
             let operand = |value: &crate::kernel::SharedPointer| {
+                if let Some(name) = pointer_names::shared_name(value) {
+                    return Some(ContractExpression::ProgramExpression(
+                        ProgramExpression::Variable(name.into()),
+                    ));
+                }
+                if shared_address {
+                    return synthesize_pointer_equality_operand(
+                        &value.export().ok()?,
+                        parameter_binding,
+                        state,
+                        bound_variables,
+                    );
+                }
                 synthesize_pointer_equality_address(
                     &value.node().address.export().ok()?,
                     value.node().program_type,
@@ -4119,10 +4194,16 @@ fn raise_pointer_comparison(
                     bound_variables,
                 )
             };
-            (
-                operand(&pair.arguments()[0])?,
-                operand(&pair.arguments()[1])?,
-            )
+            let left = operand(left)?;
+            let right = operand(right)?;
+            if shared_address && left == right {
+                crate::surface::proof::raise_lower_audit::note_reason(|| {
+                    "pointer equality: its operands share an address but have no distinct names"
+                        .to_string()
+                });
+                return None;
+            }
+            (left, right)
         }
         Node::AddressEqual { arguments } => {
             let left = arguments[0].export().ok()?;

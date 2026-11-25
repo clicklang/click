@@ -23,7 +23,7 @@ theorem spellings(x: int32, y: int32, a: uint64, b: uint64, n: int32) {
 
 theorem integer_mirror(i: Integer, j: Integer) {
     requires i < j;
-    ensures (if j > i { 1 } else { 2 }) == 1 by { normalize() using { i < j; }; }
+    ensures (if j > i { 1 } else { 2 }) == 1 by { close() using { i < j; }; }
 }
 
 theorem ambient_wide(a: uint64, b: uint64) {

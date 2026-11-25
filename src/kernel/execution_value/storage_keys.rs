@@ -145,7 +145,7 @@ impl ConditionStorageKey {
             _ => Self::native(&BooleanOperandView::Shared(root).identity_leaf()),
         }
     }
-    fn native(term: &ConditionTerm) -> Self {
+    pub(in crate::kernel) fn native(term: &ConditionTerm) -> Self {
         enum Task<'a> {
             Enter(&'a ConditionTerm),
             If,

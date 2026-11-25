@@ -150,13 +150,19 @@ pub fn without_implicit_solve_for_claim<R>(
 }
 
 /// Cold-checks an audit claim and measures time spent inside its proof scope.
-/// Complete rewrites also reject implicit solving and monitored discovery.
+/// Complete rewrites also disable proof search inside the selected claim.
 pub fn check_audit_claim<R>(
     claim_label: &str,
     complete_rewrite: bool,
     operation: impl FnOnce() -> Result<R, String>,
 ) -> Result<(R, Duration), String> {
-    check_selected_claim(claim_label, complete_rewrite, true, false, operation)
+    check_selected_claim(
+        claim_label,
+        complete_rewrite,
+        true,
+        complete_rewrite,
+        operation,
+    )
 }
 
 fn check_selected_claim<R>(

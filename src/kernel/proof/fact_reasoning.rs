@@ -288,7 +288,10 @@ pub(crate) fn normalize_using_conditions(
     if PureFactContext::checks_listed_signed_order_chain(goal, premises)
         || intervals::reduces_one_operation(goal, premises)
         || super::arithmetic_special::checks_selected_float_bounds(goal, premises)
-        || matches!(premises, [premise] if super::arithmetic_special::word_order_excludes_literal(goal, premise))
+        || matches!(premises, [premise] if
+            super::arithmetic_special::word_order_excludes_literal(goal, premise)
+                || super::arithmetic_special::odd_product_nonzero_requirement(goal)
+                    .is_some_and(|required| order_claim_equivalent(premise, &required)))
     {
         return Ok(());
     }

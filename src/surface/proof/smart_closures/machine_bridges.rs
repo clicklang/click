@@ -1012,6 +1012,44 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     if !facts.pure_known_available(&lowered)
                         && !crate::surface::planning::solve::computes_with_known(&lowered)
                     {
+                        // Arm equality checks use the guard as written. If a
+                        // cited Integer order spells it differently, publish
+                        // the exact guard before checking the selected arm.
+                        use crate::kernel::proof::fact_reasoning::{
+                            known_bridge_leaf, order_claim_forms,
+                        };
+                        if matches!(
+                            lowered.condition_native(),
+                            Some((
+                                ConditionTerm::IntegerLessThan(..)
+                                    | ConditionTerm::IntegerLessEqual(..)
+                                    | ConditionTerm::IntegerGreaterThan(..)
+                                    | ConditionTerm::IntegerGreaterEqual(..),
+                                _
+                            ))
+                        ) && order_claim_forms(&lowered)
+                            .iter()
+                            .any(|form| facts.contains(form))
+                            && proof.goal().is_some_and(|goal| {
+                                known_bridge_leaf(goal, &|premise| {
+                                    premise == &lowered || facts.pure_known_available(premise)
+                                })
+                            })
+                        {
+                            let guarded =
+                                proof
+                                    .driver()
+                                    .apply_step(super::super::wide_arithmetic::have(
+                                        guard,
+                                        vec![ProofStep::Known],
+                                    ))?;
+                            let closed = if guarded.focused_discharged() {
+                                guarded
+                            } else {
+                                guarded.driver().apply_step(ProofStep::Known)?
+                            };
+                            return Ok(Some((closed, sources)));
+                        }
                         continue;
                     }
                     let left = if mathematical {

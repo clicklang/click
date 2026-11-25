@@ -5695,3 +5695,11 @@ path = "reference/library/index.md#float_orderfloat64_square_interval"
 [[item]]
 id = "library.theorem.float_order::int32_to_float32_le"
 path = "reference/library/index.md#float_orderint32_to_float32_le"
+
+[[item]]
+id = "library.theorem.float_order::float32_divide_positive_lower"
+path = "reference/library/index.md#float_orderfloat32_divide_positive_lower"
+
+[[item]]
+id = "library.theorem.float_order::float32_divide_positive_upper"
+path = "reference/library/index.md#float_orderfloat32_divide_positive_upper"

@@ -100,6 +100,10 @@ pub(crate) trait ProofDiagnosticState: Send + Sync {
         None
     }
 
+    fn failed_requirement_source(&self) -> Option<&str> {
+        None
+    }
+
     fn rejected_resource_fact(&self) -> Option<&crate::kernel::proof::RejectedResourceRewriteFact> {
         None
     }
@@ -128,9 +132,8 @@ pub(crate) trait ProofDiagnosticState: Send + Sync {
 
     fn kernel_goal(&self) -> Option<&Proposition>;
 
-    /// The retained written goal when the source spelling carries pointer
-    /// information that an address rendering could lose.
-    fn written_pointer_goal(&self) -> Option<&super::ClickProposition> {
+    /// Source retained when the current goal was lowered or refined.
+    fn written_goal(&self) -> Option<&super::ClickProposition> {
         None
     }
 
@@ -296,13 +299,16 @@ impl ProofFailureDiagnostic {
         labels: &mut render::MemoryStateLabels,
     ) -> Option<String> {
         let state = self.state.as_ref()?;
-        if let Some(goal) = state.written_pointer_goal() {
-            return Some(super::printing::source_click_proposition(goal));
+        let goal = state.kernel_goal()?;
+        // Retained source can preserve pointer casts, but an unqualified
+        // written goal can hide the historical state of a read. Keep the
+        // checked goal's state labels in the general case.
+        if render::pointer_comparison_needs_source(goal)
+            && let Some(written) = state.written_goal()
+        {
+            return Some(super::printing::source_click_proposition(written));
         }
-        Some(render::render_proposition_labeled(
-            state.kernel_goal()?,
-            labels,
-        ))
+        Some(render::render_proposition_labeled(goal, labels))
     }
 
     pub(crate) fn premises(&self, limit: usize) -> Vec<&Proposition> {
@@ -380,10 +386,12 @@ pub(crate) fn render_failed_requirement(
     state.register_names(labels);
     let mut result = String::new();
     if let Some((label, proposition)) = state.failed_requirement() {
-        result = format!(
-            "{label}: {}",
-            render::render_proposition_labeled(proposition, labels)
-        );
+        let text = state
+            .failed_requirement_source()
+            .filter(|_| !render::typed_notation() && !render::renders_exactly(proposition, labels))
+            .map(str::to_owned)
+            .unwrap_or_else(|| render::render_proposition_labeled(proposition, labels));
+        result = format!("{label}: {text}");
         // The body fact of a resource without fields reads its hidden
         // record; show the record the fold proposed, in the same labels.
         if let Some(instance) = state.proposed_hidden_record()

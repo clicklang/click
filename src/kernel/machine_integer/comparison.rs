@@ -43,38 +43,13 @@ pub(crate) fn structural_boolean_comparison_view(
             operands: [left?, right?],
         });
     }
-    if let Some(native) = condition.native_leaf() {
-        return structural_comparison_view(native);
-    }
-    let crate::kernel::BooleanOperandView::Shared(root) = condition else {
-        unreachable!()
-    };
-    if !matches!(
-        root.node(),
-        crate::kernel::KernelTermNode::IntegerCompare { .. }
-    ) {
-        return None;
-    }
-    let native = condition.native();
-    let view = structural_comparison_view(&native)?;
-    Some(StructuralComparisonView {
-        format: view.format,
-        relation: view.relation,
-        negated: view.negated,
-        operands: view.operands.map(|operand| match operand {
-            ComparisonOperand::Written(value) => ComparisonOperand::Observation(
-                crate::kernel::MachineOperandView::Legacy(value).retain(view.format),
-            ),
-            ComparisonOperand::Observation(value) => ComparisonOperand::Observation(value),
-            ComparisonOperand::Constant(value) => ComparisonOperand::Constant(value),
-        }),
-    })
+    let (operator, [left, right]) = written_integer_comparison(condition)?;
+    structural_integer_comparison_view(operator, [&left, &right])
 }
 
 pub(crate) fn structural_comparison_view(
     condition: &ConditionTerm,
 ) -> Option<StructuralComparisonView<'_>> {
-    use crate::kernel::CompareRelation as R;
     if let ConditionTerm::Compare {
         format,
         relation,
@@ -92,16 +67,55 @@ pub(crate) fn structural_comparison_view(
             ],
         });
     }
-    let (relation, negated) = match condition {
-        ConditionTerm::IntegerEqual(..) => (R::Equal, false),
-        ConditionTerm::IntegerNotEqual(..) => (R::Equal, true),
-        ConditionTerm::IntegerLessThan(..) => (R::LessThan, false),
-        ConditionTerm::IntegerLessEqual(..) => (R::LessEqual, false),
-        ConditionTerm::IntegerGreaterThan(..) => (R::GreaterThan, false),
-        ConditionTerm::IntegerGreaterEqual(..) => (R::GreaterEqual, false),
-        _ => return None,
+    let (operator, operands) = integer_comparison_operands(condition)?;
+    structural_integer_comparison_view(operator, operands)
+}
+
+/// The written Integer operands, with their original scopes and direction.
+pub(crate) fn written_integer_comparison(
+    condition: crate::kernel::BooleanOperandView<'_>,
+) -> Option<(IntegerComparisonOperator, [SharedIntegerTerm; 2])> {
+    use crate::kernel::BooleanOperandView as B;
+    match condition {
+        B::Native(native) => {
+            let (operator, operands) = integer_comparison_operands(native)?;
+            Some((operator, operands.map(Clone::clone)))
+        }
+        B::Shared(root) => {
+            if let Some(native) = root.cached_condition_output() {
+                return written_integer_comparison(B::Native(native));
+            }
+            let KernelTermNode::IntegerCompare {
+                operator,
+                arguments,
+            } = root.node()
+            else {
+                return None;
+            };
+            Some((
+                *operator,
+                arguments.clone().map(SharedIntegerTerm::from_root),
+            ))
+        }
+    }
+}
+
+pub(crate) fn structural_integer_comparison_view(
+    operator: IntegerComparisonOperator,
+    operands: [&SharedIntegerTerm; 2],
+) -> Option<StructuralComparisonView<'static>> {
+    use crate::kernel::CompareRelation as R;
+    use IntegerComparisonOperator as Op;
+    let (relation, negated) = match operator {
+        Op::Equal => (R::Equal, false),
+        Op::NotEqual => (R::Equal, true),
+        Op::LessThan => (R::LessThan, false),
+        Op::LessEqual => (R::LessEqual, false),
+        Op::GreaterThan => (R::GreaterThan, false),
+        Op::GreaterEqual => (R::GreaterEqual, false),
     };
-    let mut view = comparison_view_at_format(condition, true)?;
+    let (ordered_relation, left, right) = order_integer_operands(operator, operands, true);
+    let mut view = comparison_view_at_format_from_handles(ordered_relation, left, right)?;
     if matches!(relation, R::GreaterThan | R::GreaterEqual) {
         view.operands.swap(0, 1);
     }
@@ -1182,6 +1196,14 @@ fn comparison_view_at_format(
     value: bool,
 ) -> Option<NativeComparisonView<'static>> {
     let (relation, left, right) = integer_relation(condition, value)?;
+    comparison_view_at_format_from_handles(relation, left, right)
+}
+
+fn comparison_view_at_format_from_handles(
+    relation: Relation,
+    left: &SharedIntegerTerm,
+    right: &SharedIntegerTerm,
+) -> Option<NativeComparisonView<'static>> {
     if [left, right].iter().any(|operand| {
         !matches!(
             operand.root().node(),
