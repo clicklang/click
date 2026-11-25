@@ -174,12 +174,19 @@ impl Global {
             kernel_name: BindingDeclaration::from(kernel_name.into()),
             program_type,
             initial_value,
+            linked_library_value: false,
             volatile: false,
             pointee_volatile: false,
             constant: false,
             pointee_constant: false,
             declared_class: None,
         }
+    }
+
+    pub(crate) fn with_linked_library_value(mut self) -> Self {
+        assert!(self.is_constant() && !self.is_volatile());
+        self.linked_library_value = true;
+        self
     }
 
     /// Records the class the frontend gives the object.

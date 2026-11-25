@@ -2896,6 +2896,7 @@ pub(in crate::kernel) fn evaluate_program_lvalue_paths(
                     pointee_volatile,
                     constant,
                     pointee_constant,
+                    ..
                 }) => LValueOutcome::LValue(
                     LValue::memory_with_qualifiers(
                         slot.clone(),
@@ -3147,6 +3148,25 @@ pub(in crate::kernel) fn read_retained_lvalue_expression_paths(
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<ExecutionValuePath>> {
+    // The interface supplies this const object's value at every program
+    // point. Call frames may forget cells, but cannot change that value.
+    if let ProgramExpression::Variable(name) = expression
+        && let Some(LocalBinding::GlobalObject {
+            library_value: Some(value),
+            ..
+        }) = state.locals.binding(name)
+    {
+        budget.consume_expression_step()?;
+        budget.check_path_width(1)?;
+        let value = value.clone().into_value();
+        let mut facts = ExecutionFacts::new();
+        add_retained_local_range_facts(&mut facts, assumptions, &value);
+        return Ok(vec![ExecutionValuePath {
+            outcome: ExpressionOutcome::Value(value),
+            facts,
+            obligations: Vec::new(),
+        }]);
+    }
     let source = match expression {
         ProgramExpression::TypedLoad { source, .. } => source.as_ref(),
         _ => None,

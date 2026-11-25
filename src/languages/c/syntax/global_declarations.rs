@@ -91,10 +91,8 @@ impl Parser {
                 && is_extern
                 && parsed_type.is_constant
                 && parsed_type.interface_type == InterfaceType::Int32Pointer
-                && struct_pointer_name.as_deref() == Some("__click_c_stdio_FILE");
-            let kernel_name = if hosted_stdout {
-                HOSTED_STDOUT_BINDING.into()
-            } else if is_file_static {
+                && struct_pointer_name.as_deref() == Some(STDIO_FILE_TAG);
+            let kernel_name = if is_file_static {
                 self.file_static_kernel_name(&name)
             } else {
                 name.clone().into()
@@ -545,7 +543,6 @@ impl Parser {
                             .with_pointee_constant(parsed_type.pointee_constant);
                             if hosted_stdout {
                                 global.hosted_stdout = true;
-                                global.kernel_name = kernel_name.clone();
                             }
                             global
                         }),

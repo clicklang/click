@@ -1603,6 +1603,7 @@ impl LocalEnvironment {
         pointee_volatile: bool,
         constant: bool,
         pointee_constant: bool,
+        library_value: Option<StoredExecutionValue>,
     ) {
         let name = self.resolve_binding(&name.into());
         self.insert_binding(
@@ -1614,6 +1615,7 @@ impl LocalEnvironment {
                 pointee_volatile,
                 constant,
                 pointee_constant,
+                library_value,
             },
         );
     }

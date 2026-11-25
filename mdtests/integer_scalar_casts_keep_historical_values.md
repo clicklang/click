@@ -23,7 +23,17 @@ int32 bump(int32 x) {
     step_until(function.exit);
     have (old(x) as int32) == at(before, x) by close();
     have (at(before, x) as int64) == old(x as int64) by close();
-    have ((at(after, x) - at(before, x)) as int32) == 1 by normalize();
+    have at(after, x) == at(before, x) + 1 by { close(); }
+    have to_integer(at(after, x)) == to_integer(at(before, x)) + 1 by {
+        rewrite(at(after, x), at(before, x) + 1);
+        apply(click::integer::int32_add_to_integer(at(before, x), 1));
+        close();
+    }
+    have to_integer(at(after, x)) - to_integer(at(before, x)) == 1 by {
+        rewrite(to_integer(at(after, x)), to_integer(at(before, x)) + 1);
+        close();
+    }
+    have ((at(after, x) - at(before, x)) as int32) == 1 by { close(); }
     close();
 }
 ```

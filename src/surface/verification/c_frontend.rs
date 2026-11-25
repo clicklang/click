@@ -187,9 +187,7 @@ pub(super) fn link_c_units(
         }
     }
     for (name, declaration) in library_values {
-        if let Some(global) = globals.get(name)
-            && !global.is_hosted_stdout()
-        {
+        if let Some(global) = globals.get(name) {
             let value = declaration.linked_value.clone().ok_or_else(|| {
                 link_error(format!(
                     "C library value `{name}` requires a matching linked const declaration"
@@ -201,7 +199,6 @@ pub(super) fn link_c_units(
     if let Some((name, _)) = globals.iter().find(|(name, global)| {
         referenced_external_objects.contains(name.as_str())
             && !global.is_defined()
-            && !global.is_hosted_stdout()
             && !global.is_library_value()
     }) {
         return Err(link_error(format!(
@@ -857,13 +854,11 @@ pub(super) fn c_layouts(
     let mut frontend_contracts = BTreeMap::<String, String>::new();
     for source_path in verifying_paths {
         let unit = parse_c_source_unit(&source_path, c_sources, target)?;
-        for global in unit.globals.values().filter(|global| {
-            global.is_constant()
-                && !global.is_file_static()
-                && !global.is_defined()
-                && !global.is_volatile()
-                && !global.pointee_is_volatile()
-        }) {
+        for global in unit
+            .globals
+            .values()
+            .filter(|global| global.can_supply_library_value())
+        {
             let values = std::sync::Arc::make_mut(&mut tables.c_library_globals);
             let ordinal = values.len() as u64;
             values
@@ -955,7 +950,14 @@ pub(super) fn c_layouts(
             .filter(|callee| !calls.contains_key(callee.as_str()))
             .filter_map(|callee| syntax::library_contract_module_named(callee)),
     );
-    tables.frontend_contracts = frontend_contracts.into_values().collect();
+    if tables.library_modules.contains("library/c/stdio.click") {
+        tables
+            .frontend_contracts
+            .push_str(include_str!("../../../library/c/stdio.interface.click"));
+    }
+    tables
+        .frontend_contracts
+        .extend(frontend_contracts.into_values());
     tables.recursion_peers = crate::kernel::recursive_component_peers(&calls);
     Ok(tables)
 }
@@ -1102,19 +1104,6 @@ pub(super) fn unit_qualified_objects(
 ) -> BTreeMap<String, parser::QualifiedCObject> {
     let mut objects = BTreeMap::new();
     for (name, global) in &unit.globals {
-        if let Some(value) = global.hosted_stdout() {
-            objects.insert(
-                name.clone(),
-                parser::QualifiedCObject {
-                    expression: ProgramExpression::Value(value),
-                    address: None,
-                    struct_name: global.struct_name().map(str::to_owned),
-                    array_shape: None,
-                    ambiguous: false,
-                },
-            );
-            continue;
-        }
         if let Some(pointer_type) = global.interface_type().pointer_type() {
             let pointer = SymbolicMemory::global_pointer(global.kernel_name());
             let address = ProgramValue::typed_pointer(pointer, pointer_type.to_kernel_type());
@@ -1296,7 +1285,7 @@ pub(super) fn unit_qualified_objects(
 
 /// Records the program objects a declared function's `extern` contract may
 /// name: the externally linked file-scope objects of a unit that declares
-/// it, and the hosted `stdout`. A contract reads them at the call, as it
+/// it. A contract reads them at the call, as it
 /// reads its parameters. A function this unit defines gets its own tables
 /// from [`record_function_tables`]; a declaration in several units sees the
 /// objects of each.
@@ -1330,21 +1319,24 @@ fn record_declaration_tables(tables: &mut parser::ProgramLayouts, unit: &syntax:
                 .map(|object| object.name().to_string()),
         )
         .collect::<BTreeSet<_>>();
-    let stdout = unit
+    let library_names = unit
         .globals
-        .get("stdout")
-        .and_then(syntax::CGlobal::hosted_stdout);
+        .values()
+        .filter(|global| global.can_supply_library_value())
+        .map(|global| global.name().to_owned())
+        .collect::<BTreeSet<_>>();
     for name in unit.function_declarations.keys() {
         if defined.contains(name) {
             continue;
         }
         let names = tables.program_object_names.entry(name.clone()).or_default();
         std::sync::Arc::make_mut(names).extend(visible.iter().cloned());
-        if let Some(stdout) = &stdout {
-            tables
-                .hosted_stdout
+        if !library_names.is_empty() {
+            let names = tables
+                .c_library_names_by_function
                 .entry(name.clone())
-                .or_insert_with(|| stdout.clone());
+                .or_default();
+            std::sync::Arc::make_mut(names).extend(library_names.iter().cloned());
         }
     }
 }
@@ -1387,10 +1379,24 @@ pub(super) fn record_function_tables(
                 .map(|object| object.name().to_string()),
         )
         .collect();
-    let mut stdout_shadowed = function
-        .parameters()
-        .iter()
-        .any(|parameter| parameter.name() == "stdout");
+    let mut library_names = function
+        .globals()
+        .values()
+        .filter(|global| global.can_supply_library_value())
+        .map(|global| global.name().to_owned())
+        .collect::<BTreeSet<_>>();
+    for parameter in function.parameters() {
+        library_names.remove(parameter.name());
+    }
+    for name in function
+        .static_locals()
+        .keys()
+        .chain(function.static_arrays().keys())
+        .chain(function.static_aggregates().keys())
+        .chain(function.static_aggregate_arrays().keys())
+    {
+        library_names.remove(name.source_name());
+    }
     // Statement states can name locals at the recorded boundary. Index
     // their declarations once, alongside the function's ambient objects;
     // state lowering still checks whether each local is available there.
@@ -1399,7 +1405,7 @@ pub(super) fn record_function_tables(
         match statement {
             syntax::CStatement::Declare { name, .. }
             | syntax::CStatement::DeclareStructValue { name, .. } => {
-                stdout_shadowed |= name.source_name() == "stdout";
+                library_names.remove(name.source_name());
                 names.insert(name.source_name().to_owned());
             }
             syntax::CStatement::Seq(first, second) => {
@@ -1444,15 +1450,18 @@ pub(super) fn record_function_tables(
             _ => {}
         }
     }
-    if !stdout_shadowed
-        && let Some(stdout) = function
-            .globals()
-            .get("stdout")
-            .and_then(syntax::CGlobal::hosted_stdout)
+    if !library_names.is_empty()
+        || tables
+            .c_library_names_by_function
+            .contains_key(function.source_name())
     {
+        let library_names = std::sync::Arc::new(library_names);
         tables
-            .hosted_stdout
-            .insert(function.name().to_owned(), stdout);
+            .c_library_names_by_function
+            .insert(function.source_name().to_owned(), library_names.clone());
+        tables
+            .c_library_names_by_function
+            .insert(function.name().to_owned(), library_names);
     }
     let names = std::sync::Arc::new(names);
     tables

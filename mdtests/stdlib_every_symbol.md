@@ -129,6 +129,9 @@ The external catalog symbol `__click_constant_p_unknown`, the value of the C
 builtin `__builtin_constant_p`, is verified in
 [`c_builtin_constant_p.md`](c_builtin_constant_p.md).
 
+The linked `stdout` value and the exported `stdout_non_null` theorem are used in
+[`hosted_stdout_uses_its_library_value.md`](hosted_stdout_uses_its_library_value.md).
+
 The `WriteAttempt` datatype, `stream` resource and `stdio::write_requests`
 function are used by
 [`printf_and_fprintf_share_the_streams_write_history.md`](printf_and_fprintf_share_the_streams_write_history.md).

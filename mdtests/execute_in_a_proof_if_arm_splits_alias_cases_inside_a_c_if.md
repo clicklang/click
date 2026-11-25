@@ -56,7 +56,25 @@ int32 f(int32 u, int32 w) {
                     if u == 2 {
                         rewrite(u, 2); close();
                     } else {
-                        have u == 3 by { normalize() using { 1 <= u; u < 4; u != 1; u != 2; }; }
+                        have u == 3 by {
+                            apply(click::integer::int32_less_equal_and_not_equal_implies_less_than(1, u));
+                            have 2 <= to_integer(u) by {
+                                apply(click::integer::lt_step_le(1, to_integer(u)));
+                                close();
+                            }
+                            apply(click::integer::int32_to_integer_less_equal_implies_less_equal(2, u));
+                            apply(click::integer::int32_less_equal_and_not_equal_implies_less_than(2, u));
+                            have 3 <= to_integer(u) by {
+                                apply(click::integer::lt_step_le(2, to_integer(u)));
+                                close();
+                            }
+                            have to_integer(u) <= 3 by {
+                                apply(click::integer::lt_le_predecessor(to_integer(u), 4));
+                                close();
+                            }
+                            apply(click::integer::le_antisymmetric(to_integer(u), 3));
+                            close();
+                        }
                         rewrite(u, 3); close();
                     }
                 }

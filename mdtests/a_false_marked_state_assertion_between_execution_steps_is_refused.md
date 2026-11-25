@@ -2,14 +2,14 @@
 
 The entry value of `a[m]` is unknown, so `close()` cannot prove that it was 5.
 
-```c filename=a_false_transport_using_between_execution_steps_is_refused.c
+```c filename=a_false_marked_state_assertion_between_execution_steps_is_refused.c
 void mark_one(int32 a[], int32 n, int32 i, int32 m) {
     a[i] = 1;
 }
 ```
 
 ```click
-verifying "a_false_transport_using_between_execution_steps_is_refused.c";
+verifying "a_false_marked_state_assertion_between_execution_steps_is_refused.c";
 
 void mark_one(int32 a[], int32 n, int32 i, int32 m) {
     requires 0 <= i;

@@ -5407,6 +5407,16 @@ pub(in crate::surface) fn describe_pointer(
             )
         };
     }
+    if let Some((name, _)) = super::proof_diagnostics::render::c_library_pointer_name(pointer) {
+        return if pointer.offset == AddressOffset::Constant(0) {
+            name
+        } else {
+            format!(
+                "byte_offset({name}, {})",
+                describe_pointer_offset_with_context(&pointer.offset, parameter_binding)
+            )
+        };
+    }
     // Two parameters can point into one block, and then every one of them can
     // express the address -- `b[j]` is also `a[(b - a) + j]`. As in
     // [`describe_source_cell`], the shortest spelling is the one written

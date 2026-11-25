@@ -5981,6 +5981,22 @@ selects this contract for the projected `<stdio.h>` declaration
 
 **Verified use:** [`mdtests/printf_and_fprintf_share_the_streams_write_history.md`](https://github.com/clicklang/click/blob/master/mdtests/printf_and_fprintf_share_the_streams_write_history.md); a format that converts is refused in [`mdtests/fprintf_refuses_a_format_that_converts.md`](https://github.com/clicklang/click/blob/master/mdtests/fprintf_refuses_a_format_that_converts.md).
 
+### `stdout`
+
+```click
+FILE *const stdout;
+
+theorem stdout_non_null() {
+    ensures stdout != 0;
+}
+```
+
+C's `<stdio.h>` supplies the linked library value. C execution, contracts,
+and standalone theorems share that pointer. Writing to the stream
+requires ownership of `click::c::stdio::stream(stdout)`.
+
+**Verified use:** [`hosted_stdout_uses_its_library_value.md`](https://github.com/clicklang/click/blob/master/mdtests/hosted_stdout_uses_its_library_value.md).
+
 ### `printf`
 
 ```click
@@ -6001,7 +6017,7 @@ int32 printf(const uint8* format, ...args) {
 ```
 
 **Meaning:** [`fprintf`](#fprintf) with the stream `stdout`, the hosted
-target's standard output, which the contract names as a program global. The
+target's standard output, which the contract names as a linked library value. The
 C front end selects this contract for the projected `<stdio.h>` declaration
 on the hosted target ([formatted output](../language/c.md#formatted-output)).
 

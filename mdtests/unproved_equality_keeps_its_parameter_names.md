@@ -4,12 +4,12 @@ The premise `a == 1` cannot prove the unrelated goal `b == 1`. Ordinary
 fact checking refuses the goal and prints both the available premise and
 the unproved goal with their distinct parameter names.
 
-```c filename=transport_using_names_its_source_and_target.c
+```c filename=unproved_equality_keeps_its_parameter_names.c
 void unused(void) {}
 ```
 
 ```click
-verifying "transport_using_names_its_source_and_target.c";
+verifying "unproved_equality_keeps_its_parameter_names.c";
 
 theorem t(a: int32, b: int32) {
     requires a == 1;

@@ -917,10 +917,8 @@ fn verification_error_report(
 /// What refused a proof step, by class, and the `click docs` entry that
 /// documents it. A C statement's open requirement is proved by the implicit
 /// `solve` when no smart tactic reached the statement, so its refusal is a
-/// smart miss even under a written `step()`. A smart form that elides an
-/// argument, such as `apply(t(x))`, refuses by a search miss: the fix is to
-/// write the argument. An incomplete proof reports the open requirement so
-/// the proof author can finish the script.
+/// smart miss even under a written `step()`. An incomplete proof reports the
+/// open requirement so the proof author can finish the script.
 fn refusal_class_lines(written: Option<&str>, refusal: Option<ProofRefusal>) -> Vec<String> {
     if refusal == Some(ProofRefusal::IncompleteProof) {
         return vec![
@@ -928,7 +926,6 @@ fn refusal_class_lines(written: Option<&str>, refusal: Option<ProofRefusal>) -> 
             "see: click docs tracing".to_owned(),
         ];
     }
-    let written_text = written;
     let written = written.and_then(click::docs::written_tactic_class);
     if refusal == Some(ProofRefusal::ImplicitStatementSearch) {
         let smart = click::docs::TacticClass::Smart;
@@ -946,11 +943,6 @@ fn refusal_class_lines(written: Option<&str>, refusal: Option<ProofRefusal>) -> 
     };
     use click::docs::TacticClass::{Simple, Smart};
     let meaning = match (refusal, class) {
-        (Some(ProofRefusal::UnsuccessfulSearch), _)
-            if written_text.is_some_and(click::docs::written_tactic_elides_argument) =>
-        {
-            Some(click::docs::SEARCH_MISS_MEANING)
-        }
         (Some(ProofRefusal::Tactic), Simple) | (Some(ProofRefusal::UnsuccessfulSearch), Smart) => {
             Some(class.refusal_meaning())
         }

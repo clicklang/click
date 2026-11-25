@@ -1498,7 +1498,7 @@ fn symbolic_loop_frame_expands_and_cold_replays() {
 #[ignore = "nightly: unrelated equality refusal and related-premise replay"]
 fn unrelated_equality_is_refused_without_transport() {
     let (source, sources) =
-        mdtest_sources("mdtests/transport_using_names_its_source_and_target.md");
+        mdtest_sources("mdtests/unproved_equality_keeps_its_parameter_names.md");
     let sources = sources
         .iter()
         .map(|(name, text)| (name.as_str(), text.as_str()))

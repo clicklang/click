@@ -109,13 +109,13 @@ void inspect(struct node* parent) {
                             have child == leaf;
                             have sibling->left == child;
                             have model->left == leaf by {
-                                normalize() using { sibling == model; sibling->left == child; child == leaf; };
+                                close() using { sibling == model; sibling->left == child; child == leaf; };
                             }
                             step();
                             step();
                             have sibling->right == child;
                             have model->right == parent by {
-                                normalize() using { sibling == model; sibling->right == child; };
+                                close() using { sibling == model; sibling->right == child; };
                             }
                             let l = fold(leaf_at(parent->left->left), { model: Identity::At(leaf) });
                             let c = fold(cell(parent->left), { model: Pair::At(model, Identity::At(leaf)), l: l });
@@ -134,5 +134,5 @@ void inspect(struct node* parent) {
 ```
 
 ```expect
-fail: `normalize using` goal did not normalize to true
+fail: `close() using` could not prove the current goal from only its listed premises
 ```

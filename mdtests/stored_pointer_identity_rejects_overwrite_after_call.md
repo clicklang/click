@@ -53,11 +53,11 @@ void caller(struct Node* p, struct Node* q, struct Node* t, struct Root* root) {
     mark call_entry;
     let {after: after} = step(helper, {before: before});
     step();
-    have r->next == at(call_entry, r->next) by normalize();
+    have r->next == at(call_entry, r->next) by close();
     have r->next == 0;
 }
 ```
 
 ```expect
-fail: normalize
+fail: could not establish `r->next == at(call_entry, r->next)`
 ```

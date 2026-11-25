@@ -396,8 +396,8 @@ int32 vector_grow(struct vector* owner) {
                     have at(statement(10).call(vector_copy, 0).entry, old_data[k]) == old(owner->data[k]) by { close(); }
                     have k < new_capacity by { close(); }
                     have separate(memory(*owner), memory(new_data[0..new_capacity])) by { close(); }
-                    have contains(memory(*owner), memory(owner->data)) by { normalize(); }
-                    have contains(memory(*owner), memory(owner->cap)) by { normalize(); }
+                    have contains(memory(*owner), memory(owner->data)) by { close(); }
+                    have contains(memory(*owner), memory(owner->cap)) by { close(); }
                     have separate(memory(owner->data), memory(new_data[k])) by {
                         apply(selected_array_cell(memory(*owner), memory(owner->data), new_data, new_capacity, k));
                     }
@@ -518,7 +518,7 @@ int32 vector_push(struct vector* owner, int32 value) {
                 have k < old(owner->cap) by {
                     apply(click::integer::int32_less_than_less_equal_transitive(k, old(owner->len), old(owner->cap)));
                 }
-                have contains(memory(*owner), memory(owner->len)) by { normalize(); }
+                have contains(memory(*owner), memory(owner->len)) by { close(); }
                 have contains(memory(old(owner->data)[0..old(owner->cap)]), memory(old(owner->data)[k])) by {
                     apply(click::separation::contains_element(old(owner->data), 0, old(owner->cap), k));
                 }
