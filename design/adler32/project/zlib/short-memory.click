@@ -1,4 +1,5 @@
 import click::integer;
+import click::separation;
 
 target "x86_64-unknown-linux-gnu";
 verifying "../../vendor/zlib-1.3.1/adler32.c";
@@ -216,9 +217,29 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    have len <= at(before_decrement, len) - 1u64 by close();
    have len <= 15u64;
    have len <= 9223372036854775807u64;
-   have viewable(buf[0u64..len]) by {
-    transport(at(before_decrement, viewable(buf[0u64..len])), viewable(buf[0u64..len]));
+   have contains(
+    memory(at(before_decrement, buf)[0u64..at(before_decrement, len)]),
+    memory(at(before_decrement, buf)[1u64..at(before_decrement, len)])
+   ) by {
+    apply(separation::contains_subrange(at(before_decrement, buf), 0u64, at(before_decrement, len), 1u64, at(before_decrement, len)));
    }
+   have contains(
+    memory(at(before_decrement, buf)[1u64..at(before_decrement, len)]), memory(buf[0u64..len])
+   ) by {
+    rewrite(buf, at(before_decrement, buf) + 1u64);
+    rewrite(len, at(before_decrement, len) - 1u64);
+    apply(separation::contains_rebase(at(before_decrement, buf), 1u64, at(before_decrement, len)));
+   }
+   apply(separation::contains_trans(
+    memory(at(before_decrement, buf)[0u64..at(before_decrement, len)]),
+    memory(at(before_decrement, buf)[1u64..at(before_decrement, len)]),
+    memory(buf[0u64..len])
+   ));
+   have viewable(memory(at(before_decrement, buf)[0u64..at(before_decrement, len)])) by {
+    transport(at(before_decrement, viewable(buf[0u64..len])),
+     viewable(memory(at(before_decrement, buf)[0u64..at(before_decrement, len)])));
+   }
+   apply(separation::viewable_restrict(memory(at(before_decrement, buf)[0u64..at(before_decrement, len)]), memory(buf[0u64..len])));
    have old(len) - len <= 15u64 by {
     have to_integer(old(len) - len) <= 15 by close() using {
      to_integer(old(len) - len) == to_integer(old(len)) - to_integer(len);
