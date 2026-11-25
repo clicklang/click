@@ -29,7 +29,23 @@ full-expression temporaries, and admitted cleanup paths. Construction-return
 restrictions do not remove already supported nontrivial local destruction.
 Placement/replacement, overlapping unions, general inheritance/virtual dispatch,
 broader exceptional construction and other targets require separate rules.
-The [C++ coverage item](../roadmap/cpp-support.md) owns feature expansion.
+
+## Exceptional exits
+
+The 2026-10-13 design decisions apply when extending the bounded exception
+profile. Each return or throw has a separate checked outcome. Both exits
+restore lent `owns` and `views` resources. Exceptional postconditions account
+for writes before a throw, including observations of entry memory. Cleanup
+runs in language order for objects whose construction completed. Combining
+`throws` with `consumes`, `produces`, or `constructs` needs explicit rules
+for the exceptional footprint.
+
+A class exception can be modeled as an opaque value of exact dynamic type.
+The selected runtime profile must state construction, destruction, and
+allocation-failure assumptions. A typed handler needs source-order matching
+using checked class-hierarchy evidence, including public unambiguous base
+classes. An unmatched exception propagates, and a `noexcept` proof must rule
+out escape.
 
 ## Semantic state
 

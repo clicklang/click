@@ -1,16 +1,14 @@
 # Roadmap
 
-Click's launch strategy is to finish P1, verify the Linux kernel rbtree
-implementation within the agreed minimum viable rbtree (MVR) scope, and launch
-with that proof as the key demo. The
+Click's launch strategy is to verify the Linux kernel rbtree implementation
+within the agreed minimum viable rbtree (MVR) scope and launch with that proof
+as the key demo. The
 [roadmap index](https://github.com/clicklang/click/blob/master/roadmap/README.md)
-is authoritative for priorities and scope. This page does not duplicate its
-feature list or maintain a second proof-status ledger.
+lists work we intend to pursue actively.
 
-## Complete the P1 work
+## Launch scope
 
-Choose work by dependencies and what it unblocks; P1 means required before
-launch, not a fixed execution order. The selected stable-view, basic C++,
+Choose work by dependencies and what it unblocks. The selected stable-view, basic C++,
 concurrency, representation-copy, cleanup and shared-heap demonstrations have
 landed with bounded support claims. They are evidence for those slices, not
 unfinished launch milestones or general language completeness.
@@ -53,9 +51,9 @@ compiler, translation and external-assumption boundary.
 
 Publish reproducible pinned sources, configuration, sidecars and verification
 instructions. State exactly what is proved, under which target and assumptions,
-and use that result in the launch demonstration. Broader language, compiler,
-concurrency and object-lifetime coverage follows the P2 items and subsequent
-explicit priorities; it is not implied by the bounded launch demonstrations.
+and use that result in the launch demonstration. Let feedback from real
+projects guide later work on language, compiler, concurrency, and
+object-lifetime coverage.
 
 The [historical launch note](https://github.com/clicklang/click/blob/2175760b9/docs/internals/roadmap.md)
 retains the October 13 per-case counts and copied-header limitations. Those

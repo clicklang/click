@@ -825,5 +825,5 @@ session.
 `SpanReaderRead32.click` composes that contract with the pinned
 `ser_readdata32<SpanReader>` instantiation. Success advances the cursor four
 bytes and returns their little-endian value on x86-64. Short input propagates
-`std::ios_base::failure` and leaves the cursor unchanged. Typed catches are
-tracked in [the exceptions roadmap](../../roadmap/cpp-exceptions.md).
+`std::ios_base::failure` and leaves the cursor unchanged. See the [exception design](../../design/cpp-object-model.md#exceptional-exits)
+for the constraints on typed catches.
