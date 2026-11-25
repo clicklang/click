@@ -239,33 +239,26 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 continue;
             }
             proof.charge_execute_step(steps, splits)?;
-            let stepped = crate::kernel::search::ProofSearch::try_smart_statement_step(
+            if let Some(target) = until {
+                let next = match proof.driver().apply_step(ProofStep::Step) {
+                    Ok(next) => next,
+                    Err(error) => return Err(step_until_refusal(&proof, target, error)?),
+                };
+                record_added(&next);
+                proof = next;
+                continue;
+            }
+            if let Some(next) = crate::kernel::search::ProofSearch::try_smart_statement_step(
                 &(proof),
                 ProofStep::Step,
                 retried_requirements,
-            );
-            let stepped = match (stepped, until) {
-                (Err(error), Some(target)) => {
-                    return Err(step_until_refusal(&proof, target, error)?);
-                }
-                (stepped, _) => stepped?,
-            };
-            if let Some(next) = stepped {
+            )? {
                 if pending.is_empty() {
                     record_added(&next);
                 }
                 proof = next;
                 retried_requirements.clear();
                 continue;
-            }
-            if let Some(target) = until {
-                return match proof.driver().apply_step(ProofStep::Step) {
-                    Err(error) => Err(step_until_refusal(&proof, target, error)?),
-                    Ok(_) => Err(proof.step_error(format!(
-                        "`step_until({}.entry)` could not advance this statement",
-                        target.describe()
-                    ))),
-                };
             }
             let split = if proof.is_at_call_outcomes_frontier()? {
                 proof
