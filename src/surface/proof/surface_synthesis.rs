@@ -2616,6 +2616,21 @@ fn synthesize_surface_atomic_proposition(
             _ => {}
         }
     }
+    if let Proposition::ConditionIs(condition, value) = proposition
+        && let Some((operator, operands)) =
+            crate::kernel::machine_integer::comparison::written_integer_comparison(
+                condition.operand_view(),
+            )
+    {
+        return raise_integer_comparison(
+            operator,
+            &operands,
+            *value,
+            parameter_binding,
+            state,
+            bound_variables,
+        );
+    }
     // A `bool` local's truth, C's test `w != 0` at `uint8` of its carrier:
     // the claim on the local, `w` or `not w`, which is what a claim on it
     // lowers to. Compared with an integer, as `w != 0`, it would not lower.
@@ -3261,92 +3276,6 @@ fn synthesize_surface_atomic_proposition(
             ClickProposition::Not(Box::new(comparison))
         });
     }
-    // An Integer comparison of observations keeps machine Surface operands
-    // exactly when the machine spelling lowers back to it: lowering keeps a
-    // comparison over a retained compound operand (an operation, a
-    // conditional, a cast) Integer. Over atomic operands the machine
-    // spelling lowers native, so those keep explicit `to_integer`.
-    if !matches!(condition.native_compat(), ConditionTerm::Compare { .. })
-        && let Some(view) = crate::kernel::machine_integer::comparison::structural_comparison_view(
-            condition.native_compat(),
-        )
-        && matches!(
-            view.format,
-            MachineIntegerType::Int32
-                | MachineIntegerType::UInt32
-                | MachineIntegerType::Int64
-                | MachineIntegerType::UInt64
-        )
-        && machine_spelling_lowers_to_integer(
-            view.format,
-            view.relation,
-            view.operands.each_ref().map(|operand| {
-                crate::kernel::KernelTerm::retained_machine_operand(
-                    view.format,
-                    operand.operand_view(),
-                )
-            }),
-        )
-    {
-        let operator = match view.relation {
-            CompareRelation::Equal => ComparisonOperator::Equal,
-            CompareRelation::LessThan => ComparisonOperator::LessThan,
-            CompareRelation::LessEqual => ComparisonOperator::LessEqual,
-            CompareRelation::GreaterThan => ComparisonOperator::GreaterThan,
-            CompareRelation::GreaterEqual => ComparisonOperator::GreaterEqual,
-        };
-        let raise = |operand: &crate::kernel::machine_integer::comparison::ComparisonOperand<
-            '_,
-        >| {
-            let root = crate::kernel::KernelTerm::retained_machine_operand(
-                view.format,
-                operand.operand_view(),
-            );
-            raise_kernel_term(&root, parameter_binding, state, bound_variables).and_then(
-                |expression| synthesize_observation_operand(expression, view.format.program_type()),
-            )
-        };
-        let comparison = ClickProposition::Comparison {
-            left: raise(&view.operands[0])?,
-            operator,
-            right: raise(&view.operands[1])?,
-        };
-        return Some(if *value != view.negated {
-            comparison
-        } else {
-            ClickProposition::Not(Box::new(comparison))
-        });
-    }
-    let integer_comparison = match condition.native_compat() {
-        ConditionTerm::IntegerLessThan(left, right) => {
-            Some((left, ComparisonOperator::LessThan, right))
-        }
-        ConditionTerm::IntegerLessEqual(left, right) => {
-            Some((left, ComparisonOperator::LessEqual, right))
-        }
-        ConditionTerm::IntegerGreaterThan(left, right) => {
-            Some((left, ComparisonOperator::GreaterThan, right))
-        }
-        ConditionTerm::IntegerGreaterEqual(left, right) => {
-            Some((left, ComparisonOperator::GreaterEqual, right))
-        }
-        ConditionTerm::IntegerEqual(left, right) => Some((left, ComparisonOperator::Equal, right)),
-        ConditionTerm::IntegerNotEqual(left, right) => {
-            Some((left, ComparisonOperator::NotEqual, right))
-        }
-        _ => None,
-    };
-    if let Some((left, operator, right)) = integer_comparison {
-        return integer_observation_comparison(
-            left,
-            operator,
-            right,
-            *value,
-            parameter_binding,
-            state,
-            bound_variables,
-        );
-    }
     // Keep the narrow interpretation even when rewriting removed the last
     // symbolic operand. Observing a literal as Integer would discard its type.
     if let ConditionTerm::Compare {
@@ -3779,28 +3708,29 @@ pub(super) fn spell_conjunct_observations(goal: &Proposition, surface: &mut Clic
             spell_conjunct_observations(goal, surface_body);
         }
         (goal, ClickProposition::Comparison { left, right, .. }) => {
-            if let Some((
-                ConditionTerm::Compare {
-                    format,
-                    left: a,
-                    right: b,
-                    ..
-                },
-                _,
-            )) = goal.condition_native()
+            use crate::kernel::BooleanOperandView as B;
+            if let Proposition::ConditionIs(condition, _) = goal
+                && let Some((format, _, operands)) = match condition.operand_view() {
+                    B::Shared(root) => root.cached_condition_output().map_or_else(
+                        || B::Shared(root).comparison(),
+                        |native| B::Native(native).comparison(),
+                    ),
+                    view => view.comparison(),
+                }
                 && matches!(
                     format,
                     MachineIntegerType::Int32 | MachineIntegerType::Int64
                 )
-                && [a.as_ref(), b.as_ref()].iter().any(|operand| {
+                && operands.iter().any(|operand| {
                     matches!(
-                        operand,
-                        MachineTerm::Binary {
-                            op: MachineBinaryOp::Add
+                        operand.binary(),
+                        Some((
+                            _,
+                            MachineBinaryOp::Add
                                 | MachineBinaryOp::Subtract
                                 | MachineBinaryOp::Multiply,
-                            ..
-                        }
+                            _
+                        ))
                     )
                 })
             {
@@ -3839,6 +3769,91 @@ fn machine_spelling_lowers_to_integer(
             comparison::logical_condition_for_operand_views(format, relation, operands),
             ConditionTerm::Compare { .. } | ConditionTerm::Constant(_)
         )
+}
+
+fn raise_integer_comparison(
+    operator: crate::kernel::IntegerComparisonOperator,
+    operands: &[crate::kernel::SharedIntegerTerm; 2],
+    value: bool,
+    parameter_binding: ParameterBinding<'_>,
+    state: &ExecutionState,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
+) -> Option<ClickProposition> {
+    // An Integer comparison of observations keeps machine Surface operands
+    // exactly when the machine spelling lowers back to it: lowering keeps a
+    // comparison over a retained compound operand (an operation, a
+    // conditional, a cast) Integer. Over atomic operands the machine
+    // spelling lowers native, so those keep explicit `to_integer`.
+    if let Some(view) =
+        crate::kernel::machine_integer::comparison::structural_integer_comparison_view(
+            operator,
+            operands.each_ref(),
+        )
+        && matches!(
+            view.format,
+            MachineIntegerType::Int32
+                | MachineIntegerType::UInt32
+                | MachineIntegerType::Int64
+                | MachineIntegerType::UInt64
+        )
+        && machine_spelling_lowers_to_integer(
+            view.format,
+            view.relation,
+            view.operands.each_ref().map(|operand| {
+                crate::kernel::KernelTerm::retained_machine_operand(
+                    view.format,
+                    operand.operand_view(),
+                )
+            }),
+        )
+    {
+        let operator = match view.relation {
+            CompareRelation::Equal => ComparisonOperator::Equal,
+            CompareRelation::LessThan => ComparisonOperator::LessThan,
+            CompareRelation::LessEqual => ComparisonOperator::LessEqual,
+            CompareRelation::GreaterThan => ComparisonOperator::GreaterThan,
+            CompareRelation::GreaterEqual => ComparisonOperator::GreaterEqual,
+        };
+        let raise = |operand: &crate::kernel::machine_integer::comparison::ComparisonOperand<
+            '_,
+        >| {
+            let root = crate::kernel::KernelTerm::retained_machine_operand(
+                view.format,
+                operand.operand_view(),
+            );
+            raise_kernel_term(&root, parameter_binding, state, bound_variables).and_then(
+                |expression| synthesize_observation_operand(expression, view.format.program_type()),
+            )
+        };
+        let comparison = ClickProposition::Comparison {
+            left: raise(&view.operands[0])?,
+            operator,
+            right: raise(&view.operands[1])?,
+        };
+        return Some(if value != view.negated {
+            comparison
+        } else {
+            ClickProposition::Not(Box::new(comparison))
+        });
+    }
+    use crate::kernel::IntegerComparisonOperator as Op;
+    let operator = match operator {
+        Op::Equal => ComparisonOperator::Equal,
+        Op::NotEqual => ComparisonOperator::NotEqual,
+        Op::LessThan => ComparisonOperator::LessThan,
+        Op::LessEqual => ComparisonOperator::LessEqual,
+        Op::GreaterThan => ComparisonOperator::GreaterThan,
+        Op::GreaterEqual => ComparisonOperator::GreaterEqual,
+    };
+    integer_observation_comparison(
+        &operands[0],
+        operator,
+        &operands[1],
+        value,
+        parameter_binding,
+        state,
+        bound_variables,
+    )
 }
 
 /// `to_integer(left) OP to_integer(right)` with an explicit Integer context:
