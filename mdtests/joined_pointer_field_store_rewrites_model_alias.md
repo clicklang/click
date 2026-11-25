@@ -115,7 +115,7 @@ void inspect(struct node* parent) {
                             have sibling->left == child;
                             have model->left == leaf by {
                                 rewrite(model, sibling);
-                                normalize() using { sibling->left == child; child == leaf; };
+                                rewrite(sibling->left, child); close();
                             }
                             have pid->left == model;
                             have pid->right == at(split, parent->right);
@@ -125,19 +125,15 @@ void inspect(struct node* parent) {
                             step();
                             mark after_store;
                             have pid->left == at(before_store, pid->left) by {
-                                have separate(loop(0).statement(2).footprint, memory(pid->left)) by {
-                                    normalize() using {
-                                        at(before_store, separate(memory(sibling->right), memory(pid->left)));
-                                    };
+                                have at(before_store, separate(loop(0).statement(2).footprint, memory(pid->left))) by {
+                                    close();
                                 }
                                 preserve(memory(pid->left), loop(0).statement(2));
                             }
                             have pid->left == model;
                             have pid->right == at(before_store, pid->right) by {
-                                have separate(loop(0).statement(2).footprint, memory(pid->right)) by {
-                                    normalize() using {
-                                        at(before_store, separate(memory(sibling->right), memory(pid->right)));
-                                    };
+                                have at(before_store, separate(loop(0).statement(2).footprint, memory(pid->right))) by {
+                                    close();
                                 }
                                 preserve(memory(pid->right), loop(0).statement(2));
                             }
