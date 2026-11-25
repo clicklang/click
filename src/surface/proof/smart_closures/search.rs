@@ -7898,7 +7898,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let (other, read) =
             if matches!(right, SyntaxTerm::Field { .. }) && is_field_observation(left) {
                 (left, right)
-        } else if let Some(pair) = field_at_two_points(left, right) {
+            } else if let Some(pair) = field_at_two_points(left, right) {
                 pair
             } else {
                 return Ok(None);
