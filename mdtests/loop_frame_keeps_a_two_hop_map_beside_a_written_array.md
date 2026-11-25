@@ -157,7 +157,7 @@ void clear_data(struct region* region) {
                             apply(click::separation::separate_restrict(at(opened, memory(arena->data[0..arena->capacity])), at(opened, memory(region->arena->occupied[0..arena->capacity])), at(opened, memory(arena->data[i])), at(opened, memory(region->arena->occupied[k]))));
                         }
                         // Select the preserved cell as one complete int32 observation.
-                        have contains(at(opened, memory(region->arena->occupied[k])), at(opened, memory((&region->arena->occupied[k])[0..1]))) by { normalize(); }
+                        have contains(at(opened, memory(region->arena->occupied[k])), at(opened, memory((&region->arena->occupied[k])[0..1]))) by { close(); }
                         have contains(at(opened, memory(arena->data[i])), at(opened, memory(arena->data[i]))) by { apply(click::separation::contains_refl(at(opened, memory(arena->data[i])))); }
                         have separate(at(opened, memory(arena->data[i])), at(opened, memory((&region->arena->occupied[k])[0..1]))) by {
                             apply(click::separation::separate_restrict(at(opened, memory(arena->data[i])), at(opened, memory(region->arena->occupied[k])), at(opened, memory(arena->data[i])), at(opened, memory((&region->arena->occupied[k])[0..1]))));
