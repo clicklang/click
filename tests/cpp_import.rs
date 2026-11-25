@@ -18557,6 +18557,35 @@ uint64 probe(struct View& view, uint64 n) {
  ensures view.data == old(view.data);
  ensures view.size == n;
  ensures view.data[0] == 19;
+} by {
+    step_until(region(7).entry);
+    have separate(memory(back), memory(view.size)) by close();
+    have separate(memory(back), memory(view.data)) by close();
+    have view.data == old(view.data) by close();
+    have view.size == n by close();
+    step();
+    have separate(region(7).footprint, memory(view.size)) by {
+        normalize() using { at(region(7).entry, separate(memory(back), memory(view.size))); };
+    }
+    have view.size == at(region(7).entry, view.size) by {
+        preserve(memory(view.size), region(7));
+    }
+    have view.size == n by {
+        rewrite(view.size, at(region(7).entry, view.size));
+        close();
+    }
+    have separate(region(7).footprint, memory(view.data)) by {
+        normalize() using { at(region(7).entry, separate(memory(back), memory(view.data))); };
+    }
+    have view.data == at(region(7).entry, view.data) by {
+        preserve(memory(view.data), region(7));
+    }
+    have view.data == old(view.data) by {
+        rewrite(view.data, at(region(7).entry, view.data));
+        close();
+    }
+    step_until(function.exit);
+    close();
 }
 "#;
     check_arithmetic_sidecar_with_tools(&project, &import, proof, expand_and_retain);
