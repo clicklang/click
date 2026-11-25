@@ -8,7 +8,7 @@ later citation of the name cannot be read two ways.
 theorem reflexive(x: int32) {
     ensures x == x by {
         have x: x == x;
-        normalize();
+        close();
     }
 }
 ```

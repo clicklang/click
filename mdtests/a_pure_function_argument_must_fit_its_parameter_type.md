@@ -9,7 +9,7 @@ as `256 as uint8` when the wrap is meant.
 function byte_plus_one(word: uint8) -> int32 { word + 1 }
 theorem implicit_wrap() {
     ensures byte_plus_one(256) == 1 by {
-        unfold(byte_plus_one(256)); normalize();
+        unfold(byte_plus_one(256)); close();
     }
 }
 ```

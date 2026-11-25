@@ -21,7 +21,7 @@ int32 f(int32 n) {
 } by {
     step_until(function.exit);
     close();
-    normalize();
+    close();
 }
 ```
 

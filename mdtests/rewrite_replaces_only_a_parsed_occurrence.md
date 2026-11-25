@@ -18,7 +18,7 @@ theorem right_suffix_does_not_occur(x: int32, y: int32, w: int32, z: int32) {
     requires y + w == z;
     ensures x + y + w == x + z by {
         rewrite(y + w, z);
-        normalize();
+        close();
     }
 }
 ```

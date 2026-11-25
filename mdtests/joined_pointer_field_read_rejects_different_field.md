@@ -80,7 +80,7 @@ void inspect(struct node* parent) {
                 Pair::At(model, lm) => {
                     let { l: l } = unfold(c);
                     have parent->left == model by { close(); }
-                    have defined(parent->right) by { rewrite(parent, pid); normalize(); }
+                    have defined(parent->right) by { rewrite(parent, pid); close(); }
                     mark before_sibling;
                     have defined(at(before_sibling, pid->right)) by { close(); }
                     step();
