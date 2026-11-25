@@ -3305,7 +3305,9 @@ impl<'a> Proof<'a> {
             ProofContext::Execution(context) => {
                 self.apply_execution_transport_using(source, target, premises, context)
             }
-            ProofContext::Pure(_) => self.apply_pure_transport_using(source, target, premises),
+            ProofContext::Pure(_) => {
+                Err(self.step_error("fact transport requires a recorded execution state"))
+            }
         }
     }
 
@@ -3359,91 +3361,6 @@ impl<'a> Proof<'a> {
                 "the kernel native view checker did not establish `{target}` in the current proof context; `solve` did not construct a checked source proof"
             )
         })
-    }
-
-    /// `transport(source, target) using { ... }` inside a pure theorem.
-    ///
-    /// A pure theorem has no C state, so everything the fixed-state checker
-    /// reads from one — `old(...)`, `at(...)`, recorded lowerings, certified
-    /// call and store effects, resource observations — has nothing to consult
-    /// here. What is left is the part of the rule that never mentioned a
-    /// state: every listed premise must be an exact available fact, the source
-    /// must follow from exactly those premises, and the target must follow
-    /// from the source under them. That last question is
-    /// [`certified_fact_transport_reaches`] with no landing memory, the same
-    /// function the fixed-state checker asks, so a pure theorem and a C proof
-    /// accept the same conclusions from the same facts — including the
-    /// memory-loadability decision, which both reach through the kernel's
-    /// atomic derivation.
-    pub(super) fn apply_pure_transport_using(
-        &self,
-        source: &ClickProposition,
-        target: &ClickProposition,
-        premises: &[ClickProposition],
-    ) -> Result<CheckedFocusedTransition, ClickError> {
-        let mut explicit_premises = Vec::new();
-        for surface_premise in premises {
-            let premise =
-                self.lower_cited_surface_proposition(surface_premise, "`transport using` premise")?;
-            if !self.facts().listed_premise_available(&premise, &[], true) {
-                return Err(self.step_error_with_requirement(
-                    "`transport using` requires an exact premise",
-                    None,
-                    Some(("required transport premise", Box::new(premise), None)),
-                ));
-            }
-            if !explicit_premises.contains(&premise) {
-                explicit_premises.push(premise);
-            }
-        }
-        let source = self.lower_cited_surface_proposition(source, "`transport` source")?;
-        let selected_assumptions =
-            crate::surface::verification::assumptions_from_propositions(&explicit_premises);
-        if !exact_fact_is_available(&source, &explicit_premises)
-            && !separation_bridged_fact_is_available(
-                &source,
-                &explicit_premises,
-                &selected_assumptions,
-                &[],
-            )
-            && crate::kernel::search::ProofSearch::derive_atomic_proposition(
-                &(selected_assumptions),
-                &source,
-            )
-            .is_none()
-        {
-            return Err(self.step_error(format!(
-                "`transport using` requires a source derivable from its explicit facts: {}",
-                self.render_diagnostic_proposition(&source)
-            )));
-        }
-        let target = self.lower_cited_surface_proposition(target, "`transport` target")?;
-        let transport_assumptions = selected_assumptions.assume_proposition(source.clone());
-        if !self.facts().available_across_effects(&target, &[])
-            && !certified_fact_transport_reaches(&source, &target, None, &transport_assumptions)
-        {
-            return Err(self.step_error(format!(
-                "`transport using` target does not follow from the source fact and the listed premises\n  source: {}\n  target: {}",
-                self.render_diagnostic_proposition(&source),
-                self.render_diagnostic_proposition(&target)
-            )));
-        }
-        let mut facts = self.facts().clone();
-        let added_facts = if facts.contains(&target) {
-            Vec::new()
-        } else {
-            vec![target.clone()]
-        };
-        let checked_facts = vec![source, target.clone()];
-        facts = facts.with_kernel_checked_fact(target);
-        let complete = self.goal().is_some_and(|goal| facts.contains(goal));
-        Ok(self.checked_fact_transition(
-            self.state().locals().clone(),
-            facts,
-            complete,
-            added_facts,
-            checked_facts,
-        ))
     }
 
     fn attach_transport_check_error(&self, error: ClickError) -> ClickError {

@@ -169,6 +169,14 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             )));
         }
 
+        if matches!(step, ProofStep::TransportUsing { .. })
+            && matches!(driver_proof.context.as_ref(), ProofContext::Pure(_))
+        {
+            return Err(driver_proof.step_error(
+                "`transport ... using` is retired in pure proofs; state intermediate facts with `have` and use `rewrite` or `close() using`",
+            ));
+        }
+
         // One explicitly selected statement can produce its read equality
         // directly. A later landing state belongs to history planning,
         // not to this ordinary preserve operation.
