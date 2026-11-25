@@ -24,7 +24,10 @@ int32 half64(double x) {
 theorem scale_bound(x: float) {
     requires x >= float32_from_bits(0xc1200000);
     ensures x * float32_from_bits(0x3f000000) >= float32_from_bits(0xc0a00000) by {
-        normalize() using { x >= float32_from_bits(0xc1200000); };
+        apply(click::float_order::float32_scale_right_lower(
+            float32_from_bits(0x3f000000), x, float32_from_bits(0xc1200000)
+        ));
+        close();
     }
 }
 ```
