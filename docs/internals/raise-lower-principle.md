@@ -473,6 +473,20 @@ the one the text names.
   choosing a term by known origin. Equalities stay in the equality graph
   and the comparison form, which every check consults.
 
+A term's meaning includes the type every operation works at and where every
+conversion happens. An int32 `a + b` wraps and an Integer `a + b` does not,
+and `x == y` at int32 compares words while `to_integer(x) == to_integer(y)`
+compares Integers. Two such terms can be equal in every state and still be
+different terms: a rewrite, a cited fact or e-matching finds one and not the
+other. So lowering never replaces a term by an equivalent one at another
+type, such as an int32 comparison by the Integer comparison of its operands'
+observations. Equality substitution depends on this: congruence
+(`a == b` gives `f(a) == f(b)`) is sound only when each node names one exact
+operation, and an equality class holds terms of one type, joined to others
+only through explicit conversion nodes such as `to_integer`. The equivalence
+between an int32 fact and its Integer reading is a step that checking proves,
+not a choice lowering makes.
+
 Lowering never folds a comparison of two literals.
 
 - Closed native comparisons at 8, 16, 32, and 64 bits, order and equality
