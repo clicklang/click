@@ -116,80 +116,8 @@ pub(crate) struct KernelPointer {
 
 /// Exact producer handle. Logical equality is a separate checker operation;
 /// it must not discard qualifiers or proof evidence from this payload.
-///
-/// Handles are interned by their complete payload ([`same_source_payload`]):
-/// building the same address, provenance, array object, type and qualifiers
-/// twice yields one handle, so handle identity is payload identity and two
-/// kernel terms over equal payloads are one term.
-///
-/// [`same_source_payload`]: SharedPointer::same_source_payload
 #[derive(Clone)]
 pub struct SharedPointer(Arc<KernelPointer>);
-
-/// A payload as an interner key: equality is [`SharedPointer::same_source_payload`]
-/// on the payloads, and the hash covers a subset of what that compares.
-struct PayloadKey(KernelPointer);
-impl PartialEq for PayloadKey {
-    fn eq(&self, other: &Self) -> bool {
-        same_payload(&self.0, &other.0)
-    }
-}
-impl Eq for PayloadKey {}
-impl Hash for PayloadKey {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        let value = &self.0;
-        value.address.hash(state);
-        value.provenance.hash(state);
-        value.array.is_known().hash(state);
-        value.array.owner().hash(state);
-        if let Some(bounds) = value.array.bounds() {
-            bounds.start.hash(state);
-            bounds.width.hash(state);
-        }
-        value.program_type.hash(state);
-        if let Some(qualifiers) = &value.qualifiers {
-            qualifiers.object_class.hash(state);
-            if let Some(evidence) = &qualifiers.object_type_evidence {
-                evidence.class.hash(state);
-                evidence.checked.hash(state);
-                evidence.premise_fingerprint.hash(state);
-            }
-        }
-    }
-}
-#[derive(Default)]
-struct PointerInterner {
-    nodes: HashMap<PayloadKey, Weak<KernelPointer>>,
-    cleanup: VecDeque<KernelPointer>,
-}
-
-/// Payload equality: retained children by identity, qualifiers and
-/// evidence included. Premises are compared by map identity, never walked.
-fn same_payload(a: &KernelPointer, b: &KernelPointer) -> bool {
-    if a.address != b.address
-        || a.provenance != b.provenance
-        || !a.array.same_payload(&b.array)
-        || a.program_type != b.program_type
-    {
-        return false;
-    }
-    let (a, b) = match (&a.qualifiers, &b.qualifiers) {
-        (None, None) => return true,
-        (Some(a), Some(b)) => (a, b),
-        _ => return false,
-    };
-    let evidence_matches = match (&a.object_type_evidence, &b.object_type_evidence) {
-        (None, None) => true,
-        (Some(a), Some(b)) => {
-            a.class == b.class
-                && a.checked == b.checked
-                && a.premise_fingerprint == b.premise_fingerprint
-                && a.premises.ptr_eq(&b.premises)
-        }
-        _ => false,
-    };
-    a.object_class == b.object_class && evidence_matches
-}
 impl std::fmt::Debug for SharedPointer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_tuple("SharedPointer")
@@ -210,35 +138,8 @@ impl Hash for SharedPointer {
 }
 impl SharedPointer {
     pub(crate) fn new(value: KernelPointer) -> Self {
-        static INTERNER: std::sync::OnceLock<std::sync::Mutex<PointerInterner>> =
-            std::sync::OnceLock::new();
         crate::instrumentation::record_deterministic_work(1);
-        let key = PayloadKey(value);
-        let mut interner = INTERNER
-            .get_or_init(Default::default)
-            .lock()
-            .expect("pointer interner");
-        if let Some(live) = interner.nodes.get(&key).and_then(Weak::upgrade) {
-            return Self(live);
-        }
-        // As for offsets, bounded upkeep runs only on insertion and never
-        // scans the arena.
-        for _ in 0..interner.cleanup.len().min(8) {
-            let stale = PayloadKey(interner.cleanup.pop_front().unwrap());
-            if interner
-                .nodes
-                .get(&stale)
-                .is_some_and(|value| value.strong_count() == 0)
-            {
-                interner.nodes.remove(&stale);
-            } else {
-                interner.cleanup.push_back(stale.0);
-            }
-        }
-        let value = Arc::new(key.0.clone());
-        interner.cleanup.push_back(key.0.clone());
-        interner.nodes.insert(key, Arc::downgrade(&value));
-        Self(value)
+        Self(Arc::new(value))
     }
     pub(crate) fn node(&self) -> &KernelPointer {
         &self.0
@@ -270,7 +171,33 @@ impl SharedPointer {
     /// Children use their retained identities and premises are never re-walked.
     pub(crate) fn same_source_payload(&self, other: &Self) -> bool {
         crate::instrumentation::record_deterministic_work(1);
-        self == other || same_payload(self.node(), other.node())
+        if self == other {
+            return true;
+        }
+        let (a, b) = (self.node(), other.node());
+        if a.address != b.address
+            || a.provenance != b.provenance
+            || !a.array.same_payload(&b.array)
+            || a.program_type != b.program_type
+        {
+            return false;
+        }
+        let (a, b) = match (&a.qualifiers, &b.qualifiers) {
+            (None, None) => return true,
+            (Some(a), Some(b)) => (a, b),
+            _ => return false,
+        };
+        let evidence_matches = match (&a.object_type_evidence, &b.object_type_evidence) {
+            (None, None) => true,
+            (Some(a), Some(b)) => {
+                a.class == b.class
+                    && a.checked == b.checked
+                    && a.premise_fingerprint == b.premise_fingerprint
+                    && a.premises.ptr_eq(&b.premises)
+            }
+            _ => false,
+        };
+        a.object_class == b.object_class && evidence_matches
     }
     /// Same address roles as Pointer::pointers. Widths remain separate
     /// numeric payloads; each reader retains its existing metadata policy.
@@ -535,24 +462,6 @@ mod tests {
                 .ptr_eq(&after.object_type_evidence.as_ref().unwrap().premises)
         );
         assert_eq!(shared.clone(), shared);
-    }
-    #[test]
-    fn equal_complete_payloads_share_one_handle_and_one_term() {
-        let source = complete_source();
-        let first = SharedPointer::import(&source);
-        let second = SharedPointer::import(&source.clone());
-        assert_eq!(first, second);
-        assert!(Arc::ptr_eq(&first.0, &second.0));
-        assert_eq!(
-            KernelTerm::shared_pointer_value(first.clone()),
-            KernelTerm::shared_pointer_value(second)
-        );
-        // A different type keeps its own handle, as do different qualifiers.
-        let retyped = first.with_binding_type(ProgramType::Int32Pointer);
-        assert_ne!(retyped, first);
-        let mut unqualified = source;
-        unqualified.qualifiers = None;
-        assert_ne!(SharedPointer::import(&unqualified), first);
     }
     #[test]
     fn logical_equality_does_not_coalesce_distinct_complete_payloads() {
