@@ -7,12 +7,12 @@ theorem reject_shadowed_false_claim(d: Integer) {
     requires d == 0;
     ensures forall (d: Integer) { number(NumberBox::Wrap(d)) == 0 } by {
         intro() {
-            unfold(number(NumberBox::Wrap(d))); normalize();
+            unfold(number(NumberBox::Wrap(d))); close();
         }
     }
 }
 ```
 
 ```expect
-fail: normalize
+fail: could not establish `(d : Integer) == 0`
 ```

@@ -1185,18 +1185,40 @@ theorem rounding_can_merge(x: float) {
             assert!(expanded.contains(name), "{expanded}");
         }
 
-        let strict_square = directory.path().join("strict_square.click");
+        let strict_products = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("mdtests/float_interval_proofs_from_strict_bounds.md");
+        for (claim, law) in [
+            ("square.ensures_0", "float64_square_interval"),
+            (
+                "positive_product.ensures_0",
+                "float64_positive_product_lower",
+            ),
+            ("mixed_product.ensures_0", "float32_product_upper"),
+            ("positive_quotient.ensures_0", "float64_quotient_upper"),
+            ("negative_quotient.ensures_0", "float32_quotient_lower"),
+            ("zero_product.ensures_0", "float32_finite_between"),
+        ] {
+            let expanded = check(&strict_products, claim).unwrap();
+            assert!(expanded.contains(law), "{claim}: {expanded}");
+        }
+
+        let expanded = check(&strict_products, "product_cast.ensures_0").unwrap();
+        for law in ["float64_product_lower", "float64_product_upper"] {
+            assert!(expanded.contains(law), "{expanded}");
+        }
+
+        let finiteness = directory.path().join("finiteness.click");
         fs::write(
-            &strict_square,
-            r#"theorem strict_square(x: double) {
-    requires x > float64_from_bits(0x3ff0000000000000u64);
-    requires x < float64_from_bits(0x4000000000000000u64);
-    ensures x * x <= float64_from_bits(0x4010000000000000u64) by close();
+            &finiteness,
+            r#"theorem finite_between(x: float) {
+    requires x > float32_from_bits(0xbf800000);
+    requires x < float32_from_bits(0x3f800000);
+    ensures isfinite(x) by close();
 }
 "#,
         )
         .unwrap();
-        let generated = check(&strict_square, "strict_square.ensures_0").unwrap_err();
+        let generated = check(&finiteness, "finite_between.ensures_0").unwrap_err();
         assert!(
             generated.contains("Expanded proof still contains normalize()"),
             "{generated}"

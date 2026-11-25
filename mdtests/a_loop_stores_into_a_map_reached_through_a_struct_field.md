@@ -47,7 +47,7 @@ void mark_all(struct arena* arena) {
                 apply(click::separation::contains_element(arena->data, 0, arena->capacity, i));
             }
             have separate(memory(arena->data[i]), memory(*arena)) by { close(); }
-            have contains(memory(*arena), memory(arena->capacity)) by { normalize(); }
+            have contains(memory(*arena), memory(arena->capacity)) by { close(); }
             have contains(memory(arena->data[i]), memory(arena->data[i])) by {
                 apply(click::separation::contains_refl(memory(arena->data[i])));
             }

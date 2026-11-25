@@ -4050,11 +4050,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let Some(tighter) = tighter else {
                 continue;
             };
-            let Some(surface) = proof.structural_proposition_candidate(&tighter) else {
-                return Ok(None);
-            };
-            let step = super::super::wide_arithmetic::have(surface.clone(), vec![ProofStep::Known]);
-            let Some(retained) = attempt::candidate_outcome(proof.driver().apply_step(step))?
+            let Some((retained, surface)) = Self::retain_float_adjacent_bound(&proof, &tighter)?
             else {
                 return Ok(None);
             };
@@ -4098,9 +4094,23 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         Self::try_apply_float_pair_bound(input, &plan, subtract, premises)
     }
 
+    pub(super) fn retain_float_adjacent_bound(
+        input: &Proof<'a>,
+        tighter: &Proposition,
+    ) -> Result<Option<(Proof<'a>, SyntaxProposition)>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("retain_float_adjacent_bound");
+        let Some(surface) = input.structural_proposition_candidate(tighter) else {
+            return Ok(None);
+        };
+        let step = super::super::wide_arithmetic::have(surface.clone(), vec![ProofStep::Known]);
+        Ok(attempt::candidate_outcome(input.driver().apply_step(step))?
+            .map(|retained| (retained, surface)))
+    }
+
     /// Rounding can merge distinct operands. Turn a strict input comparison
     /// into the explicitly checked non-strict premise used by the rounded laws.
-    fn prepare_float_bound(
+    pub(super) fn prepare_float_bound(
         input: &Proof<'a>,
         format: crate::kernel::KernelFloatType,
         source: SyntaxProposition,

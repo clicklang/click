@@ -4,11 +4,11 @@
 theorem integer_exists_witness_false(x: Integer) {
     ensures exists (z: Integer) { z == 0 } by {
         witness(x);
-        normalize();
+        close();
     }
 }
 ```
 
 ```expect
-fail: normalize
+fail: could not establish `x == 0`
 ```

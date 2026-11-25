@@ -290,15 +290,13 @@ void parent_detach(struct parent* p) {
                 with(child_control(kid)) {
                     have kid->payload == old(p->kid->payload) by { close(); }
                     have separate(memory(p->kid), memory(*kid)) by { close(); }
-                    have contains(memory(*kid), memory(kid->payload)) by { normalize(); }
+                    have contains(memory(*kid), memory(kid->payload)) by { close(); }
                     apply(click::separation::contains_refl(memory(p->kid)));
                     apply(click::separation::separate_restrict(memory(p->kid), memory(*kid),
                         memory(p->kid), memory(kid->payload)));
                     mark before_clear;
                     step();
-                    have separate(statement(2).footprint, memory(kid->payload)) by {
-                        normalize() using { at(before_clear, separate(memory(p->kid), memory(kid->payload))); };
-                    }
+                    have at(before_clear, separate(statement(2).footprint, memory(kid->payload))) by { close(); }
                     have kid->payload == at(before_clear, kid->payload) by {
                         preserve(memory(kid->payload), statement(2));
                     }

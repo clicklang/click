@@ -136,7 +136,7 @@ void rb_link_node(struct rb_node* node, struct rb_node* parent, struct rb_node**
     step();
     have separate(memory(node->rb_left), memory(node->__rb_parent_color)) by { close(); }
     have separate(statement(1).footprint, memory(node->__rb_parent_color)) by {
-        normalize() using { separate(memory(node->rb_left), memory(node->__rb_parent_color)); };
+        close() using { separate(memory(node->rb_left), memory(node->__rb_parent_color)); };
     }
     have node->__rb_parent_color == at(statement(1).entry, node->__rb_parent_color) by {
         preserve(memory(node->__rb_parent_color), statement(1));
@@ -144,14 +144,14 @@ void rb_link_node(struct rb_node* node, struct rb_node* parent, struct rb_node**
     step();
     have separate(memory(node->rb_right), memory(node->__rb_parent_color)) by { close(); }
     have separate(statement(2).footprint, memory(node->__rb_parent_color)) by {
-        normalize() using { separate(memory(node->rb_right), memory(node->__rb_parent_color)); };
+        close() using { separate(memory(node->rb_right), memory(node->__rb_parent_color)); };
     }
     have node->__rb_parent_color == at(statement(2).entry, node->__rb_parent_color) by {
         preserve(memory(node->__rb_parent_color), statement(2));
     }
     have separate(memory(node->rb_right), memory(node->rb_left)) by { close(); }
     have separate(statement(2).footprint, memory(node->rb_left)) by {
-        normalize() using { separate(memory(node->rb_right), memory(node->rb_left)); };
+        close() using { separate(memory(node->rb_right), memory(node->rb_left)); };
     }
     have node->rb_left == at(statement(2).entry, node->rb_left) by {
         preserve(memory(node->rb_left), statement(2));
@@ -159,21 +159,21 @@ void rb_link_node(struct rb_node* node, struct rb_node* parent, struct rb_node**
     step();
     have separate(memory(rb_link[0]), memory(node->__rb_parent_color)) by { close(); }
     have separate(statement(3).footprint, memory(node->__rb_parent_color)) by {
-        normalize() using { separate(memory(rb_link[0]), memory(node->__rb_parent_color)); };
+        close() using { separate(memory(rb_link[0]), memory(node->__rb_parent_color)); };
     }
     have node->__rb_parent_color == at(statement(3).entry, node->__rb_parent_color) by {
         preserve(memory(node->__rb_parent_color), statement(3));
     }
     have separate(memory(rb_link[0]), memory(node->rb_left)) by { close(); }
     have separate(statement(3).footprint, memory(node->rb_left)) by {
-        normalize() using { separate(memory(rb_link[0]), memory(node->rb_left)); };
+        close() using { separate(memory(rb_link[0]), memory(node->rb_left)); };
     }
     have node->rb_left == at(statement(3).entry, node->rb_left) by {
         preserve(memory(node->rb_left), statement(3));
     }
     have separate(memory(rb_link[0]), memory(node->rb_right)) by { close(); }
     have separate(statement(3).footprint, memory(node->rb_right)) by {
-        normalize() using { separate(memory(rb_link[0]), memory(node->rb_right)); };
+        close() using { separate(memory(rb_link[0]), memory(node->rb_right)); };
     }
     have node->rb_right == at(statement(3).entry, node->rb_right) by {
         preserve(memory(node->rb_right), statement(3));

@@ -9,11 +9,11 @@ A native `uint64` sum wraps. The premise
 theorem native_offset_sum(bytes: uint8[], prefix: uint64, suffix: uint64, total: uint64) {
     requires to_integer(total) == to_integer(prefix + suffix);
     ensures (bytes + prefix) + suffix == bytes + total by {
-        normalize() using { to_integer(total) == to_integer(prefix + suffix); };
+        close() using { to_integer(total) == to_integer(prefix + suffix); };
     }
 }
 ```
 
 ```expect
-fail: goal did not normalize to true using the listed conditions
+fail: `close() using` could not prove the current goal from only its listed premises
 ```

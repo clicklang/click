@@ -3,7 +3,7 @@ use super::super::surface_certificates::surface_strict_parts;
 use super::*;
 use crate::kernel::proof::arithmetic_special::{
     FloatBoundWeakening, float_corner_bound_weakening, float_positive_product_bound,
-    float_square_bound, float_zero_product_from_bounds,
+    float_square_bound, float_zero_product_from_bounds, tighter_float_interval_bound,
 };
 use crate::kernel::{FloatBinaryOperator, KernelFloatType};
 
@@ -58,23 +58,64 @@ fn corner_order(
     at_most(left, right)
 }
 
+type ResolvedIntervalBound = (SyntaxProposition, (SyntaxTerm, SyntaxTerm));
+
 impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     fn resolve_float_interval_bound(
         input: &Proof<'a>,
         bound: &Proposition,
         introduced_surfaces: &[SyntaxProposition],
-    ) -> Option<(SyntaxProposition, (SyntaxTerm, SyntaxTerm))> {
+    ) -> Option<SyntaxProposition> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("resolve_float_interval_bound");
-        let surface = Self::resolve_solve_premises_unmeasured(
+        Self::resolve_solve_premises_unmeasured(
             input,
             std::slice::from_ref(bound),
             introduced_surfaces,
         )
         .and_then(|mut pairs| pairs.pop().map(|(_, surface)| surface))
-        .or_else(|| input.structural_proposition_candidate(bound))?;
-        let parts = surface_nonstrict_parts(&surface_comparison_with_anchored_operands(&surface))?;
-        Some((surface, parts))
+        .or_else(|| input.structural_proposition_candidate(bound))
+    }
+
+    fn prepare_float_interval_bounds<const N: usize>(
+        input: &Proof<'a>,
+        format: KernelFloatType,
+        bounds: &[Proposition; N],
+        introduced_surfaces: &[SyntaxProposition],
+    ) -> Result<Option<(Proof<'a>, [ResolvedIntervalBound; N])>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("prepare_float_interval_bounds");
+        let mut proof = input.clone();
+        let mut resolved = Vec::with_capacity(N);
+        for bound in bounds {
+            let surface = if let Some(tighter) = tighter_float_interval_bound(bound) {
+                let Some((retained, surface)) =
+                    Self::retain_float_adjacent_bound(&proof, &tighter)?
+                else {
+                    return Ok(None);
+                };
+                proof = retained;
+                surface
+            } else {
+                let Some(surface) =
+                    Self::resolve_float_interval_bound(&proof, bound, introduced_surfaces)
+                else {
+                    return Ok(None);
+                };
+                surface
+            };
+            let Some((retained, premise, left, right)) =
+                Self::prepare_float_bound(&proof, format, surface)?
+            else {
+                return Ok(None);
+            };
+            proof = retained;
+            resolved.push((premise, (left, right)));
+        }
+        Ok(Some((
+            proof,
+            resolved.try_into().expect("one proof per interval bound"),
+        )))
     }
 
     fn try_apply_float_interval_bound(
@@ -211,9 +252,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let Some((format, classification)) = float_zero_product_from_bounds(goal, bounds) else {
             return Ok(None);
         };
-        let [Some((first, (lo, x))), Some((second, (_, hi)))] = bounds
-            .each_ref()
-            .map(|bound| Self::resolve_float_interval_bound(input, bound, introduced_surfaces))
+        let Some((proof, [(first, (lo, x)), (second, (_, hi))])) =
+            Self::prepare_float_interval_bounds(input, format, bounds, introduced_surfaces)?
         else {
             return Ok(None);
         };
@@ -226,7 +266,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             KernelFloatType::Float64 => "float64_finite_between",
         };
         let Some(proof) = Self::try_retain_float_interval_fact(
-            input,
+            &proof,
             &finite_x,
             name,
             vec![x, lo, hi],
@@ -249,9 +289,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let Some((plan, upper)) = float_square_bound(goal, bounds) else {
             return Ok(None);
         };
-        let [Some((first, (lo, x))), Some((second, (_, hi)))] = bounds
-            .each_ref()
-            .map(|bound| Self::resolve_float_interval_bound(input, bound, introduced_surfaces))
+        let Some((proof, [(first, (lo, x)), (second, (_, hi))])) =
+            Self::prepare_float_interval_bounds(input, plan.format, bounds, introduced_surfaces)?
         else {
             return Ok(None);
         };
@@ -273,7 +312,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             KernelFloatType::Float32 => "float32_square_interval",
             KernelFloatType::Float64 => "float64_square_interval",
         };
-        Self::try_apply_float_interval_bound(input, &plan, name, vec![x, lo, hi, upper], premises)
+        Self::try_apply_float_interval_bound(&proof, &plan, name, vec![x, lo, hi, upper], premises)
     }
 
     pub(in crate::surface::proof) fn try_positive_float_product_bound(
@@ -287,9 +326,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let Some(plan) = float_positive_product_bound(goal, bounds) else {
             return Ok(None);
         };
-        let [Some((first, (a, x))), Some((second, (b, y)))] = bounds
-            .each_ref()
-            .map(|bound| Self::resolve_float_interval_bound(input, bound, introduced_surfaces))
+        let Some((proof, [(first, (a, x)), (second, (b, y))])) =
+            Self::prepare_float_interval_bounds(input, plan.format, bounds, introduced_surfaces)?
         else {
             return Ok(None);
         };
@@ -306,7 +344,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             KernelFloatType::Float32 => "float32_positive_product_lower",
             KernelFloatType::Float64 => "float64_positive_product_lower",
         };
-        Self::try_apply_float_interval_bound(input, &plan, name, vec![x, y, a, b], premises)
+        Self::try_apply_float_interval_bound(&proof, &plan, name, vec![x, y, a, b], premises)
     }
 
     pub(in crate::surface::proof) fn try_float_corner_bound(
@@ -320,14 +358,15 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let Some((plan, operator)) = float_corner_bound_weakening(goal, bounds) else {
             return Ok(None);
         };
-        let [
-            Some((first, (a, x))),
-            Some((second, (b, y))),
-            Some((third, (_, c))),
-            Some((fourth, (_, d))),
-        ] = bounds
-            .each_ref()
-            .map(|bound| Self::resolve_float_interval_bound(input, bound, introduced_surfaces))
+        let Some((
+            proof,
+            [
+                (first, (a, x)),
+                (second, (b, y)),
+                (third, (_, c)),
+                (fourth, (_, d)),
+            ],
+        )) = Self::prepare_float_interval_bounds(input, plan.format, bounds, introduced_surfaces)?
         else {
             return Ok(None);
         };
@@ -350,7 +389,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             );
             // Selected applications cite the disjunction itself. Retain it
             // even when the two literal comparisons decide its truth.
-            let Some(proof) = attempt::candidate_outcome(input.driver().apply_step(
+            let Some(proof) = attempt::candidate_outcome(proof.driver().apply_step(
                 super::super::wide_arithmetic::have(sign.clone(), vec![ProofStep::Known]),
             ))?
             else {
@@ -377,7 +416,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         };
         let bound = literal(plan.format, plan.actual_endpoint);
         Self::try_apply_float_interval_bound(
-            advanced.as_ref().unwrap_or(input),
+            advanced.as_ref().unwrap_or(&proof),
             &plan,
             name,
             vec![x, y, a, b, c, d, bound],
