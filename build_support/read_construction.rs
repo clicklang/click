@@ -155,13 +155,13 @@ const BASELINE: &[(&str, Form, usize)] = &[
         1,
     ),
     ("src/kernel/assumptions.rs", Form::UnplacedPoint, 1),
-    ("src/kernel/equality_graph.rs", Form::UnplacedPoint, 2),
+    ("src/kernel/equality_graph.rs", Form::UnplacedPoint, 1),
     ("src/kernel/equality_graph/terms.rs", Form::UnplacedPoint, 1),
-    ("src/kernel/eval/memory_loads.rs", Form::UnplacedPoint, 11),
+    ("src/kernel/eval/memory_loads.rs", Form::UnplacedPoint, 12),
     (
         "src/kernel/functions/globals_and_aggregates.rs",
         Form::UnplacedPoint,
-        2,
+        3,
     ),
     ("src/kernel/memory_history.rs", Form::UnplacedPoint, 3),
     ("src/kernel/primitives.rs", Form::UnplacedPoint, 1),
@@ -179,7 +179,7 @@ const BASELINE: &[(&str, Form, usize)] = &[
     (
         "src/kernel/primitives/memory_state.rs",
         Form::UnplacedPoint,
-        17,
+        7,
     ),
     (
         "src/kernel/primitives/program_point.rs",
@@ -196,34 +196,17 @@ const BASELINE: &[(&str, Form, usize)] = &[
         Form::UnplacedPoint,
         2,
     ),
-    ("src/kernel/proof/execution.rs", Form::UnplacedPoint, 1),
     (
         "src/kernel/reasoning/substitution.rs",
         Form::UnplacedPoint,
         1,
     ),
-    (
-        "src/kernel/reasoning/variable_collection.rs",
-        Form::UnplacedPoint,
-        1,
-    ),
     ("src/kernel/spec.rs", Form::UnplacedPoint, 1),
-    (
-        "src/surface/lowering/resource_lowering.rs",
-        Form::UnplacedPoint,
-        2,
-    ),
     (
         "src/surface/proof/fixed_state_proofs/fact_transport.rs",
         Form::UnplacedPoint,
         1,
     ),
-    (
-        "src/surface/proof/smart_closures/search.rs",
-        Form::UnplacedPoint,
-        2,
-    ),
-    ("src/surface/proof_trace.rs", Form::UnplacedPoint, 1),
 ];
 
 /// Direct constructions of each form in `file`, outside test code.
@@ -343,13 +326,6 @@ impl<'ast> Visit<'ast> for Counter {
             }
         }
         syn::visit::visit_expr_call(self, call);
-    }
-    fn visit_expr_method_call(&mut self, call: &'ast syn::ExprMethodCall) {
-        // A typed load's optional read site falls back to an unplaced point.
-        if call.method == "legacy_read_point" {
-            self.add(Form::UnplacedPoint);
-        }
-        syn::visit::visit_expr_method_call(self, call);
     }
     // Expression and pattern paths: a pattern's path is an `ExprPath` too.
     fn visit_expr_path(&mut self, path: &'ast syn::ExprPath) {

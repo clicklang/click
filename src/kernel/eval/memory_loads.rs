@@ -2676,7 +2676,12 @@ fn canonicalized_retained_symbolic_load_value_with_identity(
         record_load_access_width(memory, &address, value_type.byte_width());
         memory.symbolic_pointer_version_load(site, &address, value_type)
     } else {
-        symbolic_load_value(memory, site, &address, value_type)?
+        // An optional site is placed explicitly until the shared pointer
+        // chain requires one.
+        let site = site
+            .cloned()
+            .unwrap_or_else(|| ProgramPoint::unplaced(&crate::kernel::intern_memory_ref(memory)));
+        symbolic_load_value(memory, &site, &address, value_type)?
     };
     // Ordinary scalar reads retain their selected memory and address directly.
     match &value {
@@ -6133,7 +6138,7 @@ fn record_load_variable_defining_fact_with_source_and_pointer(
 #[cfg_attr(test, track_caller)]
 pub(in crate::kernel) fn symbolic_load_value(
     memory: &SymbolicMemory,
-    site: Option<&ProgramPoint>,
+    site: &ProgramPoint,
     pointer: &Address,
     value_type: ProgramType,
 ) -> Option<ProgramValue> {
@@ -6151,7 +6156,7 @@ pub(in crate::kernel) fn symbolic_load_value(
 #[cfg_attr(test, track_caller)]
 pub(in crate::kernel) fn symbolic_load_value_unrecorded(
     memory: &SymbolicMemory,
-    site: Option<&ProgramPoint>,
+    site: &ProgramPoint,
     pointer: &Address,
     value_type: ProgramType,
 ) -> Option<ProgramValue> {
@@ -6168,12 +6173,7 @@ pub(in crate::kernel) fn symbolic_load_value_unrecorded(
         )),
         ProgramType::Void | ProgramType::VoidPointer => None,
         ProgramType::Bool => Some(ProgramValue::of_bool(ConditionTerm::boolean_cell_read(
-            match site {
-                Some(site) => {
-                    ProgramPoint::read_at(&crate::kernel::intern_memory_ref(memory), site)
-                }
-                None => ProgramPoint::unplaced(&crate::kernel::intern_memory_ref(memory)),
-            },
+            ProgramPoint::read_at(&crate::kernel::intern_memory_ref(memory), site),
             pointer.clone(),
         ))),
         ProgramType::Int8 => Some(memory.symbolic_int8_load(site, pointer)),
@@ -6187,7 +6187,7 @@ pub(in crate::kernel) fn symbolic_load_value_unrecorded(
         ProgramType::Float32 => Some(memory.symbolic_float32_load(pointer)),
         ProgramType::Float64 => Some(memory.symbolic_float64_load(pointer)),
         ProgramType::Int8Pointer | ProgramType::Int8PointerPointer => {
-            Some(memory.symbolic_pointer_load(site, pointer, value_type))
+            Some(memory.symbolic_pointer_load(Some(site), pointer, value_type))
         }
         ProgramType::VoidPointerPointer
         | ProgramType::ParameterPointer(_)
@@ -6209,20 +6209,20 @@ pub(in crate::kernel) fn symbolic_load_value_unrecorded(
         | ProgramType::Int64PointerPointer
         | ProgramType::UInt128PointerPointer
         | ProgramType::UInt64PointerPointer => {
-            Some(memory.symbolic_pointer_load(site, pointer, value_type))
+            Some(memory.symbolic_pointer_load(Some(site), pointer, value_type))
         }
         ProgramType::Float32Pointer
         | ProgramType::Float64Pointer
         | ProgramType::Float32PointerPointer
         | ProgramType::Float64PointerPointer => {
-            Some(memory.symbolic_pointer_load(site, pointer, value_type))
+            Some(memory.symbolic_pointer_load(Some(site), pointer, value_type))
         }
         ProgramType::FunctionPointer(_) => {
-            Some(memory.symbolic_pointer_load(site, pointer, value_type))
+            Some(memory.symbolic_pointer_load(Some(site), pointer, value_type))
         }
         // Click's untyped pointer reads a pointer-width cell as any pointer
         // load does; only its type states no pointee.
-        ProgramType::Pointer => Some(memory.symbolic_pointer_load(site, pointer, value_type)),
+        ProgramType::Pointer => Some(memory.symbolic_pointer_load(Some(site), pointer, value_type)),
         ProgramType::Int8Array(_) => None,
         ProgramType::Int32Array(_)
         | ProgramType::UInt8Array(_)
@@ -6324,10 +6324,13 @@ pub(in crate::kernel) fn symbolic_storage_cell_value(
         )));
     }
     // Entry cells and contract reads select the same structural descriptor.
+    let site = site
+        .cloned()
+        .unwrap_or_else(|| ProgramPoint::unplaced(&crate::kernel::intern_memory_ref(memory)));
     let value = if record_width {
-        symbolic_load_value(memory, site, pointer, program_type)
+        symbolic_load_value(memory, &site, pointer, program_type)
     } else {
-        symbolic_load_value_unrecorded(memory, site, pointer, program_type)
+        symbolic_load_value_unrecorded(memory, &site, pointer, program_type)
     };
     value.map(|value| match value {
         ProgramValue::Int8(bits) => ProgramValue::Int8(canonical_scalar_read(&bits)),
@@ -6941,7 +6944,13 @@ mod tests {
             ProgramType::Int32Pointer,
             ProgramType::FunctionPointer(CallbackSignature::UNSPECIFIED),
         ] {
-            let ordinary = symbolic_load_value(&memory, None, &address, ty).unwrap();
+            let ordinary = symbolic_load_value(
+                &memory,
+                &crate::kernel::ProgramPoint::of_memory(&memory),
+                &address,
+                ty,
+            )
+            .unwrap();
             let logical = memory.symbolic_pointer_version_load(None, &address, ty);
             let entry = symbolic_storage_cell_value(&memory, None, &address, ty, true)
                 .expect("entry pointer read");

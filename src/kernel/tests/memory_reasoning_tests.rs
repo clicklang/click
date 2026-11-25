@@ -7038,11 +7038,19 @@ fn memory_resolution_requires_the_loaded_cell_width() {
     );
     for pointer in [&stored, &alias] {
         assert_eq!(
-            assumptions.resolve_memory_load_value(&memory, pointer, LoadKind::Int32),
+            assumptions.resolve_memory_load_value(
+                &crate::kernel::ProgramPoint::of_memory(&memory),
+                pointer,
+                LoadKind::Int32
+            ),
             None
         );
         assert_eq!(
-            assumptions.resolve_memory_load_value(&memory, pointer, LoadKind::UInt16),
+            assumptions.resolve_memory_load_value(
+                &crate::kernel::ProgramPoint::of_memory(&memory),
+                pointer,
+                LoadKind::UInt16
+            ),
             Some(uint16(7))
         );
     }
@@ -7091,17 +7099,29 @@ fn symbolic_run_load_selection_checks_aliases_holes_and_width() {
             .expect("a named scalar run is compact");
         let unknown = PureFactContext::new();
         assert_eq!(
-            unknown.resolve_memory_load_value(&memory, &read, LoadKind::Int32),
+            unknown.resolve_memory_load_value(
+                &crate::kernel::ProgramPoint::of_memory(&memory),
+                &read,
+                LoadKind::Int32
+            ),
             None
         );
         let exact = PureFactContext::new()
             .assume_condition(ConditionTerm::equal(index, MachineTerm::constant(3)), true);
         assert_eq!(
-            exact.resolve_memory_load_value(&memory, &read, LoadKind::Int32),
+            exact.resolve_memory_load_value(
+                &crate::kernel::ProgramPoint::of_memory(&memory),
+                &read,
+                LoadKind::Int32
+            ),
             Some(int32(9))
         );
         assert_eq!(
-            exact.resolve_memory_load_value(&memory, &read, LoadKind::UInt16),
+            exact.resolve_memory_load_value(
+                &crate::kernel::ProgramPoint::of_memory(&memory),
+                &read,
+                LoadKind::UInt16
+            ),
             None
         );
         let alias = PureFactContext::new().assume_condition(
@@ -7109,7 +7129,11 @@ fn symbolic_run_load_selection_checks_aliases_holes_and_width() {
             true,
         );
         assert_eq!(
-            alias.resolve_memory_load_value(&memory, &read, LoadKind::Int32),
+            alias.resolve_memory_load_value(
+                &crate::kernel::ProgramPoint::of_memory(&memory),
+                &read,
+                LoadKind::Int32
+            ),
             Some(int32(9))
         );
         let other_base = Address {
@@ -7122,7 +7146,7 @@ fn symbolic_run_load_selection_checks_aliases_holes_and_width() {
         );
         assert_eq!(
             base_alias.resolve_memory_load_value(
-                &memory,
+                &crate::kernel::ProgramPoint::of_memory(&memory),
                 &other_base.offset_by_bytes(12),
                 LoadKind::Int32,
             ),
@@ -7138,7 +7162,11 @@ fn symbolic_run_load_selection_checks_aliases_holes_and_width() {
             true,
         );
         assert_eq!(
-            wide_exact.resolve_memory_load_value(&memory, &wide_read, LoadKind::Int32),
+            wide_exact.resolve_memory_load_value(
+                &crate::kernel::ProgramPoint::of_memory(&memory),
+                &wide_read,
+                LoadKind::Int32
+            ),
             Some(int32(9))
         );
         let signed_read = Address {
@@ -7150,7 +7178,11 @@ fn symbolic_run_load_selection_checks_aliases_holes_and_width() {
             true,
         );
         assert_eq!(
-            signed_exact.resolve_memory_load_value(&memory, &signed_read, LoadKind::Int32),
+            signed_exact.resolve_memory_load_value(
+                &crate::kernel::ProgramPoint::of_memory(&memory),
+                &signed_read,
+                LoadKind::Int32
+            ),
             Some(int32(9))
         );
         let high_word = PureFactContext::new().assume_condition(
@@ -7161,7 +7193,11 @@ fn symbolic_run_load_selection_checks_aliases_holes_and_width() {
             true,
         );
         assert_eq!(
-            high_word.resolve_memory_load_value(&memory, &wide_read, LoadKind::Int32),
+            high_word.resolve_memory_load_value(
+                &crate::kernel::ProgramPoint::of_memory(&memory),
+                &wide_read,
+                LoadKind::Int32
+            ),
             None
         );
         let low_word_only = PureFactContext::new().assume_condition(
@@ -7169,20 +7205,36 @@ fn symbolic_run_load_selection_checks_aliases_holes_and_width() {
             true,
         );
         assert_eq!(
-            low_word_only.resolve_memory_load_value(&memory, &wide_read, LoadKind::Int32),
+            low_word_only.resolve_memory_load_value(
+                &crate::kernel::ProgramPoint::of_memory(&memory),
+                &wide_read,
+                LoadKind::Int32
+            ),
             None
         );
         let changed = memory.store(base.offset_by_bytes(12), int32(7));
         assert_eq!(
-            exact.resolve_memory_load_value(&changed, &read, LoadKind::Int32),
+            exact.resolve_memory_load_value(
+                &crate::kernel::ProgramPoint::of_memory(&changed),
+                &read,
+                LoadKind::Int32
+            ),
             Some(int32(7))
         );
         assert_eq!(
-            alias.resolve_memory_load_value(&changed, &read, LoadKind::Int32),
+            alias.resolve_memory_load_value(
+                &crate::kernel::ProgramPoint::of_memory(&changed),
+                &read,
+                LoadKind::Int32
+            ),
             Some(int32(7))
         );
         assert_eq!(
-            unknown.resolve_memory_load_value(&changed, &read, LoadKind::Int32),
+            unknown.resolve_memory_load_value(
+                &crate::kernel::ProgramPoint::of_memory(&changed),
+                &read,
+                LoadKind::Int32
+            ),
             None
         );
     }

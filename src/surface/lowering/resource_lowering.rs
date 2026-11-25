@@ -1362,8 +1362,11 @@ fn materialize_access_segment_cells(
             return Ok(memory);
         };
         let entry = entry_frame.program_point();
-        let fallback =
-            crate::kernel::ProgramPoint::unplaced(&crate::kernel::intern_memory_ref(&memory));
+        // The memory being filled is a view of the entry state's.
+        let fallback = crate::kernel::ProgramPoint::viewing(
+            &crate::kernel::intern_memory_ref(&memory),
+            &state.program_point(),
+        );
         for field in 0..layout.field_count() {
             let Some(field_type) = layout
                 .field_type(field)
@@ -1395,8 +1398,11 @@ fn materialize_access_segment_cells(
     }
 
     let entry = entry_frame.program_point();
-    let fallback =
-        crate::kernel::ProgramPoint::unplaced(&crate::kernel::intern_memory_ref(&memory));
+    // The memory being filled is a view of the entry state's.
+    let fallback = crate::kernel::ProgramPoint::viewing(
+        &crate::kernel::intern_memory_ref(&memory),
+        &state.program_point(),
+    );
 
     // A complete object (`*p`) is one struct at the base: its cells
     // take the field types of the layout, so a `uint64` or pointer field

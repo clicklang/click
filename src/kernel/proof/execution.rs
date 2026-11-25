@@ -1194,17 +1194,17 @@ fn describe_unnamed_cell_addition(
     let held = truncate_debug(value, 240);
     let expected = truncate_debug(load, 240);
     let (base_arena, base_id) = base.arena_id();
-    let version_note = match crate::kernel::resource_tracker::last_same_version_point(
+    let version_note = match crate::kernel::resource_tracker::last_same_version_memory(
         crate::kernel::resource_tracker::TrackedResource::Cell {
             pointer,
             bytes: crate::kernel::AccessExtent::from(
                 crate::kernel::resource_tracker::widest_scalar_access_bytes(),
             ),
         },
-        &crate::kernel::resource_tracker::ProgramPoint::unplaced(base),
+        base,
     ) {
         Some(version) => {
-            let (version_arena, version_id) = version.shared_memory().arena_id();
+            let (version_arena, version_id) = version.arena_id();
             format!("version state ({version_arena},{version_id})")
         }
         None => "version state none (unwritten at a derivation root)".to_string(),
