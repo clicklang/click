@@ -980,7 +980,7 @@ src/surface/proof/smart_closures/float_intervals.rs	search	ProofSearch::prepare_
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_bounded_arithmetic_closure	try_float_finite_interval	1
 src/surface/proof/smart_closures/float_intervals.rs	search	ProofSearch::try_float_finite_interval	driver	1
 src/surface/proof/smart_closures/float_intervals.rs	search	ProofSearch::try_float_finite_interval	establish_arithmetic_bounds	1
-src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_float_literal_sum_or_difference_bound	try_float_add_at_infinite_bound	1
-src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_float_add_at_infinite_bound	driver	4
-src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_float_add_at_infinite_bound	prepare_float_bound	1
-src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_float_add_at_infinite_bound	try_float_bound_weakening	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_float_literal_sum_or_difference_bound	try_float_sum_or_difference_at_infinite_bound	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_float_sum_or_difference_at_infinite_bound	driver	4
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_float_sum_or_difference_at_infinite_bound	prepare_float_bound	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_float_sum_or_difference_at_infinite_bound	try_float_bound_weakening	1

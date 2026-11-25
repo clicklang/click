@@ -5784,3 +5784,11 @@ path = "reference/library/index.md#float_orderfloat32_add_finite_monotone"
 [[item]]
 id = "library.theorem.float_order::float64_add_finite_monotone"
 path = "reference/library/index.md#float_orderfloat64_add_finite_monotone"
+
+[[item]]
+id = "library.theorem.float_order::float32_subtract_finite_monotone"
+path = "reference/library/index.md#float_orderfloat32_subtract_finite_monotone"
+
+[[item]]
+id = "library.theorem.float_order::float64_subtract_finite_monotone"
+path = "reference/library/index.md#float_orderfloat64_subtract_finite_monotone"

@@ -597,3 +597,16 @@ axiom float64_add_finite_monotone(c: double, a: double, b: double) {
     requires isfinite(c);
     ensures a + c <= b + c and c + a <= c + b;
 }
+
+// A finite operand keeps subtraction ordered at both infinities.
+axiom float32_subtract_finite_monotone(c: float, a: float, b: float) {
+    requires a <= b;
+    requires isfinite(c);
+    ensures a - c <= b - c and c - b <= c - a;
+}
+
+axiom float64_subtract_finite_monotone(c: double, a: double, b: double) {
+    requires a <= b;
+    requires isfinite(c);
+    ensures a - c <= b - c and c - b <= c - a;
+}

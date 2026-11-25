@@ -4625,6 +4625,7 @@ pub(crate) enum FloatLiteralSumOperation {
     Add,
     AddAtInfinity,
     Subtract,
+    SubtractAtInfinity,
 }
 
 /// An addition or subtraction law can use reflexive order for a literal operand.
@@ -4648,12 +4649,12 @@ pub(crate) fn float_literal_sum_or_difference_bound(
     if !same_float_operand(input.operand, operand) || !float_bound_weakens(source, goal) {
         return None;
     }
-    let law = if operator == Subtract {
-        FloatLiteralSumOperation::Subtract
-    } else if input.endpoint & !float_sign_bit(input.format) == float_infinity(input.format) {
-        FloatLiteralSumOperation::AddAtInfinity
-    } else {
-        FloatLiteralSumOperation::Add
+    let infinite = input.endpoint & !float_sign_bit(input.format) == float_infinity(input.format);
+    let law = match (operator == Subtract, infinite) {
+        (false, false) => FloatLiteralSumOperation::Add,
+        (false, true) => FloatLiteralSumOperation::AddAtInfinity,
+        (true, false) => FloatLiteralSumOperation::Subtract,
+        (true, true) => FloatLiteralSumOperation::SubtractAtInfinity,
     };
     let (endpoint, strict) = operation.apply(result.format, input.endpoint, false);
     Some((

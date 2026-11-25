@@ -4070,7 +4070,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         crate::kernel::search::record_discovery("try_float_literal_sum_or_difference_bound");
         use crate::kernel::KernelFloatType;
         use crate::kernel::proof::arithmetic_special::{
-            FloatLiteralSumOperation::{AddAtInfinity, Subtract},
+            FloatLiteralSumOperation::{AddAtInfinity, Subtract, SubtractAtInfinity},
             float_literal_sum_or_difference_bound,
         };
         let Some((plan, bits, literal_on_left, operation)) =
@@ -4084,8 +4084,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
             KernelFloatType::Float64 => crate::kernel::program_expression::float64_literal(bits),
         });
-        if matches!(operation, AddAtInfinity) {
-            return Self::try_float_add_at_infinite_bound(input, &plan, literal, source_surface);
+        if matches!(operation, AddAtInfinity | SubtractAtInfinity) {
+            return Self::try_float_sum_or_difference_at_infinite_bound(
+                input,
+                &plan,
+                matches!(operation, SubtractAtInfinity),
+                literal,
+                source_surface,
+            );
         }
         let reflexive = SyntaxProposition::Comparison {
             left: literal.clone(),
@@ -4100,14 +4106,15 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         Self::try_apply_float_pair_bound(input, &plan, matches!(operation, Subtract), premises)
     }
 
-    fn try_float_add_at_infinite_bound(
+    fn try_float_sum_or_difference_at_infinite_bound(
         input: &Proof<'a>,
         plan: &crate::kernel::proof::arithmetic_special::FloatBoundWeakening,
+        subtract: bool,
         literal: SyntaxTerm,
         source: &SyntaxProposition,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
-        crate::kernel::search::record_discovery("try_float_add_at_infinite_bound");
+        crate::kernel::search::record_discovery("try_float_sum_or_difference_at_infinite_bound");
         use crate::kernel::KernelFloatType;
         let Some(intermediate) = input.structural_proposition_candidate(&plan.intermediate) else {
             return Ok(None);
@@ -4137,9 +4144,15 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             expression: literal.clone(),
             classification: syntax::CFloatClassification::Finite,
         };
-        let name = match plan.format {
-            KernelFloatType::Float32 => "click::float_order::float32_add_finite_monotone",
-            KernelFloatType::Float64 => "click::float_order::float64_add_finite_monotone",
+        let name = match (plan.format, subtract) {
+            (KernelFloatType::Float32, false) => "click::float_order::float32_add_finite_monotone",
+            (KernelFloatType::Float64, false) => "click::float_order::float64_add_finite_monotone",
+            (KernelFloatType::Float32, true) => {
+                "click::float_order::float32_subtract_finite_monotone"
+            }
+            (KernelFloatType::Float64, true) => {
+                "click::float_order::float64_subtract_finite_monotone"
+            }
         };
         let application = ProofStep::ApplyPlannedTheorem {
             application: TheoremApplication {
