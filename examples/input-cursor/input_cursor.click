@@ -134,8 +134,46 @@ int32 input_cursor_clone(
         apply(separation::separate_restrict(memory(*target), memory(*source),
             memory(target->data), memory(source->data)));
     }
+    have contains(memory(*source), memory(source->pos)) by { close(); }
+    have separate(memory(target->pos), memory(source->pos)) by {
+        apply(separation::separate_restrict(memory(*target), memory(*source),
+            memory(target->pos), memory(source->pos)));
+    }
+    have separate(memory(target->len), memory(source->pos)) by {
+        apply(separation::separate_restrict(memory(*target), memory(*source),
+            memory(target->len), memory(source->pos)));
+    }
+    have separate(memory(target->data), memory(source->pos)) by {
+        apply(separation::separate_restrict(memory(*target), memory(*source),
+            memory(target->data), memory(source->pos)));
+    }
+    have contains(memory(*source), memory(source->len)) by { close(); }
+    have separate(memory(target->pos), memory(source->len)) by {
+        apply(separation::separate_restrict(memory(*target), memory(*source),
+            memory(target->pos), memory(source->len)));
+    }
+    have separate(memory(target->len), memory(source->len)) by {
+        apply(separation::separate_restrict(memory(*target), memory(*source),
+            memory(target->len), memory(source->len)));
+    }
+    have separate(memory(target->data), memory(source->len)) by {
+        apply(separation::separate_restrict(memory(*target), memory(*source),
+            memory(target->data), memory(source->len)));
+    }
     mark before_copy;
     step();
+    have separate(statement(0).footprint, memory(source->pos)) by {
+        close() using { separate(memory(target->pos), memory(source->pos)); };
+    }
+    have at(statement(0).exit, source->pos) == at(statement(0).entry, source->pos) by {
+        preserve(memory(source->pos), statement(0));
+    }
+    have separate(statement(0).footprint, memory(source->len)) by {
+        close() using { separate(memory(target->pos), memory(source->len)); };
+    }
+    have at(statement(0).exit, source->len) == at(statement(0).entry, source->len) by {
+        preserve(memory(source->len), statement(0));
+    }
     have separate(statement(0).footprint, memory(source->data)) by {
         close() using { separate(memory(target->pos), memory(source->data)); };
     }
@@ -144,6 +182,18 @@ int32 input_cursor_clone(
     }
     mark after_pos;
     step();
+    have separate(statement(1).footprint, memory(source->pos)) by {
+        close() using { separate(memory(target->len), memory(source->pos)); };
+    }
+    have at(statement(1).exit, source->pos) == at(statement(1).entry, source->pos) by {
+        preserve(memory(source->pos), statement(1));
+    }
+    have separate(statement(1).footprint, memory(source->len)) by {
+        close() using { separate(memory(target->len), memory(source->len)); };
+    }
+    have at(statement(1).exit, source->len) == at(statement(1).entry, source->len) by {
+        preserve(memory(source->len), statement(1));
+    }
     have separate(statement(1).footprint, memory(source->data)) by {
         close() using { separate(memory(target->len), memory(source->data)); };
     }
@@ -156,6 +206,18 @@ int32 input_cursor_clone(
     }
     mark after_len;
     step();
+    have separate(statement(2).footprint, memory(source->pos)) by {
+        close() using { separate(memory(target->data), memory(source->pos)); };
+    }
+    have at(statement(2).exit, source->pos) == at(statement(2).entry, source->pos) by {
+        preserve(memory(source->pos), statement(2));
+    }
+    have separate(statement(2).footprint, memory(source->len)) by {
+        close() using { separate(memory(target->data), memory(source->len)); };
+    }
+    have at(statement(2).exit, source->len) == at(statement(2).entry, source->len) by {
+        preserve(memory(source->len), statement(2));
+    }
     have separate(statement(2).footprint, memory(source->data)) by {
         close() using { separate(memory(target->data), memory(source->data)); };
     }

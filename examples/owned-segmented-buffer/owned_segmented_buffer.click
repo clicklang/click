@@ -132,6 +132,17 @@ int32 owned_segmented_buffer_set_first(
         apply(separation::contains_element(owner->first_data, 0, owner->first_len, index));
     }
     have separate(memory(owner->first_data[index]), memory(*owner)) by { close(); }
+    apply(separation::contains_refl(memory(owner->first_data[index])));
+    have contains(memory(*owner), memory(owner->first_len)) by { close(); }
+    have separate(memory(owner->first_data[index]), memory(owner->first_len)) by {
+        apply(separation::separate_restrict(memory(owner->first_data[index]), memory(*owner),
+            memory(owner->first_data[index]), memory(owner->first_len)));
+    }
+    have contains(memory(*owner), memory(owner->second_len)) by { close(); }
+    have separate(memory(owner->first_data[index]), memory(owner->second_len)) by {
+        apply(separation::separate_restrict(memory(owner->first_data[index]), memory(*owner),
+            memory(owner->first_data[index]), memory(owner->second_len)));
+    }
     step();
     have separate(statement(0).footprint, memory(owner->first_data)) by {
         close() using { at(before_store, separate(memory(owner->first_data), memory(owner->first_data[index]))); };
@@ -144,6 +155,18 @@ int32 owned_segmented_buffer_set_first(
     }
     have owner->second_data == at(before_store, owner->second_data) by {
         preserve(memory(owner->second_data), statement(0));
+    }
+    have separate(statement(0).footprint, memory(owner->first_len)) by {
+        close() using { at(before_store, separate(memory(owner->first_data[index]), memory(owner->first_len))); };
+    }
+    have owner->first_len == old(owner->first_len) by {
+        preserve(memory(owner->first_len), statement(0));
+    }
+    have separate(statement(0).footprint, memory(owner->second_len)) by {
+        close() using { at(before_store, separate(memory(owner->first_data[index]), memory(owner->second_len))); };
+    }
+    have owner->second_len == old(owner->second_len) by {
+        preserve(memory(owner->second_len), statement(0));
     }
     step();
     close();
@@ -182,6 +205,17 @@ int32 owned_segmented_buffer_set_second(
         apply(separation::contains_element(owner->second_data, 0, owner->second_len, index));
     }
     have separate(memory(owner->second_data[index]), memory(*owner)) by { close(); }
+    apply(separation::contains_refl(memory(owner->second_data[index])));
+    have contains(memory(*owner), memory(owner->first_len)) by { close(); }
+    have separate(memory(owner->second_data[index]), memory(owner->first_len)) by {
+        apply(separation::separate_restrict(memory(owner->second_data[index]), memory(*owner),
+            memory(owner->second_data[index]), memory(owner->first_len)));
+    }
+    have contains(memory(*owner), memory(owner->second_len)) by { close(); }
+    have separate(memory(owner->second_data[index]), memory(owner->second_len)) by {
+        apply(separation::separate_restrict(memory(owner->second_data[index]), memory(*owner),
+            memory(owner->second_data[index]), memory(owner->second_len)));
+    }
     step();
     have separate(statement(0).footprint, memory(owner->first_data)) by {
         close() using { at(before_store, separate(memory(owner->first_data), memory(owner->second_data[index]))); };
@@ -194,6 +228,18 @@ int32 owned_segmented_buffer_set_second(
     }
     have owner->second_data == at(before_store, owner->second_data) by {
         preserve(memory(owner->second_data), statement(0));
+    }
+    have separate(statement(0).footprint, memory(owner->first_len)) by {
+        close() using { at(before_store, separate(memory(owner->second_data[index]), memory(owner->first_len))); };
+    }
+    have owner->first_len == old(owner->first_len) by {
+        preserve(memory(owner->first_len), statement(0));
+    }
+    have separate(statement(0).footprint, memory(owner->second_len)) by {
+        close() using { at(before_store, separate(memory(owner->second_data[index]), memory(owner->second_len))); };
+    }
+    have owner->second_len == old(owner->second_len) by {
+        preserve(memory(owner->second_len), statement(0));
     }
     step();
     close();

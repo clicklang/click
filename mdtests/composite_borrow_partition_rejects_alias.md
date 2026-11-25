@@ -17,7 +17,15 @@ void update(int* p, int* q) {
     ensures *q == old(*q);
 } by {
     unfold(cell(p));
-    with(cell(q)) { step_until(function.exit); }
+    with(cell(q)) {
+        have separate(memory(*p), memory(*q)) by { close(); }
+        step();
+        have separate(statement(0).footprint, memory(*q)) by {
+            close() using { separate(memory(*p), memory(*q)); };
+        }
+        have *q == old(*q) by { preserve(memory(*q), statement(0)); }
+        step_until(function.exit);
+    }
     fold(cell(p));
     close();
 }

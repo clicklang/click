@@ -97,6 +97,17 @@ int32 owned_split_buffer_set_left(
             memory(*owner), memory(owner->data[index])));
         apply(separation::separate_symm(memory(*owner), memory(owner->data[index])));
     }
+    apply(separation::contains_refl(memory(owner->data[index])));
+    have contains(memory(*owner), memory(owner->split)) by { close(); }
+    have separate(memory(owner->data[index]), memory(owner->split)) by {
+        apply(separation::separate_restrict(memory(owner->data[index]), memory(*owner),
+            memory(owner->data[index]), memory(owner->split)));
+    }
+    have contains(memory(*owner), memory(owner->len)) by { close(); }
+    have separate(memory(owner->data[index]), memory(owner->len)) by {
+        apply(separation::separate_restrict(memory(owner->data[index]), memory(*owner),
+            memory(owner->data[index]), memory(owner->len)));
+    }
     step();
     have separate(statement(0).footprint, memory(owner->data)) by {
         close() using {
@@ -105,6 +116,18 @@ int32 owned_split_buffer_set_left(
     }
     have owner->data == at(before_store, owner->data) by {
         preserve(memory(owner->data), statement(0));
+    }
+    have separate(statement(0).footprint, memory(owner->split)) by {
+        close() using { at(before_store, separate(memory(owner->data[index]), memory(owner->split))); };
+    }
+    have owner->split == old(owner->split) by {
+        preserve(memory(owner->split), statement(0));
+    }
+    have separate(statement(0).footprint, memory(owner->len)) by {
+        close() using { at(before_store, separate(memory(owner->data[index]), memory(owner->len))); };
+    }
+    have owner->len == old(owner->len) by {
+        preserve(memory(owner->len), statement(0));
     }
     step();
     close();
@@ -148,6 +171,17 @@ int32 owned_split_buffer_set_right(
             memory(*owner), memory(owner->data[index])));
         apply(separation::separate_symm(memory(*owner), memory(owner->data[index])));
     }
+    apply(separation::contains_refl(memory(owner->data[index])));
+    have contains(memory(*owner), memory(owner->split)) by { close(); }
+    have separate(memory(owner->data[index]), memory(owner->split)) by {
+        apply(separation::separate_restrict(memory(owner->data[index]), memory(*owner),
+            memory(owner->data[index]), memory(owner->split)));
+    }
+    have contains(memory(*owner), memory(owner->len)) by { close(); }
+    have separate(memory(owner->data[index]), memory(owner->len)) by {
+        apply(separation::separate_restrict(memory(owner->data[index]), memory(*owner),
+            memory(owner->data[index]), memory(owner->len)));
+    }
     step();
     have separate(statement(0).footprint, memory(owner->data)) by {
         close() using {
@@ -156,6 +190,18 @@ int32 owned_split_buffer_set_right(
     }
     have owner->data == at(before_store, owner->data) by {
         preserve(memory(owner->data), statement(0));
+    }
+    have separate(statement(0).footprint, memory(owner->split)) by {
+        close() using { at(before_store, separate(memory(owner->data[index]), memory(owner->split))); };
+    }
+    have owner->split == old(owner->split) by {
+        preserve(memory(owner->split), statement(0));
+    }
+    have separate(statement(0).footprint, memory(owner->len)) by {
+        close() using { at(before_store, separate(memory(owner->data[index]), memory(owner->len))); };
+    }
+    have owner->len == old(owner->len) by {
+        preserve(memory(owner->len), statement(0));
     }
     step();
     close();

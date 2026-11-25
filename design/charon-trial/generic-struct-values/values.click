@@ -45,4 +45,19 @@ fn generic_struct_values::copy_first(dst: &mut generic_struct_values::Pair, src:
     owns *dst;
     views *src;
     ensures dst.x == src.x;
+} by {
+    step_until(region(8).entry);
+    have contains(memory(*src), memory(src.x)) by { close(); }
+    have contains(memory(*dst), memory(dst.x)) by { close(); }
+    have separate(memory(dst.x), memory(src.x)) by {
+        apply(click::separation::separate_restrict(memory(*dst), memory(*src), memory(dst.x), memory(src.x)));
+    }
+    step();
+    have separate(region(8).footprint, memory(src.x)) by {
+        close() using { separate(memory(dst.x), memory(src.x)); };
+    }
+    have at(region(8).exit, src.x) == at(region(8).entry, src.x) by {
+        preserve(memory(src.x), region(8));
+    }
+    close();
 }
