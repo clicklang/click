@@ -8,10 +8,10 @@ struct item { uint8 tag; int64 value; };
 verifying "objects.c";
 theorem inspect(p: struct item*) {
     let q: int32* = (p as (void *)) as (int32 *);
-    ensures contains(memory(q[0..1]), memory(q[1])) by { normalize(); }
+    ensures contains(memory(q[0..1]), memory(q[1])) by { close(); }
 }
 ```
 
 ```expect
-fail: did not normalize to true
+fail: could not establish `contains(memory(((p as (void *)) as (int32 *))[0..1]), memory(((p as (void *)) as (int32 *))[1]))`
 ```

@@ -63,11 +63,11 @@ int probe(struct rb_node* node, struct rb_node* parent) {
         == RbTree::Node(node, node, Color::Red, RbTree::Empty, RbTree::Empty) by {
         unfold(reparent(
             RbTree::Node(node, node, Color::Red, RbTree::Empty, RbTree::Empty), parent));
-        normalize();
+        close();
     }
 }
 ```
 
 ```expect
-fail: `normalize` goal did not normalize to true
+fail: could not establish `RbTree::Node(node, (let pointer: void* = parent; pointer), Color::Red(), RbTree::Empty(), RbTree::Empty()) == RbTree::Node(node, node, Color::Red(), RbTree::Empty(), RbTree::Empty())`
 ```

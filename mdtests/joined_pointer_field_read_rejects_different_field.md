@@ -80,9 +80,9 @@ void inspect(struct node* parent) {
                 Pair::At(model, lm) => {
                     let { l: l } = unfold(c);
                     have parent->left == model by { close(); }
-                    have defined(parent->right) by { rewrite(parent, pid); normalize(); }
+                    have defined(parent->right) by { rewrite(parent, pid); close(); }
                     mark before_sibling;
-                    have defined(at(before_sibling, pid->right)) by { normalize(); }
+                    have defined(at(before_sibling, pid->right)) by { close(); }
                     step();
                     have separate(loop(0).statement(0).footprint, memory(parent->right)) by { close(); }
                     have defined(parent->right) by {
@@ -127,7 +127,7 @@ void inspect(struct node* parent) {
                             have child == leaf by { close(); }
                             have sibling->left == child;
                             have model->right == leaf by {
-                                normalize() using { sibling == model; sibling->left == child; child == leaf; };
+                                close() using { sibling == model; sibling->left == child; child == leaf; };
                             }
                             let l = fold(leaf_at(parent->left->left), { model: Identity::At(leaf) });
                             let c = fold(cell(parent->left), { model: Pair::At(model, Identity::At(leaf)), l: l });
@@ -146,5 +146,5 @@ void inspect(struct node* parent) {
 ```
 
 ```expect
-fail: `normalize using` goal did not normalize to true
+fail: `close() using` could not prove the current goal from only its listed premises
 ```

@@ -27,11 +27,11 @@ void mark_one(int32 a[], int32 n, int32 i, int32 m) {
     mark entry;
     step();
     have a[m] == 7 by {
-        normalize();
+        close();
     }
 }
 ```
 
 ```expect
-fail: `normalize` goal did not normalize to true
+fail: could not establish `a[m] == 7`
 ```

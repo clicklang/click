@@ -2,10 +2,10 @@
 
 ```click
 theorem subtract_one(n: uint64) {
-    ensures n - 1u64 == n by normalize();
+    ensures n - 1u64 == n by close();
 }
 ```
 
 ```expect
-fail: goal did not normalize to true
+fail: could not establish `(to_integer(n) - to_integer(1u64)) == to_integer(n)`
 ```

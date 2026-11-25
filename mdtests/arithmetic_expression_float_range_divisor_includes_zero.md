@@ -7,7 +7,7 @@ theorem no_bound(x: float, y: float) {
     requires y >= float32_from_bits(0xbf800000);
     requires y <= float32_from_bits(0x3f800000);
     ensures x / y >= float32_from_bits(0xc0000000) by {
-        normalize() using {
+        close() using {
             x >= float32_from_bits(0x3f800000);
             x <= float32_from_bits(0x40000000);
             y >= float32_from_bits(0xbf800000);
@@ -18,5 +18,5 @@ theorem no_bound(x: float, y: float) {
 ```
 
 ```expect
-fail: did not normalize
+fail: `close() using` could not prove the current goal from only its listed premises
 ```

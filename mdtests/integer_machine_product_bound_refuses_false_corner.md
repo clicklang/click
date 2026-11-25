@@ -9,11 +9,11 @@ theorem false_bound(a: Integer, b: Integer) {
     requires -4 <= b;
     requires b <= 5;
     ensures -11 <= a * b by {
-        normalize() using { -2 <= a; a <= 3; -4 <= b; b <= 5; };
+        close() using { -2 <= a; a <= 3; -4 <= b; b <= 5; };
     }
 }
 ```
 
 ```expect
-fail: `normalize using` goal did not normalize to true
+fail: `close() using` could not prove the current goal from only its listed premises
 ```
