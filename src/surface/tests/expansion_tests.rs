@@ -1,6 +1,31 @@
 use super::*;
 
 #[test]
+fn field_copy_and_array_loop_expand_without_fact_transport() {
+    for (fixture, function) in [
+        (
+            "mdtests/a_struct_equality_compares_every_field.md",
+            "copy_both",
+        ),
+        ("mdtests/fill3_array_loop.md", "fill3_array_loop"),
+    ] {
+        let (source, sources) = mdtest_sources(fixture);
+        let sources = sources
+            .iter()
+            .map(|(name, text)| (name.as_str(), text.as_str()))
+            .collect::<Vec<_>>();
+        let claim = format!("{function}.contract");
+        let expanded = expand_c_claim_source_by_label(&source, &sources, &claim).unwrap();
+        assert!(expanded.contains("preserve("), "{expanded}");
+        assert!(!expanded.contains("transport("), "{expanded}");
+        crate::surface::check_audit_claim(&claim, true, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap();
+    }
+}
+
+#[test]
 fn shifted_one_replays_through_each_expansion_entry_point() {
     let source = r#"
         theorem shifted_one(d: uint32) {

@@ -5,8 +5,8 @@ use super::*;
 impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// The one mid-execution `transport` premise law, shared by the drivers:
     /// the source and target are lowered at the frontier, the premise
-    /// planner names the premises, and the driver applies the explicit
-    /// `transport using` transition. The planner's failure is the answer,
+    /// planner names the premises, and the driver constructs a checked
+    /// proof from ordinary steps. The planner's failure is the answer,
     /// with its diagnostic. `source_refusal` is the refusal of the bare
     /// form's source-only attempt, which that diagnostic reports when it
     /// names a frame the source could not cross.
@@ -158,13 +158,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         )? {
             return Ok(proof);
         }
-        search_input
-            .driver()
-            .apply_step(ProofStep::CompatibilityFactTransport {
-                source: surface_source.clone(),
-                target: surface_target.clone(),
-                premises,
-            })
+        Err(ClickError::new(format!(
+            "`{claim_label}` tactic {tactic_index}: `transport` found no ordinary proof of its target"
+        ))
+        .with_proof_refusal(crate::surface::ProofRefusal::UnsuccessfulSearch))
     }
     /// The live-state search planner on a focused function outcome:
     /// the same premise planner, reading the path's effects, the returned
@@ -244,12 +241,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         )? {
             return Ok(proof);
         }
-        search_input
-            .driver()
-            .apply_step(ProofStep::CompatibilityFactTransport {
-                source: surface_source.clone(),
-                target: surface_target.clone(),
-                premises,
-            })
+        Err(ClickError::new(format!(
+            "`{claim_label}` tactic {tactic_index}: `transport` found no ordinary proof of its target"
+        ))
+        .with_proof_refusal(crate::surface::ProofRefusal::UnsuccessfulSearch))
     }
 }

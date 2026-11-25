@@ -94,3 +94,4 @@ try_native_integer_bound
 plan_bare_statement_step
 try_signed_definedness_bounds
 try_indexed_separation_restriction
+try_struct_field_equality
