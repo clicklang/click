@@ -80,7 +80,16 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
             ClickFunctionType {
                 value_parameter: false,
                 type_parameters: definition.type_parameters().to_vec(),
-                parameters: definition.parameters().to_vec(),
+                parameters: definition
+                    .parameters()
+                    .iter()
+                    .map(|parameter| ClickFunctionParameterType {
+                        click_type: parameter.click_type().clone(),
+                        object_pointer_type: parameter.pointer_object_class().map(|class| {
+                            ClickType::from_object_pointer_class(parameter.interface_type(), &class)
+                        }),
+                    })
+                    .collect(),
                 return_type: definition.return_type_with_object_class(),
             },
         );

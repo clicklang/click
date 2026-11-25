@@ -134,7 +134,7 @@ impl AlgebraicVariables {
                             function
                                 .parameters
                                 .iter()
-                                .map(FunctionParameter::click_type_with_object_class),
+                                .map(ClickFunctionParameterType::click_type_with_object_class),
                             actual_types,
                         )
                         .map_err(ClickError::new)?;

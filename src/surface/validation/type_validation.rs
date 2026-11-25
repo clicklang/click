@@ -1302,16 +1302,9 @@ pub(super) fn with_function_parameter_types<T>(
                 return_type: *result.clone(),
                 parameters: parameters
                     .iter()
-                    .enumerate()
-                    .map(|(index, ty)| FunctionParameter {
-                        slice_length: None,
-                        name: format!("argument{index}"),
+                    .map(|ty| ClickFunctionParameterType {
                         click_type: ty.clone(),
-                        struct_name: None,
-                        function_pointer_signature: None,
-                        constant: false,
-                        pointee_constant: false,
-                        reference: false,
+                        object_pointer_type: None,
                     })
                     .collect(),
             };
