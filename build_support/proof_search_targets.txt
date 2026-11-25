@@ -297,6 +297,7 @@ try_float_bound_weakening
 select_float_pair_bounds
 try_float_pair_bound
 try_float_literal_sum_or_difference_bound
+try_float_sum_or_difference_at_infinite_bound
 try_apply_float_pair_bound
 prepare_float_bound
 try_float_scale_bound
@@ -311,6 +312,7 @@ prepare_float_interval_bounds
 retain_float_adjacent_bound
 try_retain_float_interval_fact
 try_float_zero_product_bound
+try_float_finite_interval
 try_float_square_bound
 try_rounded_int32_to_float32_bound
 try_struct_field_equalities

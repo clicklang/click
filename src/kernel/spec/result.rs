@@ -481,7 +481,7 @@ impl SpecCallArgument {
         match self {
             Self::Native(value) => Some(value),
             Self::Shared(value) => value
-                .pointer_argument_native()
+                .old_pointer_argument()
                 .or_else(|| value.boolean_argument_native()),
         }
     }
@@ -532,7 +532,7 @@ impl SpecCallArgument {
                     );
                 }
                 if let Some(descriptor) = value
-                    .pointer_argument_native()
+                    .old_pointer_argument()
                     .or_else(|| value.boolean_argument_native())
                 {
                     return descriptor.clone();
@@ -608,7 +608,7 @@ mod pointer_observation_tests {
     #[test]
     fn numeric_pointer_projection_retains_the_address_without_changing_complete_values() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = Pointer::new(
+        let pointer = OldPointer::new(
             Address::symbolic(Variable(1024900)),
             ProgramType::Int32Pointer,
         );

@@ -8890,7 +8890,7 @@ impl AnnotationLowerer<'_> {
         &'b self,
         expression: &'b ProgramExpression,
         environment: &'b SpecElaborationContext,
-    ) -> Option<&'b crate::kernel::Pointer> {
+    ) -> Option<&'b crate::kernel::OldPointer> {
         if let ProgramExpression::Variable(name) = expression
             && name.local_id().is_some()
             && let Some(state) = environment.reference_state.as_ref()

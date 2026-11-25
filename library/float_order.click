@@ -584,3 +584,29 @@ axiom float64_scale_negative_right_upper(factor: double, x: double, bound: doubl
     requires factor < float64_from_bits(0u64);
     ensures x * factor <= bound * factor;
 }
+
+// Translating by a finite value preserves the order of both infinities.
+axiom float32_add_finite_monotone(c: float, a: float, b: float) {
+    requires a <= b;
+    requires isfinite(c);
+    ensures a + c <= b + c and c + a <= c + b;
+}
+
+axiom float64_add_finite_monotone(c: double, a: double, b: double) {
+    requires a <= b;
+    requires isfinite(c);
+    ensures a + c <= b + c and c + a <= c + b;
+}
+
+// A finite operand keeps subtraction ordered at both infinities.
+axiom float32_subtract_finite_monotone(c: float, a: float, b: float) {
+    requires a <= b;
+    requires isfinite(c);
+    ensures a - c <= b - c and c - b <= c - a;
+}
+
+axiom float64_subtract_finite_monotone(c: double, a: double, b: double) {
+    requires a <= b;
+    requires isfinite(c);
+    ensures a - c <= b - c and c - b <= c - a;
+}

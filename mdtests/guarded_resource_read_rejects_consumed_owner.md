@@ -45,8 +45,8 @@ int32 f(struct cell* root) {
     step(); step(); step(); step();
     mark before_store;
     step();
-    have contains(memory(root->value), memory((&root->value)[0..1])) by { normalize(); }
-    have contains(memory((root->base.left as (void *) as (struct cell *))->value), memory((&((root->base.left as (void *) as (struct cell *))->value))[0..1])) by { normalize(); }
+    have contains(memory(root->value), memory((&root->value)[0..1])) by { close(); }
+    have contains(memory((root->base.left as (void *) as (struct cell *))->value), memory((&((root->base.left as (void *) as (struct cell *))->value))[0..1])) by { close(); }
     have separate(memory((&((root->base.left as (void *) as (struct cell *))->value))[0..1]), memory((&root->value)[0..1])) by {
         apply(click::separation::separate_restrict(
             memory((root->base.left as (void *) as (struct cell *))->value), memory(root->value),

@@ -2,7 +2,7 @@
 //! plans selecting those rules for ordinary proof expansion.
 use super::super::{
     Address, AddressBase, AddressOffset, ComparisonOperator, ConditionTerm, FloatClassification,
-    FloatCondition, FloatOperandView, KernelFloatType, MachineTerm, Pointer, Proposition,
+    FloatCondition, FloatOperandView, KernelFloatType, MachineTerm, OldPointer, Proposition,
     SignedDefinedWidth,
 };
 
@@ -1263,7 +1263,7 @@ fn pointer_translation(
     goal: &Proposition,
 ) -> bool {
     if let Some((ConditionTerm::PointerEqual(left, right), true)) = (goal).condition_native() {
-        let same_domain = |a: &Pointer, b: &Pointer| a.same_provenance_as(b);
+        let same_domain = |a: &OldPointer, b: &OldPointer| a.same_provenance_as(b);
         let linked = match relation {
             condition_source_0 @ Proposition::ConditionIs(_, true)
                 if let Some((ConditionTerm::PointerEqual(a, b), _)) =
@@ -4354,6 +4354,28 @@ pub(crate) fn float_finiteness_bounds(goal: &Proposition) -> Option<[Proposition
     ])
 }
 
+/// The largest finite endpoints give an inclusive interval for finiteness.
+pub(crate) fn float_finite_interval(
+    goal: &Proposition,
+) -> Option<(KernelFloatType, [Proposition; 2])> {
+    let operand = float_finiteness_operand(goal)?;
+    let format = operand.format();
+    let maximum = float_infinity(format) - 1;
+    Some((
+        format,
+        [
+            float_bound_proposition(
+                format,
+                operand,
+                maximum | float_sign_bit(format),
+                true,
+                false,
+            )?,
+            float_bound_proposition(format, operand, maximum, false, false)?,
+        ],
+    ))
+}
+
 /// Finite self-subtraction gives zero. Finite, nonzero self-division gives
 /// one, including when the shared operand is subnormal.
 pub(super) fn float_self_operation_bounds(
@@ -4599,11 +4621,18 @@ pub(crate) fn float_pair_bound_weakening(
     ))
 }
 
+pub(crate) enum FloatLiteralSumOperation {
+    Add,
+    AddAtInfinity,
+    Subtract,
+    SubtractAtInfinity,
+}
+
 /// An addition or subtraction law can use reflexive order for a literal operand.
 pub(crate) fn float_literal_sum_or_difference_bound(
     source: &Proposition,
     goal: &Proposition,
-) -> Option<(FloatBoundWeakening, u64, bool, bool)> {
+) -> Option<(FloatBoundWeakening, u64, bool, FloatLiteralSumOperation)> {
     use crate::kernel::FloatBinaryOperator::{Add, Subtract};
     let input = float_bound(source)?;
     let result = float_bound(goal)?;
@@ -4620,12 +4649,19 @@ pub(crate) fn float_literal_sum_or_difference_bound(
     if !same_float_operand(input.operand, operand) || !float_bound_weakens(source, goal) {
         return None;
     }
+    let infinite = input.endpoint & !float_sign_bit(input.format) == float_infinity(input.format);
+    let law = match (operator == Subtract, infinite) {
+        (false, false) => FloatLiteralSumOperation::Add,
+        (false, true) => FloatLiteralSumOperation::AddAtInfinity,
+        (true, false) => FloatLiteralSumOperation::Subtract,
+        (true, true) => FloatLiteralSumOperation::SubtractAtInfinity,
+    };
     let (endpoint, strict) = operation.apply(result.format, input.endpoint, false);
     Some((
         FloatBoundWeakening::from_goal(goal, endpoint, strict)?,
         literal,
         literal_on_left,
-        operator == Subtract,
+        law,
     ))
 }
 

@@ -34,7 +34,7 @@ pub(in crate::kernel) fn explicit_signed_elements(
     facts: PureFactContext,
 ) -> PureFactContext {
     let law = crate::kernel::prove_separation_elements(
-        Pointer::new(base, ty.pointer_to().unwrap()),
+        OldPointer::new(base, ty.pointer_to().unwrap()),
         ty.byte_width(),
         MachineIntegerType::Int32,
         i,
@@ -151,8 +151,10 @@ pub(in crate::kernel) fn explicit_frame(
         other => panic!("unsupported test observation: {other:?}"),
     };
     let result = Proposition::condition_is(condition, true);
-    crate::kernel::proof::preservation::apply(&separation, None, &result, |p| p == &separation)
-        .expect("explicit preservation");
+    crate::kernel::proof::preservation::apply(&separation, None, &result, None, |p| {
+        p == &separation
+    })
+    .expect("explicit preservation");
     Some((old, new, result))
 }
 

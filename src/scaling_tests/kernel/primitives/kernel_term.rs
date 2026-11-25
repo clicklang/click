@@ -719,7 +719,7 @@ fn pointer_read_roots_and_handoffs_do_not_expand_defining_address_dags() {
             memory = memory.with_block(format!("pointer-read-unrelated-{n}"), 8);
         }
         let memory = intern_memory(memory);
-        let value = SharedPointer::import(&Pointer::new(
+        let value = SharedPointer::import(&OldPointer::new(
             Address::symbolic(Variable(1018100)),
             ProgramType::Int32Pointer,
         ));
@@ -769,7 +769,7 @@ fn formed_pointer_roots_keep_prepared_displacement_dags() {
     for unrelated in [0, 128, 512] {
         let _unrelated = (0..unrelated)
             .map(|n| {
-                KernelTerm::shared_pointer_value(SharedPointer::import(&Pointer::new(
+                KernelTerm::shared_pointer_value(SharedPointer::import(&OldPointer::new(
                     Address::symbolic(Variable(1022100 + n)),
                     ProgramType::Int32Pointer,
                 )))
@@ -782,7 +782,7 @@ fn formed_pointer_roots_keep_prepared_displacement_dags() {
                     .into_shared()
                     .unwrap();
             }
-            let source = SharedPointer::import(&Pointer::new(
+            let source = SharedPointer::import(&OldPointer::new(
                 Address::symbolic(Variable(1022700)),
                 ProgramType::Int32Pointer,
             ));
@@ -811,7 +811,7 @@ fn formed_pointer_roots_keep_prepared_displacement_dags() {
 #[test]
 fn pointer_arithmetic_roots_retain_operand_and_result_dags() {
     let _session = crate::kernel::VerificationSession::enter();
-    let base = SharedPointer::import(&Pointer::new(
+    let base = SharedPointer::import(&OldPointer::new(
         Address::symbolic(Variable(1023100)),
         ProgramType::Int32Pointer,
     ));
@@ -885,7 +885,7 @@ fn pointer_arithmetic_roots_retain_operand_and_result_dags() {
 #[test]
 fn pointer_numeric_observations_retain_prepared_dags_without_export() {
     let _session = crate::kernel::VerificationSession::enter();
-    let pointer = SharedPointer::import(&Pointer::new(
+    let pointer = SharedPointer::import(&OldPointer::new(
         Address::symbolic(Variable(1024200)),
         ProgramType::Int32Pointer,
     ));
@@ -938,7 +938,7 @@ fn pointer_numeric_observations_retain_prepared_dags_without_export() {
 #[test]
 fn pointer_call_handoffs_retain_prepared_argument_dags() {
     let _session = crate::kernel::VerificationSession::enter();
-    let value = SharedPointer::import(&Pointer::new(
+    let value = SharedPointer::import(&OldPointer::new(
         Address::symbolic(Variable(1025200)),
         ProgramType::Int32Pointer,
     ));

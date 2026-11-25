@@ -4288,7 +4288,8 @@ impl PureFactContext {
                 ConditionTerm::PointerEqual(fact_left, fact_right),
                 ConditionTerm::PointerEqual(target_left, target_right),
             ) => {
-                let same = |fact: &crate::kernel::Pointer, target: &crate::kernel::Pointer| {
+                let same = |fact: &crate::kernel::OldPointer,
+                            target: &crate::kernel::OldPointer| {
                     fact == target
                         || fact.program_type() == target.program_type()
                             && self.pointer_provenance_match(fact, target)

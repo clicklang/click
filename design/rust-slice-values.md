@@ -45,7 +45,7 @@ checked against all seven.
 
 ## Decision
 
-A Rust slice is a **wide pointer**: a kernel `Pointer` with one more
+A Rust slice is a **wide pointer**: a kernel pointer with one more
 component, its metadata, which for a slice is the element count. This is
 Rust's own definition of every pointer to `[T]` or `str`.
 
@@ -70,7 +70,7 @@ second.
 
 `&[T]`, `&mut [T]`, `*const [T]`, `*mut [T]`, `Box<[T]>` and `&str` are one
 kernel value form with six types. This is the choice Click already makes
-for thin pointers: `&T`, `&mut T` and `*const T` are one `Pointer` value
+for thin pointers: `&T`, `&mut T` and `*const T` are one pointer value
 whose type decides what is owed and held, and pointer equality ignores the
 type, so a cast keeps the value. Separate kernel forms would need a
 conversion at every cast and reborrow, the boundary problem the hybrid
@@ -125,9 +125,9 @@ specs may also write the Rust type. The other four are spelled as in Rust.
 
 ### Risks to settle first
 
-1. **Consumers of a `Pointer` that assume it is thin.** Arithmetic,
+1. **Consumers of a pointer that assume it is thin.** Arithmetic,
    dereference, range formation and integer casts must take the thin part
-   or refuse a wide pointer. There are 203 `Pointer::new` sites in 72
+   or refuse a wide pointer. There are 203 `OldPointer::new` sites in 72
    files outside tests. The type distinguishes wide pointers, so a
    consumer that does not handle one refuses it rather than misreading it.
    The inventory is [below](#inventory-of-pointer-consumers).
@@ -145,7 +145,7 @@ behaviour in the large evaluation files (`eval/memory_loads.rs`,
 `eval/expression.rs`, `kernel/spec.rs`, `surface/proof/surface_synthesis.rs`)
 is still to be confirmed.
 
-**Choke points.** `Pointer`'s fields are private
+**Choke points.** `OldPointer`'s fields are private
 (`primitives.rs:2945-3300`), so metadata flows through a few places:
 
 - `identity()` (`primitives.rs:3313-3373`) for equality, hash and order,
@@ -243,7 +243,7 @@ one value.
 
 ### Kernel facts the options rely on
 
-- `Pointer` (`src/kernel/primitives.rs:2657`) is already a compound: an
+- `OldPointer` (`src/kernel/primitives.rs:2657`) is already a compound: an
   address, its provenance and its array object. Its identity, hash and
   order use those components, not its type.
 - The e-graph decomposes pointer equality by component:

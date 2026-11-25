@@ -1,17 +1,17 @@
-# Recorded pointer normalization rejects a changed link
+# A recorded pointer value cannot justify a changed link
 
 The second link is assigned null rather than the old parent pointer. The
-normalizer must reject the claimed parent link even when the other copied
-pointer and all framed resources remain valid.
+proof still establishes the copied pointer and receives the framed resources.
+The attempt to establish the old parent link fails.
 
-```c filename=normalized_wrong_pointer_value.c
+```c filename=changed_link.c
 struct node { uint64 tag; struct node *right; struct node *left; };
 void retarget(struct node *p, struct node *q, int32 *anchor) { q->tag = p->tag; p->tag = 1; }
 void call(struct node *p, struct node *q, int32 *anchor) { p->right = q->left; q->left = 0; retarget(p, q, anchor); }
 ```
 
 ```click
-verifying "normalized_wrong_pointer_value.c";
+verifying "changed_link.c";
 resource links(p: struct node*) {
     field model: int32;
     owns p->tag; owns p->left; owns p->right;
@@ -47,12 +47,15 @@ void call(struct node* p, struct node* q, int32* anchor) {
     mark before;
     let { b: c } = step(retarget, { a: c });
     have p->left == 0;
-    have p->right == 0 by { normalize() using { at(before, p->right) == 0; }; }
-    have q->left == p by { normalize() using { }; }
+    have p->right == 0 by {
+        rewrite(at(before, p->right), 0);
+        close();
+    }
+    have q->left == p by { close() using { }; }
     unfold(c);
 }
 ```
 
 ```expect
-fail: `normalize using` goal did not normalize to true using the listed conditions
+fail: `close() using` could not prove the current goal from only its listed premises
 ```

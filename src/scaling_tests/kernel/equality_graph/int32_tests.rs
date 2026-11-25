@@ -549,7 +549,7 @@ fn complete_pointer_scalar_evidence_ignores_unrelated_inputs() {
             context = context.assume_condition(eq(&var(index * 2), &var(index * 2 + 1)), true);
         }
         let pointer = |id| {
-            Pointer::new(
+            OldPointer::new(
                 Address {
                     base: AddressBase::ExternalArgument,
                     offset: AddressOffset::scale_int32(var(id), 4),

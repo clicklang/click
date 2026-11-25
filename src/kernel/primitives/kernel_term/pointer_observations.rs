@@ -77,7 +77,7 @@ mod tests {
     fn pointer_argument_observations_keep_retained_sources() {
         use crate::kernel::effective_type::{CAccessClass, CScalarClass};
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = Pointer::new(
+        let pointer = OldPointer::new(
             Address::symbolic(Variable(1024002)),
             ProgramType::Int32Pointer,
         );

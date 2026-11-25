@@ -1395,7 +1395,7 @@ fn return_resource_observations_construct_successors_and_reject_other_paths() {
 #[test]
 fn return_exchange_keeps_the_published_body_state() {
     use crate::kernel::{
-        Pointer, ResourceFieldSchema, ResourceFieldType, ResourceInstance, SpecPoint,
+        OldPointer, ResourceFieldSchema, ResourceFieldType, ResourceInstance, SpecPoint,
     };
     let pointer = Address::symbolic(Variable(810_000));
     let schema = ResourceFieldSchema::new(vec![(
@@ -1420,10 +1420,9 @@ fn return_exchange_keeps_the_published_body_state() {
         vec![SpecProposition::Comparison {
             left: SpecExpression::MemoryLoad {
                 point: SpecPoint::Current,
-                pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(Pointer::new(
-                    pointer.clone(),
-                    ProgramType::Int32Pointer,
-                )))),
+                pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
+                    OldPointer::new(pointer.clone(), ProgramType::Int32Pointer),
+                ))),
                 value_type: ProgramType::Int32,
                 exact: false,
             },
@@ -2746,7 +2745,7 @@ fn branch_split_obligations_require_evidence_on_each_named_arm() {
 
 #[test]
 fn interface_logical_read_does_not_establish_validity() {
-    use crate::kernel::{Pointer, SpecPoint};
+    use crate::kernel::{OldPointer, SpecPoint};
     let state = ExecutionState::new();
     let pointer = crate::kernel::Address {
         base: "interface_cell".into(),
@@ -2754,10 +2753,9 @@ fn interface_logical_read_does_not_establish_validity() {
     };
     let load = SpecExpression::MemoryLoad {
         point: SpecPoint::Current,
-        pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(Pointer::new(
-            pointer,
-            ProgramType::Int32Pointer,
-        )))),
+        pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
+            OldPointer::new(pointer, ProgramType::Int32Pointer),
+        ))),
         value_type: ProgramType::Int32,
         exact: false,
     };
@@ -3553,7 +3551,7 @@ fn resource_pointer_cell_keeps_the_complete_read_from_its_recorded_store() {
     assert!(before.memory().known_value(&slot).is_none());
     let source = before.program_point();
     let version = source.indexed_typed_version(&slot, ty).unwrap();
-    let pointer = crate::kernel::Pointer::from_point_read(version, ty, &slot);
+    let pointer = crate::kernel::OldPointer::from_point_read(version, ty, &slot);
     let expected = ProgramValue::Pointer(pointer.clone());
     let named = before
         .memory()

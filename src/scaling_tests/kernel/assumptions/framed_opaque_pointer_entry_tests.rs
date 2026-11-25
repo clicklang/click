@@ -11,12 +11,12 @@ fn an_opaque_candidate_does_not_walk_its_unusable_memory_frame() {
         };
         let base = SymbolicMemory::new();
         let raw = Address::symbolic(Variable(995_080));
-        let previous = Pointer::new(
+        let previous = OldPointer::new(
             Address::loaded_value(&intern_memory_ref(&base), &field),
             ProgramType::Int32Pointer,
         )
         .with_address(raw.clone());
-        let alias = Pointer::new(
+        let alias = OldPointer::new(
             Address::symbolic(Variable(995_081)),
             ProgramType::Int32Pointer,
         );
@@ -30,7 +30,7 @@ fn an_opaque_candidate_does_not_walk_its_unusable_memory_frame() {
                 ProgramValue::UInt64(MachineTerm::uint64_constant(index)),
             );
         }
-        let current = Pointer::new(
+        let current = OldPointer::new(
             Address::loaded_value(&intern_memory_ref(&memory), &field),
             ProgramType::Int32Pointer,
         )
@@ -52,7 +52,7 @@ fn provenance_misses_do_not_enumerate_direct_alias_stars() {
     for size in [8u64, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = |id| Address::symbolic(Variable(963_000 + id));
-        let value = |id| Pointer::new(pointer(id), ProgramType::Int32Pointer);
+        let value = |id| OldPointer::new(pointer(id), ProgramType::Int32Pointer);
         let mut facts = PureFactContext::new();
         for index in 1..=size {
             facts =
@@ -82,7 +82,7 @@ fn framed_pointer_refusals_do_not_scan_same_address_sources() {
         let _session = crate::kernel::VerificationSession::enter();
         let field = Address::symbolic(Variable(964_000));
         let raw = Address::symbolic(Variable(964_001));
-        let alias = Pointer::new(
+        let alias = OldPointer::new(
             Address::symbolic(Variable(964_002)),
             ProgramType::Int32Pointer,
         );
@@ -92,7 +92,7 @@ fn framed_pointer_refusals_do_not_scan_same_address_sources() {
                 field.offset_by_bytes(8),
                 ProgramValue::UInt64(MachineTerm::uint64_constant(index)),
             );
-            let source = Pointer::new(
+            let source = OldPointer::new(
                 Address::loaded_value(&intern_memory_ref(&memory), &field),
                 ProgramType::Int32Pointer,
             )
@@ -100,7 +100,7 @@ fn framed_pointer_refusals_do_not_scan_same_address_sources() {
             facts =
                 facts.assume_condition(ConditionTerm::pointer_equal(source, alias.clone()), true);
         }
-        let current = Pointer::new(
+        let current = OldPointer::new(
             Address::loaded_value(&intern_memory_ref(&SymbolicMemory::new()), &field),
             ProgramType::Int32Pointer,
         )

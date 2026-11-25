@@ -131,7 +131,7 @@ candidate spelling and falls back to another.
 
 Today a pointer read minted during evaluation has:
 - the version-point read as its address (since #3270), and
-- either the version-point read (via `Pointer::new`) or the exact read (via
+- either the version-point read (via `OldPointer::new`) or the exact read (via
   `from_read`) as its provenance, depending on the path.
 
 That mix is the main source of pointer `differs`.

@@ -1221,7 +1221,7 @@ pub(in crate::surface) fn evaluate_fixed_state_array_ref_through_kernel(
     integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
     fixed_state: FixedStateFrame<'_>,
     spec_definitions: SpecDefinitions<'_>,
-) -> Result<(ClickArrayRef, crate::kernel::Pointer), String> {
+) -> Result<(ClickArrayRef, crate::kernel::OldPointer), String> {
     if let SyntaxTerm::Binding(name)
     | SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
         crate::kernel::BindingName::Named(name),
@@ -1934,7 +1934,7 @@ mod retained_capture_tests {
             ProgramValue::UInt64(MachineTerm::Variable(Variable(997001))),
             ProgramValue::Bool(MachineTerm::constant(1)),
             ProgramValue::Float64(MachineTerm::Variable(Variable(997002))),
-            ProgramValue::Pointer(crate::kernel::Pointer::new(
+            ProgramValue::Pointer(crate::kernel::OldPointer::new(
                 crate::kernel::Address::symbolic(Variable(997003)),
                 ProgramType::Int32Pointer,
             )),

@@ -64,7 +64,7 @@ fn external_array_execution_requires_full_authority() {
                         own_memory_fact(target.clone(), 0, write),
                     ]),
                 );
-                let target_value = Pointer::new(target.clone(), ProgramType::UInt32Pointer);
+                let target_value = OldPointer::new(target.clone(), ProgramType::UInt32Pointer);
                 let (theorem, work) = crate::instrumentation::measure_deterministic_work(|| {
                     prove_execution_statement_execution(
                         state,

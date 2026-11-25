@@ -353,7 +353,7 @@ pub(crate) fn substitute_pointer_variable_in_proposition(
 pub(crate) fn substitute_pointer_value_in_proposition(
     proposition: &Proposition,
     from: Variable,
-    to: &Pointer,
+    to: &OldPointer,
 ) -> Result<Proposition, String> {
     let c = std::collections::BTreeMap::from([(
         from,
@@ -4593,7 +4593,8 @@ fn rewrite_integer_memory_loadable_with_walker(
     {
         integer_work(1)?;
         let term_source_0 @ Term::ProgramValue(_) = walker.term(&Term::ProgramValue(
-            ProgramValue::Pointer(Pointer::new(pointer.clone(), ProgramType::VoidPointer)).into(),
+            ProgramValue::Pointer(OldPointer::new(pointer.clone(), ProgramType::VoidPointer))
+                .into(),
         )) else {
             unreachable!("pointer rewrite changed its carrier")
         };
@@ -4619,7 +4620,7 @@ fn rewrite_integer_memory_loadable_with_walker(
         unreachable!("memory-viewable helper called for another proposition carrier")
     };
     integer_work(1)?;
-    let pointer = ProgramValue::Pointer(Pointer::new(base.clone(), ProgramType::VoidPointer));
+    let pointer = ProgramValue::Pointer(OldPointer::new(base.clone(), ProgramType::VoidPointer));
     let term_source_0 @ Term::ProgramValue(_) = walker.term(&Term::ProgramValue(pointer.into()))
     else {
         unreachable!("pointer rewrite changed its carrier")
@@ -9138,7 +9139,7 @@ mod integer_mixed_quantifier_tests {
         .expect("pointer observations are Integer-valued");
         let pointer_value = |variable| {
             Term::ProgramValue(
-                ProgramValue::Pointer(Pointer::new(
+                ProgramValue::Pointer(OldPointer::new(
                     Address::symbolic(variable),
                     ProgramType::Int32Pointer,
                 ))
@@ -9993,8 +9994,8 @@ mod checked_singleton_substitution_tests {
     use super::*;
     use crate::instrumentation::{self, TacticEvent, TacticWorkLimits, VerificationEvent};
 
-    fn pointer_value(variable: Variable) -> Pointer {
-        Pointer::new(Address::symbolic(variable), ProgramType::Int32Pointer)
+    fn pointer_value(variable: Variable) -> OldPointer {
+        OldPointer::new(Address::symbolic(variable), ProgramType::Int32Pointer)
     }
 
     fn pointer_term(variable: Variable) -> Term {

@@ -77,9 +77,7 @@ int32 buffer_push(struct buffer* owner, int32 value) {
     have separate(memory(old(owner->data)[0]), memory(old(owner->data)[old(owner->len) + 1])) by {
         apply(click::separation::separate_elements(old(owner->data), 0, old(owner->len) + 1));
     }
-    have separate(statement(4).footprint, at(statement(4).entry, memory(owner->data[0]))) by {
-        normalize() using { separate(memory(old(owner->data)[0]), memory(old(owner->data)[old(owner->len) + 1])); };
-    }
+    have at(statement(4).entry, separate(statement(4).footprint, memory(owner->data[0]))) by { close(); }
     have at(statement(4).exit, owner->data[0]) == at(statement(4).entry, owner->data[0]) by {
         preserve(at(statement(4).entry, memory(owner->data[0])), statement(4));
     }

@@ -80,7 +80,7 @@ mod tests {
         source.node = AlgebraicTermNode::Constructor {
             variant: "Arm".into(),
             fields: vec![AlgebraicValue::Program(ProgramValue::Pointer(
-                Pointer::new(
+                OldPointer::new(
                     Address::symbolic(Variable(999728)),
                     ProgramType::Int32Pointer,
                 ),
@@ -158,7 +158,7 @@ mod tests {
         );
         for exact in [false, true] {
             let sources = [false, true].map(|qualified| {
-                let pointer = Pointer::new(
+                let pointer = OldPointer::new(
                     Address::symbolic(Variable(999730)),
                     ProgramType::Int32Pointer,
                 );

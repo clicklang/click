@@ -2536,12 +2536,12 @@ fn count_uses_its_written_anchor_not_a_proven_alias() {
         base: AddressBase::ExternalArgument,
         offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(9_850_100)), 4),
     };
-    let count_of = |pointer: Pointer| SpecExpression::CountedResourceCount {
+    let count_of = |pointer: OldPointer| SpecExpression::CountedResourceCount {
         name: "reference".into(),
         arguments: vec![Some(SpecExpression::Value(ProgramValue::Pointer(pointer)))],
     };
     let anchor_count = count_of(anchor.clone());
-    let alias_count = count_of(Pointer::new(alias.clone(), anchor.program_type()));
+    let alias_count = count_of(OldPointer::new(alias.clone(), anchor.program_type()));
     let events = CreationEvents::new()
         .import_opaque_contract_population_inner(
             &description,
@@ -2561,7 +2561,7 @@ fn count_uses_its_written_anchor_not_a_proven_alias() {
     Arc::make_mut(&mut state.population_effects).creation = Some(events);
     let equal = PureFactContext::new().assume_condition(
         ConditionTerm::PointerEqual(
-            Box::new(Pointer::new(alias, ProgramType::Int32Pointer)),
+            Box::new(OldPointer::new(alias, ProgramType::Int32Pointer)),
             Box::new(anchor.clone()),
         ),
         true,

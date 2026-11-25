@@ -309,7 +309,7 @@ mod tests {
             collect_address_variables(&shared, mode, &mut actual);
             assert_eq!(actual, native_variables(&address, mode), "{mode:?}");
         }
-        let source = Pointer::new(address, ProgramType::VoidPointer);
+        let source = OldPointer::new(address, ProgramType::VoidPointer);
         let shared = SharedPointer::import(&source);
         let mut expected = BTreeSet::new();
         collect_program_value_bound_identities(
@@ -326,7 +326,7 @@ mod tests {
     #[test]
     fn complete_pointer_readers_keep_native_metadata_and_coordinate_policy() {
         let _session = crate::kernel::VerificationSession::enter();
-        let source = Pointer::new(
+        let source = OldPointer::new(
             Address::symbolic(Variable(1001010)),
             ProgramType::VoidPointer,
         )

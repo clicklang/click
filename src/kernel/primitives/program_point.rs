@@ -2735,7 +2735,7 @@ mod tests {
             base: AddressBase::ExternalArgument,
             offset: AddressOffset::Constant(0),
         };
-        let pointer = Pointer::from_point_read(
+        let pointer = OldPointer::from_point_read(
             entry.program_point().for_exact_read(),
             ProgramType::Int32Pointer,
             &pointer_slot,
@@ -2771,7 +2771,7 @@ mod tests {
             base: AddressBase::ExternalArgument,
             offset: AddressOffset::Constant(0),
         };
-        let pointer = Pointer::from_point_read(
+        let pointer = OldPointer::from_point_read(
             point.clone().for_legacy_read(),
             ProgramType::Int32Pointer,
             &slot,
@@ -2792,7 +2792,7 @@ mod tests {
             base: AddressBase::ExternalArgument,
             offset: AddressOffset::Constant(0),
         };
-        let loaded = Pointer::from_point_read(
+        let loaded = OldPointer::from_point_read(
             entry.program_point().for_exact_read(),
             ProgramType::UInt64Pointer,
             &caller_cell.offset_by_bytes(8),

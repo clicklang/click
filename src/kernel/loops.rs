@@ -9876,7 +9876,7 @@ fn with_retained_bounds(
 /// claims nothing. A pointer without bounds is bounded by its complete
 /// object, as before.
 fn segment_bounds_refusal(
-    base: &Pointer,
+    base: &OldPointer,
     segment: &EvaluatedMemorySegment,
     assumptions: &PureFactContext,
 ) -> Option<String> {
@@ -9893,7 +9893,7 @@ fn segment_bounds_refusal(
 /// [`segment_bounds_refusal`] for a lowered range: a proof step's clause
 /// names its range through the same pointer value.
 pub(crate) fn memory_range_bounds_refusal(
-    base: &Pointer,
+    base: &OldPointer,
     range: &MemoryRange,
     assumptions: &PureFactContext,
 ) -> Option<String> {
@@ -9912,7 +9912,7 @@ pub(crate) fn memory_range_bounds_refusal(
 }
 
 fn range_bounds_refusal(
-    base: &Pointer,
+    base: &OldPointer,
     start: &MachineTerm,
     end: &MachineTerm,
     element_width: u32,
@@ -10037,7 +10037,7 @@ mod pointer_domain_clause_tests {
     #[test]
     fn clause_ranges_check_admitted_member_bounds_without_rewriting_the_base() {
         let _session = crate::kernel::VerificationSession::enter();
-        let base = Pointer::new(
+        let base = OldPointer::new(
             Address::symbolic(Variable(1013200)),
             ProgramType::Int32Pointer,
         );

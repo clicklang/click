@@ -174,8 +174,8 @@ void inner(struct rb_node* node) {
                     have separate(statement(1).statement(4).footprint, at(after_store, memory(parent->rb_right))) by {
                         close() using { separate(memory(parent->rb_right), memory(node->rb_left)); };
                     }
-                    have separate(statement(1).statement(5).footprint, at(statement(1).statement(4).exit, memory(parent->rb_right))) by {
-                        normalize() using { separate(memory(parent->rb_right), memory(p->__rb_parent_color)); };
+                    have at(statement(1).statement(4).exit, separate(statement(1).statement(5).footprint, memory(parent->rb_right))) by {
+                        close();
                     }
                     have at(statement(1).statement(4).exit, parent->rb_right) == at(after_store, parent->rb_right) by {
                         preserve(at(after_store, memory(parent->rb_right)), statement(1).statement(4));

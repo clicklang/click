@@ -10,11 +10,11 @@ theorem wrong(c: Color) {
     ensures choose(c) == Color::Black by {
         unfold(choose(c));
         rewrite(c, Color::Black);
-        normalize();
+        close();
     }
 }
 ```
 
 ```expect
-fail: normalize
+fail: could not establish `match Color::Black()
 ```

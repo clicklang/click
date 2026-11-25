@@ -212,7 +212,7 @@ impl KernelTerm {
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn values() -> Vec<Pointer> {
+    fn values() -> Vec<OldPointer> {
         let mut values = Vec::new();
         for pointer in [
             Address::symbolic(Variable(999101)),
@@ -223,7 +223,7 @@ mod tests {
                 offset: AddressOffset::Constant(0),
             },
         ] {
-            let raw = Pointer::new(pointer, ProgramType::Int32Pointer);
+            let raw = OldPointer::new(pointer, ProgramType::Int32Pointer);
             values.push(raw.clone());
             values.push(raw.clone());
             values.push(raw.clone().with_root_bounds());
@@ -246,14 +246,14 @@ mod tests {
                 ),
             }));
         }
-        values.push(Pointer::new(
+        values.push(OldPointer::new(
             Address {
                 base: AddressBase::FunctionSymbolic(Variable(999101)),
                 offset: AddressOffset::Constant(0),
             },
             ProgramType::FunctionPointer(CallbackSignature::UNSPECIFIED),
         ));
-        values.push(Pointer::new(
+        values.push(OldPointer::new(
             Address::symbolic(Variable(999101)),
             ProgramType::VoidPointer,
         ));
@@ -300,7 +300,7 @@ mod tests {
             ] {
                 let source = ConditionTerm::PointerEqual(
                     Box::new(value.clone()),
-                    Box::new(Pointer::new(
+                    Box::new(OldPointer::new(
                         Address::symbolic(Variable(999111)),
                         ProgramType::Int32Pointer,
                     )),
@@ -357,11 +357,11 @@ mod tests {
         // comparison, native or shared, builds that same term, in either
         // operand order, so a produced fact raises and lowers back to itself.
         let _session = crate::kernel::VerificationSession::enter();
-        let value = Pointer::new(
+        let value = OldPointer::new(
             Address::symbolic(Variable(999130)),
             ProgramType::Int32Pointer,
         );
-        let null = Pointer::new(Address::null(), ProgramType::Int32Pointer);
+        let null = OldPointer::new(Address::null(), ProgramType::Int32Pointer);
         for (left, right) in [(value.clone(), null.clone()), (null, value)] {
             let expected =
                 ConditionTerm::address_equal(left.address().clone(), right.address().clone());
@@ -379,14 +379,14 @@ mod tests {
     #[test]
     fn complete_pointer_conditions_observe_semantic_identity_without_erasing_producers() {
         let _session = crate::kernel::VerificationSession::enter();
-        let value = Pointer::new(
+        let value = OldPointer::new(
             Address::symbolic(Variable(999120)),
             ProgramType::Int32Pointer,
         );
         let roots = [value.clone(), value].map(|value| {
             KernelTermImport::default().condition(&ConditionTerm::PointerEqual(
                 Box::new(value),
-                Box::new(Pointer::new(Address::null(), ProgramType::Int32Pointer)),
+                Box::new(OldPointer::new(Address::null(), ProgramType::Int32Pointer)),
             ))
         });
         assert_ne!(roots[0], roots[1]);
@@ -423,7 +423,7 @@ mod tests {
             .map(|value| {
                 let guard = KernelTermImport::default().condition(&ConditionTerm::PointerEqual(
                     Box::new(value.clone()),
-                    Box::new(Pointer::new(Address::null(), ProgramType::Int32Pointer)),
+                    Box::new(OldPointer::new(Address::null(), ProgramType::Int32Pointer)),
                 ));
                 SharedMachineIntegerTerm::observe_shared(
                     MachineIntegerType::Int32,
@@ -466,8 +466,8 @@ mod tests {
                 ),
             };
             KernelTermImport::default().condition(&ConditionTerm::PointerEqual(
-                Box::new(Pointer::new(pointer, ProgramType::Int32Pointer)),
-                Box::new(Pointer::new(Address::null(), ProgramType::Int32Pointer)),
+                Box::new(OldPointer::new(pointer, ProgramType::Int32Pointer)),
+                Box::new(OldPointer::new(Address::null(), ProgramType::Int32Pointer)),
             ))
         });
         for allowed in [false, true] {

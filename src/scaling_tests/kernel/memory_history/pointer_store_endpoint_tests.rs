@@ -52,7 +52,7 @@ fn selected_pointer_store_endpoint_preserves_width_history_and_scales() {
         });
         assert_eq!(
             value,
-            Some(Pointer::new(stored.clone(), ProgramType::Int32Pointer))
+            Some(OldPointer::new(stored.clone(), ProgramType::Int32Pointer))
         );
         samples.push(work);
         for (kind, bytes) in [
@@ -101,11 +101,11 @@ fn selected_pointer_store_endpoint_preserves_width_history_and_scales() {
         ));
         assert_eq!(
             pointer_value_at_stopping_store(&overwritten, &address, LoadKind::Int32, 8, &context),
-            Some(Pointer::new(Address::null(), ProgramType::Int32Pointer))
+            Some(OldPointer::new(Address::null(), ProgramType::Int32Pointer))
         );
         assert_ne!(
             pointer_value_at_stopping_store(&overwritten, &address, LoadKind::Int32, 8, &context),
-            Some(Pointer::new(stored, ProgramType::Int32Pointer))
+            Some(OldPointer::new(stored, ProgramType::Int32Pointer))
         );
         for offset in [0, 4, 32] {
             let changed = endpoint(memory.clone().store(

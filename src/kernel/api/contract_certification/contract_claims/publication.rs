@@ -275,7 +275,7 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let (execution, _) = fixture();
         let seed = execution.published_outcome(0);
-        let pointer = Pointer::new(
+        let pointer = OldPointer::new(
             Address::symbolic(Variable(996901)),
             ProgramType::Int32Pointer,
         );

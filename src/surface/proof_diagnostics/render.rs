@@ -834,8 +834,8 @@ impl MemoryStateLabels {
 /// A comparison of full pointers can carry more information than their
 /// common address contains.
 fn distinct_pointers_at_one_address(
-    left: &crate::kernel::Pointer,
-    right: &crate::kernel::Pointer,
+    left: &crate::kernel::OldPointer,
+    right: &crate::kernel::OldPointer,
 ) -> bool {
     left != right && left.address() == right.address()
 }
@@ -3064,9 +3064,9 @@ mod tests {
 
     #[test]
     fn pointer_equality_diagnostic_keeps_provenance_distinct_at_the_same_address() {
-        use crate::kernel::{Pointer, ProgramType, SubobjectBounds};
+        use crate::kernel::{OldPointer, ProgramType, SubobjectBounds};
         let address = Address::symbolic(Variable(10993745));
-        let left = Pointer::new(address.clone(), ProgramType::Int32Pointer);
+        let left = OldPointer::new(address.clone(), ProgramType::Int32Pointer);
         let right = left.clone().with_bounds(Some(SubobjectBounds {
             start: address,
             width: MachineTerm::uint64_constant(4),

@@ -822,7 +822,7 @@ pub(super) fn acquisition_availability_refusal(
 }
 
 /// The caller-facing byte extent keeps the origin of the evaluated pointer.
-pub(super) fn storage_write_range(pointer: &super::Pointer, bytes: u32) -> super::MemoryRange {
+pub(super) fn storage_write_range(pointer: &super::OldPointer, bytes: u32) -> super::MemoryRange {
     super::MemoryRange::from_pointer_value(
         &pointer.clone().with_root_bounds(),
         0u32.into(),

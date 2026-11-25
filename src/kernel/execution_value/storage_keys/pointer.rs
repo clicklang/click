@@ -48,7 +48,7 @@ impl PointerStorageKey {
             fingerprint: hash.finish(),
         }))
     }
-    pub(in crate::kernel) fn native(value: &Pointer) -> Self {
+    pub(in crate::kernel) fn native(value: &OldPointer) -> Self {
         Self::new(PointerIdentity {
             address: AddressKey::native(value.address()),
             provenance: AddressKey::native(value.provenance()),

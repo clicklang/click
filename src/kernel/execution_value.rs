@@ -26,7 +26,7 @@ impl PartialEq for ExecutionValue {
                             .syntax_equal(BooleanOperandView::Shared(b)))
                     || matches!((a.pointer_payload(), b.pointer_payload()),
                         (Some(a), Some(b)) if a.same_source_payload(b))
-                    || match (a.pointer_native(), b.pointer_native()) {
+                    || match (a.old_pointer_value(), b.old_pointer_value()) {
                         (Some(a), Some(b)) => a == b,
                         _ => false,
                     }
@@ -60,7 +60,7 @@ impl ExecutionValue {
         match self {
             Self::Native(value) => Some(value),
             Self::Shared(root) => root
-                .pointer_native()
+                .old_pointer_value()
                 .or_else(|| root.boolean_native())
                 .or_else(|| {
                     matches!(root.node(), KernelTermNode::Variable(_))
@@ -69,10 +69,10 @@ impl ExecutionValue {
                 }),
         }
     }
-    pub fn pointer(&self) -> Option<&Pointer> {
+    pub fn pointer(&self) -> Option<&OldPointer> {
         let value = match self {
             Self::Native(value) => value,
-            Self::Shared(root) => root.pointer_native()?,
+            Self::Shared(root) => root.old_pointer_value()?,
         };
         match value {
             ProgramValue::Pointer(pointer) => Some(pointer),
@@ -271,7 +271,7 @@ impl ExecutionValue {
                 if let Some(value) = term.boolean_native() {
                     return value.clone();
                 }
-                if let Some(value) = term.pointer_native() {
+                if let Some(value) = term.old_pointer_value() {
                     return value.clone();
                 }
                 if matches!(term.node(), KernelTermNode::Call { .. }) {
@@ -841,7 +841,7 @@ mod tests {
     #[test]
     fn pointer_local_storage_retains_root_and_native_identity() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = Pointer::new(
+        let pointer = OldPointer::new(
             Address::symbolic(Variable(1027000)),
             ProgramType::Int32Pointer,
         );
@@ -904,7 +904,7 @@ mod tests {
     #[test]
     fn pointer_memory_cells_keep_roots_and_the_previous_native_key() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = Pointer::new(
+        let pointer = OldPointer::new(
             Address::symbolic(Variable(1027500)),
             ProgramType::Int32Pointer,
         );
@@ -934,7 +934,7 @@ mod tests {
     fn pointer_store_history_keeps_the_root_after_cache_forgetting() {
         let _session = crate::kernel::VerificationSession::enter();
         let address = SymbolicMemory::local_pointer("retained_pointer_cell");
-        let pointer = Pointer::new(
+        let pointer = OldPointer::new(
             Address::symbolic(Variable(1027600)),
             ProgramType::Int32Pointer,
         );

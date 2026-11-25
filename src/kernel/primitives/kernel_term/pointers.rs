@@ -208,13 +208,13 @@ impl SharedPointer {
             .chain(value.array.owner())
             .chain(value.array.bounds().map(|bounds| &bounds.start))
     }
-    pub(crate) fn import(value: &Pointer) -> Self {
+    pub(crate) fn import(value: &OldPointer) -> Self {
         Self::import_addresses(value, SharedAddress::import)
     }
-    pub(crate) fn import_produced(value: &Pointer) -> Self {
+    pub(crate) fn import_produced(value: &OldPointer) -> Self {
         Self::import_addresses(value, SharedAddress::import_produced)
     }
-    fn import_addresses(value: &Pointer, address: fn(&Address) -> SharedAddress) -> Self {
+    fn import_addresses(value: &OldPointer, address: fn(&Address) -> SharedAddress) -> Self {
         Self::new(KernelPointer {
             address: address(&value.address),
             provenance: address(&value.provenance),
@@ -245,9 +245,9 @@ impl SharedPointer {
             }),
         })
     }
-    pub(crate) fn export(&self) -> Result<Pointer, &'static str> {
+    pub(crate) fn export(&self) -> Result<OldPointer, &'static str> {
         let value = self.node();
-        Ok(Pointer {
+        Ok(OldPointer {
             address: value.address.export()?,
             provenance: Arc::new(value.provenance.export()?),
             array: value.array.export()?,
@@ -306,16 +306,16 @@ impl KernelTerm {
     }
 
     /// Explicit native compatibility view; common handoffs retain only the root.
-    pub(crate) fn pointer_native(&self) -> Option<&ProgramValue> {
-        let PureFunctionArgument::Value(value) = self.pointer_argument_native()? else {
+    pub(crate) fn old_pointer_value(&self) -> Option<&ProgramValue> {
+        let PureFunctionArgument::Value(value) = self.old_pointer_argument()? else {
             return None;
         };
         Some(value)
     }
 
-    pub(crate) fn pointer_argument_native(&self) -> Option<&PureFunctionArgument> {
+    pub(crate) fn old_pointer_argument(&self) -> Option<&PureFunctionArgument> {
         if let KernelTermNode::ObservedPointer(value) = self.node() {
-            return value.source().pointer_argument_native();
+            return value.source().old_pointer_argument();
         }
         if let KernelTermNode::ArrayReference {
             point,
@@ -326,7 +326,7 @@ impl KernelTerm {
             return Some(self.0.argument_leaf.get_or_init(|| {
                 Box::new(PureFunctionArgument::ArrayRef {
                     point: point.clone(),
-                    pointer: pointer.pointer_native().expect("array pointer").clone(),
+                    pointer: pointer.old_pointer_value().expect("array pointer").clone(),
                     element_type: *element_type,
                 })
             }));
@@ -369,7 +369,7 @@ impl KernelTerm {
 
     /// Keep the producer structure when existing object-argument checking
     /// refines only its complete pointer payload.
-    pub(crate) fn refined_pointer_argument(&self, pointer: &Pointer) -> Self {
+    pub(crate) fn refined_pointer_argument(&self, pointer: &OldPointer) -> Self {
         if let KernelTermNode::ArrayReference {
             point,
             pointer: source,
@@ -420,9 +420,9 @@ impl KernelTerm {
 mod tests {
     use super::*;
     use crate::kernel::effective_type::{CAccessClass, CScalarClass};
-    pub(super) fn complete_source() -> Pointer {
+    pub(super) fn complete_source() -> OldPointer {
         let class = CAccessClass::Scalar(CScalarClass::Int);
-        Pointer {
+        OldPointer {
             address: Address::symbolic(Variable(1000001)),
             provenance: Arc::new(Address::symbolic(Variable(1000002))),
             array: ArrayObject::from_parts(

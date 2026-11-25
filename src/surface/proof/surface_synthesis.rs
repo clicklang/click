@@ -288,7 +288,7 @@ impl Drop for LocalStructLayoutScope {
 /// written, the pointer's value here, and the struct layout at that value.
 struct StructOwner {
     base: ProgramExpression,
-    pointer: crate::kernel::Pointer,
+    pointer: crate::kernel::OldPointer,
     layout: crate::languages::interface::RecordLayout,
 }
 
@@ -383,7 +383,7 @@ fn owner_field_pointer(
 struct NamedRangeBase {
     lowered: ProgramExpression,
     surface: SyntaxTerm,
-    pointer: crate::kernel::Pointer,
+    pointer: crate::kernel::OldPointer,
     width: u32,
 }
 
@@ -2258,7 +2258,7 @@ fn int32_scaled_value(offset: &AddressOffset, width: i64) -> Option<MachineTerm>
 fn named_pointer_bases<'a>(
     parameter_binding: ParameterBinding<'a>,
     state: Option<&'a ExecutionState>,
-) -> impl Iterator<Item = (crate::kernel::BindingName, crate::kernel::Pointer, u32)> + 'a {
+) -> impl Iterator<Item = (crate::kernel::BindingName, crate::kernel::OldPointer, u32)> + 'a {
     parameter_binding
         .parameters
         .iter()
@@ -4003,7 +4003,7 @@ fn raise_call_argument(
         // reads, as source writes it; an `int32` zero would not fit it.
         Node::Pointer(_) | Node::PointerRead { .. } | Node::PointerArithmetic { .. }
             if matches!(
-                term.pointer_native(),
+                term.old_pointer_value(),
                 Some(ProgramValue::Pointer(pointer)) if pointer.address() == &Address::null()
             ) =>
         {
@@ -4399,7 +4399,7 @@ fn raise_constructor_field(
     if matches!(term.ty(), KernelType::Algebraic(_)) {
         return raise_kernel_term(term, parameter_binding, state, bound_variables);
     }
-    if let Some(ProgramValue::Pointer(pointer)) = term.pointer_native() {
+    if let Some(ProgramValue::Pointer(pointer)) = term.old_pointer_value() {
         return raise_constructor_pointer(pointer, parameter_binding, state, bound_variables);
     }
     if term.ty() == &KernelType::Integer {
@@ -4442,7 +4442,7 @@ fn raise_constructor_field(
 }
 
 fn raise_constructor_pointer(
-    pointer: &crate::kernel::Pointer,
+    pointer: &crate::kernel::OldPointer,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
@@ -4841,7 +4841,7 @@ fn raise_kernel_term_dispatch(
         // A null array is formed at no state; it is the literal `0`.
         Node::ArrayReference { pointer, .. }
             if matches!(
-                pointer.pointer_native(),
+                pointer.old_pointer_value(),
                 Some(ProgramValue::Pointer(value)) if value.address() == &Address::null()
             ) =>
         {
@@ -4860,7 +4860,7 @@ fn raise_kernel_term_dispatch(
             if let Some(name) = pointer_names::shared_name(value) {
                 SyntaxTerm::ProgramExpression(ProgramExpression::Variable((name).into()))
             } else {
-                synthesize_surface_value(term.pointer_native()?, parameter_binding, state)?
+                synthesize_surface_value(term.old_pointer_value()?, parameter_binding, state)?
             }
         }
         Node::WrittenMachine(input) => {
@@ -8457,7 +8457,7 @@ fn state_call_result(
 /// Keep this at the value-comparison boundary: resource addresses retain
 /// their existing source places and frontend layout information.
 fn synthesize_pointer_equality_operand(
-    value: &crate::kernel::Pointer,
+    value: &crate::kernel::OldPointer,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
@@ -9106,7 +9106,7 @@ fn synthesize_entry_pointer_expression(
 /// state, or failing that the state state as `at(<selector>, ..)`,
 /// registers that read.
 fn synthesize_loaded_pointer_value(
-    pointer: &crate::kernel::Pointer,
+    pointer: &crate::kernel::OldPointer,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
 ) -> Option<SyntaxTerm> {

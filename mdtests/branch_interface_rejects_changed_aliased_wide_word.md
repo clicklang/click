@@ -130,7 +130,7 @@ void inspect(struct node* parent) {
                             step(); step();
                             let after = fold(leaf_at(child), {model: Identity::Empty});
                             have after.model == lm;
-                            have far_identity->tag == (address(model) | 1) by { normalize() using { at(before_update, far_identity->tag == (address(model) | 1)); far == far_identity; sibling == model; }; }
+                            have far_identity->tag == (address(model) | 1) by { close() using { at(before_update, far_identity->tag == (address(model) | 1)); far == far_identity; sibling == model; }; }
                         },
                         Identity::At(leaf) => {
                             have l.model == Identity::At(leaf);

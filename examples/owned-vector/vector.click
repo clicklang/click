@@ -22,6 +22,22 @@ theorem int32_equality_transitive(first: int32, second: int32, third: int32) {
     }
 }
 
+theorem vector_nonnegative_as_uint32_bound(value: int32, limit: uint32) {
+    requires 0 <= to_integer(value);
+    requires to_integer(value) <= to_integer(limit);
+    ensures (value as uint32) <= limit by {
+        have to_integer(value) <= 2147483647;
+        have to_integer(value as uint32) == to_integer(value) by {
+            close() using { 0 <= to_integer(value); to_integer(value) <= 2147483647; };
+        }
+        have to_integer(value as uint32) <= to_integer(limit) by {
+            rewrite(to_integer(value as uint32), to_integer(value));
+            close();
+        }
+        apply(click::integer::uint32_to_integer_less_equal_implies_less_equal(value as uint32, limit));
+    }
+}
+
 resource empty_vector(owner: struct vector*) {
     owns *owner;
     owns owner->data[0..owner->cap];
@@ -336,10 +352,9 @@ int32 vector_grow(struct vector* owner) {
     }
     have (old_capacity as uint32) <= 1073741823u32 by {
         rewrite(old_capacity, owner->cap);
-        normalize() using {
-            1 <= owner->cap;
-            owner->cap <= 536870910;
-        };
+        have 0 <= to_integer(owner->cap);
+        have to_integer(owner->cap) <= to_integer(1073741823u32);
+        apply(vector_nonnegative_as_uint32_bound(owner->cap, 1073741823u32));
     }
     if new_data == 0 {
         step();
@@ -373,7 +388,9 @@ int32 vector_grow(struct vector* owner) {
             close() using { 1 <= new_capacity; new_capacity <= 536870912; };
         }
         have (owner->len as uint32) <= 1073741823u32 by {
-            normalize() using { 0 <= owner->len; owner->len <= owner->cap; owner->cap <= 536870910; };
+            have 0 <= to_integer(owner->len);
+            have to_integer(owner->len) <= to_integer(1073741823u32);
+            apply(vector_nonnegative_as_uint32_bound(owner->len, 1073741823u32));
         }
         step();
         step();
