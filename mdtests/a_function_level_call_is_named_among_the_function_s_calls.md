@@ -30,10 +30,8 @@ int32 f(int32 a) {
     step();
     have call(twice, 0).result == a + a;
     have to_integer(b) == to_integer(first) + 1 by {
-        normalize() using {
-            -2147483648 <= to_integer(first) + 1;
-            to_integer(first) + 1 <= 2147483647;
-        };
+        apply(integer::int32_add_to_integer(first, 1));
+        close();
     }
 
     // The first call doubles a value in [0, 100], so b is in [1, 201].
@@ -78,10 +76,8 @@ int32 f(int32 a) {
     have call(twice, 1).result == statement(1).call(twice, 0).result;
     have call(1).result == call(twice, 1).result;
     have to_integer(c) == to_integer(call(twice, 1).result) + 1 by {
-        normalize() using {
-            -2147483648 <= to_integer(call(twice, 1).result) + 1;
-            to_integer(call(twice, 1).result) + 1 <= 2147483647;
-        };
+        apply(integer::int32_add_to_integer(call(twice, 1).result, 1));
+        close();
     }
     have to_integer(call(twice, 1).result) == to_integer(b) + to_integer(b);
     have to_integer(c) == 4 * to_integer(a) + 3 by {
@@ -89,7 +85,7 @@ int32 f(int32 a) {
         rewrite(to_integer(call(twice, 1).result), to_integer(b) + to_integer(b));
         rewrite(to_integer(b), to_integer(first) + 1);
         rewrite(to_integer(first), to_integer(a) + to_integer(a));
-        normalize() using {};
+        close();
     }
     step();
     have to_integer(result) == to_integer(4 * a + 3) by {

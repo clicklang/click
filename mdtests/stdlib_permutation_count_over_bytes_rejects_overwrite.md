@@ -41,7 +41,7 @@ int32 duplicate_byte(uint8 p[2]) {
                 rewrite(x, 0u8);
                 rewrite(permutation::count(p, 0, 2, 0u8), 0);
                 rewrite(permutation::count(old(p), 0, 2, 0u8), 1);
-                normalize();
+                close();
             } else {
                 close();
             }
@@ -51,5 +51,5 @@ int32 duplicate_byte(uint8 p[2]) {
 ```
 
 ```expect
-fail: `normalize` goal did not normalize to true
+fail: could not establish `false`
 ```

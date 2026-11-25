@@ -4161,22 +4161,23 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             },
             float_scale_bound_weakening,
         };
-        let Some((plan, factor, scale)) = float_scale_bound_weakening(source, goal) else {
+        let Some((plan, factor, scale, source_strict)) = float_scale_bound_weakening(source, goal)
+        else {
             return Ok(None);
         };
         let source_order = surface_comparison_with_anchored_operands(source_surface);
-        let Some((left, right)) = surface_nonstrict_parts(&source_order) else {
+        let parts = if source_strict {
+            super::super::surface_certificates::surface_strict_parts(&source_order)
+        } else {
+            surface_nonstrict_parts(&source_order)
+        };
+        let Some((left, right)) = parts else {
             return Ok(None);
         };
         let reverse = matches!(
             scale,
             DivideNegative | MultiplyNegativeLeft | MultiplyNegativeRight
         );
-        let (x, endpoint) = if plan.lower != reverse {
-            (right, left)
-        } else {
-            (left, right)
-        };
         let Some(intermediate) = input.structural_proposition_candidate(&plan.intermediate) else {
             return Ok(None);
         };
@@ -4223,14 +4224,44 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             KernelFloatType::Float32 => "float32",
             KernelFloatType::Float64 => "float64",
         };
+        let (proof, source_bound) = if source_strict {
+            // Rounding can merge distinct inputs. Pass only the weakened
+            // bound to the scaling law and the rounded result to the goal.
+            let bound = SyntaxProposition::Comparison {
+                left: left.clone(),
+                operator: ComparisonOperator::LessEqual,
+                right: right.clone(),
+            };
+            let weakening = ProofStep::ApplyPlannedTheorem {
+                application: TheoremApplication {
+                    name: format!("click::float_order::{module_width}_lt_to_le"),
+                    arguments: vec![left.clone(), right.clone()],
+                },
+                premises: vec![source_surface.clone()],
+            };
+            let Some(proof) = attempt::candidate_outcome(input.driver().apply_step(
+                super::super::wide_arithmetic::have(bound.clone(), vec![weakening]),
+            ))?
+            else {
+                return Ok(None);
+            };
+            (proof, bound)
+        } else {
+            (input.clone(), source_surface.clone())
+        };
+        let (x, endpoint) = if plan.lower != reverse {
+            (right, left)
+        } else {
+            (left, right)
+        };
         let application = ProofStep::ApplyPlannedTheorem {
             application: TheoremApplication {
                 name: format!("click::float_order::{module_width}_{name}"),
                 arguments: vec![factor, x, endpoint],
             },
-            premises: vec![source_surface.clone(), finite, sign],
+            premises: vec![source_bound, finite, sign],
         };
-        let Some(proof) = attempt::candidate_outcome(input.driver().apply_step(
+        let Some(proof) = attempt::candidate_outcome(proof.driver().apply_step(
             super::super::wide_arithmetic::have(intermediate.clone(), vec![application]),
         ))?
         else {
@@ -4779,9 +4810,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         }
         if let (Some(surface_goal), Some(goal)) = (search_input.surface_goal(), search_input.goal())
         {
-            // Check the two written order spellings of positivity at this
-            // fixed state. The normalizer checks the cited premise before
-            // recording it in the expanded step proof.
+            // A stated positive bound refutes equality to zero. Use the
+            // same checked split and rewrite as disjunctive word bounds.
             if let SyntaxProposition::Comparison {
                 left: written_left,
                 operator: ComparisonOperator::NotEqual,
@@ -4812,11 +4842,20 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                             operator,
                             right: right.clone(),
                         };
-                        if let Some(proof) = attempt::candidate_outcome(
+                        check_verification_deadline()?;
+                        if let Some(bound) = attempt::candidate_outcome(
                             search_input
-                                .driver()
-                                .apply_step(ProofStep::NormalizeUsing(vec![premise])),
-                        )? {
+                                .lower_cited_surface_proposition(&premise, "positive bound"),
+                        )? && search_input
+                            .facts()
+                            .assumptions()
+                            .states_required_goal(&bound)
+                            && crate::kernel::proof::arithmetic_special::word_order_excludes_literal(
+                                goal, &bound,
+                            )
+                            && let Some(proof) =
+                                Self::try_word_order_exclusion_case(search_input, &premise)
+                        {
                             return Ok(Some(proof));
                         }
                     }
@@ -11905,7 +11944,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         })
     }
 
-    /// Refute equality with the excluded literal under a selected case bound.
+    /// Refute equality with the excluded literal under a selected word bound.
     /// The hypothetical equality rewrites the opposite bound to a constant.
     fn try_word_order_exclusion_case(
         input: &Proof<'a>,

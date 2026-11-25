@@ -4704,7 +4704,7 @@ pub(crate) enum FloatScaleOperation {
 pub(crate) fn float_scale_bound_weakening(
     source: &Proposition,
     goal: &Proposition,
-) -> Option<(FloatBoundWeakening, u64, FloatScaleOperation)> {
+) -> Option<(FloatBoundWeakening, u64, FloatScaleOperation, bool)> {
     let input = float_bound(source)?;
     let result = float_bound(goal)?;
     let (_, operation) = float_literal_operation(result.operand)?;
@@ -4727,7 +4727,7 @@ pub(crate) fn float_scale_bound_weakening(
         (Divide, false, false) => FloatScaleOperation::DivideNegative,
         _ => return None,
     };
-    if input.strict || !float_bound_weakens(source, goal) {
+    if !float_bound_weakens(source, goal) {
         return None;
     }
     let (endpoint, strict) = operation.apply(result.format, input.endpoint, false);
@@ -4735,6 +4735,7 @@ pub(crate) fn float_scale_bound_weakening(
         FloatBoundWeakening::from_goal(goal, endpoint, strict)?,
         literal,
         scale,
+        input.strict,
     ))
 }
 
