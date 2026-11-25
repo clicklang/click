@@ -4517,7 +4517,8 @@ fn forall_integer_instantiation_refuses_after_work_exhaustion() {
 #[test]
 fn forall_pointer_instantiation_takes_a_pointer_of_the_binder_type() {
     let binder = Variable(640);
-    let pointer = |variable, program_type| Pointer::new(Address::symbolic(variable), program_type);
+    let pointer =
+        |variable, program_type| OldPointer::new(Address::symbolic(variable), program_type);
     let pointer_term = |variable| {
         Term::ProgramValue(
             ProgramValue::Pointer(pointer(variable, ProgramType::Int32Pointer)).into(),
@@ -8147,15 +8148,15 @@ fn pointer_predicate_matching_preserves_arguments_states_and_scope() {
     let goal = fact("Selected", state.clone(), &[b.clone(), d.clone()], ty, 7);
     let ab = Proposition::condition_is(
         ConditionTerm::PointerEqual(
-            Box::new(Pointer::new(a.clone(), ty)),
-            Box::new(Pointer::new(b.clone(), ty)),
+            Box::new(OldPointer::new(a.clone(), ty)),
+            Box::new(OldPointer::new(b.clone(), ty)),
         ),
         true,
     );
     let cd = Proposition::condition_is(
         ConditionTerm::PointerEqual(
-            Box::new(Pointer::new(c.clone(), ty)),
-            Box::new(Pointer::new(d.clone(), ty)),
+            Box::new(OldPointer::new(c.clone(), ty)),
+            Box::new(OldPointer::new(d.clone(), ty)),
         ),
         true,
     );
@@ -8671,8 +8672,9 @@ fn complete_pointer_read_source_retains_the_domain_version() {
             .clone()
             .store(unrelated, ProgramValue::Int32(MachineTerm::constant(1))),
     );
-    let old_value = Pointer::from_read(address.clone(), ProgramType::Int32Pointer, &before, &cell);
-    let value = Pointer::from_read(address, ProgramType::Int32Pointer, &after, &cell);
+    let old_value =
+        OldPointer::from_read(address.clone(), ProgramType::Int32Pointer, &before, &cell);
+    let value = OldPointer::from_read(address, ProgramType::Int32Pointer, &after, &cell);
     assert_eq!(old_value.address(), value.address());
     assert_ne!(
         old_value, value,

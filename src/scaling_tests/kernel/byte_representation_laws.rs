@@ -6,7 +6,7 @@ fn representation_axiom_has_fixed_work_at_distant_word_addresses() {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = Address::symbolic(Variable(8_390_002)).offset_by_bytes(offset);
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-            prove_uint32_from_le_bytes(Pointer::new(pointer, ProgramType::UInt32Pointer))
+            prove_uint32_from_le_bytes(OldPointer::new(pointer, ProgramType::UInt32Pointer))
         });
         result.expect("representation axiom");
         work

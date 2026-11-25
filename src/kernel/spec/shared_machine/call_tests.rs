@@ -548,7 +548,7 @@ fn pointer_call_producers_retain_nested_arguments_and_native_metadata() {
         .into_iter()
         .flat_map(|null| (0..3).map(move |mode| (null, mode)))
     {
-        let pointer = Pointer::new(
+        let pointer = OldPointer::new(
             if null {
                 Address::null()
             } else {

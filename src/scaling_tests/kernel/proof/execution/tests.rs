@@ -894,17 +894,16 @@ fn branch_fact_availability_is_exact_and_independent_of_ambient_history() {
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn interface_aliased_wide_read_preserves_scope_history_and_scales() {
-    use crate::kernel::{ConditionTerm, Pointer, SpecPoint};
+    use crate::kernel::{ConditionTerm, OldPointer, SpecPoint};
     let _session = crate::kernel::VerificationSession::enter();
     let owner = Address::symbolic(Variable(951_000));
     let alias = Address::symbolic(Variable(951_001));
     let value = MachineTerm::uint64_constant(0x1234_5678_9abc_def0);
     let load = SpecExpression::MemoryLoad {
         point: SpecPoint::Current,
-        pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(Pointer::new(
-            alias.clone(),
-            ProgramType::UInt64Pointer,
-        )))),
+        pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
+            OldPointer::new(alias.clone(), ProgramType::UInt64Pointer),
+        ))),
         value_type: ProgramType::UInt64,
         exact: false,
     };

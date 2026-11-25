@@ -1548,7 +1548,7 @@ mod pointer_argument_tests {
     #[test]
     fn pointer_execution_arguments_keep_selected_roots_and_native_bindings() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = Pointer::new(
+        let pointer = OldPointer::new(
             Address::symbolic(Variable(1027100)),
             ProgramType::Int32Pointer,
         );
@@ -1621,7 +1621,7 @@ mod pointer_return_tests {
     #[test]
     fn pointer_returns_keep_complete_payload() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = Pointer::new(
+        let pointer = OldPointer::new(
             Address::symbolic(Variable(1027400)),
             ProgramType::Int32Pointer,
         );

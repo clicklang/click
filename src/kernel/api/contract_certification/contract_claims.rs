@@ -3364,7 +3364,7 @@ mod checked_proposition_index_tests {
         let context = PureFactContext::new().assume_proposition(route.clone());
         let pointer = Address::symbolic(Variable(71_031));
         let equation = ExecutionPureFact::logical_read_equation(
-            Pointer::new(pointer.clone(), ProgramType::Int32Pointer),
+            OldPointer::new(pointer.clone(), ProgramType::Int32Pointer),
             Address::loaded_value(&intern_memory(SymbolicMemory::new()), &pointer),
         );
         let mut paths = vec![
@@ -3936,7 +3936,7 @@ mod retained_contract_input_tests {
     #[test]
     fn contract_input_preparation_preserves_roots_and_native_binding_rules() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = Pointer::new(
+        let pointer = OldPointer::new(
             Address::symbolic(Variable(996801)),
             ProgramType::Int32Pointer,
         );

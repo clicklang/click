@@ -47,9 +47,9 @@ pub(super) fn native_name(value: &ProgramValue) -> Option<SurfaceBinder> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::{KernelTermExport, Pointer, SubobjectBounds, VerificationSession};
+    use crate::kernel::{KernelTermExport, OldPointer, SubobjectBounds, VerificationSession};
 
-    fn check_names(values: Vec<(&str, Pointer)>) {
+    fn check_names(values: Vec<(&str, OldPointer)>) {
         let state = ExecutionState::new();
         let bindings: ProgramValueBindings = values
             .iter()
@@ -174,7 +174,7 @@ mod tests {
     #[test]
     fn shared_pointer_equality_uses_the_names_of_distinct_same_address_operands() {
         let _session = VerificationSession::enter();
-        let left = Pointer::new(
+        let left = OldPointer::new(
             Address::symbolic(Variable(1018020)),
             ProgramType::Int32Pointer,
         );
@@ -225,7 +225,7 @@ mod tests {
             KernelTermImport, MachineIntegerType, MachineTerm, PureFunctionArgument,
         };
         let _session = VerificationSession::enter();
-        let pointer = Pointer::new(
+        let pointer = OldPointer::new(
             Address::symbolic(Variable(1024950)),
             ProgramType::Int32Pointer,
         );
@@ -273,7 +273,7 @@ mod tests {
     #[test]
     fn pointer_proof_names_preserve_qualifiers_instead_of_address_equality() {
         let _session = VerificationSession::enter();
-        let plain = Pointer::new(
+        let plain = OldPointer::new(
             Address::symbolic(Variable(1015000)),
             ProgramType::Int32Pointer,
         );
@@ -300,7 +300,7 @@ mod tests {
         );
         let pointer = Address::symbolic(Variable(1015010));
         let make = |memory| {
-            Pointer::new(pointer.clone(), ProgramType::Int32Pointer).with_bounds(Some(
+            OldPointer::new(pointer.clone(), ProgramType::Int32Pointer).with_bounds(Some(
                 SubobjectBounds {
                     start: pointer.clone(),
                     width: MachineTerm::read_named(
@@ -349,7 +349,7 @@ mod tests {
     #[test]
     fn pointer_proof_name_scopes_restore_exact_payload_bindings() {
         let _session = VerificationSession::enter();
-        let pointer = Pointer::new(
+        let pointer = OldPointer::new(
             Address::symbolic(Variable(1015020)),
             ProgramType::Int32Pointer,
         );

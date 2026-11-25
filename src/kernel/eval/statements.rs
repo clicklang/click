@@ -781,7 +781,7 @@ fn write_program_lvalue_paths_for_initialization(
                 } else {
                     // Name the declared slot with the same carrier as `&name`.
                     let range = MemoryRange::from_pointer_value(
-                        &Pointer::new(pointer.clone(), ProgramType::VoidPointer),
+                        &OldPointer::new(pointer.clone(), ProgramType::VoidPointer),
                         0u32.into(),
                         1u32.into(),
                         bytes,
@@ -1262,9 +1262,9 @@ fn write_program_lvalue_paths_for_initialization(
                 let read = if let Some(version) =
                     point.indexed_typed_version(&written_pointer, value_type)
                 {
-                    Pointer::from_point_read(version, value_type, &written_pointer)
+                    OldPointer::from_point_read(version, value_type, &written_pointer)
                 } else {
-                    Pointer::new(
+                    OldPointer::new(
                         Address::canonical_read(
                             point.shared_memory(),
                             Some(&point),
@@ -1600,7 +1600,7 @@ fn execute_program_aggregate_copy_paths(
 
 fn missing_aggregate_copy_write_resource(
     state: &ExecutionState,
-    target: &Pointer,
+    target: &OldPointer,
     layout: &AggregateLayout,
     assumptions: &PureFactContext,
 ) -> Option<ResourceFact> {
@@ -1647,7 +1647,7 @@ fn missing_aggregate_copy_write_resource(
 
 pub(in crate::kernel) fn missing_aggregate_copy_read_resource(
     state: &ExecutionState,
-    source: &Pointer,
+    source: &OldPointer,
     layout: &AggregateLayout,
     assumptions: &PureFactContext,
 ) -> Option<ResourceFact> {
@@ -2614,7 +2614,7 @@ fn execute_program_realloc_result_paths(
         let old_argument = match old_value {
             ProgramValue::Pointer(pointer) => pointer,
             ProgramValue::Int32(bits) if bits.as_const() == Some(0) => {
-                Pointer::new(Address::null(), target_type)
+                OldPointer::new(Address::null(), target_type)
             }
             _ => {
                 paths.push(StatementExecutionPath::new(
@@ -3312,7 +3312,7 @@ fn execute_program_heap_free_paths(
         for (address, value_type) in pointer_frames {
             let point = state.program_point();
             let before = if let Some(version) = point.indexed_typed_version(&address, value_type) {
-                Pointer::from_point_read(version, value_type, &address)
+                OldPointer::from_point_read(version, value_type, &address)
             } else {
                 // `before_free` is the state's memory: the read is made at
                 // its point.
@@ -6784,10 +6784,10 @@ pub(in crate::kernel) fn sync_retained_stack_local(
 /// A pointer value moved from a pending allocation's base to its resolved
 /// block. Its subobject bounds, which names the same block, moves with it.
 pub(in crate::kernel) fn rebase_resolved_allocation(
-    value: &Pointer,
+    value: &OldPointer,
     base: &Address,
     resolved: &Address,
-) -> Pointer {
+) -> OldPointer {
     let resolved_value = value
         .map_pointers(|address| {
             if address == base {

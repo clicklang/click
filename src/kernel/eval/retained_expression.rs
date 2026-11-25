@@ -683,7 +683,7 @@ mod tests {
     #[test]
     fn retained_pointer_numeric_results_match_native_casts_and_differences() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = ProgramExpression::Value(ProgramValue::Pointer(Pointer::new(
+        let pointer = ProgramExpression::Value(ProgramValue::Pointer(OldPointer::new(
             Address::symbolic(Variable(1024100)),
             ProgramType::Int32Pointer,
         )));
@@ -758,7 +758,7 @@ mod tests {
     #[test]
     fn retained_pointer_arithmetic_preserves_operands_metadata_and_refusals() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = ProgramExpression::Value(ProgramValue::Pointer(Pointer::new(
+        let pointer = ProgramExpression::Value(ProgramValue::Pointer(OldPointer::new(
             Address::symbolic(Variable(1023000)),
             ProgramType::Int32Pointer,
         )));
@@ -854,7 +854,7 @@ mod tests {
             .locals
             .set_array_object_at("array", ProgramType::Int32, 4, array.clone());
         state.set_memory(SymbolicMemory::new().with_block(array.base, 16));
-        let pointer = Pointer::new(
+        let pointer = OldPointer::new(
             Address::symbolic(Variable(1022000)),
             ProgramType::Int32Pointer,
         );
@@ -1117,11 +1117,11 @@ mod tests {
     #[test]
     fn pointer_conditional_paths_keep_scoped_facts_and_complete_values() {
         let _session = crate::kernel::VerificationSession::enter();
-        let left = ProgramValue::Pointer(Pointer::new(
+        let left = ProgramValue::Pointer(OldPointer::new(
             Address::symbolic(Variable(1026200)),
             ProgramType::Int32Pointer,
         ));
-        let right = ProgramValue::Pointer(Pointer::new(
+        let right = ProgramValue::Pointer(OldPointer::new(
             Address::symbolic(Variable(1026201)),
             ProgramType::Int32Pointer,
         ));
@@ -1974,7 +1974,7 @@ mod tests {
                 "nested".into(),
                 vec![read_root.clone()],
             ),
-            SharedPointer::import(&Pointer::new(
+            SharedPointer::import(&OldPointer::new(
                 SymbolicMemory::local_pointer("pointer_step_pointee"),
                 ProgramType::Int32Pointer,
             )),

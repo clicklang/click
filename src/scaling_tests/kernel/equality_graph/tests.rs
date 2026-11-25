@@ -756,7 +756,7 @@ fn pointer_fact_source_order_queries_ignore_unrelated_admissions() {
         let graph = EqualityGraph::default();
         let mut target = None;
         for id in 0..size {
-            let domain = crate::kernel::Pointer::new(
+            let domain = crate::kernel::OldPointer::new(
                 Address::symbolic(Variable(9_000_000 + id)),
                 crate::kernel::ProgramType::Int32Pointer,
             );

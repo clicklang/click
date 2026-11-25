@@ -98,11 +98,11 @@ fn child_witness_aliases_use_the_published_point_index() {
         let state = state.with_resource_context(resources);
         let aliased = assumptions.assume_proposition(Proposition::condition_is(
             ConditionTerm::PointerEqual(
-                Box::new(Pointer::new(
+                Box::new(OldPointer::new(
                     Address::symbolic(Variable(2)),
                     ProgramType::Int32Pointer,
                 )),
-                Box::new(Pointer::new(
+                Box::new(OldPointer::new(
                     Address::symbolic(Variable(50)),
                     ProgramType::Int32Pointer,
                 )),

@@ -16,8 +16,8 @@ use crate::kernel::{
 };
 use crate::kernel::{
     AlgebraicTerm, AlgebraicTermNode, AlgebraicValue, IntegerComparisonOperator, IntegerTerm,
-    KernelTermNode, MachineIntegerType, Pointer, ProgramType, ProgramValue, PureFunctionArgument,
-    SharedIntegerTerm, SharedMemory, Sort, Term,
+    KernelTermNode, MachineIntegerType, OldPointer, ProgramType, ProgramValue,
+    PureFunctionArgument, SharedIntegerTerm, SharedMemory, Sort, Term,
 };
 use crate::kernel::{MachineCastSpelling, cast_term};
 use crate::kernel::{
@@ -138,7 +138,7 @@ impl MemoryErasedPointerKey {
     }
 }
 
-fn memory_erased_pointer_key(pointer: &Pointer) -> MemoryErasedPointerKey {
+fn memory_erased_pointer_key(pointer: &OldPointer) -> MemoryErasedPointerKey {
     MemoryErasedPointerKey {
         address: memory_erased_address_key(pointer.address()),
         provenance: memory_erased_address_key(pointer.provenance()),
@@ -5454,7 +5454,7 @@ mod complete_pointer_condition_tests {
     #[test]
     fn complete_pointer_conditions_keep_state_domain_keys() {
         let _session = crate::kernel::VerificationSession::enter();
-        let a = Pointer::new(
+        let a = OldPointer::new(
             Address::symbolic(Variable(998620)),
             ProgramType::Int32Pointer,
         );

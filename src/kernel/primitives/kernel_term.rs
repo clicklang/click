@@ -1005,7 +1005,7 @@ impl KernelTerm {
             return Some(value);
         }
         if let Some(value) = self
-            .pointer_native()
+            .old_pointer_value()
             .or_else(|| self.boolean_native())
             .or_else(|| self.algebraic_native_value())
             .or_else(|| self.float_native_value())
@@ -2237,7 +2237,7 @@ mod tests {
 
     #[test]
     fn legacy_pointer_equality_does_not_discard_auxiliary_qualifiers() {
-        let pointer = Pointer::new(Address::symbolic(Variable(76)), ProgramType::Int32Pointer);
+        let pointer = OldPointer::new(Address::symbolic(Variable(76)), ProgramType::Int32Pointer);
         let constant = pointer.clone().with_declared_object_class(Some(
             crate::kernel::effective_type::CAccessClass::Scalar(
                 crate::kernel::effective_type::CScalarClass::Int,
@@ -2269,7 +2269,7 @@ mod tests {
     #[test]
     fn legacy_adapter_keeps_complete_pointers_and_scoped_integer_nodes() {
         let base = Address::symbolic(Variable(75));
-        let root = Pointer::new(base.clone(), ProgramType::Int32Pointer);
+        let root = OldPointer::new(base.clone(), ProgramType::Int32Pointer);
         let member = root.clone().with_bounds(Some(SubobjectBounds {
             start: base,
             width: 4u32.into(),
@@ -2453,9 +2453,7 @@ impl KernelTermExport {
             | KernelTermNode::Pointer(value) => {
                 PureFunctionArgument::Value(ProgramValue::Pointer(value.export()?))
             }
-            KernelTermNode::ArrayReference { .. } => {
-                term.pointer_argument_native().unwrap().clone()
-            }
+            KernelTermNode::ArrayReference { .. } => term.old_pointer_argument().unwrap().clone(),
             KernelTermNode::ProgramParameter { operand } => PureFunctionArgument::Value(
                 ProgramValue::Parameter(Box::new(self.algebraic(operand)?)),
             ),

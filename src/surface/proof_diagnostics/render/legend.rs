@@ -738,7 +738,7 @@ mod tests {
                 "select",
                 vec![PureFunctionArgument::ArrayRef {
                     point: crate::kernel::ProgramPoint::of_memory(&memory),
-                    pointer: ProgramValue::Pointer(crate::kernel::Pointer::new(
+                    pointer: ProgramValue::Pointer(crate::kernel::OldPointer::new(
                         base.clone(),
                         crate::kernel::ProgramType::Int32Pointer,
                     )),

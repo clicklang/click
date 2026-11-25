@@ -12,7 +12,7 @@ fn loop_view_partition_uses_alias_graph_without_scanning_ambient_ranges() {
     let _session = crate::kernel::VerificationSession::enter();
     let source = Address::symbolic(Variable(916_100));
     let alias = Address::symbolic(Variable(916_101));
-    let source_value = Pointer::new(source.clone(), ProgramType::UInt8Pointer);
+    let source_value = OldPointer::new(source.clone(), ProgramType::UInt8Pointer);
     // Respelling a copied pointer retains its origin; address equality alone
     // cannot turn an independently originated pointer into this owner.
     let cursor = source_value.clone().with_address(alias.clone());

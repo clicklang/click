@@ -2471,7 +2471,7 @@ impl LocalEnvironment {
     pub(crate) fn pointer_objects_in_block<'a>(
         &'a self,
         block: &AddressBase,
-    ) -> impl Iterator<Item = (&'a BindingName, &'a Pointer)> {
+    ) -> impl Iterator<Item = (&'a BindingName, &'a OldPointer)> {
         self.pointer_objects_by_block
             .get(block)
             .into_iter()
@@ -4849,7 +4849,7 @@ impl SymbolicMemory {
     /// Name the success identity already reserved by this allocation producer.
     /// This is a value observation, not evidence that allocation succeeded or
     /// that the object is still live. No facts or memory history are consulted.
-    pub(crate) fn fresh_allocation_identity(&self, result: &Pointer) -> Option<Pointer> {
+    pub(crate) fn fresh_allocation_identity(&self, result: &OldPointer) -> Option<OldPointer> {
         let base = result.address();
         match base.base {
             AddressBase::Heap(_) => Some(result.clone()),
@@ -9067,7 +9067,7 @@ impl SymbolicMemory {
         // cell, either of which already carries its definition.
         match Address::version_read_value(&retained_state, site, pointer) {
             Ok(held) => ProgramValue::Pointer(held.with_type(value_type)),
-            Err(value) => ProgramValue::Pointer(Pointer::from_read_at(
+            Err(value) => ProgramValue::Pointer(OldPointer::from_read_at(
                 value,
                 value_type,
                 &retained_state,
@@ -9097,7 +9097,7 @@ impl SymbolicMemory {
         // resource argument evaluator does not retain a C load's fact stream.
         crate::kernel::equality_graph::EqualityGraph::default()
             .register_pointer_read_definition_at(&value, &retained_state, site, pointer);
-        ProgramValue::Pointer(Pointer::from_read_at(
+        ProgramValue::Pointer(OldPointer::from_read_at(
             value,
             value_type,
             &retained_state,

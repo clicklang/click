@@ -14,7 +14,7 @@ fn mixed_call_arguments_import_structurally_and_keep_exact_native_forms() {
             )],
         },
     };
-    let pointer = Pointer::new(
+    let pointer = OldPointer::new(
         Address::symbolic(Variable(1008501)),
         ProgramType::Int32Pointer,
     );
@@ -149,7 +149,7 @@ fn prepared_call_children_reuse_the_producer_only_in_the_current_session() {
     let application = SharedPureApplication::intern(
         "session_pointer_argument".into(),
         vec![PureFunctionArgument::Value(ProgramValue::Pointer(
-            Pointer::new(
+            OldPointer::new(
                 Address::symbolic(Variable(1008515)),
                 ProgramType::Int32Pointer,
             ),
@@ -181,7 +181,7 @@ fn prepared_call_children_do_not_cross_threads_with_equal_session_generations() 
     let application = SharedPureApplication::intern(
         "thread_pointer_argument".into(),
         vec![PureFunctionArgument::Value(ProgramValue::Pointer(
-            Pointer::new(
+            OldPointer::new(
                 Address::symbolic(Variable(1008517)),
                 ProgramType::Int32Pointer,
             ),
@@ -226,7 +226,7 @@ fn opaque_call_children_borrow_their_producers_exact_argument_slot() {
     let machine = import.machine_call(MachineIntegerType::Int32, &first);
     let boolean = import.boolean_call(&first);
     let integer = import.integer(&IntegerTerm::PureFunctionApplication(first.clone()).into());
-    let pointer = SharedPointer::import(&Pointer::new(
+    let pointer = SharedPointer::import(&OldPointer::new(
         Address::symbolic(Variable(1008520)),
         ProgramType::Int32Pointer,
     ));
@@ -279,7 +279,7 @@ fn a_null_array_argument_is_formed_at_no_state() {
     let other =
         crate::kernel::ProgramPoint::of_memory(&SymbolicMemory::new().with_block("local:x", 8));
     let pointer = |address: Address| {
-        KernelTerm::shared_pointer_value(SharedPointer::import(&Pointer::new(
+        KernelTerm::shared_pointer_value(SharedPointer::import(&OldPointer::new(
             address,
             ProgramType::Int32Pointer,
         )))

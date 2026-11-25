@@ -8619,7 +8619,7 @@ fn evaluate_spec_pure_function_application_paths_in(
                 .collect();
             let application = (!all_null)
                 .then(|| SharedPureApplication::intern(name.to_owned(), call_arguments(arguments)));
-            let value = Pointer::new(
+            let value = OldPointer::new(
                 if all_null {
                     Address::null()
                 } else {
@@ -8827,7 +8827,7 @@ fn refine_object_pointer_argument_with_null(
     {
         return true;
     }
-    let names_declared_object = |value: &Pointer| {
+    let names_declared_object = |value: &OldPointer| {
         [value.address(), value.provenance()]
             .into_iter()
             .any(|object| {
@@ -8915,8 +8915,7 @@ fn evaluate_spec_pure_function_argument_paths_in(
                         _ => None,
                     };
                     if let Some(root) = &retained {
-                        path.value =
-                            SpecCallArgument::Native(root.pointer_argument_native()?.clone());
+                        path.value = SpecCallArgument::Native(root.old_pointer_argument()?.clone());
                     }
                     let value = match &mut path.value {
                         SpecCallArgument::Native(
@@ -11495,7 +11494,7 @@ mod pointer_integer_observation_tests {
     #[test]
     fn integer_specifications_observe_bits_without_a_pointer_record() {
         let context = PureFactContext::new();
-        let pointer = Pointer::new(
+        let pointer = OldPointer::new(
             Address::symbolic(Variable(994_001)),
             ProgramType::Int32Pointer,
         );

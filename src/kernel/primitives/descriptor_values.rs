@@ -800,7 +800,7 @@ mod protocol_value_tests {
         use crate::kernel::effective_type::{CAccessClass, CScalarClass};
 
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = Pointer::new(
+        let pointer = OldPointer::new(
             Address::symbolic(Variable(998991)),
             ProgramType::Int32Pointer,
         );
@@ -1117,7 +1117,7 @@ mod term_payload_contract_tests {
         state.finish()
     }
 
-    fn algebraic(pointer: Pointer) -> AlgebraicTerm {
+    fn algebraic(pointer: OldPointer) -> AlgebraicTerm {
         let mut value = KernelMatch::test_scrutinee(vec![AlgebraicValueType::Program(
             ProgramType::Int32Pointer,
         )]);
@@ -1163,7 +1163,7 @@ mod term_payload_contract_tests {
             assert_eq!(hash(&retained), hash(value));
             assert_eq!(stored.into_native_compat(), *value);
         }
-        let pointer = Pointer::new(
+        let pointer = OldPointer::new(
             Address::symbolic(Variable(991701)),
             ProgramType::Int32Pointer,
         );

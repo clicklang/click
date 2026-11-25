@@ -605,7 +605,7 @@ pub(super) struct TermClasses {
     pending_machine_relations: Vec<(machine_relations::Relation, u64, u64)>,
     // Pairs of complete pointer values whose classes merged, still to be
     // joined component by component (provenance, bounds and address).
-    pending_pointer_joins: Vec<(crate::kernel::Pointer, crate::kernel::Pointer)>,
+    pending_pointer_joins: Vec<(crate::kernel::OldPointer, crate::kernel::OldPointer)>,
     relating_machine_terms: bool,
     // Constant signed int32 bounds belong to a value class, not a spelling.
     // A class union intersects two intervals in constant local work.
@@ -672,8 +672,8 @@ pub(super) struct TermClasses {
     // One zero-offset pointer read or pure-call value per class. Congruence emits only
     // newly identified pairs for the legacy affine/index projection.
     pointer_value_witnesses: PersistentMap<u64, AddressBase>,
-    pointer_values: PersistentMap<u64, crate::kernel::Pointer>,
-    bounds_values: PersistentMap<u64, crate::kernel::Pointer>,
+    pointer_values: PersistentMap<u64, crate::kernel::OldPointer>,
+    bounds_values: PersistentMap<u64, crate::kernel::OldPointer>,
     read_domains: crate::kernel::pointer_provenance::ValueClasses<Address>,
     read_provenance_nodes: PersistentMap<Address, u64>,
     // Every registered opaque origin, including symbols and complete reads.
@@ -3631,12 +3631,12 @@ mod tests {
 
     #[test]
     fn complete_pointer_identity_tracks_symbolic_bounds_widths() {
-        use crate::kernel::{Pointer, ProgramType, SubobjectBounds};
+        use crate::kernel::{OldPointer, ProgramType, SubobjectBounds};
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = Address::symbolic(Variable(942_001));
         let width = MachineTerm::Variable(Variable(942_002));
         let bounded = |width| {
-            Pointer::new(pointer.clone(), ProgramType::Int32Pointer).with_bounds(Some(
+            OldPointer::new(pointer.clone(), ProgramType::Int32Pointer).with_bounds(Some(
                 SubobjectBounds {
                     start: pointer.clone(),
                     width,

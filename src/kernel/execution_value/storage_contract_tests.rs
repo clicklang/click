@@ -76,7 +76,7 @@ fn nonnumeric_storage_keys_preserve_native_pairwise_order_and_hash_classes() {
     for bits in [0, 0x8000000000000000, 0x7ff8000000000001] {
         values.push(ProgramValue::Float64(MachineTerm::uint64_constant(bits)));
     }
-    values.push(ProgramValue::Pointer(Pointer::new(
+    values.push(ProgramValue::Pointer(OldPointer::new(
         Address::symbolic(Variable(998603)),
         ProgramType::Int32Pointer,
     )));
@@ -326,7 +326,7 @@ fn algebraic_storage_keys_preserve_native_order_and_carrier_classes() {
             arguments: vec![arg],
         }));
     }
-    let pointer = Pointer::new(
+    let pointer = OldPointer::new(
         Address::symbolic(Variable(998737)),
         ProgramType::Int32Pointer,
     );
@@ -426,7 +426,7 @@ fn deep_algebraic_storage_keys_use_a_small_stack() {
 #[test]
 fn pointer_storage_keys_preserve_the_complete_native_identity_tuple() {
     let _session = VerificationSession::enter();
-    let pointer = Pointer::new(
+    let pointer = OldPointer::new(
         Address::symbolic(Variable(998750)),
         ProgramType::Int32Pointer,
     );
@@ -465,7 +465,7 @@ fn pointer_storage_keys_preserve_the_complete_native_identity_tuple() {
         AddressOffset::scaled_int64_node(MachineTerm::Variable(Variable(998754)), 8, false),
         AddressOffset::scaled_int64_node(MachineTerm::Variable(Variable(998754)), 8, true),
     ] {
-        values.push(Pointer::new(
+        values.push(OldPointer::new(
             Address {
                 base: other.base.clone(),
                 offset,
@@ -510,7 +510,7 @@ fn deep_pointer_storage_keys_use_a_small_stack() {
         .spawn(|| {
             use crate::kernel::{KernelAddressOffset, SharedAddress};
             let _session = VerificationSession::enter();
-            let value = SharedPointer::import_produced(&Pointer::new(
+            let value = SharedPointer::import_produced(&OldPointer::new(
                 Address::symbolic(Variable(998755)),
                 ProgramType::Int32Pointer,
             ));

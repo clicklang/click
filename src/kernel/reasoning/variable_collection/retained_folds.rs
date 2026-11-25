@@ -354,7 +354,7 @@ pub(super) fn common_variables(
             }
             KernelTermNode::ArrayReference { .. } => {
                 collect_argument(
-                    term.pointer_argument_native().expect("array descriptor"),
+                    term.old_pointer_argument().expect("array descriptor"),
                     mode,
                     &mut leaf_variables,
                     &mut SeenTerms::default(),
@@ -1350,7 +1350,7 @@ mod tests {
             },
             ConditionTerm::PointerEqual(
                 Box::new(
-                    Pointer::new(
+                    OldPointer::new(
                         Address::symbolic(Variable(970_010)),
                         ProgramType::Int32Pointer,
                     )
@@ -1359,7 +1359,7 @@ mod tests {
                         width: MachineTerm::Variable(Variable(970_012)),
                     })),
                 ),
-                Box::new(Pointer::new(Address::null(), ProgramType::Int32Pointer)),
+                Box::new(OldPointer::new(Address::null(), ProgramType::Int32Pointer)),
             ),
             ConditionTerm::AddressOffsetEqual(
                 Box::new(AddressOffset::Add(
@@ -1776,7 +1776,7 @@ mod mixed_argument_tests {
                 ],
             },
         };
-        let pointer = ProgramValue::Pointer(Pointer::new(
+        let pointer = ProgramValue::Pointer(OldPointer::new(
             Address::symbolic(Variable(1008512)),
             ProgramType::Int32Pointer,
         ));

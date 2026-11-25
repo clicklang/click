@@ -2,7 +2,7 @@
 //! plans selecting those rules for ordinary proof expansion.
 use super::super::{
     Address, AddressBase, AddressOffset, ComparisonOperator, ConditionTerm, FloatClassification,
-    FloatCondition, FloatOperandView, KernelFloatType, MachineTerm, Pointer, Proposition,
+    FloatCondition, FloatOperandView, KernelFloatType, MachineTerm, OldPointer, Proposition,
     SignedDefinedWidth,
 };
 
@@ -1263,7 +1263,7 @@ fn pointer_translation(
     goal: &Proposition,
 ) -> bool {
     if let Some((ConditionTerm::PointerEqual(left, right), true)) = (goal).condition_native() {
-        let same_domain = |a: &Pointer, b: &Pointer| a.same_provenance_as(b);
+        let same_domain = |a: &OldPointer, b: &OldPointer| a.same_provenance_as(b);
         let linked = match relation {
             condition_source_0 @ Proposition::ConditionIs(_, true)
                 if let Some((ConditionTerm::PointerEqual(a, b), _)) =

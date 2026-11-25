@@ -357,7 +357,7 @@ fn nested_operators_register_the_pointer_arguments_they_use() {
     let call = |pointer| MachineTerm::ClickFunctionApplication {
         name: "pointer_getter".into(),
         arguments: vec![PureFunctionArgument::Value(ProgramValue::Pointer(
-            crate::kernel::Pointer::new(pointer, ProgramType::Int32Pointer),
+            crate::kernel::OldPointer::new(pointer, ProgramType::Int32Pointer),
         ))],
     };
     let expression = |pointer| {
@@ -385,8 +385,8 @@ fn nested_operators_register_the_pointer_arguments_they_use() {
     // address equality alone must not identify these function applications.
     assert!(!graph.are_uint64_equal(&a, &b));
     graph.add_pointer_equality(
-        &crate::kernel::Pointer::new(p, ProgramType::Int32Pointer),
-        &crate::kernel::Pointer::new(q, ProgramType::Int32Pointer),
+        &crate::kernel::OldPointer::new(p, ProgramType::Int32Pointer),
+        &crate::kernel::OldPointer::new(q, ProgramType::Int32Pointer),
     );
     assert!(graph.are_uint64_equal(&a, &b));
 }
@@ -429,18 +429,19 @@ fn a_uint32_constant_is_one_class_with_its_word() {
 #[test]
 fn common_call_operands_register_complete_pointer_arguments() {
     use crate::kernel::{
-        KernelTermExport, KernelTermImport, MachineOperandView as V, Pointer, SharedPureApplication,
+        KernelTermExport, KernelTermImport, MachineOperandView as V, OldPointer,
+        SharedPureApplication,
     };
     let _session = crate::kernel::VerificationSession::enter();
-    let p = Pointer::new(
+    let p = OldPointer::new(
         Address::symbolic(Variable(940_061)),
         ProgramType::Int32Pointer,
     );
-    let q = Pointer::new(
+    let q = OldPointer::new(
         Address::symbolic(Variable(940_062)),
         ProgramType::Int32Pointer,
     );
-    let call = |pointer: Pointer| {
+    let call = |pointer: OldPointer| {
         KernelTermImport::default().machine_call(
             M::Int32,
             &SharedPureApplication::intern(

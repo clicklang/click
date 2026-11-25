@@ -170,7 +170,7 @@ fn add_arithmetic_branch_fact(
     add_condition_path_fact(facts, assumptions, condition, value)
 }
 
-fn pointer_types_compatible(left: &Pointer, right: &Pointer) -> bool {
+fn pointer_types_compatible(left: &OldPointer, right: &OldPointer) -> bool {
     left.program_type()
         .pointer_types_compatible(right.program_type())
         || left.is_null()
@@ -1902,7 +1902,7 @@ pub(in crate::kernel) fn apply_program_bitwise_not(
 /// pointer forms (C11 6.3.2.3p7): the allocation's bytes, not the member the
 /// pointer was formed from. Linux's `container_of` steps back from a member
 /// this way.
-fn gnu_void_arithmetic_operand(pointer: Pointer) -> Pointer {
+fn gnu_void_arithmetic_operand(pointer: OldPointer) -> OldPointer {
     if pointer.program_type() == ProgramType::VoidPointer {
         pointer.with_root_bounds()
     } else {
@@ -1911,7 +1911,7 @@ fn gnu_void_arithmetic_operand(pointer: Pointer) -> Pointer {
 }
 
 pub(super) fn pointer_value_step_width(
-    pointer: &Pointer,
+    pointer: &OldPointer,
     expression_width: Option<u32>,
 ) -> Option<u32> {
     // GNU C treats void-pointer arithmetic as byte arithmetic. Other
@@ -2171,8 +2171,8 @@ fn uint32_order_condition(
 
 fn apply_same_allocation_pointer_operation(
     state: &ExecutionState,
-    left: Pointer,
-    right: Pointer,
+    left: OldPointer,
+    right: OldPointer,
     context: &'static str,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
@@ -2225,8 +2225,8 @@ fn apply_same_allocation_pointer_operation(
 /// two provenances, or else the path continues with the fact and the
 /// undefined-behavior path records its negation. Both raise as written.
 fn apply_same_allocation_guard(
-    left: &Pointer,
-    right: &Pointer,
+    left: &OldPointer,
+    right: &OldPointer,
     context: &'static str,
     mut facts: ExecutionFacts,
     mut obligations: Vec<ProofObligation>,
@@ -2261,7 +2261,7 @@ fn apply_same_allocation_guard(
 
 fn apply_pointer_object_nonnull_guard(
     state: &ExecutionState,
-    pointer: &Pointer,
+    pointer: &OldPointer,
     is_null: ConditionTerm,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
@@ -2356,7 +2356,7 @@ enum SameArray {
 /// width), or both the whole object. When either side's bounds are not known
 /// (a pointer from a parameter or loaded from memory), its array is the
 /// object the same-object check already compares.
-fn pointer_subtraction_same_array(left: &Pointer, right: &Pointer) -> SameArray {
+fn pointer_subtraction_same_array(left: &OldPointer, right: &OldPointer) -> SameArray {
     if !left.bounds_are_known() || !right.bounds_are_known() {
         return SameArray::Holds;
     }
@@ -2462,8 +2462,8 @@ pub(in crate::kernel) fn pointer_object_is_null_condition(pointer: &Address) -> 
 /// The kernel fact `same_allocation(left, right)`: one predicate, which
 /// raises to itself (`design/pointer-model.md`).
 pub(in crate::kernel) fn same_allocation_proposition(
-    left: &Pointer,
-    right: &Pointer,
+    left: &OldPointer,
+    right: &OldPointer,
 ) -> Proposition {
     Proposition::Predicate {
         name: crate::kernel::SAME_ALLOCATION_PREDICATE_NAME.to_string(),
@@ -2928,7 +2928,7 @@ pub(in crate::kernel) fn pointer_index_term(
 
 fn pointer_offset_by_elements_paths(
     state: &ExecutionState,
-    pointer: Pointer,
+    pointer: OldPointer,
     offset: MachineTerm,
     byte_width: u32,
     unsigned: bool,
@@ -3174,7 +3174,7 @@ fn byte_product_no_overflow(
 
 pub(in crate::kernel) fn pointer_offset_by_bytes_paths(
     state: &ExecutionState,
-    pointer: Pointer,
+    pointer: OldPointer,
     bytes: impl Into<crate::kernel::LayoutOffset>,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
@@ -4139,7 +4139,7 @@ fn pointer_index_from_base(
 /// `const` pointee qualifier, as formation always has; the write-through-const
 /// check reads the lvalue's static type.
 fn apply_pointer_formation_guards(
-    pointer: Pointer,
+    pointer: OldPointer,
     guards: Vec<PointerFormationGuard>,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
@@ -6527,7 +6527,7 @@ pub(in crate::kernel) fn effective_type_refusal_of(
 /// subobject bounds. A result whose position cannot be related to the
 /// bounds is refused outright.
 fn subobject_formation_guards(
-    value: &Pointer,
+    value: &OldPointer,
     result: &Address,
     facts: &ExecutionFacts,
     obligations: &[ProofObligation],
@@ -6583,7 +6583,7 @@ fn subobject_formation_guards(
 /// its address. A pointer that already designates a subobject may select
 /// only a part of it.
 pub(in crate::kernel) fn subobject_paths(
-    pointer: Pointer,
+    pointer: OldPointer,
     width: u32,
     mut facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
@@ -6872,7 +6872,7 @@ mod pointer_domain_tests {
     #[test]
     fn arithmetic_and_access_check_admitted_bounds_without_adopting_them() {
         let _session = crate::kernel::VerificationSession::enter();
-        let value = Pointer::new(
+        let value = OldPointer::new(
             Address::symbolic(Variable(1013100)),
             ProgramType::Int32Pointer,
         );

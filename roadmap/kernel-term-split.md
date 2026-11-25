@@ -25,6 +25,18 @@ an opaque input retains the exact producer's argument slot. Selected readers
 still use native views of these operands. Completed slices and their
 validation are in the [migration history][history].
 
+## Old names
+
+A type or function named `Old…` belongs to the native representation this
+item retires; its replacement is the `KernelTerm` form named beside it.
+"Native", "legacy" and "compat" in older names mean the same and are being
+renamed to "old". Renamed so far:
+
+| Old | Replacement |
+| --- | --- |
+| `OldPointer` | `KernelPointer` (handle `SharedPointer`) |
+| `KernelTerm::old_pointer_value`, `old_pointer_argument` | the retained `SharedPointer` itself |
+
 ## Closure checklist
 
 | Remaining boundary | Live callers | Close when |

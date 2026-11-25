@@ -10,7 +10,7 @@ pub(in crate::kernel) enum PointerDomain {
 }
 
 impl PointerDomain {
-    pub(in crate::kernel) fn intrinsic(value: &Pointer) -> Self {
+    pub(in crate::kernel) fn intrinsic(value: &OldPointer) -> Self {
         match value.bounds() {
             Some(bounds) => Self::Selected(bounds.clone()),
             None if value.bounds_are_known() => Self::Root,
@@ -31,8 +31,8 @@ pub(in crate::kernel) enum PointerDomainSource<'a> {
     BoundsOwner(&'a Address),
 }
 
-impl<'a> From<&'a Pointer> for PointerDomainSource<'a> {
-    fn from(value: &'a Pointer) -> Self {
+impl<'a> From<&'a OldPointer> for PointerDomainSource<'a> {
+    fn from(value: &'a OldPointer) -> Self {
         Self::Retained {
             bounds: value.bounds(),
             known: value.bounds_are_known(),
@@ -203,13 +203,13 @@ impl PureFactContext {
 mod tests {
     use super::*;
 
-    fn pointer(id: u64) -> Pointer {
-        Pointer::new(Address::symbolic(Variable(id)), ProgramType::Int32Pointer)
+    fn pointer(id: u64) -> OldPointer {
+        OldPointer::new(Address::symbolic(Variable(id)), ProgramType::Int32Pointer)
     }
-    fn equal(facts: PureFactContext, a: &Pointer, b: &Pointer) -> PureFactContext {
+    fn equal(facts: PureFactContext, a: &OldPointer, b: &OldPointer) -> PureFactContext {
         facts.assume_condition(ConditionTerm::pointer_equal(a.clone(), b.clone()), true)
     }
-    fn member(parent: &Pointer) -> Pointer {
+    fn member(parent: &OldPointer) -> OldPointer {
         parent
             .clone()
             .with_address(parent.address().offset_by_bytes(4))
@@ -296,7 +296,7 @@ mod tests {
         let memory = crate::kernel::intern_memory(
             SymbolicMemory::new().store(cell.clone(), ProgramValue::Pointer(selected.clone())),
         );
-        let read = Pointer::from_read(
+        let read = OldPointer::from_read(
             Address::loaded_value(&memory, &cell),
             ProgramType::Int32Pointer,
             &memory,
